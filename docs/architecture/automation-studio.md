@@ -199,12 +199,17 @@ structure so token usage scales with novelty rather than execution count.
 
 New Flows are fail-closed: normal execution, no LLM intervention, manual
 proposal review, and no automatic adaptation promotion. Fully adaptive
-behavior remains an explicit opt-in. Explicit runtime assistance has two closed
-lanes: `diagnosis_only` makes one diagnosis request and cannot patch or create
-an adaptation, while `diagnose_and_adapt` makes exactly one diagnosis and one
-runtime-patch request against an exact Flow revision. The latter may persist a
-proposal for manual review but cannot auto-apply it or authorize external side
-effects. A proposed target override is structurally validated as an opaque
+behavior remains an explicit opt-in. Explicit runtime assistance has three
+lanes, each against an exact Flow revision. `diagnosis_only` makes one
+diagnosis request and cannot patch or create an adaptation.
+`diagnose_and_adapt` diagnoses, may gather evidence, and ends in at most one
+runtime target-override proposal. `explore_and_adapt` diagnoses, gathers
+evidence, and live-tests the runtime patches it proposes within the Flow's own
+adaptation policy. Neither adapting lane has a fixed call count; see
+[Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
+Both may persist proposals for manual review, and neither can auto-apply one or
+authorize external side effects. A `diagnose_and_adapt` target override is
+structurally validated as an opaque
 target object; an optional domain validator receives bounded failed-node
 identity (node ID and definition ID) so it can enforce action compatibility.
 It may accept the proposed target or resolve one exact canonical replacement;
@@ -214,16 +219,20 @@ the current Flow. The proposal records only categorical selector/node resolution
 provenance, is marked high-risk/external-side-effecting, and is never run as a
 live patch. The canonical graph changes only through the existing
 PIN-authorized adaptation review/apply endpoint.
-Because the explicit grant is schema-bound to this one proposal kind, Core
-enables action-target proposal creation for that run even when the Flow's normal
-policy is locked. It does not enable live patch execution, auto-application,
-external side effects, or any other mutation class.
+Because the `diagnose_and_adapt` grant is schema-bound to this one proposal
+kind, Core enables action-target proposal creation for that run even when the
+Flow's normal policy is locked. It does not enable live patch execution,
+auto-application, external side effects, or any other mutation class. An
+`explore_and_adapt` run gets no such exemption: its patches are held to the
+mutation flags the Flow's policy actually sets.
 
 Every provider request carries server-enforced input, output, and total token
 limits. Core defaults are 8,000 input, 2,000 output, and 10,000 total tokens.
-Persisted Flow settings allow one through eight LLM calls, matching the global
-execution-grant ceiling; individual runtime intents can impose narrower exact
-limits. Evidence-guided generation uses the upper bound for its bounded loop.
+Persisted Flow settings allow one through 64 LLM calls, matching the
+execution-grant backstop. A call count is configuration, not a property of a
+runtime intent: only `diagnosis_only` is fixed at one call, because one
+diagnosis is all it asks for. Evidence-guided generation makes at most one
+evidence decision per call its grant authorizes.
 No request setting may raise the absolute total-token ceiling above 50,000,
 and Core rejects a request before provider invocation when its estimated input
 plus output allowance exceeds the effective total. Provider transport output
@@ -237,15 +246,17 @@ The adapter has one fixed HTTPS chat-completions URL and the explicit
 `deepseek-chat` model; user/Flow endpoint overrides, redirects, hidden retries,
 and unbounded response reads are not supported. Requests use a concrete output
 allowance, a bounded timeout and abort signal, request/idempotency identifiers,
-and an opaque scoped secret resolver. A per-run reservation ledger is shared
-across diagnosis and patch calls so the call, total-token, and output-token
-budgets are reserved before transport dispatch. Failed or usage-less calls are
-charged conservatively. The default runtime composes this adapter only through
+and an opaque scoped secret resolver. A per-run reservation ledger is shared by
+every call a recovery makes (the diagnosis, each evidence decision, and the
+patch), so the total-token, output-token, and estimated-cost budgets, and a
+250-call runaway backstop, are reserved before transport dispatch. Failed or
+usage-less calls are charged conservatively. The default runtime composes this adapter only through
 an opaque, session-bound execution grant. Grant issue requires an authenticated
 actor session and a session-scoped Secret Keys unlock established at login; it
 does not accept or retain a password or PIN. The grant binds the enabled LLM key
-and revision, `deepseek-chat`, a canonical execution digest, effective token/
-call/cost/timeout limits, purpose, and expiry, and returns no secret. The
+and revision, `deepseek-chat`, a canonical execution digest, effective per-call
+token limits, run token budget, call/cost/timeout limits, purpose, and claim
+window, and returns no secret. The
 execution digest covers the parent Flow, Flow Map Router, Subflow
 records, routed Subflow graphs, effective settings, applicable project/Flow/
 Subflow instructions, and every transitively reachable version-pinned
@@ -256,29 +267,35 @@ domain Flow's calls to globally published Flows owned by another project, but
 the digest hashes only records transitively reachable from the executed Flow.
 Consequently unrelated publication churn is excluded while same-millisecond
 snapshot, dependency, publication, and deprecation changes invalidate a grant.
-Claiming is atomic. Secret Keys creates a separate opaque,
-one-use reveal authorization after identity verification and owns only its
-zeroizable password-derived key; the LLM grant retains only that opaque ID.
-The provider secret is first decrypted just in time at dispatch, and both the
-Secret Keys authorization and LLM grant recheck active state and expiry after
-asynchronous work before returning it. Neither login credentials nor provider
-secrets are retained by the grant or persisted. Unused capabilities expire
-actively and are cleared on consume, failure, cancellation, key change,
-service shutdown, web-runtime reload, SIGINT, or SIGTERM. Core never reads a
+Claiming is atomic. For each authorized call, Secret Keys creates a separate
+opaque, one-use reveal authorization after identity verification and owns only
+its zeroizable password-derived key; the LLM grant retains only those opaque
+IDs. The provider secret is first decrypted just in time at dispatch, and both
+the Secret Keys authorization and LLM grant recheck active state and expiry
+(the grant's claim window, or its run lease once claimed) after asynchronous
+work before returning it. Neither login credentials nor provider secrets are
+retained by the grant or persisted. Unused capabilities expire actively and are
+cleared on consume, failure, cancellation, key change, service shutdown,
+web-runtime reload, SIGINT, or SIGTERM.
+[LLM execution grant lifetime](#llm-execution-grant-lifetime) states what bounds
+a grant before and after a run claims it. Core never reads a
 provider key from the environment. Flow Settings exposes only DeepSeek and
 deepseek-chat, selects only enabled Secret Keys metadata in global or current
-Flow scope, and persists per-request input/output/total token limits, one-call
+Flow scope, and persists per-request input/output/total token limits, a call
 limit, timeout, estimated-cost cap, and zero-retry policy. The settings API
 rejects totals above 50,000, input-plus-output reservations above the total,
-calls other than one, retries other than zero, timeouts above 25 seconds, and
-cost caps above USD 0.25. Runtime Debug exposes separate **LLM diagnosis** and
-**Diagnose and propose adaptation** modes, performs purpose-specific preflight,
-and issues the scoped one- or two-call grant from the authenticated session. A
-future profile above 100,000 total tokens additionally requires an explicit
-high-token confirmation. Server
+call limits outside one through 64, retries other than zero, timeouts above 25
+seconds, and cost caps above USD 0.25. Runtime Debug exposes separate **LLM
+diagnosis** and **Diagnose and propose adaptation** modes, performs
+purpose-specific preflight, and issues the scoped grant from the authenticated
+session: one call for diagnosis, and Core's default call count for the adapting
+mode, whose request names none. It does not offer `explore_and_adapt`, which is
+reachable through the API. Issuing a grant whose run token budget, or whose
+per-call total limit, is above 100,000 tokens additionally requires an explicit
+high-token confirmation; the call count alone never does. Server
 failures are presented as fixed, sanitized messages. Explicit grants are
 attached only to run-runtime-session; ordinary deterministic modes do not
-receive them. Both explicit runtime lanes must create a fresh runtime session:
+receive them. Every explicit runtime lane must create a fresh runtime session:
 the API and service reject a supplied `runId` and revoke the invalid grant. As
 defense in depth, diagnosis execution
 sets graph cross-domain authorization to an empty set instead of reconstructing
@@ -310,34 +327,51 @@ canonical persisted Flow settings revision, bind the enabled key revision, and
 become invalid when any of those revisions or the authorized user session
 changes. The purpose is runtime-enum validated.
 
-The grant module's own request check lets a `build_and_adapt` grant match flow
-bootstrap, evidence tool decision, runtime diagnosis, runtime patch,
-instruction suggestion, and change proposal requests. The production provider
-resolver, bound in `createGlobalProgramRuntime` (`programs/_shared/runtime.ts`),
-gives each purpose a task-kind list, and a call whose task kind is outside that
-list is refused and its grant revoked:
+The grant module's own request check lets each purpose match only its own task
+kinds. A purpose says what may be asked for, never how many times:
+- `diagnosis_only` matches runtime diagnosis.
+- `diagnose_and_adapt` matches runtime diagnosis, evidence tool decision,
+  runtime patch, loop plan, and loop verification requests.
+- `explore_and_adapt` matches those, plus instruction suggestion and router,
+  subflow, expectation/action-target, and change proposal requests.
+- `build_and_adapt` matches all of those, plus flow bootstrap.
+
+The production provider resolver, bound in `createGlobalProgramRuntime`
+(`programs/_shared/runtime.ts`), narrows each purpose further to the entry point
+it arrived through, and a call whose task kind is outside that list is refused
+and its grant revoked:
 - `build_and_adapt` resolves `flow_bootstrap` and `evidence_tool_decision`, the
   two task kinds Flow bootstrap generation sends; the second is sent only when
   generation is evidence-guided.
-- `diagnose_and_adapt` resolves `runtime_diagnosis` and `runtime_patch`.
+- `diagnose_and_adapt` and `explore_and_adapt` resolve `runtime_diagnosis`,
+  `evidence_tool_decision`, `runtime_patch`, `loop_plan`, and
+  `loop_verification`, the task kinds a runtime recovery sends. A failed run
+  never reaches instruction suggestions or change proposals, whatever its grant
+  allows.
 - `diagnosis_only` resolves `runtime_diagnosis`.
 
 A request that carries no execution grant resolves no provider.
-`runRuntimeSession` accepts only `diagnosis_only` and `diagnose_and_adapt`
-grants, so a build grant never reaches runtime diagnosis, patch, or proposal
-tasks. [What the shipped app reaches](#what-the-shipped-app-reaches) lists which
-runtime paths each purpose gives a provider.
+`runRuntimeSession` accepts only `diagnosis_only`, `diagnose_and_adapt`, and
+`explore_and_adapt` grants, so a build grant never reaches runtime diagnosis,
+patch, or proposal tasks. [What the shipped app reaches](#what-the-shipped-app-reaches)
+lists which runtime paths each purpose gives a provider.
 
 Calls are sequential and atomically claimed; each call consumes a separate opaque,
-one-use Secret Keys authorization and receives a grant-owned abort signal. A
-grant allows at most eight explicitly configured calls, no provider retries,
-at most 50,000 total tokens per request, a finite per-call timeout and cost
-ceiling, and a finite aggregate estimated-cost ceiling. Provider completion is
-not result acceptance: Core revalidates expiry, active membership, actor/
-session, key revision, dependency digest, and settings revision at a mandatory
-commit boundary before returning a result for parsing or accounting. Expiry,
-explicit cancellation, abort, user/session revocation, failure, or service
-close aborts the in-flight call and revokes all unused authorizations. No password, PIN, or provider plaintext is retained or
+one-use Secret Keys authorization and receives a grant-owned abort signal. An
+iterating grant allows 26 calls unless its request names a count, and never
+more than 64; a `diagnosis_only` grant allows one. A grant allows no provider
+retries, at most 50,000 total tokens per request, a
+finite per-call timeout and cost ceiling, a finite aggregate estimated-cost
+ceiling of at most USD 2, and a run token budget, `maxTotalTokensPerRun`. By
+default that budget is the per-call total limit times the calls, held to
+100,000. The grant refuses a call whose worst case would cross it and charges
+each call what it reported using, or its worst case when that report is missing
+or inconsistent. Provider completion is not result acceptance:
+Core revalidates the grant's lifetime, active membership, actor/session, key
+revision, dependency digest, and settings revision at a mandatory commit
+boundary before returning a result for parsing or accounting. The end of the run
+lease, explicit cancellation, abort, user/session revocation, failure, or
+service close aborts the in-flight call and revokes all unused authorizations. No password, PIN, or provider plaintext is retained or
 persisted. A durable Flow or settings mutation changes the binding, so later
 calls require a newly authorized grant against the new revision.
 
@@ -425,7 +459,9 @@ offered only when the run's training behaviour allows the LLM
 off, a failed node with no deterministic recovery ends `exhausted`. Recovery budgets can cap
 retries per action, recovery attempts per subflow, reroutes per run, and
 adaptation/LLM attempts per run; exhausted budgets produce terminal failure
-metadata instead of looping.
+metadata instead of looping. An LLM attempt is one recovery, not one provider
+call: the calls inside it are bounded as described in
+[Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
 
 Failed attempts carry a structured failure when one is known. Core owns the one
 category list, `AutomationStudioAdaptiveFailureClass`, exported from
@@ -612,22 +648,34 @@ that carries an explicit execution grant, and only for that grant purpose's task
 kinds. Each path reaches a model as follows:
 
 - **Flow bootstrap generation:** a `build_and_adapt` grant.
-- **Runtime diagnosis:** a `diagnosis_only` or `diagnose_and_adapt` grant. A run
-  without a grant gets no provider in any training mode. When a training window
-  lets such a run ask, the harness records `llm.provider_missing` and calls no
-  model.
-- **Runtime patch requests:** a `diagnose_and_adapt` grant only. That lane saves
-  its one target override as a high-risk proposal and never executes it. A
-  `diagnosis_only` run sends no patch request, because its lane turns adaptation
-  creation off.
-- **Live patch testing:** no grant purpose. It executes a patch only outside the
-  `diagnose_and_adapt` lane. A `diagnosis_only` run sends no patch request, a
-  run without a grant has no provider, and `runRuntimeSession` refuses a
+- **Runtime diagnosis:** a `diagnosis_only`, `diagnose_and_adapt`, or
+  `explore_and_adapt` grant. A run without a grant gets no provider in any
+  training mode. When a training window lets such a run ask, the harness
+  records `llm.provider_missing` and calls no model.
+- **Evidence gathering during a recovery:** a `diagnose_and_adapt` or
+  `explore_and_adapt` grant. Each `evidence_tool_decision` call chooses one of
+  the domain's registered evidence tools. The captured failure evidence goes to
+  the diagnosis and the patch only, never to these calls.
+- **Runtime patch requests:** a `diagnose_and_adapt` or `explore_and_adapt`
+  grant. The `diagnose_and_adapt` lane saves its one target override as a
+  high-risk proposal and never executes it. The `explore_and_adapt` lane sends
+  each patch to live patch testing. A `diagnosis_only` run sends no patch
+  request, because its lane turns adaptation creation off.
+- **Live patch testing:** an `explore_and_adapt` grant, which Runtime Debug does
+  not offer and an API caller must request. Its patches run against a cloned Flow
+  with the run's own execution options, for at most 50 steps, only when the
+  Flow's adaptation policy allows runtime recovery and that patch kind. An
+  explicit run never carries external side-effect authorization, so a
+  side-effecting patch is refused wherever the policy disallows external side
+  effects or requires approval for them. The `diagnose_and_adapt` lane never
+  executes its patch, a `diagnosis_only` run sends no patch request, a run
+  without a grant has no provider, and `runRuntimeSession` refuses a
   `build_and_adapt` grant.
 - **Automatic promotion:** no grant purpose. Core attempts it for each adaptation
-  a runtime patch saves, which in the shipped app is only a `diagnose_and_adapt`
-  proposal. That proposal is high-risk, and the promotion gate sends high-risk
-  adaptations to manual review. The proposal is applied only through the
+  a runtime patch saves, which in the shipped app comes only from an adapting
+  grant. Every explicit run is forced into manual proposal mode, and the
+  promotion gate sends manual-mode adaptations to review; a `diagnose_and_adapt`
+  proposal is high-risk as well. An adaptation is applied only through the
   PIN-authorized review endpoint.
 - **The retry after an applied patch:** no grant purpose. The retry runs only
   when a runtime patch was applied automatically and marked the original action
@@ -640,14 +688,143 @@ kinds. Each path reaches a model as follows:
   which a run without a grant does not get. A run with an explicit grant
   replaces the window's behavior with its lane's. `diagnosis_only` turns
   recovery, adaptation creation, and promotion off. `diagnose_and_adapt` turns
-  recovery off and allows only its one manual-review proposal. An exhausted
-  training budget stops neither explicit lane.
+  recovery off and allows only its one manual-review proposal.
+  `explore_and_adapt` also turns recovery off and allows manual-review
+  proposals within the Flow's policy. An exhausted training budget stops none
+  of the explicit lanes; each spends its grant's budget instead of the training
+  settings'.
 
 In a host whose resolver lets a run reach the retry, the retry reruns the updated
 Flow, or a routed run's selected Subflow graph, in the same run session. It
 starts from that graph's start, not from the failed node. The retry passes the run's
 graph options, which set no `startNodeId`, so the executor chooses the start
 node as it does for a new run.
+
+### Iterating adaptations and their bounds
+
+A recovery under an adapting grant is a diagnosis, then an exploration that may
+ask for evidence for as long as it keeps learning something, then a patch. No
+stage has a fixed call count. The recovery stops on the first of four guards,
+and each reports under its own name:
+
+1. **Estimated cost.** The run ledger refuses a call that would cross the run's
+   estimated-cost ceiling (`llm_budget.run_cost_limit`). With a grant the
+   ceiling is the grant's total, and never more than USD 2 for one recovery.
+   Without one it is the adaptation policy's, and never more than USD 0.25.
+2. **Tokens.** The ledger refuses a call that would cross the run's token budget
+   (`llm_budget.run_total_limit`, or `llm_budget.run_output_limit` for output).
+   With a grant the budget is the grant's `maxTotalTokensPerRun`. Without one it
+   is the training settings' `maxTokensPerRun`, or 144,000 when that is unset.
+3. **The recovery deadline.** A recovery has one clock, started once when it
+   begins: 600 seconds, which is also the most any recovery clock may be. An
+   exploration it stops reports `recovery_deadline_expired`, as distinct from
+   its own `wall_clock_expired`. The per-call timeout, 20 seconds by default and
+   45 at most, still catches a single hung call.
+4. **No progress.** An exploration step advances only when it brings back
+   something the exploration did not already have. Three consecutive steps that
+   do not advance stop the exploration with the outcome `no_progress`, separate
+   from `budget_exhausted`. The reason names which failure it was: a repeated
+   request, an answer already held, or an empty or refused answer. Any step that
+   advances resets the count.
+
+Call counts survive only as backstops that a working recovery should not meet.
+The run ledger stops at 250 calls, or at the grant's call limit when a grant
+declares one; the grant mints exactly that many reveal authorizations, so the
+ledger refuses the next call with `llm_budget.run_call_limit` rather than let
+the grant fail it. An exploration also stops at 24 decisions and 24 actions by
+default, and at most 64 of each. A default grant's 26 calls are a diagnosis, a
+patch, and those 24 decisions, so the grant does not stop a default recovery
+that is still making progress.
+
+The patch keeps its share. Before an exploration starts, the recovery reserves
+one patch-sized call on the run ledger: the patch's token limits and its
+per-call cost. The ledger refuses, on its ordinary codes, any exploration
+decision that would eat into that reservation, and the recovery releases it
+just before the patch. A reservation the run cannot afford is not taken. When
+the grant declares a call count, the exploration's own call ceiling is lowered
+to what remains after the patch, so a long exploration ends on its own limit
+and the patch still runs.
+
+Evidence-guided Flow Bootstrap follows the same model. Its loop makes at most
+one decision per call its grant authorizes, and at most 64, with at most one
+more tool call than decisions. Each decision reserves the grant's total
+estimated cost divided by its calls. Underneath, the grant enforces its token
+and cost totals on every call, and the loop stops a repeated request or a
+repeated observation with no change in between. Bootstrap has no run ledger,
+so a bootstrap that runs out of the grant's tokens or money fails as a provider
+request failure rather than on a named budget code.
+
+The worst case for one recovery follows. The figures come from the run
+ledger's estimated-cost accounting and DeepSeek's peak prices of USD 0.44 per
+million input tokens and USD 1.32 per million output tokens. They are
+arithmetic, not a measured run.
+
+| Recovery | Calls | Tokens | Estimated-cost ceiling | Wall clock |
+| --- | --- | --- | --- | --- |
+| Default adapting grant (`diagnose_and_adapt` or `explore_and_adapt`, no numbers named) | At most 26: one diagnosis, up to 24 evidence decisions, one patch | At most 100,000, of which at most 52,000 output | USD 2.00; each call reserves USD 2/26, about 0.077 | 600-second recovery deadline; 600-second grant lease from the claim |
+| Confirmed maximum grant, at default per-call limits | At most 64 | At most 640,000, of which at most 128,000 output | USD 2.00 | 600 seconds |
+| No grant | 250-call backstop; at most 24 exploration decisions | At most 144,000 | USD 0.25 | 600 seconds |
+| `diagnosis_only` grant | 1 | 10,000 | USD 0.25 | 600 seconds |
+
+At those prices the token budget binds long before the cost ceiling. The most a
+default grant's 100,000 tokens can cost is about USD 0.09, spent as 52,000
+output and 48,000 input tokens. A confirmed maximum grant can cost about USD
+0.39. A recovery without a grant costs at most USD 0.25, and by tokens alone
+about USD 0.06 to 0.19. DeepSeek refuses a reply above a call's token limits,
+so no single call can spend more tokens than it reserved.
+
+### LLM execution grant lifetime
+
+A grant has two lifetimes, and they bound different things.
+
+- **The claim window** bounds how long an issued grant may wait for a run to
+  claim it. It is the issue request's `ttlMs`: 60 seconds by default, from one
+  to 300 seconds. Secret Keys never lets an authorization outlive the actor's
+  session unlock, so the window also ends no later than that unlock. Every
+  reveal authorization minted at issue, one per authorized call, lives only as
+  long as this window. The grant's public `expiresAtMs` is the end of the
+  window, not the end of the grant's life once claimed. An unclaimed grant is
+  revoked when its window ends, together with every authorization minted for
+  it, and a claim made after the window is refused even if the timer has not
+  yet run.
+- **The run lease** bounds how long a claimed grant may keep making calls: 600
+  seconds from the claim (`AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`).
+  Claiming replaces the claim-window timer with a lease timer, so a run is not
+  cut off when its claim window ends. When the lease ends, the grant is
+  revoked, a call still in flight is aborted as `llm.provider_timeout`, and a
+  reveal that completes after the lease is discarded. The lease is a backstop.
+  It is at least as long as the longest recovery deadline, and the recovery
+  clock starts before the grant is claimed, so the recovery deadline ends a
+  recovery first.
+
+**The one-for-one exchange.** A call whose authorization would expire before
+the call's own time window ends exchanges it for a fresh one. That window is
+the larger of one second and the grant's per-call timeout. This covers every
+call made after the claim window, and any call made too close to its end.
+Secret Keys mints the fresh authorization from the actor's session unlock,
+which must still be active. The fresh one is sized to that one call and capped
+by the time the unlock has left, and the old one is revoked. The exchange
+replaces only the authorization already taken for this call, so a grant can
+never reveal the key more times than its call limit. If the grant is revoked,
+cancelled, or superseded while the fresh authorization is being minted, or the
+key changes, the fresh authorization is revoked at once and never used.
+
+**What ends a claimed grant early.** Each of the following revokes the grant,
+and every authorization it still holds, before its lease ends:
+
+- the runtime session revoking it when the run ends;
+- its last authorized call completing;
+- a call that fails, is cancelled or aborted, or asks for a task kind outside
+  its entry point's list;
+- a call whose worst case would cross the grant's total estimated cost or run
+  token budget;
+- the actor's identity session becoming invalid, which is checked on every
+  call;
+- the actor's Secret Keys session unlock ending, after which a call that needs
+  a fresh authorization fails;
+- the key being disabled or changed, or the Flow's execution digest or settings
+  revision changing;
+- revocation of the user or session, and service shutdown.
 
 ## Canonical Node Definition Foundation
 

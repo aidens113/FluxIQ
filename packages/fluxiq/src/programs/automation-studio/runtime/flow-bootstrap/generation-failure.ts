@@ -5,6 +5,44 @@ import type {
   AutomationStudioLlmUsageSummary
 } from "../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmEvidenceLoopResult } from "../llm/index.ts";
+import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
+
+type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
+
+/**
+ * Each provider refusal made before a request is sent, under its Flow-bootstrap
+ * name. They all used to arrive as one `llm.provider_configuration_invalid` and
+ * leave as one `flow_bootstrap.provider_configuration_invalid`, so a refusal
+ * could not say which check made it.
+ *
+ * Keyed by the provider's own codes, so a refusal added there fails the type
+ * check until it is named here. Written as literals rather than derived at run
+ * time: the DeepSeek adapter reads values out of this directory, so a value
+ * read back from `runtime/llm/` here would close a module cycle.
+ */
+const FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES: {
+  readonly [Code in AutomationStudioLlmProviderPreflightErrorCode]: `flow_bootstrap.provider_${ProviderPreflightSuffix<Code>}`
+} = Object.freeze({
+  "llm.provider_secret_reference_invalid": "flow_bootstrap.provider_secret_reference_invalid",
+  "llm.provider_model_unsupported": "flow_bootstrap.provider_model_unsupported",
+  "llm.provider_response_limit_invalid": "flow_bootstrap.provider_response_limit_invalid",
+  "llm.provider_request_identity_invalid": "flow_bootstrap.provider_request_identity_invalid",
+  "llm.provider_request_scope_invalid": "flow_bootstrap.provider_request_scope_invalid",
+  "llm.provider_request_context_unbounded": "flow_bootstrap.provider_request_context_unbounded",
+  "llm.provider_request_task_mismatch": "flow_bootstrap.provider_request_task_mismatch",
+  "llm.provider_recent_actions_invalid": "flow_bootstrap.provider_recent_actions_invalid",
+  "llm.provider_failure_evidence_invalid": "flow_bootstrap.provider_failure_evidence_invalid",
+  "llm.provider_flow_bootstrap_context_invalid": "flow_bootstrap.provider_flow_bootstrap_context_invalid",
+  "llm.provider_evidence_loop_context_invalid": "flow_bootstrap.provider_evidence_loop_context_invalid",
+  "llm.provider_request_limits_invalid": "flow_bootstrap.provider_request_limits_invalid",
+  "llm.provider_request_timeout_invalid": "flow_bootstrap.provider_request_timeout_invalid",
+  "llm.provider_input_budget_exceeded": "flow_bootstrap.provider_input_budget_exceeded",
+  "llm.provider_credential_in_request": "flow_bootstrap.provider_credential_in_request",
+  "llm.provider_request_construction_failed": "flow_bootstrap.provider_request_construction_failed",
+  "llm.provider_request_setup_failed": "flow_bootstrap.provider_request_setup_failed"
+});
+const FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST = Object.values(FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES);
+const FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_SET: ReadonlySet<string> = new Set(FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST);
 
 export type AutomationStudioFlowBootstrapFailureStage =
   | "pre_provider_validation"
@@ -41,8 +79,11 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.provider_http_error",
     "flow_bootstrap.provider_network_error",
     "flow_bootstrap.provider_secret_unavailable",
+    // No longer produced. Kept so a diagnostic stored before the refusals were
+    // split still parses.
     "flow_bootstrap.provider_configuration_invalid",
-    "flow_bootstrap.provider_transport_unknown"
+    "flow_bootstrap.provider_transport_unknown",
+    ...FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST
   ],
   provider_output_validation: [
     "flow_bootstrap.provider_output_validation_failed",
@@ -309,6 +350,9 @@ type ProviderHarnessFailureProjection = {
 };
 
 function providerHarnessFailureProjection(code: unknown, status: number | undefined): ProviderHarnessFailureProjection {
+  if (typeof code === "string" && Object.hasOwn(FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES, code)) {
+    return providerRequestProjection(FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES[code as AutomationStudioLlmProviderPreflightErrorCode], false, "not_received");
+  }
   switch (code) {
     case "llm.provider_auth_failed": return providerRequestProjection("flow_bootstrap.provider_auth_failed", false, "received");
     case "llm.provider_rate_limited": return providerRequestProjection("flow_bootstrap.provider_rate_limited", true, "received");
@@ -322,7 +366,6 @@ function providerHarnessFailureProjection(code: unknown, status: number | undefi
     );
     case "llm.provider_network_error": return providerRequestProjection("flow_bootstrap.provider_network_error", true, "unknown");
     case "llm.provider_secret_unavailable": return providerRequestProjection("flow_bootstrap.provider_secret_unavailable", false, "not_received");
-    case "llm.provider_configuration_invalid": return providerRequestProjection("flow_bootstrap.provider_configuration_invalid", false, "not_received");
     case "llm.provider_malformed_response": return providerOutputProjection("flow_bootstrap.provider_response_malformed");
     case "llm.provider_output_invalid": return providerOutputProjection("flow_bootstrap.provider_output_invalid");
     case "llm.provider_response_oversize": return providerOutputProjection("flow_bootstrap.provider_response_oversize");
@@ -396,6 +439,7 @@ function fixedProviderFailureState(
   code: unknown,
   status: number | undefined
 ): Pick<ProviderHarnessFailureProjection, "retryable" | "providerResponse"> | null {
+  if (typeof code === "string" && FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_SET.has(code)) return { retryable: false, providerResponse: "not_received" };
   switch (code) {
     case "flow_bootstrap.provider_auth_failed": return { retryable: false, providerResponse: "received" };
     case "flow_bootstrap.provider_rate_limited": return { retryable: true, providerResponse: "received" };

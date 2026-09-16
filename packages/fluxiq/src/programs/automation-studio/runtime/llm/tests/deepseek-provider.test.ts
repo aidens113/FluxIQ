@@ -66,7 +66,10 @@ describe("Automation Studio DeepSeek provider", () => {
     });
     const context = {
       ...request().context,
-      recentActions: [{ attemptId: "attempt.one", nodeId: "submit", definitionId: "web.output.dom-click", order: 2, status: "failed" as const, route: "failed", comparisonStatus: "action_failed" }],
+      // `failureCategory` is part of the packet's projection of a failed
+      // attempt. The adapter's own copy of the field list omitted it, and every
+      // real recovery from a structured failure was refused before it was sent.
+      recentActions: [{ attemptId: "attempt.one", nodeId: "submit", definitionId: "web.output.dom-click", order: 2, status: "failed" as const, route: "failed", comparisonStatus: "action_failed", failureCategory: "target_not_found" as const }],
       failureEvidence: { schemaVersion: "web-llm-evidence.v2", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", name: "Submit" }], truncated: false }
     };
 
@@ -77,12 +80,13 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(payload.context.recentActions).toEqual(context.recentActions);
     expect(outboundBody).not.toMatch(/innerHTML|PRIVATE_RAW_SNAPSHOT/);
 
-    await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], metadata: { snapshot: "PRIVATE_RAW_SNAPSHOT" } }] as any } })), "llm.provider_configuration_invalid");
+    await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], metadata: { snapshot: "PRIVATE_RAW_SNAPSHOT" } }] as any } })), "llm.provider_recent_actions_invalid");
+    await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], failureCategory: "PRIVATE_FAILURE_TEXT" }] as any } })), "llm.provider_recent_actions_invalid");
     // The provider re-checks that the evidence in the request it was handed is
     // already sanitized, using Core's structural bounds -- which are all it can
     // apply, because the domain's declared keys are enforced where the domain
     // hands Core its evidence and are not part of an outbound request.
-    await expectProviderError(provider.runTask(request({ context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_configuration_invalid");
+    await expectProviderError(provider.runTask(request({ context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_failure_evidence_invalid");
   });
 
   it("normalizes unexpected local request-boundary failures before they reach the harness", async () => {
@@ -94,7 +98,7 @@ describe("Automation Studio DeepSeek provider", () => {
     const hostileExecution = Object.defineProperty({}, "signal", { get: () => { throw new Error("private setup detail"); } });
     await expect(provider.runTask(request(), hostileExecution as any)).rejects.toMatchObject({
       name: "AutomationStudioLlmProviderError",
-      code: "llm.provider_configuration_invalid",
+      code: "llm.provider_request_setup_failed",
       provenance: { providerInvocation: "not_attempted", providerResponse: "not_received" }
     });
   });
@@ -268,12 +272,9 @@ describe("Automation Studio DeepSeek provider", () => {
       resolveSecret: async () => { secretCalls += 1; return "test-secret"; },
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
     });
-    await expectProviderError(provider.runTask(request({ tokenLimits: { maxInputTokens: 1, maxOutputTokens: 1, maxTotalTokens: 2 } })), "llm.provider_configuration_invalid");
+    await expectProviderError(provider.runTask(request({ tokenLimits: { maxInputTokens: 1, maxOutputTokens: 1, maxTotalTokens: 2 } })), "llm.provider_request_limits_invalid");
     expect(secretCalls).toBe(0);
-    expect(() => createAutomationStudioDeepSeekProvider({
-      secretReference: "sk-raw-secret" as any,
-      resolveSecret: async () => "test-secret"
-    })).toThrowError(AutomationStudioLlmProviderError);
+    expect(constructionCode({ secretReference: "sk-raw-secret" as any })).toBe("llm.provider_secret_reference_invalid");
   });
 
   it("rejects an outbound body containing the resolved credential literal", async () => {
@@ -285,7 +286,7 @@ describe("Automation Studio DeepSeek provider", () => {
     });
     const credentialContext = request();
     credentialContext.context.metadata = { accidentalValue: "credential-literal" };
-    await expectProviderError(provider.runTask(credentialContext), "llm.provider_configuration_invalid");
+    await expectProviderError(provider.runTask(credentialContext), "llm.provider_credential_in_request");
     expect(transportCalls).toBe(0);
   });
 
@@ -338,17 +339,9 @@ describe("Automation Studio DeepSeek provider", () => {
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
     });
     await expectProviderError(missing.runTask(request()), "llm.provider_secret_unavailable");
-    await expectProviderError(missing.runTask(request({ timeoutMs: 45_001 })), "llm.provider_configuration_invalid");
-    expect(() => createAutomationStudioDeepSeekProvider({
-      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
-      resolveSecret: async () => "test-secret",
-      model: "deepseek-reasoner" as "deepseek-chat"
-    })).toThrowError(AutomationStudioLlmProviderError);
-    expect(() => createAutomationStudioDeepSeekProvider({
-      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
-      resolveSecret: async () => "test-secret",
-      maxResponseBytes: 3_000_000
-    })).toThrowError(AutomationStudioLlmProviderError);
+    await expectProviderError(missing.runTask(request({ timeoutMs: 45_001 })), "llm.provider_request_timeout_invalid");
+    expect(constructionCode({ model: "deepseek-reasoner" as "deepseek-chat" })).toBe("llm.provider_model_unsupported");
+    expect(constructionCode({ maxResponseBytes: 3_000_000 })).toBe("llm.provider_response_limit_invalid");
   });
 });
 
@@ -388,6 +381,17 @@ function responseEnvelope(content: unknown, usage: unknown, encodeContent = true
     choices: [{ finish_reason: "stop", message: { content: encodeContent ? JSON.stringify(content) : content } }],
     usage
   }), { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+/** The code a provider construction refuses with, from options over a valid base. */
+function constructionCode(overrides: Partial<Parameters<typeof createAutomationStudioDeepSeekProvider>[0]>): string | undefined {
+  try {
+    createAutomationStudioDeepSeekProvider({ secretReference: { kind: "secret_reference", id: "secret:deepseek" }, resolveSecret: async () => "test-secret", ...overrides });
+    return undefined;
+  } catch (error) {
+    expect(error).toBeInstanceOf(AutomationStudioLlmProviderError);
+    return (error as AutomationStudioLlmProviderError).code;
+  }
 }
 
 async function expectProviderError(promise: Promise<unknown>, code: AutomationStudioLlmProviderErrorCode): Promise<void> {

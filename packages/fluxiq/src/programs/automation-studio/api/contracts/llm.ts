@@ -19,11 +19,30 @@ export type AutomationStudioPackReusableLlmContextsRequest = {
   maxInputTokens: number; now?: number;
 };
 
-export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "diagnose_and_adapt" | "build_and_adapt";
+/**
+ * What an LLM execution grant authorizes. A purpose says what may be asked
+ * for, never how many times: `diagnosis_only` is one call, and every other
+ * purpose iterates under a call limit that is configuration on the grant.
+ * Absent means `diagnosis_only`.
+ */
+export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt";
+
+/** The purposes `run-runtime-session` accepts as its `runIntent`, together
+ * with an `llmExecutionGrantId` of that purpose. Creating a Flow from nothing,
+ * `build_and_adapt`, is a different entry point. */
+export type AutomationStudioRuntimeSessionLlmIntent = Exclude<AutomationStudioLlmExecutionPurpose, "build_and_adapt">;
 
 export type AutomationStudioLlmExecutionLimitRequest = {
+  /** Per call. An absent field takes Core's default: 8,000 input, 2,000
+   * output and 10,000 total tokens. */
   tokenLimits?: { maxInputTokens?: number; maxOutputTokens?: number; maxTotalTokens?: number };
+  /** Provider calls the grant authorizes, from 1 to 64. Absent means 26 for
+   * an iterating purpose; `diagnosis_only` accepts only 1. */
   maxCalls?: number;
+  /** The whole run's token budget. Absent means the per-call total limit
+   * times `maxCalls`, held to 100,000. A value must lie between one call's
+   * total limit and every call's together. */
+  maxTotalTokensPerRun?: number;
   maxEstimatedCostUsd?: number;
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
@@ -39,7 +58,51 @@ export type AutomationStudioLlmExecutionPreflightRequest = FlowIdProjectRequest 
 
 export type AutomationStudioLlmExecutionGrantRequest = AutomationStudioLlmExecutionPreflightRequest & {
   authSessionId: string;
+  /** Required when the run's token budget, or one call's total limit, is
+   * above 100,000 tokens. The call count alone never requires it. */
   highTokenConfirmation?: boolean;
+  /** The claim window in milliseconds, from 1,000 to 300,000 (default
+   * 60,000): how long the grant may wait to be claimed by a run. A claimed
+   * grant runs under its own 600-second lease instead. */
   ttlMs?: number;
+  /** When given, must equal the grant's call limit. */
   maxUses?: number;
 };
+
+/** The limits Core resolved for a grant request. `preflight-llm-execution`
+ * returns it as `preflight`; it carries no secret. */
+export type AutomationStudioLlmExecutionPreflight = {
+  keyId: string;
+  provider: "deepseek";
+  model: "deepseek-chat";
+  projectId: string;
+  flowId: string;
+  executionDigest: string;
+  purpose: AutomationStudioLlmExecutionPurpose;
+  keyUpdatedAtMs: number;
+  settingsRevision?: number;
+  tokenLimits: { maxInputTokens: number; maxOutputTokens: number; maxTotalTokens: number };
+  maxCalls: number;
+  /** The whole run's token budget. The high-token confirmation is judged on
+   * this, not on the call count. */
+  maxTotalTokensPerRun: number;
+  maxEstimatedCostUsd: number;
+  maxTotalEstimatedCostUsd: number;
+  timeoutMs: number;
+  providerRetryCount: 0;
+};
+
+export type AutomationStudioLlmExecutionPreflightResponse = { preflight: AutomationStudioLlmExecutionPreflight };
+
+/** An issued grant. `issue-llm-execution-grant` returns it as `grant`; the
+ * grant ID is an opaque handle and the record carries no secret. */
+export type AutomationStudioLlmExecutionGrant = AutomationStudioLlmExecutionPreflight & {
+  grantId: string;
+  /** The end of the claim window, not the grant's lifetime: once a run
+   * claims it, the grant lives until its 600-second lease ends or it is
+   * revoked, whichever comes first. */
+  expiresAtMs: number;
+  remainingUses: number;
+};
+
+export type AutomationStudioLlmExecutionGrantResponse = { grant: AutomationStudioLlmExecutionGrant };

@@ -23,12 +23,18 @@
 // does.
 
 /**
- * The default ceiling on one recovery, end to end. Two minutes: long enough for
- * a diagnosis call, a bounded exploration and a patch call at Core's own
- * per-call limits, short enough that a person watching a run stall gets an
- * answer rather than a spinner.
+ * The default ceiling on one recovery, end to end. Ten minutes.
+ *
+ * It was two, when a recovery was a diagnosis, a short look and a patch. A
+ * recovery now iterates for as long as it is learning something -- a default
+ * grant allows twenty-six provider calls -- and at a realistic few seconds a
+ * call, two minutes would quietly have become the new call cap, ending
+ * explorations that were still making progress. The per-call timeout is
+ * unchanged, so a hung call is still caught at its own limit; this bounds only
+ * how long a recovery that keeps answering may keep going, and it is still the
+ * clock a person watching the run is waiting on.
  */
-export const AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS = 120_000;
+export const AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS = 600_000;
 
 /** The largest a host may set it to. Above this a recovery is a background job. */
 export const AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_CEILING_MS = 600_000;

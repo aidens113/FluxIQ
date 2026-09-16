@@ -1,4 +1,8 @@
-import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
+import {
+  isAutomationStudioAdaptiveFailureClass,
+  parseAutomationStudioFailureRecord,
+  type AutomationStudioAdaptiveFailureClass
+} from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
@@ -69,6 +73,45 @@ export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRu
   /** Core's category from the attempt's failure record, when the record parses. Its code and texts are not sent. */
   failureCategory?: AutomationStudioAdaptiveFailureClass;
 };
+
+/**
+ * Every field a recent action may carry. The `satisfies` clause is the point:
+ * a field added to the type above and left out here, or listed here and not in
+ * the type, fails the type check. The provider used to keep its own copy of
+ * this list, and when `failureCategory` was added to the projection that copy
+ * was not updated, so every recovery from a failure with a structured record
+ * was refused before it was sent.
+ */
+const RECENT_ACTION_FIELDS = {
+  attemptId: true,
+  nodeId: true,
+  definitionId: true,
+  order: true,
+  status: true,
+  route: true,
+  durationMs: true,
+  comparisonStatus: true,
+  failureCategory: true
+} as const satisfies Record<keyof AutomationStudioLlmRecentActionContext, true>;
+const RECENT_ACTION_FIELD_NAMES: ReadonlySet<string> = new Set(Object.keys(RECENT_ACTION_FIELDS));
+
+/**
+ * Whether a value is a recent action exactly as `packAutomationStudioLlmContext`
+ * projects one: only the fields above, each bounded. A provider checks what it
+ * is about to send with this, rather than with a list of its own.
+ */
+export function isAutomationStudioLlmRecentActionContext(value: unknown): value is AutomationStudioLlmRecentActionContext {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const action = value as Record<string, unknown>;
+  if (Object.keys(action).some((key) => !RECENT_ACTION_FIELD_NAMES.has(key))) return false;
+  if (typeof action.attemptId !== "string" || typeof action.nodeId !== "string" || typeof action.definitionId !== "string"
+    || !Number.isSafeInteger(action.order) || typeof action.status !== "string") return false;
+  if ([action.attemptId, action.nodeId, action.definitionId, action.status, action.route, action.comparisonStatus]
+    .some((text) => text !== undefined && (typeof text !== "string" || text.length < 1 || text.length > 200))) return false;
+  if (action.failureCategory !== undefined && !isAutomationStudioAdaptiveFailureClass(action.failureCategory)) return false;
+  return action.durationMs === undefined
+    || (Number.isSafeInteger(action.durationMs) && (action.durationMs as number) >= 0 && (action.durationMs as number) <= 86_400_000);
+}
 
 export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarnessInput): AutomationStudioLlmContextPacket {
   const stage = input.stage;

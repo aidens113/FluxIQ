@@ -150,8 +150,9 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         return;
       }
       if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setLlmAuthorizationMode(mode); return; }
-      const maxUses = mode === "diagnose_and_adapt" ? 2 : 1;
-      const issued = await props.commands.issueLlmGrant({ ...request.payload, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}), maxUses });
+      // Uses are not restated here: Core issues one use per authorized call, so
+      // an adapting run gets as many as the call limit it resolved.
+      const issued = await props.commands.issueLlmGrant({ ...request.payload, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}) });
       const grantId = issued.payload?.grant?.grantId;
       if (!issued.ok || !grantId) {
         const message = "LLM execution authorization failed. Verify your session and enabled key.";

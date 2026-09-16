@@ -16,8 +16,16 @@
 // from the JSON schema sent to the provider. The `imports` structure-audit rule
 // now fails the build on a value import in that direction; this module is where
 // a shared value goes instead of provoking one.
+//
+// They are ceilings on what a caller may configure, not defaults: the loop
+// still starts from eight of each unless it is told otherwise. Sixteen was the
+// ceiling while a recovery was capped at a handful of provider calls anyway;
+// with the cap replaced by a cost, a token and a no-progress guard, a bounded
+// exploration that is still learning has to be able to keep going, and a
+// ceiling of sixteen would simply have become the next hard limit underneath
+// the ones that were removed.
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
-  maxIterations: 16,
-  maxToolCalls: 16,
+  maxIterations: 64,
+  maxToolCalls: 64,
   maxEvidenceBytes: 1_048_576
 } as const;

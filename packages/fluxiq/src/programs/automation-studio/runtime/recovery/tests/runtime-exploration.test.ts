@@ -96,6 +96,87 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.actions).toBe(0);
   });
 
+  // The decision this guard exists for: an adaptation iterates for as many
+  // provider calls as it needs. The old limits were two calls for a run and six
+  // for an exploring grant, with sixteen underneath as the loop's own ceiling;
+  // a loop that keeps finding something new runs past all three and ends
+  // because it finished, not because it was counted.
+  it("lets a loop that keeps learning run well past the old two-, six- and sixteen-call limits", async () => {
+    let decisions = 0;
+    const steps = Array.from({ length: 20 }, (_, index) => call("test.inspect", { area: `area.${index}` }));
+    const run = await explore({
+      decisions: [...steps, complete({ finding: "the control moved" })],
+      onDecide: () => { decisions += 1; }
+    });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    expect(decisions).toBe(21);
+    expect(run.accounting.iterations).toBe(21);
+    expect(run.observedActions).toBe(20);
+    expect(run.result).toEqual({ finding: "the control moved" });
+  });
+
+  // And the other half of it: a loop that has stopped getting anywhere is
+  // stopped by the guard, well before any count -- here after four of its
+  // twenty-four allowed actions -- and says it was going in circles rather
+  // than that it ran out.
+  it("stops a loop whose new requests keep returning what it already has on no_progress, not on a count", async () => {
+    let decisions = 0;
+    const steps = Array.from({ length: 20 }, (_, index) => call("test.inspect", { area: `area.${index}` }));
+    const run = await explore({
+      decisions: steps,
+      onDecide: () => { decisions += 1; },
+      execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: { control: "absent" }, effectApplied: false, resultCode: "test.ok" })
+    });
+
+    expect(run.outcome).toBe("no_progress");
+    expect(run.stopReason).toBe("no_progress");
+    expect(run.endedBy).toBe("no_progress");
+    expect(run.noProgressReason).toBe("repeated_evidence");
+    expect(run.reason).toContain("evidence it already had");
+    expect(run.actions).toBe(4);
+    expect(decisions).toBe(4);
+    expect(run.result).toBeUndefined();
+  });
+
+  it("stops a loop that keeps asking for the same thing across mutations on no_progress", async () => {
+    const run = await explore({
+      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {})],
+      budget: { maxRepeatsPerAction: 4 }
+    });
+
+    expect(run.outcome).toBe("no_progress");
+    expect(run.noProgressReason).toBe("repeated_request");
+    expect(run.reason).toContain("already asked for");
+  });
+
+  it("stops a loop whose steps keep coming back empty on no_progress", async () => {
+    const run = await explore({
+      decisions: Array.from({ length: 10 }, (_, index) => call("test.inspect", { area: `area.${index}` })),
+      execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: "", effectApplied: false })
+    });
+
+    expect(run.outcome).toBe("no_progress");
+    expect(run.noProgressReason).toBe("no_new_evidence");
+    expect(run.actions).toBe(3);
+  });
+
+  // The recovery's clock still binds a loop that is making progress. Guard (c)
+  // is untouched by removing the call caps.
+  it("still stops a progressing loop when the recovery's clock runs out part-way", async () => {
+    const run = await explore({
+      decisions: Array.from({ length: 20 }, (_, index) => call("test.inspect", { area: `area.${index}` })),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: 1_000, maxDurationMs: 5_000 }),
+      advanceClockAfterAction: 1_000
+    });
+
+    expect(run.outcome).toBe("budget_exhausted");
+    expect(run.stopReason).toBe("recovery_deadline_expired");
+    expect(run.noProgressReason).toBeUndefined();
+    expect(run.observedActions).toBe(5);
+  });
+
   it("charges refused actions against the action budget rather than only the successful ones", async () => {
     const run = await explore({
       decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
@@ -128,8 +209,20 @@ describe("automationStudioExplorationTraceEvent", () => {
     expect(JSON.stringify(event)).not.toContain("the control moved");
   });
 
+  it("records a circling exploration as failed, with what it kept doing", async () => {
+    const run = await explore({
+      decisions: Array.from({ length: 10 }, (_, index) => call("test.inspect", { area: `area.${index}` })),
+      execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: { control: "absent" }, effectApplied: false })
+    });
+    const event = automationStudioExplorationTraceEvent({ requested: true, exploration: run });
+
+    expect(event).toMatchObject({ stage: "exploration", status: "failed" });
+    expect(event.detail).toMatchObject({ outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "repeated_evidence" });
+  });
+
   it.each([
     ["budget_exhausted", "failed"],
+    ["no_progress", "failed"],
     ["unsafe_action_blocked", "refused"],
     ["no_evidence_found", "completed"]
   ])("reports a %s exploration as a %s stage", (outcome, status) => {
@@ -179,7 +272,7 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
       budget: { maxDurationMs: 5_000 },
       advanceClockAfterAction: 6_000
     }],
-    ["cycle of the same action across mutations", "budget_exhausted", "repeat_window", {
+    ["cycle of the same action across mutations", "no_progress", "repeat_window", {
       decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {})],
       budget: { maxActions: 8, maxRepeatsPerAction: 2 }
     }],

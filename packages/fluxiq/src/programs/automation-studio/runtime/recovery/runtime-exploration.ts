@@ -29,6 +29,7 @@
 // returned evidence -- Phase D's rule, applied one layer further out.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioHarnessOptionLoopBinding,
@@ -49,6 +50,7 @@ import {
   type AutomationStudioExplorationOutcome,
   type AutomationStudioExplorationStopReason
 } from "./exploration-outcome.ts";
+import { automationStudioExplorationEvidenceDigest, type AutomationStudioExplorationNoProgressReason } from "./progress-guard.ts";
 import type { AutomationStudioRecoveryDeadline } from "./recovery-deadline.ts";
 import { AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES, type AutomationStudioRecoveryTraceEvent } from "./trace.ts";
 
@@ -86,6 +88,8 @@ export type AutomationStudioRuntimeExploration = {
   endedBy: string;
   /** Present when the budget ended it, and it says which limit. */
   stopReason?: AutomationStudioExplorationStopReason;
+  /** Present only on `no_progress`, and it says what the loop kept doing. */
+  noProgressReason?: AutomationStudioExplorationNoProgressReason;
   /** Present only on `evidence_gathered`. There is no other branch that writes it. */
   result?: JsonObject;
   actions: number;
@@ -122,18 +126,31 @@ export async function runAutomationStudioRuntimeExploration(
           return input.decide(decision);
         },
         executeTool: async (call) => {
-          const admitted = ledger.admitAction(actionSignature(call.toolId, call.value));
+          const signature = actionSignature(call.toolId, call.value);
+          const admitted = ledger.admitAction(signature);
           if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
           const execution = await input.loop.executeTool(call);
-          ledger.recordAction(refusal(execution, input.classifyRefusal));
+          // What the step asked for and what came back, recorded together. The
+          // ledger needs both to answer whether the exploration is still
+          // learning: a repeated request and a new request that returned an
+          // answer already held are different findings, and neither of them is
+          // visible from the action alone.
+          const evidence = evidenceValue(execution);
+          const evidenceText = canonicalJson(evidence);
+          ledger.recordAction({
+            signature,
+            evidenceDigest: automationStudioExplorationEvidenceDigest(evidenceText),
+            evidenceBytes: emptyEvidence(evidence) ? 0 : Buffer.byteLength(evidenceText, "utf8"),
+            ...refusal(execution, input.classifyRefusal)
+          });
           return execution;
         },
         // The ledger is the binding limit on actions and provider calls, so it
         // can name which one was hit; the loop keeps Core's ceilings underneath
         // as the backstop. Evidence bytes stay the loop's, which already
         // enforces them per call and reports `evidence_limit`.
-        maxIterations: AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls,
-        maxToolCalls: AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions,
+        maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
+        maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
@@ -178,6 +195,7 @@ export function automationStudioExplorationTraceEvent(input: {
       outcome: exploration.outcome,
       endedBy: exploration.endedBy,
       ...(exploration.stopReason ? { stopReason: exploration.stopReason } : {}),
+      ...(exploration.noProgressReason ? { noProgressReason: exploration.noProgressReason } : {}),
       actions: exploration.actions,
       observedActions: exploration.observedActions,
       refusedActions: exploration.refusedActions,
@@ -197,6 +215,7 @@ const EXPLORATION_TRACE_STATUS: Readonly<Record<AutomationStudioExplorationOutco
   evidence_gathered: "completed",
   no_evidence_found: "completed",
   budget_exhausted: "failed",
+  no_progress: "failed",
   unsafe_action_blocked: "refused",
   user_intervention_required: "refused",
   cancelled: "failed",
@@ -223,12 +242,14 @@ function classify(input: {
   };
   const stopReason = input.ledger.stopReason;
   if (stopReason) {
+    const noProgressReason = input.ledger.noProgressReason;
     return {
       ...base,
       outcome: AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON[stopReason],
-      reason: STOP_REASON_SENTENCE[stopReason],
+      reason: noProgressReason ? NO_PROGRESS_SENTENCE[noProgressReason] : STOP_REASON_SENTENCE[stopReason],
       endedBy: stopReason,
-      stopReason
+      stopReason,
+      ...(noProgressReason ? { noProgressReason } : {})
     };
   }
   if (input.externallyCancelled || !input.loopResult) {
@@ -259,12 +280,26 @@ function classify(input: {
   };
 }
 
+/**
+ * What going in circles looked like, in Core's own words.
+ *
+ * Three sentences rather than one, because they are three different things to
+ * do next: narrow what is being asked for, give the model something it has not
+ * already been given, or find out why every step comes back empty.
+ */
+const NO_PROGRESS_SENTENCE: Readonly<Record<AutomationStudioExplorationNoProgressReason, string>> = Object.freeze({
+  repeated_request: "The exploration kept asking for something it had already asked for, so it was stopped.",
+  repeated_evidence: "The exploration kept gathering evidence it already had, so it was stopped.",
+  no_new_evidence: "The exploration kept taking steps that returned nothing new, so it was stopped."
+});
+
 const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReason, string>> = Object.freeze({
   wall_clock_expired: "The exploration ran out of its own time before it reached an answer.",
   recovery_deadline_expired: "The recovery as a whole ran out of time, so the exploration was stopped.",
   action_limit: "The exploration used every action it was allowed before it reached an answer.",
   provider_call_limit: "The exploration used every provider call it was allowed before it reached an answer.",
   repeat_window: "The exploration kept attempting the same action, so it was stopped.",
+  no_progress: "The exploration had stopped learning anything new, so it was stopped.",
   destructive_action_refused: "The exploration asked to do something destructive and was refused.",
   out_of_scope_refused: "The exploration asked to go outside the scope it was given and was refused.",
   refusal_limit: "Every action the exploration had left to try was refused.",
@@ -280,6 +315,23 @@ function refusal(
   if (resultCode === undefined) return {};
   const refused = classifyRefusal(resultCode);
   return refused ? { refused } : {};
+}
+
+/** What an execution actually carried, whatever shape the domain returned it in.
+ * A missing value is `null`, so the digest below always has text to work on. */
+function evidenceValue(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): JsonValue {
+  if (!execution || typeof execution !== "object" || Array.isArray(execution)) return (execution ?? null) as JsonValue;
+  const candidate = execution as { kind?: unknown; evidence?: unknown };
+  return candidate.kind === "llm_evidence_tool_execution" ? ((candidate.evidence ?? null) as JsonValue) : (execution as JsonValue);
+}
+
+/** Whether a step came back with nothing in it. Serialized, `""` and `{}` are
+ * still a few bytes; as evidence they are nothing, and counting them as an
+ * answer would let a loop of empty steps look like one that is learning. */
+function emptyEvidence(value: JsonValue): boolean {
+  if (value === null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  return typeof value === "object" && Object.keys(value).length === 0;
 }
 
 function executionResultCode(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): string | undefined {

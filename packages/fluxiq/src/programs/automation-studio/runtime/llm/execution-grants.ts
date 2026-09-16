@@ -16,27 +16,81 @@ const LIMITS: AutomationStudioLlmTokenLimits = { maxInputTokens: 8000, maxOutput
 const TIMEOUT_MS = 20_000;
 const COST_USD = 0.25;
 const MAX_TTL_MS = 300_000;
-export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS = 8;
+/**
+ * The absolute backstop on a grant's provider calls.
+ *
+ * It exists for one thing only: stopping a loop that has genuinely run away. It
+ * is deliberately far above what any adaptation needs, so that in normal
+ * operation it never binds and never decides anything. The bounds that are meant
+ * to decide are cost, tokens, the recovery deadline and a lack of progress, and
+ * they live with the run, not with the grant. It is one number for every
+ * purpose: a per-mode call count is exactly the coupling this file used to have,
+ * where "which mode" silently meant "how many calls", and a recovery that needed
+ * a third call was refused because of the name on its grant.
+ */
+export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS = 64;
+
+/**
+ * What an iterating grant gets when the caller names no number.
+ *
+ * Configuration, not a property of the purpose. It is a diagnosis, a patch, and
+ * the exploration's own default ceiling of twenty-four decisions
+ * (`AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxProviderCalls`), so the
+ * grant is never the thing that stops a recovery which is still learning -- the
+ * run's cost, tokens, clock and progress guard are. It is written as a literal
+ * because `runtime/llm/` may not import a value out of `runtime/recovery/`; a
+ * recovery test pins the two together.
+ *
+ * Twenty-six calls no longer means twenty-six times the per-call token limit.
+ * A grant carries its own whole-run token budget, `maxTotalTokensPerRun`, which
+ * defaults to the high-token confirmation threshold, so an ordinary adapting
+ * grant needs no confirmation however many calls it may make. A caller that
+ * wants a larger run budget asks for one, and confirms it.
+ */
+export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS = 26;
 const MAX_TOTAL_COST_USD = 2;
 export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = 100_000;
+
+/**
+ * How long a claimed grant may keep making calls.
+ *
+ * A grant has two lifetimes, and they protect different things. The TTL it is
+ * issued with is the window in which it may be *claimed*: an authorization
+ * nobody picked up must die promptly, so it stays short. Once a run has claimed
+ * it, the run is bounded by its own recovery deadline, cost, tokens and
+ * no-progress guard, and the claim window has nothing left to protect -- holding
+ * a claimed grant to it only turned a sixty-second TTL into a hidden cap on how
+ * long an adaptation could iterate. So a claim starts this lease instead.
+ *
+ * It is a backstop, not the working limit. The host revokes the grant when the
+ * run ends; this is what still kills a claimed grant whose run never said so.
+ * It matches `AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_CEILING_MS`, and a
+ * recovery test pins it at or above that, because the recovery clock starts
+ * before the grant is claimed and must be the one that ends a recovery.
+ */
+export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS = 600_000;
+
+/** The shortest a Secret Keys reveal authorization may be asked to live. */
+const MIN_REVEAL_AUTHORIZATION_TTL_MS = 1_000;
 
 /**
  * What a grant authorizes. These are entry points into one improvement loop,
  * not separate systems: `build_and_adapt` is a person asking for a new Flow,
  * `explore_and_adapt` is a run that failed or an existing Flow that met an edge
- * case, and `diagnosis_only` and `diagnose_and_adapt` remain the narrower
- * answers for a caller that wants a diagnosis and at most one patch.
+ * case, `diagnose_and_adapt` is the narrower answer for a caller that wants a
+ * diagnosis and one target-override proposal, and `diagnosis_only` asks one
+ * question and changes nothing.
  *
- * `explore_and_adapt` exists rather than `diagnose_and_adapt` being widened,
- * because a person granting that one consented to exactly two provider calls
- * and no exploration. Exploring is a larger thing to agree to, so it is a
- * different thing to grant, and every grant already issued keeps its meaning.
+ * A purpose says what may be *asked for*. It no longer says how many times.
+ * `diagnose_and_adapt` used to mean "exactly two calls and no exploration",
+ * which read as a consent boundary and behaved as a defect: the model's first
+ * move on a real failure is to ask for more evidence, the call that serves it
+ * was forbidden by the name on the grant, and the diagnosis was left staged and
+ * unvalidated. Gathering evidence is part of diagnosing, so every adapting
+ * purpose may do it, and what still separates the purposes is what they may
+ * change afterwards.
  */
 export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt";
-
-/** Default provider calls for an exploration grant: enough iterations for the
- * loop to gather evidence and propose, inside the absolute ceiling above. */
-const EXPLORE_DEFAULT_MAX_CALLS = 6;
 
 export type AutomationStudioLlmExecutionGrantResolvePolicy = {
   allowedTaskKinds?: readonly AutomationStudioLlmTaskKind[];
@@ -60,10 +114,16 @@ export type AutomationStudioLlmExecutionGrantMetadata = {
   settingsRevision?: number;
   tokenLimits: AutomationStudioLlmTokenLimits;
   maxCalls: number;
+  /** The whole run's token budget: what issuing the grant confirmed. Every
+   * call is charged what it reported using, and a call whose worst case would
+   * cross this is refused. */
+  maxTotalTokensPerRun: number;
   maxEstimatedCostUsd: number;
   maxTotalEstimatedCostUsd: number;
   timeoutMs: number;
   providerRetryCount: 0;
+  /** The end of the window in which the grant may be claimed. A claimed grant
+   * runs on its own lease, `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`. */
   expiresAtMs: number;
   remainingUses: number;
 };
@@ -71,18 +131,28 @@ export type AutomationStudioLlmExecutionGrantMetadata = {
 type StoredGrant = AutomationStudioLlmExecutionGrantMetadata & {
   actorUserId: string;
   actorSessionId: string;
+  /** Minted at issue, one per call, and all live until at least `expiresAtMs`. */
   revealAuthorizationIds: string[];
   state: "available" | "claimed";
+  /** When a claimed grant's run lease ends. Absent until it is claimed. */
+  runExpiresAtMs: number | undefined;
   callInFlight: boolean;
   inFlightAuthorizationId: string | undefined;
   inFlightAbortController: AbortController | undefined;
   committedEstimatedCostUsd: number;
+  committedTotalTokens: number;
   expiryTimer: ReturnType<typeof setTimeout>;
 };
+
+/** One call in flight. Its authorization may be exchanged before it is used. */
+type ClaimedCall = { authorizationId: string; controller: AbortController; signal: AbortSignal; worstCaseTokens: number };
 
 type RequestedExecutionLimits = {
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   maxCalls?: number;
+  /** The whole run's token budget. Absent means the per-call limit times the
+   * calls, held to the high-token confirmation threshold. */
+  maxTotalTokensPerRun?: number;
   maxEstimatedCostUsd?: number;
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
@@ -118,13 +188,27 @@ export class AutomationStudioLlmExecutionGrantService {
     const flowId = required(input.flowId);
     const purpose = executionGrantPurpose(input.purpose);
     const binding = executionBinding(await this.options.resolveExecutionDigest(projectId, flowId), purpose);
-    const maxCalls = input.maxCalls ?? defaultMaxCalls(purpose);
+    // A purpose that cannot iterate makes one request because one request is
+    // all it asks for, not because a table says so. Everything that iterates
+    // takes its number from the caller, or from the single configured default.
+    const capability = GRANT_CAPABILITIES[purpose];
+    const maxCalls = capability.iterates ? input.maxCalls ?? AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS : 1;
+    if (!capability.iterates && input.maxCalls !== undefined && input.maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
-    if (purpose === "diagnosis_only" && maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
-    if (purpose === "diagnose_and_adapt" && maxCalls !== 2) throw new Error("diagnose_and_adapt permits exactly two LLM calls.");
     if ((input.providerRetryCount ?? 0) !== 0) throw new Error("LLM execution grants do not permit provider retries.");
     const tokenResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits ?? LIMITS);
     if (tokenResolution.diagnostics.length) throw new Error("LLM token limits are invalid.");
+    // The run's token budget is its own number, not calls times the per-call
+    // limit. By default it is that product held to the confirmation threshold,
+    // so a grant that may make many calls is not by that fact a high-token one;
+    // it can never be less than one call's limit, nor more than every call's.
+    const perCallTokens = tokenResolution.limits.maxTotalTokens;
+    const callTokenExposure = perCallTokens * maxCalls;
+    const maxTotalTokensPerRun = input.maxTotalTokensPerRun
+      ?? Math.max(perCallTokens, Math.min(callTokenExposure, AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD));
+    if (!Number.isSafeInteger(maxTotalTokensPerRun) || maxTotalTokensPerRun < perCallTokens || maxTotalTokensPerRun > callTokenExposure) {
+      throw new Error("LLM total token limit is invalid.");
+    }
     const maxEstimatedCostUsd = input.maxEstimatedCostUsd ?? COST_USD;
     if (!Number.isFinite(maxEstimatedCostUsd) || maxEstimatedCostUsd <= 0 || maxEstimatedCostUsd > Math.min(COST_USD, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD)) throw new Error("LLM estimated-cost limit is invalid.");
     const defaultTotalCost = Math.min(MAX_TOTAL_COST_USD, maxEstimatedCostUsd * maxCalls);
@@ -144,6 +228,7 @@ export class AutomationStudioLlmExecutionGrantService {
       ...(binding.settingsRevision !== undefined ? { settingsRevision: binding.settingsRevision } : {}),
       tokenLimits: tokenResolution.limits,
       maxCalls,
+      maxTotalTokensPerRun,
       maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd,
       timeoutMs,
@@ -167,7 +252,10 @@ export class AutomationStudioLlmExecutionGrantService {
     const session = await this.options.identityAccess.validateSession(input.actorSessionId, this.now());
     if (!session || session.user.id !== input.actorUserId) throw new Error("LLM execution actor session is unavailable.");
     const safe = await this.preflight(input);
-    const aggregateAuthorizedTokens = safe.tokenLimits.maxTotalTokens * safe.maxCalls;
+    // What the person is agreeing the run may spend in tokens. The per-call
+    // limit is included so that a single call above the threshold still asks,
+    // whatever the run budget says.
+    const aggregateAuthorizedTokens = Math.max(safe.maxTotalTokensPerRun, safe.tokenLimits.maxTotalTokens);
     if (aggregateAuthorizedTokens > AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD && input.highTokenConfirmation !== true) {
       throw new Error("High-token LLM execution requires explicit confirmation.");
     }
@@ -221,10 +309,12 @@ export class AutomationStudioLlmExecutionGrantService {
       actorSessionId: input.actorSessionId,
       revealAuthorizationIds,
       state: "available",
+      runExpiresAtMs: undefined,
       callInFlight: false,
       inFlightAuthorizationId: undefined,
       inFlightAbortController: undefined,
       committedEstimatedCostUsd: 0,
+      committedTotalTokens: 0,
       expiryTimer
     };
     this.grants.set(grantId, grant);
@@ -266,6 +356,7 @@ export class AutomationStudioLlmExecutionGrantService {
     provider: AutomationStudioLlmProvider;
     tokenLimits: AutomationStudioLlmTokenLimits;
     maxCallsPerRun: number;
+    maxTotalTokensPerRun: number;
     maxEstimatedCostUsd: number;
     maxTotalEstimatedCostUsd: number;
     timeoutMs: number;
@@ -296,6 +387,7 @@ export class AutomationStudioLlmExecutionGrantService {
         execution?.signal?.addEventListener("abort", cancellation, { once: true });
         try {
           await this.validateClaimedGrant(grant, input);
+          await this.ensureLiveAuthorization(grant, call);
           const delegate = createAutomationStudioDeepSeekProvider({
             secretReference: { kind: "secret_reference", id: grant.keyId },
             ...(this.options.fetchImpl ? { fetchImpl: this.options.fetchImpl } : {}),
@@ -306,7 +398,7 @@ export class AutomationStudioLlmExecutionGrantService {
                 const revealed = await this.options.secretKeys.revealKeyWithAuthorization({ authorizationId: call.authorizationId, id: grant.keyId });
                 validateRevealedKey(revealed.key, grant);
                 await this.validateClaimedGrant(grant, input);
-                if (call.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.expiresAtMs <= this.now()) {
+                if (call.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) {
                   revealed.value = "";
                   throw new Error("LLM execution grant is unavailable.");
                 }
@@ -323,7 +415,7 @@ export class AutomationStudioLlmExecutionGrantService {
             }
           });
           const result = await delegate.runTask(request, { signal: call.signal });
-          await this.commitCall(grant, input, call.controller);
+          await this.commitCall(grant, input, call, result);
           return result;
         } catch (error) {
           this.revoke(grant.grantId);
@@ -337,6 +429,7 @@ export class AutomationStudioLlmExecutionGrantService {
       provider,
       tokenLimits: grant.tokenLimits,
       maxCallsPerRun: grant.maxCalls,
+      maxTotalTokensPerRun: grant.maxTotalTokensPerRun,
       maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
       timeoutMs: grant.timeoutMs,
@@ -383,12 +476,34 @@ export class AutomationStudioLlmExecutionGrantService {
       this.revoke(input.grantId);
       throw new Error("LLM execution grant scope mismatch.");
     }
+    // From here the claim window is spent and the run lease governs. The
+    // claim window's timer is replaced rather than left running, so a claimed
+    // grant is not revoked mid-run at the instant it stopped being claimable.
     grant.state = "claimed";
+    grant.runExpiresAtMs = this.now() + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS;
+    clearTimeout(grant.expiryTimer);
+    grant.expiryTimer = setTimeout(
+      () => this.revoke(grant.grantId, new DOMException("LLM execution grant run lease exceeded.", "TimeoutError")),
+      AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS
+    );
+    grant.expiryTimer.unref?.();
     return grant;
   }
 
-  private claimCall(grant: StoredGrant, input: GrantScope, request: AutomationStudioLlmTaskRequest, policy: AutomationStudioLlmExecutionGrantResolvePolicy): { authorizationId: string; controller: AbortController; signal: AbortSignal } {
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.expiresAtMs <= this.now() || grant.remainingUses <= 0) {
+  /** Whether the grant's current lifetime is over: the claim window while it is
+   * available, the run lease once it is claimed. */
+  private expired(grant: StoredGrant): boolean {
+    const until = grant.state === "claimed" ? grant.runExpiresAtMs ?? grant.expiresAtMs : grant.expiresAtMs;
+    return until <= this.now();
+  }
+
+  private claimCall(grant: StoredGrant, input: GrantScope, request: AutomationStudioLlmTaskRequest, policy: AutomationStudioLlmExecutionGrantResolvePolicy): ClaimedCall {
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.remainingUses <= 0) {
+      throw new Error("LLM execution grant is unavailable.");
+    }
+    // Past its lease, the grant is finished whether or not its timer has run.
+    if (this.expired(grant)) {
+      this.revoke(grant.grantId);
       throw new Error("LLM execution grant is unavailable.");
     }
     if (!sameScope(grant, input)) throw new Error("LLM execution grant scope mismatch.");
@@ -401,6 +516,17 @@ export class AutomationStudioLlmExecutionGrantService {
       this.revoke(grant.grantId);
       throw new Error("LLM execution total estimated-cost limit exceeded.");
     }
+    // The most this call can spend: its input and output limits together, and
+    // never more than its total limit. Charged against what earlier calls
+    // actually used, so the run budget bounds real spending rather than a sum of
+    // worst cases -- which would put a call cap back under another name. A run
+    // ledger reserves at least this much, so a recovery's own ledger always
+    // refuses first and names the reason.
+    const worstCaseTokens = Math.min(request.tokenLimits.maxTotalTokens, request.tokenLimits.maxInputTokens + request.tokenLimits.maxOutputTokens);
+    if (grant.committedTotalTokens + worstCaseTokens > grant.maxTotalTokensPerRun) {
+      this.revoke(grant.grantId);
+      throw new Error("LLM execution total token limit exceeded.");
+    }
     const authorizationId = grant.revealAuthorizationIds.shift();
     if (!authorizationId) {
       this.revoke(grant.grantId);
@@ -412,15 +538,52 @@ export class AutomationStudioLlmExecutionGrantService {
     grant.inFlightAbortController = controller;
     grant.remainingUses -= 1;
     grant.committedEstimatedCostUsd = roundedCost(grant.committedEstimatedCostUsd + request.maxEstimatedCostUsd);
-    return { authorizationId, controller, signal: controller.signal };
+    return { authorizationId, controller, signal: controller.signal, worstCaseTokens };
   }
 
-  private async commitCall(grant: StoredGrant, input: GrantScope, controller: AbortController): Promise<void> {
+  /**
+   * Make sure the call's reveal authorization will outlive the call.
+   *
+   * The authorizations minted at issue live only as long as the claim window,
+   * because that is all an unclaimed grant may be worth. A call made later in
+   * a claimed run exchanges its one for a fresh authorization, minted from the
+   * actor's still-unlocked session and sized to this call. The exchange is one
+   * for one, so the reveals a grant can make stay capped at its call count, and
+   * minting needs the session unlock, so a claimed grant still dies with it.
+   */
+  private async ensureLiveAuthorization(grant: StoredGrant, call: ClaimedCall): Promise<void> {
+    const callWindowMs = Math.max(MIN_REVEAL_AUTHORIZATION_TTL_MS, grant.timeoutMs);
+    if (grant.expiresAtMs - this.now() >= callWindowMs) return;
+    const renewed = await this.options.secretKeys.createSessionRevealAuthorization({
+      id: grant.keyId,
+      sessionId: grant.actorSessionId,
+      userId: grant.actorUserId,
+      ttlMs: callWindowMs,
+      nowMs: this.now()
+    });
+    // Revoked, cancelled or superseded while the authorization was minted: the
+    // new one must not outlive the call it was minted for.
+    if (call.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.inFlightAbortController !== call.controller) {
+      this.options.secretKeys.revokeRevealAuthorization(renewed.authorizationId);
+      throw new Error("LLM execution grant is unavailable.");
+    }
+    if (renewed.keyId !== grant.keyId || renewed.keyUpdatedAtMs !== grant.keyUpdatedAtMs) {
+      this.options.secretKeys.revokeRevealAuthorization(renewed.authorizationId);
+      throw new Error("LLM key changed during grant authorization.");
+    }
+    this.options.secretKeys.revokeRevealAuthorization(call.authorizationId);
+    call.authorizationId = renewed.authorizationId;
+    grant.inFlightAuthorizationId = renewed.authorizationId;
+  }
+
+  private async commitCall(grant: StoredGrant, input: GrantScope, call: ClaimedCall, result: unknown): Promise<void> {
+    const controller = call.controller;
     if (controller.signal.aborted || grant.inFlightAbortController !== controller) throw new Error("LLM execution grant is unavailable.");
     await this.validateClaimedGrant(grant, input);
     if (controller.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.inFlightAbortController !== controller) {
       throw new Error("LLM execution grant is unavailable.");
     }
+    grant.committedTotalTokens += reportedTotalTokens(result, call.worstCaseTokens);
     grant.callInFlight = false;
     grant.inFlightAuthorizationId = undefined;
     grant.inFlightAbortController = undefined;
@@ -428,7 +591,7 @@ export class AutomationStudioLlmExecutionGrantService {
   }
 
   private async validateClaimedGrant(grant: StoredGrant, input: GrantScope): Promise<void> {
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.expiresAtMs <= this.now()) throw new Error("LLM execution grant is unavailable.");
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new Error("LLM execution grant is unavailable.");
     if (!sameScope(grant, input)) throw new Error("LLM execution grant scope mismatch.");
     const [session, key, unresolvedBinding] = await Promise.all([
       this.options.identityAccess.validateSession(input.actorSessionId, this.now()),
@@ -436,7 +599,7 @@ export class AutomationStudioLlmExecutionGrantService {
       this.options.resolveExecutionDigest(grant.projectId, grant.flowId)
     ]);
     const binding = executionBinding(unresolvedBinding, grant.purpose);
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.expiresAtMs <= this.now()) throw new Error("LLM execution grant is unavailable.");
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new Error("LLM execution grant is unavailable.");
     if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
@@ -480,6 +643,7 @@ function publicGrant(grant: StoredGrant): AutomationStudioLlmExecutionGrantMetad
     ...(grant.settingsRevision !== undefined ? { settingsRevision: grant.settingsRevision } : {}),
     tokenLimits: grant.tokenLimits,
     maxCalls: grant.maxCalls,
+    maxTotalTokensPerRun: grant.maxTotalTokensPerRun,
     maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
     maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
     timeoutMs: grant.timeoutMs,
@@ -497,11 +661,61 @@ function executionGrantPurpose(value: unknown): AutomationStudioLlmExecutionGran
   throw new Error("LLM execution grant purpose is unsupported.");
 }
 
-function defaultMaxCalls(purpose: AutomationStudioLlmExecutionGrantPurpose): number {
-  if (purpose === "diagnosis_only") return 1;
-  if (purpose === "diagnose_and_adapt") return 2;
-  if (purpose === "explore_and_adapt") return EXPLORE_DEFAULT_MAX_CALLS;
-  return 4;
+/** One thing a grant may ask a provider for: a task kind and the single output
+ * shape that task kind is allowed to return under a grant. */
+type GrantTaskAllowance = { taskKind: AutomationStudioLlmTaskKind; expectedOutput: AutomationStudioLlmTaskRequest["expectedOutput"] };
+
+/** What a purpose may ask for, and whether it may ask more than once.
+ *
+ * `iterates` is the whole of what a purpose says about call counts. It is a
+ * yes-or-no, never a number: the number is configuration, and a purpose that
+ * cannot iterate is a single request by arity rather than by budget. */
+type GrantCapability = { iterates: boolean; taskKinds: readonly GrantTaskAllowance[] };
+
+const DIAGNOSIS_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
+  { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" }
+]);
+
+// The two stages that ask the model for a judgement rather than for a change.
+// Deliberately not extended to `diagnosis_only`, whose one call is a diagnosis.
+const LOOP_PROTOCOL_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
+  { taskKind: "loop_plan", expectedOutput: "diagnosis" },
+  { taskKind: "loop_verification", expectedOutput: "diagnosis" }
+]);
+
+/** Diagnosing a failure, for real: look, ask for more, decide, repair. The
+ * `evidence_tool_decision` call is what turns a staged guess into something the
+ * run actually checked, so every adapting purpose has it. */
+const RECOVERY_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
+  ...DIAGNOSIS_TASK_KINDS,
+  { taskKind: "evidence_tool_decision", expectedOutput: "evidence_tool_decision" },
+  { taskKind: "runtime_patch", expectedOutput: "runtime_patch" },
+  ...LOOP_PROTOCOL_TASK_KINDS
+]);
+
+/** Everything `build_and_adapt` may do except create a Flow from nothing. */
+const EXPLORE_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
+  ...RECOVERY_TASK_KINDS,
+  { taskKind: "instruction_suggestion", expectedOutput: "instruction_suggestion" },
+  { taskKind: "router_patch", expectedOutput: "change_proposal" },
+  { taskKind: "subflow_patch", expectedOutput: "change_proposal" },
+  { taskKind: "expectation_action_target_patch", expectedOutput: "change_proposal" },
+  { taskKind: "change_proposal_generation", expectedOutput: "change_proposal" }
+]);
+
+const GRANT_CAPABILITIES: Readonly<Record<AutomationStudioLlmExecutionGrantPurpose, GrantCapability>> = Object.freeze({
+  diagnosis_only: { iterates: false, taskKinds: DIAGNOSIS_TASK_KINDS },
+  // Iterating now, and able to gather. What it may *change* is unchanged: the
+  // patch stage still holds it to one target override, as a proposal.
+  diagnose_and_adapt: { iterates: true, taskKinds: RECOVERY_TASK_KINDS },
+  explore_and_adapt: { iterates: true, taskKinds: EXPLORE_TASK_KINDS },
+  build_and_adapt: { iterates: true, taskKinds: Object.freeze([...EXPLORE_TASK_KINDS, { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" } as GrantTaskAllowance]) }
+});
+
+/** The task kinds this purpose authorizes, for a caller that has to narrow them
+ * further for its own entry point. */
+export function automationStudioLlmExecutionGrantTaskKinds(purpose: AutomationStudioLlmExecutionGrantPurpose): readonly AutomationStudioLlmTaskKind[] {
+  return [...new Set(GRANT_CAPABILITIES[executionGrantPurpose(purpose)].taskKinds.map((allowance) => allowance.taskKind))];
 }
 
 function executionBinding(value: string | AutomationStudioLlmExecutionBinding, purpose: AutomationStudioLlmExecutionGrantPurpose): { executionDigest: string; settingsRevision?: number } {
@@ -514,53 +728,11 @@ function executionBinding(value: string | AutomationStudioLlmExecutionBinding, p
   return { executionDigest, settingsRevision: value.settingsRevision };
 }
 
-// The two stages that ask the model for a judgement rather than for a change.
-// Deliberately not extended to `diagnosis_only`, whose one call is a diagnosis,
-// or to `diagnose_and_adapt`, which is pinned at exactly two calls: a person who
-// granted two calls did not grant a five-stage protocol.
-const LOOP_PROTOCOL_TASK_KINDS: readonly AutomationStudioLlmTaskKind[] = ["loop_plan", "loop_verification"];
-
 function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: StoredGrant, policy: AutomationStudioLlmExecutionGrantResolvePolicy): boolean {
   if (policy.allowedTaskKinds && !policy.allowedTaskKinds.includes(request.taskKind)) return false;
-  let taskAllowed: boolean;
-  switch (grant.purpose) {
-    case "diagnosis_only":
-      taskAllowed = request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis";
-      break;
-    case "diagnose_and_adapt":
-      taskAllowed = (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
-        || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch");
-      break;
-    // The failure and edge-case entry points. Everything build_and_adapt may
-    // do except create a Flow from nothing: the same exploration loop, the
-    // same diagnosis, patch and proposal kinds, reached from a run that failed
-    // or a Flow that met a case it was not built for.
-    case "explore_and_adapt":
-      taskAllowed = (request.taskKind === "evidence_tool_decision" && request.expectedOutput === "evidence_tool_decision")
-        || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
-        || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
-        || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")
-        // The stages of the protocol that report rather than change. A grant
-        // that may explore and adapt must be able to plan before it changes
-        // anything and to verify afterwards, or the order it is held to is one
-        // it is not authorized to follow.
-        || (LOOP_PROTOCOL_TASK_KINDS.includes(request.taskKind) && request.expectedOutput === "diagnosis")
-        || (["router_patch", "subflow_patch", "expectation_action_target_patch", "change_proposal_generation"].includes(request.taskKind) && request.expectedOutput === "change_proposal");
-      break;
-    case "build_and_adapt":
-      taskAllowed = (request.taskKind === "flow_bootstrap" && request.expectedOutput === "flow_bootstrap")
-        || (request.taskKind === "evidence_tool_decision" && request.expectedOutput === "evidence_tool_decision")
-        || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
-        || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
-        || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")
-        || (LOOP_PROTOCOL_TASK_KINDS.includes(request.taskKind) && request.expectedOutput === "diagnosis")
-        || (["router_patch", "subflow_patch", "expectation_action_target_patch", "change_proposal_generation"].includes(request.taskKind) && request.expectedOutput === "change_proposal");
-      break;
-    default: {
-      const unsupported: never = grant.purpose;
-      return unsupported;
-    }
-  }
+  const capability = GRANT_CAPABILITIES[grant.purpose];
+  if (!capability) return false;
+  const taskAllowed = capability.taskKinds.some((allowance) => allowance.taskKind === request.taskKind && allowance.expectedOutput === request.expectedOutput);
   return taskAllowed
     && request.context.projectId === grant.projectId
     && request.context.flowId === grant.flowId
@@ -572,6 +744,20 @@ function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: Sto
 }
 function roundedCost(value: number): number {
   return Math.round(value * 1_000_000_000) / 1_000_000_000;
+}
+
+/** What a completed call is charged against the run's token budget: the total
+ * it reported, when the report is consistent, and never more than its worst
+ * case -- the provider already refuses a reply above its limits, and charging
+ * past the worst case would make the grant stricter than the run's ledger. A
+ * missing or inconsistent report is charged the worst case. */
+function reportedTotalTokens(result: unknown, worstCaseTokens: number): number {
+  const usage = typeof result === "object" && result !== null ? (result as { usage?: unknown }).usage : undefined;
+  if (typeof usage !== "object" || usage === null) return worstCaseTokens;
+  const { inputTokens, outputTokens, totalTokens } = usage as { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown };
+  const whole = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+  if (!whole(inputTokens) || !whole(outputTokens) || !whole(totalTokens) || totalTokens !== inputTokens + outputTokens) return worstCaseTokens;
+  return Math.min(totalTokens, worstCaseTokens);
 }
 
 function requiredDigest(value: string): string {

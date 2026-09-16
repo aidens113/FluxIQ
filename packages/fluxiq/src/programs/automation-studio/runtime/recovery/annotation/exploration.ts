@@ -90,11 +90,10 @@ export type AutomationStudioRecoveryExplorationInput = {
   instructions: AutomationStudioFlowInstruction[];
   runDetail: AutomationStudioFlowRunDetail;
   recoveryContext: AutomationStudioRuntimeRecoveryContext;
-  failureEvidence?: JsonObject;
   reusableContext?: AutomationStudioReusableLlmContextPacket;
-  /** The run's ledger. Exploration decisions draw on its exploration call
-   * allowance, and on the same global token and cost ceilings as every other
-   * call the run makes. */
+  /** The run's ledger. Exploration decisions are paid from the same token and
+   * cost ceilings as every other call the run makes, and are labelled on its
+   * receipt so what exploring cost stays visible. */
   runBudget: AutomationStudioLlmRunBudgetLedger;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   timeoutMs?: number;
@@ -115,14 +114,13 @@ export async function runAutomationStudioRecoveryExploration(
     { scope: input.scope, stage: "gather", policy: input.policy }
   );
   // The exploration is billed to the run's own LLM budget, beside the diagnosis
-  // and the patch, because it is model spend on this run -- but to that budget's
-  // *exploration* call allowance, which is its own number. Borrowing from
-  // `maxCallsPerRun` is what made this stage useless in practice: the diagnosis
-  // and the patch spent both of a default run's two calls, so a real recovery
-  // ended its exploration in `budget_exhausted` before it looked at anything.
-  // The token and cost ceilings are still the run's single global ones. When
-  // the budget refuses the next decision, the refusal is what ended the
-  // exploration, and it is kept so the ending can be named.
+  // and the patch, because it is model spend on this run. That budget is bounded
+  // by tokens and money, not by a small call count -- a two-call run is what
+  // once ended every real exploration in `budget_exhausted` before it looked at
+  // anything -- and the exploration's own ledger adds the clock and the
+  // no-progress guard. When the run budget refuses the next decision, the
+  // refusal is what ended the exploration, and it is kept so the ending can be
+  // named as tokens or as money rather than as a fault.
   let runBudgetRefusal: AutomationStudioLlmRunBudgetDiagnostic["code"] | undefined;
   const exploration = await runAutomationStudioRuntimeExploration({
     loop,
@@ -173,7 +171,12 @@ async function explorationDecision(
     instructions: input.instructions,
     runDetail: input.runDetail,
     recoveryContext: input.recoveryContext,
-    ...(input.failureEvidence ? { failureEvidence: input.failureEvidence } : {}),
+    // No `failureEvidence`, on purpose. Core admits a captured failure snapshot
+    // to the diagnosis and the patch only, and refuses it on any other task
+    // before a provider is called -- so carrying it here refused every
+    // exploration decision whenever the domain captured one, which the web
+    // domain always does. The diagnosis has already read it; the exploration's
+    // job is to gather fresh evidence of its own.
     ...(input.binding.deniedEvidenceKeys ? { deniedEvidenceKeys: input.binding.deniedEvidenceKeys } : {}),
     ...(input.reusableContext ? { reusableContext: input.reusableContext } : {}),
     evidenceLoop: {
@@ -188,9 +191,8 @@ async function explorationDecision(
     provider: input.provider,
     runBudget: input.runBudget,
     // Declared, not inferred. The ledger reads an undeclared reservation as an
-    // ordinary run call, so this line is the whole of what makes an exploration
-    // decision draw on the exploration allowance instead of on the diagnosis
-    // and patch pair's.
+    // ordinary run call, so this line is what puts an exploration decision on
+    // the receipt as one. It is a label; it draws on the same purse.
     runBudgetAllowance: "exploration",
     ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),

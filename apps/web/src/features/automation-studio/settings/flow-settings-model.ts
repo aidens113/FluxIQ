@@ -1,12 +1,10 @@
 export const FLOW_LLM_HARD_MAX_TOKENS = 50_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
 export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
-export const FLOW_LLM_MAX_CALLS = 8;
 export const FLOW_LLM_EXECUTION_DEFAULTS = {
   maxInputTokens: "8000",
   maxOutputTokens: "2000",
   maxTotalTokens: "10000",
-  maxCalls: "1",
   timeoutSeconds: "20",
   maxCostUsd: "0.25",
   retryCount: "0"
@@ -70,7 +68,6 @@ export type FlowSettingsDraft = {
   llmMaxInputTokens: string;
   llmMaxOutputTokens: string;
   llmMaxTotalTokens: string;
-  llmMaxCalls: string;
   llmTimeoutSeconds: string;
   llmMaxCostUsd: string;
   llmRetryCount: string;
@@ -100,7 +97,7 @@ type FlowEffectiveSetting = { key: keyof FlowSettingsDraft; group: string; label
 export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
   timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: "deepseek-chat",
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
-  llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmMaxCalls: "1", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
+  llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2"
 };
 
@@ -161,7 +158,7 @@ export function flowGeneralRuntimeErrors(draft: Pick<FlowSettingsDraft, "name" |
   if (draft.trainingMode === "train_until_stable" && (!Number.isFinite(Number(draft.minimumStabilityScore)) || Number(draft.minimumStabilityScore) <= 0 || Number(draft.minimumStabilityScore) > 1)) errors.push("Stability target must be greater than 0 and no more than 1.");
   return errors;
 }
-export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIntervention" | "llmProvider" | "llmModel" | "llmSecretKeyId" | "llmMaxInputTokens" | "llmMaxOutputTokens" | "llmMaxTotalTokens" | "llmMaxCalls" | "llmTimeoutSeconds" | "llmMaxCostUsd" | "llmRetryCount">, compatibleKeys: any[], keysReady: boolean): string[] {
+export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIntervention" | "llmProvider" | "llmModel" | "llmSecretKeyId" | "llmMaxInputTokens" | "llmMaxOutputTokens" | "llmMaxTotalTokens" | "llmTimeoutSeconds" | "llmMaxCostUsd" | "llmRetryCount">, compatibleKeys: any[], keysReady: boolean): string[] {
   if (!draft.allowLlmIntervention) return [];
   const errors: string[] = [];
   if (draft.llmProvider !== "deepseek") errors.push("Only DeepSeek is supported for live LLM execution.");
@@ -175,7 +172,6 @@ export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIn
     if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > FLOW_LLM_HARD_MAX_TOKENS) errors.push(label + " must be a whole number from 1 to 50,000.");
   }
   if (Number(draft.llmMaxInputTokens) + Number(draft.llmMaxOutputTokens) > Number(draft.llmMaxTotalTokens)) errors.push("Input and output token limits together cannot exceed the total-token limit.");
-  if (!Number.isInteger(Number(draft.llmMaxCalls)) || Number(draft.llmMaxCalls) < 1 || Number(draft.llmMaxCalls) > FLOW_LLM_MAX_CALLS) errors.push(`LLM call limit must be between 1 and ${FLOW_LLM_MAX_CALLS}.`);
   if (!Number.isInteger(Number(draft.llmTimeoutSeconds)) || Number(draft.llmTimeoutSeconds) < 1 || Number(draft.llmTimeoutSeconds) > FLOW_LLM_MAX_TIMEOUT_SECONDS) errors.push("LLM timeout must be a whole number from 1 to 25 seconds.");
   if (!Number.isFinite(Number(draft.llmMaxCostUsd)) || Number(draft.llmMaxCostUsd) <= 0 || Number(draft.llmMaxCostUsd) > FLOW_LLM_DIAGNOSIS_MAX_COST_USD) errors.push("Diagnosis cost limit must be greater than 0 and no more than 0.25 USD.");
   if (draft.llmRetryCount !== "0") errors.push("Flow LLM execution does not permit provider retries.");
@@ -319,7 +315,6 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     llmMaxInputTokens: numberInputValue(llmTokenLimits.maxInputTokens ?? 8000),
     llmMaxOutputTokens: numberInputValue(llmTokenLimits.maxOutputTokens ?? 2000),
     llmMaxTotalTokens: numberInputValue(llmTokenLimits.maxTotalTokens ?? 10000),
-    llmMaxCalls: numberInputValue(llmExecution.maxCalls ?? 1),
     llmTimeoutSeconds: numberInputValue(Number(llmExecution.timeoutMs ?? 20000) / 1000),
     llmMaxCostUsd: numberInputValue(llmExecution.maxEstimatedCostUsd ?? 0.25),
     llmRetryCount: numberInputValue(llmExecution.retryCount ?? 0),
@@ -334,7 +329,7 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     requireFirstManualReviewBeforeAutoPromotion: _oldFirstReview, manualReviewForStructuralChanges: _oldStructuralReview,
     trainingModeSettings: _oldTrainingSettings, adaptationPolicySettings: _oldAdaptationSettings,
     budgetExhaustedBehavior: _oldBudgetBehavior, llmProvider: _oldLlmProvider, llmModel: _oldLlmModel,
-    llmSecretKeyId: _oldLlmSecretKeyId, llmExecutionSettings: _oldLlmExecutionSettings, adaptationPolicyId: _oldAdaptationPolicyId, ...retainedMetadata
+    llmSecretKeyId: _oldLlmSecretKeyId, llmExecutionSettings: storedLlmExecutionSettings, adaptationPolicyId: _oldAdaptationPolicyId, ...retainedMetadata
   } = rawMetadata;
   const llmProvider = draft.llmProvider.trim();
   const llmModel = draft.llmModel.trim();
@@ -342,7 +337,7 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
   const adaptationPolicyId = draft.adaptationPolicyId.trim();
   const llmExecutionSettings = {
     tokenLimits: { maxInputTokens: Number(draft.llmMaxInputTokens), maxOutputTokens: Number(draft.llmMaxOutputTokens), maxTotalTokens: Number(draft.llmMaxTotalTokens) },
-    maxCalls: Number(draft.llmMaxCalls), timeoutMs: Math.round(Number(draft.llmTimeoutSeconds) * 1000), maxEstimatedCostUsd: Number(draft.llmMaxCostUsd), retryCount: Number(draft.llmRetryCount)
+    maxCalls: storedLlmCallCount(storedLlmExecutionSettings), timeoutMs: Math.round(Number(draft.llmTimeoutSeconds) * 1000), maxEstimatedCostUsd: Number(draft.llmMaxCostUsd), retryCount: Number(draft.llmRetryCount)
   };
   const recoveryBudget = {
     ...(Number(draft.maxRetriesPerAction) !== 1 ? { maxRetriesPerAction: Math.round(Number(draft.maxRetriesPerAction)) } : {}),
@@ -466,7 +461,7 @@ export function flowSettingsMetadata(flow: any) {
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
     llmProvider: "deepseek",
     llmModel: "deepseek-chat",
-    llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
+    llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: FLOW_LLM_UNSET_CALL_COUNT, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
     adaptationPolicyId: "policy.default",
     adaptationPolicySettings: { ...adaptationPolicySettings, ...existingAdaptationSettings },
     budgetExhaustedBehavior: "ask",
@@ -493,6 +488,16 @@ function flowSettingsAdaptationMode(metadata: any, trainingMode: FlowSettingsDra
   if (trainingMode === "normal" || preset === "locked" || approval === "disabled" || approval === "deterministic") return "no_llm_intervention";
   if (approval === "manual" || approval === "mixed" || approval === "manual_approval" || preset === "observe" || preset === "repair") return "manual_approval";
   return "fully_adaptive";
+}
+
+// Flow Settings offers no call limit and no run reads the saved `maxCalls`, but
+// Core's update-flow-settings requires one and replaces the stored execution
+// settings wholesale. A save keeps the stored count; a Flow with none gets the
+// count this form always wrote.
+const FLOW_LLM_UNSET_CALL_COUNT = 1;
+function storedLlmCallCount(execution: unknown): number {
+  const value = execution && typeof execution === "object" ? (execution as { maxCalls?: unknown }).maxCalls : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 ? value : FLOW_LLM_UNSET_CALL_COUNT;
 }
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {

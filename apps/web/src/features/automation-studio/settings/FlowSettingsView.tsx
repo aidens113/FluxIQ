@@ -8,7 +8,7 @@ import { JsonToggle } from "../runtime";
 import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
-import { FLOW_LLM_MAX_CALLS, FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
+import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 
@@ -295,7 +295,6 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
             <label><span>Total tokens</span><input aria-label="Total tokens" max={50000} min={1} step={1} type="number" value={draft.llmMaxTotalTokens} onChange={(event) => updateDraft("llmMaxTotalTokens", event.target.value)} /></label>
           </div>
           <div className="automation-settings-inline-fields">
-            <label><span>Max calls</span><input aria-label="Max calls" max={FLOW_LLM_MAX_CALLS} min={1} step={1} type="number" value={draft.llmMaxCalls} onChange={(event) => updateDraft("llmMaxCalls", event.target.value)} /><small>Use 1 for diagnosis-only, 2 for diagnose-and-adapt, or up to 8 for bounded evidence-guided generation.</small></label>
             <label><span>Timeout (seconds)</span><input aria-label="Timeout (seconds)" max={25} min={1} step={1} type="number" value={draft.llmTimeoutSeconds} onChange={(event) => updateDraft("llmTimeoutSeconds", event.target.value)} /></label>
             <label><span>Max cost (USD)</span><input aria-label="Max cost (USD)" max={0.25} min={0.01} step={0.01} type="number" value={draft.llmMaxCostUsd} onChange={(event) => updateDraft("llmMaxCostUsd", event.target.value)} /></label>
             <label><span>Provider retries</span><input aria-label="Provider retries" max={0} min={0} step={1} type="number" value={draft.llmRetryCount} onChange={(event) => updateDraft("llmRetryCount", event.target.value)} /><small>Retries are disabled for diagnosis and adaptation runs.</small></label>

@@ -112,7 +112,11 @@ export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flo
         maxOutputTokens: tokenLimits.maxOutputTokens ?? 2000,
         maxTotalTokens: tokenLimits.maxTotalTokens ?? 10000
       },
-      maxCalls: purpose === "diagnose_and_adapt" ? 2 : 1,
+      // A single question is one call. An adapting run iterates, so it names no
+      // count and Core applies its own default. The Flow's saved `maxCalls` is
+      // not used here: it is written as 1 by the authoring defaults, and
+      // honouring it would pin every adapting run to a single call.
+      ...(purpose === "diagnosis_only" ? { maxCalls: 1 } : {}),
       timeoutMs: settings.timeoutMs ?? 20000,
       maxEstimatedCostUsd: settings.maxEstimatedCostUsd ?? 0.25
     }

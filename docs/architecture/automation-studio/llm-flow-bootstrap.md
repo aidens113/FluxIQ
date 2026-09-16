@@ -207,9 +207,10 @@ memory, bounded by the session expiry. One-use reveal authorizations copy only
 the selected derived buffer; logout, session expiry, key mutation, and runtime
 close revoke and zero the applicable buffers. Neither the login password nor
 the unlock state is persisted. Grant issue revalidates the actor/session/key
-binding, and requests above 100,000 total tokens additionally require an
-explicit high-token confirmation flag (while the current absolute token ceiling
-remains lower).
+binding. A grant whose run token budget (`maxTotalTokensPerRun`), or whose
+per-call total limit, is above 100,000 tokens additionally requires an explicit
+high-token confirmation flag. The per-request ceiling is 50,000 tokens, so in
+practice only a run budget can require it.
 
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
@@ -331,8 +332,12 @@ catalog, strict dynamic decision schema, allowlisted tools, and prior sanitized
 evidence. A decision either requests one registered tool or completes with a
 `{ summary, plan }` candidate whose plan schema is the existing strict Flow
 Bootstrap schema. Unknown tools, duplicate calls, malformed output, cancellation,
-iteration exhaustion, and evidence-byte overflow fail closed. The final plan is
-parsed and registry-validated again before the ordinary proposed Bootstrap
+iteration exhaustion, and evidence-byte overflow fail closed. The series has no
+fixed length of its own. It makes at most one decision per call the grant
+authorizes, and at most 64, with at most one more tool call than decisions.
+Each decision reserves the grant's total estimated cost divided by its calls,
+and the grant enforces its token and cost totals on every call. The final plan
+is parsed and registry-validated again before the ordinary proposed Bootstrap
 Adaptation is written.
 
 The evidence loop is an authoring-time information-gathering boundary, not a
@@ -418,9 +423,13 @@ The persisted adaptation records only bounded iteration, decision, call/tool ID,
 categorical result code, effect-applied state, evidence-byte, and usage
 accounting. Public failure diagnostics may project at most 16 content-free
 `{toolId, effectApplied?, resultCode?}` steps. Raw tool inputs, call IDs, and
-collected evidence are not copied into that diagnostic. Aggregate grant exposure is
-`maxTotalTokens * maxCalls`; explicit high-token confirmation is required only
-when that amount is greater than 100,000 tokens.
+collected evidence are not copied into that diagnostic. A grant's aggregate
+token exposure is its run token budget, `maxTotalTokensPerRun`. By default that
+is `maxTotalTokens * maxCalls` held to 100,000, and it is never less than one
+call's total limit. The grant charges each call what it reported using, or its
+worst case when that report is missing or inconsistent. Explicit
+high-token confirmation is required only when that budget, or one call's total
+limit, is greater than 100,000 tokens.
 
 The success audit exposes `providerCallCount` and `decisionCount` from trace
 entries whose iteration is greater than zero, excluding the deterministic
@@ -459,9 +468,9 @@ model-selected node ID before evidence resolution. Only categorical
 
 Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled key that passes purpose-aware preflight, and the exact saved build limits: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, one call, 20 seconds, USD 0.25, and zero provider retries. Ordinary Run remains unavailable while the Flow has no executable topology.
 
-The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the bounded 8,000 input, 4,000 output, 12,000 total, four-call, 45-second-per-call, USD 1 aggregate request at action time, while server preflight and grant issuance remain authoritative. Its 48,000-token aggregate exposure remains below the threshold that requires high-token confirmation. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the bounded 8,000 input, 4,000 output, 12,000 total, four-call, 45-second-per-call, USD 1 aggregate request at action time, while server preflight and grant issuance remain authoritative. Its run token budget, 48,000 tokens by default, remains below the threshold that requires high-token confirmation. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
-The authoring action uses the current authenticated session to issue its bounded grant and does not ask for the account password or PIN again. Only a preflight whose total-token limit exceeds 100,000 opens an additional confirmation dialog; confirmation is carried as a boolean grant-request field and enforced again by Core. Preflight and grant issuance use `build_and_adapt`; the browser route adds the authenticated session ID, so browser code never derives or exposes it. The surface keeps availability checks visible instead of disappearing while preflight is pending or rejected, and a rejected check offers an explicit retry.
+The authoring action uses the current authenticated session to issue its bounded grant and does not ask for the account password or PIN again. An additional confirmation dialog opens only when the preflight's per-call total-token limit times its call limit exceeds 100,000. Confirmation is carried as a boolean grant-request field, and Core requires it only when the run token budget, or one call's total limit, exceeds 100,000. Preflight and grant issuance use `build_and_adapt`; the browser route adds the authenticated session ID, so browser code never derives or exposes it. The surface keeps availability checks visible instead of disappearing while preflight is pending or rejected, and a rejected check offers an explicit retry.
 
 Website exploration distinguishes its two safety boundaries in the interface: bounded browser actions happen immediately against the connected tab, while the generated Router, Subflows, and actions remain an unapplied proposal. Preparing and exploring states expose an accessible indeterminate progress indicator, elapsed time, and a reminder to keep the target tab connected. Shared LLM progress vocabulary uses `Checking prior evidence`, `Inspecting live target`, `Generating proposal`, and `Ready for review`; the current authoring surface renders only phases supported by observable state. In particular, prior-evidence wording and controls remain hidden until reusable-context candidate data exists. Successful generation states explicitly confirm that no generated change has been applied. Failures map only allowlisted diagnostic codes to fixed, actionable recovery guidance; raw service errors, provider output, prompts, and page evidence are never rendered.
 

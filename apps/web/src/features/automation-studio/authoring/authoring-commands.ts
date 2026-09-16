@@ -1,6 +1,8 @@
 import type { ProgramCommandTransport } from "../data/program-transport";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
 
+// A website exploration iterates for as long as Core's run lease allows, so the
+// browser waits out the grant's claim window, that whole lease, and the reply.
 export const WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS = WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS;
 
 export function generateFlowBootstrapAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; llmExecutionGrantId: string }) {

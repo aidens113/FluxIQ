@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../contracts.ts";
+import { AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
 function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true } } {
@@ -107,6 +108,46 @@ describe("Automation Studio LLM execution API", () => {
     expect(grants.issue).toHaveBeenCalledWith(expect.objectContaining({ purpose: "build_and_adapt", actorUserId: "user.one", actorSessionId: "session.one", tokenLimits: limits.tokenLimits, maxCalls: 4, timeoutMs: 45_000, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0, maxUses: 4 }));
     expect(grants.issue.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
     expect(grants.issue.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
+  });
+
+  // The run's token budget is a limit a caller may lower. It has to survive the
+  // handler's field-by-field copy into the grant service, be stored on the
+  // grant, and come back on both answers; left out, the default applies.
+  it("forwards a caller's lower run token budget, which the grant stores and returns", async () => {
+    const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+    let minted = 0;
+    const grants = new AutomationStudioLlmExecutionGrantService({
+      resolveExecutionDigest: async () => ({ executionDigest: "digest.one", settingsRevision: 3 }),
+      identityAccess: { validateSession: async () => ({ user: { id: "user.one" }, session: {}, role: {} }) } as any,
+      secretKeys: {
+        getKeySummary: async () => ({ ...key }),
+        createSessionRevealAuthorization: async () => ({ authorizationId: `secret-reveal:${++minted}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: Date.now() + 60_000, remainingUses: 1 }),
+        revokeRevealAuthorization: () => undefined
+      } as any
+    });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ runRuntimeSession: vi.fn() }) as any, undefined, undefined, undefined, grants);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
+    const limits = { purpose: "diagnose_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxTotalTokensPerRun: 40_000 };
+    try {
+      const preflight = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: limits });
+      expect(preflight).toMatchObject({ ok: true, payload: { preflight: { maxCalls: 26, maxTotalTokensPerRun: 40_000 } } });
+      const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...limits, authSessionId: "session.one" } });
+      expect(issued).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: 40_000 } } });
+      const grantId = (issued as unknown as { payload: { grant: { grantId: string } } }).payload.grant.grantId;
+      // Stored: the run that claims the grant is held to it.
+      const resolved = await grants.resolve({ grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: "project.one", flowId: "flow.one", purpose: "diagnose_and_adapt" });
+      expect(resolved.maxTotalTokensPerRun).toBe(40_000);
+
+      const { maxTotalTokensPerRun: _omitted, ...withoutBudget } = limits;
+      const defaulted = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...withoutBudget, authSessionId: "session.one" } });
+      expect(defaulted).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: 100_000 } } });
+      // A budget the grant cannot hold is refused, not silently replaced.
+      const invalid = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { ...limits, maxTotalTokensPerRun: "40000" } });
+      expect(invalid.ok).toBe(false);
+    } finally {
+      grants.close();
+    }
   });
 
   it("rejects build grants carrying existing-runtime flags before grant issue", async () => {

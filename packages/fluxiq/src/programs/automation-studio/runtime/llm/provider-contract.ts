@@ -1,4 +1,41 @@
+/**
+ * Every way a provider refuses a request before sending it, one code per check.
+ *
+ * These were all `llm.provider_configuration_invalid`, and a run records codes,
+ * never messages, so a refusal said only that *something* local was wrong. That
+ * hid a stale field list in the DeepSeek adapter through every live recovery:
+ * each one made a call that was refused before it left the process, and the
+ * record could not say which check had refused it. A code names the check; the
+ * message stays out of the record.
+ */
+export const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES = Object.freeze([
+  // The provider as configured.
+  "llm.provider_secret_reference_invalid",
+  "llm.provider_model_unsupported",
+  "llm.provider_response_limit_invalid",
+  // The request as built.
+  "llm.provider_request_identity_invalid",
+  "llm.provider_request_scope_invalid",
+  "llm.provider_request_context_unbounded",
+  "llm.provider_request_task_mismatch",
+  "llm.provider_recent_actions_invalid",
+  "llm.provider_failure_evidence_invalid",
+  "llm.provider_flow_bootstrap_context_invalid",
+  "llm.provider_evidence_loop_context_invalid",
+  "llm.provider_request_limits_invalid",
+  "llm.provider_request_timeout_invalid",
+  "llm.provider_input_budget_exceeded",
+  "llm.provider_credential_in_request",
+  // Something threw that no named check caught: while the request was being
+  // built, or anywhere else before it could be sent.
+  "llm.provider_request_construction_failed",
+  "llm.provider_request_setup_failed"
+] as const);
+
+export type AutomationStudioLlmProviderPreflightErrorCode = (typeof AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES)[number];
+
 export type AutomationStudioLlmProviderErrorCode =
+  | AutomationStudioLlmProviderPreflightErrorCode
   | "llm.provider_auth_failed"
   | "llm.provider_rate_limited"
   | "llm.provider_timeout"
@@ -13,16 +50,17 @@ export type AutomationStudioLlmProviderErrorCode =
   | "llm.provider_usage_limit_exceeded"
   | "llm.provider_http_error"
   | "llm.provider_network_error"
-  | "llm.provider_secret_unavailable"
-  | "llm.provider_configuration_invalid";
+  | "llm.provider_secret_unavailable";
 
 const AUTOMATION_STUDIO_LLM_PROVIDER_ERROR_CODES: ReadonlySet<string> = new Set<AutomationStudioLlmProviderErrorCode>([
   "llm.provider_auth_failed", "llm.provider_rate_limited", "llm.provider_timeout", "llm.provider_aborted",
   "llm.provider_redirect_rejected", "llm.provider_response_oversize", "llm.provider_output_padding_truncated",
   "llm.provider_output_truncated", "llm.provider_malformed_response", "llm.provider_output_invalid",
   "llm.provider_usage_invalid", "llm.provider_usage_limit_exceeded", "llm.provider_http_error",
-  "llm.provider_network_error", "llm.provider_secret_unavailable", "llm.provider_configuration_invalid"
+  "llm.provider_network_error", "llm.provider_secret_unavailable",
+  ...AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES
 ]);
+const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODE_SET: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES);
 
 export type AutomationStudioLlmProviderInvocationState = "not_attempted" | "attempted" | "unknown";
 export type AutomationStudioLlmProviderResponseState = "not_received" | "received" | "unknown";
@@ -128,15 +166,24 @@ function defaultProviderFailureProvenance(code: AutomationStudioLlmProviderError
     case "llm.provider_network_error":
       return { providerInvocation: "attempted", providerResponse: "unknown" };
     case "llm.provider_secret_unavailable":
-    case "llm.provider_configuration_invalid":
       return { providerInvocation: "not_attempted", providerResponse: "not_received" };
     case "llm.provider_timeout":
     case "llm.provider_aborted":
       return { providerInvocation: "unknown", providerResponse: "not_received" };
+    default: {
+      // Only a pre-flight refusal is left. A new code that is neither fails
+      // this assignment rather than silently inheriting "not attempted".
+      const refusal: AutomationStudioLlmProviderPreflightErrorCode = code;
+      void refusal;
+      return { providerInvocation: "not_attempted", providerResponse: "not_received" };
+    }
   }
 }
 function safeProviderFailureMessage(code: AutomationStudioLlmProviderErrorCode): string {
-  const messages: Record<AutomationStudioLlmProviderErrorCode, string> = {
+  // One sentence for every pre-flight refusal: the code already names the
+  // check, and the check's own wording stays out of anything recorded.
+  if (AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODE_SET.has(code)) return "The LLM provider refused the request before sending it.";
+  const messages: Record<Exclude<AutomationStudioLlmProviderErrorCode, AutomationStudioLlmProviderPreflightErrorCode>, string> = {
     "llm.provider_auth_failed": "The LLM provider rejected the configured credential.",
     "llm.provider_rate_limited": "The LLM provider rate limited the request.",
     "llm.provider_timeout": "The LLM provider request timed out.",
@@ -151,8 +198,7 @@ function safeProviderFailureMessage(code: AutomationStudioLlmProviderErrorCode):
     "llm.provider_usage_limit_exceeded": "The LLM provider reported usage above the configured token limits.",
     "llm.provider_http_error": "The LLM provider returned an unsuccessful HTTP status.",
     "llm.provider_network_error": "The LLM provider request failed at the network boundary.",
-    "llm.provider_secret_unavailable": "The LLM provider credential is unavailable.",
-    "llm.provider_configuration_invalid": "The LLM provider configuration is invalid."
+    "llm.provider_secret_unavailable": "The LLM provider credential is unavailable."
   };
-  return messages[code];
+  return messages[code as Exclude<AutomationStudioLlmProviderErrorCode, AutomationStudioLlmProviderPreflightErrorCode>];
 }

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS } from "../../../runtime/index.ts";
 import { assertFlowLlmExecutionSettings } from "../index.ts";
 
 describe("Flow LLM execution settings API validation", () => {
@@ -17,9 +18,12 @@ describe("Flow LLM execution settings API validation", () => {
     }
   };
 
-  it("accepts bounded one-call diagnosis and two-call diagnose-and-adapt settings", () => {
+  it("accepts bounded call counts up to the one runaway backstop, not a per-mode cap", () => {
     expect(() => assertFlowLlmExecutionSettings(valid)).not.toThrow();
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 8 } })).not.toThrow();
+    // An iterating recovery needs more than the eight calls the old ceiling allowed.
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 9 } })).not.toThrow();
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS } })).not.toThrow();
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25_000 } })).not.toThrow();
   });
 
@@ -27,7 +31,7 @@ describe("Flow LLM execution settings API validation", () => {
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "openai" })).toThrow(/DeepSeek/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, tokenLimits: { ...valid.llmExecutionSettings.tokenLimits, maxTotalTokens: 50001 } } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 0 } })).toThrow(/limit/);
-    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 9 } })).toThrow(/limit/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS + 1 } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, retryCount: 1 } })).toThrow(/retries/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25001 } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: 0.26 } })).toThrow(/cost/);

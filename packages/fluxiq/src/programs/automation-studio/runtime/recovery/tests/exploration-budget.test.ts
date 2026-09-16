@@ -7,6 +7,8 @@ import {
   automationStudioExplorationScopeAllows,
   resolveAutomationStudioExplorationBudget
 } from "../exploration-budget.ts";
+import type { AutomationStudioExplorationStopReason } from "../exploration-outcome.ts";
+import { automationStudioExplorationEvidenceDigest } from "../progress-guard.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_CEILING_MS,
   automationStudioRecoveryDeadlineExpired,
@@ -100,9 +102,9 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
     const ledger = ledgerFor({ maxActions: 2, maxRefusedActions: 5 });
 
     ledger.admitAction("a");
-    ledger.recordAction({ refused: "out_of_scope_refused" });
+    ledger.recordAction(step("a", "out_of_scope_refused"));
     ledger.admitAction("b");
-    ledger.recordAction({});
+    ledger.recordAction(step("b"));
 
     expect(ledger.actions).toBe(2);
     expect(ledger.refusedActions).toBe(1);
@@ -129,10 +131,10 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
     const ledger = ledgerFor({ maxActions: 8, maxRefusedActions: 2 });
 
     ledger.admitAction("a");
-    ledger.recordAction({ refused: "destructive_action_refused" });
+    ledger.recordAction(step("a", "destructive_action_refused"));
     expect(ledger.stopReason).toBeUndefined();
     ledger.admitAction("b");
-    ledger.recordAction({ refused: "destructive_action_refused" });
+    ledger.recordAction(step("b", "destructive_action_refused"));
 
     expect(ledger.stopReason).toBe("destructive_action_refused");
     expect(ledger.signal.aborted).toBe(true);
@@ -187,9 +189,76 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
 
     ledger.admitAction("a");
     expect(ledger.admitAction("b")).toEqual({ admitted: false, stopReason: "action_limit" });
-    ledger.recordAction({ refused: "destructive_action_refused" });
+    ledger.recordAction(step("a", "destructive_action_refused"));
 
     expect(ledger.stopReason).toBe("action_limit");
+    ledger.close();
+  });
+
+  // The guard that replaced the call caps. The ledger runs for as long as each
+  // step brings back something new, however many steps that is, and stops on
+  // `no_progress` -- not on a count -- once three steps in a row have not.
+  it("keeps admitting a loop that is still learning, well past any old call count", () => {
+    const ledger = ledgerFor({ maxActions: 24, maxProviderCalls: 24 });
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(ledger.admitProviderCall()).toEqual({ admitted: true });
+      expect(ledger.admitAction(`inspect.${index}`)).toEqual({ admitted: true });
+      ledger.recordAction(step(`inspect.${index}`));
+    }
+
+    expect(ledger.stopReason).toBeUndefined();
+    expect(ledger.providerCalls).toBe(20);
+    expect(ledger.stepsWithoutProgress).toBe(0);
+    ledger.close();
+  });
+
+  it("stops on no_progress when different requests keep returning an answer it already has", () => {
+    const ledger = ledgerFor({ maxActions: 24, maxRepeatsPerAction: 4 });
+
+    ledger.admitAction("inspect.a");
+    ledger.recordAction(step("inspect.a", undefined, "same"));
+    for (const signature of ["inspect.b", "inspect.c"]) {
+      ledger.admitAction(signature);
+      ledger.recordAction(step(signature, undefined, "same"));
+      expect(ledger.stopReason).toBeUndefined();
+    }
+    ledger.admitAction("inspect.d");
+    ledger.recordAction(step("inspect.d", undefined, "same"));
+
+    expect(ledger.stopReason).toBe("no_progress");
+    expect(ledger.noProgressReason).toBe("repeated_evidence");
+    expect(ledger.signal.aborted).toBe(true);
+    // Four actions, nowhere near the cap of twenty-four: the guard, not a count.
+    expect(ledger.actions).toBe(4);
+    ledger.close();
+  });
+
+  // A slow start is not a stuck loop. Only a streak counts, so two barren steps
+  // followed by a finding reset it.
+  it("forgives barren steps once a step brings something new", () => {
+    const ledger = ledgerFor({ maxActions: 24 });
+
+    for (const [signature, bytes] of [["a", 0], ["b", 0], ["c", 32], ["d", 0], ["e", 0], ["f", 32]] as const) {
+      ledger.admitAction(signature);
+      ledger.recordAction({ signature, evidenceDigest: `digest.${signature}`, evidenceBytes: bytes });
+    }
+
+    expect(ledger.stopReason).toBeUndefined();
+    expect(ledger.stepsWithoutProgress).toBe(0);
+    ledger.close();
+  });
+
+  it("lets a spent refusal allowance name itself even when the progress streak comes due on the same step", () => {
+    const ledger = ledgerFor({ maxActions: 8, maxRefusedActions: 3, maxStepsWithoutProgress: 3 });
+
+    for (const signature of ["a", "b", "c"]) {
+      ledger.admitAction(signature);
+      ledger.recordAction(step(signature, "out_of_scope_refused"));
+    }
+
+    expect(ledger.stopReason).toBe("out_of_scope_refused");
+    expect(ledger.noProgressReason).toBeUndefined();
     ledger.close();
   });
 
@@ -224,6 +293,16 @@ describe("startAutomationStudioRecoveryDeadline", () => {
     expect(startAutomationStudioRecoveryDeadline({ startedAtMs: 0 }).maxDurationMs).toBeGreaterThan(0);
   });
 });
+
+/** One completed step. Distinct evidence per signature unless told otherwise. */
+function step(signature: string, refused?: AutomationStudioExplorationStopReason, evidence = `evidence.${signature}`) {
+  return {
+    signature,
+    evidenceDigest: automationStudioExplorationEvidenceDigest(evidence),
+    evidenceBytes: evidence.length,
+    ...(refused ? { refused } : {})
+  };
+}
 
 function ledgerFor(overrides: Parameters<typeof resolveAutomationStudioExplorationBudget>[0]): AutomationStudioExplorationBudgetLedger {
   return new AutomationStudioExplorationBudgetLedger({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../llm/index.ts";
 import {
   flowBootstrapEvidenceLoopFailure,
   flowBootstrapHarnessFailure,
@@ -205,17 +206,39 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [
         { severity: "error", code: "instruction.invalid_scope", message: "private instruction detail" },
-        { severity: "error", code: "llm.provider_configuration_invalid", message: "private provider detail", metadata: { retryable: false } }
+        { severity: "error", code: "llm.provider_request_limits_invalid", message: "private provider detail", metadata: { retryable: false } }
       ],
       request: { requestId: "request.ordered", estimatedInputTokens: 1_000 } as any,
       provider: { provider: "deepseek", model: "deepseek-chat" }
     });
     expect(failure.diagnostic).toMatchObject({
-      code: "flow_bootstrap.provider_configuration_invalid",
+      code: "flow_bootstrap.provider_request_limits_invalid",
       stage: "provider_request",
       providerResponse: "not_received"
     });
     expect(JSON.stringify(failure)).not.toMatch(/private instruction|private provider/);
+  });
+
+  // They were one code on both sides, so a Flow bootstrap refused before its
+  // request was sent could not say which check refused it.
+  it.each(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES)("keeps the provider's pre-flight refusal %s as its own parseable code", (code) => {
+    const failure = flowBootstrapHarnessFailure({
+      diagnostics: [{ severity: "error", code, message: "private provider detail", metadata: { retryable: false } }],
+      request: { requestId: "request.refused", estimatedInputTokens: 1_000 } as any,
+      provider: { provider: "deepseek", model: "deepseek-chat" }
+    });
+    expect(failure.diagnostic).toMatchObject({
+      code: code.replace(/^llm\./u, "flow_bootstrap."),
+      stage: "provider_request",
+      retryable: false,
+      providerResponse: "not_received"
+    });
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(failure.diagnostic)).toEqual(failure.diagnostic);
+  });
+
+  it("still parses a stored diagnostic carrying the retired combined refusal code", () => {
+    const stored = { code: "flow_bootstrap.provider_configuration_invalid", stage: "provider_request", retryable: false, providerInvocation: "attempted", providerResponse: "not_received" };
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toEqual(stored);
   });
 
   it("projects valid but over-limit provider usage without exposing raw counts", () => {

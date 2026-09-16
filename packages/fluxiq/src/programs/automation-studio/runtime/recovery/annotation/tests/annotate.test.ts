@@ -43,6 +43,25 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     });
   });
 
+  // A domain that captures a failure snapshot -- the web domain always does --
+  // hands it to the diagnosis and the patch. The exploration's own requests
+  // must not carry it: Core refuses failure evidence on any task but those two,
+  // and when the gather request carried it, every exploration decision was
+  // refused before the provider was ever asked.
+  it("still explores when the domain captured failure evidence for the diagnosis", async () => {
+    const executed: string[] = [];
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed, taskKinds, captureFailureEvidence: true });
+
+    expect(taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision"]);
+    expect(executed).toEqual(["test.inspect"]);
+    expect(explorationStage(detail)).toMatchObject({
+      status: "completed",
+      detail: { requested: true, outcome: "evidence_gathered", observedActions: 1, providerCalls: 2 }
+    });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.failureEvidence).toBeDefined();
+  });
+
   it("says the plan asked for an exploration and none ran when the Flow has no scope", async () => {
     const executed: string[] = [];
     const detail = await annotate({ executed, scope: undefined });
@@ -77,34 +96,38 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     expect(offered[0]).toEqual(["test.inspect", "test.reveal"]);
   });
 
-  // The exploration is billed to the run's own LLM budget, beside the diagnosis
-  // and the patch, but to its own call allowance. A budget that cannot pay for
-  // the next decision is a limit being reached, not the loop breaking, and the
-  // two are different advice. One call's allowance buys the look and not the
-  // answer, so the exploration takes its action and then stops.
-  it("ends the exploration in budget exhaustion when its own call allowance runs out", async () => {
+  // A resolver that says how many calls it will authorise is taken at its word
+  // -- a grant mints exactly that many, so a call past it would fail anyway --
+  // and reaching it is a limit being reached, not the loop breaking. Two calls
+  // buy the diagnosis and one look, and the exploration then stops on the
+  // run's call count, named as such.
+  it("ends the exploration in budget exhaustion when the resolver's own call count runs out", async () => {
     const executed: string[] = [];
-    const detail = await annotate({ executed, explorationCallAllowance: 1 });
+    const detail = await annotate({ executed, maxCallsPerRun: 2 });
 
     expect(executed).toEqual(["test.inspect"]);
     expect(explorationStage(detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_exploration_call_limit" }
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
     });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
   });
 
-  // The other direction, and the one that makes the split worth having: the
-  // ordinary call limit is spent on the diagnosis alone, and the exploration
-  // still runs because it never drew on that limit in the first place.
-  it("still explores when the ordinary call limit is spent on the diagnosis", async () => {
+  // The conflation this removed: an intervention limit counts interventions,
+  // and it used to be read as a cap on provider calls, so a policy allowing one
+  // intervention allowed one call and the exploration never began. With no
+  // count declared anywhere, the run is bounded by money, tokens, the clock and
+  // progress, and the exploration runs.
+  it("does not read the intervention limit as a provider-call limit", async () => {
     const executed: string[] = [];
-    const detail = await annotate({ executed, maxCallsPerRun: 1 });
+    const detail = await annotate({ executed, maxCallsPerRun: "undeclared", maxInterventionsPerRun: 1 });
 
     expect(executed).toEqual(["test.inspect"]);
     expect(explorationStage(detail)).toMatchObject({
       status: "completed",
-      detail: { requested: true, outcome: "evidence_gathered", observedActions: 1 }
+      detail: { requested: true, outcome: "evidence_gathered", observedActions: 1, providerCalls: 2 }
     });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 3, explorationCalls: 2 });
   });
 
   it("does not explore when the plan did not ask for one", async () => {
@@ -122,25 +145,31 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
 
 type Options = {
   executed: string[];
-  /** How many provider calls the run may make for its diagnosis and patch. */
-  maxCallsPerRun?: number;
-  /** How many provider calls the exploration may make, on its own allowance. */
-  explorationCallAllowance?: number;
+  /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */
+  maxCallsPerRun?: number | "undeclared";
+  /** The policy's and the settings' intervention limit, when one is set. */
+  maxInterventionsPerRun?: number;
   /** The tool ids the model was offered, one entry per exploration decision. */
   offered?: string[][];
   scope?: AutomationStudioFlowScope | undefined;
   explorationNeeded?: boolean;
   allowExternalSideEffects?: boolean;
+  /** The domain captures a failure snapshot, as the web domain always does. */
+  captureFailureEvidence?: boolean;
+  /** Every task kind the provider was actually asked for, in order. */
+  taskKinds?: string[];
 };
 
 async function annotate(options: Options): Promise<AutomationStudioFlowRunDetail> {
-  const policy = adaptationPolicy(options.allowExternalSideEffects === true);
+  const policy = {
+    ...adaptationPolicy(options.allowExternalSideEffects === true),
+    ...(options.maxInterventionsPerRun === undefined ? {} : { maxInterventionsPerRun: options.maxInterventionsPerRun })
+  };
   return await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: ports(options),
     detail: runDetail(),
     context: context(options, policy),
-    failedTraceAttempt: failedAttempt(),
-    ...(options.explorationCallAllowance === undefined ? {} : { explorationCallAllowance: options.explorationCallAllowance })
+    failedTraceAttempt: failedAttempt()
   });
 }
 
@@ -152,7 +181,9 @@ function explorationStage(detail: AutomationStudioFlowRunDetail): JsonObject | u
 function ports(options: Options): AutomationStudioRuntimeRecoveryPorts {
   const scope: AutomationStudioFlowScope | undefined = "scope" in options ? options.scope : { kind: "domain", domainId: "test.domain" };
   return {
-    resolveLlmProvider: () => ({ provider: provider(options), maxCallsPerRun: options.maxCallsPerRun ?? 4 }),
+    resolveLlmProvider: () => options.maxCallsPerRun === "undeclared"
+      ? { provider: provider(options) }
+      : { provider: provider(options), maxCallsPerRun: options.maxCallsPerRun ?? 4 },
     llmEvidenceRuntime: binding(options),
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
@@ -169,6 +200,7 @@ function provider(options: Options): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
+      options.taskKinds?.push(request.taskKind);
       if (request.expectedOutput === "diagnosis") {
         return {
           response: {
@@ -198,7 +230,10 @@ function binding(options: Options): AutomationStudioLlmEvidenceRuntimeBinding {
     deniedEvidenceKeys: [],
     tools: [],
     harnessOptions: harnessOptions(options),
-    executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); }
+    executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); },
+    ...(options.captureFailureEvidence
+      ? { captureSanitizedFailureEvidence: async () => ({ schemaVersion: "test.failure-evidence.v1", failedControl: "submit", visible: false }) }
+      : {})
   };
 }
 
@@ -279,7 +314,11 @@ function settings(options: Options): AutomationStudioTrainingModeSettings {
     allowAdaptationCreation: true,
     proposalApprovalMode: "auto",
     allowPromotion: true,
-    budgets: { maxTokensPerRun: 200_000, exhaustedBehavior: "stop" }
+    budgets: {
+      maxTokensPerRun: 200_000,
+      exhaustedBehavior: "stop",
+      ...(options.maxInterventionsPerRun === undefined ? {} : { maxInterventionsPerRun: options.maxInterventionsPerRun })
+    }
   };
 }
 

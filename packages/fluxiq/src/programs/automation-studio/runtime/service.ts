@@ -110,6 +110,7 @@ import {
 } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
 import { automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
+import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantRefusal, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
@@ -120,6 +121,7 @@ import {
   type AutomationStudioBootstrapAuditEvent
 } from "./flow-bootstrap/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "./loop-limits/index.ts";
 import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "./reusable-llm-context.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
@@ -388,6 +390,8 @@ export type AutomationStudioLlmProviderResolution = {
   provider: AutomationStudioLlmProvider;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   maxCallsPerRun?: number;
+  /** The whole run's token budget, when the resolver was issued for one. It caps the run however many calls it may make. */
+  maxTotalTokensPerRun?: number;
   maxEstimatedCostUsd?: number;
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
@@ -399,10 +403,7 @@ export type AutomationStudioLlmProviderResolverInput = {
   providerId?: string;
   modelId?: string;
   metadata?: JsonObject;
-  executionGrant?:
-    | { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" }
-    | { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnose_and_adapt" }
-    | AutomationStudioBuildAndAdaptExecutionGrant;
+  executionGrant?: AutomationStudioRuntimeSessionGrant | AutomationStudioBuildAndAdaptExecutionGrant;
 };
 
 export type AutomationStudioBuildAndAdaptExecutionGrant = {
@@ -1907,15 +1908,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           let estimatedInputTokens = 0;
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
           const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+          const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
           const loop = await runAutomationStudioLlmEvidenceLoop({
             tools: harnessOptions.tools,
-            minToolCalls: 1,
             propagateDecisionErrors: true,
-            maxEvidenceBytes: 64_000,
-            maxEvidenceContextBytes: 8_000,
             completionSchema,
-            maxIterations: Math.min(unresolvedProvider.maxCallsPerRun ?? 4, 8),
-            maxToolCalls: 7,
+            ...bootstrapLoopLimits.loop,
             decide: async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
               if (input.useReusableContext === true && evidence.length) {
                 reusableContextResult = await this.reusableLlmContextForFreshEvidence({
@@ -1934,7 +1932,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 flowBootstrap: { registry, resolution, maxInputTokens: 5_000 },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
-                ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
+                ...(bootstrapLoopLimits.maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall } : {}),
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
                 expectedOutput: "evidence_tool_decision", ...(signal ? { signal } : {})
               });
@@ -3084,26 +3082,16 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     authorizedExternalSideEffects?: boolean;
     subflowId?: string;
     idempotencyKey?: string;
-    llmExecution?: { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" | "diagnose_and_adapt" };
+    llmExecution?: AutomationStudioRuntimeSessionGrant;
     useReusableContext?: true;
   }): Promise<AutomationStudioRuntimeSession> {
     if (input.llmExecution) {
-      const compatiblePurpose = input.llmExecution.purpose === "diagnosis_only" || input.llmExecution.purpose === "diagnose_and_adapt";
-      const incompatible = !compatiblePurpose
-        || (input.adaptiveMode !== undefined && input.adaptiveMode !== "manual_approval")
-        || input.dryRunLlm === true
-        || input.authorizedExternalSideEffects === true
-        || (input.authorizedDomainIds?.length ?? 0) > 0
-        || input.runId !== undefined;
-      if (incompatible) {
+      const refusal = automationStudioRuntimeSessionGrantRefusal(input.llmExecution, input);
+      if (refusal) {
         this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
-        throw new Error("Explicit LLM execution flags are incompatible.");
+        throw new Error(refusal);
       }
-      input = {
-        ...input,
-        adaptiveMode: "manual_approval",
-        authorizedExternalSideEffects: false
-      };
+      input = { ...input, adaptiveMode: "manual_approval", authorizedExternalSideEffects: false };
     }
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
     if (input.llmExecution && idempotencyKey) {
@@ -3167,7 +3155,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
     let adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
-    if (adaptationContext && input.llmExecution?.purpose === "diagnose_and_adapt") adaptationContext = runtimeAdaptationContextForExplicitProposal(adaptationContext);
+    if (adaptationContext && input.llmExecution) adaptationContext = automationStudioRuntimeAdaptationContextForGrant(adaptationContext, input.llmExecution.purpose);
     if (adaptationContext) { graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext); graphOptions.allowLlmDiagnosis = adaptationContext.behavior.invokeLlm; }
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
@@ -6309,28 +6297,6 @@ function runtimeAdaptationContextWithRunOverride(
       ...(mode !== "fully_adaptive" ? [`Runtime override mode: ${mode}.`] : []),
       ...(input.dryRunLlm === true ? ["Runtime override enabled dry-run LLM adaptation suggestions."] : [])
     ]
-  };
-}
-
-function runtimeAdaptationContextForExplicitProposal(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRuntimeAdaptationContext {
-  return {
-    ...context,
-    behavior: {
-      ...context.behavior,
-      invokeLlm: true,
-      runRecovery: false,
-      createAdaptations: true,
-      promoteAdaptations: true
-    },
-    policy: {
-      ...context.policy,
-      proposalMode: "manual",
-      // The explicit grant is schema-bound to one target-override proposal.
-      // Permit only that mutation class; preflight still forbids execution and
-      // the ordinary PIN-gated review path remains required for application.
-      allowModifyActionTargets: true
-    },
-    diagnostics: [...context.diagnostics, "Explicit diagnose_and_adapt run permits one target-override proposal with manual review only."]
   };
 }
 

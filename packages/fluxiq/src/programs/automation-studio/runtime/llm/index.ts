@@ -16,3 +16,11 @@ export * from "./evidence-loop.ts";
 export * from "./harness-options/index.ts";
 export * from "./stages/index.ts";
 export * from "./run-budget.ts";
+export type {
+  AutomationStudioLlmRunCallCharge,
+  AutomationStudioLlmRunCallChargeBasis,
+  AutomationStudioLlmRunCallDescription,
+  AutomationStudioLlmRunCallOutcome,
+  AutomationStudioLlmRunCallRecord
+} from "./run-call-record.ts";
+export * from "./runtime-session-grant.ts";

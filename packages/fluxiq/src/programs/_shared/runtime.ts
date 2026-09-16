@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { automationStudioRuntimeSessionGrantTaskKinds, AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -80,11 +80,12 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     (input) => input.executionGrant
       ? llmExecutionGrants.resolve(
         { ...input.executionGrant, projectId: input.projectId, flowId: input.flowId },
+        // What each entry point may spend its grant on. Narrower than the grant
+        // itself: Flow bootstrap gathers and builds, a runtime recovery
+        // diagnoses, gathers and repairs, and neither reaches the other's kinds.
         { allowedTaskKinds: input.executionGrant.purpose === "build_and_adapt"
           ? ["flow_bootstrap", "evidence_tool_decision"]
-          : input.executionGrant.purpose === "diagnose_and_adapt"
-            ? ["runtime_diagnosis", "runtime_patch"]
-            : ["runtime_diagnosis"] }
+          : automationStudioRuntimeSessionGrantTaskKinds(input.executionGrant.purpose) }
       )
       : undefined,
     (grantId) => llmExecutionGrants.revoke(grantId),

@@ -29,6 +29,7 @@ export {
 } from "./instruction.ts";
 export {
   AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
+  isAutomationStudioLlmRecentActionContext,
   packAutomationStudioLlmContext,
   type AutomationStudioLlmContextPacket,
   type AutomationStudioLlmRecentActionContext

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
   automationStudioLlmSignalTimedOut,
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
@@ -124,6 +125,14 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       maxOutputTokens: request.tokenLimits.maxOutputTokens
       , maxEstimatedCostUsd: request.maxEstimatedCostUsd
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
+      // What the call is, for its own line on the run's receipt.
+      , call: {
+        taskKind: request.taskKind,
+        ...(input.stage ? { stage: input.stage } : {}),
+        promptVersion: request.promptVersion,
+        provider: input.provider.metadata.provider,
+        model: input.provider.metadata.model
+      }
     })
     : null;
   if (reservation && !reservation.ok) {
@@ -143,7 +152,6 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   try {
     untrustedProviderResult = await runProviderWithEnforcedDeadline(input.provider, request, input.signal);
   } catch (error) {
-    if (reservation?.ok) reservation.lease.complete();
     const failure = normalizedAutomationStudioLlmProviderFailure(error);
     const diagnostics = [
       ...context.instructions.diagnostics,
@@ -157,6 +165,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
         }
       }
     ];
+    if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
     return {
       ok: false,
       request,
@@ -169,14 +178,18 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   try {
     providerResult = parseAutomationStudioLlmProviderResult(untrustedProviderResult, expectedOutput, input.flowBootstrap);
   } catch {
-    if (reservation?.ok) reservation.lease.complete();
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }];
+    if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
     return { ok: false, request, provider: input.provider.metadata, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
-  if (reservation?.ok) reservation.lease.complete(usageDiagnostics.length ? undefined : providerResult.usage);
   const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics];
   const ok = diagnostics.every((diagnostic) => diagnostic.severity !== "error");
+  // The provider's report goes to the ledger as it was given, over the
+  // request's limits or not. Withholding an overage made the ledger charge the
+  // smaller reservation instead and never count the breach, so a run that
+  // overspent read as a run that spent exactly what it reserved.
+  if (reservation?.ok) reservation.lease.complete(providerResult.usage, callOutcome(diagnostics));
   return {
     ok,
     request,
@@ -185,6 +198,14 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     ...(providerResult.usage ? { usage: providerResult.usage } : {}),
     diagnostics,
     intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, input.provider.metadata, providerResult.usage)
+  };
+}
+
+/** How a call ended, as its line on the run's receipt records it: codes, never messages. */
+function callOutcome(diagnostics: readonly AutomationStudioLlmDiagnostic[]): AutomationStudioLlmRunCallOutcome {
+  return {
+    validationOk: diagnostics.every((diagnostic) => diagnostic.severity !== "error"),
+    issueCodes: diagnostics.map((diagnostic) => diagnostic.code)
   };
 }
 

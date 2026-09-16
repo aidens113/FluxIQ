@@ -408,10 +408,14 @@ describe("Automation Runtime workspace", () => {
         }
       }
     })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat", purpose: "diagnosis_only", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
-    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
+    const adapting = runtimeLlmExecutionRequestFromFlow("project.one", {
       flowId: "flow.one",
       metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }
-    }, "diagnose_and_adapt")).toMatchObject({ ok: true, payload: { purpose: "diagnose_and_adapt", maxCalls: 2 } });
+    }, "diagnose_and_adapt");
+    // Saved `maxCalls: 1` does not pin an adapting run: it names no count and
+    // Core applies its own iterating default.
+    expect(adapting).toMatchObject({ ok: true, payload: { purpose: "diagnose_and_adapt" } });
+    expect(adapting.ok && adapting.payload).not.toHaveProperty("maxCalls");
     const source = FlowRunViewContent.toString();
     expect(source).toContain("commands.preflightLlm");
     expect(source).toContain("commands.issueLlmGrant");

@@ -6,7 +6,6 @@ import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../../../../nodes/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
-import type { JsonObject } from "../../../../../../core/index.ts";
 import { installPrimaryRouter, createFailingCanonicalFlow, adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 let tempRoot: string;
@@ -271,33 +270,33 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
 
+  // One call count still applies to a run: the one its provider resolver
+  // declares, because a grant mints exactly that many authorisations. The
+  // training settings' intervention limit used to be read as a provider-call
+  // cap too, and no longer is -- it counts interventions -- so the single call
+  // here is declared where a real host declares it.
   it("shares one atomic call budget across diagnosis and patch requests", async () => {
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
-        metadata: { provider: "mock", model: "one-call-model" },
-        runTask: async (request) => {
-          taskKinds.push(request.taskKind);
-          return request.taskKind === "runtime_patch"
-            ? { response: { kind: "runtime_patch", summary: "Should be blocked.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "divide", reason: "Blocked by run budget." }] }, usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 } }
-            : { response: { kind: "diagnosis", summary: "The denominator is zero." }, usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 } };
+        maxCallsPerRun: 1,
+        provider: {
+          metadata: { provider: "mock", model: "one-call-model" },
+          runTask: async (request) => {
+            taskKinds.push(request.taskKind);
+            return request.taskKind === "runtime_patch"
+              ? { response: { kind: "runtime_patch", summary: "Should be blocked.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "divide", reason: "Blocked by run budget." }] }, usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 } }
+              : { response: { kind: "diagnosis", summary: "The denominator is zero." }, usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 } };
+          }
         }
       })
     });
     const project = await service.createProject({ name: "Atomic LLM budget" });
-    const adaptive = adaptiveTrainingMetadata();
-    const training = adaptive.trainingModeSettings as JsonObject;
     const flow = await createFailingCanonicalFlow(service, project.id, {
       flowId: "flow.atomic-llm-budget",
-      metadata: {
-        ...adaptive,
-        trainingModeSettings: {
-          ...training,
-          budgets: { ...(training.budgets as JsonObject), maxInterventionsPerRun: 1 }
-        }
-      }
+      metadata: adaptiveTrainingMetadata()
     });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });

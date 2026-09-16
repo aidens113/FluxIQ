@@ -16,6 +16,7 @@
 // - `evidence_gathered` -- it ran and produced something observed.
 // - `no_evidence_found` -- it ran to a clean end and produced nothing.
 // - `budget_exhausted` -- a limit stopped it before it could answer.
+// - `no_progress` -- it could have kept going and had stopped getting anywhere.
 // - `unsafe_action_blocked` -- a refusal stopped it.
 //
 // **Success is constructible only from observed evidence.** That is Phase D's
@@ -44,8 +45,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOMES = Object.freeze([
   "evidence_gathered",
   /** It ran to a clean end and produced nothing usable. Not a failure, not a success. */
   "no_evidence_found",
-  /** A limit -- time, actions, provider calls, evidence, repetition -- stopped it. */
+  /** A limit -- time, actions, provider calls, evidence -- stopped it. */
   "budget_exhausted",
+  /** It was still allowed to run and had stopped getting anywhere, so it was stopped. */
+  "no_progress",
   /** Something it tried to do was refused as unsafe or out of scope. */
   "unsafe_action_blocked",
   /** It cannot proceed without a person. */
@@ -73,6 +76,7 @@ export const AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS = Object.freeze([
   "action_limit",
   "provider_call_limit",
   "repeat_window",
+  "no_progress",
   "destructive_action_refused",
   "out_of_scope_refused",
   "refusal_limit",
@@ -87,9 +91,13 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON: Readonly<Rec
   recovery_deadline_expired: "budget_exhausted",
   action_limit: "budget_exhausted",
   provider_call_limit: "budget_exhausted",
-  // Trying the same thing forever is a budget being spent, not a fault: the
-  // repeat window is what stops it, and it stops it the way a clock does.
-  repeat_window: "budget_exhausted",
+  // Going in circles is its own ending, and the reason it is not
+  // `budget_exhausted` is what an operator does next: a run that stopped on
+  // money or on the clock is a number to raise, and a run that kept asking the
+  // same question is not. Both repeat guards say so -- the action-level window
+  // and the streak guard that watches whether anything is still being learned.
+  repeat_window: "no_progress",
+  no_progress: "no_progress",
   destructive_action_refused: "unsafe_action_blocked",
   out_of_scope_refused: "unsafe_action_blocked",
   refusal_limit: "unsafe_action_blocked",
@@ -99,9 +107,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON: Readonly<Rec
 /**
  * Each evidence-loop failure code's outcome.
  *
- * The split that matters: the loop's own limits and its repeat detection are
- * `budget_exhausted`, and everything meaning the loop could not be driven
- * correctly is `failed`. `cancelled` is here for completeness only -- the
+ * The split that matters is three ways now, not two: the loop's own size limits
+ * are `budget_exhausted`, its repeat detection is `no_progress` -- a loop that
+ * asked twice for one thing did not run out of anything -- and everything
+ * meaning the loop could not be driven correctly is `failed`. `cancelled` is here for completeness only -- the
  * runner aborts the loop itself whenever a limit fires, so it knows the real
  * reason and never falls through to this row.
  */
@@ -110,8 +119,8 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE: Readonly<Re
   "llm_evidence_loop.invalid_decision": "failed",
   "llm_evidence_loop.unknown_tool": "failed",
   "llm_evidence_loop.duplicate_call": "failed",
-  "llm_evidence_loop.duplicate_tool_request": "budget_exhausted",
-  "llm_evidence_loop.repeat_without_progress": "budget_exhausted",
+  "llm_evidence_loop.duplicate_tool_request": "no_progress",
+  "llm_evidence_loop.repeat_without_progress": "no_progress",
   "llm_evidence_loop.tool_failed": "failed",
   "llm_evidence_loop.evidence_limit": "budget_exhausted",
   "llm_evidence_loop.iteration_limit": "budget_exhausted",
@@ -121,7 +130,6 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE: Readonly<Re
 /** Each run-budget diagnostic's outcome, for an exploration refused before it starts. */
 export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET: Readonly<Record<AutomationStudioLlmRunBudgetDiagnostic["code"], AutomationStudioExplorationOutcome>> = Object.freeze({
   "llm_budget.run_call_limit": "budget_exhausted",
-  "llm_budget.run_exploration_call_limit": "budget_exhausted",
   "llm_budget.run_total_limit": "budget_exhausted",
   "llm_budget.run_output_limit": "budget_exhausted",
   "llm_budget.run_cost_limit": "budget_exhausted",

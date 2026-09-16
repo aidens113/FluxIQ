@@ -6,6 +6,7 @@ import {
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
   automationStudioLlmTaskExpectsDiagnosis,
+  isAutomationStudioLlmRecentActionContext,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmProvider,
@@ -17,8 +18,10 @@ import {
   automationStudioLlmSignalTimedOut,
   AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
   AutomationStudioLlmProviderError,
-  type AutomationStudioLlmOpaqueSecretResolver
+  type AutomationStudioLlmOpaqueSecretResolver,
+  type AutomationStudioLlmProviderPreflightErrorCode
 } from "./provider-contract.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
@@ -159,14 +162,14 @@ export type AutomationStudioDeepSeekProviderOptions = {
 export function createAutomationStudioDeepSeekProvider(options: AutomationStudioDeepSeekProviderOptions): AutomationStudioLlmProvider {
   const secretReference = options.secretReference?.id?.trim();
   if (options.secretReference?.kind !== "secret_reference" || !/^secret:[a-z0-9_.:-]{1,180}$/i.test(secretReference ?? "") || /(?:sk-|bearer\s|api[_-]?key)/i.test(secretReference ?? "")) {
-    throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "A valid opaque DeepSeek secret reference is required.");
+    throw new AutomationStudioLlmProviderError("llm.provider_secret_reference_invalid", "A valid opaque DeepSeek secret reference is required.");
   }
   const model = options.model ?? AUTOMATION_STUDIO_DEEPSEEK_MODEL;
-  if (model !== AUTOMATION_STUDIO_DEEPSEEK_MODEL) throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "Only the deepseek-chat model is enabled.");
+  if (model !== AUTOMATION_STUDIO_DEEPSEEK_MODEL) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", "Only the deepseek-chat model is enabled.");
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) {
-    throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "DeepSeek response-byte limit is invalid.");
+    throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "DeepSeek response-byte limit is invalid.");
   }
   return {
     metadata: { provider: "deepseek", model },
@@ -177,7 +180,7 @@ export function createAutomationStudioDeepSeekProvider(options: AutomationStudio
         if (error instanceof AutomationStudioLlmProviderError) throw error;
         // Transport and response work is normalized inside runDeepSeekTask. Any
         // other escape happened while establishing the local request boundary.
-        throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "DeepSeek request setup failed.");
+        throw new AutomationStudioLlmProviderError("llm.provider_request_setup_failed", "DeepSeek request setup failed.");
       }
     }
   };
@@ -197,17 +200,17 @@ async function runDeepSeekTask(input: {
   try {
     validateDeepSeekRequest(input.request);
     if (!Number.isInteger(input.request.timeoutMs) || input.request.timeoutMs <= 0 || input.request.timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS) {
-      throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "LLM request timeout is outside the allowed provider range.");
+      throw new AutomationStudioLlmProviderError("llm.provider_request_timeout_invalid", "LLM request timeout is outside the allowed provider range.");
     }
     body = buildDeepSeekRequestBody(input.request, input.model);
     estimatedInputTokens = estimateAutomationStudioDeepSeekInputTokens(input.request, input.model);
     if (estimatedInputTokens > input.request.tokenLimits.maxInputTokens
       || estimatedInputTokens + input.request.tokenLimits.maxOutputTokens > input.request.tokenLimits.maxTotalTokens) {
-      throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "Outbound request exceeds the estimated input-token budget.");
+      throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Outbound request exceeds the estimated input-token budget.");
     }
   } catch (error) {
     if (error instanceof AutomationStudioLlmProviderError) throw error;
-    throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "DeepSeek request construction failed.");
+    throw new AutomationStudioLlmProviderError("llm.provider_request_construction_failed", "DeepSeek request construction failed.");
   }
   const controller = new AbortController();
   let timedOut = false;
@@ -237,7 +240,7 @@ async function runDeepSeekTask(input: {
       throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
     }
     if (typeof secret !== "string" || !secret.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
-    if (body.includes(secret)) throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "The outbound request contains the configured credential.");
+    if (body.includes(secret)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
     const response = await input.fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
       redirect: "manual",
@@ -351,45 +354,48 @@ function parseDeepSeekEnvelope(value: unknown, request: AutomationStudioLlmTaskR
   };
 }
 
+// Each check refuses with its own code, in the order they are made. They were
+// one condition and one code, which is how a stale field list went unnoticed.
 function validateDeepSeekRequest(request: AutomationStudioLlmTaskRequest): void {
   const validId = (value: string) => /^[a-z0-9_.:-]{1,200}$/i.test(value);
   const limits = request.tokenLimits;
-  if (!validId(request.requestId) || !validId(request.idempotencyKey)
-    || request.context.projectId.trim() === "" || request.context.flowId.trim() === "" || !boundedJson(request.context)
-    || !validRuntimePromptProjection(request)
-    || request.context.taskKind !== request.taskKind || request.expectedOutput !== expectedOutput(request.taskKind)
-    || (request.taskKind === "flow_bootstrap" && !validFlowBootstrapContext(request.context))
-    || (request.taskKind === "evidence_tool_decision" && !validEvidenceLoopContext(request.context))
-    || !Number.isInteger(request.estimatedInputTokens) || request.estimatedInputTokens < 0
+  if (!validId(request.requestId) || !validId(request.idempotencyKey)) refuse("llm.provider_request_identity_invalid", "DeepSeek request identity is invalid.");
+  if (request.context.projectId.trim() === "" || request.context.flowId.trim() === "") refuse("llm.provider_request_scope_invalid", "DeepSeek request names no project or Flow.");
+  if (!boundedJson(request.context)) refuse("llm.provider_request_context_unbounded", "DeepSeek request context is not bounded JSON.");
+  if (!validRecentActions(request.context.recentActions)) refuse("llm.provider_recent_actions_invalid", "DeepSeek request recent actions are not the packet's projection.");
+  if (!validFailureEvidence(request)) refuse("llm.provider_failure_evidence_invalid", "DeepSeek request failure evidence is not sanitized for this task.");
+  if (request.context.taskKind !== request.taskKind || request.expectedOutput !== expectedOutput(request.taskKind)) {
+    refuse("llm.provider_request_task_mismatch", "DeepSeek request task kind and expected output disagree.");
+  }
+  if (request.taskKind === "flow_bootstrap" && !validFlowBootstrapContext(request.context)) refuse("llm.provider_flow_bootstrap_context_invalid", "DeepSeek Flow bootstrap context is invalid.");
+  if (request.taskKind === "evidence_tool_decision" && !validEvidenceLoopContext(request.context)) refuse("llm.provider_evidence_loop_context_invalid", "DeepSeek evidence loop context is invalid.");
+  if (!Number.isInteger(request.estimatedInputTokens) || request.estimatedInputTokens < 0
     || !Number.isFinite(request.maxEstimatedCostUsd) || request.maxEstimatedCostUsd <= 0 || request.maxEstimatedCostUsd > 10
     || !Number.isInteger(limits.maxInputTokens) || !Number.isInteger(limits.maxOutputTokens) || !Number.isInteger(limits.maxTotalTokens)
     || limits.maxInputTokens <= 0 || limits.maxOutputTokens <= 0 || limits.maxTotalTokens <= 0 || limits.maxTotalTokens > 50_000
     || limits.maxInputTokens > limits.maxTotalTokens || limits.maxOutputTokens > limits.maxTotalTokens
     || request.estimatedInputTokens > limits.maxInputTokens || request.estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens) {
-    throw new AutomationStudioLlmProviderError("llm.provider_configuration_invalid", "DeepSeek request contract is invalid.");
+    refuse("llm.provider_request_limits_invalid", "DeepSeek request token or cost limits are invalid.");
   }
 }
 
-function validRuntimePromptProjection(request: AutomationStudioLlmTaskRequest): boolean {
+function refuse(code: AutomationStudioLlmProviderPreflightErrorCode, message: string): never {
+  throw new AutomationStudioLlmProviderError(code, message);
+}
+
+function validFailureEvidence(request: AutomationStudioLlmTaskRequest): boolean {
   const evidence = request.context.failureEvidence;
-  if (evidence !== undefined) {
-    if (request.taskKind !== "runtime_diagnosis" && request.taskKind !== "runtime_patch") return false;
-    try {
-      if (JSON.stringify(sanitizeAutomationStudioLlmFailureEvidence(request.taskKind, evidence)) !== JSON.stringify(evidence)) return false;
-    } catch { return false; }
-  }
-  const actions = request.context.recentActions;
+  if (evidence === undefined) return true;
+  if (request.taskKind !== "runtime_diagnosis" && request.taskKind !== "runtime_patch") return false;
+  try {
+    return JSON.stringify(sanitizeAutomationStudioLlmFailureEvidence(request.taskKind, evidence)) === JSON.stringify(evidence);
+  } catch { return false; }
+}
+
+/** The packet's own projection, checked by the packet's own rule. */
+function validRecentActions(actions: unknown): boolean {
   if (!actions) return true;
-  if (!Array.isArray(actions) || actions.length > AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS) return false;
-  const allowed = new Set(["attemptId", "nodeId", "definitionId", "order", "status", "route", "durationMs", "comparisonStatus"]);
-  return actions.every((action) => {
-    if (!isRecord(action) || Object.keys(action).some((key) => !allowed.has(key))) return false;
-    if (typeof action.attemptId !== "string" || typeof action.nodeId !== "string" || typeof action.definitionId !== "string"
-      || !Number.isSafeInteger(action.order) || typeof action.status !== "string") return false;
-    if ([action.attemptId, action.nodeId, action.definitionId, action.status, action.route, action.comparisonStatus]
-      .some((value) => value !== undefined && (typeof value !== "string" || value.length < 1 || value.length > 200))) return false;
-    return action.durationMs === undefined || (Number.isSafeInteger(action.durationMs) && (action.durationMs as number) >= 0 && (action.durationMs as number) <= 86_400_000);
-  });
+  return Array.isArray(actions) && actions.length <= AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS && actions.every(isAutomationStudioLlmRecentActionContext);
 }
 
 function boundedJson(root: unknown): boolean {
@@ -593,11 +599,15 @@ function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["cont
     && selection.missingRequiredTerms.length === 0;
 }
 
+// The iteration and evidence bounds are the loop's own ceilings. They were a
+// literal sixteen here, left behind when the loop's ceiling was raised, so a
+// real exploration was refused at its seventeenth decision.
 function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["context"]): boolean {
   const loop = context.evidenceLoop;
-  if (!isRecord(loop) || !Number.isInteger(loop.iteration) || (loop.iteration as number) < 1 || (loop.iteration as number) > 16
+  if (!isRecord(loop) || !Number.isInteger(loop.iteration) || (loop.iteration as number) < 1
+    || (loop.iteration as number) > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
     || !Array.isArray(loop.tools) || loop.tools.length > 32
-    || !Array.isArray(loop.evidence) || loop.evidence.length > 16) return false;
+    || !Array.isArray(loop.evidence) || loop.evidence.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return false;
   const ids = new Set<string>();
   for (const tool of loop.tools) {
     if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "repeatPolicy", "initialObservation"].includes(key))

@@ -31,9 +31,6 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
-  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
-  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
-  AUTOMATION_STUDIO_LLM_DEFAULT_MAX_EXPLORATION_CALLS_PER_RUN,
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AutomationStudioLlmRunBudgetLedger,
   resolveAutomationStudioLlmTokenLimits,
@@ -57,8 +54,10 @@ import type { AutomationStudioRuntimeExploration } from "../runtime-exploration.
 import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structured-diagnosis.ts";
 import { runAutomationStudioRecoveryExploration } from "./exploration.ts";
+import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches } from "./patches.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
+import { resolveAutomationStudioRecoveryRunBudget } from "./run-budget.ts";
 
 export type AutomationStudioRuntimeRecoveryAnnotationInput = {
   ports: AutomationStudioRuntimeRecoveryPorts;
@@ -74,20 +73,7 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
   graphOptions?: AutomationStudioGraphExecutionOptions | undefined;
   executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"] | undefined;
   useReusableContext?: true | undefined;
-  /** Provider calls a bounded exploration may make on this run, over and above
-   * the diagnosis and the patch; absent means
-   * `AUTOMATION_STUDIO_LLM_DEFAULT_MAX_EXPLORATION_CALLS_PER_RUN`. Its own
-   * number rather than a wider `maxCallsPerRun`, so somebody who sets the
-   * intervention limit to two still gets two diagnosis-and-patch calls from it. */
-  explorationCallAllowance?: number | undefined;
 };
-
-/** Core's default per-run token pot, per call the run may make. It used to be
- * the literal 12_000 below, written when a run meant two calls, so 6_000 x 2 is
- * that number unchanged; sizing it per call gives an exploration's calls tokens
- * to spend without widening anything a person set, because
- * `settings.budgets.maxTokensPerRun` still binds exactly as written when it is. */
-const AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_CALL = 6_000;
 
 /** One failed run, taken through the loop's four stages at the failure entry point. */
 export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
@@ -96,7 +82,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const ports = input.ports;
   if (!input.context) return input.detail;
   if (input.detail.summary.status !== "failed") return input.detail;
-  const explicitGrantBudget = input.executionGrant?.purpose === "diagnose_and_adapt" || input.executionGrant?.purpose === "diagnosis_only";
+  // A person who authorized this run said what it may spend, so the run is held
+  // to that rather than to the training settings' no-grant budget -- including
+  // an exploring run, whose grant is the one most likely to need more than it.
+  const grantPurpose = input.executionGrant?.purpose;
+  const explicitGrantBudget = grantPurpose === "diagnose_and_adapt" || grantPurpose === "diagnosis_only" || grantPurpose === "explore_and_adapt";
+  const executionPurpose = grantPurpose === "diagnose_and_adapt" || grantPurpose === "explore_and_adapt" ? { executionPurpose: grantPurpose } : {};
   if (!input.context.behavior.invokeLlm || (!explicitGrantBudget && !input.context.budgetDecision.ok)) {
     return {
       ...input.detail,
@@ -157,21 +148,16 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     projectId: input.context.projectId,
     flowId: input.context.flowId
   }).catch(() => []);
-  const explicitCallLimit = input.executionGrant?.purpose === "diagnose_and_adapt"
-    ? 2
-    : input.executionGrant?.purpose === "diagnosis_only"
-      ? 1
-      : undefined;
-  const configuredCallLimits = [input.context.policy.maxInterventionsPerRun, input.context.settings.budgets?.maxInterventionsPerRun, providerResolution?.maxCallsPerRun]
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-  const maxCallsPerRun = explicitCallLimit ?? Math.max(1, Math.trunc(configuredCallLimits.length ? Math.min(...configuredCallLimits) : 2));
-  // The exploration's own call number, and the run's total. The second matters
-  // as much as the first: the per-run token pot below is a multiple of "how many
-  // calls may this run make", so a pot sized for the diagnosis and the patch
-  // alone would refuse an exploration on tokens the instant the call allowance
-  // stopped refusing it on calls, and the split would change nothing.
-  const explorationCallAllowance = Math.max(1, Math.trunc(input.explorationCallAllowance ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_EXPLORATION_CALLS_PER_RUN));
-  const totalCallAllowance = maxCallsPerRun + explorationCallAllowance;
+  // What the run may spend: its cost ceiling and token budget, with the call
+  // count only a runaway backstop. `run-budget.ts` says why each number is what
+  // it is; the clock and the progress guard live in the exploration ledger.
+  const budget = resolveAutomationStudioRecoveryRunBudget({
+    explicitGrantBudget,
+    resolution: providerResolution,
+    maxTokensPerRun: input.context.settings.budgets?.maxTokensPerRun,
+    policyMaxEstimatedCostUsdPerRun: input.context.policy.maxEstimatedCostUsdPerRun
+  });
+  const maxEstimatedCostUsdPerCall = budget.maxEstimatedCostUsdPerCall;
   const requestedTokenLimits = providerResolution?.tokenLimits;
   let failureEvidence: JsonObject | undefined;
   if (provider && failedAttempt && ports.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
@@ -220,30 +206,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       };
     }
   }
-  const requestedTotalTokensPerRun = (requestedTokenLimits?.maxTotalTokens ?? 10_000) * totalCallAllowance;
-  const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(
-    AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST * totalCallAllowance,
-    explicitGrantBudget
-      ? requestedTotalTokensPerRun
-      : Math.min(input.context.settings.budgets?.maxTokensPerRun ?? AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_CALL * totalCallAllowance, requestedTotalTokensPerRun)
-  )));
-  const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (requestedTokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * totalCallAllowance)));
-  // The money ceiling does not move. It is still the per-call cost the provider
-  // resolution allows times the *ordinary* call limit, and what changes is only
-  // how that fixed purse is divided: one share per call the run may make, so an
-  // exploration is paid for out of the same money rather than out of more of it.
-  const requestedEstimatedCostUsdPerRun = providerResolution?.maxTotalEstimatedCostUsd ?? (providerResolution?.maxEstimatedCostUsd ?? 0.25) * maxCallsPerRun;
-  const maxEstimatedCostUsdPerRun = explicitGrantBudget
-    ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, requestedEstimatedCostUsdPerRun)
-    : Math.min(0.25, input.context.policy.maxEstimatedCostUsdPerRun ?? 0.25, requestedEstimatedCostUsdPerRun);
-  const maxEstimatedCostUsdPerCall = maxEstimatedCostUsdPerRun / totalCallAllowance;
-  const runBudget = new AutomationStudioLlmRunBudgetLedger({
-    maxCallsPerRun,
-    maxExplorationCallsPerRun: explorationCallAllowance,
-    maxTotalTokensPerRun,
-    maxOutputTokensPerRun,
-    maxEstimatedCostUsdPerRun
-  });
+  const runBudget = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
   const reusableContextResult = input.useReusableContext === true && failureEvidence
     ? await ports.reusableLlmContextForFreshEvidence({
       optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
@@ -275,21 +238,23 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
     ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
     now,
-    metadata: {
-      source: "runRuntimeSession",
-      expectedOutput: "diagnosis",
-      ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
-    }
+    metadata: { source: "runRuntimeSession", expectedOutput: "diagnosis", ...executionPurpose }
   });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
   const plan = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
+  const patchWillFollow = Boolean(plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
   let exploration: AutomationStudioRuntimeExploration | undefined;
   if (plan.explorationRequested && provider && ports.llmEvidenceRuntime) {
     const scope = await ports.flowScope(input.context.projectId, input.context.flowId);
-    if (scope) {
-      exploration = await runAutomationStudioRecoveryExploration({
+    // The patch's call, tokens and money are set aside before the exploration
+    // may spend anything, and handed back the moment it ends.
+    const patchReserve = scope && patchWillFollow
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall })
+      : undefined;
+    try {
+      exploration = scope ? await runAutomationStudioRecoveryExploration({
         binding: ports.llmEvidenceRuntime,
         scope,
         // Authoritative over side effects. `allowSideEffectsWithoutPolicy` is
@@ -307,18 +272,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         instructions,
         runDetail: input.detail,
         recoveryContext,
-        ...(failureEvidence ? { failureEvidence } : {}),
         ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
         runBudget,
         ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
         ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
         maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
         recoveryDeadline,
+        ...(patchReserve?.explorationBudget ? { budget: patchReserve.explorationBudget } : {}),
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
-      });
+      }) : undefined;
+    } finally {
+      patchReserve?.release();
     }
   }
-  const patchResult = plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
+  const patchResult = patchWillFollow && provider && input.runtimeFlow && input.failedTraceAttempt
     ? await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
       projectId: input.context.projectId,
@@ -339,11 +306,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
       expectedOutput: "runtime_patch",
       now,
-      metadata: {
-        source: "runRuntimeSession",
-        expectedOutput: "runtime_patch",
-        ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
-      }
+      metadata: { source: "runRuntimeSession", expectedOutput: "runtime_patch", ...executionPurpose }
     })
     : null;
   const applied = patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt
@@ -362,6 +325,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(input.graphOptions ? { graphOptions: input.graphOptions } : {})
     })
     : { attempts: [], adaptationIds: [], changeProposalIds: [] };
+  // One line per provider call, beside the totals they add up to. The
+  // interventions below keep only the diagnosis and the patch; the calls that
+  // gathered evidence between them leave none, and are itemized only here.
+  const providerCalls = runBudget.callRecords(input.detail.summary.runId);
   const withIntervention: AutomationStudioFlowRunDetail = {
     ...input.detail,
     interventions: [...input.detail.interventions, result.intervention, ...(patchResult ? [patchResult.intervention] : [])],
@@ -374,6 +341,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         providerConfigured: Boolean(provider),
         ok: result.ok && (patchResult?.ok ?? true),
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
+        providerCalls: providerCalls.calls,
+        providerCallsOmitted: providerCalls.omitted,
         ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
         recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,

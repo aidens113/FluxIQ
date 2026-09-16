@@ -21,7 +21,16 @@
 // Core's ceiling and the ledger is the binding limit, so the cap is enforced
 // where it can be reported precisely. A refused action still counts: an
 // exploration that spends its whole allowance being told no has spent it, and
-// counting only the successes is how a budget stops bounding anything.
+// counting only the successes is how a budget stops bounding anything. The
+// count is a runaway backstop, not the working limit -- an exploration that is
+// still learning something is meant to reach the end of the recovery's clock or
+// the run's tokens, not to be cut off at a small number of turns.
+//
+// **A progress guard.** The one bound here that is not a quantity. Cost, tokens
+// and the clock all answer "may it spend more"; `progress-guard.ts` answers
+// "did the last few steps do anything", and it is what makes the counts above
+// safe to set out of the way. The ledger owns the verdict because the ledger is
+// the only thing that records why an exploration stopped.
 //
 // **A repeat limit across mutations.** The loop refuses the identical request
 // twice within one mutation epoch, and refuses re-observing without a mutation
@@ -45,6 +54,12 @@
 
 import type { AutomationStudioExplorationStopReason } from "./exploration-outcome.ts";
 import {
+  AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
+  AutomationStudioExplorationProgressGuard,
+  type AutomationStudioExplorationNoProgressReason
+} from "./progress-guard.ts";
+import {
+  AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
   automationStudioRecoveryDeadlineRemainingMs,
   type AutomationStudioRecoveryDeadline
 } from "./recovery-deadline.ts";
@@ -76,6 +91,8 @@ export type AutomationStudioExplorationBudget = {
   maxRefusedActions: number;
   /** How many times one identical action may be attempted, mutations notwithstanding. */
   maxRepeatsPerAction: number;
+  /** Consecutive steps that may fail to advance before the loop is stopped. */
+  maxStepsWithoutProgress: number;
   /** Not a switch. There is no value that turns destructive actions on. */
   allowDestructive: false;
   scopePolicy: AutomationStudioExplorationScopePolicy;
@@ -83,12 +100,19 @@ export type AutomationStudioExplorationBudget = {
 
 export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS: AutomationStudioExplorationBudget = Object.freeze({
   schemaVersion: "automation-studio.exploration-budget.v1",
-  maxDurationMs: 30_000,
-  maxActions: 8,
-  maxProviderCalls: 8,
+  // Time, actions and provider calls are runaway backstops. They are set where
+  // a loop that is still getting somewhere will not meet them: the recovery's
+  // own clock, the run's token pot and the progress guard are what a healthy
+  // exploration actually ends on. The clock is the recovery deadline's own
+  // default, read rather than copied, so raising the recovery's limit raises
+  // this with it rather than leaving a shorter cap underneath it.
+  maxDurationMs: AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
+  maxActions: 24,
+  maxProviderCalls: 24,
   maxEvidenceBytes: 262_144,
   maxRefusedActions: 2,
   maxRepeatsPerAction: 2,
+  maxStepsWithoutProgress: AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
   allowDestructive: false,
   scopePolicy: Object.freeze({ kind: "same_scope" })
 });
@@ -104,12 +128,13 @@ export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS: AutomationStudioExpl
  * equal to the loop's own limits, so they cannot drift apart silently.
  */
 export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS = Object.freeze({
-  maxDurationMs: 120_000,
-  maxActions: 16,
-  maxProviderCalls: 16,
+  maxDurationMs: 600_000,
+  maxActions: 64,
+  maxProviderCalls: 64,
   maxEvidenceBytes: 1_048_576,
   maxRefusedActions: 8,
-  maxRepeatsPerAction: 4
+  maxRepeatsPerAction: 4,
+  maxStepsWithoutProgress: 8
 });
 
 const MIN_EVIDENCE_BYTES = 4_096;
@@ -133,6 +158,7 @@ export function resolveAutomationStudioExplorationBudget(input?: Partial<Omit<Au
     maxEvidenceBytes: clamp(input?.maxEvidenceBytes, defaults.maxEvidenceBytes, MIN_EVIDENCE_BYTES, ceilings.maxEvidenceBytes),
     maxRefusedActions: clamp(input?.maxRefusedActions, defaults.maxRefusedActions, 1, ceilings.maxRefusedActions),
     maxRepeatsPerAction: clamp(input?.maxRepeatsPerAction, defaults.maxRepeatsPerAction, 1, ceilings.maxRepeatsPerAction),
+    maxStepsWithoutProgress: clamp(input?.maxStepsWithoutProgress, defaults.maxStepsWithoutProgress, 1, ceilings.maxStepsWithoutProgress),
     allowDestructive: false,
     scopePolicy: scopePolicy(input?.scopePolicy) ?? defaults.scopePolicy
   };
@@ -172,6 +198,7 @@ export class AutomationStudioExplorationBudgetLedger {
   private readonly expiresAtMs: number;
   private readonly expiryReason: AutomationStudioExplorationStopReason;
   private readonly attempts = new Map<string, number>();
+  private readonly progress: AutomationStudioExplorationProgressGuard;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped: AutomationStudioExplorationStopReason | undefined;
   private actionCount = 0;
@@ -187,6 +214,7 @@ export class AutomationStudioExplorationBudgetLedger {
     externalSignal?: AbortSignal;
   }) {
     this.budget = input.budget;
+    this.progress = new AutomationStudioExplorationProgressGuard({ maxStepsWithoutProgress: input.budget.maxStepsWithoutProgress });
     this.now = input.now ?? (() => Date.now());
     const ownExpiry = input.startedAtMs + input.budget.maxDurationMs;
     const recoveryExpiry = input.recoveryDeadline
@@ -230,6 +258,16 @@ export class AutomationStudioExplorationBudgetLedger {
     return this.providerCallCount;
   }
 
+  /** Why the exploration stopped advancing, when it did. Absent otherwise. */
+  get noProgressReason(): AutomationStudioExplorationNoProgressReason | undefined {
+    return this.stopped === "no_progress" ? this.progress.reason : undefined;
+  }
+
+  /** Steps in a row that produced nothing new. Zero while the loop is learning. */
+  get stepsWithoutProgress(): number {
+    return this.progress.stepsWithoutProgress;
+  }
+
   remainingMs(): number {
     return Number.isFinite(this.expiresAtMs) ? Math.max(0, this.expiresAtMs - this.now()) : Number.POSITIVE_INFINITY;
   }
@@ -264,13 +302,34 @@ export class AutomationStudioExplorationBudgetLedger {
    * kept being told no" into `unsafe_action_blocked` rather than into an
    * exploration that quietly found nothing.
    */
-  recordAction(input: { refused?: AutomationStudioExplorationStopReason }): void {
+  recordAction(input: {
+    /** The action's identity, as `admitAction` was given it. */
+    signature: string;
+    /** A digest of what came back, so a held answer is recognised by content. */
+    evidenceDigest: string;
+    /** Bytes the action actually carried. Zero is not an answer. */
+    evidenceBytes: number;
+    refused?: AutomationStudioExplorationStopReason;
+  }): void {
     if (input.refused) {
       this.refusedCount += 1;
+      // The refusal allowance is charged before the progress streak on purpose.
+      // Both can come due on the same action, and "every action left was
+      // refused" is the more specific thing to report: it names what to change
+      // about the exploration's scope, where the streak only says it stopped
+      // learning. First reason wins inside `stop`, so the order here is the
+      // decision.
       if (this.refusedCount >= this.budget.maxRefusedActions) this.stop(input.refused);
-      return;
+    } else {
+      this.observedCount += 1;
     }
-    this.observedCount += 1;
+    const verdict = this.progress.record({
+      signature: input.signature,
+      evidenceDigest: input.evidenceDigest,
+      evidenceBytes: input.evidenceBytes,
+      refused: input.refused !== undefined
+    });
+    if (!verdict.advanced && verdict.stalled) this.stop("no_progress");
   }
 
   /** Release the timer. Safe to call more than once. */

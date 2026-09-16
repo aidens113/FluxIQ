@@ -63,7 +63,7 @@ describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
       fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
     });
 
-    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_input_budget_exceeded" });
     expect(secretCalls).toBe(0);
   });
 
@@ -109,7 +109,7 @@ describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
       fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
     });
 
-    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_input_budget_exceeded" });
     expect(secretCalls).toBe(0);
   });
 
@@ -123,7 +123,7 @@ describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
       fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
     });
 
-    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_flow_bootstrap_context_invalid" });
     expect(secretCalls).toBe(0);
   });
   it.each([
@@ -193,7 +193,7 @@ describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
       fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
     });
 
-    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_flow_bootstrap_context_invalid" });
     expect(secretCalls).toBe(0);
   });
   it.each(["recordingId", "timelineEvents"])("rejects forbidden bootstrap context field %s before secret resolution", async (field) => {
@@ -206,7 +206,7 @@ describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
       fetchImpl: (async () => { throw new Error("transport must not run"); }) as typeof fetch
     });
 
-    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(request)).rejects.toMatchObject({ code: "llm.provider_flow_bootstrap_context_invalid" });
     expect(secretCalls).toBe(0);
   });
 

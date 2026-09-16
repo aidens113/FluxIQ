@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 
 describe("Automation Studio LLM run budget ledger", () => {
   it("atomically reserves calls and worst-case output, then releases unused capacity on completion", () => {
@@ -45,49 +45,82 @@ describe("Automation Studio LLM run budget ledger", () => {
     expect(ledger.snapshot("run.cost").estimatedCostUsd).toBe(0.2);
   });
 
-  // The exploration used to borrow from `maxCallsPerRun`, so a default run's two
-  // calls went to the diagnosis and the patch and the exploration was refused
-  // before it looked at anything. The two allowances are now counted apart, and
-  // the direction that matters most is the second one: an undeclared call must
-  // not be able to reach the exploration's allowance by saying nothing.
-  it("counts exploration calls against their own allowance and keeps ordinary calls out of it", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxExplorationCallsPerRun: 2, maxTotalTokensPerRun: 10_000, maxOutputTokensPerRun: 10_000, maxEstimatedCostUsdPerRun: 1 });
-    for (const requestId of ["request.diagnosis", "request.patch"]) {
-      const lease = ledger.reserve({ runId: "run.split", requestId, estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1 });
-      expect(lease.ok).toBe(true);
-      if (lease.ok) lease.lease.complete({ inputTokens: 10, outputTokens: 10, totalTokens: 20 });
+  // The decision this replaced: a run used to be bounded by a small call count
+  // -- two for the diagnosis and the patch -- and an exploration was refused
+  // before it looked at anything. A run is now bounded by tokens and money, and
+  // a run whose calls come in under budget keeps going.
+  it("lets a run make far more calls than the old limits when tokens and money allow", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 144_000, maxOutputTokensPerRun: 48_000, maxEstimatedCostUsdPerRun: 0.25 });
+    for (let index = 0; index < 40; index += 1) {
+      const lease = ledger.reserve({ runId: "run.long", requestId: `request.${index}`, estimatedInputTokens: 8_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.25 / 24, allowance: index % 2 ? "exploration" : "run" });
+      expect(lease).toMatchObject({ ok: true });
+      if (lease.ok) lease.lease.complete({ inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400, estimatedCostUsd: 0.002 });
     }
-    // The ordinary allowance is spent, and saying nothing does not reach the other one.
-    expect(ledger.reserve({ runId: "run.split", requestId: "request.third", estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1 }))
-      .toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_call_limit" } });
 
-    for (const requestId of ["request.explore.one", "request.explore.two"]) {
-      const lease = ledger.reserve({ runId: "run.split", requestId, estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1, allowance: "exploration" });
-      expect(lease.ok).toBe(true);
-      if (lease.ok) lease.lease.complete({ inputTokens: 10, outputTokens: 10, totalTokens: 20 });
-    }
-    expect(ledger.reserve({ runId: "run.split", requestId: "request.explore.three", estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1, allowance: "exploration" }))
-      .toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_exploration_call_limit" } });
-    expect(ledger.snapshot("run.split")).toMatchObject({ calls: 2, explorationCalls: 2, pendingCalls: 0 });
+    expect(ledger.snapshot("run.long")).toMatchObject({ calls: 40, explorationCalls: 20, totalTokens: 56_000, pendingCalls: 0 });
   });
 
-  // Separate call allowances, one purse. An exploration that has calls left and
-  // no money is still refused, which is what stops "its own allowance" becoming
-  // a second budget to spend from.
-  it("holds exploration calls to the same global token and cost ceilings", () => {
-    const tokens = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxExplorationCallsPerRun: 4, maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 300, maxEstimatedCostUsdPerRun: 1 });
+  // Exploration is a label on the receipt now, not a second allowance. It is
+  // counted inside `calls`, and it draws on the one backstop like everything
+  // else, so there is no longer a number that bounds only one kind of call.
+  it("counts exploration calls on the receipt and against the one backstop", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 3, maxTotalTokensPerRun: 10_000, maxOutputTokensPerRun: 10_000, maxEstimatedCostUsdPerRun: 1 });
+    for (const [requestId, allowance] of [["request.diagnosis", "run"], ["request.explore", "exploration"], ["request.patch", "run"]] as const) {
+      const lease = ledger.reserve({ runId: "run.label", requestId, estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1, allowance });
+      expect(lease.ok).toBe(true);
+      if (lease.ok) lease.lease.complete({ inputTokens: 10, outputTokens: 10, totalTokens: 20 });
+    }
+
+    expect(ledger.snapshot("run.label")).toMatchObject({ calls: 3, explorationCalls: 1 });
+    expect(ledger.reserve({ runId: "run.label", requestId: "request.more", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.1, allowance: "exploration" }))
+      .toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_call_limit" } });
+  });
+
+  // The backstop is still there for the one case the real guards cannot catch:
+  // calls that cost nothing and use no tokens, forever.
+  it("defaults the call count to a far-away backstop that still stops a runaway", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
+    let admitted = 0;
+    for (let index = 0; index < AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP + 5; index += 1) {
+      const lease = ledger.reserve({ runId: "run.runaway", requestId: `request.${index}`, estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.000_001 });
+      if (!lease.ok) {
+        expect(lease.diagnostic.code).toBe("llm_budget.run_call_limit");
+        break;
+      }
+      admitted += 1;
+      lease.lease.complete({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
+    }
+
+    expect(AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP).toBeGreaterThanOrEqual(100);
+    expect(admitted).toBe(AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP);
+  });
+
+  // With calls out of the way, money and tokens are what end a run -- and they
+  // still end it, on their own codes, with the backstop nowhere near.
+  it("still stops a run at its token or cost ceiling, whatever the call count", () => {
+    const tokens = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 300, maxEstimatedCostUsdPerRun: 1 });
     const first = tokens.reserve({ runId: "run.global", requestId: "request.one", estimatedInputTokens: 150, maxOutputTokens: 100, allowance: "exploration", maxEstimatedCostUsd: 0.1 });
     expect(first.ok).toBe(true);
     if (first.ok) first.lease.complete();
     expect(tokens.reserve({ runId: "run.global", requestId: "request.two", estimatedInputTokens: 150, maxOutputTokens: 100, allowance: "exploration", maxEstimatedCostUsd: 0.1 }))
       .toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_total_limit" } });
 
-    const cost = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxExplorationCallsPerRun: 4, maxTotalTokensPerRun: 10_000, maxOutputTokensPerRun: 10_000, maxEstimatedCostUsdPerRun: 0.15 });
-    const paid = cost.reserve({ runId: "run.purse", requestId: "request.one", estimatedInputTokens: 10, maxOutputTokens: 10, allowance: "exploration", maxEstimatedCostUsd: 0.1 });
-    expect(paid.ok).toBe(true);
-    if (paid.ok) paid.lease.complete();
-    expect(cost.reserve({ runId: "run.purse", requestId: "request.two", estimatedInputTokens: 10, maxOutputTokens: 10, allowance: "exploration", maxEstimatedCostUsd: 0.1 }))
-      .toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_cost_limit" } });
+    const cost = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 0.255 });
+    let paid = 0;
+    for (let index = 0; index < 100; index += 1) {
+      const lease = cost.reserve({ runId: "run.purse", requestId: `request.${index}`, estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.02 });
+      if (!lease.ok) {
+        expect(lease.diagnostic.code).toBe("llm_budget.run_cost_limit");
+        break;
+      }
+      paid += 1;
+      lease.lease.complete({ inputTokens: 5, outputTokens: 5, totalTokens: 10, estimatedCostUsd: 0.01 });
+    }
+    // Each call reserves two cents and spends one, so the twenty-fifth
+    // reservation is the first that would overrun a 25.5-cent purse. The run
+    // stops there, on money, nowhere near the backstop of 250.
+    expect(paid).toBe(24);
+    expect(cost.snapshot("run.purse").estimatedCostUsd).toBeLessThanOrEqual(0.255);
   });
 
   it("charges valid actual overages instead of under-accounting them", () => {
@@ -96,5 +129,30 @@ describe("Automation Studio LLM run budget ledger", () => {
     expect(reserved.ok).toBe(true);
     if (reserved.ok) reserved.lease.complete({ inputTokens: 80, outputTokens: 60, totalTokens: 140, estimatedCostUsd: 0.2 });
     expect(ledger.snapshot("run.overage")).toMatchObject({ inputTokens: 80, outputTokens: 60, totalTokens: 140, estimatedCostUsd: 0.2, budgetBreaches: 1 });
+  });
+
+  // A hold is a reservation no call spends. While it is held, every other
+  // reservation is refused as if it were a call in flight; released, it leaves
+  // no trace on the receipt, and a lease settles only once.
+  it("holds a reservation that other calls cannot spend, and releases it without charging anything", () => {
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 1_000, maxOutputTokensPerRun: 1_000, maxEstimatedCostUsdPerRun: 0.2 });
+    const hold = ledger.reserve({ runId: "run.hold", requestId: "recovery.patch-reserve", estimatedInputTokens: 400, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1 });
+    expect(hold.ok).toBe(true);
+    if (!hold.ok) return;
+    expect(ledger.snapshot("run.hold")).toMatchObject({ calls: 0, pendingCalls: 1 });
+    // Tokens, money and the call count are each held.
+    expect(ledger.reserve({ runId: "run.hold", requestId: "request.tokens", estimatedInputTokens: 450, maxOutputTokens: 100, maxEstimatedCostUsd: 0.05 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_total_limit" } });
+    expect(ledger.reserve({ runId: "run.hold", requestId: "request.money", estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.11 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_cost_limit" } });
+    const explore = ledger.reserve({ runId: "run.hold", requestId: "request.explore", estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.05, allowance: "exploration" });
+    expect(explore.ok).toBe(true);
+    if (explore.ok) explore.lease.complete({ inputTokens: 5, outputTokens: 5, totalTokens: 10, estimatedCostUsd: 0.01 });
+    expect(ledger.reserve({ runId: "run.hold", requestId: "request.third", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.01 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_call_limit" } });
+
+    hold.lease.release();
+    hold.lease.release();
+    hold.lease.complete({ inputTokens: 400, outputTokens: 100, totalTokens: 500 });
+    expect(ledger.snapshot("run.hold")).toEqual({ calls: 1, explorationCalls: 1, inputTokens: 5, outputTokens: 5, totalTokens: 10, estimatedCostUsd: 0.01, budgetBreaches: 0, pendingCalls: 0 });
+    // What was held is spendable again, by the call it was held for.
+    expect(ledger.reserve({ runId: "run.hold", requestId: "request.patch", estimatedInputTokens: 400, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1 }).ok).toBe(true);
   });
 });

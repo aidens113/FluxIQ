@@ -93,11 +93,10 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   timeoutMs?: number;
   signal?: AbortSignal;
   runBudget?: AutomationStudioLlmRunBudgetLedger;
-  /** Which of the run's two call allowances this call draws on. Absent means
-   * the ordinary run budget, so a bounded exploration has to say that it is
-   * one: a call that declares nothing can never reach the exploration's
-   * allowance, which is what keeps that allowance a separate, visible number
-   * rather than a wider `maxCallsPerRun` in disguise. */
+  /** What kind of call this is, for the run's receipt: an exploration
+   * decision says `exploration`, everything else is an ordinary run call. It
+   * is a label only -- every call draws on the same backstop, token budget
+   * and cost ceiling. */
   runBudgetAllowance?: AutomationStudioLlmRunBudgetAllowance;
   now?: () => number;
   metadata?: JsonObject;

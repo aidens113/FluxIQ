@@ -3,6 +3,7 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
@@ -25,9 +26,10 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
       if ((payload as Record<string, unknown>).useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      const runIntent: "diagnosis_only" | "diagnose_and_adapt" | undefined = payload.runIntent === "diagnosis_only"
-        ? "diagnosis_only"
-        : payload.runIntent === "diagnose_and_adapt" ? "diagnose_and_adapt" : undefined;
+      // Every purpose a runtime session runs under, named in one place, so
+      // `explore_and_adapt` is reachable from a failed run rather than being a
+      // capability nothing could ask for.
+      const runIntent = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((purpose) => purpose === payload.runIntent);
       const llmExecution = runIntent && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: runIntent } : undefined;
       if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A supported explicit LLM intent and grant are required together." };
       if (llmExecution && payload.runId !== undefined) {

@@ -89,9 +89,9 @@ describe("Runtime Debug mounted diagnosis authorization", () => {
     expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({
       keyId: "key.deepseek",
       purpose: "diagnosis_only",
-      maxCalls: 1,
-      maxUses: 1
+      maxCalls: 1
     }));
+    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxUses");
     expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
     expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
     expect(runtimeCommands.preflightLlm).toHaveBeenCalledWith(expect.not.objectContaining({
@@ -137,15 +137,17 @@ describe("Runtime Debug mounted diagnosis authorization", () => {
     const renderer = await mount(runtimeCommands, onOpenAdaptation);
     await runAdaptation(renderer);
 
+    // An adapting run iterates: it names no call count, even though the Flow's
+    // saved settings say 1, and leaves the number to Core.
     expect(runtimeCommands.preflightLlm).toHaveBeenCalledWith(expect.objectContaining({
-      purpose: "diagnose_and_adapt",
-      maxCalls: 2
+      purpose: "diagnose_and_adapt"
     }));
+    expect(runtimeCommands.preflightLlm.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
     expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({
-      purpose: "diagnose_and_adapt",
-      maxCalls: 2,
-      maxUses: 2
+      purpose: "diagnose_and_adapt"
     }));
+    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
+    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxUses");
     expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
     expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
     expect(runtimeCommands.execute).toHaveBeenCalledWith(expect.objectContaining({
@@ -225,7 +227,7 @@ describe("Runtime Debug mounted diagnosis authorization", () => {
     expect(JSON.stringify(renderer.toJSON())).toContain("more than 100,000 tokens");
     expect(runtimeCommands.issueLlmGrant).not.toHaveBeenCalled();
     await act(async () => button(renderer, "Continue high-token execution")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({ highTokenConfirmation: true, maxUses: 1 }));
+    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({ highTokenConfirmation: true, maxCalls: 1 }));
     await act(async () => renderer.unmount());
   });
 });

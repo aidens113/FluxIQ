@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../execution-grants.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS,
+  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS,
+  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS
+} from "../execution-grants.ts";
+import { automationStudioRuntimeSessionGrantTaskKinds } from "../runtime-session-grant.ts";
+import { evidenceRequest, gatherRequest, issueInput, patchRequest, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
 afterEach(() => vi.useRealTimers());
 
@@ -62,23 +68,34 @@ describe("Automation Studio LLM execution grants", () => {
     });
   });
 
-  it("requires confirmation only when aggregate multi-call authorization exceeds 100,000 tokens", async () => {
+  // The confirmation is about tokens, not calls. A grant's run token budget
+  // defaults to its calls times the per-call limit held to the threshold, so
+  // many calls alone never ask; a run budget above the threshold always does.
+  it("requires confirmation only when the run's token budget exceeds 100,000 tokens", async () => {
     const fixture = setup();
     fixture.exactBinding = true;
     const aggregate = { ...issueInput(), purpose: "build_and_adapt" as const, maxCalls: 3, maxUses: 3, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_333, maxTotalTokens: 33_333 }, maxTotalEstimatedCostUsd: 0.75 };
-    await expect(fixture.service.issue(aggregate)).resolves.toMatchObject({ maxCalls: 3 });
-    await expect(fixture.service.issue({ ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 } })).rejects.toThrow("explicit confirmation");
-    await expect(fixture.service.issue({ ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 }, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: 3 });
+    const larger = { ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 } };
+    await expect(fixture.service.issue(aggregate)).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 99_999 });
+    // 3 x 33,334 is past the threshold, so by default the run is held to it.
+    await expect(fixture.service.issue(larger)).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 100_000 });
+    // Asking for the whole exposure is asking for more than 100,000: confirm it.
+    await expect(fixture.service.issue({ ...larger, maxTotalTokensPerRun: 100_002 })).rejects.toThrow("explicit confirmation");
+    await expect(fixture.service.issue({ ...larger, maxTotalTokensPerRun: 100_002, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 100_002 });
+    // A run budget is at least one call and at most every call.
+    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 100_003 })).rejects.toThrow("total token limit");
+    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 33_333 })).rejects.toThrow("total token limit");
+    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 40_000.5 })).rejects.toThrow("total token limit");
   });
 
-  it("rechecks active state after delayed just-in-time reveal crosses expiry", async () => {
+  it("rechecks active state after a delayed just-in-time reveal crosses the run lease", async () => {
     const fixture = setup();
     fixture.delayReveal = true;
     const grant = await fixture.service.issue({ ...issueInput(), ttlMs: 1000 });
     const resolved = await fixture.service.resolve(resolveInput(grant.grantId));
     const pending = resolved.provider.runTask(request());
     await fixture.revealStarted;
-    fixture.now = 2001;
+    fixture.now = 1 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS;
     fixture.releaseReveal();
     await expect(pending).rejects.toThrow("cancelled");
     expect(fixture.service.activeGrantCount()).toBe(0);
@@ -185,28 +202,93 @@ describe("Automation Studio LLM execution grants", () => {
     expect(fixture.service.activeGrantCount()).toBe(0);
   });
 
-  it("issues an exact-revision two-call grant limited to diagnosis and runtime patch", async () => {
+  it("issues an exact-revision adapt grant whose call count is configuration, not the purpose's identity", async () => {
     const fixture = setup();
     fixture.exactBinding = true;
     const grant = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
-    expect(grant).toMatchObject({ purpose: "diagnose_and_adapt", settingsRevision: 7, maxCalls: 2, remainingUses: 2 });
+    expect(grant).toMatchObject({
+      purpose: "diagnose_and_adapt",
+      settingsRevision: 7,
+      maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS,
+      remainingUses: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS
+    });
     const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "diagnose_and_adapt" }, {
-      allowedTaskKinds: ["runtime_diagnosis", "runtime_patch"]
+      allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("diagnose_and_adapt")
     });
     await expect(resolved.provider.runTask(request())).resolves.toBeDefined();
-    const patchRequest = request();
-    await expect(resolved.provider.runTask({ ...patchRequest, requestId: "request.patch", idempotencyKey: "request.patch", taskKind: "runtime_patch", expectedOutput: "runtime_patch", context: { ...patchRequest.context, taskKind: "runtime_patch" } })).resolves.toBeDefined();
+    await expect(resolved.provider.runTask(patchRequest())).resolves.toBeDefined();
     expect(fixture.revealCount).toBe(2);
-    expect(fixture.service.activeGrantCount()).toBe(0);
+    // Two calls no longer exhaust it: the recovery's guards decide when it stops.
+    expect(fixture.service.activeGrantCount()).toBe(1);
+    fixture.service.revoke(grant.grantId);
+
+    // A caller that configures a number gets that number, for any iterating
+    // purpose, up to the one absolute backstop and no further.
+    for (const purpose of ["diagnose_and_adapt", "explore_and_adapt", "build_and_adapt"] as const) {
+      await expect(fixture.service.preflight({ ...issueInput(), purpose, maxCalls: 3 })).resolves.toMatchObject({ maxCalls: 3 });
+      await expect(fixture.service.preflight({ ...issueInput(), purpose, maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, highTokenConfirmation: true } as any)).resolves.toMatchObject({ maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS });
+      await expect(fixture.service.preflight({ ...issueInput(), purpose, maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS + 1 })).rejects.toThrow("call limit");
+    }
+    // The backstop is set far above any recovery. More calls do not by
+    // themselves ask for confirmation -- the run's token budget stays at the
+    // threshold -- and a caller asking for a larger token budget still does.
+    expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS).toBeGreaterThanOrEqual(32);
+    expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS).toBeGreaterThan(2);
+    const beyondDefault = AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS + 1;
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS })).resolves.toMatchObject({ maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, maxTotalTokensPerRun: 100_000 });
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001 })).rejects.toThrow("High-token");
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001 });
 
     const forbidden = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
     const forbiddenResolved = await fixture.service.resolve({ ...resolveInput(forbidden.grantId), purpose: "diagnose_and_adapt" }, {
-      allowedTaskKinds: ["runtime_diagnosis", "runtime_patch"]
+      allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("diagnose_and_adapt")
     });
     await expect(forbiddenResolved.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toThrow("request mismatch");
   });
 
-  it("opens the exploration loop to a failure or edge case without widening the two-call adapt grant", async () => {
+  // The sequence that failed live, twice, against the real provider: the model
+  // is asked for a diagnosis, answers that it must look first, asks to gather,
+  // gathers, and only then answers. Every call below goes through the real
+  // grant service, the real DeepSeek provider contract and the exact task-kind
+  // policy the host binds for a runtime recovery.
+  it.each(["diagnose_and_adapt", "explore_and_adapt"] as const)("lets a %s recovery stage a diagnosis, gather evidence and then answer", async (purpose) => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    fixture.script.push(
+      { kind: "diagnosis", summary: "The control moved; look at the page before changing anything.", diagnosis: { explorationNeeded: true, patchNeeded: true } },
+      { kind: "evidence_tool_decision", summary: "Inspect the form first.", decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: {} } },
+      { kind: "evidence_tool_decision", summary: "The replacement control is present.", decision: { kind: "complete", result: { findings: "target.1 is the replacement." } } },
+      { kind: "runtime_patch", summary: "Use the observed replacement.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { handles: { element: "target.1" } }, reason: "Observed while gathering." }] }
+    );
+    const grant = await fixture.service.issue({ ...issueInput(), purpose });
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose }, {
+      allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds(purpose)
+    });
+
+    const ask = async (task: AutomationStudioLlmTaskRequest) => ((await resolved.provider.runTask(task)) as { response?: unknown }).response;
+    expect(await ask(request())).toMatchObject({ kind: "diagnosis", diagnosis: { explorationNeeded: true } });
+    expect(await ask(gatherRequest(1, []))).toMatchObject({ kind: "evidence_tool_decision", decision: { kind: "tool_call", toolId: "inspect" } });
+    expect(await ask(gatherRequest(2, [{ callId: "call.1", toolId: "inspect", value: { control: "target.1" } }]))).toMatchObject({ kind: "evidence_tool_decision", decision: { kind: "complete" } });
+    expect(await ask(patchRequest())).toMatchObject({ kind: "runtime_patch", patches: [{ kind: "temporary_target_override" }] });
+
+    expect(fixture.script).toEqual([]);
+    expect(fixture.revealCount).toBe(4);
+    expect(fixture.service.activeGrantCount()).toBe(1);
+    fixture.service.revoke(grant.grantId);
+    expect(fixture.service.activeGrantCount()).toBe(0);
+  });
+
+  it("scopes a runtime recovery to diagnosing, gathering and repairing, whatever its grant would also allow", () => {
+    expect(automationStudioRuntimeSessionGrantTaskKinds("diagnosis_only")).toEqual(["runtime_diagnosis"]);
+    for (const purpose of ["diagnose_and_adapt", "explore_and_adapt"] as const) {
+      expect(automationStudioRuntimeSessionGrantTaskKinds(purpose)).toEqual(["runtime_diagnosis", "evidence_tool_decision", "runtime_patch", "loop_plan", "loop_verification"]);
+    }
+    // Asking for an instruction suggestion or a Flow change is not a recovery.
+    expect(automationStudioRuntimeSessionGrantTaskKinds("explore_and_adapt")).not.toContain("instruction_suggestion");
+    expect(automationStudioRuntimeSessionGrantTaskKinds("explore_and_adapt")).not.toContain("change_proposal_generation");
+  });
+
+  it("opens the exploration loop to a failure or edge case, and to the adapt grant a person may already hold", async () => {
     const fixture = setup();
     fixture.exactBinding = true;
 
@@ -219,7 +301,12 @@ describe("Automation Studio LLM execution grants", () => {
     // The entry point that did not exist: a run that failed, or an existing
     // Flow that met a case it was not built for, reaching the same loop.
     const diagnosis = await exploreProvider();
-    expect(diagnosis.grant).toMatchObject({ purpose: "explore_and_adapt", settingsRevision: 7, maxCalls: 6, remainingUses: 6 });
+    expect(diagnosis.grant).toMatchObject({
+      purpose: "explore_and_adapt",
+      settingsRevision: 7,
+      maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS,
+      remainingUses: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS
+    });
     await expect(diagnosis.provider.runTask(request())).resolves.toBeDefined();
 
     // The loop's own task kind is no longer forbidden to this entry point. It
@@ -233,19 +320,24 @@ describe("Automation Studio LLM execution grants", () => {
     const bootstrap = await exploreProvider();
     await expect(bootstrap.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toThrow("request mismatch");
 
-    // The grant a person may already hold keeps exactly the meaning they gave
-    // it: two calls, and no exploration.
+    // The adapt grant a person may already hold may now gather too: asking for
+    // evidence is part of diagnosing, and forbidding it is what left live
+    // diagnoses staged and unvalidated. What it may *change* is still narrower
+    // than exploring: it never reaches an instruction suggestion.
     const narrow = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
-    expect(narrow).toMatchObject({ maxCalls: 2 });
     const narrowResolved = await fixture.service.resolve({ ...resolveInput(narrow.grantId), purpose: "diagnose_and_adapt" });
-    await expect(narrowResolved.provider.runTask(evidenceRequest())).rejects.toThrow("request mismatch");
+    const narrowOutcome = await narrowResolved.provider.runTask(evidenceRequest()).then(() => "allowed").catch((error: Error) => error.message);
+    expect(narrowOutcome).not.toContain("request mismatch");
+    const narrowSuggestion = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
+    const narrowSuggestionResolved = await fixture.service.resolve({ ...resolveInput(narrowSuggestion.grantId), purpose: "diagnose_and_adapt" });
+    await expect(narrowSuggestionResolved.provider.runTask({ ...request(), taskKind: "instruction_suggestion", expectedOutput: "instruction_suggestion" })).rejects.toThrow("request mismatch");
 
     // An exploration grant is bound to an exact Flow settings revision and to
-    // the same absolute call ceiling as every other grant.
+    // the same absolute call backstop as every other grant.
     fixture.exactBinding = false;
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "explore_and_adapt" })).rejects.toThrow("settings revision");
     fixture.exactBinding = true;
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "explore_and_adapt", maxCalls: 9 })).rejects.toThrow("call limit");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "explore_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS + 1 })).rejects.toThrow("call limit");
   });
 
   it("inspects an available revision-bound build grant without claiming or revealing it", async () => {
@@ -317,7 +409,7 @@ describe("Automation Studio LLM execution grants", () => {
     fixture.exactBinding = true;
     const buildGrant = await fixture.service.issue({ ...issueInput(), purpose: "build_and_adapt", maxCalls: 1 });
     const build = await fixture.service.resolve({ ...resolveInput(buildGrant.grantId), purpose: "build_and_adapt" });
-    await expect(build.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(build.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toMatchObject({ code: "llm.provider_request_task_mismatch" });
 
     const diagnosisGrant = await fixture.service.issue(issueInput());
     const diagnosis = await fixture.service.resolve(resolveInput(diagnosisGrant.grantId));
@@ -333,7 +425,7 @@ describe("Automation Studio LLM execution grants", () => {
 
     grant = await fixture.service.issue({ ...issueInput(), purpose: "build_and_adapt", maxCalls: 2 });
     resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "build_and_adapt" }, { allowedTaskKinds: ["flow_bootstrap"] });
-    await expect(resolved.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(resolved.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toMatchObject({ code: "llm.provider_request_task_mismatch" });
   });
 
   it("rejects arbitrary runtime purposes before they can obtain build permissions or bypass revision binding", async () => {
@@ -359,14 +451,22 @@ describe("Automation Studio LLM execution grants", () => {
     fixture.releaseProvider();
 
     vi.useFakeTimers();
-    fixture.delayProvider = true;
     fixture.now = 1;
     grant = await fixture.service.issue({ ...issueInput(), purpose: "build_and_adapt", maxCalls: 2, ttlMs: 1000, maxEstimatedCostUsd: 0.1 });
     resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "build_and_adapt" });
+    // The claim window passing does not end a run that has claimed the grant.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.service.activeGrantCount()).toBe(1);
+    // The run lease does: a call still in flight when it ends is aborted as a
+    // timeout and its result is never committed.
+    const lateInLease = AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS - 5_000;
+    await vi.advanceTimersByTimeAsync(lateInLease - 1000);
+    fixture.now = 1 + lateInLease;
+    fixture.delayProvider = true;
     pending = resolved.provider.runTask({ ...request(), requestId: "request.expiry", idempotencyKey: "request.expiry", maxEstimatedCostUsd: 0.1 });
     await fixture.providerStarted;
     const expiryRejection = expect(pending).rejects.toMatchObject({ code: "llm.provider_timeout" });
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(5_000);
     await expiryRejection;
     expect(fixture.service.activeGrantCount()).toBe(0);
     fixture.releaseProvider();
@@ -389,7 +489,7 @@ describe("Automation Studio LLM execution grants", () => {
     const fixture = setup();
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt" })).rejects.toThrow("settings revision");
     fixture.exactBinding = true;
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", maxCalls: 9 })).rejects.toThrow("call limit");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS + 1 })).rejects.toThrow("call limit");
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", providerRetryCount: 1 })).rejects.toThrow("retries");
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", maxTotalEstimatedCostUsd: Number.POSITIVE_INFINITY })).rejects.toThrow("total estimated-cost");
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", tokenLimits: { maxTotalTokens: 50_001 } })).rejects.toThrow("token limits");
@@ -402,153 +502,55 @@ describe("Automation Studio LLM execution grants", () => {
     fixture.pinConfigured = false;
     await expect(fixture.service.issue(issueInput())).resolves.toMatchObject({ remainingUses: 1 });
   });
-});
 
-function setup() {
-  const key: any = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
-  let now = 1;
-  let sessionValid = true;
-  let pinConfigured = true;
-  let executionDigest = "execution-digest.one";
-  let settingsRevision = 7;
-  let exactBinding = false;
-  let revealAuthorizationCount = 0;
-  let revealCount = 0;
-  let revokeAuthorizationCount = 0;
-  let delayReveal = false;
-  let releaseReveal = () => {};
-  let startReveal = () => {};
-  let revealWait = Promise.resolve();
-  let revealStarted = Promise.resolve();
-  let delayProvider = false;
-  let releaseProvider = () => {};
-  let startProvider = () => {};
-  let providerWait = Promise.resolve();
-  let providerStarted = Promise.resolve();
-  const resetProviderGate = () => {
-    providerStarted = new Promise<void>((resolve) => { startProvider = resolve; });
-    providerWait = new Promise<void>((resolve) => { releaseProvider = resolve; });
-  };
-  const resetRevealGate = () => {
-    revealStarted = new Promise<void>((resolve) => { startReveal = resolve; });
-    revealWait = new Promise<void>((resolve) => { releaseReveal = resolve; });
-  };
-  const fixture: any = {
-    key,
-    get now() { return now; },
-    set now(value: number) { now = value; },
-    get sessionValid() { return sessionValid; },
-    set sessionValid(value: boolean) { sessionValid = value; },
-    get pinConfigured() { return pinConfigured; },
-    set pinConfigured(value: boolean) { pinConfigured = value; },
-    get executionDigest() { return executionDigest; },
-    set executionDigest(value: string) { executionDigest = value; },
-    get settingsRevision() { return settingsRevision; },
-    set settingsRevision(value: number) { settingsRevision = value; },
-    get exactBinding() { return exactBinding; },
-    set exactBinding(value: boolean) { exactBinding = value; },
-    get revealAuthorizationCount() { return revealAuthorizationCount; },
-    get revealCount() { return revealCount; },
-    get revokeAuthorizationCount() { return revokeAuthorizationCount; },
-    get delayReveal() { return delayReveal; },
-    set delayReveal(value: boolean) {
-      delayReveal = value;
-      if (value) resetRevealGate();
-    },
-    get revealStarted() { return revealStarted; },
-    releaseReveal: () => releaseReveal(),
-    get delayProvider() { return delayProvider; },
-    set delayProvider(value: boolean) {
-      delayProvider = value;
-      if (value) resetProviderGate();
-    },
-    get providerStarted() { return providerStarted; },
-    releaseProvider: () => releaseProvider()
-  };
-  fixture.service = new AutomationStudioLlmExecutionGrantService({
-    now: () => now,
-    resolveExecutionDigest: async (_projectId: string, flowId: string) => {
-      if (flowId !== "flow.one") throw new Error("Unknown Flow");
-      return exactBinding ? { executionDigest, settingsRevision } : executionDigest;
-    },
-    identityAccess: {
-      validateSession: async () => sessionValid ? { user: { id: "user.one", passwordConfigured: true, pinConfigured }, session: {}, role: {} } : null
-    } as any,
-    secretKeys: {
-      getKeySummary: async () => ({ ...key }),
-      createSessionRevealAuthorization: async (input: { ttlMs?: number }) => {
-        revealAuthorizationCount += 1;
-        return { authorizationId: `secret-reveal:${revealAuthorizationCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: now + (input.ttlMs ?? 60_000), remainingUses: 1 };
-      },
-      revealKeyWithAuthorization: async () => {
-        revealCount += 1;
-        if (delayReveal) {
-          startReveal();
-          await revealWait;
-        }
-        return { key: { ...key }, value: "test-secret" };
-      },
-      revokeRevealAuthorization: () => { revokeAuthorizationCount += 1; }
-    } as any,
-    fetchImpl: (async (_input: unknown, init?: RequestInit) => {
-      if (delayProvider) {
-        startProvider();
-        await new Promise<void>((resolve, reject) => {
-          const aborted = () => reject(new Error("provider aborted"));
-          init?.signal?.addEventListener("abort", aborted, { once: true });
-          providerWait.then(() => {
-            init?.signal?.removeEventListener("abort", aborted);
-            resolve();
-          }, reject);
-        });
-      }
-      const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
-      const userMessage = body.messages?.find((message) => message.role === "user")?.content;
-      const task = userMessage ? JSON.parse(userMessage) as { taskKind?: string } : {};
-      const content = task.taskKind === "runtime_patch"
-        ? { kind: "runtime_patch", summary: "safe", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { handles: { element: "target.1" } }, reason: "Use observed target." }] }
-        : { kind: "diagnosis", summary: "safe" };
-      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
-    }) as typeof fetch
+  // What a person gets when they authorize an adaptation and name no numbers:
+  // enough calls for the recovery's own guards to be what stops it, a run token
+  // budget that sits exactly at the confirmation threshold, $2.00, and no
+  // high-token prompt.
+  it.each(["diagnose_and_adapt", "explore_and_adapt", "build_and_adapt"] as const)("issues a default %s grant as 26 calls, 100,000 tokens and $2.00, with no confirmation", async (purpose) => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const grant = await fixture.service.issue({ ...issueInput(), purpose });
+    expect(grant).toMatchObject({
+      purpose,
+      maxCalls: 26,
+      remainingUses: 26,
+      maxTotalTokensPerRun: 100_000,
+      maxEstimatedCostUsd: 0.25,
+      maxTotalEstimatedCostUsd: 2,
+      tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }
+    });
+    expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS).toBe(26);
+    expect(fixture.revealAuthorizationCount).toBe(26);
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose });
+    expect(resolved).toMatchObject({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
+    fixture.service.close();
   });
-  return fixture as {
-    service: AutomationStudioLlmExecutionGrantService;
-    key: any;
-    now: number;
-    sessionValid: boolean;
-    pinConfigured: boolean;
-    executionDigest: string;
-    settingsRevision: number;
-    exactBinding: boolean;
-    revealAuthorizationCount: number;
-    revealCount: number;
-    revokeAuthorizationCount: number;
-    delayReveal: boolean;
-    revealStarted: Promise<void>;
-    releaseReveal: () => void;
-    delayProvider: boolean;
-    providerStarted: Promise<void>;
-    releaseProvider: () => void;
-  };
-}
 
-function issueInput() {
-  return { actorUserId: "user.one", actorSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-chat" };
-}
-function evidenceRequest(): AutomationStudioLlmTaskRequest {
-  const base = request();
-  return {
-    ...base,
-    requestId: "request.evidence",
-    idempotencyKey: "request.evidence",
-    taskKind: "evidence_tool_decision",
-    expectedOutput: "evidence_tool_decision",
-    context: { ...base.context, taskKind: "evidence_tool_decision" }
-  };
-}
-function resolveInput(grantId: string) {
-  return { grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: "project.one", flowId: "flow.one", purpose: "diagnosis_only" as const };
-}
-function request(): AutomationStudioLlmTaskRequest {
-  return { requestId: "request.one", idempotencyKey: "request.one", timeoutMs: 20000, estimatedInputTokens: 100, maxEstimatedCostUsd: 0.25, taskKind: "runtime_diagnosis", promptVersion: "v1", expectedOutput: "diagnosis", tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, context: { schemaVersion: "0.1", taskKind: "runtime_diagnosis", promptVersion: "v1", projectId: "project.one", flowId: "flow.one", instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8000, estimatedTokens: 0 } } };
-}
+  // The grant enforces the token budget it was issued with, whoever holds it --
+  // a recovery's own ledger refuses first, but a Flow Bootstrap has no ledger.
+  // Calls are charged what they reported, so the budget bounds real spending.
+  it("refuses a call whose worst case would cross the run's token budget, charging what earlier calls reported", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    fixture.usage = { prompt_tokens: 6_000, completion_tokens: 2_000, total_tokens: 8_000 };
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxTotalTokensPerRun: 25_000 });
+    expect(grant.maxTotalTokensPerRun).toBe(25_000);
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "diagnose_and_adapt" });
+    await expect(resolved.provider.runTask({ ...request(), requestId: "request.t1", idempotencyKey: "request.t1" })).resolves.toBeDefined();
+    await expect(resolved.provider.runTask({ ...request(), requestId: "request.t2", idempotencyKey: "request.t2" })).resolves.toBeDefined();
+    // 16,000 used, and the next call could use 10,000: 26,000 > 25,000.
+    await expect(resolved.provider.runTask({ ...request(), requestId: "request.t3", idempotencyKey: "request.t3" })).rejects.toThrow("total token limit");
+    expect(fixture.revealCount).toBe(2);
+    expect(fixture.service.activeGrantCount()).toBe(0);
+
+    // Small replies leave room for many calls under the same budget.
+    fixture.usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
+    const roomy = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxTotalTokensPerRun: 25_000 });
+    const roomyResolved = await fixture.service.resolve({ ...resolveInput(roomy.grantId), purpose: "diagnose_and_adapt" });
+    for (let index = 0; index < 10; index += 1) {
+      await expect(roomyResolved.provider.runTask({ ...request(), requestId: `request.r${index}`, idempotencyKey: `request.r${index}`, maxEstimatedCostUsd: 2 / 26 })).resolves.toBeDefined();
+    }
+    fixture.service.close();
+  });
+});

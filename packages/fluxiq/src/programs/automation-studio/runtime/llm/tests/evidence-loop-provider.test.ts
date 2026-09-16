@@ -79,7 +79,7 @@ describe("Automation Studio evidence-loop provider task", () => {
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
     });
     const altered = request({ context: { ...request().context, evidenceLoop: { ...evidenceLoop, decisionSchema: { type: "object" } } } });
-    await expect(provider.runTask(altered)).rejects.toMatchObject({ code: "llm.provider_configuration_invalid" });
+    await expect(provider.runTask(altered)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
     expect(secrets).toBe(0);
   });
 

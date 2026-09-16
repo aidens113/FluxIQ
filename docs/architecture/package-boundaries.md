@@ -83,7 +83,7 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.5.0`;
+`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.6.0`;
 `@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
@@ -100,6 +100,282 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.6.0: adaptations iterate under guards instead of call counts, endpoints declare what they destroy, and repair targets are opaque (`fluxiq`)
+
+No export was removed, but several host-facing types gain required fields,
+several published numbers move, and much of what a failed run does next
+changes without any host opt-in. None of it is forward-only: no table, stored
+record or file changes shape, nothing is rewritten on load, and records written
+by 0.5.0 are read as they are. Read the whole entry if a host:
+- registers its own endpoints on `GlobalProgramApiRegistry`, or constructs the
+  registry itself;
+- calls `delete-run-datasets`, or the Identity Access user, session, TOTP or
+  vault endpoints;
+- binds `llmEvidenceRuntime`, implements `validateTargetOverrideEvidence`, or
+  writes an LLM provider or provider resolver;
+- builds an LLM harness input itself, or calls
+  `sanitizeAutomationStudioLlmFailureEvidence`;
+- preflights, issues or displays LLM execution grants;
+- implements `AutomationStudioLlmRunBudgetLease`, or reads a run ledger's
+  limits;
+- matches exhaustively on a grant purpose or an LLM task kind;
+- or reads what a failed run's recovery recorded, or applies adaptations.
+
+**Every endpoint declares what it does to persisted state.**
+- `GlobalProgramApiRegistry.register` requires `classification`, a
+  `ProgramEndpointClassification`: `read`, `authoring`, `destructive`,
+  `program-gated` or `destructive-ungated`. A host endpoint without one does not
+  compile. `endpoints()` reports it.
+- `call()` now asks for the operator's session PIN before the handler of every
+  `destructive` endpoint, and of no other. The registry takes Identity Access
+  from its constructor: `new GlobalProgramApiRegistry({ identityAccess })`.
+  `registerAutomationStudioApi` still accepts an `identityAccess` argument but
+  no longer uses it. A host that builds its registry without one therefore gets
+  "PIN authorization service is not available." from every destructive
+  endpoint. `createGlobalProgramRuntime` already passes it.
+- **Fewer PIN prompts.** 45 Automation Studio endpoints no longer ask for a
+  PIN. Most create, save, publish or edit Flows, subflows, routes,
+  instructions, projects, categories and recordings. The rest review
+  adaptations and proposals, start or stop client recordings, revoke client
+  trust, run Flow migrations, or delete a Flow map route. A PIN sent to them is
+  ignored. Twelve still ask: nine deletes, `execute-client-action`,
+  `seal-legacy-writes` and `rollback-flow-migration`.
+- **One new PIN prompt.** `delete-run-datasets` now asks for a PIN. It used to
+  delete captured rows under `flows.write` alone. Send `authSessionId` and
+  `authorizationPin`, or the call is refused.
+- **Declared gaps.** `database-manager/run-migration`, `deployment-sync/sync`
+  and `deployment-sync/rollback` are `destructive-ungated` and still check
+  nothing. [Declared gaps](automation-studio/persistence.md#declared-gaps) says
+  why.
+
+**Identity Access re-proves the caller before it hands out authority.**
+`create-user`, `create-session`, `begin-totp`, `confirm-totp` and
+`unlock-vault` now recheck the calling session's own credentials.
+- **What to send.** Send `authSessionId` with `authorizationPassword`,
+  `authorizationPin` and, when the calling account has TOTP enabled,
+  `authorizationTotp`. Their request types gain those four optional fields.
+- **`update-user`.** It now rechecks when the request carries `roleId` or
+  `enabled`. It used to recheck only for `roleId`.
+- **Refusal.** A refusal is `{ ok: false, requiresRecheck: true, error }`.
+- **Unchecked.** `revoke-session` and `lock-vault` still check nothing.
+
+**A domain's evidence binding names its domain, and what must never reach the
+model.**
+- **Two required fields.** `llmEvidenceRuntime` is now typed
+  `AutomationStudioLlmEvidenceRuntimeBinding`, which requires `domainId`
+  and `deniedEvidenceKeys`. A binding without them does not compile, and a
+  `domainId` outside `[A-Za-z0-9._:-]`, 1–200 characters, is refused when its
+  tools are registered. It may also declare `harnessOptions` and
+  `classifyRefusal`.
+- **Core no longer denies keys by name.** 0.5.0 refused `html`, `innerHtml`,
+  `outerHtml`, `pageSource`, `snapshot`, `cookies` and `headers` in failure
+  evidence, and `selector` and `selectors` in reusable context. Now each is
+  refused only when the domain lists it, compared ignoring case, `_` and `-`.
+  Core still refuses the `target` family in reusable context, and still bounds
+  depth, size and shape. To keep the old protection, list those keys; `[]`
+  denies nothing.
+- **An undeclared packet is refused.** A context packet carrying failure
+  evidence or reusable context now needs `deniedEvidenceKeys` on its harness
+  input, or packing throws. The service forwards the binding's list, Flow
+  Bootstrap included. A host that builds a harness input itself must pass it.
+  `sanitizeAutomationStudioLlmFailureEvidence` takes the list as an optional
+  third argument and, without it, denies nothing.
+- **Tools are scoped to the domain.** The binding's tools now reach Flows in its
+  own domain and Flows that name no domain, never a Flow in another domain.
+  Evidence-guided Flow Bootstrap for such a Flow gets no tools and fails.
+
+**A repair target is opaque.** `AutomationStudioRuntimeTargetOverrideTarget`
+was `{ selector: string }`. It is now
+`JsonObject & { handles: Record<string, string> }`: handles the domain issued in
+its evidence, plus any resolution the domain adds.
+- A model's target override must carry `handles` and nothing else. A provider
+  that returns `{ selector }` has the patch refused with
+  `llm_output.invalid_target_override`.
+- `validateTargetOverrideEvidence`, on the binding and on
+  `AutomationStudioRuntimePatchExecutionInput`, receives the new shape. A
+  domain that checked selectors must resolve its handles instead.
+
+**A grant's purpose no longer fixes its call count.**
+- **Backstop.** `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS` is now 64,
+  where it was 8. It exists only to stop a runaway loop.
+- **Default.** `diagnose_and_adapt`, `explore_and_adapt` and `build_and_adapt`
+  default to 26 calls (`AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS`).
+  `diagnose_and_adapt` defaulted to 2 and `build_and_adapt` to 4.
+  `diagnose_and_adapt` refused any count but 2 and now takes 1 to 64.
+  `diagnosis_only` is still exactly one.
+- **Cost.** The default cost purse follows the count, so a default adapting
+  grant may spend $2.00. `diagnose_and_adapt` could spend $0.50, and a build
+  grant $1.00.
+- **`maxUses`.** It must still equal the call count. A request that sends
+  `maxUses: 2` or `4` without `maxCalls` is now refused with "LLM execution
+  grant uses must match its call limit."; send `maxCalls` as well.
+- **Task kinds.** `diagnose_and_adapt` may now also ask for evidence decisions,
+  and every adapting purpose for the new `loop_plan` and `loop_verification`
+  task kinds, which `AutomationStudioLlmTaskKind` gains. What
+  `diagnose_and_adapt` may change is unchanged: one target-override proposal.
+
+**A grant carries a run token budget, and the high-token confirmation is judged
+on it.**
+- **The budget.** The limit request, the preflight, the grant and `resolve()`
+  gain `maxTotalTokensPerRun`. By default it is the per-call total times the
+  calls, held to 100,000 and never below one call's total. A supplied value
+  outside that range is refused with "LLM total token limit is invalid."
+- **The confirmation.** `issue()` asks for `highTokenConfirmation` when the
+  larger of that budget and the per-call total exceeds 100,000. It used to
+  multiply per-call tokens by calls. So a default 26-call grant needs no
+  confirmation.
+- **Fewer prompts, lower exposure.** A request that used to need confirmation,
+  such as 8 calls at 20,000 tokens, no longer does, and is held to 100,000
+  tokens. To keep the old exposure, ask for that `maxTotalTokensPerRun` and
+  confirm it.
+- **Enforced by the grant.** A call whose worst case would cross the budget is
+  refused with "LLM execution total token limit exceeded.", and the grant is
+  revoked. Each call is charged the usage it reported, or its worst case when
+  the report is missing or inconsistent.
+- **For resolvers.** `AutomationStudioLlmProviderResolution` gains an optional
+  `maxTotalTokensPerRun`, which a recovery uses as its token budget's ceiling.
+
+**`explore_and_adapt` is a new purpose, and a runtime session accepts it.** The
+grant purpose types and the resolver's `executionGrant` include it, and
+`run-runtime-session` accepts it as `runIntent`
+(`AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES`). An exhaustive `switch` or
+resolver must handle it.
+- **No exemption.** Unlike `diagnose_and_adapt`, it gets no target-override
+  exemption, and its patches are not proposal-only.
+- **Patches run live.** Each patch the Flow's policy permits is run on a patched
+  copy of the Flow with the run's own graph options, for at most 50 steps.
+- **Side effects.** A side-effecting patch is refused where the policy disallows
+  external side effects or requires approval for them, because an explicit run
+  never carries that approval. A policy that allows them without approval lets
+  one run. Every result still goes to manual review.
+
+**A grant's TTL is a claim window, and a claimed grant runs on a 600-second
+lease.**
+- **Claim window.** `ttlMs` (default 60,000, at most 300,000) now bounds only
+  how long a grant may wait to be claimed. `expiresAtMs` is the end of that
+  window, not of the grant.
+- **Run lease.** Claiming starts a lease of
+  `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`, 600,000 ms. A claimed
+  grant used to be refused and revoked at `expiresAtMs`. It now keeps calling
+  until the lease ends, the host revokes it, a limit is reached, or the actor's
+  session or Secret Keys unlock ends. A host that shows `expiresAtMs` as the
+  grant's lifetime under-reports a claimed grant.
+- **Fresh authorizations.** A call made after the claim window swaps its reveal
+  authorization for a fresh one, minted from the actor's unlocked Secret Keys
+  session. The swap is one for one, so reveals stay capped at the call count.
+
+**A recovery is bounded by cost, tokens, time and progress, not by a call
+count.** This covers every failed run the model is asked about, with or without
+a grant.
+- **Calls.** A recovery takes the call count its provider resolver declares,
+  and otherwise 250 (`AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP`). 0.5.0 used 1
+  for `diagnosis_only` and 2 for `diagnose_and_adapt`. Otherwise it used the
+  smallest of the policy's and settings' `maxInterventionsPerRun` and the
+  resolver's count, or 2. Intervention limits no longer cap provider calls.
+- **Tokens without a grant.** The settings' `maxTokensPerRun` still binds as
+  written, and default Flow settings carry 12,000. Without that setting, and
+  with no call count from the resolver, the budget is 144,000; it was 12,000.
+- **Tokens with a grant.** The per-call total times the declared calls, held to
+  the grant's `maxTotalTokensPerRun`. A default adapting grant gets 100,000;
+  `diagnose_and_adapt` got 20,000.
+- **Cost.** Without a grant it is still at most $0.25, and with one it is the
+  grant's total. It is never more than $2.00
+  (`AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN`). Each call
+  reserves the purse divided by the declared calls, or by 24. So the
+  `maxEstimatedCostUsd` a provider receives is smaller. With no grant and no
+  declared count it is about $0.0104, where it was $0.125.
+- **Time and progress.** The whole recovery runs under a fixed 600,000 ms
+  deadline (`AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS`), new in this release.
+  An exploration also stops as `no_progress` after 3 consecutive steps that
+  bring back nothing new.
+- **The ledger.** `AutomationStudioLlmRunBudgetLimits.maxCallsPerRun` is
+  optional. `AutomationStudioLlmRunBudgetLease` gains a required `release()`,
+  which returns a reservation unspent, so a host implementing the lease must
+  add it. `complete()` takes an optional outcome. The ledger's `snapshot()`
+  gains `explorationCalls`, and `callRecords(runId)` lists each call.
+
+**What a failed run does next changes.**
+- **Deterministic first.** The model is not asked when Core already has an
+  answer: a known recovery, a reroute, a matching adaptation, or a failure a
+  person must clear. `metadata.llmGate` records `invoked: false`, the reason and
+  `requiredPriorAction`.
+- **A patch only when called for.** 0.5.0 asked for a patch whenever a
+  provider was configured, even after a failed diagnosis. Now a patch call
+  follows only when four things hold: the diagnosis call succeeded and returned
+  a diagnosis, Core's own diagnosis needs the model, the structured diagnosis
+  calls for a patch or for exploration, and the policy permits a patch kind for
+  that failure.
+- **One channel for the model's verdict.** A provider answers a diagnosis
+  through `response.diagnosis` (`AutomationStudioLlmDiagnosisFields`), and only
+  there. `patchNeeded: false` there cancels the patch call. The same keys in
+  `response.metadata` are not read, and the run records them as refused.
+- **Exploration calls the host's tools.** When the diagnosis asks for evidence,
+  the recovery explores with the bound domain's tools. That calls the binding's
+  `executeTool` during a failed run; 0.5.0 called it only from Flow Bootstrap.
+  A mutating tool is offered only when the policy sets
+  `allowExternalSideEffects`. One patch call's worth of calls, tokens and cost
+  is held back while it explores.
+- **A larger request.** Diagnosis and patch requests now carry
+  `recoveryContext`, and staged requests a `stage`, whose prompt version gains
+  `+stage.<stage>`.
+- **What the run records.** The run detail's `metadata` gains `recoveryTrace`.
+  `llmGate` gains `providerCalls` (one line per provider call, including the
+  evidence decisions no intervention records), `providerCallsOmitted`,
+  `recoveryContext` and `structuredDiagnosis`, and its `costAccounting` gains
+  `explorationCalls`.
+
+**A patch is recorded as validated only when a rerun proved it.**
+- **Nothing to compare.** A live-tested patch whose rerun succeeded with no
+  declared expectation used to be `validated`, with a succeeded validation
+  result. It is now `testing` with no validation result, and its
+  `metadata.verification` says `unverifiable`.
+- **Cannot be applied.** A patch whose target node is gone, or whose kind is
+  `temporary_action_sequence` or `temporary_recovery_subflow_call`, is no longer
+  run against the unpatched Flow. It is `rejected` as `not_executed`.
+- **Proposal-only.** A proposal-only target override no longer carries a
+  succeeded validation result.
+- **Types.** `AutomationStudioRuntimePatchExecutionResult` gains `verification`.
+  `adaptationFromRuntimePatch` takes an `AutomationStudioRuntimePatchVerification`
+  where it took `restoredExpectedState: boolean`.
+- **Applying.** An adaptation now needs a succeeded validation result, or an
+  `approved` audit event by a named actor other than `runtime`. A `validated`
+  status alone used to be enough.
+- **Old records.** Adaptations saved by 0.5.0 are not rewritten. One that 0.5.0
+  validated on a proposal-only check, or on a rerun with nothing to compare,
+  still carries its succeeded validation result and can still be applied.
+
+**`edit_recovery` adaptations are refused.** Applying one used to report
+success and change nothing. It now throws "Adaptation patch edit_recovery has
+no durable application; <id> refused."
+
+**Rolling back a graph change restores the whole graph.** The inverse of
+`delete_node` now restores the edges the deletion removed. Restoring a snapshot
+restores every node field, not only position and parameters. A graph revision
+records each cascaded edge deletion as its own operation, and its
+`operation_count` counts them.
+
+**Smaller changes.**
+- `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS` allows 64 iterations and tool
+  calls; it allowed 16.
+- Evidence-guided Flow Bootstrap makes one decision per authorized call, or up
+  to 64 when the resolver names no count. It made at most 8, or 4 when no count
+  was named. It allows one more tool call than decisions, where it always
+  allowed 7.
+- `AutomationStudioRuntimeAdaptationContext` gains a required
+  `recentAdaptations`.
+- `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION` no longer mentions
+  pages, so its text changed.
+- `InputOutputBinding` gains an opt-in `recordInputPayload`. A binding that sets
+  it keeps the input event's payload on the recorded action entry, under
+  `metadata.inputPayload`. Other bindings are unchanged.
+- 182 names are newly exported from the root, `fluxiq/automation-studio` and
+  `fluxiq/programs`, most of them from `runtime/recovery/` and `runtime/llm/`.
+
+**For Core contributors.** The structure audit now fails a value import from
+`runtime/llm/` into `runtime/recovery/` (`importBoundaries` in
+`scripts/structure-audit/config.mjs`). Type-only imports stay allowed, and a
+value both sides need lives in `runtime/loop-limits/`. No host is affected.
 
 ### 0.5.0: stronger password derivation, hashed session ids, and credential hardening (`fluxiq`)
 

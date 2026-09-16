@@ -20,6 +20,7 @@ describe("exploration outcomes", () => {
       "evidence_gathered",
       "no_evidence_found",
       "budget_exhausted",
+      "no_progress",
       "unsafe_action_blocked",
       "user_intervention_required",
       "cancelled",
@@ -51,7 +52,6 @@ describe("exploration outcomes", () => {
     ]],
     ["run-budget diagnostics", AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET, [
       "llm_budget.run_call_limit",
-      "llm_budget.run_exploration_call_limit",
       "llm_budget.run_total_limit",
       "llm_budget.run_output_limit",
       "llm_budget.run_cost_limit",
@@ -71,8 +71,8 @@ describe("exploration outcomes", () => {
   it.each([
     ["llm_evidence_loop.iteration_limit", "budget_exhausted"],
     ["llm_evidence_loop.evidence_limit", "budget_exhausted"],
-    ["llm_evidence_loop.duplicate_tool_request", "budget_exhausted"],
-    ["llm_evidence_loop.repeat_without_progress", "budget_exhausted"],
+    ["llm_evidence_loop.duplicate_tool_request", "no_progress"],
+    ["llm_evidence_loop.repeat_without_progress", "no_progress"],
     ["llm_evidence_loop.invalid_configuration", "failed"],
     ["llm_evidence_loop.invalid_decision", "failed"],
     ["llm_evidence_loop.unknown_tool", "failed"],
@@ -85,7 +85,6 @@ describe("exploration outcomes", () => {
 
   it.each([
     ["llm_budget.run_call_limit", "budget_exhausted"],
-    ["llm_budget.run_exploration_call_limit", "budget_exhausted"],
     ["llm_budget.run_total_limit", "budget_exhausted"],
     ["llm_budget.run_output_limit", "budget_exhausted"],
     ["llm_budget.run_cost_limit", "budget_exhausted"],
@@ -104,12 +103,28 @@ describe("exploration outcomes", () => {
     expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).toContain("recovery_deadline_expired");
   });
 
+  // What replaced the call caps has to be tellable apart from what it replaced.
+  // "It went in circles", "it ran out of money or tokens" and "it ran out of
+  // time" are three different things to do next, so a trace must never report
+  // one where it meant another.
+  it("keeps going in circles apart from running out of money, tokens or time", () => {
+    expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).toContain("no_progress");
+    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.no_progress).toBe("no_progress");
+    const circling = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.no_progress;
+    const money = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_cost_limit"];
+    const tokens = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_total_limit"];
+    const time = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.recovery_deadline_expired;
+    expect(circling).not.toBe(money);
+    expect(circling).not.toBe(tokens);
+    expect(circling).not.toBe(time);
+  });
+
   // A refusal is not a budget, and being stopped is not being empty. If these
   // ever agreed, the runner could report one where it meant the other and no
   // test above would notice.
   it("gives budget limits, refusals and a person's decision three different outcomes", () => {
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.action_limit).toBe("budget_exhausted");
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.repeat_window).toBe("budget_exhausted");
+    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.repeat_window).toBe("no_progress");
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.destructive_action_refused).toBe("unsafe_action_blocked");
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.out_of_scope_refused).toBe("unsafe_action_blocked");
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.operator_approval_required).toBe("user_intervention_required");

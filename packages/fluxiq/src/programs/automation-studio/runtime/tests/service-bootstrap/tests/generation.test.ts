@@ -190,6 +190,49 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
   });
 
+  // The loop used to stop at `min(calls, 8)` decisions. A grant's call count is
+  // now what bounds it, each decision reserves an even share of the grant's
+  // purse so every authorised call can be paid for, and a model that never
+  // finishes is still stopped at that count.
+  it.each([
+    { looks: 10, calls: 11, finishes: true },
+    // Never finishing: stopped at the grant's twelve, not at eight and not later.
+    { looks: 100, calls: 12, finishes: false }
+  ])("lets an evidence-guided bootstrap keep gathering past eight decisions, up to its grant's call count (%o)", async ({ looks, calls, finishes }) => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider = mockProvider(async (request) => {
+      requests.push(request);
+      const iteration = request.context.evidenceLoop?.iteration ?? 0;
+      const decision = iteration <= looks
+        ? { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } }
+        : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
+      return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
+    });
+    const instance = createService({
+      provider,
+      resolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }),
+      evidenceRuntime: {
+        domainId: "test.domain",
+        deniedEvidenceKeys: [],
+        tools: [{ toolId: "inspect", description: "Inspect one area.", inputSchema: { type: "object" }, effect: "observe" }],
+        executeTool: async (input) => ({ area: String(input.value.area) })
+      }
+    });
+    const { project, flow } = await blankFixture(instance);
+    const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
+
+    if (finishes) {
+      const result = await generation;
+      await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId)).resolves.toMatchObject({ status: "proposed" });
+    } else {
+      await expect(generation).rejects.toThrow();
+    }
+    expect(requests).toHaveLength(calls);
+    // Each decision reserved an even share of the grant's purse, not its $0.25
+    // per-call cap, at which the grant would refuse the ninth on cost.
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(2 / 12, 8);
+  });
+
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const selectedEvidence: unknown[] = [];

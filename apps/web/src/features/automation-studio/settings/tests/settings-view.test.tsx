@@ -98,9 +98,11 @@ describe("Automation Settings workspace", () => {
     };
     expect(getByRoleAndExactName("combobox", "Provider").props.value).toBe("deepseek");
     expect(getByRoleAndExactName("combobox", "Model").props.value).toBe("deepseek-chat");
-    for (const name of ["Input tokens", "Output tokens", "Total tokens", "Max calls", "Timeout (seconds)", "Max cost (USD)", "Provider retries"]) {
+    for (const name of ["Input tokens", "Output tokens", "Total tokens", "Timeout (seconds)", "Max cost (USD)", "Provider retries"]) {
       getByRoleAndExactName("spinbutton", name);
     }
+    // Runs iterate within Core's guards; Flow Settings offers no call limit.
+    expect(renderer.root.findAll((node) => node.type === "input" && node.props["aria-label"] === "Max calls")).toHaveLength(0);
     expect(renderer.root.findAll((node) => typeof node.props?.["aria-label"] === "string" && node.props["aria-label"].startsWith("Provider"))).toHaveLength(2);
     await act(async () => { renderer.unmount(); });
     if (previousWindow === undefined) delete (globalThis as any).window;
@@ -109,12 +111,9 @@ describe("Automation Settings workspace", () => {
   it("uses controlled LLM provider/model choices and encrypted key summaries", () => {
     expect(FLOW_LLM_PROVIDERS.map((provider) => provider.id)).toContain("deepseek");
     expect(flowLlmProvider("deepseek").models).toEqual(["deepseek-chat"]);
-    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmMaxCalls: "1", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
+    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
     expect(flowLlmSettingsErrors(draft, [], true)).toContain("Choose an enabled encrypted key for DeepSeek.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
-    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "2" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
-    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "8" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
-    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "9" }, [{ id: "secret.deepseek" }], true)).toContain("LLM call limit must be between 1 and 8.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxTotalTokens: "50001" }, [{ id: "secret.deepseek" }], true)).toContain("Total-token limit must be a whole number from 1 to 50,000.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxInputTokens: "9000", llmMaxOutputTokens: "2000" }, [{ id: "secret.deepseek" }], true)).toContain("Input and output token limits together cannot exceed the total-token limit.");
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: { llmProvider: "deepseek", llmModel: "deepseek-reasoner" } } }));
@@ -167,13 +166,16 @@ describe("Automation Settings workspace", () => {
     expect(payload.executionDefaults).not.toHaveProperty("timeoutMs");
     expect(payload.metadata).toHaveProperty("llmProvider", "deepseek");
     expect(payload.metadata.trainingModeSettings ?? {}).not.toHaveProperty("recoveryBudget");
+    // This Flow stored no execution settings; Core still requires a call count, so the save carries the one this form always wrote.
     expect(payload.metadata.llmExecutionSettings).toEqual({ tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 });
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow }));
     expect(html).toContain("Framework default");
     expect(html).toContain("Flow override");
     expect(html).toContain("Use Default");
     expect(html).toContain("Show Technical Metadata");
-    expect(html).toContain("Use 1 for diagnosis-only, 2 for diagnose-and-adapt, or up to 8 for bounded evidence-guided generation.");
+    expect(html).not.toContain("Max calls");
+    expect(html).not.toContain("diagnosis-only");
+    expect(html).not.toContain("bounded evidence-guided generation");
   });
   it("gives Flow Settings persistent section navigation and one dirty-aware footer", () => {
     expect(settingsDraftIsDirty({ name: "A" }, { name: "A" })).toBe(false);
