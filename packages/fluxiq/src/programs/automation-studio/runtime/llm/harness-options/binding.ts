@@ -29,6 +29,25 @@ import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
  */
 export type AutomationStudioLlmEvidenceRuntimeBinding = {
   domainId: string;
+  /**
+   * Keys that may never appear in the failure evidence or the reusable context
+   * this domain produces, because for its medium they carry raw payload or
+   * something the model could execute or address directly.
+   *
+   * Core used to hold this list itself, naming `html`, `cookies`, `headers` and
+   * the rest -- a browser's and an HTTP client's vocabulary inside a framework
+   * that must have neither, which also enforced nothing for a domain whose raw
+   * payload goes by another name. The only party that knows what raw payload
+   * looks like is the domain, so the domain declares it. Core still bounds
+   * depth, size and shape whatever is declared.
+   *
+   * Optional only because making it required would stop Core compiling until
+   * every existing binding, including test fixtures in files this change does
+   * not own, declared one. It should become required in the same work unit that
+   * updates them; declaring `[]` would then be a domain saying it has nothing of
+   * the sort, which is a claim a reviewer can see, where an absent field is not.
+   */
+  deniedEvidenceKeys?: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
   executeTool(input: {
     projectId: string;

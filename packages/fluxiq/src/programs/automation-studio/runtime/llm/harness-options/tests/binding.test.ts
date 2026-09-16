@@ -62,7 +62,25 @@ describe("Automation Studio harness option binding", () => {
     expect(registry.list(SCOPE).map((option) => option.toolId)).toEqual(["erp.inspect"]);
     expect(registry.list({ ...SCOPE, allowSideEffectsWithoutPolicy: true }).map((option) => option.toolId)).toEqual(["erp.inspect", "erp.advance"]);
     // Another domain's Flow sees none of it.
-    expect(registry.list({ scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true })).toEqual([]);
+    expect(registry.list({ scope: { kind: "domain", domainId: "warehouse" }, allowSideEffectsWithoutPolicy: true })).toEqual([]);
+  });
+
+  it("offers the host's options to a Flow that declares no domain of its own", () => {
+    // The regression this pins. Before the registry the bound slot's tools went
+    // to the loop unfiltered, so a Flow whose project names no domain -- which
+    // is every Flow until someone gives its project one -- could be authored
+    // with evidence. Reading the binding's domain id as the Flow scope the
+    // tools are for narrowed that to domain-scoped Flows alone, and every other
+    // Flow got an empty tool list, which the evidence loop correctly refuses as
+    // `llm_evidence_loop.invalid_configuration`. The loop was right and the
+    // configuration it was handed was wrong.
+    //
+    // A Flow that named no domain is run by whichever host is bound, so that
+    // host's options are what it has. A Flow that named a different domain is a
+    // different matter and is still refused, above.
+    const registry = automationStudioHarnessOptionRegistry({ binding: slot() });
+    const unscopedFlow: AutomationStudioHarnessOptionResolution = { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true };
+    expect(registry.tools(unscopedFlow).map((tool) => tool.toolId)).toEqual(["erp.inspect", "erp.advance"]);
   });
 
   it("binds nothing when the host binds nothing, exactly as before the registry existed", () => {

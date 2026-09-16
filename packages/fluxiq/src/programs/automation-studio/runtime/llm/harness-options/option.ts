@@ -15,17 +15,19 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
+import { isAutomationStudioLoopStage, type AutomationStudioLoopStage } from "../stages/index.ts";
 
 /** Maximum options one registry may hold, matching the evidence loop's own
  * ceiling on the tool list it will accept. */
 export const AUTOMATION_STUDIO_HARNESS_OPTION_LIMIT = 32;
 
 /**
- * A stage of the loop's fixed order of work. Core's stage protocol lands
- * separately; until it does the dimension is carried as an opaque identifier,
- * so narrowing the vocabulary later changes no registration.
+ * A stage of the loop's fixed order of work. Carried as an opaque identifier
+ * while the stage protocol was still to land; now it is the protocol's own
+ * closed vocabulary, so an option pinned to a stage nobody will ever be in is a
+ * registration error rather than an option that silently never appears.
  */
-export type AutomationStudioHarnessOptionStage = string;
+export type AutomationStudioHarnessOptionStage = AutomationStudioLoopStage;
 
 /**
  * What running the option does beyond producing evidence.
@@ -110,7 +112,7 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
   }
   issues.push(...availabilityIssues(option.availability));
   if (option.requiredRuntimeCapabilities !== undefined && !isIdentifierList(option.requiredRuntimeCapabilities)) issues.push("harness_option.runtime_capabilities_invalid");
-  if (option.stages !== undefined && !isIdentifierList(option.stages)) issues.push("harness_option.stages_invalid");
+  if (option.stages !== undefined && (!Array.isArray(option.stages) || !option.stages.length || !option.stages.every(isAutomationStudioLoopStage))) issues.push("harness_option.stages_invalid");
   issues.push(...safetyIssues(option));
   return issues;
 }

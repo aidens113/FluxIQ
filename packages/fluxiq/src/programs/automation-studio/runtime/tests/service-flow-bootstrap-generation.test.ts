@@ -319,7 +319,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
+      evidenceRuntime: { domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
     });
     const { project, flow } = await blankFixture(instance);
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
@@ -355,7 +355,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) },
+      // The domain of the bound evidence runtime is the domain this test's
+      // project is created in, below. They are the same host: a runtime bound
+      // for one domain has no tools to offer a Flow authored in another.
+      evidenceRuntime: { domainId: "domain.test", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) },
       reusableLlmContext: {
         enabled: true,
         contentProtection,
@@ -408,7 +411,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
       evidenceRuntime: {
-        tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+        domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
         executeTool: vi.fn().mockResolvedValue({ factCount: 1 })
       }
     });
@@ -455,7 +458,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
+      evidenceRuntime: { domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
     });
     const { project, flow } = await blankFixture(instance);
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({

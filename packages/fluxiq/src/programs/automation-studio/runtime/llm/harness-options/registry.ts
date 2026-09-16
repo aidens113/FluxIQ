@@ -204,10 +204,28 @@ function isOffered(option: AutomationStudioHarnessOption, resolution: Automation
   return true;
 }
 
+/**
+ * Which Flows an option is offered to.
+ *
+ * This is the node registry's rule with one deliberate difference, and the
+ * difference is the point of the whole file. A node is a thing the Flow is made
+ * of, so a domain's node belongs only to that domain's Flows. A harness option
+ * gathers evidence about the environment the Flow *runs in*, and that
+ * environment belongs to whichever host is bound, not to the Flow's authoring
+ * scope. A Flow whose project names no domain still runs somewhere, and what it
+ * can observe there is exactly what the bound host offers.
+ *
+ * So a domain-scoped option reaches its own domain's Flows and Flows that named
+ * no domain, and still never reaches a Flow that named a different one.
+ * Narrowing it to domain-scoped Flows alone left an unscoped Flow with no tools
+ * at all, which the evidence loop refuses outright -- evidence-guided Flow
+ * bootstrap died with `llm_evidence_loop.invalid_configuration` for every
+ * project nobody had given a domain id.
+ */
 function scopeAllows(availability: AutomationStudioNodeAvailability, scope: AutomationStudioFlowScope): boolean {
   if (availability.kind === "both") return true;
   if (availability.kind === "global") return scope.kind === "global";
-  return scope.kind === "domain" && scope.domainId === availability.domainId;
+  return scope.kind === "global" || (scope.kind === "domain" && scope.domainId === availability.domainId);
 }
 
 /** An option pinned to stages is offered only inside one of them. A call that
