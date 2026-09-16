@@ -537,15 +537,25 @@ handler runs; no handler takes a PIN of its own.
 | `program-gated` | The owning program runs its own, stronger check inside the handler — password, PIN and authenticator code, or a time-boxed grant. | Nothing, so that one regime stays the single rule. |
 | `destructive-ungated` | Destructive, and nothing checks a credential. A declared gap, listed below. | Nothing. |
 
-The fifteen `destructive` endpoints are `delete-flow`, `delete-flow-subflow`,
+The thirteen `destructive` endpoints are `delete-flow`, `delete-flow-subflow`,
 `delete-flow-map-route-group`, `delete-project`, `delete-project-category`,
-`delete-project-artifact`, `delete-project-hierarchy-node`,
-`save-project-hierarchy` (which honours a `deletedHierarchyIds` array),
-`delete-proposal`, `delete-recording`, `delete-recordings`,
-`delete-run-datasets`, `rollback-flow-migration`, `seal-legacy-writes`, and
-`execute-client-action`. The last two are the irreversible cases rather than
-deletions: sealing legacy writes removes a capability permanently, and executing
-a client action clicks, types, or submits in the operator's real browser.
+`delete-project-artifact`, `delete-proposal`, `delete-recording`,
+`delete-recordings`, `delete-run-datasets`, `rollback-flow-migration`,
+`seal-legacy-writes`, and `execute-client-action`. The last two are the
+irreversible cases rather than deletions: sealing legacy writes removes a
+capability permanently, and executing a client action clicks, types, or submits
+in the operator's real browser. The exact list is pinned by
+`packages/fluxiq/src/programs/tests/endpoint-classification.test.ts`, so moving
+an endpoint in or out of it fails a named test rather than passing silently.
+
+A gated endpoint needs a caller that asks for the PIN. In the panel that caller
+is `AuthorizationDialog`
+(`apps/web/src/features/programs/components/overlays`), used by the client
+gateway and by the Data window's dataset delete. A caller that posts a
+`destructive` endpoint without `authorizationPin` gets
+`{ ok: false, error: "PIN is required for this action" }` and the handler never
+runs, so a missing prompt shows up as a refused action rather than an unguarded
+deletion.
 
 Three deletions are deliberately **not** gated, because they are how a Flow is
 edited rather than removed: `delete-flow-map-route` and the delete action of
@@ -553,6 +563,38 @@ edited rather than removed: `delete-flow-map-route` and the delete action of
 `delete-reusable-llm-context` / `clear-reusable-llm-context-scope` remove
 derived, regenerable cache records. `archive-flow-subflow` remains the soft
 alternative a loop should prefer to `delete-flow-subflow`.
+
+#### The workspace hierarchy is filing, not data
+
+`save-project-hierarchy`, `put-project-hierarchy-node`, and
+`delete-project-hierarchy-node` are `authoring`, although two of them carry the
+word *delete* and one honours a `deletedHierarchyIds` array. The reason is in
+what they write. All three touch `customHierarchyNodes` and
+`deletedHierarchyIds` and nothing else
+(`AutomationStudioService.deleteProjectHierarchyNode`): removing a node drops
+the folder record and cascades to its descendant folders, and no Flow,
+recording, project, or dataset is touched. The operator's work survives the
+delete and simply becomes unfiled. What is destroyed is organization, not data,
+so the rule at the top of this section does not reach it.
+
+Two further things make `authoring` the correct label here rather than a
+convenient one:
+
+- `delete-project-hierarchy-node` is an **autosave** path.
+  `apps/web/src/features/automation-studio/hierarchy/useHierarchyPersistence.ts`
+  posts it while the operator drags items around the workspace, so gating it
+  would put a PIN prompt in the middle of ordinary editing. A prompt that
+  appears during routine work trains people to enter their PIN reflexively,
+  which weakens it everywhere it actually matters — including in front of the
+  thirteen endpoints above.
+- Gating the bulk `save-project-hierarchy` while leaving the granular delete
+  open would be a **bypass**, because the granular path can remove the same
+  nodes one at a time. The two move together in either direction, so they move
+  together here.
+
+Deleting a *project*, a *category*, an *artifact*, or a *recording* remains
+`destructive`: those endpoints remove the content itself, not its place in the
+tree.
 
 Revocation is authoring, not destruction. `revoke-session`, `lock-vault`, and
 `revoke-client-trust` withdraw access without removing persisted data, and

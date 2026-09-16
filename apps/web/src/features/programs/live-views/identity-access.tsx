@@ -35,7 +35,7 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [createOpen, setCreateOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ username: "", displayName: "", roleId: "viewer", password: "", pin: "", enabled: true });
+  const [newUser, setNewUser] = useState(emptyNewUser());
   const [profileEdit, setProfileEdit] = useState<{ id: string; username: string; displayName: string } | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [totpSetup, setTotpSetup] = useState<{ secret: string; otpauthUrl: string; qrSvg: string; issuer: string; accountLabel: string } | null>(null);
@@ -44,6 +44,11 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
   const [roleEdit, setRoleEdit] = useState<{ userId: string; roleId: string; password: string; pin: string; totp: string } | null>(null);
   const [roleAlert, setRoleAlert] = useState<{ tone: AlertTone; message: string } | null>(null);
   const [totpDisable, setTotpDisable] = useState<{ userId: string; authorizationPassword: string; authorizationPin: string; authorizationTotp: string; error: string } | null>(null);
+  const [totpStart, setTotpStart] = useState<{ userId: string; authorizationPassword: string; authorizationPin: string; authorizationTotp: string; error: string } | null>(null);
+  const [enabledEdit, setEnabledEdit] = useState<{ userId: string; enabled: boolean; authorizationPassword: string; authorizationPin: string; authorizationTotp: string; error: string } | null>(null);
+  // Enrollment is two gated calls, so the factors the operator entered once are
+  // held for the confirm call and dropped the moment the enrollment closes.
+  const [totpAuthorization, setTotpAuthorization] = useState<Authorization | null>(null);
   const operation = useOperationLock();
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -69,7 +74,7 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
       const result = await api.post("create-user", newUser);
       if (!result.ok) { setStatus(result.error ?? "Create failed"); return; }
       setStatus("User created");
-      setNewUser({ username: "", displayName: "", roleId: "viewer", password: "", pin: "", enabled: true });
+      setNewUser(emptyNewUser());
       setCreateOpen(false);
       await refresh();
     });
@@ -96,7 +101,19 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
     await operation.run("update-role", async () => {
       const result = await api.post("update-user", { id: roleEdit.userId, roleId: roleEdit.roleId, authorizationPassword: roleEdit.password, authorizationPin: roleEdit.pin, authorizationTotp: roleEdit.totp });
       if (result.ok) { setStatus("Role updated"); setRoleAlert(null); setRoleEdit(null); await refresh(); }
-      else setRoleAlert({ tone: "error", message: result.error ?? "Role update failed." });
+      else setRoleAlert({ tone: "error", message: refusalMessage(result, "Role update failed.") });
+    });
+  }
+
+  async function saveEnabledEdit() {
+    if (!enabledEdit) return;
+    const draft = enabledEdit;
+    await operation.run("update-user", async () => {
+      const result = await api.post("update-user", { id: draft.userId, enabled: draft.enabled, ...authorizationOf(draft) });
+      if (!result.ok) { setEnabledEdit({ ...draft, error: refusalMessage(result, "Update failed.") }); return; }
+      setStatus(draft.enabled ? "User enabled" : "User disabled");
+      setEnabledEdit(null);
+      await refresh();
     });
   }
 
@@ -111,21 +128,33 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
     });
   }
 
-  async function beginTotp(userId = selectedUser?.id) {
-    if (!userId) return;
+  async function beginTotp() {
+    if (!totpStart) return;
+    const draft = totpStart;
     await operation.run("begin-totp", async () => {
-      const result = await api.post<{ secret: string; otpauthUrl: string; qrSvg: string; issuer: string; accountLabel: string }>("begin-totp", { userId });
-      if (result.ok) { setTotpSetup(result.payload ?? null); setTotpCode(""); setStatus("2FA setup started"); }
-      else setStatus(result.error ?? "2FA setup failed");
+      const result = await api.post<{ secret: string; otpauthUrl: string; qrSvg: string; issuer: string; accountLabel: string }>("begin-totp", draft);
+      if (!result.ok) { setTotpStart({ ...draft, error: result.error ?? "2FA setup failed." }); return; }
+      setTotpAuthorization(authorizationOf(draft));
+      setTotpSetup(result.payload ?? null);
+      setTotpCode("");
+      setTotpStart(null);
+      setStatus("2FA setup started");
     });
+  }
+
+  function closeTotpSetup() {
+    setTotpSetup(null);
+    setTotpCode("");
+    setTotpAuthorization(null);
   }
 
   async function confirmTotp() {
     if (!selectedUser) return;
+    const authorization = totpAuthorization;
     await operation.run("confirm-totp", async () => {
-      const result = await api.post("confirm-totp", { userId: selectedUser.id, code: totpCode });
+      const result = await api.post("confirm-totp", { userId: selectedUser.id, code: totpCode, ...authorization });
       setStatus(result.ok ? "2FA enabled" : result.error ?? "2FA confirmation failed");
-      if (result.ok) { setTotpSetup(null); await refresh(); }
+      if (result.ok) { closeTotpSetup(); await refresh(); }
     });
   }
 
@@ -176,8 +205,8 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
                 { id: "role", label: "Change role", disabled: protectedAdmin, onSelect: () => { setSelectedUserId(user.id); setRoleAlert(null); setRoleEdit({ userId: user.id, roleId: user.roleId, password: "", pin: "", totp: "" }); } },
                 { id: "password", label: "Change password", onSelect: () => beginCredential(user, "password") },
                 { id: "pin", label: "Change PIN", onSelect: () => beginCredential(user, "pin") },
-                { id: "totp", label: user.totpEnabled ? "Disable 2FA" : "Set up 2FA", onSelect: () => { setSelectedUserId(user.id); if (user.totpEnabled) setTotpDisable({ userId: user.id, authorizationPassword: "", authorizationPin: "", authorizationTotp: "", error: "" }); else void beginTotp(user.id); } },
-                { id: "enabled", label: user.enabled ? "Disable user" : "Enable user", danger: user.enabled, disabled: protectedAdmin, onSelect: () => void updateUser(user, { enabled: !user.enabled }) }
+                { id: "totp", label: user.totpEnabled ? "Disable 2FA" : "Set up 2FA", onSelect: () => { setSelectedUserId(user.id); setTotpDisable(null); setTotpStart(null); if (user.totpEnabled) setTotpDisable(emptyAuthorizationStep(user.id)); else setTotpStart(emptyAuthorizationStep(user.id)); } },
+                { id: "enabled", label: user.enabled ? "Disable user" : "Enable user", danger: user.enabled, disabled: protectedAdmin, onSelect: () => { setSelectedUserId(user.id); setEnabledEdit({ userId: user.id, enabled: !user.enabled, ...NO_AUTHORIZATION, error: "" }); } }
               ]} />
             ];
           })} empty={users.length ? "No users match these filters." : "No users have been created."} />
@@ -199,22 +228,64 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
         <VisualAlert tone="info" title="Security consequences" message="Role changes and credential replacement require the acting user's current authorization factors. Disabling a user invalidates future login, and the final enabled administrator is protected." />
       </div> : null}
 
-      {createOpen ? <Modal title="Add User" description="Create a framework account with an initial role and temporary credentials." onClose={() => setCreateOpen(false)}>
-        <div className="dialog-form"><Field label="Username" required><input autoComplete="username" data-autofocus value={newUser.username} onChange={(event) => setNewUser({ ...newUser, username: event.target.value })} /></Field><Field label="Display name" required><input value={newUser.displayName} onChange={(event) => setNewUser({ ...newUser, displayName: event.target.value })} /></Field><Field label="Role" required><select value={newUser.roleId} onChange={(event) => setNewUser({ ...newUser, roleId: event.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field><Field label="Temporary password" required><input autoComplete="new-password" type="password" value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} /></Field><Field hint="Leave blank when this account does not require a PIN." label="PIN"><input inputMode="numeric" value={newUser.pin} onChange={(event) => setNewUser({ ...newUser, pin: digits(event.target.value) })} /></Field><label className="check-row"><input checked={newUser.enabled} onChange={(event) => setNewUser({ ...newUser, enabled: event.target.checked })} type="checkbox" />Enabled at creation</label></div>
-        <div className="modal-actions"><button className="button" onClick={() => setCreateOpen(false)} type="button">Cancel</button><button className="button button-primary" disabled={!newUser.username.trim() || !newUser.displayName.trim() || !newUser.password || (newUser.pin.length > 0 && newUser.pin.length < 4)} onClick={() => void createUser()} type="button">Create User</button></div>
+      {createOpen ? <Modal title="Add User" description="Create a framework account with an initial role and temporary credentials." onClose={() => { setCreateOpen(false); setNewUser(emptyNewUser()); }}>
+        <div className="dialog-form"><Field label="Username" required><input autoComplete="username" data-autofocus value={newUser.username} onChange={(event) => setNewUser({ ...newUser, username: event.target.value })} /></Field><Field label="Display name" required><input value={newUser.displayName} onChange={(event) => setNewUser({ ...newUser, displayName: event.target.value })} /></Field><Field label="Role" required><select value={newUser.roleId} onChange={(event) => setNewUser({ ...newUser, roleId: event.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field><Field label="Temporary password" required><input autoComplete="new-password" type="password" value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} /></Field><Field hint="Leave blank when this account does not require a PIN." label="PIN"><input inputMode="numeric" value={newUser.pin} onChange={(event) => setNewUser({ ...newUser, pin: digits(event.target.value) })} /></Field><label className="check-row"><input checked={newUser.enabled} onChange={(event) => setNewUser({ ...newUser, enabled: event.target.checked })} type="checkbox" />Enabled at creation</label><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={newUser} onChange={(authorization) => setNewUser({ ...newUser, ...authorization })} /></div>
+        <div className="modal-actions"><button className="button" onClick={() => { setCreateOpen(false); setNewUser(emptyNewUser()); }} type="button">Cancel</button><button className="button button-primary" disabled={!newUser.username.trim() || !newUser.displayName.trim() || !newUser.password || (newUser.pin.length > 0 && newUser.pin.length < 4) || !authorizationComplete(newUser, currentUser, actorPinConfigured)} onClick={() => void createUser()} type="button">Create User</button></div>
       </Modal> : null}
 
       {profileEdit ? <Modal title="Edit User Profile" onClose={() => setProfileEdit(null)}><div className="dialog-form"><Field label="Display name" required><input data-autofocus value={profileEdit.displayName} onChange={(event) => setProfileEdit({ ...profileEdit, displayName: event.target.value })} /></Field><Field label="Username" required><input value={profileEdit.username} onChange={(event) => setProfileEdit({ ...profileEdit, username: event.target.value })} /></Field></div><div className="modal-actions"><button className="button" onClick={() => setProfileEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!profileEdit.displayName.trim() || !profileEdit.username.trim()} onClick={() => void saveProfile()} type="button">Save Profile</button></div></Modal> : null}
 
-      {totpSetup ? <Modal title="Set Up Two-Factor Authentication" description={"Enroll an authenticator for " + (selectedUser?.displayName ?? "this user") + "."} onClose={() => { setTotpSetup(null); setTotpCode(""); }}><div className="totp-enrollment"><div className="totp-qr-card"><div className="totp-qr-frame" dangerouslySetInnerHTML={{ __html: String(totpSetup.qrSvg ?? "") }} /><span>Scan with an authenticator app</span></div><div className="totp-enrollment-steps"><VisualAlert tone="info" title="Authenticator setup" message="Scan the QR code or enter the manual key, then provide the current six-digit code." /><div className="secret-copy-row"><span><strong>Manual key</strong><code>{totpSetup.secret}</code></span><button className="button" onClick={() => void copyText(String(totpSetup.secret ?? ""))} type="button"><Copy size={14} aria-hidden />Copy</button></div><details className="otpauth-details"><summary>Advanced URI</summary><code>{totpSetup.otpauthUrl}</code></details><Field label="Six-digit code" required><input data-autofocus inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(digits(event.target.value).slice(0, 6))} /></Field></div></div><div className="modal-actions"><button className="button" onClick={() => { setTotpSetup(null); setTotpCode(""); }} type="button">Cancel</button><button className="button button-primary" disabled={totpCode.length !== 6} onClick={() => void confirmTotp()} type="button"><QrCode size={14} aria-hidden />Enable 2FA</button></div></Modal> : null}
+      {totpSetup ? <Modal title="Set Up Two-Factor Authentication" description={"Enroll an authenticator for " + (selectedUser?.displayName ?? "this user") + "."} onClose={closeTotpSetup}><div className="totp-enrollment"><div className="totp-qr-card"><div className="totp-qr-frame" dangerouslySetInnerHTML={{ __html: String(totpSetup.qrSvg ?? "") }} /><span>Scan with an authenticator app</span></div><div className="totp-enrollment-steps"><VisualAlert tone="info" title="Authenticator setup" message="Scan the QR code or enter the manual key, then provide the current six-digit code." /><div className="secret-copy-row"><span><strong>Manual key</strong><code>{totpSetup.secret}</code></span><button className="button" onClick={() => void copyText(String(totpSetup.secret ?? ""))} type="button"><Copy size={14} aria-hidden />Copy</button></div><details className="otpauth-details"><summary>Advanced URI</summary><code>{totpSetup.otpauthUrl}</code></details><Field label="Six-digit code" required><input data-autofocus inputMode="numeric" value={totpCode} onChange={(event) => setTotpCode(digits(event.target.value).slice(0, 6))} /></Field></div></div><div className="modal-actions"><button className="button" onClick={closeTotpSetup} type="button">Cancel</button><button className="button button-primary" disabled={totpCode.length !== 6} onClick={() => void confirmTotp()} type="button"><QrCode size={14} aria-hidden />Enable 2FA</button></div></Modal> : null}
+
+      {totpStart ? <Modal title="Set Up Two-Factor Authentication" description={"Authorize enrollment for " + (users.find((user) => user.id === totpStart.userId)?.displayName ?? "this user") + "."} onClose={() => setTotpStart(null)}>{totpStart.error ? <VisualAlert tone="error" title="Authorization failed" message={totpStart.error} /> : null}<div className="dialog-form"><VisualAlert tone="warning" title="Security impact" message="Enrollment issues the authenticator secret for this account, replacing any authenticator already set up for it." /><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={totpStart} onChange={(authorization) => setTotpStart({ ...totpStart, ...authorization, error: "" })} /></div><div className="modal-actions"><button className="button" onClick={() => setTotpStart(null)} type="button">Cancel</button><button className="button button-primary" disabled={!authorizationComplete(totpStart, currentUser, actorPinConfigured)} onClick={() => void beginTotp()} type="button"><QrCode size={14} aria-hidden />Continue</button></div></Modal> : null}
 
       {credentialEdit ? <Modal title={"Change " + credentialEdit.kind} description={"Replace the selected user's " + credentialEdit.kind + " after authorizing this privileged action."} onClose={() => setCredentialEdit(null)}>{credentialAlert ? <VisualAlert tone={credentialAlert.tone} title="Credential update" message={credentialAlert.message} /> : null}<div className="dialog-form"><Field label="New value" required><input autoComplete="new-password" data-autofocus inputMode={credentialEdit.kind === "pin" ? "numeric" : undefined} type={credentialEdit.kind === "password" ? "password" : "text"} value={credentialEdit.value} onChange={(event) => setCredentialEdit({ ...credentialEdit, value: credentialEdit.kind === "pin" ? digits(event.target.value) : event.target.value })} /></Field><Field label="Confirm value" required><input autoComplete="new-password" inputMode={credentialEdit.kind === "pin" ? "numeric" : undefined} type={credentialEdit.kind === "password" ? "password" : "text"} value={credentialEdit.confirm} onChange={(event) => setCredentialEdit({ ...credentialEdit, confirm: credentialEdit.kind === "pin" ? digits(event.target.value) : event.target.value })} /></Field><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={credentialEdit} onChange={(authorization) => setCredentialEdit({ ...credentialEdit, ...authorization })} /></div><div className="modal-actions"><button className="button" onClick={() => setCredentialEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!credentialEdit.value || credentialEdit.value !== credentialEdit.confirm || !credentialEdit.authorizationPassword || (actorPinConfigured && credentialEdit.authorizationPin.length < 4) || (currentUser.totpEnabled && credentialEdit.authorizationTotp.length !== 6)} onClick={() => void saveCredential()} type="button"><KeyRound size={14} aria-hidden />Save Credential</button></div></Modal> : null}
 
       {totpDisable ? <Modal title="Disable Two-Factor Authentication" description={"Remove authenticator protection from " + (selectedUser?.displayName ?? "this user") + "."} onClose={() => setTotpDisable(null)}>{totpDisable.error ? <VisualAlert tone="error" title="Authorization failed" message={totpDisable.error} /> : null}<div className="dialog-form"><VisualAlert tone="warning" title="Security impact" message="This user will be able to sign in without an authenticator code after this change." /><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={totpDisable} onChange={(authorization) => setTotpDisable({ ...totpDisable, ...authorization, error: "" })} /></div><div className="modal-actions"><button className="button" onClick={() => setTotpDisable(null)} type="button">Cancel</button><button className="button button-danger" disabled={!totpDisable.authorizationPassword || (actorPinConfigured && totpDisable.authorizationPin.length < 4) || (currentUser.totpEnabled && totpDisable.authorizationTotp.length !== 6)} onClick={() => void disableTotp()} type="button">Disable 2FA</button></div></Modal> : null}
 
+      {enabledEdit ? <Modal title={enabledEdit.enabled ? "Enable User" : "Disable User"} description={(enabledEdit.enabled ? "Restore access for " : "Withdraw access from ") + (users.find((user) => user.id === enabledEdit.userId)?.displayName ?? "this user") + "."} onClose={() => setEnabledEdit(null)}>{enabledEdit.error ? <VisualAlert tone="error" title="Authorization failed" message={enabledEdit.error} /> : null}<div className="dialog-form"><VisualAlert tone="warning" title="Security impact" message={enabledEdit.enabled ? "This account will be able to sign in again with its existing role and credentials." : "This account will no longer be able to sign in, and anyone relying on it loses access."} /><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={enabledEdit} onChange={(authorization) => setEnabledEdit({ ...enabledEdit, ...authorization, error: "" })} /></div><div className="modal-actions"><button className="button" onClick={() => setEnabledEdit(null)} type="button">Cancel</button><button className={enabledEdit.enabled ? "button button-primary" : "button button-danger"} disabled={!authorizationComplete(enabledEdit, currentUser, actorPinConfigured)} onClick={() => void saveEnabledEdit()} type="button">{enabledEdit.enabled ? "Enable User" : "Disable User"}</button></div></Modal> : null}
+
       {roleEdit ? <Modal title="Change Role" description="Changing permissions affects what this user can view and control." onClose={() => setRoleEdit(null)}>{roleAlert ? <VisualAlert tone={roleAlert.tone} title="Role update" message={roleAlert.message} /> : null}<div className="dialog-form"><Field label="Role" required><select data-autofocus value={roleEdit.roleId} onChange={(event) => setRoleEdit({ ...roleEdit, roleId: event.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={{ authorizationPassword: roleEdit.password, authorizationPin: roleEdit.pin, authorizationTotp: roleEdit.totp }} onChange={(value) => setRoleEdit({ ...roleEdit, password: value.authorizationPassword, pin: value.authorizationPin, totp: value.authorizationTotp })} /></div><div className="modal-actions"><button className="button" onClick={() => setRoleEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!roleEdit.password || (actorPinConfigured && roleEdit.pin.length < 4) || (currentUser.totpEnabled && roleEdit.totp.length !== 6)} onClick={() => void saveRoleEdit()} type="button">Save Role</button></div></Modal> : null}
     </section></OperationBusyBoundary>
   );
+}
+
+type Authorization = { authorizationPassword: string; authorizationPin: string; authorizationTotp: string };
+
+const NO_AUTHORIZATION: Authorization = { authorizationPassword: "", authorizationPin: "", authorizationTotp: "" };
+
+function emptyNewUser() {
+  return { username: "", displayName: "", roleId: "viewer", password: "", pin: "", enabled: true, ...NO_AUTHORIZATION };
+}
+
+function emptyAuthorizationStep(userId: string) {
+  return { userId, ...NO_AUTHORIZATION, error: "" };
+}
+
+function authorizationOf(value: Authorization): Authorization {
+  return { authorizationPassword: value.authorizationPassword, authorizationPin: value.authorizationPin, authorizationTotp: value.authorizationTotp };
+}
+
+/**
+ * The message to show for a refused privileged call. A gated Identity Access
+ * endpoint answers `requiresRecheck` when what is missing is proof of the
+ * acting user's own credentials rather than permission, and the two need
+ * different words: one is a form to fill in again, the other a dead end. The
+ * field rides through `normalizeProgramApiResponse` untyped, so it is read
+ * here rather than named in the shared response type.
+ */
+function refusalMessage(result: { error?: string }, fallback: string): string {
+  const message = result.error ?? fallback;
+  return (result as { requiresRecheck?: boolean }).requiresRecheck === true
+    ? message + " Enter your current security factors and try again."
+    : message;
+}
+
+/** The factors the acting user must supply before a gated endpoint will act: password always, PIN when configured, 2FA code when enabled. */
+function authorizationComplete(value: Authorization, currentUser: CurrentUser, pinConfigured: boolean): boolean {
+  if (!value.authorizationPassword) return false;
+  if (pinConfigured && value.authorizationPin.length < 4) return false;
+  return !currentUser.totpEnabled || value.authorizationTotp.length === 6;
 }
 
 function AuthorizationFields(props: { currentUser: CurrentUser; pinConfigured: boolean; value: { authorizationPassword: string; authorizationPin: string; authorizationTotp: string }; onChange(value: { authorizationPassword: string; authorizationPin: string; authorizationTotp: string }): void }) {

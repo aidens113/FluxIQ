@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AuthorizationDialog, type AuthorizationCredentials } from "../../programs/shared-ui";
 import { RunDatasetTable } from "./RunDatasetTable";
 import { RUN_DATASET_PAGE_SIZE } from "./dataset-queries";
 import type { RunDatasetCommands } from "./dataset-commands";
@@ -16,10 +17,18 @@ export type RunDatasetsPanelProps = {
 
 type LoadedPage = { datasetId: string; schema: RunDatasetPage["schema"] | null; rows: Array<Record<string, unknown>>; nextCursor: string | null };
 
+const NO_CREDENTIALS: AuthorizationCredentials = { password: "", pin: "", totp: "" };
+
 /**
  * The datasets a run stored, beside Export Audit in Runtime Debug: a table per
  * dataset, a page of rows, inline CSV/JSON export, a streaming link when the
  * export is too large, and deletion.
+ *
+ * Deleting a table removes the rows a run captured, which the registry classifies
+ * `destructive`, so `delete-run-datasets` will not run without the operator's
+ * session PIN. The panel therefore collects one through the same
+ * `AuthorizationDialog` the client gateway uses, rather than an inline confirm the
+ * server would only refuse.
  *
  * The panel holds no transport of its own. `runtime-host.ts` binds the commands
  * and passes them in, so a test injects stubs rather than mocking the network.
@@ -33,7 +42,18 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
   const [message, setMessage] = useState("");
   const [streamHref, setStreamHref] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [credentials, setCredentials] = useState<AuthorizationCredentials>(NO_CREDENTIALS);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const requestRef = useRef(0);
+
+  /** Closes the prompt and drops the PIN; it is never held past the request. */
+  const closeDeletePrompt = () => {
+    setConfirmingDelete(false);
+    setCredentials(NO_CREDENTIALS);
+    setDeleteError("");
+    setDeleteBusy(false);
+  };
 
   useEffect(() => {
     requestRef.current += 1;
@@ -43,6 +63,9 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
     setMessage("");
     setStreamHref("");
     setConfirmingDelete(false);
+    setCredentials(NO_CREDENTIALS);
+    setDeleteError("");
+    setDeleteBusy(false);
     setLoading(false);
   }, [props.projectId, props.runId]);
 
@@ -79,7 +102,7 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
     setSelectedId(datasetId);
     setMessage("");
     setStreamHref("");
-    setConfirmingDelete(false);
+    closeDeletePrompt();
     setPage(null);
     void loadPage(datasetId, null);
   };
@@ -115,16 +138,23 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
 
   const deleteDataset = async () => {
     if (!props.projectId || !props.runId || !selected) return;
+    setDeleteBusy(true);
+    setDeleteError("");
     const result = await props.commands.remove({
       projectId: props.projectId,
       runId: props.runId,
-      datasetId: selected.datasetId
+      datasetId: selected.datasetId,
+      authorizationPin: credentials.pin
     });
-    setConfirmingDelete(false);
     if (!result.ok) {
-      setMessage(result.error ?? "The table could not be deleted.");
+      // The prompt stays open with the PIN cleared, so a mistyped PIN costs one
+      // retry rather than a dismissed dialog and a message with no way back.
+      setDeleteBusy(false);
+      setCredentials(NO_CREDENTIALS);
+      setDeleteError(result.error ?? "The table could not be deleted.");
       return;
     }
+    closeDeletePrompt();
     setSelectedId("");
     setPage(null);
     setMessage("The table was deleted. Reopen the run to refresh the list.");
@@ -168,14 +198,7 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
           <div className="automation-datasets-actions">
             <button className="automation-runtime-row-action" onClick={() => void exportDataset("csv")} type="button">Export CSV</button>
             <button className="automation-runtime-row-action" onClick={() => void exportDataset("json")} type="button">Export JSON</button>
-            {confirmingDelete ? (
-              <>
-                <button className="automation-runtime-row-action" onClick={() => void deleteDataset()} type="button">Confirm delete</button>
-                <button className="automation-runtime-row-action" onClick={() => setConfirmingDelete(false)} type="button">Cancel</button>
-              </>
-            ) : (
-              <button className="automation-runtime-row-action" onClick={() => setConfirmingDelete(true)} type="button">Delete</button>
-            )}
+            <button className="automation-runtime-row-action" onClick={() => setConfirmingDelete(true)} type="button">Delete</button>
           </div>
           <RunDatasetTable
             hasMore={Boolean(page?.nextCursor)}
@@ -185,6 +208,20 @@ export function RunDatasetsPanel(props: RunDatasetsPanelProps) {
             rows={page && page.datasetId === selected.datasetId ? page.rows : []}
             schema={page && page.datasetId === selected.datasetId ? page.schema : null}
           />
+          {confirmingDelete ? (
+            <AuthorizationDialog
+              actionLabel="Delete table"
+              busy={deleteBusy}
+              credentials={credentials}
+              description={`Deleting "${selected.label ?? selected.datasetId}" removes the ${selected.recordCount} rows this run captured. It cannot be undone.`}
+              error={deleteError}
+              requirements={{ pin: true }}
+              title="Delete this table"
+              onAuthorize={() => void deleteDataset()}
+              onCancel={() => { if (!deleteBusy) closeDeletePrompt(); }}
+              onChange={setCredentials}
+            />
+          ) : null}
         </>
       ) : null}
     </section>

@@ -18,6 +18,10 @@ export type ApiResponse<T = unknown> = {
   code?: string;
   fieldErrors?: ApiFieldErrors;
   retryable?: boolean;
+  /** The endpoint refused because the caller must re-prove its credentials.
+   *  A view reads this to ask for the security factors again, rather than
+   *  reporting a permission failure the user has no way to act on. */
+  requiresRecheck?: boolean;
   requestId?: string;
   conflictRevision?: string | number;
 };

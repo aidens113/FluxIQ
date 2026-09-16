@@ -16,14 +16,12 @@ const PIN_GATED = [
   "automation-studio/delete-project",
   "automation-studio/delete-project-artifact",
   "automation-studio/delete-project-category",
-  "automation-studio/delete-project-hierarchy-node",
   "automation-studio/delete-proposal",
   "automation-studio/delete-recording",
   "automation-studio/delete-recordings",
   "automation-studio/delete-run-datasets",
   "automation-studio/execute-client-action",
   "automation-studio/rollback-flow-migration",
-  "automation-studio/save-project-hierarchy",
   "automation-studio/seal-legacy-writes"
 ];
 
@@ -80,6 +78,25 @@ describe("global program endpoint classification", () => {
       "automation-studio/update-flow-subflow",
       "automation-studio/review-flow-adaptation",
       "automation-studio/publish-flow"
+    ]) {
+      expect(authoring, endpoint).toContain(endpoint);
+    }
+  });
+
+  // The workspace hierarchy is filing, not data. Both endpoints write only
+  // `customHierarchyNodes` and `deletedHierarchyIds`; deleting a node leaves every
+  // Flow, recording, project and dataset in place and merely unfiled. The delete is
+  // an autosave path that fires while the operator drags items around, so gating it
+  // would raise a PIN prompt during ordinary editing and train people to type the
+  // PIN reflexively. The bulk save is pinned alongside it because the granular
+  // delete can remove the same nodes one at a time, so gating only the bulk path
+  // would be a bypass, and gating only the granular one would be theatre.
+  it("keeps workspace filing un-gated, so rearranging the workspace never raises a prompt", () => {
+    const authoring = new Set(named("authoring"));
+    for (const endpoint of [
+      "automation-studio/save-project-hierarchy",
+      "automation-studio/put-project-hierarchy-node",
+      "automation-studio/delete-project-hierarchy-node"
     ]) {
       expect(authoring, endpoint).toContain(endpoint);
     }

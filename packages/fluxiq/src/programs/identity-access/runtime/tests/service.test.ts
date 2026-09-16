@@ -295,6 +295,32 @@ describe("IdentityAccessService sessions", () => {
   });
 });
 
+describe("IdentityAccessService vault unlock", () => {
+  it("refuses a vault unlock that omits a credential the account has configured", async () => {
+    const identity = createService(new MemoryIdentityRepository());
+    await identity.upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD, pin: PIN });
+
+    // An omitted password or PIN once counted as proved, so `{ userId }` alone unlocked the vault.
+    await expect(identity.unlockVault({ userId: "user.one" })).rejects.toThrow("Invalid vault credentials");
+    await expect(identity.unlockVault({ userId: "user.one", password: PASSWORD })).rejects.toThrow("Invalid vault credentials");
+    await expect(identity.unlockVault({ userId: "user.one", pin: PIN })).rejects.toThrow("Invalid vault credentials");
+    await expect(identity.unlockVault({ userId: "user.one", password: PASSWORD, pin: WRONG_PIN })).rejects.toThrow("Invalid vault credentials");
+    expect((await identity.snapshot()).vault.unlocked).toBe(false);
+
+    await expect(identity.unlockVault({ userId: "user.one", password: PASSWORD, pin: PIN })).resolves.toMatchObject({ unlocked: true, unlockedBy: "user.one" });
+  });
+
+  it("refuses a vault unlock in the name of an account that has no password verifier to prove", async () => {
+    const identity = createService(new MemoryIdentityRepository());
+    await identity.upsertUser({ id: "user.none", username: "user-none", displayName: "No Credential", roleId: "admin" });
+
+    // Nothing configured once meant nothing to check, so naming the account was the whole proof.
+    await expect(identity.unlockVault({ userId: "user.none" })).rejects.toThrow("Invalid vault credentials");
+    await expect(identity.unlockVault({ userId: "user.none", password: PASSWORD })).rejects.toThrow("Invalid vault credentials");
+    expect((await identity.snapshot()).vault.unlocked).toBe(false);
+  });
+});
+
 describe("IdentityAccessService upsertUser", () => {
   it("refuses to change an existing account's password or PIN, leaving its profile and credentials as they were", async () => {
     const repository = new MemoryIdentityRepository();

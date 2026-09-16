@@ -288,6 +288,14 @@ export class IdentityAccessService {
     return { session, user: this.userWithCredentialStatus(user), role };
   }
 
+  /**
+   * Mints a bearer session for a user. It proves nothing by itself, so a caller
+   * must already have established that this user's own credentials were
+   * presented. One internal path satisfies that: `authenticate`, which mints
+   * only after the password and, where one is configured, the authenticator
+   * code have verified. The `create-session` endpoint is the only other way in,
+   * and it re-proves the calling session's credentials before reaching here.
+   */
   async createSession(userId: string, ttlMs = DEFAULT_SESSION_TTL_MS, nowMs = Date.now()): Promise<Session> {
     await this.load();
     const user = this.users.get(userId);
@@ -384,8 +392,17 @@ export class IdentityAccessService {
     await this.load();
     this.requireUser(params.userId);
     const credential = this.requireCredential(params.userId);
-    const passwordOk = params.password ? (await verifyPasswordHash(params.password, credential.passwordHash, this.kdf)).ok : true;
-    const pinOk = params.pin ? (await verifyPasswordHash(params.pin, credential.pinHash, this.kdf)).ok : true;
+    // What the account has configured decides what must be proved, never what
+    // the caller chose to send: an omitted password or PIN is an unproved one.
+    // An account with no password verifier can prove nothing, so it unlocks
+    // nothing; it cannot sign in either. The dummy derivation keeps that
+    // refusal off the clock, as `unlockCredential` does for the same case.
+    if (!credential.passwordHash) {
+      await runDummyCredentialDerivation(params.password ?? "", this.kdf);
+      throw new Error("Invalid vault credentials");
+    }
+    const passwordOk = (await verifyPasswordHash(params.password ?? "", credential.passwordHash, this.kdf)).ok;
+    const pinOk = credential.pinHash ? (await verifyPasswordHash(params.pin ?? "", credential.pinHash, this.kdf)).ok : true;
     const totpOk = credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
     if (!passwordOk || !pinOk || !totpOk) throw new Error("Invalid vault credentials");
     this.vault = {

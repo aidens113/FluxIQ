@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => "/programs/automation-studio"
+}));
+
+// `Modal` portals into `document.body`, and these tests run without a DOM, so the
+// real one renders nothing. `AuthorizationDialog` imports it directly, so the
+// module itself is stubbed rather than the `shared-ui` barrel. Everything else in
+// the prompt — the dialog, its PIN field, its buttons — is the real component.
+vi.mock("../../../programs/components/overlays/Modal", () => ({
+  Modal: (props: { children: ReactNode; title: string }) => createElement("section", { "aria-label": props.title }, props.children)
 }));
 
 import { RunDatasetsPanel } from "../RunDatasetsPanel";
@@ -105,7 +113,7 @@ describe("run datasets panel", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("deletes a table only after the action is confirmed", async () => {
+  it("deletes a table only after the operator supplies a PIN", async () => {
     const commands = commandsWith();
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -114,9 +122,32 @@ describe("run datasets panel", () => {
     await act(async () => button(renderer, "Orders")!.props.onClick());
     await act(async () => button(renderer, "Delete")!.props.onClick());
     expect(commands.remove).not.toHaveBeenCalled();
+    // `delete-run-datasets` is destructive, so the registry refuses it without a
+    // PIN. Confirming alone must therefore not be able to send the request.
+    expect(button(renderer, "Delete table")!.props.disabled).toBe(true);
 
-    await act(async () => button(renderer, "Confirm delete")!.props.onClick());
-    expect(commands.remove).toHaveBeenCalledWith({ projectId: "p", runId: "run.1", datasetId: "orders" });
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "123456" } }));
+    await act(async () => button(renderer, "Delete table")!.props.onClick());
+
+    expect(commands.remove).toHaveBeenCalledWith({ projectId: "p", runId: "run.1", datasetId: "orders", authorizationPin: "123456" });
+    expect(JSON.stringify(renderer.toJSON())).toContain("The table was deleted.");
+    await act(async () => renderer.unmount());
+  });
+
+  it("keeps the prompt open and clears the PIN when the server refuses it", async () => {
+    const commands = commandsWith({ remove: vi.fn(async () => ({ ok: false as const, error: "PIN is incorrect" })) });
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(RunDatasetsPanel, { projectId: "p", runId: "run.1", datasets, commands }));
+    });
+    await act(async () => button(renderer, "Orders")!.props.onClick());
+    await act(async () => button(renderer, "Delete")!.props.onClick());
+    await act(async () => renderer.root.findByType("input").props.onChange({ target: { value: "999999" } }));
+    await act(async () => button(renderer, "Delete table")!.props.onClick());
+
+    expect(JSON.stringify(renderer.toJSON())).toContain("PIN is incorrect");
+    expect(renderer.root.findByType("input").props.value).toBe("");
+    expect(button(renderer, "Delete table")!.props.disabled).toBe(true);
     await act(async () => renderer.unmount());
   });
 });

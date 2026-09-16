@@ -177,11 +177,20 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
       return { ok: true, payload: await service.listProjectChangeFeed({ projectId: String(payload.projectId ?? ""), afterSequence: payload.afterSequence, limit: payload.limit }) };
     }
   });
+  // Both hierarchy endpoints are `authoring`, not `destructive`. They write only
+  // `customHierarchyNodes` and `deletedHierarchyIds`: no Flow, recording, project
+  // or dataset is touched, so what a delete removes is the filing, not the work —
+  // the items survive and become unfiled. `delete-project-hierarchy-node` is also
+  // an autosave path that fires while the operator drags items around the
+  // workspace, and a PIN prompt during ordinary editing teaches people to enter it
+  // reflexively, which weakens it everywhere it matters. The bulk save moves with
+  // it because the granular delete can remove the same nodes one at a time; gating
+  // one and not the other would only be a bypass.
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectHierarchy,
     permission: "programs.write",
-    classification: "destructive",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; hierarchy?: unknown }
@@ -218,7 +227,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
     permission: "programs.write",
-    classification: "destructive",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; nodeId?: unknown }
