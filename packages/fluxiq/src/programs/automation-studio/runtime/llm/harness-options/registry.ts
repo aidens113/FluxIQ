@@ -199,7 +199,7 @@ function isOffered(option: AutomationStudioHarnessOption, resolution: Automation
   const permissions = new Set(resolution.permissions ?? []);
   if (option.safety?.requiredPermissions?.some((permission) => !permissions.has(permission))) return false;
   if (!stageAllows(option, resolution.stage)) return false;
-  if (!sideEffectAllows(option, resolution.policy)) return false;
+  if (!sideEffectAllows(option, resolution)) return false;
   if (option.safety?.requiresOperatorApproval === true && !new Set(resolution.approvedOptionIds ?? []).has(option.toolId)) return false;
   return true;
 }
@@ -218,12 +218,19 @@ function stageAllows(option: AutomationStudioHarnessOption, stage: AutomationStu
   return stage !== undefined && option.stages.includes(stage);
 }
 
-/** Destructive is never offered: gathering information never requires
- * destroying anything. Mutating needs the policy to permit side effects, and
- * an absent policy fails closed. */
-function sideEffectAllows(option: AutomationStudioHarnessOption, policy: AutomationStudioAdaptationPolicy | undefined): boolean {
+/**
+ * Destructive is never offered: gathering information never requires
+ * destroying anything.
+ *
+ * Mutating needs permission, and where a policy governs the call that policy
+ * decides, full stop. Only where none governs it does the caller's own opt-in
+ * apply, so a call that forgets to say anything withholds the option rather
+ * than inheriting it from silence.
+ */
+function sideEffectAllows(option: AutomationStudioHarnessOption, resolution: AutomationStudioHarnessOptionResolution): boolean {
   const sideEffect = option.safety?.sideEffect ?? (option.effect === "mutate" ? "mutate" : "observe");
   if (sideEffect === "destructive") return false;
   if (sideEffect !== "mutate") return true;
-  return policy?.allowExternalSideEffects === true;
+  if (resolution.policy) return resolution.policy.allowExternalSideEffects === true;
+  return resolution.allowSideEffectsWithoutPolicy === true;
 }

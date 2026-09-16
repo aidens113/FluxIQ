@@ -187,6 +187,12 @@ describe("Automation Studio harness option registry", () => {
     expect(registry.list(LEDGER_SCOPE).map((option) => option.toolId)).toEqual(["erp.ledger_balances"]);
     expect(registry.list({ ...LEDGER_SCOPE, policy: permissivePolicy() }).map((option) => option.toolId))
       .toEqual(["erp.ledger_balances", "erp.open_period"]);
+    // A policy present decides, and the caller's opt-in never overrides it.
+    expect(registry.list({ ...LEDGER_SCOPE, policy: { ...permissivePolicy(), allowExternalSideEffects: false }, allowSideEffectsWithoutPolicy: true }).map((option) => option.toolId))
+      .toEqual(["erp.ledger_balances"]);
+    // With no policy governing the call, the caller has to say so explicitly.
+    expect(registry.list({ ...LEDGER_SCOPE, allowSideEffectsWithoutPolicy: true }).map((option) => option.toolId))
+      .toEqual(["erp.ledger_balances", "erp.open_period"]);
 
     const destructive = new AutomationStudioHarnessOptionRegistry();
     destructive.register(ledgerBundle({

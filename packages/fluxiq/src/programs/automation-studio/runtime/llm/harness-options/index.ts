@@ -22,3 +22,8 @@ export {
   type AutomationStudioHarnessOptionLoopBinding,
   type AutomationStudioHarnessOptionResolution
 } from "./registry.ts";
+export {
+  automationStudioHarnessOptionBundleFromBinding,
+  automationStudioHarnessOptionRegistry,
+  type AutomationStudioLlmEvidenceRuntimeBinding
+} from "./binding.ts";
