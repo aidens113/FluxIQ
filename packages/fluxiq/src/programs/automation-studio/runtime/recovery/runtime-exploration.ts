@@ -53,6 +53,7 @@ import {
 import { automationStudioExplorationEvidenceDigest, type AutomationStudioExplorationNoProgressReason } from "./progress-guard.ts";
 import type { AutomationStudioRecoveryDeadline } from "./recovery-deadline.ts";
 import { AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES, type AutomationStudioRecoveryTraceEvent } from "./trace.ts";
+import { AutomationStudioExplorationUnusableDecisionError } from "./unusable-decision.ts";
 
 /**
  * How a domain translates its own refusal codes into Core's stop reasons.
@@ -68,6 +69,11 @@ export type AutomationStudioExplorationRefusalClassifier = (resultCode: string) 
 export type AutomationStudioRuntimeExplorationInput = {
   /** The tools and the dispatch, from the harness-option registry. */
   loop: AutomationStudioHarnessOptionLoopBinding;
+  /**
+   * One provider decision. Throwing `AutomationStudioExplorationUnusableDecisionError`
+   * says the call was spent on an answer that cannot be used, and the runner
+   * asks again under the same budget; anything else it throws ends the loop.
+   */
   decide: AutomationStudioLlmEvidenceLoopInput["decide"];
   budget: AutomationStudioExplorationBudget;
   /** The whole recovery's clock, when one is running. Binds ahead of the budget's. */
@@ -95,6 +101,8 @@ export type AutomationStudioRuntimeExploration = {
   actions: number;
   observedActions: number;
   refusedActions: number;
+  /** Provider decisions that were made and came back unusable, each asked again. */
+  unusableDecisions: number;
   accounting: AutomationStudioLlmEvidenceLoopAccounting;
   trace: AutomationStudioLlmEvidenceLoopTrace[];
   durationMs: number;
@@ -113,6 +121,7 @@ export async function runAutomationStudioRuntimeExploration(
     ...(input.recoveryDeadline ? { recoveryDeadline: input.recoveryDeadline } : {}),
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
+  let unusableDecisions = 0;
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -120,10 +129,25 @@ export async function runAutomationStudioRuntimeExploration(
       ? undefined
       : await runAutomationStudioLlmEvidenceLoop({
         tools: input.loop.tools,
+        // An answer that could not be used is asked for again, each attempt
+        // admitted and charged like any other call. It is a step that did not
+        // advance, so the progress guard -- not the call backstop -- is what
+        // ends a loop whose answers stay unusable, and it says why.
         decide: async (decision) => {
-          const admitted = ledger.admitProviderCall();
-          if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
-          return input.decide(decision);
+          for (;;) {
+            const admitted = ledger.admitProviderCall();
+            if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
+            try {
+              return await input.decide(decision);
+            } catch (error) {
+              if (!(error instanceof AutomationStudioExplorationUnusableDecisionError)) throw error;
+              unusableDecisions += 1;
+              ledger.recordUnusableDecision();
+              // Stopped from outside while the answer was coming back: the
+              // loop reads the signal and names the ending, so do not ask again.
+              if (decision.signal?.aborted) throw error;
+            }
+          }
         },
         executeTool: async (call) => {
           const signature = actionSignature(call.toolId, call.value);
@@ -155,7 +179,7 @@ export async function runAutomationStudioRuntimeExploration(
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
       });
-    return classify({ loopResult, ledger, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
+    return classify({ loopResult, ledger, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();
   }
@@ -199,6 +223,7 @@ export function automationStudioExplorationTraceEvent(input: {
       actions: exploration.actions,
       observedActions: exploration.observedActions,
       refusedActions: exploration.refusedActions,
+      unusableDecisions: exploration.unusableDecisions,
       providerCalls: exploration.accounting.iterations,
       evidenceBytes: exploration.accounting.evidenceBytes,
       durationMs: exploration.durationMs
@@ -227,6 +252,7 @@ type LoopResult = Awaited<ReturnType<typeof runAutomationStudioLlmEvidenceLoop>>
 function classify(input: {
   loopResult: LoopResult | undefined;
   ledger: AutomationStudioExplorationBudgetLedger;
+  unusableDecisions: number;
   externallyCancelled: boolean;
   durationMs: number;
 }): AutomationStudioRuntimeExploration {
@@ -236,6 +262,7 @@ function classify(input: {
     actions: input.ledger.actions,
     observedActions: input.ledger.observedActions,
     refusedActions: input.ledger.refusedActions,
+    unusableDecisions: input.unusableDecisions,
     accounting,
     trace: input.loopResult?.trace ?? [],
     durationMs: input.durationMs
@@ -290,7 +317,8 @@ function classify(input: {
 const NO_PROGRESS_SENTENCE: Readonly<Record<AutomationStudioExplorationNoProgressReason, string>> = Object.freeze({
   repeated_request: "The exploration kept asking for something it had already asked for, so it was stopped.",
   repeated_evidence: "The exploration kept gathering evidence it already had, so it was stopped.",
-  no_new_evidence: "The exploration kept taking steps that returned nothing new, so it was stopped."
+  no_new_evidence: "The exploration kept taking steps that returned nothing new, so it was stopped.",
+  unusable_decision: "The model kept answering with something the exploration could not use, so it was stopped."
 });
 
 const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReason, string>> = Object.freeze({

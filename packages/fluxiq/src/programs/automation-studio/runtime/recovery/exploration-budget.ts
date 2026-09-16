@@ -332,6 +332,17 @@ export class AutomationStudioExplorationBudgetLedger {
     if (!verdict.advanced && verdict.stalled) this.stop("no_progress");
   }
 
+  /**
+   * Record a provider decision that was made and could not be used.
+   *
+   * It has already been charged by `admitProviderCall`. What it adds is a step
+   * that did not advance, so a loop whose every answer is unusable stops on the
+   * progress guard -- saying so -- rather than on the provider-call backstop.
+   */
+  recordUnusableDecision(): void {
+    if (this.progress.recordUnusableDecision().stalled) this.stop("no_progress");
+  }
+
   /** Release the timer. Safe to call more than once. */
   close(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
@@ -345,7 +356,10 @@ export class AutomationStudioExplorationBudgetLedger {
       this.stop(this.expiryReason);
       return;
     }
-    this.timer = setTimeout(() => this.stop(this.expiryReason), remaining);
+    // A clock that runs out mid-call aborts it as a timeout. The provider call
+    // it cuts off was spent, not cancelled, and a grant held for the patch that
+    // follows must not read it as a cancellation and end with it.
+    this.timer = setTimeout(() => this.stop(this.expiryReason, new DOMException("The exploration ran out of time.", "TimeoutError")), remaining);
     // A recovery must never hold the process open past its own work.
     this.timer.unref?.();
   }
@@ -356,11 +370,11 @@ export class AutomationStudioExplorationBudgetLedger {
     return this.stop(this.expiryReason);
   }
 
-  private stop(reason: AutomationStudioExplorationStopReason): { admitted: false; stopReason: AutomationStudioExplorationStopReason } {
+  private stop(reason: AutomationStudioExplorationStopReason, abortReason?: DOMException): { admitted: false; stopReason: AutomationStudioExplorationStopReason } {
     // First reason wins. A later abort cannot overwrite what actually stopped it.
     this.stopped ??= reason;
     this.close();
-    this.controller.abort();
+    this.controller.abort(abortReason);
     return { admitted: false, stopReason: this.stopped };
   }
 }

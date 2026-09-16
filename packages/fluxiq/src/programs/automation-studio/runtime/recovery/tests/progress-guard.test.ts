@@ -72,8 +72,44 @@ describe("AutomationStudioExplorationProgressGuard", () => {
     expect(new AutomationStudioExplorationProgressGuard({ maxStepsWithoutProgress: 0 }).record(step("x", ""))).toMatchObject({ stalled: true });
   });
 
-  it("has three distinct reasons", () => {
-    expect([...AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS]).toEqual(["repeated_request", "repeated_evidence", "no_new_evidence"]);
+  it("has four distinct reasons", () => {
+    expect([...AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS]).toEqual(["repeated_request", "repeated_evidence", "no_new_evidence", "unusable_decision"]);
+  });
+
+  // A reply that could not be used is a step that did nothing. Three in a row
+  // stall the loop, and say that it was the answers that were unusable.
+  it("stalls on decisions that keep coming back unusable, after exactly the configured streak", () => {
+    const guard = new AutomationStudioExplorationProgressGuard({ maxStepsWithoutProgress: 3 });
+
+    expect(guard.record(step("inspect.a", "one"))).toEqual({ advanced: true });
+    expect([guard.recordUnusableDecision(), guard.recordUnusableDecision(), guard.recordUnusableDecision()]).toEqual([
+      { advanced: false, reason: "unusable_decision", stalled: false },
+      { advanced: false, reason: "unusable_decision", stalled: false },
+      { advanced: false, reason: "unusable_decision", stalled: true }
+    ]);
+    expect(guard.reason).toBe("unusable_decision");
+  });
+
+  // One bad reply between steps that work is ordinary, and it asked for
+  // nothing, so the step after it is judged on its own and is not a repeat.
+  it("lets an unusable decision between productive steps pass, without recording a request", () => {
+    const guard = new AutomationStudioExplorationProgressGuard({ maxStepsWithoutProgress: 2 });
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(guard.recordUnusableDecision()).toMatchObject({ stalled: false });
+      expect(guard.record(step(`inspect.${index}`, `evidence.${index}`))).toEqual({ advanced: true });
+    }
+    expect(guard.stepsWithoutProgress).toBe(0);
+  });
+
+  // It shares the streak with barren actions rather than keeping its own.
+  it("counts an unusable decision in the same streak as a barren action", () => {
+    const guard = new AutomationStudioExplorationProgressGuard({ maxStepsWithoutProgress: 3 });
+
+    guard.record(step("inspect.a", "one"));
+    guard.record(step("inspect.b", ""));
+    guard.recordUnusableDecision();
+    expect(guard.record(step("inspect.c", ""))).toEqual({ advanced: false, reason: "no_new_evidence", stalled: true });
   });
 });
 

@@ -6,11 +6,12 @@ import type {
   AutomationStudioFlowRunDetail
 } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor.ts";
-import type {
-  AutomationStudioHarnessOptionBundle,
-  AutomationStudioLlmEvidenceRuntimeBinding,
-  AutomationStudioLlmProvider,
-  AutomationStudioLlmTaskRequest
+import {
+  AutomationStudioLlmProviderError,
+  type AutomationStudioHarnessOptionBundle,
+  type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioLlmProvider,
+  type AutomationStudioLlmTaskRequest
 } from "../../../llm/index.ts";
 import type { AutomationStudioTrainingModeSettings } from "../../../training-modes.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
@@ -61,6 +62,46 @@ describe("what bounds a recovery", () => {
       detail: { requested: true, outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "repeated_evidence", actions: 4 }
     });
     expect(budgetCodes(run.detail)).toEqual([]);
+  });
+
+  // The guard also ends a loop whose answers are unusable. Every decision call
+  // fails as the provider's own invalid output -- a spent call, not a fault --
+  // so the exploration asks again, and after three unusable answers of its
+  // twenty-four allowed it is stopped, saying the answers were the problem. The
+  // patch still runs: nothing about a bad reply ends the recovery.
+  it("stops an exploration whose every decision comes back unusable on the no-progress guard, then still patches", async () => {
+    const run = await annotate({ looks: 40, unusableDecisions: "all" });
+
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
+    expect(run.executed).toEqual([]);
+    expect(explorationStage(run.detail)).toMatchObject({
+      status: "failed",
+      detail: { requested: true, outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "unusable_decision", unusableDecisions: 3, actions: 0 }
+    });
+    // Each unusable answer is on the receipt, charged, with its code.
+    expect(costAccounting(run.detail)).toMatchObject({ calls: 5, explorationCalls: 3, pendingCalls: 0 });
+    expect(receipt(run.detail).filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.validation)).toEqual(
+      Array.from({ length: 3 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
+    );
+    expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
+    expect(budgetCodes(run.detail)).toEqual([]);
+  });
+
+  // One answer that fails Core's own checks is a step that did not advance,
+  // not the end of the exploration: it is asked again and the loop finishes.
+  it("keeps exploring past a single decision that came back unusable", async () => {
+    const run = await annotate({ looks: 3, unusableDecisions: [2] });
+
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", ...Array.from({ length: 5 }, () => "evidence_tool_decision"), "runtime_patch"]);
+    expect(run.executed).toEqual(["area.1", "area.2", "area.3"]);
+    expect(explorationStage(run.detail)).toMatchObject({
+      status: "completed",
+      detail: { requested: true, outcome: "evidence_gathered", observedActions: 3, unusableDecisions: 1 }
+    });
+    expect(receipt(run.detail).filter((call) => call.taskKind === "evidence_tool_decision")[1]).toMatchObject({
+      validation: { ok: false, issueCodes: ["llm_output.kind_mismatch"] }
+    });
+    expect(patchIntervention(run.detail)).toMatchObject({ validation: { ok: true } });
   });
 
   // Money still ends an exploration, on its own code, and the patch keeps its
@@ -174,6 +215,12 @@ type Options = {
   trainingBudgetExhausted?: boolean;
   /** Every request the provider was sent, in order. */
   requests?: AutomationStudioLlmTaskRequest[];
+  /**
+   * Decision calls, counting from one, whose answer cannot be used: `"all"` fails
+   * every one as the provider's invalid output, and a list answers those with
+   * the wrong kind of response.
+   */
+  unusableDecisions?: "all" | number[];
 };
 
 type Run = { detail: AutomationStudioFlowRunDetail; taskKinds: string[]; executed: string[] };
@@ -200,6 +247,11 @@ function patchIntervention(detail: AutomationStudioFlowRunDetail): AutomationStu
 function explorationStage(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
   const trace = detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined;
   return trace?.stages?.find((stage) => stage.stage === "exploration");
+}
+
+/** The run's receipt: one line per provider call. */
+function receipt(detail: AutomationStudioFlowRunDetail): JsonObject[] {
+  return (detail.metadata?.llmGate as { providerCalls?: JsonObject[] } | undefined)?.providerCalls ?? [];
 }
 
 function costAccounting(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
@@ -238,11 +290,21 @@ function ports(options: Options, taskKinds: string[], executed: string[]): Autom
  * guards bind on real spending rather than on worst cases.
  */
 function provider(options: Options, taskKinds: string[]): AutomationStudioLlmProvider {
+  let decisionCalls = 0;
   return {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
       taskKinds.push(request.taskKind);
       options.requests?.push(request);
+      if (request.expectedOutput === "evidence_tool_decision") {
+        decisionCalls += 1;
+        if (options.unusableDecisions === "all") {
+          throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "The reply did not satisfy the requested structure.");
+        }
+        if (options.unusableDecisions?.includes(decisionCalls)) {
+          return { response: { kind: "diagnosis", summary: "Not a decision." }, usage: { inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400, estimatedCostUsd: 0.002 } };
+        }
+      }
       const usage = {
         inputTokens: 1_200,
         outputTokens: 200,

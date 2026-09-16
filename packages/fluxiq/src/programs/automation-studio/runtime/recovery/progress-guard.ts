@@ -18,13 +18,16 @@
 // can report "it was going in circles" rather than "it ran out".
 //
 // **A step advances when it produces something the loop did not already have.**
-// Three ways it can fail to, and they are kept apart because they are three
+// Four ways it can fail to, and they are kept apart because they are four
 // different pieces of advice. `repeated_request` is the model asking for
 // something it has already asked for -- the evidence loop refuses an identical
 // request inside one mutation epoch, and this is the cycle that spans several.
 // `repeated_evidence` is a *different* request that came back with an answer
 // already held, which is the one nothing else here can see. `no_new_evidence`
 // is a step that returned nothing usable at all, refusal included.
+// `unusable_decision` is a provider call that was made and paid for and came
+// back as nothing the loop could act on -- a malformed reply, a timeout -- which
+// is a step that did not advance, not a reason to end the exploration outright.
 //
 // **The streak resets.** A guard that counted unproductive steps for the whole
 // exploration would stop a loop that spent two turns finding its feet and then
@@ -32,8 +35,8 @@
 // the guard fires on a loop that is stuck rather than on one that was slow.
 
 /**
- * Why a step did not advance the exploration. Three reasons rather than one
- * boolean: they are three different things for an operator to do about it.
+ * Why a step did not advance the exploration. Four reasons rather than one
+ * boolean: they are four different things for an operator to do about it.
  */
 export const AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS = Object.freeze([
   /** The same request, already made. A cycle the mutation-epoch check cannot see. */
@@ -41,7 +44,9 @@ export const AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS = Object.freeze([
   /** A new request that returned an answer the loop already held. */
   "repeated_evidence",
   /** The step returned nothing usable: empty, or refused. */
-  "no_new_evidence"
+  "no_new_evidence",
+  /** The provider was asked what to do next and its answer could not be used. */
+  "unusable_decision"
 ] as const);
 
 export type AutomationStudioExplorationNoProgressReason = (typeof AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS)[number];
@@ -132,6 +137,22 @@ export class AutomationStudioExplorationProgressGuard {
       this.streakReason = undefined;
       return { advanced: true };
     }
+    return this.unadvanced(reason);
+  }
+
+  /**
+   * Judge a decision call that came back unusable.
+   *
+   * It joins the same streak as a barren action, and deliberately so: the
+   * question is whether the last few steps did anything, and a reply that could
+   * not be used did nothing. It asked for nothing, so it leaves the request and
+   * evidence records alone and cannot make a later step read as a repeat.
+   */
+  recordUnusableDecision(): Extract<AutomationStudioExplorationProgressVerdict, { advanced: false }> {
+    return this.unadvanced("unusable_decision");
+  }
+
+  private unadvanced(reason: AutomationStudioExplorationNoProgressReason): Extract<AutomationStudioExplorationProgressVerdict, { advanced: false }> {
     this.streak += 1;
     this.streakReason = reason;
     return { advanced: false, reason, stalled: this.streak >= this.limit };

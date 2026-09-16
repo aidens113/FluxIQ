@@ -33,6 +33,8 @@ export function setupExecutionGrantFixture() {
   // What each provider reply reports using.
   let usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
   // Provider replies, in order, for a test that scripts a whole conversation.
+  // An entry that is a function answers with whatever `Response` it returns, so
+  // a test can script the envelope, the status or the transport itself.
   const script: unknown[] = [];
   let delayReveal = false;
   let releaseReveal = () => {};
@@ -160,6 +162,7 @@ export function setupExecutionGrantFixture() {
       const content = script.length ? script.shift() : task.taskKind === "runtime_patch"
         ? { kind: "runtime_patch", summary: "safe", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { handles: { element: "target.1" } }, reason: "Use observed target." }] }
         : { kind: "diagnosis", summary: "safe" };
+      if (typeof content === "function") return (content as (init?: RequestInit) => Response | Promise<Response>)(init);
       return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch
   });

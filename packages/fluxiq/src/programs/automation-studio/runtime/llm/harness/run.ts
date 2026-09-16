@@ -214,7 +214,10 @@ async function runProviderWithEnforcedDeadline(provider: AutomationStudioLlmProv
   const parentAbort = () => controller.abort(parentSignal?.reason);
   if (parentSignal?.aborted) parentAbort();
   else parentSignal?.addEventListener("abort", parentAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(), request.timeoutMs);
+  // The deadline aborts as a timeout, not as a bare abort. A provider that
+  // holds an authorization reads the difference: a call that ran out of time is
+  // a spent call, and a cancellation ends the authorization with it.
+  const timer = setTimeout(() => controller.abort(new DOMException("LLM provider call reached its deadline.", "TimeoutError")), request.timeoutMs);
   try {
     if (controller.signal.aborted) throw providerAbortFailure(parentSignal);
     return await Promise.race([

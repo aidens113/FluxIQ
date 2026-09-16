@@ -34,30 +34,36 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES = Object.freez
 
 export type AutomationStudioLlmProviderPreflightErrorCode = (typeof AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES)[number];
 
+/**
+ * Every way a provider call fails once it is under way: resolving the
+ * credential, the transport, and the reply. Listed as values, beside the
+ * pre-flight list, so a table keyed by every code can be checked against the
+ * whole vocabulary at run time as well as by the type.
+ */
+export const AUTOMATION_STUDIO_LLM_PROVIDER_CALL_ERROR_CODES = Object.freeze([
+  "llm.provider_auth_failed",
+  "llm.provider_rate_limited",
+  "llm.provider_timeout",
+  "llm.provider_aborted",
+  "llm.provider_redirect_rejected",
+  "llm.provider_response_oversize",
+  "llm.provider_output_padding_truncated",
+  "llm.provider_output_truncated",
+  "llm.provider_malformed_response",
+  "llm.provider_output_invalid",
+  "llm.provider_usage_invalid",
+  "llm.provider_usage_limit_exceeded",
+  "llm.provider_http_error",
+  "llm.provider_network_error",
+  "llm.provider_secret_unavailable"
+] as const);
+
 export type AutomationStudioLlmProviderErrorCode =
   | AutomationStudioLlmProviderPreflightErrorCode
-  | "llm.provider_auth_failed"
-  | "llm.provider_rate_limited"
-  | "llm.provider_timeout"
-  | "llm.provider_aborted"
-  | "llm.provider_redirect_rejected"
-  | "llm.provider_response_oversize"
-  | "llm.provider_output_padding_truncated"
-  | "llm.provider_output_truncated"
-  | "llm.provider_malformed_response"
-  | "llm.provider_output_invalid"
-  | "llm.provider_usage_invalid"
-  | "llm.provider_usage_limit_exceeded"
-  | "llm.provider_http_error"
-  | "llm.provider_network_error"
-  | "llm.provider_secret_unavailable";
+  | (typeof AUTOMATION_STUDIO_LLM_PROVIDER_CALL_ERROR_CODES)[number];
 
 const AUTOMATION_STUDIO_LLM_PROVIDER_ERROR_CODES: ReadonlySet<string> = new Set<AutomationStudioLlmProviderErrorCode>([
-  "llm.provider_auth_failed", "llm.provider_rate_limited", "llm.provider_timeout", "llm.provider_aborted",
-  "llm.provider_redirect_rejected", "llm.provider_response_oversize", "llm.provider_output_padding_truncated",
-  "llm.provider_output_truncated", "llm.provider_malformed_response", "llm.provider_output_invalid",
-  "llm.provider_usage_invalid", "llm.provider_usage_limit_exceeded", "llm.provider_http_error",
-  "llm.provider_network_error", "llm.provider_secret_unavailable",
+  ...AUTOMATION_STUDIO_LLM_PROVIDER_CALL_ERROR_CODES,
   ...AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES
 ]);
 const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODE_SET: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES);

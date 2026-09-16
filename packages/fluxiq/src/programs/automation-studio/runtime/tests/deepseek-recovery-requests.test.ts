@@ -97,6 +97,35 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
     for (const call of calls) expect(call).toMatchObject({ validation: { ok: true, issueCodes: [] } });
     expect(explorationStage(run.detail)).toMatchObject({ status: "completed", detail: { outcome: "evidence_gathered", observedActions: 18 } });
   });
+
+  // One bad answer used to end the whole recovery: the grant was revoked on
+  // the first failed call, so every later call -- the patch included -- was
+  // refused as "grant unavailable". A bad answer is now a spent call. The grant
+  // carries on, the exploration asks again, the progress guard stops a loop
+  // whose answers stay bad, and the patch is still sent under the same grant.
+  it.each([
+    ["come back malformed", "malformed", "llm.provider_malformed_response", undefined],
+    ["run past the call's deadline", "hang", "llm.provider_timeout", 1_000]
+  ] as const)("keeps the grant through exploration decisions that %s, stops them on the progress guard, and still sends the patch", async (_label, decisionReply, code, timeoutMs) => {
+    const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply, ...(timeoutMs ? { timeoutMs } : {}) });
+
+    expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
+    // The same iteration asked three times: each unusable answer was asked again.
+    expect(run.sent.filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.iteration)).toEqual([1, 1, 1]);
+    expect(run.revealed).toHaveLength(5);
+    expect(providerCalls(run.detail).map((call) => call.validation)).toEqual([
+      { ok: true, issueCodes: [] },
+      { ok: false, issueCodes: [code] },
+      { ok: false, issueCodes: [code] },
+      { ok: false, issueCodes: [code] },
+      { ok: true, issueCodes: [] }
+    ]);
+    expect(explorationStage(run.detail)).toMatchObject({
+      status: "failed",
+      detail: { outcome: "no_progress", stopReason: "no_progress", noProgressReason: "unusable_decision", unusableDecisions: 3 }
+    });
+    expect(run.detail.interventions.find((intervention) => intervention.kind === "runtime_patch")).toMatchObject({ validation: { ok: true } });
+  }, 30_000);
 });
 
 type RecoveryOptions = {
@@ -107,6 +136,10 @@ type RecoveryOptions = {
   patch: boolean;
   /** How many looks the model takes before it completes the exploration. */
   looks?: number;
+  /** How every exploration decision is answered instead: a malformed body, or never. */
+  decisionReply?: "malformed" | "hang";
+  /** The grant's per-call timeout. */
+  timeoutMs?: number;
 };
 
 type SentCall = { url: string; taskKind: string; iteration?: number; recentActions?: JsonObject[] };
@@ -131,7 +164,7 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
     maxTotalTokensPerRun: Math.min(600_000, options.tokenLimits.maxTotalTokens * 26),
     highTokenConfirmation: true,
     tokenLimits: options.tokenLimits,
-    timeoutMs: 25_000,
+    timeoutMs: options.timeoutMs ?? 25_000,
     maxEstimatedCostUsd: 0.25,
     maxTotalEstimatedCostUsd: 2
   });
@@ -211,8 +244,16 @@ function deepSeekEndpoint(options: RecoveryOptions, sent: SentCall[]): typeof fe
     };
     const iteration = user.context.evidenceLoop?.iteration;
     sent.push({ url: String(url), taskKind: user.taskKind, ...(iteration !== undefined ? { iteration } : {}), ...(user.context.recentActions ? { recentActions: user.context.recentActions } : {}) });
+    if (user.taskKind === "evidence_tool_decision" && options.decisionReply === "hang") {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("The request was aborted.", "AbortError")), { once: true });
+      });
+    }
+    const content = user.taskKind === "evidence_tool_decision" && options.decisionReply === "malformed"
+      ? "{\"kind\":\"evidence_tool_decision\",\"summary\":"
+      : JSON.stringify(answer(options, user.taskKind, iteration));
     return new Response(JSON.stringify({
-      choices: [{ finish_reason: "stop", message: { content: JSON.stringify(answer(options, user.taskKind, iteration)) } }],
+      choices: [{ finish_reason: "stop", message: { content } }],
       usage: { prompt_tokens: 1_200, completion_tokens: 150, total_tokens: 1_350 }
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;

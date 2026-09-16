@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   automationStudioHarnessOptionRegistry,
@@ -16,6 +16,7 @@ import {
   runAutomationStudioRuntimeExploration,
   type AutomationStudioRuntimeExploration
 } from "../runtime-exploration.ts";
+import { AutomationStudioExplorationUnusableDecisionError } from "../unusable-decision.ts";
 
 // Phase 2.3's load-bearing property, and the reason this phase exists: an
 // exploration that ran out of budget, one that found nothing, and one that was
@@ -177,6 +178,95 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.observedActions).toBe(5);
   });
 
+  // One reply that could not be used does not end the exploration. The call is
+  // spent and admitted like any other, the decision is asked again, and the
+  // loop carries on to its answer.
+  it("asks again after a decision that came back unusable, and carries on to an answer", async () => {
+    let decisions = 0;
+    const run = await explore({
+      decisions: [call("test.inspect", { area: "one" }), complete({ finding: "the control moved" })],
+      onDecide: () => { decisions += 1; },
+      unusableAt: [1, 3]
+    });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.result).toEqual({ finding: "the control moved" });
+    expect(run.unusableDecisions).toBe(2);
+    expect(decisions).toBe(4);
+    // The loop saw two decisions; the two unusable answers were retried beneath it.
+    expect(run.accounting.iterations).toBe(2);
+    expect(automationStudioExplorationTraceEvent({ requested: true, exploration: run }).detail).toMatchObject({ unusableDecisions: 2 });
+  });
+
+  // And a loop whose answers never become usable is stopped by the progress
+  // guard, after three of its twenty-four allowed calls, saying why -- not by
+  // the provider-call backstop.
+  it("stops a loop whose decisions keep coming back unusable on no_progress, not on the call backstop", async () => {
+    let decisions = 0;
+    const run = await explore({
+      decisions: [],
+      onDecide: () => { decisions += 1; },
+      unusableAt: Array.from({ length: 50 }, (_, index) => index + 1)
+    });
+
+    expect(run.outcome).toBe("no_progress");
+    expect(run.stopReason).toBe("no_progress");
+    expect(run.noProgressReason).toBe("unusable_decision");
+    expect(run.reason).toContain("could not use");
+    expect(run.unusableDecisions).toBe(3);
+    expect(decisions).toBe(3);
+    expect(resolveAutomationStudioExplorationBudget().maxProviderCalls).toBeGreaterThan(decisions);
+    expect(run.result).toBeUndefined();
+  });
+
+  // Only the typed error is asked again. Anything else `decide` throws still
+  // ends the loop at once, as a fault.
+  it("ends the loop on any other decide failure, without asking again", async () => {
+    let decisions = 0;
+    const run = await explore({
+      decisions: [],
+      onDecide: () => { decisions += 1; },
+      decide: async () => { throw new Error("the budget would not pay for it"); }
+    });
+
+    expect(run.outcome).toBe("failed");
+    expect(run.endedBy).toBe("llm_evidence_loop.invalid_decision");
+    expect(run.unusableDecisions).toBe(0);
+    expect(decisions).toBe(1);
+  });
+
+  // The exploration's clock cuts off a call in flight as a timeout, which a
+  // grant reads as a spent call; a cancellation from outside stays a
+  // cancellation, which a grant reads as the end of its authorization.
+  it("aborts a call in flight as a timeout when its clock runs out, and as a cancellation when stopped from outside", async () => {
+    vi.useFakeTimers();
+    try {
+      const reasons: string[] = [];
+      const inFlight = (decision: { signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+        decision.signal?.addEventListener("abort", () => {
+          reasons.push(String((decision.signal?.reason as { name?: unknown } | undefined)?.name));
+          reject(new AutomationStudioExplorationUnusableDecisionError(["llm.provider_timeout"]));
+        }, { once: true });
+      });
+
+      const timedOut = explore({ decisions: [], budget: { maxDurationMs: 5_000 }, decide: inFlight });
+      await vi.advanceTimersByTimeAsync(5_000);
+      const clocked = await timedOut;
+      expect(clocked.outcome).toBe("budget_exhausted");
+      expect(clocked.stopReason).toBe("wall_clock_expired");
+
+      const controller = new AbortController();
+      const cancelled = explore({ decisions: [], decide: inFlight, signal: controller.signal });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      expect((await cancelled).outcome).toBe("cancelled");
+
+      expect(reasons).toEqual(["TimeoutError", "AbortError"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("charges refused actions against the action budget rather than only the successful ones", async () => {
     const run = await explore({
       decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
@@ -246,6 +336,10 @@ type Scenario = {
   signal?: AbortSignal;
   onDecide?: () => void;
   advanceClockAfterAction?: number;
+  /** Which provider calls, counting from one, come back unusable. They consume no scripted decision. */
+  unusableAt?: number[];
+  /** Replaces the scripted decisions entirely. */
+  decide?: (decision: { signal?: AbortSignal }) => Promise<unknown>;
 };
 
 type ExploreExecute = (input: { callId: string; toolId: string; value: JsonObject }) => Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
@@ -323,6 +417,7 @@ function classifyTestRefusal(resultCode: string): AutomationStudioExplorationSto
 async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExploration> {
   let nowMs = scenario.startedAtMs ?? 1_000;
   let index = 0;
+  let providerCalls = 0;
   const execute = scenario.execute ?? defaultExecution;
   const registry = automationStudioHarnessOptionRegistry({
     binding: {
@@ -338,8 +433,11 @@ async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExplo
   });
   return runAutomationStudioRuntimeExploration({
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
-    decide: async () => {
+    decide: async (decision) => {
       scenario.onDecide?.();
+      providerCalls += 1;
+      if (scenario.decide) return scenario.decide(decision);
+      if (scenario.unusableAt?.includes(providerCalls)) throw new AutomationStudioExplorationUnusableDecisionError(["llm.provider_malformed_response"]);
       return scenario.decisions[index++] ?? { kind: "complete", result: {} };
     },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, ...scenario.budget }),
@@ -381,6 +479,7 @@ function blankExploration(): AutomationStudioRuntimeExploration {
     actions: 0,
     observedActions: 0,
     refusedActions: 0,
+    unusableDecisions: 0,
     accounting: { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
     trace: [],
     durationMs: 0

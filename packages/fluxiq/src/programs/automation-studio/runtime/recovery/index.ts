@@ -14,3 +14,4 @@ export * from "./runtime-exploration.ts";
 export * from "./stages.ts";
 export * from "./trace.ts";
 export * from "./structured-diagnosis.ts";
+export * from "./unusable-decision.ts";

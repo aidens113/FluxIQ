@@ -29,7 +29,7 @@
 //   flags instead of being handed a target-override exemption.
 
 import type { AutomationStudioRuntimeAdaptationContext } from "../service.ts";
-import { automationStudioLlmExecutionGrantTaskKinds } from "./execution-grants.ts";
+import { automationStudioLlmExecutionGrantTaskKinds } from "./grant-capabilities.ts";
 import type { AutomationStudioLlmTaskKind } from "./harness.ts";
 
 /** The grant purposes a runtime session will run under. `build_and_adapt` is

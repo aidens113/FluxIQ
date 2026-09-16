@@ -12,6 +12,14 @@ export {
   estimateAutomationStudioDeepSeekInputTokens
 } from "./deepseek-provider.ts";
 export * from "./execution-grants.ts";
+// The grant's authorization table. Only the names `execution-grants.ts` used to
+// publish itself are exported; the checks the grant runs stay internal.
+export {
+  automationStudioLlmExecutionGrantTaskKinds,
+  type AutomationStudioLlmExecutionGrantPurpose,
+  type AutomationStudioLlmExecutionGrantResolvePolicy
+} from "./grant-capabilities.ts";
+export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
 export * from "./harness-options/index.ts";
 export * from "./stages/index.ts";
