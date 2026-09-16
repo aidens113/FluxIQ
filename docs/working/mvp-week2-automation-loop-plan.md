@@ -13,40 +13,70 @@ Related: [automation studio](../architecture/automation-studio.md), [code struct
 
 ## Current State
 
-**Phase, as of 2026-09-15: plan written; waiting for the user's review; no
-Core code changed for the loop.** The downstream document owns the plan,
-decisions L1-L11, phases, and sequencing; the file:line evidence is in its two
-scoping reports (`w2-scope-context-recovery`, `w2-scope-repair-reuse`). Most
-Week 2 loop work is Core's. Path prefix: `AS/` is
-`packages/fluxiq/src/programs/automation-studio/`.
+**Phase, as of 2026-09-15: the user reshaped the plan as L12-L16, approved the
+five defect fixes, and instructed that they be planned and not started; no Core
+code changed for the loop.** The downstream document owns the plan, decisions,
+phases, and sequencing, and now carries L12-L16 plus three investigation
+reports. Path prefix: `AS/` is `packages/fluxiq/src/programs/automation-studio/`.
 
-**What is true in Core today:**
+**The user's direction, one line each; the full text is in the downstream
+document.** L12: **one improvement loop with three entry points** — building a
+new flow, a run failing, an edge case — not a recovery loop. L13: the model may
+propose **anything a person can do to a flow**, used freely, with approval mode
+gating *applying* a proposal rather than producing one. L14: exploration is a
+**Core framework capability** with a registry of harness options an imported
+domain extends. L15: a fixed stage order owned by Core, with stage instructions
+a domain may extend or wholly override. L16: **the PIN guards destruction, not
+authorship** — most writes lose it, deletes and destructive actions keep it,
+enforced by an exhaustive classification and a test that fails on an
+unclassified endpoint.
+
+**What is true in Core today, corrected by the investigations:**
 - The one runtime LLM caller, `maybeAnnotateRunDetailWithRuntimeLlm`
   (`AS/runtime/service.ts:2865-3169`), sends instructions, recent actions, a
-  3,000-byte failure snapshot, and policy; the harness packet's other slots are
-  never filled.
-- `classifyAutomationStudioAdaptiveFailure` (`AS/runtime/adaptive-orchestrator.ts:65-212`)
-  decides AI eligibility but only decorates run summaries.
-- There is no runtime exploration loop; the bounded evidence loop serves Flow
-  creation only (`AS/runtime/llm/evidence-loop.ts`).
-- `runtimePatchRestoredExpectedState` (`AS/runtime/live-patch.ts:324-330`)
-  treats a succeeded patched run as recovered when there is nothing to compare.
-- Never-executed proposals count as succeeded validations
-  (`live-patch.ts:285-290`); `edit_recovery` action sequences have no reader
-  (`AS/runtime/service/adaptations/patches.ts:52-55`); `failureSignature` is
-  never written.
+  3,000-byte failure snapshot, and policy; the packet's other slots are never
+  filled.
+- **The loop L14 asks for already exists and is already domain-neutral**
+  (`AS/runtime/llm/evidence-loop.ts`). Missing are a registry, any Core-owned
+  neutral harness options — Core ships **zero**, every tool today comes from the
+  downstream repository — and the other entry points:
+  `execution-grants.ts:493-511` explicitly forbids the loop to a recovery run.
+- **The repair target is a CSS selector**,
+  `AutomationStudioRuntimeTargetOverrideTarget = { selector: string }`
+  (`structured-response.ts:14-16`), hard-required at five Core sites including
+  the JSON schema and the provider prompt. This blocks L14, so decision L2 is a
+  **prerequisite**, not a preference.
+- `runtimePatchRestoredExpectedState` (`live-patch.ts:324-330`) has **two**
+  vacuous-true paths, not one — `!comparison` and `[].every()` on an empty
+  expectation. Proved by executing Core's own code in a scratch copy.
+- `applyRuntimePatchToFlow` has **no branch at all** for
+  `temporary_action_sequence`, so a validation rerun executes the *unmodified*
+  flow; `temporary_recovery_subflow_call` has the same hole.
+- `decideAutomationStudioLlmInvocationGate` (`training-modes.ts:271-282`)
+  implements L5 correctly, is tested, and has **zero production callers**.
+- **Two earlier claims in this document were wrong.** A never-executed proposal
+  does **not** auto-apply — `training-modes.ts:310` refuses high risk; the harm
+  is that the fabricated success is indistinguishable from a verified one to a
+  reviewer. And `failureSignature` being unwritten is **not** why matching
+  fails: `conversions.ts:143` passes no adaptations at all, so the match set is
+  always empty, and writing the signature alone would change nothing.
 - The retry after an auto-applied patch reruns from the graph's start
   (`service.ts:3260-3343`) and is unreachable in the shipped app.
 - Attempts carry no adaptation id; no scripted provider exists for the Lab.
 
-**Done:** this document, from the downstream scoping.
+**Done:** this document; the three investigations, whose reports live beside the
+downstream document.
 
-**Not done:** every Core step below.
+**Not done:** every Core step below. Nothing is started, by instruction.
 
-**Next steps:** the user's review; then phase D and R0, after the extraction
-plan's K4c.1-2, which also edits `service.ts`.
+**Next steps:** Phase D — the five fixes in the order **1 → 3 → 2 → 5 → 4**.
+Fixes 1-3 all edit `live-patch.ts` and are serial for one worker; 4 and 5 must
+come **last**, or the loop will begin skipping the model on the strength of the
+unverified `validated` records that 1-3 fabricate. Then the PIN
+reclassification, then L2's target contract as L14's prerequisite.
 
-**Blockers:** the user's review.
+**Blockers:** none. The user approved the fixes and asked that nothing be built
+until he says go.
 
 ---
 
