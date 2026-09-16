@@ -12,7 +12,7 @@
     "check": "pnpm structure:test && node scripts/structure-audit.mjs && pnpm -r check",
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
-    "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
+    "docs:check": "node scripts/structure-audit.mjs --rule docs-links && node scripts/docs-reference.mjs --check",
     "studio:baseline": "pnpm --filter fluxiq build && node scripts/automation-studio-scale-baseline.mjs",
     "studio:certify": "pnpm --filter fluxiq build && node scripts/automation-studio-scale-certification.mjs",
     "flows:check": "node scripts/flow-compiler.mjs --check",

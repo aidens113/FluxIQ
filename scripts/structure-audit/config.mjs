@@ -55,6 +55,20 @@ export const CONFIG = {
   bannedBasenames: ["utils", "helpers", "misc", "common", "shared-ui"],
   bannedDirectoryNames: ["utils", "helpers", "misc", "common"],
 
+  // Directory prefixes whose Markdown the docs-links rule checks: every local
+  // link must resolve to a tracked file, and every `#fragment` to a heading
+  // that still exists. Like contractSpreadPaths, a prefix is configured once it
+  // is clean -- the finding does not ratchet, so a listed directory stays
+  // resolvable rather than accumulating dead links behind a recorded number.
+  //
+  // All of docs/ is in, and clean. The rule replaced scripts/validate-docs.mjs,
+  // which checked link existence over this same tree from the separate
+  // `pnpm docs:check` step: the scope is unchanged, anchors are new, and it now
+  // runs inside `pnpm check`. The repository root's own Markdown is deliberately
+  // out -- AGENTS.md links sideways into the web-extension checkout, which is
+  // not this repository's to resolve.
+  docsLinkDirs: ["docs"],
+
   workingDocsDir: "docs/working",
   workingDocsIndexKind: "core"
 };

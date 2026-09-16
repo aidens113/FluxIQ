@@ -4,7 +4,6 @@
     "includes": [
       "package.json",
       "scripts/docs-reference.mjs",
-      "scripts/validate-docs.mjs",
       "apps/web/src/app/api/auth/login/route.ts",
       "apps/web/src/app/api/programs/\\[programId\\]/\\[endpoint\\]/route.ts",
       "apps/web/src/lib/login-attempts.ts",
