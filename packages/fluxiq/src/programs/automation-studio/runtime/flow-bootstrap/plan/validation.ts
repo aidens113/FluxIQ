@@ -3,8 +3,21 @@
 // its definition, every edge connects compatible ports, and each Subflow graph
 // is one connected acyclic graph within the depth limit. The accepted plan is
 // returned laid out and risk-banded.
+//
+// A parameter value the runtime would refuse is refused here, so a malformed
+// structured value never reaches dispatch: record outputs, the output a policy
+// action runs, and a domain's bound parameter contract are all checked.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, isAutomationNodeParameterStateBinding, type AutomationNodeParameter, type AutomationNodePort, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import {
+  AutomationStudioNodeRegistry,
+  isAutomationNodeParameterStateBinding,
+  parseAutomationStudioRecordOutput,
+  type AutomationNodeParameter,
+  type AutomationNodePort,
+  type AutomationStudioNodeDefinition,
+  type AutomationStudioNodeParameterContract,
+  type AutomationStudioNodeRegistryResolution
+} from "../../../nodes/index.ts";
 import type {
   AutomationStudioFlowBootstrapIssue,
   AutomationStudioFlowBootstrapNode,
@@ -27,13 +40,19 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
   if (!structural.plan) return { ok: false, issues: structural.issues };
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
   const issues = [...structural.issues];
+  let outputIds: ReadonlySet<string> | undefined;
+  const scope: ValidationScope = {
+    registry,
+    resolution: input.resolution,
+    outputIds: () => outputIds ??= declaredOutputIds(registry, input.resolution)
+  };
   const subflowKeys = new Set<string>();
   const primary = input.plan.subflows.filter((subflow) => subflow.role === "primary");
   if (primary.length !== 1) issues.push(error("bootstrap.primary_count", "Bootstrap plan must define exactly one primary Subflow.", "plan.subflows"));
   for (const [subflowIndex, subflow] of input.plan.subflows.entries()) {
     if (subflowKeys.has(subflow.key)) issues.push(error("bootstrap.duplicate_subflow_key", "Subflow keys must be unique.", `plan.subflows.${subflowIndex}.key`));
     subflowKeys.add(subflow.key);
-    validateSubflow(subflow, subflowIndex, registry, input.resolution, issues);
+    validateSubflow(subflow, subflowIndex, scope, issues);
   }
   const routerRuleKeys = new Set<string>();
   for (const [index, rule] of input.plan.router.rules.entries()) {
@@ -60,11 +79,18 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
   };
 }
 
+/** What validating one plan reads from the registry. */
+type ValidationScope = {
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+  /** The output ids the available definitions declare, read once per plan. */
+  outputIds(): ReadonlySet<string>;
+};
+
 function validateSubflow(
   subflow: AutomationStudioFlowBootstrapSubflow,
   subflowIndex: number,
-  registry: AutomationStudioNodeRegistry,
-  resolution: AutomationStudioNodeRegistryResolution,
+  scope: ValidationScope,
   issues: AutomationStudioFlowBootstrapIssue[]
 ): void {
   const path = `plan.subflows.${subflowIndex}`;
@@ -72,14 +98,14 @@ function validateSubflow(
   for (const [nodeIndex, node] of subflow.nodes.entries()) {
     const nodePath = `${path}.nodes.${nodeIndex}`;
     if (nodes.has(node.key)) issues.push(error("bootstrap.duplicate_node_key", "Node keys must be unique within a Subflow.", `${nodePath}.key`));
-    const definition = registry.get(node.definitionId, resolution);
+    const definition = scope.registry.get(node.definitionId, scope.resolution);
     nodes.set(node.key, { node, ...(definition ? { definition } : {}) });
     if (!definition) {
       issues.push(error("bootstrap.definition_unavailable", "Node definition is missing or unavailable in this Flow scope.", `${nodePath}.definitionId`));
       continue;
     }
     if (node.definitionVersion !== definition.version) issues.push(error("bootstrap.definition_version_mismatch", "Node definition version must exactly match the registry.", `${nodePath}.definitionVersion`));
-    validateParameters(node.parameters ?? {}, definition.parameters, nodePath, issues);
+    validateParameters(node.parameters ?? {}, definition, nodePath, scope, issues);
     validateOutputAction(node, definition, nodePath, issues);
   }
   const edgeKeys = new Set<string>();
@@ -129,25 +155,116 @@ function validateSubflow(
   validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, issues, path);
 }
 
-function validateParameters(values: JsonObject, definitions: AutomationNodeParameter[], path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
-  const byId = new Map(definitions.map((parameter) => [parameter.id, parameter]));
+function validateParameters(values: JsonObject, definition: AutomationStudioNodeDefinition, path: string, scope: ValidationScope, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  const byId = new Map(definition.parameters.map((parameter) => [parameter.id, parameter]));
   for (const key of Object.keys(values)) if (!byId.has(key)) issues.push(error("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${path}.parameters.${key}`));
-  for (const parameter of definitions) {
+  const contract = scope.registry.getParameterContract(definition.id);
+  for (const parameter of definition.parameters) {
     const value = values[parameter.id];
     if (value === undefined) {
       if (parameter.required && parameter.defaultValue === undefined) issues.push(error("bootstrap.missing_parameter", "Required node parameter is missing.", `${path}.parameters.${parameter.id}`));
       continue;
     }
     const parameterPath = `${path}.parameters.${parameter.id}`;
+    const namesOutput = namesOutputToRun(definition, parameter);
     if (isAutomationNodeParameterStateBinding(value)) {
-      if (parameter.allowStateBinding === false || !value.$state.path.trim()) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", parameterPath));
+      // A bound output id would let the run choose which output runs.
+      if (parameter.allowStateBinding === false || !value.$state.path.trim() || namesOutput) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", parameterPath));
       continue;
     }
     const nestedBindingPath = invalidStateBindingPath(value, parameter.allowStateBinding !== false, parameterPath, 0);
     if (nestedBindingPath) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", nestedBindingPath));
-    if (!parameterValueMatches(value, parameter)) issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", parameterPath));
+    const recordOutput = parameter.ui?.control === "record-output";
+    // Null is how a record output saves nothing, as the runtime reads it.
+    if (recordOutput && value === null) continue;
+    if (!parameterValueMatches(value, parameter)) {
+      issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", parameterPath));
+      continue;
+    }
+    if (nestedBindingPath) continue;
+    if (recordOutput) issues.push(...recordOutputIssues(value, definition, parameterPath));
+    if (namesOutput && (typeof value !== "string" || !scope.outputIds().has(value))) {
+      issues.push(error("bootstrap.unknown_output_reference", "Parameter names an output that no available node declares.", parameterPath));
+    }
+    if (contract) for (const code of contractIssueCodes(contract, definition.id, parameter.id, value)) {
+      issues.push(error(code, "Node parameter value does not satisfy its domain contract.", parameterPath));
+    }
   }
 }
+
+/**
+ * Core's own parameters whose value is the id of an output to dispatch. The
+ * policy action's `outputId` is refused unless an available node declares that
+ * output, fixed or allowed, which is every output a domain registers a node
+ * for. `builtin.policy.recovery`'s fallback reference names a definition, not
+ * an output, so it is not listed.
+ */
+const OUTPUT_TO_RUN_PARAMETERS: ReadonlyMap<string, string> = new Map([["builtin.policy.action", "outputId"]]);
+
+function namesOutputToRun(definition: AutomationStudioNodeDefinition, parameter: AutomationNodeParameter): boolean {
+  return definition.source.kind === "builtin" && OUTPUT_TO_RUN_PARAMETERS.get(definition.id) === parameter.id;
+}
+
+function declaredOutputIds(registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const definition of registry.list(resolution)) {
+    if (definition.outputAction?.fixedOutputId) ids.add(definition.outputAction.fixedOutputId);
+    for (const id of definition.outputAction?.allowedOutputIds ?? []) ids.add(id);
+  }
+  return ids;
+}
+
+// Parsed as the policy action and record capture parse it before they dispatch
+// or save, encryption refused included, so each code is one the run would have
+// failed with. A record output that leaves `recordsPath` out takes the path its
+// definition declares in `metadata.recordsPath`, as an importer node fills it at
+// dispatch; when the definition declares none, the missing path is refused.
+function recordOutputIssues(value: JsonValue, definition: AutomationStudioNodeDefinition, path: string): AutomationStudioFlowBootstrapIssue[] {
+  const declaredPath = definition.metadata?.recordsPath;
+  const completed = typeof declaredPath === "string" && isPlainObject(value) && !Object.hasOwn(value, "recordsPath")
+    ? { ...value, recordsPath: declaredPath }
+    : value;
+  const parsed = parseAutomationStudioRecordOutput(completed);
+  return parsed.ok ? [] : parsed.issues.map((code) => error(code, "Record output does not satisfy the record-set contract.", path));
+}
+
+const isPlainObject = (value: JsonValue): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
+
+const CONTRACT_FAILED = "bootstrap.parameter_contract_failed";
+const CONTRACT_VIOLATION = "bootstrap.parameter_contract_violation";
+const MAX_CONTRACT_ISSUE_CODES = 8;
+const MAX_CONTRACT_ISSUE_CODE_LENGTH = 120;
+const CONTRACT_ISSUE_CODE = /^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$/;
+
+// The contract is domain code, so its answer is bounded, and a code is kept
+// only when it is a plain identifier that cannot pass for one of Core's own.
+function contractIssueCodes(contract: AutomationStudioNodeParameterContract, definitionId: string, parameterId: string, value: JsonValue): string[] {
+  let reported: unknown;
+  try {
+    reported = contract({ definitionId, parameterId, value: structuredClone(value) });
+  } catch {
+    return [CONTRACT_FAILED];
+  }
+  if (!Array.isArray(reported)) {
+    if (isThenable(reported)) reported.then(undefined, () => undefined);
+    return [CONTRACT_FAILED];
+  }
+  const codes = new Set<string>();
+  for (const code of reported) {
+    codes.add(isContractIssueCode(code) ? code : CONTRACT_VIOLATION);
+    if (codes.size >= MAX_CONTRACT_ISSUE_CODES) break;
+  }
+  return [...codes];
+}
+
+function isContractIssueCode(code: unknown): code is string {
+  return typeof code === "string"
+    && code.length <= MAX_CONTRACT_ISSUE_CODE_LENGTH
+    && !code.startsWith("bootstrap.")
+    && CONTRACT_ISSUE_CODE.test(code);
+}
+
+const isThenable = (value: unknown): value is PromiseLike<unknown> => typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
 
 function validateOutputAction(node: AutomationStudioFlowBootstrapNode, definition: AutomationStudioNodeDefinition, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
   const contract = definition.outputAction;

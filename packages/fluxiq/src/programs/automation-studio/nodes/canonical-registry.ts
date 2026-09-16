@@ -5,6 +5,7 @@ import {
   validateAutomationStudioNodeDefinition,
   type AutomationStudioImporterNodeManifest,
   type AutomationStudioNodeDefinition,
+  type AutomationStudioNodeParameterContract,
   type AutomationStudioNodeRegistryResolution
 } from "./definitions.ts";
 import { builtinAutomationNodeDefinitions } from "./registry.ts";
@@ -15,9 +16,15 @@ import { builtinAutomationNodeDefinitions } from "./registry.ts";
  * This registry intentionally registers declarative importer manifests only.
  * Loading importer code and binding execution adapters remains a later runtime
  * concern, so an editor cannot acquire arbitrary host code by browsing nodes.
+ *
+ * The one piece of host code it holds is a parameter contract: a check the
+ * host that registered a node binds to it explicitly, which plan validation
+ * calls and nothing executes. It is kept beside the definitions rather than on
+ * them, so a definition stays plain data.
  */
 export class AutomationStudioNodeRegistry {
   private readonly definitions = new Map<string, AutomationStudioNodeDefinition>();
+  private readonly parameterContracts = new Map<string, AutomationStudioNodeParameterContract>();
 
   constructor(definitions: Iterable<AutomationStudioNodeDefinition> = canonicalBuiltinAutomationNodeDefinitions) {
     for (const definition of definitions) this.register(definition);
@@ -45,6 +52,25 @@ export class AutomationStudioNodeRegistry {
 
   list(resolution: AutomationStudioNodeRegistryResolution): AutomationStudioNodeDefinition[] {
     return [...this.definitions.values()].filter((definition) => isAvailable(definition, resolution));
+  }
+
+  /**
+   * Binds a domain's check of a registered node's parameter values, which
+   * validation of a generated plan runs. One contract per node, bound once; a
+   * built-in node is checked by Core alone.
+   */
+  bindParameterContract(nodeId: string, contract: AutomationStudioNodeParameterContract): this {
+    const definition = this.definitions.get(nodeId);
+    if (!definition) throw new Error(`Cannot bind a parameter contract to unregistered node definition "${nodeId}".`);
+    if (definition.source.kind === "builtin") throw new Error(`Cannot bind a parameter contract to built-in node definition "${nodeId}".`);
+    if (typeof contract !== "function") throw new Error(`The parameter contract for node definition "${nodeId}" must be a function.`);
+    if (this.parameterContracts.has(nodeId)) throw new Error(`Node definition "${nodeId}" already has a parameter contract.`);
+    this.parameterContracts.set(nodeId, contract);
+    return this;
+  }
+
+  getParameterContract(nodeId: string): AutomationStudioNodeParameterContract | undefined {
+    return this.parameterContracts.get(nodeId);
   }
 }
 

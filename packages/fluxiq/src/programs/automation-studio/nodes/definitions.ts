@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowScope } from "../model/flows.ts";
 import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "../model/validation.ts";
 import type {
@@ -86,6 +86,30 @@ export type AutomationStudioNodeDefinition = {
   metadata?: JsonObject;
   editor?: AutomationStudioNodeEditorHints;
 };
+
+/**
+ * A domain's check of one parameter value on a node it registered, bound with
+ * `AutomationStudioNodeRegistry.bindParameterContract`. Flow Bootstrap calls it
+ * while it validates a generated plan, so a structured value the domain would
+ * refuse at dispatch is refused before the plan is accepted.
+ *
+ * - It is called only for a literal value that already has the parameter's
+ *   declared type. A value that is itself a state binding is not checked; a
+ *   value holding a nested binding is passed as it is, `{ $state: { path } }`
+ *   included, and a contract that does not accept one there refuses it.
+ * - `value` is a copy: changing it changes nothing.
+ * - It must be synchronous, and return stable issue codes, empty when the value
+ *   is acceptable. A code is lower-case and dot-separated, at most 120
+ *   characters, never starts with `bootstrap.`, and never carries the value.
+ *   Any other code is reported as `bootstrap.parameter_contract_violation`, and
+ *   at most 8 codes are kept for one value. A throw, or an answer that is not an
+ *   array, is reported as `bootstrap.parameter_contract_failed`.
+ */
+export type AutomationStudioNodeParameterContract = (input: {
+  definitionId: string;
+  parameterId: string;
+  value: JsonValue;
+}) => readonly string[];
 
 /** Plain registration boundary importers can expose from their configured source root. */
 export type AutomationStudioImporterNodeManifest = {

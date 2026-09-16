@@ -43,7 +43,13 @@ export class AutomationStudioNativeNodeRuntime {
     validateExtensionBindings("recording mapper", manifest.recordingMappers, bundle.recordingMappers);
     validateExtensionBindings("target resolver", manifest.targetResolvers, bundle.targetResolvers);
     validateExtensionBindings("comparator", manifest.comparators, bundle.comparators);
+    for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {})) {
+      if (!manifest.nodes.some((node) => node.id === nodeId)) throw new Error(`Parameter contract ${nodeId} is not declared by manifest ${manifest.packageId}.`);
+      if (typeof contract !== "function") throw new Error(`Parameter contract ${nodeId} must be a function.`);
+    }
     this.sdk.register(manifest);
+    // Bound on the registry that validation of a generated plan reads, never on the definition, which stays plain data.
+    for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {})) this.sdk.nodes.bindParameterContract(nodeId, contract);
     for (const node of manifest.nodes) { const key = node.source.kind === "importer" || node.source.kind === "code" ? node.source.implementationKey : ""; const implementation = bundle.implementations[key]; if (implementation) this.bindings.set(node.id, { manifest, implementation }); }
     for (const [id, implementation] of Object.entries(bundle.recordingMappers ?? {})) this.recordingMappers.set(`${manifest.domainId}:${id}`, implementation);
     for (const [id, implementation] of Object.entries(bundle.targetResolvers ?? {})) this.targetResolvers.set(`${manifest.domainId}:${id}`, implementation);

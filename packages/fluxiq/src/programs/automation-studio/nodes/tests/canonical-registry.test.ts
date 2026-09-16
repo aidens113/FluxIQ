@@ -70,3 +70,29 @@ describe("canonical Automation Studio node registry", () => {
     expect(() => new AutomationStudioNodeRegistry().registerImporterManifest(invalidManifest)).toThrow("node.importer_scope_mismatch");
   });
 });
+
+describe("a parameter contract bound on the registry", () => {
+  it("is returned for the node it was bound to, and for no other", () => {
+    const contract = () => ["orders.submit.invalid"];
+    const registry = new AutomationStudioNodeRegistry([importerNode()]).bindParameterContract("domain.orders.submit", contract);
+
+    expect(registry.getParameterContract("domain.orders.submit")).toBe(contract);
+    expect(registry.getParameterContract("builtin.policy.action")).toBeUndefined();
+  });
+
+  it("leaves the registered definition declarative, so it still copies", () => {
+    const registry = new AutomationStudioNodeRegistry([importerNode()]).bindParameterContract("domain.orders.submit", () => []);
+
+    expect(() => structuredClone(registry.get("domain.orders.submit"))).not.toThrow();
+  });
+
+  it("is refused for a node that is not registered, a built-in node, a second binding, or a value that is not a function", () => {
+    const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, importerNode()]);
+
+    expect(() => registry.bindParameterContract("domain.orders.missing", () => [])).toThrow("unregistered node definition");
+    expect(() => registry.bindParameterContract("builtin.policy.action", () => [])).toThrow("built-in node definition");
+    expect(() => registry.bindParameterContract("domain.orders.submit", "not a function" as never)).toThrow("must be a function");
+    registry.bindParameterContract("domain.orders.submit", () => []);
+    expect(() => registry.bindParameterContract("domain.orders.submit", () => [])).toThrow("already has a parameter contract");
+  });
+});

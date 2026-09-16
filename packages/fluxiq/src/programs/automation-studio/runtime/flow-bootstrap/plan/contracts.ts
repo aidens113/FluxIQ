@@ -62,6 +62,10 @@ export type AutomationStudioFlowBootstrapCatalogEntry = {
     defaultValue?: JsonValue;
     options?: string[];
     constraints?: AutomationNodeParameter["constraints"];
+    /** For an object, json or array parameter: what its value holds, bounded. */
+    description?: string;
+    /** For an object, json or array parameter: a value of the right shape, sent only when it is small. */
+    example?: JsonValue;
   }>;
   outputAction?: { required: true; fixed?: string; allowed?: string[] };
 };

@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult } from "./contracts.ts";
 import { AutomationStudioNodeRegistry } from "./canonical-registry.ts";
-import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition } from "./definitions.ts";
+import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "./definitions.ts";
 
 export const AUTOMATION_STUDIO_IMPORTER_SDK_VERSION = "0.1" as const;
 export type AutomationStudioImporterSchema = { id: string; version: string; valueType: JsonObject };
@@ -104,6 +104,12 @@ export type AutomationStudioImporterImplementationBundle = {
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;
   targetResolvers?: Record<string, AutomationStudioTargetResolverImplementation>;
   comparators?: Record<string, AutomationStudioComparatorImplementation>;
+  /**
+   * Checks of a node's parameter values, keyed by the id of a node the manifest
+   * declares. Registration binds each onto the node registry, where validation
+   * of a generated plan calls it (`AutomationStudioNodeParameterContract`).
+   */
+  parameterContracts?: Record<string, AutomationStudioNodeParameterContract>;
 };
 
 /** Explicit manifest registry. FluxIQ never scans or imports host modules from display metadata. */

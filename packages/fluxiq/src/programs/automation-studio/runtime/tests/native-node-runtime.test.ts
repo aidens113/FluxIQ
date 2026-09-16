@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
+import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 
 function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): AutomationStudioNodeDefinition {
@@ -115,5 +118,128 @@ describe("trusted-local native node runtime", () => {
   it("requires declared importer extension implementations", () => {
     const withMapper = { ...manifest(), recordingMappers: [{ id: "mapper", version: "1.0.0", description: "Mapper" }] };
     expect(() => new AutomationStudioNativeNodeRuntime().register(withMapper, { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: () => ({ outputs: { result: 1 } }) } })).toThrow("Missing importer recording mapper implementation mapper");
+  });
+});
+
+describe("the parameter contracts an importer bundle carries", () => {
+  const items = node({
+    id: "example.items",
+    source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: "items" },
+    inputs: [],
+    outputs: [{ id: "success", label: "Success", valueType: "any" }],
+    parameters: [{ id: "items", label: "Items", valueType: "object", required: true }],
+    outputAction: { fixedOutputId: "example.items" }
+  });
+  const bundle = { packageId: "example.package", packageVersion: "1.0.0", implementations: { items: () => ({ outputs: { success: true } }) } };
+  const contract = ({ value }: { value: unknown }) => (value as { item?: unknown }).item ? [] : ["example.items.missing_item"];
+  const plan = (parameters: AutomationStudioFlowBootstrapPlan["subflows"][number]["nodes"][number]["parameters"]): AutomationStudioFlowBootstrapPlan => ({
+    schemaVersion: "0.1",
+    router: { name: "Example", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+    subflows: [{ key: "primary", name: "Primary", role: "primary", edges: [], nodes: [{ key: "items", definitionId: "example.items", definitionVersion: "1.0.0", outputActionId: "example.items", ...(parameters ? { parameters } : {}) }] }]
+  });
+
+  it("reach validation of a generated plan through the registry the runtime exposes", () => {
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([items]), { ...bundle, parameterContracts: { "example.items": contract } });
+    const validate = (parameters: NonNullable<AutomationStudioFlowBootstrapPlan["subflows"][number]["nodes"][number]["parameters"]>) => validateAutomationStudioFlowBootstrapPlan({
+      plan: plan(parameters),
+      registry: runtime.sdk.nodes,
+      resolution: runtime.getRegistryResolution({ kind: "domain", domainId: "example" })
+    });
+
+    expect(runtime.sdk.nodes.getParameterContract("example.items")).toBe(contract);
+    expect(validate({ items: { nonsense: true } }).issues).toEqual([{
+      severity: "error",
+      code: "example.items.missing_item",
+      message: "Node parameter value does not satisfy its domain contract.",
+      path: "plan.subflows.0.nodes.0.parameters.items"
+    }]);
+    expect(validate({ items: { item: ".row" } })).toMatchObject({ ok: true, issues: [] });
+    expect(runtime.listDefinitions()).toHaveLength(1);
+  });
+
+  it("leave a node without one unconstrained", () => {
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([items]), bundle);
+
+    expect(runtime.sdk.nodes.getParameterContract("example.items")).toBeUndefined();
+  });
+
+  it("must name a node the manifest declares, and be functions, or nothing is registered", () => {
+    const unknown = new AutomationStudioNativeNodeRuntime();
+    expect(() => unknown.register(manifest([items]), { ...bundle, parameterContracts: { "example.elsewhere": contract } }))
+      .toThrow("Parameter contract example.elsewhere is not declared by manifest example.package.");
+    expect(unknown.listDefinitions()).toEqual([]);
+
+    const notFunction = new AutomationStudioNativeNodeRuntime();
+    expect(() => notFunction.register(manifest([items]), { ...bundle, parameterContracts: { "example.items": "check" as never } }))
+      .toThrow("Parameter contract example.items must be a function.");
+    expect(notFunction.listDefinitions()).toEqual([]);
+  });
+});
+
+describe("the records an importer node declares", () => {
+  const recordOutput = {
+    datasetId: "listings",
+    label: "Listings",
+    recordsPath: "result.extracted",
+    writeMode: "replace",
+    schema: {
+      schemaVersion: "0.1",
+      fields: [
+        { id: "title", label: "Title", valueType: "string", required: true },
+        { id: "secret", label: "Secret", valueType: "string", handling: "exclude" }
+      ]
+    }
+  };
+  const extract = node({
+    id: "example.extract",
+    source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: "extract" },
+    inputs: [],
+    outputs: [
+      { id: "success", label: "Success", valueType: "any" },
+      { id: "failed", label: "Failed", valueType: "any" },
+      { id: "records", label: "Records", valueType: "array", role: "data" }
+    ],
+    parameters: [{ id: "recordOutput", label: "Save records", valueType: "json", allowStateBinding: false, ui: { control: "record-output" } }],
+    outputAction: { fixedOutputId: "example.extract" }
+  });
+  const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([extract]), {
+    packageId: "example.package",
+    packageVersion: "1.0.0",
+    implementations: {
+      extract: ({ parameters }) => ({
+        status: "success",
+        outputs: { success: true },
+        effects: [{ type: "policy.output.dispatch", payload: { outputId: "example.extract", parameters: {}, recordOutput: parameters.recordOutput ?? null } }]
+      })
+    }
+  });
+
+  it("pass the result boundary with the record output still in the dispatch", async () => {
+    const execution = await runtime.execute({ id: "extract", definitionId: extract.id, parameterValues: { recordOutput } }, {});
+
+    expect(execution?.result.status).toBe("success");
+    expect(execution?.result.effects).toEqual([{ type: "policy.output.dispatch", payload: { outputId: "example.extract", parameters: {}, recordOutput } }]);
+  });
+
+  it("are captured from the output's answer and handed to the dataset store, without the excluded field", async () => {
+    const batches: AutomationStudioRecordBatch[] = [];
+    const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.extract", ownerKind: "policy", ownerId: "flow.extract", name: "Extract", nodes: [{ id: "extract", definitionId: extract.id, parameterValues: { recordOutput } }], edges: [], createdAt: 1, updatedAt: 1 };
+
+    const trace = await runAutomationStudioGraph(flow, {
+      nativeNodeExecutor: ({ node: instance, inputs, signal }) => runtime.execute(instance, inputs, signal),
+      // The output's payload is `outputs.result`; `recordsPath` is read inside it.
+      effectDispatcher: () => ({ status: "success", outputs: { result: { result: { extracted: [{ title: "First", secret: "withheld-value" }, { title: "Second" }] } } } }),
+      onRecordBatch: (batch): AutomationStudioRunDatasetSummary => {
+        batches.push(batch);
+        return { runId: "run", datasetId: batch.datasetId, nodeIds: [batch.nodeId], schemaDigest: "digest", recordCount: batch.rows.length, truncated: batch.truncated, invalidCount: batch.invalidCount, updatedAt: 1 };
+      }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ nodeId: "extract", datasetId: "listings", writeMode: "replace", invalidCount: 0, rows: [{ title: "First" }, { title: "Second" }] });
+    // The trace keeps a dataset marker where the rows were, never the rows.
+    expect(trace.values.records).toHaveProperty("$dataset");
+    expect(JSON.stringify(trace)).not.toContain("withheld-value");
   });
 });
