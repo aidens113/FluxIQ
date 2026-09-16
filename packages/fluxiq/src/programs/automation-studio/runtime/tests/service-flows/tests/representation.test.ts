@@ -2,11 +2,11 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import { createBlankAutomationStudioFlowArtifact, withAutomationStudioFlowRepresentation } from "../../model/index.ts";
-import { generateFlowTypeScript } from "../../dsl/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../executor/index.ts";
-import { AutomationStudioService } from "../service.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { createBlankAutomationStudioFlowArtifact, withAutomationStudioFlowRepresentation } from "../../../../model/index.ts";
+import { generateFlowTypeScript } from "../../../../dsl/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../executor/index.ts";
+import { AutomationStudioService } from "../../../service.ts";
 
 describe("Automation Studio Flow representation boundary", () => {
   let dataDir: string;

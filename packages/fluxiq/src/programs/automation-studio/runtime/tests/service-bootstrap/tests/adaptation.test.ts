@@ -2,17 +2,17 @@ import { cp, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../api/contracts.ts";
-import { registerAutomationStudioApi } from "../../api/handlers.ts";
+import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_shared/api.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api/contracts.ts";
+import { registerAutomationStudioApi } from "../../../../api/handlers.ts";
 import {
   AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
   AutomationStudioNodeRegistry,
   type AutomationStudioNodeDefinition
-} from "../../nodes/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
-import { AutomationStudioService } from "../service.ts";
+} from "../../../../nodes/index.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioService } from "../../../service.ts";
 
 // Every case needs a project that already holds a blank instruction Flow, and
 // most need a proposed bootstrap adaptation on top of it. Writing that through
