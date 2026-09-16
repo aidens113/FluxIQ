@@ -138,12 +138,15 @@ export class AutomationStudioProjectGraphRepository {
         for (const operation of input.operations) {
           const applied = await applyGraphOperation(context.sql, this, input.flowId, operation, nextRevision, context.changedAt);
           for (const partitionId of applied.affectedPartitionIds) affectedPartitionIds.add(partitionId);
-          if (applied.deletedId) deletedIds.push(applied.deletedId);
-          if (applied.changedEntity) changedEntities.push(applied.changedEntity);
-          inverseOperations.unshift(applied.inverse);
-          await insertOperation(context.sql, { revisionId, ordinal: ordinal++, operationKind: operation.op, entityKind: applied.entityKind, entityId: applied.entityId, before: applied.before, after: applied.after });
-          await context.recordTouchedEntity({ entityKind: `graph_${applied.entityKind}`, entityId: applied.entityId, operation: applied.deletedId ? "delete" : applied.before ? "update" : "create", revision: nextRevision });
+          inverseOperations.unshift(...applied.inverse);
+          for (const record of [applied.primary, ...applied.cascaded]) {
+            if (record.deletedId) deletedIds.push(record.deletedId);
+            changedEntities.push(record.changedEntity);
+            await insertOperation(context.sql, { revisionId, ordinal: ordinal++, operationKind: record.operationKind, entityKind: record.entityKind, entityId: record.entityId, before: record.before, after: record.after });
+            await context.recordTouchedEntity({ entityKind: `graph_${record.entityKind}`, entityId: record.entityId, operation: record.deletedId ? "delete" : record.before ? "update" : "create", revision: nextRevision });
+          }
         }
+        await context.sql.run("update graph_revisions set operation_count = ? where revision_id = ?", [ordinal, revisionId]);
         await this.refreshPartitionCounts([...affectedPartitionIds], context.changedAt, context.sql);
         await context.sql.run("update flows set graph_revision = ?, updated_at_ms = ? where flow_id = ?", [nextRevision, context.changedAt, input.flowId]);
         const validationJobId = await scheduleValidation(context.sql, input.flowId, nextRevision, context.changedAt);
@@ -176,11 +179,12 @@ export class AutomationStudioProjectGraphRepository {
       for (const node of current.nodes) if (!snapshot.nodes?.some((item) => item.nodeId === node.nodeId)) operations.push({ op: "delete_node", nodeId: node.nodeId });
       for (const node of snapshot.nodes ?? []) {
         const existing = current.nodes.find((item) => item.nodeId === node.nodeId);
-        if (existing && (existing.x !== node.x || existing.y !== node.y)) operations.push({ op: "move_node", nodeId: node.nodeId, x: node.x, y: node.y });
-        if (existing && JSON.stringify(existing.parameterValues) !== JSON.stringify(node.parameterValues)) operations.push({ op: "set_node_parameters", nodeId: node.nodeId, values: node.parameterValues });
+        if (!existing || !sameJson(stripNode(existing), stripNode(node))) operations.push({ op: "add_node", node: stripNode(node) });
       }
-      for (const node of snapshot.nodes ?? []) if (!current.nodes.some((item) => item.nodeId === node.nodeId)) operations.push({ op: "add_node", node: stripNode(node) });
-      for (const edge of snapshot.edges ?? []) if (!current.edges.some((item) => item.edgeId === edge.edgeId)) operations.push({ op: "add_edge", edge: stripEdge(edge) });
+      for (const edge of snapshot.edges ?? []) {
+        const existing = current.edges.find((item) => item.edgeId === edge.edgeId);
+        if (!existing || !sameJson(stripEdge(existing), stripEdge(edge))) operations.push({ op: "add_edge", edge: stripEdge(edge) });
+      }
       return await this.applyPatch({ pool: input.pool, projectId: input.projectId, flowId: input.flowId, baseRevision: current.flow.graphRevision, mutationId: input.mutationId, operations, message: "Restore graph snapshot", ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) });
     } finally { await content.close(); }
   }
@@ -253,13 +257,88 @@ type PartitionRow = { partition_id: string; flow_id: string; grid_x: number; gri
 type RevisionRow = { revision_id: string; flow_id: string; revision_number: number; parent_revision: number | null; author_id: string | null; source: string; operation_count: number; snapshot_object_id: string | null; digest: string; message: string; created_at_ms: number };
 type OperationRow = { operation_id: string; revision_id: string; ordinal: number; operation_kind: string; entity_kind: "node" | "edge" | "region"; entity_id: string; before_json: string | null; after_json: string | null };
 
-async function applyGraphOperation(sql: AutomationStudioSqlExecutor, store: AutomationStudioProjectGraphRepository, flowId: string, operation: AutomationStudioGraphPatchOperation, revision: number, changedAt: number) {
-  if (operation.op === "add_node") { const saved = await store.upsertNode({ ...operation.node, flowId }, changedAt, sql); return { entityKind: "node" as const, entityId: saved.nodeId, before: null, after: saved, inverse: { op: "delete_node" as const, nodeId: saved.nodeId }, changedEntity: { entityKind: "node", entityId: saved.nodeId, revision }, affectedPartitionIds: [saved.partitionId].filter(Boolean) as string[] }; }
-  if (operation.op === "move_node") { const before = await requiredNode(store, sql, operation.nodeId, flowId); const saved = await store.upsertNode({ ...stripNode(before), x: operation.x, y: operation.y }, changedAt, sql); return { entityKind: "node" as const, entityId: saved.nodeId, before, after: saved, inverse: { op: "move_node" as const, nodeId: before.nodeId, x: before.x, y: before.y }, changedEntity: { entityKind: "node", entityId: saved.nodeId, revision }, affectedPartitionIds: [before.partitionId, saved.partitionId].filter(Boolean) as string[] }; }
-  if (operation.op === "set_node_parameters") { const before = await requiredNode(store, sql, operation.nodeId, flowId); const saved = await store.upsertNode({ ...stripNode(before), parameterValues: operation.values }, changedAt, sql); return { entityKind: "node" as const, entityId: saved.nodeId, before, after: saved, inverse: { op: "set_node_parameters" as const, nodeId: before.nodeId, values: before.parameterValues }, changedEntity: { entityKind: "node", entityId: saved.nodeId, revision }, affectedPartitionIds: [saved.partitionId].filter(Boolean) as string[] }; }
-  if (operation.op === "delete_node") { const before = await requiredNode(store, sql, operation.nodeId, flowId); const connected = await sql.all<EdgeRow>("select * from graph_edges where flow_id = ? and deleted_at_ms is null and (source_node_id = ? or target_node_id = ?)", [flowId, before.nodeId, before.nodeId]); for (const edge of connected) await sql.run("update graph_edges set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where edge_id = ?", [changedAt, changedAt, edge.edge_id]); await sql.run("update graph_nodes set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where node_id = ?", [changedAt, changedAt, before.nodeId]); await sql.run("delete from graph_nodes_fts where node_id = ?", [before.nodeId]); return { entityKind: "node" as const, entityId: before.nodeId, before, after: null, inverse: { op: "add_node" as const, node: stripNode(before) }, deletedId: before.nodeId, changedEntity: { entityKind: "node", entityId: before.nodeId, revision }, affectedPartitionIds: [before.partitionId].filter(Boolean) as string[] }; }
-  if (operation.op === "add_edge") { const saved = await store.upsertEdge({ ...operation.edge, flowId }, changedAt, sql); const source = await store.getNode(saved.sourceNodeId, sql); const target = await store.getNode(saved.targetNodeId, sql); return { entityKind: "edge" as const, entityId: saved.edgeId, before: null, after: saved, inverse: { op: "delete_edge" as const, edgeId: saved.edgeId }, changedEntity: { entityKind: "edge", entityId: saved.edgeId, revision }, affectedPartitionIds: [source?.partitionId, target?.partitionId].filter(Boolean) as string[] }; }
-  const before = await requiredEdge(store, sql, operation.edgeId, flowId); await sql.run("update graph_edges set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where edge_id = ?", [changedAt, changedAt, before.edgeId]); return { entityKind: "edge" as const, entityId: before.edgeId, before, after: null, inverse: { op: "add_edge" as const, edge: stripEdge(before) }, deletedId: before.edgeId, changedEntity: { entityKind: "edge", entityId: before.edgeId, revision }, affectedPartitionIds: [] };
+type GraphOperationRecord = { operationKind: string; entityKind: "node" | "edge"; entityId: string; before: unknown | null; after: unknown | null; deletedId: string | null; changedEntity: { entityKind: string; entityId: string; revision: number } };
+type GraphOperationEffect = { primary: GraphOperationRecord; cascaded: GraphOperationRecord[]; inverse: AutomationStudioGraphPatchOperation[]; affectedPartitionIds: string[] };
+
+async function applyGraphOperation(sql: AutomationStudioSqlExecutor, store: AutomationStudioProjectGraphRepository, flowId: string, operation: AutomationStudioGraphPatchOperation, revision: number, changedAt: number): Promise<GraphOperationEffect> {
+  if (operation.op === "add_node") {
+    const replaced = await liveNode(store, sql, operation.node.nodeId);
+    const saved = await store.upsertNode({ ...operation.node, flowId }, changedAt, sql);
+    return {
+      primary: nodeRecord(operation.op, saved.nodeId, replaced, saved, null, revision),
+      cascaded: [],
+      inverse: [replaced ? { op: "add_node", node: stripNode(replaced) } : { op: "delete_node", nodeId: saved.nodeId }],
+      affectedPartitionIds: partitionIds([replaced?.partitionId, saved.partitionId])
+    };
+  }
+  if (operation.op === "move_node") {
+    const before = await requiredNode(store, sql, operation.nodeId, flowId);
+    const saved = await store.upsertNode({ ...stripNode(before), x: operation.x, y: operation.y }, changedAt, sql);
+    return {
+      primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
+      cascaded: [],
+      inverse: [{ op: "move_node", nodeId: before.nodeId, x: before.x, y: before.y }],
+      affectedPartitionIds: partitionIds([before.partitionId, saved.partitionId])
+    };
+  }
+  if (operation.op === "set_node_parameters") {
+    const before = await requiredNode(store, sql, operation.nodeId, flowId);
+    const saved = await store.upsertNode({ ...stripNode(before), parameterValues: operation.values }, changedAt, sql);
+    return {
+      primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
+      cascaded: [],
+      inverse: [{ op: "set_node_parameters", nodeId: before.nodeId, values: before.parameterValues }],
+      affectedPartitionIds: partitionIds([saved.partitionId])
+    };
+  }
+  if (operation.op === "delete_node") {
+    const before = await requiredNode(store, sql, operation.nodeId, flowId);
+    const connected = (await sql.all<EdgeRow>("select * from graph_edges where flow_id = ? and deleted_at_ms is null and (source_node_id = ? or target_node_id = ?) order by edge_id", [flowId, before.nodeId, before.nodeId])).map(edgeFromRow);
+    const cascaded: GraphOperationRecord[] = [];
+    const inverse: AutomationStudioGraphPatchOperation[] = [{ op: "add_node", node: stripNode(before) }];
+    const touchedPartitions: Array<string | null | undefined> = [before.partitionId];
+    for (const edge of connected) {
+      await sql.run("update graph_edges set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where edge_id = ?", [changedAt, changedAt, edge.edgeId]);
+      inverse.push({ op: "add_edge", edge: stripEdge(edge) });
+      cascaded.push(edgeRecord("delete_edge", edge.edgeId, edge, null, edge.edgeId, revision));
+      const opposite = await store.getNode(edge.sourceNodeId === before.nodeId ? edge.targetNodeId : edge.sourceNodeId, sql);
+      touchedPartitions.push(opposite?.partitionId);
+    }
+    await sql.run("update graph_nodes set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where node_id = ?", [changedAt, changedAt, before.nodeId]);
+    await sql.run("delete from graph_nodes_fts where node_id = ?", [before.nodeId]);
+    return { primary: nodeRecord(operation.op, before.nodeId, before, null, before.nodeId, revision), cascaded, inverse, affectedPartitionIds: partitionIds(touchedPartitions) };
+  }
+  if (operation.op === "add_edge") {
+    const replaced = await liveEdge(store, sql, operation.edge.edgeId);
+    const saved = await store.upsertEdge({ ...operation.edge, flowId }, changedAt, sql);
+    return {
+      primary: edgeRecord(operation.op, saved.edgeId, replaced, saved, null, revision),
+      cascaded: [],
+      inverse: [replaced ? { op: "add_edge", edge: stripEdge(replaced) } : { op: "delete_edge", edgeId: saved.edgeId }],
+      affectedPartitionIds: await endpointPartitionIds(store, sql, replaced ? [saved, replaced] : [saved])
+    };
+  }
+  const before = await requiredEdge(store, sql, operation.edgeId, flowId);
+  await sql.run("update graph_edges set deleted_at_ms = ?, revision = revision + 1, updated_at_ms = ? where edge_id = ?", [changedAt, changedAt, before.edgeId]);
+  return { primary: edgeRecord(operation.op, before.edgeId, before, null, before.edgeId, revision), cascaded: [], inverse: [{ op: "add_edge", edge: stripEdge(before) }], affectedPartitionIds: await endpointPartitionIds(store, sql, [before]) };
+}
+
+function nodeRecord(operationKind: string, entityId: string, before: AutomationStudioGraphNodeRecord | null, after: AutomationStudioGraphNodeRecord | null, deletedId: string | null, revision: number): GraphOperationRecord {
+  return { operationKind, entityKind: "node", entityId, before, after, deletedId, changedEntity: { entityKind: "node", entityId, revision } };
+}
+
+function edgeRecord(operationKind: string, entityId: string, before: AutomationStudioGraphEdgeRecord | null, after: AutomationStudioGraphEdgeRecord | null, deletedId: string | null, revision: number): GraphOperationRecord {
+  return { operationKind, entityKind: "edge", entityId, before, after, deletedId, changedEntity: { entityKind: "edge", entityId, revision } };
+}
+
+async function liveNode(store: AutomationStudioProjectGraphRepository, sql: AutomationStudioSqlExecutor, nodeId: string): Promise<AutomationStudioGraphNodeRecord | null> { const node = await store.getNode(nodeId, sql); return node && node.deletedAt === null ? node : null; }
+async function liveEdge(store: AutomationStudioProjectGraphRepository, sql: AutomationStudioSqlExecutor, edgeId: string): Promise<AutomationStudioGraphEdgeRecord | null> { const edge = await store.getEdge(edgeId, sql); return edge && edge.deletedAt === null ? edge : null; }
+function partitionIds(values: Array<string | null | undefined>): string[] { return unique(values.filter((value): value is string => Boolean(value))); }
+
+async function endpointPartitionIds(store: AutomationStudioProjectGraphRepository, sql: AutomationStudioSqlExecutor, edges: AutomationStudioGraphEdgeRecord[]): Promise<string[]> {
+  const partitions: Array<string | null | undefined> = [];
+  for (const nodeId of unique(edges.flatMap((edge) => [edge.sourceNodeId, edge.targetNodeId]))) partitions.push((await store.getNode(nodeId, sql))?.partitionId);
+  return partitionIds(partitions);
 }
 
 async function changedEntitiesSince(sql: AutomationStudioSqlExecutor, flowId: string, baseRevision: number, entityIds: Set<string>): Promise<string[]> {
@@ -312,6 +391,7 @@ function partitionFromRow(row: PartitionRow): AutomationStudioGraphPartitionReco
 function revisionFromRow(row: RevisionRow): AutomationStudioGraphRevisionRecord { return { revisionId: row.revision_id, flowId: row.flow_id, revisionNumber: row.revision_number, parentRevision: row.parent_revision, authorId: row.author_id, source: row.source, operationCount: row.operation_count, snapshotObjectId: row.snapshot_object_id, digest: row.digest, message: row.message, createdAt: row.created_at_ms }; }
 function operationFromRow(row: OperationRow): AutomationStudioGraphOperationRecord { return { operationId: row.operation_id, revisionId: row.revision_id, ordinal: row.ordinal, operationKind: row.operation_kind, entityKind: row.entity_kind, entityId: row.entity_id, before: row.before_json ? JSON.parse(row.before_json) : null, after: row.after_json ? JSON.parse(row.after_json) : null }; }
 
+function sameJson(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right); }
 function stripNode(node: AutomationStudioGraphNodeRecord): Omit<AutomationStudioGraphNodeRecord, "partitionId" | "revision" | "createdAt" | "updatedAt" | "deletedAt"> { return { nodeId: node.nodeId, flowId: node.flowId, definitionId: node.definitionId, definitionVersion: node.definitionVersion, label: node.label, description: node.description, x: node.x, y: node.y, width: node.width, height: node.height, zIndex: node.zIndex, disabled: node.disabled, parameterValues: node.parameterValues, metadata: node.metadata }; }
 function stripEdge(edge: AutomationStudioGraphEdgeRecord): Omit<AutomationStudioGraphEdgeRecord, "revision" | "createdAt" | "updatedAt" | "deletedAt"> { return { edgeId: edge.edgeId, flowId: edge.flowId, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId, sourcePortId: edge.sourcePortId, targetPortId: edge.targetPortId, label: edge.label, metadata: edge.metadata }; }
 function boundsForRegion(nodeIds: string[], nodes: AutomationStudioFlowNode[]): AutomationStudioGraphBounds { const selected = nodes.filter((node) => nodeIds.includes(node.id)); if (!selected.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0 }; const xs = selected.map((node) => node.position?.x ?? 0); const ys = selected.map((node) => node.position?.y ?? 0); return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs) + 240, maxY: Math.max(...ys) + 96 }; }
