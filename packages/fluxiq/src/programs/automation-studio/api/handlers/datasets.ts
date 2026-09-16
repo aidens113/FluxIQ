@@ -4,8 +4,15 @@
 //
 // Rows are stored raw and are never stripped (CD16), so **every handler here
 // asserts the project's domain access before it reads anything**, as the
-// reusable-context handlers do (`caches.ts:51`). The run endpoints next door
-// skip that check, which is safe only because they expose no row content.
+// reusable-context handlers do (`caches.ts:51`). That is where the line falls:
+// the scope binds a request to the domain surface it claims to be working in,
+// so a domain-scoped client cannot be pointed at another domain's project and
+// pull its stored content out. The run endpoints next door skip the check
+// because they hold no content to pull — captured rows, run input values and
+// a capture's result are all replaced by withheld markers before anything is
+// stored. Which endpoints assert and why is pinned, with the whole rule, in
+// `tests/domain-scope.test.ts`; a caller of these six presents the project's
+// domain, and one that does not is answered with a 400.
 // Reads take `programs.read`; deletion takes `flows.write` and is audited
 // (CD17). Paging is clamped through the shared helper, 1-200 with a default of
 // 50 (C11), never the Design's 1-500.

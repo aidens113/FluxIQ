@@ -1,5 +1,14 @@
 // Flow runs with their actions and events, and the adaptations reviewed
 // against them.
+//
+// No endpoint here asserts the project's domain scope, and that is deliberate
+// rather than an omission to copy either way. A run record carries structure
+// and counts only: its captured rows became a `$dataset` marker, its input
+// values the withheld marker, its capture result the same. The rows themselves
+// live behind `datasets.ts`, where every endpoint does assert. Before adding
+// an endpoint here that returns content a run captured, read the rule pinned
+// in `tests/domain-scope.test.ts` — it decides which side a new endpoint
+// belongs on.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type ReviewFlowAdaptationRequest } from "../contracts.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
