@@ -219,6 +219,8 @@ export function gatherRequest(iteration: number, evidence: Array<{ callId: strin
     ...base,
     requestId: `request.gather.${iteration}`,
     idempotencyKey: `request.gather.${iteration}`,
+    // Declared, as a harness-built request is: gathered evidence is refused without it.
+    deniedEvidenceKeys: [],
     context: {
       ...base.context,
       evidenceLoop: { iteration, tools, evidence, completionSchema, canComplete: true, decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true) }

@@ -41,7 +41,7 @@ const END_GRANT = "end_grant" as const;
 /**
  * Every provider failure code, and what it means for the grant.
  *
- * The seventeen pre-flight refusals all end it: a request Core refused to build
+ * The eighteen pre-flight refusals all end it: a request Core refused to build
  * or send will be refused identically next time, so retrying it only spends
  * reveals, and one of them -- a credential found in the outbound body -- is an
  * exfiltration signal in its own right.
@@ -57,6 +57,7 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS = Object.freeze
   "llm.provider_request_task_mismatch": END_GRANT,
   "llm.provider_recent_actions_invalid": END_GRANT,
   "llm.provider_failure_evidence_invalid": END_GRANT,
+  "llm.provider_exploration_evidence_invalid": END_GRANT,
   "llm.provider_flow_bootstrap_context_invalid": END_GRANT,
   "llm.provider_evidence_loop_context_invalid": END_GRANT,
   "llm.provider_request_limits_invalid": END_GRANT,

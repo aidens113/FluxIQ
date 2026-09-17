@@ -14,18 +14,16 @@ import {
   automationStudioFlowBootstrapCatalogByteBudget,
   buildAutomationStudioFlowBootstrapContext
 } from "../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
-import { automationStudioLlmTokenBudgetBytes } from "../token-estimation.ts";
+import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
+import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
-import { isJsonObject } from "./json-bounds.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
-import type { AutomationStudioLlmExploredEvidencePacket, AutomationStudioLlmHarnessInput } from "./task-request.ts";
-import { resolveAutomationStudioLlmTokenLimits } from "./token-limits.ts";
+import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
 
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
@@ -48,11 +46,7 @@ export type AutomationStudioLlmContextPacket = {
    * a control only the exploration revealed can be named in the repair. The
    * newest packets that fit, oldest first; the rest are counted and never
    * sent. A target check reads this list and no other. Runtime patch only. */
-  explorationEvidence?: {
-    schemaVersion: "automation-studio.exploration-evidence.v1";
-    packets: AutomationStudioLlmExploredEvidencePacket[];
-    withheldPackets: number;
-  };
+  explorationEvidence?: AutomationStudioLlmExploredEvidenceSlot;
   /** The standardized account of what went wrong: sections in a fixed priority
    * order, a byte budget, and a record of what was withheld and why. Runtime
    * tasks only, like `failureEvidence`. */
@@ -182,7 +176,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.subflows?.length ? { subflows: input.subflows.slice(0, 100).map(compactSubflowForLlm) } : {}),
     ...(input.availableActions?.length ? { availableActions: input.availableActions.slice(0, 100) } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
-    ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: structuredClone(input.evidenceLoop) } : {}),
+    ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: packEvidenceLoop(input.evidenceLoop, deniedEvidenceKeys) } : {}),
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
@@ -190,117 +184,54 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   if (input.explorationEvidence === undefined) return packed;
   return {
     ...packed,
-    explorationEvidence: packExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys, Buffer.byteLength(JSON.stringify(packed), "utf8"))
+    explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys, Buffer.byteLength(JSON.stringify(packed), "utf8"))
   };
 }
 
 /**
- * What a runtime patch request costs besides its context: the provider's system
- * prompt, the `runtime_patch` output schema and the request envelope. An empty
- * runtime patch request measured 3,774 bytes by the DeepSeek adapter's own
- * estimate on 2026-09-16; the rest is headroom for the explored-evidence
- * instruction and for growth. `harness.test.ts` sends the largest slot the room
- * admits through that estimate, so outgrowing this reserve fails the build
- * rather than a live patch call.
- */
-const RUNTIME_PATCH_REQUEST_OVERHEAD_BYTES = 6_000;
-/** Core's label for a packet: a handle token with no colon, so `<evidenceId>:<handle>` reads one way only. */
-const EXPLORED_EVIDENCE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,30}[A-Za-z0-9])?$/u;
-const EXPLORED_EVIDENCE_TOOL_ID = /^[a-z0-9_.:-]{1,200}$/iu;
-
-/**
- * The explored packets a runtime patch may be shown, bounded twice.
+ * The loop's context, carrying nothing the bound domain denies.
  *
- * By count, at the loop's own ceiling on the evidence one exploration can
- * gather. By bytes, at the smaller of the caller's allowance and the room the
- * rest of the request left under its input-token limit -- so carrying the
- * exploration can never push a patch call that would have been sent over its
- * budget and get it refused. Newest first, because the newest page is the one
- * the repair runs against; a packet that does not fit, or that is not a
- * bounded packet free of the domain's denied keys, is withheld and counted.
- *
- * A caller defect -- the wrong task, no allowance, labels that are missing,
- * repeated or could be misread -- is refused outright.
+ * During a recovery's exploration, `evidence` is whatever the domain's options
+ * returned, and it was copied into the request as it stood: the one place a
+ * domain's page reached the model without its declared keys applied. It is
+ * held to them now, and in the way failure evidence is -- refused, not trimmed.
+ * A request carrying a denied key is not built, so no provider is called; the
+ * loop that asked ends on the refusal, which is what a failure capture carrying
+ * one does too. The refusal names no key and repeats no value.
  */
-function packExploredEvidence(
-  input: AutomationStudioLlmHarnessInput,
-  exploration: NonNullable<AutomationStudioLlmHarnessInput["explorationEvidence"]>,
-  deniedKeys: readonly string[],
-  packedBytes: number
-): NonNullable<AutomationStudioLlmContextPacket["explorationEvidence"]> {
-  if (input.taskKind !== "runtime_patch") throw new Error("Exploration evidence is available only to runtime patch tasks.");
-  if (!Number.isSafeInteger(exploration.maxBytes) || exploration.maxBytes < 1) throw new Error("Exploration evidence requires a positive byte allowance.");
-  if (!Array.isArray(exploration.packets)) throw new Error("Exploration evidence requires a list of packets.");
-  const labels = new Set<string>();
-  for (const entry of exploration.packets) {
-    const valid = entry && typeof entry.evidenceId === "string" && EXPLORED_EVIDENCE_ID.test(entry.evidenceId) && !labels.has(entry.evidenceId)
-      && typeof entry.toolId === "string" && EXPLORED_EVIDENCE_TOOL_ID.test(entry.toolId);
-    if (!valid) throw new Error("Exploration evidence packets require distinct bounded labels.");
-    labels.add(entry.evidenceId);
+function packEvidenceLoop(
+  loop: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>,
+  deniedKeys: readonly string[]
+): NonNullable<AutomationStudioLlmContextPacket["evidenceLoop"]> {
+  if (loop.evidence.some((item) => screenAutomationStudioLlmEvidence(item.value, deniedKeys).deniedKey)) {
+    throw new Error("Evidence-loop evidence carries a key the bound domain denies, so the decision request is refused rather than sent.");
   }
-  const limits = resolveAutomationStudioLlmTokenLimits(input.tokenLimits).limits;
-  const inputTokens = Math.min(limits.maxInputTokens, limits.maxTotalTokens - limits.maxOutputTokens);
-  const allowance = Math.min(exploration.maxBytes, automationStudioLlmTokenBudgetBytes(inputTokens) - packedBytes - RUNTIME_PATCH_REQUEST_OVERHEAD_BYTES);
-  const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  const carried: AutomationStudioLlmExploredEvidencePacket[] = [];
-  let withheldPackets = 0;
-  for (let index = exploration.packets.length - 1; index >= 0; index -= 1) {
-    const entry = exploration.packets[index]!;
-    const candidate = carried.length < AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls && boundedExploredPacket(entry.packet, denied)
-      ? { evidenceId: entry.evidenceId, toolId: entry.toolId, packet: JSON.parse(JSON.stringify(entry.packet)) as JsonObject }
-      : undefined;
-    // Measured as the slot is sent, with the key in front of it and the largest withheld count it could carry.
-    if (candidate && Buffer.byteLength(JSON.stringify({ explorationEvidence: exploredEvidenceSlot([candidate, ...carried], exploration.packets.length) }), "utf8") <= allowance) carried.unshift(candidate);
-    else withheldPackets += 1;
-  }
-  return exploredEvidenceSlot(carried, withheldPackets);
-}
-
-function exploredEvidenceSlot(packets: AutomationStudioLlmExploredEvidencePacket[], withheldPackets: number): NonNullable<AutomationStudioLlmContextPacket["explorationEvidence"]> {
-  return { schemaVersion: "automation-studio.exploration-evidence.v1", packets, withheldPackets };
-}
-
-/**
- * Whether a value is a packet Core will carry: bounded JSON with a schema
- * version, no string longer than a failure packet may hold, and none of the
- * domain's denied keys at any depth. The byte bound is the slot's, above,
- * because an explored page is allowed to be larger than a failure snapshot.
- */
-function boundedExploredPacket(packet: unknown, deniedKeys: ReadonlySet<string>): packet is JsonObject {
-  if (!isJsonObject(packet) || typeof packet.schemaVersion !== "string" || !/^[a-z0-9_.:-]{1,100}$/iu.test(packet.schemaVersion)) return false;
-  const pending: unknown[] = [packet];
-  while (pending.length) {
-    const value = pending.pop();
-    if (typeof value === "string") { if (value.length > 2_000) return false; continue; }
-    if (!value || typeof value !== "object") continue;
-    const children = Array.isArray(value) ? value.map((item) => ["", item] as const) : Object.entries(value);
-    for (const [key, child] of children) {
-      if (key.length > 100 || deniedKeys.has(automationStudioEvidenceKey(key))) return false;
-      pending.push(child);
-    }
-  }
-  return true;
+  return structuredClone(loop);
 }
 
 /**
  * The domain's declaration, or a refusal.
  *
- * Evidence and reusable context are the two places a domain's raw payload can
- * reach the model, and Core cannot name the keys that carry it for a medium it
- * knows nothing about. An absent declaration therefore does not mean "deny
- * nothing"; it means nobody said, and the packet would carry whatever the
- * domain happened to capture. So the packet is refused instead of built.
+ * Evidence -- a failure capture, explored pages, an evidence loop's gathered
+ * results -- and reusable context are where a domain's raw payload can reach
+ * the model, and Core cannot name the keys that carry it for a medium it knows
+ * nothing about. An absent declaration therefore does not mean "deny nothing";
+ * it means nobody said, and the packet would carry whatever the domain
+ * happened to capture. So the packet is refused instead of built.
  *
  * `AutomationStudioLlmEvidenceRuntimeBinding.deniedEvidenceKeys` is required,
  * so a bound domain cannot arrive here by omission. This closes the same hole
  * for a caller that assembles a harness input by hand. A domain with nothing
  * to deny declares `[]`, which arrives as an empty list and passes: a claim a
- * reviewer can see, where an absent field is not.
+ * reviewer can see, where an absent field is not. The empty list returned
+ * last is for a request that carries nothing to check, and never reaches the
+ * request: a provider's own check reads the declaration, not this.
  */
 function declaredDeniedEvidenceKeys(input: AutomationStudioLlmHarnessInput): readonly string[] {
   if (input.deniedEvidenceKeys !== undefined) return input.deniedEvidenceKeys;
-  if (input.failureEvidence !== undefined || input.explorationEvidence !== undefined || input.reusableContext !== undefined) {
-    throw new Error("Automation Studio LLM context carrying failure evidence, exploration evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
+  const gathered = input.taskKind === "evidence_tool_decision" && (input.evidenceLoop?.evidence.length ?? 0) > 0;
+  if (input.failureEvidence !== undefined || input.explorationEvidence !== undefined || input.reusableContext !== undefined || gathered) {
+    throw new Error("Automation Studio LLM context carrying failure evidence, exploration evidence, gathered evidence-loop evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
   }
   return [];
 }

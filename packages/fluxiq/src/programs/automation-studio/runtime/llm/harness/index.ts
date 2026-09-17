@@ -1,8 +1,10 @@
-// Barrel for the automation-studio LLM harness. The export list is exactly
-// what harness.ts exported before it was split, so runtime/llm/index.ts and
-// every consumer of ../harness.ts see an unchanged surface. Modules not named
-// here (json-bounds, provider-result, intervention, task-kind's task mappers)
-// are harness internals and stay unexported.
+// Barrel for the automation-studio LLM harness. The export list started as
+// exactly what harness.ts exported before it was split, so runtime/llm/index.ts
+// and every consumer of ../harness.ts saw an unchanged surface. Added since:
+// the explored-packet label, which `runtime/recovery` writes and reads, and the
+// pre-send evidence check a provider runs. Modules not named here (json-bounds,
+// provider-result, intervention, task-kind's task mappers, explored-evidence,
+// evidence-screen) are harness internals and stay unexported.
 export type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 export {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
@@ -35,10 +37,18 @@ export {
   type AutomationStudioLlmRecentActionContext
 } from "./context-packet.ts";
 export {
+  AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
+  automationStudioExploredEvidenceHandle,
+  automationStudioExploredEvidenceLabel,
+  isAutomationStudioExploredEvidenceLabel
+} from "./explored-evidence-label.ts";
+export type { AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
+export {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
+export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-check.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,

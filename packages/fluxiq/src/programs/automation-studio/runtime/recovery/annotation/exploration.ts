@@ -44,6 +44,7 @@ import type {
   AutomationStudioFlowScope
 } from "../../../model/index.ts";
 import {
+  automationStudioExploredEvidenceLabel,
   automationStudioHarnessOptionRegistry,
   automationStudioLlmProviderFailureSpendsCall,
   runAutomationStudioLlmHarness,
@@ -126,33 +127,19 @@ export type AutomationStudioRecoveryExplorationResult = {
   exploration: AutomationStudioRuntimeExploration;
   /**
    * The packets the bound domain's own options returned and the loop
-   * accepted, oldest first, labelled `explored.1`, `explored.2`, ... Empty when
-   * it returned none. Whatever the outcome: a page seen before a limit ended
-   * the exploration was still seen. Unbounded here; the patch request bounds
-   * what it carries.
+   * accepted, oldest first, each labelled by its position through
+   * `automationStudioExploredEvidenceLabel`. Empty when it returned none.
+   * Whatever the outcome: a page seen before a limit ended the exploration was
+   * still seen. Unbounded here; the patch request bounds what it carries.
    */
   explored: AutomationStudioRecoveryExploredPacket[];
 };
 
-/** Core's label for an explored packet, and the qualifier a handle taken from it carries. */
-const EXPLORED_PACKET_LABEL_PREFIX = "explored.";
-const QUALIFIED_HANDLE = /^(explored\.[1-9][0-9]{0,2}):(.+)$/u;
-
-/**
- * A handle as a runtime patch wrote it, read the one way Core writes it.
- *
- * `qualified` names the explored packet it was taken from, by the label this
- * module gave it, and carries the handle as that packet issued it. Anything
- * without the qualifier is `unqualified` and stands exactly as written: a
- * handle taken from the failure packet, which is how every handle was read
- * before explored packets reached a patch.
- */
-export function automationStudioExploredEvidenceHandle(
-  handle: string
-): { kind: "unqualified"; handle: string } | { kind: "qualified"; evidenceId: string; handle: string } {
-  const qualified = QUALIFIED_HANDLE.exec(handle);
-  return qualified ? { kind: "qualified", evidenceId: qualified[1]!, handle: qualified[2]! } : { kind: "unqualified", handle };
-}
+// The label and the qualified-handle reader are defined once, beside the packet
+// builder in `runtime/llm/harness`, which carries only packets labelled that
+// way. The reader is re-exported here, where the target check has always
+// imported it from; it is the same binding, not a copy.
+export { automationStudioExploredEvidenceHandle } from "../../llm/index.ts";
 
 /** One bounded exploration on the recovery path, ending in one named outcome. */
 export async function runAutomationStudioRecoveryExploration(
@@ -213,7 +200,7 @@ export async function runAutomationStudioRecoveryExploration(
   const accepted = new Set(ended.trace.flatMap((step) => step.decision === "tool_call" && step.callId !== undefined && step.evidenceBytes !== undefined ? [step.callId] : []));
   const explored = returned
     .filter((entry) => accepted.has(entry.callId))
-    .map((entry, index) => ({ evidenceId: `${EXPLORED_PACKET_LABEL_PREFIX}${index + 1}`, toolId: entry.toolId, packet: entry.packet }));
+    .map((entry, index) => ({ evidenceId: automationStudioExploredEvidenceLabel(index + 1), toolId: entry.toolId, packet: entry.packet }));
   return { exploration: ended, explored };
 }
 
@@ -261,7 +248,10 @@ async function explorationDecision(
     // exploration decision whenever the domain captured one, which the web
     // domain always does. The diagnosis has already read it; the exploration's
     // job is to gather fresh evidence of its own.
-    ...(input.binding.deniedEvidenceKeys ? { deniedEvidenceKeys: input.binding.deniedEvidenceKeys } : {}),
+    // Forwarded as declared, never defaulted: every decision after the first
+    // carries what the domain's options returned, and the packet builder holds
+    // that to these keys, refusing the decision when one is present.
+    deniedEvidenceKeys: input.binding.deniedEvidenceKeys,
     ...(input.reusableContext ? { reusableContext: input.reusableContext } : {}),
     evidenceLoop: {
       iteration: decision.iteration,

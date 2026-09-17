@@ -20,6 +20,9 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES = Object.freez
   "llm.provider_request_task_mismatch",
   "llm.provider_recent_actions_invalid",
   "llm.provider_failure_evidence_invalid",
+  // The explored packets a runtime patch carries, re-checked like failure
+  // evidence: the packet builder's rule, the domain's keys, no credentials.
+  "llm.provider_exploration_evidence_invalid",
   "llm.provider_flow_bootstrap_context_invalid",
   "llm.provider_evidence_loop_context_invalid",
   "llm.provider_request_limits_invalid",

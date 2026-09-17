@@ -73,20 +73,26 @@ describe("Automation Studio DeepSeek provider", () => {
       failureEvidence: { schemaVersion: "web-llm-evidence.v2", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", name: "Submit" }], truncated: false }
     };
 
-    await provider.runTask(request({ context }));
+    const deniedEvidenceKeys = ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"];
+    await provider.runTask(request({ context, deniedEvidenceKeys }));
     const body = JSON.parse(outboundBody) as { messages: Array<{ role: string; content: string }> };
     const payload = JSON.parse(body.messages.find((message) => message.role === "user")!.content) as any;
     expect(payload.context.failureEvidence).toEqual(context.failureEvidence);
     expect(payload.context.recentActions).toEqual(context.recentActions);
     expect(outboundBody).not.toMatch(/innerHTML|PRIVATE_RAW_SNAPSHOT/);
+    // The declaration travels beside the request, not in it.
+    expect(outboundBody).not.toContain("deniedEvidenceKeys");
 
-    await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], metadata: { snapshot: "PRIVATE_RAW_SNAPSHOT" } }] as any } })), "llm.provider_recent_actions_invalid");
-    await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], failureCategory: "PRIVATE_FAILURE_TEXT" }] as any } })), "llm.provider_recent_actions_invalid");
+    await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, recentActions: [{ ...context.recentActions[0], metadata: { snapshot: "PRIVATE_RAW_SNAPSHOT" } }] as any } })), "llm.provider_recent_actions_invalid");
+    await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, recentActions: [{ ...context.recentActions[0], failureCategory: "PRIVATE_FAILURE_TEXT" }] as any } })), "llm.provider_recent_actions_invalid");
     // The provider re-checks that the evidence in the request it was handed is
-    // already sanitized, using Core's structural bounds -- which are all it can
-    // apply, because the domain's declared keys are enforced where the domain
-    // hands Core its evidence and are not part of an outbound request.
-    await expectProviderError(provider.runTask(request({ context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_failure_evidence_invalid");
+    // already sanitized: by Core's structural bounds, by the domain's declared
+    // keys, which a harness-built request carries beside its context, and by
+    // Core's credential shapes. `deepseek-evidence-preflight.test.ts` covers
+    // the keys, the shapes and the other evidence slots.
+    await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_failure_evidence_invalid");
+    await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, failureEvidence: { ...context.failureEvidence, elements: [{ target: "target.1", innerHTML: "PRIVATE_RAW_SNAPSHOT" }] } } })), "llm.provider_failure_evidence_invalid");
+    await expectProviderError(provider.runTask(request({ context })), "llm.provider_failure_evidence_invalid");
   });
 
   it("normalizes unexpected local request-boundary failures before they reach the harness", async () => {
@@ -166,6 +172,8 @@ describe("Automation Studio DeepSeek provider", () => {
       taskKind: "runtime_patch",
       expectedOutput: "runtime_patch",
       metadata: { executionPurpose: "diagnose_and_adapt" },
+      // This example domain denies nothing, and says so.
+      deniedEvidenceKeys: [],
       context: {
         ...request().context,
         taskKind: "runtime_patch",

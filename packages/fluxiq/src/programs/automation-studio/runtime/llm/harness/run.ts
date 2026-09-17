@@ -67,7 +67,14 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
   const estimatedInputTokens = estimateTokens(JSON.stringify(request));
-  request = { ...request, estimatedInputTokens };
+  // The declaration travels beside the context so a provider can re-check every
+  // evidence slot before sending. Added after the estimate because it is never
+  // sent, and only when one was made: absent stays absent, never an empty list.
+  request = {
+    ...request,
+    estimatedInputTokens,
+    ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: Object.freeze([...input.deniedEvidenceKeys]) } : {})
+  };
   const budgetDiagnostics = [...tokenLimitResolution.diagnostics, ...timeoutDiagnostics];
   // The stage protocol is enforced here, before a provider is resolved or a
   // budget reserved, so a call that breaks Core's order costs nothing and

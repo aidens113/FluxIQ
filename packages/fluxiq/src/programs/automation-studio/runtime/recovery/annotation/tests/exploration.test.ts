@@ -3,6 +3,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import {
   AutomationStudioLlmRunBudgetLedger,
+  automationStudioExploredEvidenceLabel,
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmProvider
 } from "../../../llm/index.ts";
@@ -70,10 +71,34 @@ describe("runAutomationStudioRecoveryExploration", () => {
 
     expect(calls).toEqual(["provider", "test.inspect", "provider", "test.refused", "provider", "test.reveal", "provider"]);
     expect(exploration.outcome).toBe("evidence_gathered");
+    // Labelled by the one definition the packet builder and the target check read.
     expect(explored).toEqual([
-      { evidenceId: "explored.1", toolId: "test.inspect", packet: first },
-      { evidenceId: "explored.2", toolId: "test.reveal", packet: second }
+      { evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "test.inspect", packet: first },
+      { evidenceId: automationStudioExploredEvidenceLabel(2), toolId: "test.reveal", packet: second }
     ]);
+    expect(explored.map((entry) => entry.evidenceId)).toEqual(["explored.1", "explored.2"]);
+  });
+
+  // C-7b. Every decision after the first carries what the domain's options
+  // returned, so each one is held to the domain's declared keys. A page with a
+  // denied key in it is refused while the next decision is being built: the
+  // exploration ends there, and the model is never sent it.
+  it("ends the exploration before a decision could carry a key the bound domain denies", async () => {
+    const calls: string[] = [];
+    const sent: string[] = [];
+    const leaking = { schemaVersion: "test.page.v1", controls: ["candidate.1"], raw: { outer_html: "PRIVATE-RAW-PAYLOAD" } };
+    const recording = sequenceProvider(calls, ["test.inspect", "test.reveal"]);
+    const { exploration } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: { ...pagesBinding(calls, { "test.inspect": leaking, "test.reveal": { schemaVersion: "test.page.v1" } }), deniedEvidenceKeys: ["outerHtml"] },
+      provider: { ...recording, runTask: async (request, execution) => { sent.push(JSON.stringify(request)); return await recording.runTask(request, execution); } },
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(calls).toEqual(["provider", "test.inspect"]);
+    expect(sent).toHaveLength(1);
+    for (const request of sent) expect(request).not.toContain("PRIVATE-RAW-PAYLOAD");
+    expect(exploration.outcome).toBe("failed");
   });
 
   it("returns no packet the loop refused, and none when the exploration never ran", async () => {

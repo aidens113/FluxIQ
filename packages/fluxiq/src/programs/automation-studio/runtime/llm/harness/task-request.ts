@@ -29,6 +29,13 @@ export type AutomationStudioLlmTaskRequest = {
   expectedOutput: "diagnosis" | "runtime_patch" | "change_proposal" | "instruction_suggestion" | "flow_bootstrap" | "evidence_tool_decision";
   tokenLimits: AutomationStudioLlmTokenLimits;
   maxEstimatedCostUsd: number;
+  /** The bound domain's declared keys, exactly as the harness input declared
+   * them, carried beside the context so a provider can re-check every evidence
+   * slot before sending (`automationStudioLlmRequestEvidenceRefusal`). Never
+   * part of what is sent, and not counted in `estimatedInputTokens`. Absent
+   * when nobody declared any; a provider then refuses a request that carries
+   * evidence, rather than reading the absence as an empty list. */
+  deniedEvidenceKeys?: readonly string[];
   dryRun?: boolean;
   metadata?: JsonObject;
 };
@@ -50,7 +57,8 @@ export type AutomationStudioLlmTaskResult = {
  * and `target.3` in a page the exploration revealed are different controls.
  * `evidenceId` is Core's label for the packet within one request, and a handle
  * taken from it is written `<evidenceId>:<handle>`, which is how the target
- * check knows which packet to ask the domain about. It never contains a colon.
+ * check knows which packet to ask the domain about. The label's one definition
+ * is `explored-evidence-label.ts`; it never contains a colon.
  */
 export type AutomationStudioLlmExploredEvidencePacket = {
   evidenceId: string;
@@ -79,10 +87,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * something directly executable. Core holds no such list of its own: it
    * enforces the domain's, and bounds shape and size regardless.
    *
-   * Optional only for a request that carries neither `failureEvidence` nor
-   * `reusableContext`, which is most of them. Omitting it on a request that
-   * carries either is refused when the packet is built: absent means nobody
-   * said, not "deny nothing". A domain with nothing to deny declares `[]`. */
+   * Optional only for a request that carries no evidence and no reusable
+   * context, which is most of them. Omitting it on a request that carries
+   * `failureEvidence`, `explorationEvidence`, `reusableContext`, or an
+   * `evidenceLoop` with anything gathered in it, is refused when the packet is
+   * built: absent means nobody said, not "deny nothing". A domain with nothing
+   * to deny declares `[]`. */
   deniedEvidenceKeys?: readonly string[];
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;

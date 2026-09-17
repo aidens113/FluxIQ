@@ -115,7 +115,13 @@ describe("Automation Studio opaque repair target", () => {
     });
 
     const request = patchRequest();
-    await provider.runTask({ ...request, context: { ...request.context, failureEvidence: REALISTIC_WEB_PACKET } });
+    // Under the web domain's own declaration, which the adapter re-applies
+    // before sending: the sanitizer's real output passes it.
+    await provider.runTask({
+      ...request,
+      deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"],
+      context: { ...request.context, failureEvidence: REALISTIC_WEB_PACKET }
+    });
 
     // The page's own selectors, which the capture really contained.
     for (const selector of ["#place-order", "input#coupon", "form.checkout", "data-testid", "frame[3]", "#confirm-dialog", "#cookie-wall", "#spinner", "#card-number"]) {

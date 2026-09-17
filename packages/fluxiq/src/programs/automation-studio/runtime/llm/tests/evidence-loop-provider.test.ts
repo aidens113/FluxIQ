@@ -207,6 +207,10 @@ function request(overrides: Partial<AutomationStudioLlmTaskRequest> = {}): Autom
     estimatedInputTokens: 100, taskKind: "evidence_tool_decision", promptVersion: "automation-studio.evidence-tool-decision.v1",
     expectedOutput: "evidence_tool_decision", tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
     maxEstimatedCostUsd: 0.25,
+    // This fixture's domain denies nothing, and says so: a request whose loop
+    // has gathered anything is refused without a declaration. The legacy page
+    // packet below still carries selectors, which is why it is not the web list.
+    deniedEvidenceKeys: [],
     context: { schemaVersion: "0.1", taskKind: "evidence_tool_decision", promptVersion: "automation-studio.evidence-tool-decision.v1", projectId: "project.one", flowId: "flow.one", instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8_000, estimatedTokens: 0 }, evidenceLoop },
     ...overrides
   };

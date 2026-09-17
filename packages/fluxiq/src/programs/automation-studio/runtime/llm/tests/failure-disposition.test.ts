@@ -44,9 +44,9 @@ describe("the provider failure disposition table", () => {
   });
 
   // A request Core refused to build will be refused again, so none of the
-  // seventeen is ever a spent call.
-  it("ends the grant on every one of the seventeen pre-send refusals", () => {
-    expect(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES).toHaveLength(17);
+  // eighteen is ever a spent call.
+  it("ends the grant on every one of the eighteen pre-send refusals", () => {
+    expect(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES).toHaveLength(18);
     for (const code of AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES) {
       expect(AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS[code]).toBe("end_grant");
       expect(automationStudioLlmProviderFailureSpendsCall({ code })).toBe(false);
