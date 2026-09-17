@@ -4795,7 +4795,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if ((input.action === "apply" || input.action === "revert") && !await store.supportsGraphTransaction(detail.adaptation)) return null;
       const actorId = input.actorId ?? "reviewer";
       if (input.action === "apply") {
-        const applied = await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId });
+        const applied = await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId, promotionGates: evaluateFlowAdaptationPromotionGates });
         await this.synchronizeCanonicalFlowGraphProjection(input.projectId, applied.adaptation.adaptation, applied.adaptation.updatedAt).catch(() => undefined);
         return adaptationFromTypedStoreDetail(applied.adaptation);
       }

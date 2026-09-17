@@ -4,11 +4,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioFlowAdaptation } from "../../../model/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../model/index.ts";
+import { evaluateFlowAdaptationPromotionGates } from "../../../runtime/recovery/index.ts";
 import { AutomationStudioProjectAdaptationStore } from "../adaptation-store.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectGraphRepository } from "../graph-store.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-adaptation-store-test");
+// The gates every apply path runs; the service passes the same function.
+const gates = { promotionGates: evaluateFlowAdaptationPromotionGates };
 
 describe("AutomationStudioProjectAdaptationStore", () => {
   let pools: AutomationStudioProjectDatabasePool[] = [];
@@ -104,7 +107,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.apply" });
     await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.apply", status: "validated", updatedAt: 20 }), changedAt: 20 });
 
-    const applied = await store.applyApprovedAdaptation({ adaptationId: "adaptation.apply", actorId: "reviewer", changedAt: 30, compile: false });
+    const applied = await store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.apply", actorId: "reviewer", changedAt: 30, compile: false });
     expect(applied.patch).toMatchObject({ status: "applied", revisionNumber: 2 });
     expect(applied.adaptation).toMatchObject({ status: "applied", appliedRevision: 2 });
     await expect(readNodeParameters(pool, "project.apply", "node.action")).resolves.toMatchObject({ target: { selector: "#submit" } });
@@ -172,7 +175,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
       changedAt: 18
     })).resolves.toMatchObject({ response: { status: "applied", flowId: "flow.child", revisionNumber: 3 } });
     await committedApplyGraph.close();
-    await expect(store.applyApprovedAdaptation({ adaptationId: adaptation.adaptationId, actorId: "reviewer", changedAt: 20, compile: false })).resolves.toMatchObject({
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: adaptation.adaptationId, actorId: "reviewer", changedAt: 20, compile: false })).resolves.toMatchObject({
       adaptation: { flowId: "flow.parent", subflowId: "subflow.primary", status: "applied", appliedRevision: 3 },
       patch: { flowId: "flow.child", revisionNumber: 3 }
     });
@@ -186,7 +189,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const laterGraph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
     await laterGraph.applyPatch({ pool, projectId, flowId: "flow.child", baseRevision: 4, mutationId: "child.changed", operations: [{ op: "move_node", nodeId: "node.other", x: 300, y: 0 }], changedAt: 31 });
     await laterGraph.close();
-    await expect(store.applyApprovedAdaptation({ adaptationId: stale.adaptationId, actorId: "reviewer", changedAt: 32, compile: false })).rejects.toThrow(/stale base/);
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: stale.adaptationId, actorId: "reviewer", changedAt: 32, compile: false })).rejects.toThrow(/stale base/);
     await store.close();
   });
 
@@ -196,15 +199,19 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.policy" });
     await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.manual", status: "validated", updatedAt: 20 }), approvalMode: "manual_approval", changedAt: 20 });
 
-    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.manual", actorId: "runtime", changedAt: 21, compile: false })).rejects.toThrow(/Manual approval policy/);
-    expect(store.decidePolicy({ approvalMode: "disabled", validated: true, action: "create" })).toMatchObject({ ok: false, compileRequired: false });
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.manual", actorId: "runtime", changedAt: 21, compile: false })).rejects.toThrow(/Manual approval policy/);
+    expect(store.decidePolicy({ approvalMode: "disabled", action: "create" })).toMatchObject({ ok: false, compileRequired: false });
+    expect(store.decidePolicy({ approvalMode: "adaptive", action: "create" })).toMatchObject({ ok: true, compileRequired: false });
+    // Applying without the gates' pass is refused, whatever the approval mode allows.
+    expect(store.decidePolicy({ approvalMode: "adaptive", action: "apply" })).toMatchObject({ ok: false, reason: "Adaptation cannot be applied: its promotion gates were not supplied." });
+    expect(store.decidePolicy({ approvalMode: "adaptive", action: "apply", gates: { ok: true } })).toMatchObject({ ok: true, compileRequired: true });
 
     await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.stale", status: "validated", updatedAt: 30 }), changedAt: 30 });
     const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.policy" });
     await graph.applyPatch({ pool, projectId: "project.policy", flowId: "flow.main", baseRevision: 1, mutationId: "external.move", operations: [{ op: "move_node", nodeId: "node.other", x: 300, y: 40 }], changedAt: 31 });
     await graph.close();
 
-    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.stale", actorId: "reviewer", changedAt: 32, compile: false })).rejects.toThrow(/stale base/);
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.stale", actorId: "reviewer", changedAt: 32, compile: false })).rejects.toThrow(/stale base/);
     await expect(store.listAuditEvents({ adaptationId: "adaptation.stale", limit: 10 })).resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "stale_base" })]) });
     await expect(store.rebaseAdaptation({ adaptationId: "adaptation.stale", actorId: "reviewer", changedAt: 33 })).resolves.toMatchObject({ baseRevision: 2, revisions: { flowRevision: 2 } });
 
@@ -223,10 +230,114 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     delete claimed.validationResults;
     await store.putAdaptation({ adaptation: claimed, changedAt: 20 });
 
-    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.claimed", actorId: "reviewer", changedAt: 21, compile: false }))
-      .rejects.toThrow(/must pass validation/);
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.claimed", actorId: "reviewer", changedAt: 21, compile: false }))
+      .rejects.toThrow(/Adaptation cannot be applied: at least one successful trial or replay, or a named reviewer approval, is required/);
     await expect(store.listAuditEvents({ adaptationId: "adaptation.claimed", limit: 10 }))
       .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "policy_blocked" })]) });
+    await store.close();
+  });
+
+  // The typed apply path used to accept a succeeded result of any kind, with or
+  // without a time, and never ran the gates the file-based path runs. Only a
+  // trial or a replay counts, and the confidence tier decides.
+  it("refuses a change whose only succeeded result is not a counted trial or replay", async () => {
+    const pool = createPool();
+    const projectId = "project.uncounted";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    // A result with no time passes the save validator and is stored without one.
+    const untimed = adaptationFixture({ adaptationId: "adaptation.untimed", updatedAt: 20 });
+    await store.putAdaptation({ adaptation: { ...untimed, validationResults: [{ runId: "run.untimed", status: "succeeded", checkedAt: Number.NaN }] }, changedAt: 20 });
+    // The validator refuses any other kind, but a row an older writer saved can still carry one.
+    await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.wrong-kind", updatedAt: 20 }), changedAt: 20 });
+    await rewriteValidationResults(pool, projectId, "adaptation.wrong-kind", [{ runId: "run.structural", status: "succeeded", checkedAt: 20, kind: "structural_check" }]);
+
+    for (const adaptationId of ["adaptation.untimed", "adaptation.wrong-kind"]) {
+      await expect(store.applyApprovedAdaptation({ ...gates, adaptationId, actorId: "reviewer", changedAt: 21, compile: false }))
+        .rejects.toThrow("Adaptation cannot be applied: at least one successful trial or replay, or a named reviewer approval, is required");
+      await expect(store.listAuditEvents({ adaptationId, limit: 10 }))
+        .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "policy_blocked", reason: expect.stringContaining("successful trial or replay") })]) });
+    }
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual({ target: "#old" });
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    await store.close();
+  });
+
+  it("refuses a change whose latest trial failed after its success, even with a named approval", async () => {
+    const pool = createPool();
+    const projectId = "project.contradicted";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const trials = [{ runId: "run.trial.1", status: "succeeded" as const, checkedAt: 20, kind: "trial" as const }, { runId: "run.trial.2", status: "failed" as const, checkedAt: 30, kind: "trial" as const }];
+    await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: "adaptation.contradicted", updatedAt: 30 }), validationResults: trials }, changedAt: 30 });
+    await store.setAdaptationStatus({ adaptationId: "adaptation.contradicted", status: "validated", actorId: "person.reviewer", metadata: { review: { approvedBy: "person.reviewer" } }, changedAt: 31 });
+
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.contradicted", actorId: "person.reviewer", changedAt: 32, compile: false }))
+      .rejects.toThrow("Adaptation cannot be applied: the latest trial failed");
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    await store.close();
+  });
+
+  it("takes a named person's approval in place of evidence, from the change or from its audit trail, and never the runtime's", async () => {
+    const pool = createPool();
+    const cases = [
+      { adaptationId: "adaptation.approved", actorId: "person.reviewer", metadata: { review: { approvedBy: "person.reviewer" } }, applies: true },
+      // Approved before the change carried its reviewer: the audit event is the record.
+      { adaptationId: "adaptation.audited", actorId: "person.reviewer", applies: true },
+      { adaptationId: "adaptation.runtime", actorId: "runtime", applies: false }
+    ];
+    for (const item of cases) {
+      const projectId = `project.${item.adaptationId.replace("adaptation.", "approval-")}`;
+      await seedFlow(pool, projectId, "flow.main");
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+      await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: item.adaptationId, updatedAt: 20 }), validationResults: [] }, changedAt: 20 });
+      await store.setAdaptationStatus({ adaptationId: item.adaptationId, status: "validated", actorId: item.actorId, ...(item.metadata ? { metadata: item.metadata } : {}), changedAt: 21 });
+      const applying = store.applyApprovedAdaptation({ ...gates, adaptationId: item.adaptationId, actorId: "person.reviewer", changedAt: 22, compile: false });
+      if (item.applies) await expect(applying).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 2 } });
+      else await expect(applying).rejects.toThrow("a named reviewer approval, is required");
+      await store.close();
+    }
+  });
+
+  it("runs every other apply path's refusals against the change as stored", async () => {
+    const pool = createPool();
+    const projectId = "project.refusals";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.rejected", updatedAt: 20 }), changedAt: 20 });
+    await store.setAdaptationStatus({ adaptationId: "adaptation.rejected", status: "rejected", actorId: "person.reviewer", changedAt: 21 });
+    await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: "adaptation.destructive", updatedAt: 20 }), riskLevel: "destructive" }, changedAt: 20 });
+    await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: "adaptation.unlinked-route", updatedAt: 20 }), patch: [{ kind: "edit_router", targetId: "node.action", summary: "Route failures to the other step.", after: { toNodeId: "node.other" } }] }, changedAt: 20 });
+
+    const refusals = {
+      "adaptation.rejected": "rejected adaptations cannot be applied",
+      "adaptation.destructive": "destructive adaptations require manual proposal review",
+      "adaptation.unlinked-route": "structural adaptations require a linked change proposal"
+    };
+    for (const [adaptationId, issue] of Object.entries(refusals)) {
+      await expect(store.applyApprovedAdaptation({ ...gates, adaptationId, actorId: "person.reviewer", changedAt: 22, compile: false })).rejects.toThrow(issue);
+    }
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    await store.close();
+  });
+
+  it("fails closed when the promotion gates are missing, throw, or return anything but a pass", async () => {
+    const pool = createPool();
+    const projectId = "project.fail-closed";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.proven", updatedAt: 20 }), changedAt: 20 });
+    const apply = (promotionGates: unknown) => store.applyApprovedAdaptation({ adaptationId: "adaptation.proven", actorId: "person.reviewer", changedAt: 21, compile: false, promotionGates } as Parameters<typeof store.applyApprovedAdaptation>[0]);
+
+    await expect(apply(undefined)).rejects.toThrow("Adaptation cannot be applied: its promotion gates were not supplied");
+    await expect(apply(() => { throw new Error("gate unavailable"); })).rejects.toThrow("Adaptation cannot be applied: its promotion gates could not be evaluated (gate unavailable)");
+    await expect(apply(() => ({ ok: "yes", issues: [] }))).rejects.toThrow("Adaptation cannot be applied: its promotion gates returned no verdict");
+    await expect(apply(() => ({ ok: true, issues: ["a pass that names a problem"] }))).rejects.toThrow("Adaptation cannot be applied: its promotion gates returned no verdict");
+    await expect(apply(() => ({ ok: false, issues: [] }))).rejects.toThrow("Adaptation cannot be applied: its promotion gates refused it");
+    await expect(store.listAuditEvents({ adaptationId: "adaptation.proven", limit: 10 })).resolves.toMatchObject({ total: 6 });
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    // The same change applies once the real gates judge it.
+    await expect(apply(evaluateFlowAdaptationPromotionGates)).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 2 } });
     await store.close();
   });
 
@@ -241,7 +352,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.recovery" });
     await store.putAdaptation({ adaptation: recoveryAdaptationFixture(), changedAt: 20 });
 
-    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.recovery", actorId: "reviewer", changedAt: 21, compile: false }))
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.recovery", actorId: "reviewer", changedAt: 21, compile: false }))
       .rejects.toThrow(/edit_recovery/);
     await expect(readNodeParameters(pool, "project.recovery", "node.action")).resolves.toEqual({ target: "#old" });
     await expect(readFlowRevision(pool, "project.recovery", "flow.main")).resolves.toBe(1);
@@ -262,7 +373,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const adaptation: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.stamp", patchCount: 2, updatedAt: 20 }), metadata: { baseRevision: 2, proposalModeOverride: "auto" } };
     await store.putAdaptation({ adaptation, changedAt: 20 });
 
-    const applied = await store.applyApprovedAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 30, compile: false });
+    const applied = await store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 30, compile: false });
     expect(applied.patch).toMatchObject({ status: "applied", revisionNumber: 3 });
     await expect(readNodeMetadata(pool, projectId, "node.action")).resolves.toEqual({ adaptationIds: ["adaptation.earlier", "adaptation.stamp"], note: "kept" });
     await expect(readNodeMetadata(pool, projectId, "node.other")).resolves.toEqual({});
@@ -273,7 +384,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     await history.close();
     expect(operations.map((operation) => `${operation.operationKind}:${operation.entityId}`)).toEqual(["set_node_parameters:node.action", "set_node_parameters:node.action", "set_node_metadata:node.action"]);
     // Retrying the apply replays the committed, stamped request instead of stamping twice.
-    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 35, compile: false })).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 3 } });
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 35, compile: false })).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 3 } });
     await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(3);
 
     await expect(store.rollbackAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 40 })).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 4 } });
@@ -289,16 +400,54 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     const pool = createPool();
     await seedFlow(pool, "project.route", "flow.main");
     const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.route" });
-    const adaptation: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.route", updatedAt: 20 }), patch: [{ kind: "edit_router", targetId: "node.action", summary: "Route failures to the other step.", after: { toNodeId: "node.other" } }] };
+    // A route change is structural, so every apply path requires its linked proposal.
+    const adaptation: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.route", updatedAt: 20 }), proposalId: "proposal.route", patch: [{ kind: "edit_router", targetId: "node.action", summary: "Route failures to the other step.", after: { toNodeId: "node.other" } }] };
     await store.putAdaptation({ adaptation, changedAt: 20 });
 
-    await store.applyApprovedAdaptation({ adaptationId: "adaptation.route", actorId: "reviewer", changedAt: 30, compile: false });
+    await store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.route", actorId: "reviewer", changedAt: 30, compile: false });
     await expect(readNodeMetadata(pool, "project.route", "node.action")).resolves.toEqual({});
     await expect(readNodeMetadata(pool, "project.route", "node.other")).resolves.toEqual({});
     const lease = await pool.acquire("project.route");
     const edge = await lease.database.get<{ metadata_json: string }>("select metadata_json from graph_edges where source_node_id = 'node.action' and deleted_at_ms is null");
     await lease.release();
     expect(JSON.parse(edge?.metadata_json ?? "{}")).toEqual({ adaptationId: "adaptation.route" });
+    await store.close();
+  });
+
+  // A recorded step is a `builtin.policy.action`, which dispatches only its
+  // `parameters` payload. A target written beside that payload reached nothing,
+  // so the step kept acting on the element it was recorded with.
+  it("re-points a policy action through the payload it dispatches, and its rollback restores the payload exactly", async () => {
+    const pool = createPool();
+    const projectId = "project.policy-target";
+    const recorded = { outputId: "example.activate", parameters: { selector: "#save", element: { accessibleName: "Save changes" } }, timeoutMs: 5000 };
+    await seedFlow(pool, projectId, "flow.main", [{ id: "node.action", definitionId: "builtin.policy.action", label: "Save", position: { x: 0, y: 0 }, parameterValues: recorded }]);
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const repaired = { handles: { element: "target.2" }, accessibleName: "Apply changes", selector: "#apply" };
+    await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: "adaptation.policy-target", updatedAt: 20 }), patch: [{ kind: "edit_action_target", targetId: "node.action", summary: "Act on the renamed control.", after: repaired }] }, changedAt: 20 });
+
+    await store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.policy-target", actorId: "person.reviewer", changedAt: 30, compile: false });
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual({ ...recorded, parameters: { ...recorded.parameters, target: repaired } });
+
+    await store.rollbackAdaptation({ adaptationId: "adaptation.policy-target", actorId: "person.reviewer", changedAt: 40 });
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual(recorded);
+    await store.close();
+  });
+
+  it("refuses to re-point a policy action whose payload is not a plain object, and writes nothing", async () => {
+    const pool = createPool();
+    const projectId = "project.policy-bound";
+    const bound = { outputId: "example.activate", parameters: { $state: { path: "run.payload" } } };
+    await seedFlow(pool, projectId, "flow.main", [{ id: "node.action", definitionId: "builtin.policy.action", label: "Save", position: { x: 0, y: 0 }, parameterValues: bound }]);
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    await store.putAdaptation({ adaptation: { ...adaptationFixture({ adaptationId: "adaptation.policy-bound", updatedAt: 20 }), patch: [{ kind: "edit_action_target", targetId: "node.action", summary: "Act on the renamed control.", after: { handles: { element: "target.2" } } }] }, changedAt: 20 });
+
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.policy-bound", actorId: "person.reviewer", changedAt: 30, compile: false }))
+      .rejects.toThrow("Policy action node.action has no output payload object to re-point; adaptation.policy-bound refused.");
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual(bound);
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    await expect(store.listAuditEvents({ adaptationId: "adaptation.policy-bound", limit: 10 }))
+      .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "apply_failed" })]) });
     await store.close();
   });
 
@@ -366,13 +515,17 @@ describe("AutomationStudioProjectAdaptationStore", () => {
   }
 });
 
-async function seedFlow(pool: AutomationStudioProjectDatabasePool, projectId: string, flowId: string): Promise<void> {
+type SeededNode = ReturnType<typeof createBlankAutomationStudioFlowArtifact>["nodes"][number];
+
+const DEFAULT_NODES: SeededNode[] = [
+  { id: "node.action", definitionId: "builtin.step", label: "Action", position: { x: 0, y: 0 }, parameterValues: { target: "#old" } },
+  { id: "node.other", definitionId: "builtin.step", label: "Other", position: { x: 200, y: 0 }, parameterValues: { ok: true } }
+];
+
+async function seedFlow(pool: AutomationStudioProjectDatabasePool, projectId: string, flowId: string, nodes: SeededNode[] = DEFAULT_NODES): Promise<void> {
   const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
   const flow = createBlankAutomationStudioFlowArtifact({ flowId, projectId, name: "Main", now: 1 });
-  flow.nodes = [
-    { id: "node.action", definitionId: "builtin.step", label: "Action", position: { x: 0, y: 0 }, parameterValues: { target: "#old" } },
-    { id: "node.other", definitionId: "builtin.step", label: "Other", position: { x: 200, y: 0 }, parameterValues: { ok: true } }
-  ];
+  flow.nodes = structuredClone(nodes);
   await graph.importMonolithicFlowGraph(flow, { changedAt: 1 });
   await graph.close();
   const lease = await pool.acquire(projectId);
@@ -412,6 +565,8 @@ function recoveryAdaptationFixture(): AutomationStudioFlowAdaptation {
     adaptationId: "adaptation.recovery",
     flowId: "flow.main",
     projectId: "project.recovery",
+    // A linked proposal, so the promotion gates pass and the refusal tested is the builder's.
+    proposalId: "proposal.recovery",
     trigger: "Action failed; run a confirmation sequence before retrying.",
     patch: [{ kind: "edit_recovery", targetId: "node.action", summary: "Recover by clicking the confirmation control.", after: { actionDefinitionIds: ["builtin.action.click"] } }],
     validationResults: [{ runId: "run.validation.recovery", status: "succeeded", checkedAt: 20 }],
@@ -448,6 +603,19 @@ async function readNodeParameters(pool: AutomationStudioProjectDatabasePool, pro
   try {
     const row = await lease.database.get<{ parameter_values_json: string }>("select parameter_values_json from graph_nodes where node_id = ?", [nodeId]);
     return JSON.parse(row?.parameter_values_json ?? "{}") as Record<string, unknown>;
+  } finally {
+    await lease.release();
+  }
+}
+
+// Replaces a stored change's validation results as an older writer could have
+// saved them, past the validator `putAdaptation` runs.
+async function rewriteValidationResults(pool: AutomationStudioProjectDatabasePool, projectId: string, adaptationId: string, results: unknown[]): Promise<void> {
+  const lease = await pool.acquire(projectId);
+  try {
+    const row = await lease.database.get<{ status_detail_json: string }>("select status_detail_json from adaptations where adaptation_id = ?", [adaptationId]);
+    const detail = JSON.parse(row?.status_detail_json ?? "{}") as Record<string, unknown>;
+    await lease.database.run("update adaptations set status_detail_json = ? where adaptation_id = ?", [JSON.stringify({ ...detail, validationResults: results }), adaptationId]);
   } finally {
     await lease.release();
   }

@@ -274,7 +274,7 @@ describe("an instruction whose verbs are not the catalog's own action words", ()
   const web = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
   const registry = new AutomationStudioNodeRegistry();
   for (const webDefinition of webDomainNodeDefinitionsFixture()) registry.register(webDefinition);
-  const catalog = (body: string, maxCatalogBytes = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes) => buildAutomationStudioFlowBootstrapContext({
+  const catalog = (body: string, maxCatalogBytes: number = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes) => buildAutomationStudioFlowBootstrapContext({
     registry, resolution: web, instructionText: `Evidence-guided generation goal\n${body}`, maxCatalogEntries: 12, maxCatalogBytes
   });
 

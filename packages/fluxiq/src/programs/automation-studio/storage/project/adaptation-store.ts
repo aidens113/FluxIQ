@@ -2,13 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationRiskLevel, AutomationStudioChangeProposalPatch, AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeEntryPoint } from "../../model/index.ts";
 import { parseAutomationStudioFlowChangeOrigin, validateAutomationStudioFlowAdaptation } from "../../model/index.ts";
+import { isAutomationNodeParameterStateBinding } from "../../nodes/index.ts";
 import { AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION } from "../../runtime/compiled-plan.ts";
 import { decideAutomationStudioChangeConfidence, withAutomationStudioNodeAdaptationId, type AutomationStudioChangeConfidence } from "../../runtime/flow-change/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
 import { AutomationStudioProjectCompiledPlanStore, type AutomationStudioCompiledArtifactManifest } from "./compiled-plan-store.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AutomationStudioProjectGraphRepository, automationStudioGraphPatchRequestDigest, type AutomationStudioGraphPatchApplied, type AutomationStudioGraphPatchOperation, type AutomationStudioGraphPatchResult } from "./graph-store.ts";
+import { AutomationStudioProjectGraphRepository, automationStudioGraphPatchRequestDigest, type AutomationStudioGraphNodeRecord, type AutomationStudioGraphPatchApplied, type AutomationStudioGraphPatchOperation, type AutomationStudioGraphPatchResult } from "./graph-store.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 export type AutomationStudioStoredAdaptationStatus = AutomationStudioFlowAdaptation["status"];
@@ -23,12 +24,22 @@ export type AutomationStudioAdaptationAuditEvent = { eventId: string; adaptation
 export type AutomationStudioAdaptationDetailSection = { adaptationId: string; section: "summary" | "changes" | "evidence" | "validation" | "audit" | "raw"; items: JsonValue[]; total: number; limit: number; offset: number };
 export type AutomationStudioStoredAdaptationDetail = AutomationStudioAdaptationSummaryRecord & { adaptation: AutomationStudioFlowAdaptation; revisions: AutomationStudioAdaptationRevisionBindings; artifacts: AutomationStudioAdaptationArtifactRecord[] };
 export type AutomationStudioAppliedAdaptationResult = { adaptation: AutomationStudioStoredAdaptationDetail; patch: AutomationStudioGraphPatchResult; compiledArtifact: AutomationStudioCompiledArtifactManifest | null; auditEvent: AutomationStudioAdaptationAuditEvent };
+/**
+ * The promotion gates every apply path runs: whether a change may be applied,
+ * and why not. The caller passes `evaluateFlowAdaptationPromotionGates`. The
+ * store cannot import it: it lives in `runtime/recovery`, whose imports reach
+ * `runtime/service` and, through it, this store, so an import here would close
+ * a module cycle. The store refuses to apply without it.
+ */
+export type AutomationStudioAdaptationPromotionGates = (adaptation: AutomationStudioFlowAdaptation) => { ok: boolean; issues: string[] };
 
 type ListInput = { flowId?: string; subflowId?: string; status?: string; risk?: string; failureSignature?: string; confidenceTier?: AutomationStudioChangeConfidence; search?: string; sort?: "updated" | "status" | "risk" | "trigger"; direction?: "asc" | "desc"; limit?: number; offset?: number };
 type WrittenArtifact = { artifactId: string; objectId: string; kind: AutomationStudioStoredAdaptationArtifactKind; sequence: number; summary: string; digest: string; createdAt: number };
 type AdaptationDbStatus = "draft" | "pending_approval" | "approved" | "applied" | "rejected" | "failed";
 type AdaptationRow = { adaptation_id: string; flow_id: string; subflow_id: string | null; base_revision: number; proposed_revision: number; trigger: string; status: AdaptationDbStatus; risk_level: AutomationStudioFlowAdaptation["riskLevel"]; approval_mode: AutomationStudioAdaptationApprovalMode; patch_object_id: string; evidence_object_id: string | null; created_at_ms: number; updated_at_ms: number; reviewed_at_ms: number | null; applied_at_ms: number | null; source_run_id: string | null; author: AutomationStudioFlowAdaptation["author"]; status_reason: string; status_detail_json: string; base_flow_revision: number | null; base_router_revision: number | null; base_settings_revision: number | null; base_instruction_revision: number | null; applied_revision: number | null; prompt_object_id: string | null; response_object_id: string | null; rollback_object_id: string | null; audit_object_id: string | null; patch_digest: string; evidence_digest: string; superseded_by_adaptation_id: string | null; failure_signature: string | null; confidence_tier: AutomationStudioChangeConfidence | null; origin_entry_point: AutomationStudioFlowChangeEntryPoint | null };
 type AdaptationMatchingColumns = { failureSignature: string | null; confidenceTier: AutomationStudioChangeConfidence; originEntryPoint: AutomationStudioFlowChangeEntryPoint | null };
+// What the promotion gates decided, with the refusal worded as every apply path words it.
+type PromotionGateVerdict = { ok: true } | { ok: false; reason: string };
 type ArtifactRow = { artifact_id: string; adaptation_id: string; artifact_kind: AutomationStudioStoredAdaptationArtifactKind; object_id: string; sequence: number; summary: string; digest: string; created_at_ms: number };
 type AuditRow = { event_id: string; adaptation_id: string; event_type: AutomationStudioAdaptationAuditEventType; actor_id: string | null; from_status: string | null; to_status: string | null; reason: string; detail_object_id: string | null; detail_json: string; created_at_ms: number };
 
@@ -154,21 +165,25 @@ export class AutomationStudioProjectAdaptationStore {
     return { events: rows.map(auditFromRow), total: count?.total ?? 0, limit, offset };
   }
 
-  decidePolicy(input: { approvalMode: AutomationStudioAdaptationApprovalMode; validated: boolean; action: "create" | "apply" | "auto_apply" }): { ok: boolean; autoApply: boolean; requiresManualApproval: boolean; reason: string; compileRequired: boolean } {
+  /**
+   * Whether the approval mode lets this action happen. Applying also needs the
+   * promotion gates' pass, and anything short of one refuses it.
+   */
+  decidePolicy(input: { approvalMode: AutomationStudioAdaptationApprovalMode; action: "create" | "apply" | "auto_apply"; gates?: PromotionGateVerdict }): { ok: boolean; autoApply: boolean; requiresManualApproval: boolean; reason: string; compileRequired: boolean } {
     if (input.approvalMode === "disabled") return { ok: false, autoApply: false, requiresManualApproval: false, compileRequired: false, reason: "No LLM intervention policy blocks adaptation creation and application." };
     if (input.action === "auto_apply" && input.approvalMode === "manual_approval") return { ok: false, autoApply: false, requiresManualApproval: true, compileRequired: true, reason: "Manual approval policy blocks automatic adaptation application." };
-    if ((input.action === "apply" || input.action === "auto_apply") && !input.validated) return { ok: false, autoApply: false, requiresManualApproval: true, compileRequired: true, reason: "Adaptation must pass validation before application." };
+    if (input.action !== "create" && input.gates?.ok !== true) return { ok: false, autoApply: false, requiresManualApproval: true, compileRequired: true, reason: input.gates?.ok === false ? input.gates.reason : gateRefusal("its promotion gates were not supplied.") };
     return { ok: true, autoApply: input.action === "auto_apply" && input.approvalMode === "adaptive", requiresManualApproval: input.approvalMode === "manual_approval", compileRequired: input.action !== "create", reason: input.approvalMode === "adaptive" ? "Fully adaptive policy allows validated graph-safe application." : "Manual policy allows explicit reviewer application." };
   }
 
-  async applyApprovedAdaptation(input: { adaptationId: string; actorId?: string; mutationId?: string; changedAt?: number; compile?: boolean }): Promise<AutomationStudioAppliedAdaptationResult> {
+  async applyApprovedAdaptation(input: { adaptationId: string; actorId?: string; mutationId?: string; changedAt?: number; compile?: boolean; promotionGates: AutomationStudioAdaptationPromotionGates }): Promise<AutomationStudioAppliedAdaptationResult> {
     const detail = await this.mustGetAdaptation(input.adaptationId);
-    // Only an executed validation or a named reviewer's approval counts. A
-    // `validated` status is a claim about the adaptation, not evidence that
-    // anything ran and was compared, or that anybody looked.
-    const validated = (detail.adaptation.validationResults ?? []).some((result) => result.status === "succeeded")
-      || await this.hasReviewerApproval(detail.adaptationId);
-    const policy = this.decidePolicy({ approvalMode: detail.approvalMode, validated, action: input.actorId === "runtime" ? "auto_apply" : "apply" });
+    // The same gates as every other apply path, on the change as stored: only a
+    // succeeded trial or replay, or a named reviewer's approval, is evidence,
+    // and the confidence tier decides. A `validated` status is a claim, not
+    // evidence that anything ran and was compared, or that anybody looked.
+    const gates = await this.promotionGateVerdict(input.promotionGates, detail.adaptation);
+    const policy = this.decidePolicy({ approvalMode: detail.approvalMode, gates, action: input.actorId === "runtime" ? "auto_apply" : "apply" });
     if (!policy.ok) {
       await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "policy_blocked", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: detail.status, reason: policy.reason, detail: { policy }, createdAt: input.changedAt ?? Date.now() });
       throw new Error(policy.reason);
@@ -269,13 +284,37 @@ export class AutomationStudioProjectAdaptationStore {
     return this.mustGetAdaptation(input.adaptationId);
   }
 
-  /** Whether a named person, not the runtime, approved this adaptation. */
-  private async hasReviewerApproval(adaptationId: string): Promise<boolean> {
-    const row = await this.lease.database.get<{ event_id: string }>(
-      "select event_id from adaptation_audit_events where adaptation_id = ? and event_type = 'approved' and actor_id is not null and actor_id <> 'runtime' limit 1",
-      [requiredId(adaptationId, "adaptation")]
+  /**
+   * What the caller's promotion gates decide about the change as stored. Missing
+   * gates, gates that throw, and anything but a consistent verdict all refuse.
+   */
+  private async promotionGateVerdict(promotionGates: unknown, adaptation: AutomationStudioFlowAdaptation): Promise<PromotionGateVerdict> {
+    if (typeof promotionGates !== "function") return { ok: false, reason: gateRefusal("its promotion gates were not supplied.") };
+    const judged = await this.withAuditedReviewer(adaptation);
+    let verdict: unknown;
+    try {
+      verdict = (promotionGates as AutomationStudioAdaptationPromotionGates)(judged);
+    } catch (error) {
+      return { ok: false, reason: gateRefusal(`its promotion gates could not be evaluated (${error instanceof Error ? error.message : String(error)}).`) };
+    }
+    return promotionGateVerdictFrom(verdict);
+  }
+
+  /**
+   * The change with its reviewer, for the gates, which read the reviewer from
+   * `metadata.review.approvedBy`. A change approved before it carried one has
+   * only the store's audit trail, so the latest named approval there is handed
+   * over in that field. Nothing is written.
+   */
+  private async withAuditedReviewer(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation> {
+    const review = objectValue(adaptation.metadata?.review);
+    if (stringValue(review.approvedBy)) return adaptation;
+    const row = await this.lease.database.get<{ actor_id: string }>(
+      "select actor_id from adaptation_audit_events where adaptation_id = ? and event_type = 'approved' and actor_id is not null and trim(actor_id) not in ('', 'runtime') order by created_at_ms desc, event_id desc limit 1",
+      [requiredId(adaptation.adaptationId, "adaptation")]
     );
-    return row !== undefined;
+    if (!row) return adaptation;
+    return { ...adaptation, metadata: { ...(adaptation.metadata ?? {}), review: { ...review, approvedBy: row.actor_id } } };
   }
 
   async appendAuditEvent(input: { adaptationId: string; eventType: AutomationStudioAdaptationAuditEventType; actorId?: string | null; fromStatus?: AutomationStudioStoredAdaptationStatus | null; toStatus?: AutomationStudioStoredAdaptationStatus | null; reason?: string; detail?: JsonObject; createdAt?: number }): Promise<AutomationStudioAdaptationAuditEvent> {
@@ -411,7 +450,8 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
       if (!node || node.flowId !== targetFlowId || node.deletedAt !== null) throw new Error(`Unknown node: ${patch.targetId}`);
       const values = { ...node.parameterValues };
       if (patch.kind === "edit_expectation") Object.assign(values, objectValue(patch.after));
-      else values.target = patch.after as JsonValue;
+      else Object.assign(values, actionTargetParameterValues(node, patch.after, adaptation.adaptationId));
+      // The whole value map is written, so the inverse restores it exactly.
       operations.push({ op: "set_node_parameters", nodeId: patch.targetId, values });
       if (!writtenNodes.has(node.nodeId)) writtenNodes.set(node.nodeId, node.metadata);
       continue;
@@ -432,6 +472,43 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
   for (const [nodeId, metadata] of writtenNodes) operations.push({ op: "set_node_metadata", nodeId, metadata: withAutomationStudioNodeAdaptationId(metadata, adaptation.adaptationId) });
   return operations;
 }
+
+const POLICY_ACTION_DEFINITION_ID = "builtin.policy.action";
+
+/**
+ * The parameter values that re-point a node at `target`, in the place the node
+ * reads its target from when it runs.
+ *
+ * - A native node is handed `parameterValues.target`.
+ * - A policy action, which is what a recorded step is, dispatches only its
+ *   `parameters` payload, so its target is that payload's `target`: the slot
+ *   Core's output dispatch reads an element target from. Written beside the
+ *   payload, the target reached nothing and the step kept acting on the
+ *   element it was recorded with. A payload that is not a plain object cannot
+ *   take one, and the change is refused rather than recorded as applied.
+ */
+function actionTargetParameterValues(node: Pick<AutomationStudioGraphNodeRecord, "nodeId" | "definitionId" | "parameterValues">, target: JsonValue | undefined, adaptationId: string): JsonObject {
+  if (target === undefined) throw new Error(`Action target patch for ${node.nodeId} has no target; ${adaptationId} refused.`);
+  if (node.definitionId !== POLICY_ACTION_DEFINITION_ID) return { target };
+  const payload = node.parameterValues.parameters;
+  if (payload === undefined) return { parameters: { target } };
+  if (!isPlainJsonObject(payload) || isAutomationNodeParameterStateBinding(payload)) throw new Error(`Policy action ${node.nodeId} has no output payload object to re-point; ${adaptationId} refused.`);
+  return { parameters: { ...payload, target } };
+}
+
+function gateRefusal(issue: string): string { return `Adaptation cannot be applied: ${issue}`; }
+
+// Only `{ ok: true, issues: [] }` passes. A refusal carries its issues; any
+// other shape, or a pass that lists issues, is no verdict at all.
+function promotionGateVerdictFrom(value: unknown): PromotionGateVerdict {
+  const verdict = isPlainJsonObject(value) ? value : {};
+  const issues = Array.isArray(verdict.issues) && verdict.issues.every((issue) => typeof issue === "string") ? verdict.issues as string[] : undefined;
+  if (typeof verdict.ok !== "boolean" || !issues || (verdict.ok && issues.length > 0)) return { ok: false, reason: gateRefusal("its promotion gates returned no verdict.") };
+  if (verdict.ok) return { ok: true };
+  return { ok: false, reason: gateRefusal(issues.length ? issues.join("; ") : "its promotion gates refused it.") };
+}
+
+function isPlainJsonObject(value: unknown): value is JsonObject { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 
 /**
  * The operations to retry an apply with. An apply whose graph patch committed
