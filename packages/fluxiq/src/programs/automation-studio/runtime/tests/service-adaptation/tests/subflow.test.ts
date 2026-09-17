@@ -6,6 +6,10 @@ import type { AutomationStudioFlowAdaptation } from "../../../../model/index.ts"
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import type { AutomationStudioGraphNodeRecord } from "../../../../storage/project/index.ts";
+
+/** A node as a graph patch supplies one: the stored record without the fields the store fills in. */
+type SeededGraphNode = Omit<AutomationStudioGraphNodeRecord, "partitionId" | "revision" | "createdAt" | "updatedAt" | "deletedAt">;
 
 describe("Automation Studio Subflow-scoped node adaptations", () => {
   let dataDir: string;
@@ -186,6 +190,110 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
     expect((await service.getLlmExecutionBinding(project.id, parent.flowId)).settingsRevision).toBe(settingsRevision);
   });
 
+  // What `edit_recovery` could never do. The learned recovery is inserted as
+  // real nodes wired from the failed node's `failed` port, so the recovery
+  // ladder's existing `deterministic_path` candidate picks it up and the next
+  // run executes it. The run, not the adaptation record, is the proof.
+  it("makes a learned recovery path run on the next run, and takes it away again on revert", async () => {
+    const project = await service.createProject({ name: "Deterministic recovery path" });
+    const parent = await service.createFlow({ projectId: project.id, flowId: "flow.path-parent", name: "Parent" });
+    const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: parent.flowId, name: "Primary", role: "primary" });
+    const graphFlowId = subflow.graphFlowId!;
+    await service.getFlowGraphViewport({ projectId: project.id, flowId: graphFlowId, bounds: { minX: -500, minY: -500, maxX: 500, maxY: 500 } });
+    await service.applyFlowGraphPatch({
+      projectId: project.id,
+      flowId: graphFlowId,
+      baseRevision: 1,
+      mutationId: "mutation.seed-covered-action",
+      operations: [
+        { op: "add_node", node: graphNode(graphFlowId, "action.submit", "example.target-action", { target: { selector: "#covered" } }) },
+        { op: "add_node", node: graphNode(graphFlowId, "end", "builtin.control.end", { resultStatus: "success" }) }
+      ]
+    });
+    await installRouter(service, project.id, parent.flowId, subflow.subflowId);
+
+    // Before the change, the failure is terminal: nothing handles the failed route.
+    const attempted: unknown[] = [];
+    service.bindNativeNodeRuntime(coveredControlRuntime((target) => { attempted.push(target); }));
+    const before = await service.runRuntimeSession({ projectId: project.id, flowId: parent.flowId, adaptiveMode: "no_llm_intervention" });
+    expect(before.trace).toMatchObject({ status: "failed" });
+    expect(before.trace?.attempts.map((attempt) => attempt.nodeId)).toEqual(["action.submit"]);
+
+    const path = {
+      kind: "insert_deterministic_path",
+      targetId: "action.submit",
+      summary: "Dismiss the banner, then finish.",
+      after: {
+        nodes: [{ nodeId: "recovery.dismiss", definitionId: "example.target-action", label: "Dismiss banner", target: { selector: "#dismiss" } }],
+        returnToNodeId: "end"
+      }
+    } as const;
+
+    await service.saveFlowAdaptation({
+      ...adaptationFixture({ projectId: project.id, flowId: parent.flowId, subflowId: subflow.subflowId, adaptationId: "adaptation.path" }),
+      trigger: "A banner covered the control.",
+      patch: [path]
+    });
+
+    // Inserting whole executable nodes is gated like every other structural
+    // change. It was gated by none of the three gates until 2026-09-17 -- less
+    // than the inert `edit_recovery` it replaced -- because each gate carried a
+    // hand-written list of kinds that a new kind simply was not on.
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: parent.flowId, adaptationId: "adaptation.path", action: "apply" }))
+      .rejects.toThrow(/structural adaptations require a linked change proposal/u);
+
+    await service.saveFlowChangeProposal({
+      schemaVersion: "0.1",
+      proposalId: "proposal.path",
+      flowId: parent.flowId,
+      projectId: project.id,
+      mode: "auto",
+      status: "auto_approved",
+      riskLevel: "low",
+      patches: [path],
+      createdBy: "runtime",
+      createdAt: 30,
+      updatedAt: 30
+    });
+    await service.saveFlowAdaptation({
+      ...adaptationFixture({ projectId: project.id, flowId: parent.flowId, subflowId: subflow.subflowId, adaptationId: "adaptation.path" }),
+      trigger: "A banner covered the control.",
+      proposalId: "proposal.path",
+      patch: [path]
+    });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: parent.flowId, adaptationId: "adaptation.path", action: "apply" }))
+      .resolves.toMatchObject({ status: "applied", subflowId: subflow.subflowId });
+    await expect(service.getFlow(project.id, graphFlowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "recovery.dismiss", parameterValues: { target: { selector: "#dismiss" } } })]),
+      edges: expect.arrayContaining([
+        expect.objectContaining({ sourceNodeId: "action.submit", sourcePortId: "failed", targetNodeId: "recovery.dismiss" }),
+        expect.objectContaining({ sourceNodeId: "recovery.dismiss", sourcePortId: "success", targetNodeId: "end" })
+      ])
+    });
+
+    // The next run reaches the inserted node through the failed edge and finishes.
+    attempted.length = 0;
+    const after = await service.runRuntimeSession({ projectId: project.id, flowId: parent.flowId, adaptiveMode: "no_llm_intervention" });
+    expect(after.trace).toMatchObject({ status: "succeeded" });
+    expect(after.trace?.attempts.map((attempt) => ({ nodeId: attempt.nodeId, status: attempt.status }))).toEqual([
+      { nodeId: "action.submit", status: "failed" },
+      { nodeId: "recovery.dismiss", status: "succeeded" },
+      { nodeId: "end", status: "succeeded" }
+    ]);
+    expect(attempted).toEqual([{ selector: "#covered" }, { selector: "#dismiss" }]);
+
+    // Reverting takes the path away, node and edges together, so the run is
+    // terminal again rather than left holding an unreachable node.
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: parent.flowId, adaptationId: "adaptation.path", action: "revert" }))
+      .resolves.toMatchObject({ status: "reverted" });
+    const reverted = await service.getFlow(project.id, graphFlowId);
+    expect(reverted.nodes.map((node) => node.id).sort()).toEqual(["action.submit", "end"]);
+    expect(reverted.edges).toEqual([]);
+    const afterRevert = await service.runRuntimeSession({ projectId: project.id, flowId: parent.flowId, adaptiveMode: "no_llm_intervention" });
+    expect(afterRevert.trace).toMatchObject({ status: "failed" });
+    expect(afterRevert.trace?.attempts.map((attempt) => attempt.nodeId)).toEqual(["action.submit"]);
+  });
+
   it("keeps typed adaptation identity authoritative when canonical detail objects cannot be read", async () => {
     const project = await service.createProject({ name: "Canonical adaptation identity" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.identity", name: "Identity" });
@@ -258,6 +366,47 @@ function targetCaptureRuntime(capture: (target: unknown) => void): AutomationStu
       capture: ({ parameters }) => {
         capture(parameters.target);
         return { status: "success", route: "success", outputs: { success: true } };
+      }
+    }
+  });
+}
+
+function graphNode(flowId: string, nodeId: string, definitionId: string, parameterValues: SeededGraphNode["parameterValues"]): SeededGraphNode {
+  return { nodeId, flowId, definitionId, definitionVersion: "1.0.0", label: nodeId, description: "", x: 0, y: 0, width: 240, height: 96, zIndex: 0, disabled: false, parameterValues, metadata: {} };
+}
+
+/** A node that fails while the control it acts on is covered, and succeeds on anything else. */
+function coveredControlRuntime(capture: (target: unknown) => void): AutomationStudioNativeNodeRuntime {
+  const action: AutomationStudioNodeDefinition = {
+    schemaVersion: "0.1",
+    id: "example.target-action",
+    version: "1.0.0",
+    label: "Act on a target",
+    description: "Fails while the covered control is the target.",
+    category: "action",
+    source: { kind: "importer", domainId: "test", packageId: "test.target", implementationKey: "act" },
+    availability: { kind: "domain", domainId: "test" },
+    capabilities: { executable: true, codeBacked: true },
+    inputs: [],
+    outputs: [{ id: "success", label: "Success", valueType: "any" }],
+    parameters: []
+  };
+  return new AutomationStudioNativeNodeRuntime().register({
+    schemaVersion: "0.1",
+    sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
+    packageId: "test.target",
+    packageVersion: "1.0.0",
+    domainId: "test",
+    nodes: [action]
+  }, {
+    packageId: "test.target",
+    packageVersion: "1.0.0",
+    implementations: {
+      act: ({ parameters }) => {
+        capture(parameters.target);
+        return (parameters.target as { selector?: string } | undefined)?.selector === "#covered"
+          ? { status: "failed", route: "failed", outputs: { error: "The control is covered." } }
+          : { status: "success", route: "success", outputs: { success: true } };
       }
     }
   });

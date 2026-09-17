@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
+  AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES,
   type AutomationStudioFlowAdaptation,
   type AutomationStudioFlowArtifact,
   type AutomationStudioFlowRouter,
@@ -194,7 +195,7 @@ export class AutomationStudioDurableAdaptations {
 }
 
 export function adaptationRequiresChangeProposal(adaptation: AutomationStudioFlowAdaptation): boolean {
-  return adaptation.patch.some((patch) => patch.kind === "create_subflow" || patch.kind === "edit_subflow" || patch.kind === "edit_router" || patch.kind === "edit_recovery");
+  return adaptation.patch.some((patch) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[patch.kind]?.requiresProposal !== false);
 }
 
 

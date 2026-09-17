@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioAdaptationRiskLevel, AutomationStudioChangeProposalPatch, AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeEntryPoint } from "../../model/index.ts";
-import { parseAutomationStudioFlowChangeOrigin, validateAutomationStudioFlowAdaptation } from "../../model/index.ts";
+import type { AutomationStudioAdaptationRiskLevel, AutomationStudioChangeProposalPatch, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeEntryPoint } from "../../model/index.ts";
+import { parseAutomationStudioDeterministicPath, parseAutomationStudioFlowChangeOrigin, validateAutomationStudioFlowAdaptation } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION } from "../../runtime/compiled-plan.ts";
 import { actionTargetParameterValues, decideAutomationStudioChangeConfidence, withAutomationStudioNodeAdaptationId, type AutomationStudioChangeConfidence } from "../../runtime/flow-change/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
@@ -443,6 +443,13 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
     // exactly as before while the adaptation was recorded as applied. Refusing it
     // is what stops a repair that never happened from reading as a success.
     if (patch.kind === "edit_recovery") throw new Error(`Adaptation patch edit_recovery has no durable application; ${adaptation.adaptationId} refused.`);
+    // The durable form a learned recovery does have: real nodes inserted into
+    // this graph and wired from the failed node's `failed` port, so the next run
+    // reaches them through the recovery ladder's `deterministic_path` candidate.
+    if (patch.kind === "insert_deterministic_path") {
+      operations.push(...await deterministicPathOperations(graph, adaptation, targetFlowId, patch));
+      continue;
+    }
     if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target") {
       if (!patch.targetId) throw new Error(`Patch ${patch.kind} requires a target node.`);
       const node = await graph.getNode(patch.targetId);
@@ -470,6 +477,129 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
   // inverse restores the node's previous metadata, so a rollback removes it.
   for (const [nodeId, metadata] of writtenNodes) operations.push({ op: "set_node_metadata", nodeId, metadata: withAutomationStudioNodeAdaptationId(metadata, adaptation.adaptationId) });
   return operations;
+}
+
+/** Where an inserted recovery step sits relative to the node whose failure it handles. */
+const DETERMINISTIC_PATH_X_OFFSET = 320;
+const DETERMINISTIC_PATH_Y_OFFSET = 160;
+/** The definition version an inserted node carries when the patch names none. */
+const DETERMINISTIC_PATH_DEFINITION_VERSION = "1.0.0";
+
+/**
+ * The graph operations that insert one learned recovery path and wire it in.
+ *
+ * Both halves are one request to the transactional store, so a rejected patch
+ * leaves the graph untouched and an applied one has a single inverse. The
+ * inverse the store builds for an `add_node` is a `delete_node`, which cascades
+ * to every edge on that node and restores each of them by `add_edge`; the
+ * inverse for an `add_edge` is a `delete_edge`. Rolling this change back
+ * therefore removes the path and whatever was later attached to it, and
+ * re-applying the rollback's own inverse puts the cascaded edges back.
+ *
+ * Refusals, all of them before any operation reaches the store:
+ * - no failed node named, or a node that is not live in this graph;
+ * - an `after` value that is not a readable path;
+ * - a rejoin node that is not live in this graph;
+ * - a node id already in use, because `add_node` replaces a live node of the
+ *   same id and would overwrite real behaviour rather than insert a step.
+ */
+async function deterministicPathOperations(
+  graph: AutomationStudioProjectGraphRepository,
+  adaptation: AutomationStudioFlowAdaptation,
+  targetFlowId: string,
+  patch: AutomationStudioChangeProposalPatch
+): Promise<AutomationStudioGraphPatchOperation[]> {
+  const failedNodeId = stringValue(patch.targetId);
+  if (!failedNodeId) throw new Error(`Patch insert_deterministic_path requires the node whose failure it recovers; ${adaptation.adaptationId} refused.`);
+  const path = parseAutomationStudioDeterministicPath(patch.after);
+  if (!path) throw new Error(`Patch insert_deterministic_path for ${failedNodeId} does not carry a readable recovery path; ${adaptation.adaptationId} refused.`);
+  const failed = await liveGraphNode(graph, failedNodeId, targetFlowId);
+  if (!failed) throw new Error(`Unknown node: ${failedNodeId}`);
+  if (path.returnToNodeId && !await liveGraphNode(graph, path.returnToNodeId, targetFlowId)) {
+    throw new Error(`Deterministic path rejoins unknown node ${path.returnToNodeId}; ${adaptation.adaptationId} refused.`);
+  }
+  const operations: AutomationStudioGraphPatchOperation[] = [];
+  for (const [index, node] of path.nodes.entries()) {
+    if (await liveGraphNode(graph, node.nodeId, targetFlowId)) throw new Error(`Deterministic path node ${node.nodeId} already exists; ${adaptation.adaptationId} refused.`);
+    operations.push({
+      op: "add_node",
+      node: {
+        nodeId: node.nodeId,
+        flowId: targetFlowId,
+        definitionId: node.definitionId,
+        definitionVersion: node.definitionVersion ?? DETERMINISTIC_PATH_DEFINITION_VERSION,
+        label: node.label ?? node.definitionId,
+        description: patch.summary,
+        x: failed.x + DETERMINISTIC_PATH_X_OFFSET,
+        y: failed.y + DETERMINISTIC_PATH_Y_OFFSET * (index + 1),
+        width: failed.width,
+        height: failed.height,
+        zIndex: failed.zIndex,
+        disabled: false,
+        parameterValues: deterministicPathParameterValues(node, adaptation.adaptationId),
+        // Stamped as it is inserted rather than by a later `set_node_metadata`:
+        // the node exists only because of this change, so a rollback that
+        // deletes it removes the stamp with it.
+        metadata: withAutomationStudioNodeAdaptationId({}, adaptation.adaptationId)
+      }
+    });
+  }
+  const steps = path.nodes.map((node) => node.nodeId);
+  operations.push(deterministicPathEdge(adaptation, targetFlowId, failedNodeId, "failed", steps[0]!, patch.summary));
+  for (let index = 0; index + 1 < steps.length; index += 1) {
+    operations.push(deterministicPathEdge(adaptation, targetFlowId, steps[index]!, "success", steps[index + 1]!, patch.summary));
+  }
+  if (path.returnToNodeId) operations.push(deterministicPathEdge(adaptation, targetFlowId, steps[steps.length - 1]!, "success", path.returnToNodeId, patch.summary));
+  assertInsertedNodesAreWired(operations, adaptation.adaptationId);
+  return operations;
+}
+
+/**
+ * Refuses a request that would insert a node no edge in the same request enters.
+ *
+ * An unwired inserted node is not inert. `chooseAutomationStudioStartNode` takes
+ * the start of a graph with no Start node to be the one node nothing enters, so
+ * a second such node makes the start ambiguous and the very next run refuses to
+ * begin; and a node a run does reach without being routed to it executes an
+ * action nobody asked for. This reads the operations that were built rather than
+ * restating how they were built, so dropping the wiring fails here instead of
+ * reaching the graph.
+ */
+function assertInsertedNodesAreWired(operations: AutomationStudioGraphPatchOperation[], adaptationId: string): void {
+  const entered = new Set<string>();
+  for (const operation of operations) if (operation.op === "add_edge") entered.add(operation.edge.targetNodeId);
+  const unwired: string[] = [];
+  for (const operation of operations) if (operation.op === "add_node" && !entered.has(operation.node.nodeId)) unwired.push(operation.node.nodeId);
+  if (unwired.length) throw new Error(`Deterministic path would insert unreachable node${unwired.length > 1 ? "s" : ""} ${unwired.join(", ")}; ${adaptationId} refused.`);
+}
+
+function deterministicPathEdge(adaptation: AutomationStudioFlowAdaptation, flowId: string, sourceNodeId: string, sourcePortId: string, targetNodeId: string, label: string): AutomationStudioGraphPatchOperation {
+  return {
+    op: "add_edge",
+    edge: {
+      edgeId: `adaptation.${safeSegment(adaptation.adaptationId)}.path.${safeSegment(sourceNodeId)}.${safeSegment(targetNodeId)}`,
+      flowId,
+      sourceNodeId,
+      targetNodeId,
+      sourcePortId,
+      targetPortId: "in",
+      label,
+      metadata: { adaptationId: adaptation.adaptationId }
+    }
+  };
+}
+
+/** The parameters an inserted node runs with: its own, then its target where it reads one, then its expectation. */
+function deterministicPathParameterValues(node: AutomationStudioDeterministicPathNode, adaptationId: string): JsonObject {
+  const parameters: JsonObject = { ...(node.parameters ?? {}) };
+  if (node.target !== undefined) Object.assign(parameters, actionTargetParameterValues({ nodeId: node.nodeId, definitionId: node.definitionId, parameterValues: parameters }, node.target, adaptationId));
+  if (node.expectation) Object.assign(parameters, node.expectation);
+  return parameters;
+}
+
+async function liveGraphNode(graph: AutomationStudioProjectGraphRepository, nodeId: string, flowId: string): Promise<Awaited<ReturnType<AutomationStudioProjectGraphRepository["getNode"]>>> {
+  const node = await graph.getNode(nodeId);
+  return node && node.flowId === flowId && node.deletedAt === null ? node : null;
 }
 
 function gateRefusal(issue: string): string { return `Adaptation cannot be applied: ${issue}`; }
@@ -568,8 +698,14 @@ function appliedTargets(entities: AutomationStudioGraphPatchApplied["changedEnti
 // to the file-based durable applier instead, which cannot apply it either — and
 // that path records no audit event, so the refusal would be silent. Refusing it
 // inside the transaction writes an `apply_failed` event a reviewer can read.
+//
+// `insert_deterministic_path` is claimed for the same reason, and on the same
+// terms: it names a node and carries a readable path, or the transaction refuses
+// it and the reviewer gets an `apply_failed` event rather than silence. It only
+// ever applies here, because inserting nodes and edges needs the transaction.
 function isGraphTransactionCompatibleAdaptation(adaptation: AutomationStudioFlowAdaptation): boolean {
   return adaptation.patch.every((patch) => {
+    if (patch.kind === "insert_deterministic_path") return Boolean(patch.targetId);
     if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") return Boolean(patch.targetId);
     if (patch.kind !== "edit_router" || !patch.targetId) return false;
     return typeof objectValue(patch.after).toNodeId === "string";

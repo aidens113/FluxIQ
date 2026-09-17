@@ -13,6 +13,7 @@ export * from "./llm/index.ts";
 export * from "./live-patch.ts";
 export * from "./native-node-runtime.ts";
 export * from "./recording-controller.ts";
+export * from "./exploration-reduction/index.ts";
 export * from "./recovery/index.ts";
 export * from "./recording-flow-proposal.ts";
 export * from "./reusable-llm-context.ts";

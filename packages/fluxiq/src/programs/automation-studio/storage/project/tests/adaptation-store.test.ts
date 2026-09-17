@@ -362,6 +362,73 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     await store.close();
   });
 
+  // The durable form a learned recovery does have. `edit_recovery` carried only
+  // definition ids, which no applier could turn into a node; this carries whole
+  // nodes and the failed port to wire them from, so the next run reaches them.
+  it("inserts a learned recovery path as real wired nodes, and rolls the whole path back", async () => {
+    const pool = createPool();
+    const projectId = "project.path";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    await store.putAdaptation({ adaptation: deterministicPathFixture({ projectId }), changedAt: 20 });
+
+    const applied = await store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.path", actorId: "reviewer", changedAt: 30, compile: false });
+    expect(applied.patch).toMatchObject({ status: "applied", revisionNumber: 2 });
+    // A real node: the definition the runtime dispatches, the parameters it runs
+    // with, and the target written where the node reads one — not a hint.
+    await expect(readNodeParameters(pool, projectId, "recovery.dismiss")).resolves.toEqual({ waitMs: 250, target: { selector: "#dismiss" }, timeoutMs: 5000 });
+    await expect(readNodeMetadata(pool, projectId, "recovery.dismiss")).resolves.toEqual({ adaptationIds: ["adaptation.path"] });
+    // Wired from the failed port of the node it recovers, and onward to the rejoin.
+    await expect(readEdges(pool, projectId, "flow.main")).resolves.toEqual([
+      { source_node_id: "node.action", source_port_id: "failed", target_node_id: "recovery.dismiss" },
+      { source_node_id: "recovery.dismiss", source_port_id: "success", target_node_id: "node.other" }
+    ]);
+
+    // Something else is attached to the inserted node after the fact, the way an
+    // author would wire one. Rolling back deletes the node, which cascades to
+    // this edge as well as to the two the change added.
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    await graph.applyPatch({ pool, projectId, flowId: "flow.main", baseRevision: 2, mutationId: "author.attaches", changedAt: 35, operations: [{ op: "add_edge", edge: { edgeId: "edge.author", flowId: "flow.main", sourceNodeId: "node.other", targetNodeId: "recovery.dismiss", sourcePortId: "success", targetPortId: "in", label: "", metadata: {} } }] });
+    await graph.close();
+
+    const rolledBack = await store.rollbackAdaptation({ adaptationId: "adaptation.path", actorId: "reviewer", changedAt: 40 });
+    expect(rolledBack.adaptation.status).toBe("reverted");
+    await expect(readEdges(pool, projectId, "flow.main")).resolves.toEqual([]);
+    await expect(readLiveNodeIds(pool, projectId, "flow.main")).resolves.toEqual(["node.action", "node.other"]);
+    // The rollback's own inverse carries every edge its delete_node cascaded,
+    // including the one the change did not add, so the graph it replaced can be
+    // restored whole. An inverse that listed only the node would silently drop
+    // them.
+    expect(addedEdgeIds(rolledBack.patch)).toEqual(["adaptation.adaptation.path.path.node.action.recovery.dismiss", "adaptation.adaptation.path.path.recovery.dismiss.node.other", "edge.author"]);
+    await store.close();
+  });
+
+  it("refuses a deterministic path it cannot wire, or one that would overwrite a live node", async () => {
+    const pool = createPool();
+    const projectId = "project.path-refusals";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+
+    // An id already in use: add_node replaces a live node, so this would destroy
+    // real behaviour rather than insert a recovery step.
+    await store.putAdaptation({ adaptation: deterministicPathFixture({ projectId, adaptationId: "adaptation.collide", nodeId: "node.other", returnToNodeId: "node.action" }), changedAt: 20 });
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.collide", actorId: "reviewer", changedAt: 21, compile: false }))
+      .rejects.toThrow(/already exists/);
+
+    // A rejoin node that is not in this graph.
+    await store.putAdaptation({ adaptation: deterministicPathFixture({ projectId, adaptationId: "adaptation.rejoin", returnToNodeId: "node.absent" }), changedAt: 22 });
+    await expect(store.applyApprovedAdaptation({ ...gates, adaptationId: "adaptation.rejoin", actorId: "reviewer", changedAt: 23, compile: false }))
+      .rejects.toThrow(/rejoins unknown node/);
+
+    // Nothing was written by either refusal, and both are on the record.
+    await expect(readEdges(pool, projectId, "flow.main")).resolves.toEqual([]);
+    await expect(readLiveNodeIds(pool, projectId, "flow.main")).resolves.toEqual(["node.action", "node.other"]);
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(1);
+    await expect(store.listAuditEvents({ adaptationId: "adaptation.collide", limit: 10 }))
+      .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "apply_failed" })]) });
+    await store.close();
+  });
+
   it("stamps the adaptation id once onto each node the applied change wrote, and its rollback removes the stamp", async () => {
     const pool = createPool();
     const projectId = "project.stamp";
@@ -579,6 +646,41 @@ function recoveryAdaptationFixture(): AutomationStudioFlowAdaptation {
   };
 }
 
+function deterministicPathFixture(input: { projectId: string; adaptationId?: string; nodeId?: string; returnToNodeId?: string }): AutomationStudioFlowAdaptation {
+  return {
+    schemaVersion: "0.1",
+    adaptationId: input.adaptationId ?? "adaptation.path",
+    flowId: "flow.main",
+    projectId: input.projectId,
+    // A linked proposal, so the promotion gates pass and what is tested is the builder.
+    proposalId: "proposal.path",
+    trigger: "A cookie banner covered the control; dismiss it and continue.",
+    patch: [{
+      kind: "insert_deterministic_path",
+      targetId: "node.action",
+      summary: "Dismiss the banner, then rejoin.",
+      after: {
+        nodes: [{
+          nodeId: input.nodeId ?? "recovery.dismiss",
+          definitionId: "builtin.step",
+          label: "Dismiss banner",
+          parameters: { waitMs: 250 },
+          target: { selector: "#dismiss" },
+          expectation: { timeoutMs: 5000 }
+        }],
+        returnToNodeId: input.returnToNodeId ?? "node.other"
+      }
+    }],
+    validationResults: [{ runId: "run.validation.path", status: "succeeded", checkedAt: 20 }],
+    status: "validated",
+    author: "llm",
+    riskLevel: "medium",
+    createdAt: 10,
+    updatedAt: 20,
+    metadata: { baseRevision: 1, proposalModeOverride: "auto" }
+  };
+}
+
 function subflowAdaptationFixture(input: { projectId: string; adaptationId: string; createdAt: number }): AutomationStudioFlowAdaptation {
   return {
     schemaVersion: "0.1",
@@ -619,6 +721,36 @@ async function rewriteValidationResults(pool: AutomationStudioProjectDatabasePoo
   } finally {
     await lease.release();
   }
+}
+
+async function readEdges(pool: AutomationStudioProjectDatabasePool, projectId: string, flowId: string): Promise<Array<Record<string, unknown>>> {
+  const lease = await pool.acquire(projectId);
+  try {
+    return await lease.database.all<Record<string, unknown>>("select source_node_id, source_port_id, target_node_id from graph_edges where flow_id = ? and deleted_at_ms is null order by source_node_id, target_node_id", [flowId]);
+  } finally {
+    await lease.release();
+  }
+}
+
+async function readLiveNodeIds(pool: AutomationStudioProjectDatabasePool, projectId: string, flowId: string): Promise<string[]> {
+  const lease = await pool.acquire(projectId);
+  try {
+    const rows = await lease.database.all<{ node_id: string }>("select node_id from graph_nodes where flow_id = ? and deleted_at_ms is null order by node_id", [flowId]);
+    return rows.map((row) => row.node_id);
+  } finally {
+    await lease.release();
+  }
+}
+
+/** The edge ids a graph patch's own inverse would put back, sorted. */
+function addedEdgeIds(patch: { status: string }): string[] {
+  const operations = (patch as { inverseOperations?: unknown }).inverseOperations;
+  const edgeIds: string[] = [];
+  for (const operation of Array.isArray(operations) ? operations : []) {
+    const record = operation as { op?: string; edge?: { edgeId?: string } };
+    if (record.op === "add_edge" && typeof record.edge?.edgeId === "string") edgeIds.push(record.edge.edgeId);
+  }
+  return edgeIds.sort();
 }
 
 async function readNodeMetadata(pool: AutomationStudioProjectDatabasePool, projectId: string, nodeId: string): Promise<Record<string, unknown>> {
