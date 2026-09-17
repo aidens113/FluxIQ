@@ -1,89 +1,45 @@
-// The reference-free completion schema for evidence-guided Bootstrap calls,
-// and the limit check a returned evidence result must pass.
+// What an evidence-guided Bootstrap call asks a model to return, and the limit
+// check the plan built from it must pass.
+//
+// It used to ask for the whole plan as nested JSON: router, subflows, nodes,
+// edges, endpoints, keys, versions and ids, every one of which the model had to
+// keep consistent with every other while it wrote. In the first full creation
+// campaign most refused builds failed on that shape rather than on the
+// reasoning -- an unknown record-output key, a dataset id with a space in it, a
+// handle one level from where it belonged. So the call now asks for the Flow as
+// plain lines (`./flow-script-format.ts`), which has no brackets to balance and
+// nothing to escape, and Core derives the rest.
+//
+// The reply is still read strictly: `../authoring/accept.ts` turns it into a
+// plan, and that plan goes through the same parser, the same registry
+// validation and the same record-set contract as before. Nothing a created
+// Flow may contain was widened.
 import type { JsonObject } from "../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "./flow-script-format.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 
-/** A self-contained, reference-free completion schema for bounded evidence-guided
- * Bootstrap calls. It retains the canonical public plan shape while preventing a
- * provider from spending a whole completion on optional topology or prose. */
+/**
+ * The completion an evidence-guided Bootstrap call returns: one line-oriented
+ * Flow script, and one sentence about it.
+ *
+ * The nested plan shape is still accepted by the acceptor, so a model that
+ * returns one -- and every reply captured before this existed -- still builds.
+ * It is no longer advertised, because advertising it is what made it the shape
+ * models reached for.
+ */
 export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonObject = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "plan"],
-  description: "Return a minimal Flow Bootstrap result under 12000 UTF-8 bytes. Prefer one primary Subflow routed by the Router fallback. Add Subflows or Router rules only when the instruction requires them. Every Router target must equal a Subflow key. Include only required nodes and edges.",
+  required: ["flow"],
+  description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}`,
   properties: {
     summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
-    plan: {
-      type: "object",
-      additionalProperties: false,
-      required: ["schemaVersion", "router", "subflows"],
-      properties: {
-        schemaVersion: { const: "0.1" },
-        router: {
-          type: "object",
-          additionalProperties: false,
-          required: ["name", "rules", "fallback"],
-          properties: {
-            name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
-            rules: {
-              type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxRules,
-              items: {
-                type: "object", additionalProperties: false, required: ["key", "name", "targetSubflowKey", "routeTags"],
-                properties: {
-                  key: bootstrapSymbolSchema(), name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
-                  targetSubflowKey: bootstrapSymbolSchema(),
-                  routeTags: { type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxRouteTags, items: boundedBootstrapTextSchema(100) }
-                }
-              }
-            },
-            fallback: {
-              oneOf: [
-                { type: "object", additionalProperties: false, required: ["kind", "targetSubflowKey"], properties: { kind: { const: "subflow" }, targetSubflowKey: bootstrapSymbolSchema() } },
-                { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "fail" } } }
-              ]
-            }
-          }
-        },
-        subflows: {
-          type: "array", minItems: 1, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSubflows,
-          contains: { type: "object", required: ["role"], properties: { role: { const: "primary" } } }, minContains: 1, maxContains: 1,
-          items: {
-            type: "object", additionalProperties: false, required: ["key", "name", "role", "nodes", "edges"],
-            properties: {
-              key: bootstrapSymbolSchema(), name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
-              role: { enum: ["primary", "integration", "recovery", "fallback", "utility"] },
-              nodes: {
-                type: "array", minItems: 1, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNodesPerSubflow,
-                description: "For every node, copy definitionId and definitionVersion exactly from one nodeCatalog entry. Include every required parameter. If that entry has outputAction, outputActionId is mandatory and must equal fixed or one allowed value.",
-                items: {
-                  type: "object", additionalProperties: false, required: ["key", "definitionId", "definitionVersion"],
-                  properties: {
-                    key: bootstrapSymbolSchema(), definitionId: bootstrapIdentifierSchema(),
-                    definitionVersion: boundedBootstrapTextSchema(40),
-                    // The model is shown what it observed only as opaque handles, so
-                    // this is where it learns to name one rather than invent a
-                    // locator; the bound domain resolves it before validation.
-                    parameters: {
-                      type: "object", maxProperties: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxParametersPerNode, additionalProperties: {},
-                      description: "Where a value must point at something the evidence showed (a control, a field, or a list a tool detected), write {\"handle\":\"<its handle, copied exactly>\"} as that value; after exploring more than one location, write {\"handle\":\"<handle>\",\"location\":\"<the location the evidence reported it at>\"}. A parameter's description may name further keys to write beside the handle. Never write a locator, path or query of your own."
-                    },
-                    outputActionId: bootstrapIdentifierSchema()
-                  }
-                }
-              },
-              edges: {
-                type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxEdgesPerSubflow,
-                description: "Create one connected acyclic graph. Use only output port IDs from each source node's catalog entry and input port IDs from each target node's entry. Connect every input marked required and do not reuse a port unless it is marked multiple.",
-                items: {
-                  type: "object", additionalProperties: false, required: ["key", "source", "target"],
-                  properties: { key: bootstrapSymbolSchema(), source: bootstrapEndpointSchema(), target: bootstrapEndpointSchema() }
-                }
-              }
-            }
-          }
-        }
-      }
+    flow: {
+      type: "string",
+      minLength: 1,
+      maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxResultBytes,
+      description: "The Flow as plain lines, one `key: value` per line, in the order the steps run."
     }
   }
 };
@@ -100,23 +56,4 @@ export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(value:
       && subflow.nodes.length <= limits.maxNodesPerSubflow
       && subflow.edges.length <= limits.maxEdgesPerSubflow
       && subflow.nodes.every((node) => !node.parameters || Object.keys(node.parameters).length <= limits.maxParametersPerNode));
-}
-
-function boundedBootstrapTextSchema(maxLength: number): JsonObject {
-  return { type: "string", minLength: 1, maxLength, pattern: "\\S" };
-}
-
-function bootstrapSymbolSchema(): JsonObject {
-  return { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" };
-}
-
-function bootstrapIdentifierSchema(): JsonObject {
-  return { type: "string", minLength: 1, maxLength: 200, pattern: "^[A-Za-z0-9_.:-]+$" };
-}
-
-function bootstrapEndpointSchema(): JsonObject {
-  return {
-    type: "object", additionalProperties: false, required: ["nodeKey", "portId"],
-    properties: { nodeKey: bootstrapSymbolSchema(), portId: bootstrapIdentifierSchema() }
-  };
 }

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -53,10 +54,26 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   // reasons, as a refused plan is a model failure and not the end of the build.
   // One that keeps failing stops on the unusable-decision streak -- here the
   // grant's three calls -- and the record names the check that refused it.
+  //
+  // What is refused here is what carries no intent to read: a result that says
+  // nothing, a plan with no step in it, and a plan past a bound Core cannot
+  // shrink. A spelling Core can read -- an extra key, a wrong schema version, a
+  // summary one character too long -- is normalised rather than refused
+  // (`flow-bootstrap/authoring/`), and the cases below no longer include one.
   it.each([
-    ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", "bootstrap.completion_wrapper_invalid", () => ({ summary: "Candidate.", plan: plan(), unexpected: true })],
-    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.invalid_schema_version", () => ({ summary: "Candidate.", plan: { ...plan(), schemaVersion: "0.2" } })],
-    ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", "bootstrap.completion_profile_limit_exceeded", () => ({ summary: "x".repeat(241), plan: plan() })],
+    ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", "bootstrap.completion_wrapper_invalid", () => ({})],
+    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.invalid_subflows", () => ({ summary: "Candidate.", plan: { subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [], edges: [] }] } })],
+    ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", "bootstrap.completion_profile_limit_exceeded", () => ({
+      summary: "Candidate.",
+      plan: {
+        ...plan(),
+        subflows: [{
+          ...plan().subflows[0],
+          nodes: Array.from({ length: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNodesPerSubflow + 1 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" })),
+          edges: []
+        }]
+      }
+    })],
     ["registry validation", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.definition_unavailable", () => ({
       summary: "Candidate.",
       plan: {

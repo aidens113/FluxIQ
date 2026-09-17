@@ -22,6 +22,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import {
+  acceptAutomationStudioFlowBootstrapResult,
   automationStudioFlowBootstrapIssueFeedback,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
@@ -72,14 +73,21 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
-  if (Object.keys(result).some((key) => key !== "summary" && key !== "plan") || typeof result.summary !== "string" || !result.summary.trim()) {
+  if (!Object.keys(result).length) {
     return refused("flow_bootstrap.evidence_completion_wrapper_invalid", [issue("bootstrap.completion_wrapper_invalid", "result")]);
   }
-  const parsed = parseAutomationStudioFlowBootstrapPlan(result.plan);
+  // One door for every shape a build may arrive in -- a Flow script, or the
+  // nested plan that was once the only one -- and one place that normalises it.
+  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry: input.registry, resolution: input.resolution });
+  // An issue about a normalised plan still carries the path of the plan the
+  // model wrote, so the shape a refused parameter accepts is read from that one.
+  const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
+  if (!accepted.ok) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(written));
+  const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
   if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(result.plan));
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan));
   }
-  if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: result.summary, plan: parsed.plan })) {
+  if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: accepted.summary, plan: parsed.plan })) {
     return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")]);
   }
   const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
@@ -99,7 +107,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")]);
   }
   if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan));
-  return { ok: true, summary: result.summary, buildPlan: validated.validated };
+  return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
 
 /** The plan a refusal is about, and where its nodes are defined. */

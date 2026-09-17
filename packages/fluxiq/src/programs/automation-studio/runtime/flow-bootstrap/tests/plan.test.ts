@@ -181,11 +181,14 @@ describe("Automation Studio Flow bootstrap contract", () => {
         outputActionId: expect.objectContaining({ description: expect.stringContaining("Emit iff") })
       }
     });
-    const evidencePlan = (AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA as Record<string, any>).properties.plan;
-    const evidenceSubflow = evidencePlan.properties.subflows.items;
-    expect(evidencePlan.description ?? AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA.description).toBeDefined();
-    expect(evidenceSubflow.properties.nodes.description).toContain("outputActionId is mandatory");
-    expect(evidenceSubflow.properties.edges.description).toContain("Connect every input marked required");
+    // The evidence-guided call no longer asks for any of that shape: it asks
+    // for the Flow as lines, and derives the rest (`plan/authoring/`).
+    const evidence = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA as Record<string, any>;
+    expect(evidence).toMatchObject({ type: "object", additionalProperties: false, required: ["flow"] });
+    expect(Object.keys(evidence.properties)).toEqual(["summary", "flow"]);
+    expect(evidence.properties.flow.type).toBe("string");
+    expect(String(evidence.description)).toContain("step: <what this step does>");
+    expect(String(evidence.description)).toContain("on <port>: go to <label>");
   });
 
   it("builds a deterministic catalog already filtered by scope, capabilities, and permissions", () => {

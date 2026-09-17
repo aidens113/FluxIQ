@@ -1,0 +1,62 @@
+// What a model writes when it builds a Flow, before any of it is a plan.
+//
+// A Flow script is plain lines: `key: value`, one fact per line, nothing
+// nested, nothing quoted, nothing escaped. This module holds only the shapes
+// the parser produces and the acceptor returns; the grammar itself is in
+// `./parse.ts`, and what the model is shown is in `./format.ts`.
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+
+/** One `key: value` line inside a step, with its value already joined. */
+export type AutomationStudioFlowScriptEntry = {
+  /** The key exactly as written, dots included: `extractList.fields.name`. */
+  key: string;
+  /** The value's lines, in order. One line unless the model continued it. */
+  lines: string[];
+  /** Where in the script, counting from 1, for a refusal that names a line. */
+  line: number;
+};
+
+/** A branch from one of a step's output ports to a labelled step. */
+export type AutomationStudioFlowScriptBranch = {
+  /** The port as written: an id or a label the node's catalog entry shows. */
+  port: string;
+  /** The label of the step this port goes to. */
+  target: string;
+  line: number;
+};
+
+export type AutomationStudioFlowScriptStep = {
+  /** The label the model invented, lower-cased; absent when it wrote none. */
+  label?: string;
+  /** What the step does, in the model's words. May name the node. */
+  description: string;
+  /** The `node:` line's value, when the model wrote one. */
+  node?: string;
+  /** The block this step runs instead of doing anything itself. */
+  runsBlock?: string;
+  entries: AutomationStudioFlowScriptEntry[];
+  branches: AutomationStudioFlowScriptBranch[];
+  line: number;
+};
+
+/** A block of steps: the main sequence, or a named subflow. */
+export type AutomationStudioFlowScriptBlock = {
+  /** The label a `subflow <label>:` line gave; absent for the main block. */
+  label?: string;
+  name: string;
+  role?: AutomationStudioFlowBootstrapPlan["subflows"][number]["role"];
+  steps: AutomationStudioFlowScriptStep[];
+  line: number;
+};
+
+export type AutomationStudioFlowScript = {
+  /** The `flow:` line, when the model wrote one. */
+  summary?: string;
+  /** The main sequence first, then each named block in the order written. */
+  blocks: AutomationStudioFlowScriptBlock[];
+};
+
+/** A result the acceptor could read, or the issues that refused it. */
+export type AutomationStudioFlowBootstrapAcceptance =
+  | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] }
+  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[] };

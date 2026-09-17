@@ -343,3 +343,85 @@ describe("an instruction whose verbs are not the catalog's own action words", ()
     expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(["builtin.control.end", "builtin.control.start"]);
   });
 });
+
+// An offered node whose parameters were trimmed away is worse than one node
+// fewer: the model cannot fill in what it was never shown, and a Flow it
+// builds from a half-listed node is refused for a parameter that was there all
+// along. So the budget may drop a whole entry and may shorten prose, and may
+// never drop a parameter id, type, default, option, constraint or
+// required-ness -- in either form, at any budget the catalog accepts.
+describe("what the catalog may never trim away", () => {
+  const web = {
+    scope: { kind: "domain" as const, domainId: "web-automation" },
+    runtimeCapabilities: ["web.actions"],
+    permissions: ["web-automation.action"]
+  };
+  const definitions = webDomainNodeDefinitionsFixture();
+  const registry = new AutomationStudioNodeRegistry(definitions);
+  const context = (maxCatalogBytes: number, instructionText = "Click the submit button and scrape every product.") =>
+    buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText, maxCatalogBytes });
+
+  /** Everything an entry must carry about one parameter, whatever form it is in. */
+  function contract(entry: { parameters: JsonObject[] } | { parameters: Array<Record<string, unknown>> }) {
+    return entry.parameters.map((parameter) => ({
+      id: parameter.id,
+      type: parameter.type,
+      required: parameter.required,
+      defaultValue: parameter.defaultValue,
+      options: parameter.options,
+      constraints: parameter.constraints
+    }));
+  }
+
+  function declared(id: string) {
+    const definition = definitions.find((candidate) => candidate.id === id)!;
+    return definition.parameters.map((parameter) => ({
+      id: parameter.id,
+      type: parameter.valueType,
+      required: parameter.required === true ? true : undefined,
+      defaultValue: parameter.defaultValue,
+      options: parameter.options?.map((option) => option.value),
+      constraints: parameter.constraints
+    }));
+  }
+
+  /** The smallest budget at which the catalog still offers a node at all. */
+  function smallestAcceptedBudget(): number {
+    let low = 0;
+    let high: number = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (context(middle).nodeCatalog.length > 0) high = middle;
+      else low = middle + 1;
+    }
+    return low;
+  }
+
+  it("keeps every parameter id, type, default, option and constraint at every budget it accepts", () => {
+    const smallest = smallestAcceptedBudget();
+    expect(context(smallest).nodeCatalog.length).toBeGreaterThan(0);
+    expect(context(smallest - 1).nodeCatalog).toEqual([]);
+
+    for (const budget of [smallest, smallest + 200, 2_000, 6_000, 20_000, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes]) {
+      const built = context(budget);
+      for (const entry of built.nodeCatalog) {
+        expect({ budget, id: entry.id, parameters: contract(entry as never) })
+          .toEqual({ budget, id: entry.id, parameters: declared(entry.id) });
+        expect(entry.inputs.length).toBe(definitions.find((candidate) => candidate.id === entry.id)!.inputs.length);
+        expect(entry.outputs.length).toBe(definitions.find((candidate) => candidate.id === entry.id)!.outputs.length);
+      }
+    }
+  });
+
+  it("shortens the prose instead, which is the only thing a form changes", () => {
+    const smallest = smallestAcceptedBudget();
+    const tight = context(smallest).nodeCatalog[0]!;
+    const whole = context(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes).nodeCatalog
+      .find((entry) => entry.id === tight.id)!;
+
+    // The condensed form is the whole one with text taken out, and nothing else.
+    expect(tight.description.length).toBeLessThanOrEqual(whole.description.length);
+    expect(contract(tight as never)).toEqual(contract(whole as never));
+    expect(tight.outputAction).toEqual(whole.outputAction);
+  });
+});

@@ -98,6 +98,15 @@ function typingBinding(resolve = true): AutomationStudioLlmEvidenceRuntimeBindin
   };
 }
 
+/**
+ * A value for `text` that no reading can make into the string the parameter
+ * declares. A number is not one: a model that writes `text: 42` for a string
+ * field means "42", and plan authoring reads it that way rather than refusing
+ * the build (`flow-bootstrap/authoring/normalise.ts`). An object is, and it is
+ * what the refusal cases below use.
+ */
+const UNREADABLE_TEXT: JsonValue = { value: "Ada" };
+
 function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
   return {
     schemaVersion: "0.1",
@@ -201,7 +210,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   });
 
   it("hands a plan the registry refuses back to the model, and builds the corrected plan", async () => {
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, 42), typingPlan({ handle: NAME_FIELD.handle })]);
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT), typingPlan({ handle: NAME_FIELD.handle })]);
     await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
 
     expect(feedbackBefore(run.requests, 2)).toMatchObject({
@@ -211,7 +220,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   });
 
   it("stops after three refused plans in a row, saying which checks refused them", async () => {
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, 42)]);
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(run.requests).toHaveLength(3);
@@ -246,7 +255,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   // The streak is never longer than the calls the grant allows, so a build
   // whose every call was refused still ends under the refusal's name.
   it("names the last refusal when a build's calls all go on refused plans", async () => {
-    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, 42)], { maxCallsPerRun: 2 });
+    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)], { maxCallsPerRun: 2 });
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(run.requests).toHaveLength(2);

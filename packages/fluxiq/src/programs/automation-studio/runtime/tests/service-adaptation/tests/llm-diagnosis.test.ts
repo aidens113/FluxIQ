@@ -145,7 +145,9 @@ describe("AutomationStudioService recording persistence", () => {
       flowId: flow.flowId,
       runId: run.runId,
       failedAction: { nodeId: "divide", definitionId: "builtin.math.divide", status: "failed" },
-      maxEvidenceBytes: 2_400
+      // A quarter of what the call may carry, not a fifth: a repair reads the
+      // page it failed on as closely as authoring reads the page it builds from.
+      maxEvidenceBytes: 3_000
     });
     expect(Object.keys(captures[0].failedAction).sort()).toEqual(["attemptId", "definitionId", "nodeId", "route", "status"]);
     expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]); expect(requests.map((request) => request.context.subflowId)).toEqual([runtimeSubflowId, runtimeSubflowId]);
