@@ -209,16 +209,13 @@ adaptation policy. Neither adapting lane has a fixed call count; see
 [Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
 Both may persist proposals for manual review, and neither can auto-apply one or
 authorize external side effects. A `diagnose_and_adapt` target override is
-structurally validated as an opaque
-target object; an optional domain validator receives bounded failed-node
-identity (node ID and definition ID) so it can enforce action compatibility.
-It may accept the proposed target or resolve one exact canonical replacement;
-all other results fail closed. Core also binds the proposal to the failed node,
-rewriting a different model-selected node ID only when the failed node exists in
-the current Flow. The proposal records only categorical selector/node resolution
-provenance, is marked high-risk/external-side-effecting, and is never run as a
-live patch. The canonical graph changes only through the existing
-PIN-authorized adaptation review/apply endpoint.
+structurally validated as an opaque target object and then passes the same
+domain check every target override passes, proposed or executed; see
+[Repair targets and their refusals](#repair-targets-and-their-refusals). The
+proposal records only categorical target/node resolution provenance, is marked
+high-risk/external-side-effecting, and is never run as a live patch. The
+canonical graph changes only through the adaptation review endpoint,
+`review-flow-adaptation`, whose apply runs the promotion gates.
 Because the `diagnose_and_adapt` grant is schema-bound to this one proposal
 kind, Core enables action-target proposal creation for that run even when the
 Flow's normal policy is locked. It does not enable live patch execution,
@@ -228,8 +225,9 @@ mutation flags the Flow's policy actually sets.
 
 Every provider request carries server-enforced input, output, and total token
 limits. Core defaults are 8,000 input, 2,000 output, and 10,000 total tokens.
-Persisted Flow settings allow one through 64 LLM calls, matching the
-execution-grant backstop. A call count is configuration, not a property of a
+Persisted Flow settings still carry a call count from one through 64, which the
+settings API requires, but no run takes its call count from it; a run's calls
+come from its grant. A call count is configuration, not a property of a
 runtime intent: only `diagnosis_only` is fixed at one call, because one
 diagnosis is all it asks for. Evidence-guided generation makes at most one
 evidence decision per call its grant authorizes.
@@ -370,8 +368,11 @@ or inconsistent. Provider completion is not result acceptance:
 Core revalidates the grant's lifetime, active membership, actor/session, key
 revision, dependency digest, and settings revision at a mandatory commit
 boundary before returning a result for parsing or accounting. The end of the run
-lease, explicit cancellation, abort, user/session revocation, failure, or
-service close aborts the in-flight call and revokes all unused authorizations. No password, PIN, or provider plaintext is retained or
+lease, explicit cancellation, abort, user/session revocation, a failure that
+ends the grant, or service close aborts the in-flight call and revokes all
+unused authorizations. A failed call that only spent itself leaves the grant
+as it was; [What a failed call does to its grant](#what-a-failed-call-does-to-its-grant)
+says which is which. No password, PIN, or provider plaintext is retained or
 persisted. A durable Flow or settings mutation changes the binding, so later
 calls require a newly authorized grant against the new revision.
 
@@ -610,7 +611,8 @@ diagnostics rather than applied.
 Live patch testing executes temporary fixes against a cloned Flow and current
 run context. It supports bounded action sequences, wait/retry adjustments,
 target overrides, recovery subflow calls, and temporary reroutes. Preflight
-checks adaptation policy and side-effect approval before execution. A
+checks adaptation policy and side-effect approval before execution, and a
+target override also needs the domain check to accept it. A
 successful patch can mark the original action retryable and produce a candidate
 adaptation; structural fixes are reviewed through the same adaptation surface
 according to approval mode. Failed patches remain run evidence and rejected
@@ -621,10 +623,43 @@ no provider; see [What the shipped app reaches](#what-the-shipped-app-reaches).
 Adaptations are reviewable change evidence. The Adaptations workspace groups
 them by status, shows trigger/diagnosis/failed action/patch/validation/risk
 detail, and routes review actions through privileged service mutations.
-Promotion is gated by successful validation, risk, structural review links,
-target presence, and disabled/rejected state. Applying an adaptation records a
-reversible application record instead of silently editing Flow JSON; structural
-changes continue through adaptation review. In the shipped app, automatic
+
+Applying a runtime adaptation first passes its promotion gates,
+`evaluateFlowAdaptationPromotionGates` in `runtime/recovery/adaptation-promotion.ts`.
+They ask for evidence, not for the absence of an objection:
+
+- **A succeeded trial or replay, or a named reviewer's approval.** The gates
+  read the confidence tier the saved validation results earn
+  (`decideAutomationStudioChangeConfidence` in `runtime/flow-change/`). A result
+  with no kind counts as a trial, and a result of any other kind counts for
+  nothing. A `validated` status is a claim, not evidence. The reviewer is read
+  from `metadata.review.approvedBy` and is never `runtime`. An approval never
+  outweighs a failure: while the latest counted trial or replay is a failure,
+  the adaptation is refused.
+- **Not destructive, disabled, or rejected.**
+- **A linked change proposal** for a structural adaptation.
+- **A target** on every patch except `create_subflow`.
+
+Review tries the typed project store first, then the Flow Bootstrap lifecycle,
+then the file-backed applier, and the two runtime-adaptation paths both run the
+gates. The typed store, `AutomationStudioProjectAdaptationStore.applyApprovedAdaptation`,
+takes them as a required `promotionGates` argument, because importing them
+would close a module cycle. Missing gates, gates that throw, or anything but a
+consistent verdict refuse the apply and record a `policy_blocked` audit event.
+For an approval that predates `metadata.review.approvedBy`, the store hands the
+gates the latest named `approved` audit event instead.
+
+Applying an adaptation records a reversible application record instead of
+silently editing Flow JSON; structural changes continue through adaptation
+review. In the typed store an apply is one graph patch. It writes each changed
+node's whole parameter map, so the stored inverse restores it exactly, and
+stamps the node with the adaptation ID. An action-target repair is written
+where the node reads its target when it runs. For a native node that is
+`parameterValues.target`. A recorded step is a `builtin.policy.action` node,
+which dispatches only its `parameters` payload, so its repair is written to
+`parameterValues.parameters.target`. A recorded step whose payload is not a
+plain object is refused rather than recorded as applied, and so is any
+`edit_recovery` patch, which has no durable form. In the shipped app, automatic
 promotion never applies an adaptation; see
 [What the shipped app reaches](#what-the-shipped-app-reaches).
 
@@ -676,7 +711,8 @@ kinds. Each path reaches a model as follows:
   grant. Every explicit run is forced into manual proposal mode, and the
   promotion gate sends manual-mode adaptations to review; a `diagnose_and_adapt`
   proposal is high-risk as well. An adaptation is applied only through the
-  PIN-authorized review endpoint.
+  review endpoint, `review-flow-adaptation`, which needs `flows.write` and a
+  pass from the promotion gates, not a PIN.
 - **The retry after an applied patch:** no grant purpose. The retry runs only
   when a runtime patch was applied automatically and marked the original action
   retryable, which the shipped app never produces. A run with an explicit grant
@@ -704,8 +740,9 @@ node as it does for a new run.
 
 A recovery under an adapting grant is a diagnosis, then an exploration that may
 ask for evidence for as long as it keeps learning something, then a patch. No
-stage has a fixed call count. The recovery stops on the first of four guards,
-and each reports under its own name:
+stage has a fixed call count, and a small call count is not what bounds a
+recovery. Iteration stops on the first of six guards, and each reports under
+its own name:
 
 1. **Estimated cost.** The run ledger refuses a call that would cross the run's
    estimated-cost ceiling (`llm_budget.run_cost_limit`). With a grant the
@@ -713,8 +750,9 @@ and each reports under its own name:
    Without one it is the adaptation policy's, and never more than USD 0.25.
 2. **Tokens.** The ledger refuses a call that would cross the run's token budget
    (`llm_budget.run_total_limit`, or `llm_budget.run_output_limit` for output).
-   With a grant the budget is the grant's `maxTotalTokensPerRun`. Without one it
-   is the training settings' `maxTokensPerRun`, or 144,000 when that is unset.
+   With a grant the budget is the per-call total limit times the grant's calls,
+   held to the grant's `maxTotalTokensPerRun`. Without one it is the training
+   settings' `maxTokensPerRun`, or 144,000 when that is unset.
 3. **The recovery deadline.** A recovery has one clock, started once when it
    begins: 600 seconds, which is also the most any recovery clock may be. An
    exploration it stops reports `recovery_deadline_expired`, as distinct from
@@ -724,8 +762,26 @@ and each reports under its own name:
    something the exploration did not already have. Three consecutive steps that
    do not advance stop the exploration with the outcome `no_progress`, separate
    from `budget_exhausted`. The reason names which failure it was: a repeated
-   request, an answer already held, or an empty or refused answer. Any step that
-   advances resets the count.
+   request, an answer already held, an empty or refused answer, or an unusable
+   decision. Any step that advances resets the count.
+5. **Unusable decisions.** A decision call that reached the provider and came
+   back as nothing the exploration can act on is asked again rather than ending
+   the exploration. That covers a reply that failed Core's checks (an
+   `llm_output.` finding) and every provider failure the grant treats as a spent
+   call: a malformed, invalid, truncated, or oversize reply, an unusable usage
+   report, a timeout, a network error, rate limiting, or an HTTP 5xx. Each one is
+   charged like any other call and counts as a step that did not advance, with
+   the reason `unusable_decision`, so three in a row stop the exploration as
+   `no_progress`. Any other failure, such as a refused budget, a pre-send
+   refusal, or an ended grant, ends the exploration.
+6. **The patch reserve.** Before an exploration starts, the recovery reserves
+   one patch-sized call on the run ledger: the patch's token limits and its
+   per-call cost. The ledger refuses, on its ordinary codes, any exploration
+   decision that would eat into that reservation, and the recovery releases it
+   just before the patch. A reservation the run cannot afford is not taken. When
+   the grant declares a call count, the exploration's own call ceiling is
+   lowered to what remains after the patch, so a long exploration ends on its
+   own limit and the patch still runs.
 
 Call counts survive only as backstops that a working recovery should not meet.
 The run ledger stops at 250 calls, or at the grant's call limit when a grant
@@ -736,23 +792,33 @@ default, and at most 64 of each. A default grant's 26 calls are a diagnosis, a
 patch, and those 24 decisions, so the grant does not stop a default recovery
 that is still making progress.
 
-The patch keeps its share. Before an exploration starts, the recovery reserves
-one patch-sized call on the run ledger: the patch's token limits and its
-per-call cost. The ledger refuses, on its ordinary codes, any exploration
-decision that would eat into that reservation, and the recovery releases it
-just before the patch. A reservation the run cannot afford is not taken. When
-the grant declares a call count, the exploration's own call ceiling is lowered
-to what remains after the patch, so a long exploration ends on its own limit
-and the patch still runs.
+Every call is itemized. The run ledger writes one record at the moment it
+counts a call, so the records and the totals cannot disagree, and a recovered
+run's detail keeps them at `metadata.llmGate.providerCalls`, beside the totals
+in `metadata.llmGate.costAccounting`. This is the only place the evidence
+decisions between the diagnosis and the patch are itemized, because they leave
+no intervention. Each record carries its position, request ID, task kind, loop
+stage, whether it was an `exploration` or an ordinary `run` call, prompt
+version, provider and model, and its validation result with at most 16 issue
+codes. It also carries `reported`, the provider's own figures with `null`
+wherever the provider gave none, and `charged`, what the ledger put on the
+run's account, whose `tokens` and `cost` say whether each came from the report
+or from the reservation. A record never holds prompt text, response text, or a
+diagnostic message. The receipt lists at most 250 calls, and
+`metadata.llmGate.providerCallsOmitted` counts any beyond that.
 
 Evidence-guided Flow Bootstrap follows the same model. Its loop makes at most
 one decision per call its grant authorizes, and at most 64, with at most one
 more tool call than decisions. Each decision reserves the grant's total
 estimated cost divided by its calls. Underneath, the grant enforces its token
 and cost totals on every call, and the loop stops a repeated request or a
-repeated observation with no change in between. Bootstrap has no run ledger,
-so a bootstrap that runs out of the grant's tokens or money fails as a provider
-request failure rather than on a named budget code.
+repeated observation with no change in between. An unusable decision, or a
+completed plan that Core refuses, spends that decision and the loop asks again.
+Three such decisions in a row, or fewer when the loop allows fewer decisions,
+end creation as `flow_bootstrap.evidence_unusable_decision`.
+Bootstrap has no run ledger, so a bootstrap that runs out of the grant's tokens
+or money fails as a provider request failure rather than on a named budget
+code.
 
 The worst case for one recovery follows. The figures come from the run
 ledger's estimated-cost accounting and DeepSeek's peak prices of USD 0.44 per
@@ -814,8 +880,8 @@ and every authorization it still holds, before its lease ends:
 
 - the runtime session revoking it when the run ends;
 - its last authorized call completing;
-- a call that fails, is cancelled or aborted, or asks for a task kind outside
-  its entry point's list;
+- a call that fails in a way that ends the grant (see below), is cancelled from
+  outside, or asks for a task kind outside its entry point's list;
 - a call whose worst case would cross the grant's total estimated cost or run
   token budget;
 - the actor's identity session becoming invalid, which is checked on every
@@ -825,6 +891,75 @@ and every authorization it still holds, before its lease ends:
 - the key being disabled or changed, or the Flow's execution digest or settings
   revision changing;
 - revocation of the user or session, and service shutdown.
+
+### What a failed call does to its grant
+
+A failed provider call either ends the grant or only spends the call, and the
+failure's code decides which, never its message.
+`AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS`
+(`runtime/llm/failure-disposition.ts`) gives every provider failure code one
+meaning. It is a closed `Record` over the provider contract's codes, so a new
+code without a meaning does not compile.
+
+| Disposition | Codes | What happens |
+| --- | --- | --- |
+| Ends the grant: authorization or integrity | The 17 pre-send refusals (request built or configured wrongly, including a credential found in the outbound body); `llm.provider_secret_unavailable`, `llm.provider_auth_failed`, `llm.provider_redirect_rejected`; `llm.provider_aborted`; `llm.provider_usage_limit_exceeded` | The grant is revoked at once. |
+| Spends the call: the network or the model | `llm.provider_timeout`, `llm.provider_network_error`, `llm.provider_rate_limited`; `llm.provider_malformed_response`, `llm.provider_output_invalid`, `llm.provider_output_truncated`, `llm.provider_output_padding_truncated`, `llm.provider_response_oversize`, `llm.provider_usage_invalid` | The call is counted and charged its worst-case tokens, as a successful call would be charged, and the grant keeps its remaining calls. |
+| Spends the call only for a server error | `llm.provider_http_error` | A 5xx status spends the call. Any other status is the provider refusing the request, and ends the grant. |
+
+A spent call keeps the grant only when all of the following hold: the key had
+already been handed to the provider for that call, the grant is still the same
+claimed grant inside its lease, the call is still its current call, and the
+grant still validates afterwards. Anything that is not a typed provider failure,
+including the grant's own refusals, a Secret Keys error, and an untyped
+exception, has no code and ends the grant. A caller's deadline that ends a call
+already handed to the provider settles that call as spent; one that fires
+earlier, inside the grant's own authorization steps, ends the grant. Any other
+abort from the caller is a cancellation and ends the grant.
+
+### Repair targets and their refusals
+
+Every target override passes one check, whether it is saved as a proposal or
+run as a live patch (`checkRuntimeTargetOverride` in `runtime/live-patch.ts`).
+Core first aims the override at the node whose attempt failed. It replaces a
+different node the model named, and refuses the override when the failed node
+is not in the current Flow. The bound domain's `validateTargetOverrideEvidence`
+then judges the target against the evidence the model was shown. It receives
+the failed action's node ID, definition ID, and `outputId`. The `outputId` is
+the registered output the node dispatches: a policy action's
+`parameterValues.outputId`, or the `outputActionId` a Flow Bootstrap wrote into
+the node's metadata. It is absent where the Flow names neither. A recorded step
+is always a `builtin.policy.action` node, whatever its verb, so `outputId` is
+the only part of that identity that says which action failed. The domain may
+accept the target (`matched`) or return one exact replacement (`resolved`),
+which Core validates before using. Anything else refuses the override, and so
+does a host that binds no validator.
+
+A refusal carries its status, `absent` or `ambiguous`, and optionally a reason
+from Core's closed vocabulary,
+`AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS`. Core keeps a
+domain's reason only when it is one of these words and drops anything else, so
+a domain's own text never reaches an issue a person reads.
+
+| Reason | Meaning |
+| --- | --- |
+| `action_not_repairable` | The failed action offers nothing a repair may re-point. |
+| `parameter_not_offered` | The target names a parameter the failed action does not offer. |
+| `parameter_missing` | The target leaves a required parameter unnamed. |
+| `target_malformed` | The target is not a map of parameters to handles. |
+| `handle_not_issued` | A handle is not one the evidence issued, and nothing else in it could stand in. |
+| `handle_incompatible` | A handle names something the failed action cannot use, and nothing else in the evidence could stand in. |
+| `handle_ambiguous` | A handle names more than one thing in the evidence. |
+| `no_compatible_element` | Nothing in the evidence could fill a parameter. |
+| `evidence_unrecognized` | The evidence is not a packet the domain issued. |
+| `domain_check_unavailable` | Core's own: no domain check is bound to judge the target. |
+
+The refused patch's preflight issue states the status and then, when there is
+one, the reason's meaning and its code. The patch result keeps the refusal as
+`metadata.targetOverrideRefusal`, and the run detail records every patch
+attempt, refused ones included, in `metadata.runtimePatchAttempts`, each with
+its `targetOverrideRefusal`. A refused override creates neither an adaptation
+nor a change proposal.
 
 ## Canonical Node Definition Foundation
 

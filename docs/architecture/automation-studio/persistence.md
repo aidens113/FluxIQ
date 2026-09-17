@@ -410,8 +410,24 @@ the full trace.
 Runtime run detail also carries compact adaptive metrics in metadata: LLM call
 count, token/cost totals, recovery attempts, adaptation application count,
 durable behavior-change signal, and deterministic success after adaptation.
+A run the model was asked about also carries `metadata.llmGate`. It holds the
+run ledger's totals in `costAccounting` and one record per provider call in
+`providerCalls`, with `providerCallsOmitted` counting any past the 250-record
+limit. Each record holds identifiers, codes, and numbers only: the call's task
+kind, stage and prompt version, its validation result, the usage the provider
+reported, and what the ledger charged
+([Iterating adaptations and their bounds](../automation-studio.md#iterating-adaptations-and-their-bounds)).
 If a run detail file is missing after a partial write, the service rebuilds and
-re-saves it from the durable runtime session record before returning it.
+re-saves it from the durable runtime session record before returning it. Every
+run-detail save is serialized per run and merged onto the detail already
+stored (`runtime/service/summaries/run-detail-merge.ts`). The incoming detail
+wins for each key it carries. A stored key it does not carry is kept, unless it
+is one the session projection or the stores recompute. Collections merge by
+record ID. So a detail rebuilt from the bare session never removes what the
+recovery annotation recorded, such as `llmGate`, the adaptation context, or
+patch attempts. When the typed store is in use the legacy run index is always
+empty, and only a session with no stored detail at all is rebuilt; an index
+that is present but unreadable is an error, not a reason to rebuild.
 Runtime runs accept idempotency keys so duplicate callers receive the same run
 record, and adaptive execution allows only one active adaptive run per project.
 `cancel-runtime-session` aborts an in-process executor signal when available
@@ -437,6 +453,23 @@ summary index together. Application records live in adaptation metadata with
 the applied patches, actor/reason when available, and a reversible marker.
 Revert changes the adaptation lifecycle to `reverted`; it does not require
 manual Flow JSON edits.
+
+With project storage, adaptations live in the typed `adaptations` table
+(`storage/project/adaptation-store.ts`), and review tries that store first.
+`applyApprovedAdaptation` requires the caller's promotion gates as
+`promotionGates` and refuses to apply without a pass, recording a
+`policy_blocked` audit event; a stale base records `stale_base`, and a failed
+apply records `apply_failed`
+([the gates](../automation-studio.md#llm-assisted-deterministic-automation)
+are described with adaptations). An apply is one graph patch. It writes each
+changed node's whole parameter map and stamps the node with the adaptation ID.
+The inverse patch stored as the `rollback` artifact restores both exactly, so a
+revert removes the stamp too. An action-target repair is written where the node
+reads its target: `parameterValues.target` for a native node, and
+`parameterValues.parameters.target` for a recorded step, whose
+`builtin.policy.action` node dispatches only its `parameters` payload. The
+store's `listAdaptationsPage` can filter by `failureSignature` and
+`confidenceTier` in SQL.
 
 `export-flow-run-audit` returns the selected run detail, compact intervention
 summaries, referenced adaptation records, patch evidence, mutation
@@ -862,6 +895,33 @@ before producing a summary event. Whenever a detail is normalized for
 persistence, its summary collection counts are refreshed from the detail's
 authoritative collections; `adaptationCount` is the number of unique
 `adaptationIds`, including adaptations created as manual-review proposals.
+
+## Adaptation Matching Migration
+
+Project migration `0020_adaptation_matching_columns`
+(`storage/project/schema/adaptation-matching.ts`) adds three typed columns to
+`adaptations`, so a change can be matched to the failure it answers without
+reading its JSON detail:
+
+| Column | Values | Derived from |
+| --- | --- | --- |
+| `failure_signature` | 1 to 512 characters, or null | `metadata.failureSignature`, which live patches write, otherwise the change origin's signature (never an `instruction` origin's). A value the column cannot hold is left null rather than failing the write. |
+| `confidence_tier` | `unverified`, `provisional`, `established` | The saved validation results and risk, decided on every write and never copied from a stored tier. |
+| `origin_entry_point` | `instruction`, `run_failure`, `edge_case`, or null | The change origin, read only through its strict parser. |
+
+Every write this store makes recomputes all three from the saved record, so
+they cannot drift from it. The migration also adds an index on
+`(flow_id, failure_signature, updated_at_ms desc, adaptation_id desc)`, and a
+partial index over rows whose tier is null. Every column is nullable with no
+default, and the migration rewrites no row. Every store write sets a tier, so
+a null tier marks a row written before the migration. Opening the adaptation
+store maps those rows in batches of 200 through the partial index. A row whose
+saved detail no longer parses maps to no signature, no entry point, and
+`unverified`. The migration runner applies only the migrations a build knows,
+and the 0.5.0 store names its insert columns and maps rows by column name. So
+an older build keeps working on a migrated database. A row it inserts is mapped
+on the next open. A row it updates keeps the columns it had until this store
+writes that row again.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer

@@ -105,9 +105,14 @@ commercial contract templates remain separate owner-controlled release work.
 
 No export was removed, but several host-facing types gain required fields,
 several published numbers move, and much of what a failed run does next
-changes without any host opt-in. None of it is forward-only: no table, stored
-record or file changes shape, nothing is rewritten on load, and records written
-by 0.5.0 are read as they are. Read the whole entry if a host:
+changes without any host opt-in. One table changes shape. Project migration
+`0020_adaptation_matching_columns` adds three nullable columns and two indexes
+to `adaptations`. Opening the adaptation store fills those columns for rows
+that have none. Nothing else is rewritten on load, no stored record or file
+changes shape, and records written by 0.5.0 are read as they are. A 0.5.0
+build keeps working on a migrated database: its migration runner applies only
+the migrations it knows, and its adaptation store names the columns it
+inserts. Read the whole entry if a host:
 - registers its own endpoints on `GlobalProgramApiRegistry`, or constructs the
   registry itself;
 - calls `delete-run-datasets`, or the Identity Access user, session, TOTP or
@@ -195,6 +200,12 @@ its evidence, plus any resolution the domain adds.
 - `validateTargetOverrideEvidence`, on the binding and on
   `AutomationStudioRuntimePatchExecutionInput`, receives the new shape. A
   domain that checked selectors must resolve its handles instead.
+- It now judges every target override, executed ones included, and a host that
+  binds none has every target override refused, with the reason
+  `domain_check_unavailable`. Its failed-action argument gains an optional
+  `outputId`. A refusal may name a `reason` from
+  `AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS`, and Core drops
+  any other reason.
 
 **A grant's purpose no longer fixes its call count.**
 - **Backstop.** `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS` is now 64,
@@ -244,7 +255,9 @@ resolver must handle it.
 - **No exemption.** Unlike `diagnose_and_adapt`, it gets no target-override
   exemption, and its patches are not proposal-only.
 - **Patches run live.** Each patch the Flow's policy permits is run on a patched
-  copy of the Flow with the run's own graph options, for at most 50 steps.
+  copy of the Flow with the run's own graph options, for at most 50 steps. A
+  target override also needs the domain's `validateTargetOverrideEvidence` to
+  accept it.
 - **Side effects.** A side-effecting patch is refused where the policy disallows
   external side effects or requires approval for them, because an explicit run
   never carries that approval. A policy that allows them without approval lets
@@ -338,12 +351,30 @@ a grant.
 - **Types.** `AutomationStudioRuntimePatchExecutionResult` gains `verification`.
   `adaptationFromRuntimePatch` takes an `AutomationStudioRuntimePatchVerification`
   where it took `restoredExpectedState: boolean`.
-- **Applying.** An adaptation now needs a succeeded validation result, or an
-  `approved` audit event by a named actor other than `runtime`. A `validated`
-  status alone used to be enough.
-- **Old records.** Adaptations saved by 0.5.0 are not rewritten. One that 0.5.0
-  validated on a proposal-only check, or on a rerun with nothing to compare,
-  still carries its succeeded validation result and can still be applied.
+- **Applying.** An adaptation now needs a succeeded trial or replay, or a named
+  reviewer's approval. A `validated` status alone used to be enough. A
+  validation result with no `kind` counts as a trial, and a result of any other
+  kind counts for nothing. The reviewer is read from `metadata.review.approvedBy`,
+  which an approval by a named actor other than `runtime` now writes. The typed
+  store also accepts the latest such `approved` audit event. An approval never
+  outweighs a failure: while the latest counted trial or replay is a failure,
+  the adaptation cannot be applied.
+- **The typed store needs the gates.**
+  `AutomationStudioProjectAdaptationStore.applyApprovedAdaptation` takes a
+  required `promotionGates`; pass `evaluateFlowAdaptationPromotionGates`. A call
+  without it does not compile. Missing gates, gates that throw, or an
+  inconsistent verdict refuse the apply and record a `policy_blocked` audit
+  event.
+- **A repaired recorded step acts on the repair.** An applied action-target
+  repair of a `builtin.policy.action` node is written to
+  `parameterValues.parameters.target`, the payload the step dispatches. It used
+  to be written beside the payload, where the step never read it. A step whose
+  payload is not a plain object is refused.
+- **Old records.** The saved detail of an adaptation from 0.5.0 is not
+  rewritten; only its three new columns are filled. One that 0.5.0 validated on
+  a proposal-only check, or on a rerun with nothing to compare, still carries
+  its succeeded validation result, which counts as a trial, and can still be
+  applied.
 
 **`edit_recovery` adaptations are refused.** Applying one used to report
 success and change nothing. It now throws "Adaptation patch edit_recovery has
