@@ -11,26 +11,25 @@
 // - An expected route that repeats the route the failure already took is not
 //   evidence: matching it again would mean reproducing the failure.
 // - A changed node that saves records is checked against what it captured.
+//
+// What the trial proved and whether the run may continue are two questions. The
+// second is `resume.ts`, decided from these checks and never from the outcome
+// below, so a verdict can know where a run got to without claiming it may go on
+// from there: every outcome carries its resume point, and only `resumable` says
+// the run may take it.
 import type { AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeValidationKind } from "../../model/index.ts";
-import type {
-  AutomationStudioChangeResumePoint,
-  AutomationStudioChangeVerdict,
-  AutomationStudioChangeVerdictAttempt,
-  AutomationStudioChangeVerdictCheck,
-  AutomationStudioChangeVerdictEvidenceKind,
-  AutomationStudioChangeVerdictInput
+import {
+  AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
+  type AutomationStudioChangeResumePoint,
+  type AutomationStudioChangeVerdict,
+  type AutomationStudioChangeVerdictAttempt,
+  type AutomationStudioChangeVerdictCheck,
+  type AutomationStudioChangeVerdictEvidenceKind,
+  type AutomationStudioChangeVerdictInput
 } from "./contracts.ts";
+import { decideAutomationStudioChangeResume } from "./resume.ts";
 
-export const AUTOMATION_STUDIO_CHANGE_VERDICT_SCHEMA_VERSION = "automation-studio.change-verdict.v1" as const;
-
-/** The evidence kinds, in the order a verdict's `basis` lists them. */
-export const AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS: readonly AutomationStudioChangeVerdictEvidenceKind[] = Object.freeze([
-  "expected_state",
-  "expected_route",
-  "expected_outputs",
-  "records",
-  "downstream_assertion"
-]);
+export const AUTOMATION_STUDIO_CHANGE_VERDICT_SCHEMA_VERSION = "automation-studio.change-verdict.v2" as const;
 
 /** The route the executor follows when a succeeded attempt names none. */
 const DEFAULT_SUCCESS_ROUTE = "success";
@@ -62,21 +61,26 @@ export function decideAutomationStudioChangeVerdict(input: AutomationStudioChang
   const continuation = continuationCheck(input, changed);
   checks.push(continuation.check);
 
+  // Every outcome below carries the continuation's resume point when it has
+  // one. Where the run got to is a fact the trial observed, and withholding it
+  // from an unproved change would leave a well-defined continuation with
+  // nowhere to continue from.
+  const resumeFrom = continuation.resumeFrom;
   const failedKinds = unique(checks.filter((check) => check.status === "failed").map((check) => check.kind));
   if (failedKinds.length) {
-    return verdict("contradicted", [], checks, `The trial contradicted the change: ${failedKinds.join(", ")} failed.`);
+    return verdict("contradicted", [], checks, `The trial contradicted the change: ${failedKinds.join(", ")} failed.`, resumeFrom);
   }
   const changedNodesSucceeded = checks
     .filter((check) => check.kind === "changed_node_succeeded")
     .every((check) => check.status === "passed");
   const basis = AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS.filter((kind) => checks.some((check) => check.kind === kind && check.status === "passed"));
   if (!changedNodesSucceeded) {
-    return verdict("unverifiable", [], checks, "A changed node did not finish in the trial, so the change is neither proved nor contradicted.");
+    return verdict("unverifiable", [], checks, "A changed node did not finish in the trial, so the change is neither proved nor contradicted.", resumeFrom);
   }
   if (!basis.length) {
-    return verdict("unverifiable", [], checks, "The changed nodes succeeded, but nothing they declared or a later verification observed proves the change.");
+    return verdict("unverifiable", [], checks, "The changed nodes succeeded, but nothing they declared or a later verification observed proves the change.", resumeFrom);
   }
-  return verdict("verified", basis, checks, `The trial verified the change by ${basis.join(", ")}.`, continuation.resumeFrom);
+  return verdict("verified", basis, checks, `The trial verified the change by ${basis.join(", ")}.`, resumeFrom);
 }
 
 /**
@@ -105,11 +109,14 @@ function verdict(
   reason: string,
   resumeFrom?: AutomationStudioChangeResumePoint
 ): AutomationStudioChangeVerdict {
+  const resume = decideAutomationStudioChangeResume({ checks, ...(resumeFrom ? { resumeFrom } : {}) });
   return {
     schemaVersion: AUTOMATION_STUDIO_CHANGE_VERDICT_SCHEMA_VERSION,
     outcome,
     basis,
     checks,
+    resumable: resume.resumable,
+    ...(resume.code ? { notResumableCode: resume.code } : {}),
     ...(resumeFrom ? { resumeFrom } : {}),
     reason
   };
@@ -156,6 +163,13 @@ function expectedOutputsCheck(nodeId: string, succeeded: readonly AutomationStud
 // Each attempt is held to its own minimum, since a node that saves records
 // declares what one extraction must capture. Rows captured by no attempt prove
 // nothing, even when the node allows none.
+//
+// Nothing writes a minimum yet: the trial's `capturedRecords` reports only what
+// an attempt stored, and the declared minimum arrives with extraction. Until it
+// does, rows alone still prove the change enough for `basis` — they are a real
+// observation — but the check says so in its code, and the resume decision
+// reads that code as unknown. An inert seam must never read as a pass to the
+// question "is it safe to carry on?".
 function recordsCheck(nodeId: string, succeeded: readonly AutomationStudioChangeVerdictAttempt[]): AutomationStudioChangeVerdictCheck | undefined {
   const saving = succeeded.flatMap((attempt) => attempt.records ? [attempt.records] : []);
   if (!saving.length) return undefined;
@@ -164,6 +178,7 @@ function recordsCheck(nodeId: string, succeeded: readonly AutomationStudioChange
   }
   if (saving.some((records) => records.captured < (records.minimum ?? 0))) return check("records", "failed", nodeId, "records_below_minimum");
   if (saving.every((records) => records.captured === 0)) return check("records", "unknown", nodeId, "records_none_captured");
+  if (saving.some((records) => records.minimum === undefined)) return check("records", "passed", nodeId, "records_minimum_undeclared");
   return check("records", "passed", nodeId);
 }
 
@@ -184,6 +199,11 @@ function downstreamAssertionChecks(attempts: readonly AutomationStudioChangeVerd
 // changed node took. With no next attempt, a succeeded run finished, and a run
 // that failed on the changed node itself had no edge for its route. A run
 // stopped anywhere else (a step budget, a cancel) proves nothing either way.
+//
+// The resume point names the Subflow the trial ran in, when it ran in one: a
+// node id is only unique within the graph it belongs to, and a Subflow keeps
+// its own, so a continuation inside a Subflow that named only a node id would
+// read as a node of the parent Flow.
 function continuationCheck(input: AutomationStudioChangeVerdictInput, changed: ReadonlySet<string>): { check: AutomationStudioChangeVerdictCheck; resumeFrom?: AutomationStudioChangeResumePoint } {
   const attempts = input.attempts;
   let lastIndex = -1;
@@ -192,10 +212,11 @@ function continuationCheck(input: AutomationStudioChangeVerdictInput, changed: R
   });
   const last = attempts[lastIndex]!;
   if (last.status !== "succeeded") return { check: check("continuation", "not_applicable", last.nodeId, "changed_node_not_succeeded") };
+  const inSubflow = input.subflowId !== undefined && input.subflowId !== "" ? { subflowId: input.subflowId } : {};
   const route = last.route ?? DEFAULT_SUCCESS_ROUTE;
   const next = attempts[lastIndex + 1];
-  if (next) return { check: check("continuation", "passed", last.nodeId), resumeFrom: { nodeId: next.nodeId, route } };
-  if (input.runStatus === "succeeded") return { check: check("continuation", "passed", last.nodeId), resumeFrom: { completed: true } };
+  if (next) return { check: check("continuation", "passed", last.nodeId), resumeFrom: { nodeId: next.nodeId, route, ...inSubflow } };
+  if (input.runStatus === "succeeded") return { check: check("continuation", "passed", last.nodeId), resumeFrom: { completed: true, ...inSubflow } };
   if (input.runStatus === "failed" && input.endNodeId === last.nodeId) return { check: check("continuation", "failed", last.nodeId, "continuation_route_unwired") };
   return { check: check("continuation", "unknown", last.nodeId, "continuation_incomplete") };
 }

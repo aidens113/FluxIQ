@@ -1,6 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
-  AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES,
   type AutomationStudioFlowAdaptation,
   type AutomationStudioFlowArtifact,
   type AutomationStudioFlowRouter,
@@ -8,6 +7,7 @@ import {
   validateAutomationStudioFlow
 } from "../../../model/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore, AutomationStudioFlowWriter } from "../flows/index.ts";
+import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "./gates.ts";
 import { assertFlowValidationOk, durableAdaptationMutationRecord, type AutomationStudioAdaptationPatches } from "./patches.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { mapWithConcurrency, uniqueStrings, upsertBy } from "../collections.ts";
