@@ -145,15 +145,16 @@ export { automationStudioExploredEvidenceHandle } from "../../llm/index.ts";
 export async function runAutomationStudioRecoveryExploration(
   input: AutomationStudioRecoveryExplorationInput
 ): Promise<AutomationStudioRecoveryExplorationResult> {
-  const registryLoop = automationStudioHarnessOptionRegistry({ binding: input.binding }).evidenceLoopBinding(
+  const binding = explorationRegistryBinding(input.binding);
+  const registryLoop = automationStudioHarnessOptionRegistry({ binding }).evidenceLoopBinding(
     { projectId: input.context.projectId, flowId: input.context.flowId, runId: input.context.runId },
     { scope: input.scope, stage: "gather", policy: input.policy }
   );
   // Only the bound domain's own options issue packets whose handles its target
   // check can resolve. Core's neutral options may return evidence too; it is
   // not a page, and carrying it to the patch would cost bytes and name nothing.
-  const domainToolIds = new Set(input.binding.tools.map((tool) => tool.toolId));
-  if (input.binding.harnessOptions) for (const option of input.binding.harnessOptions.options) domainToolIds.add(option.toolId);
+  const domainToolIds = new Set(binding.tools.map((tool) => tool.toolId));
+  if (binding.harnessOptions) for (const option of binding.harnessOptions.options) domainToolIds.add(option.toolId);
   const returned: Array<{ callId: string; toolId: string; packet: JsonObject }> = [];
   const loop: AutomationStudioHarnessOptionLoopBinding = {
     tools: registryLoop.tools,
@@ -202,6 +203,42 @@ export async function runAutomationStudioRecoveryExploration(
     .filter((entry) => accepted.has(entry.callId))
     .map((entry, index) => ({ evidenceId: automationStudioExploredEvidenceLabel(index + 1), toolId: entry.toolId, packet: entry.packet }));
   return { exploration: ended, explored };
+}
+
+/**
+ * The binding the recovery's registry is built from: the domain's declared
+ * options alone, when it declares any.
+ *
+ * A domain's plain `tools` are the set it authored a Flow with. They carry no
+ * stage of their own, and the registry offers an unpinned option at every
+ * stage, so they were offered to a recovery at `gather` beside the options the
+ * domain had pinned there. Two things follow, and the second is the serious
+ * one. The design's "detection is not offered during a recovery" was not
+ * literally true; and an authoring tool binds its targets through the
+ * *authoring* packet map, so a handle the model took from a `recovery` packet
+ * could resolve against an older authoring packet of the same Flow whenever
+ * the location and the selector still matched. Their descriptions also cost
+ * input bytes on every decision the recovery pays for.
+ *
+ * So a domain that declares recovery options explores with exactly those. A
+ * domain that binds only the plain slot has nothing else to explore with and
+ * keeps them, which is the whole of what a tools-only host had before.
+ *
+ * Written field by field rather than spread from the binding: a host may bind
+ * an object whose `executeTool` is a prototype method, and a spread would hand
+ * the registry a copy without it. Only the fields the registry reads are
+ * carried; the exploration reads `classifyRefusal` and `deniedEvidenceKeys`
+ * from the binding the caller passed, never from this view.
+ */
+function explorationRegistryBinding(binding: AutomationStudioLlmEvidenceRuntimeBinding): AutomationStudioLlmEvidenceRuntimeBinding {
+  if (!binding.harnessOptions?.options.length) return binding;
+  return {
+    domainId: binding.domainId,
+    deniedEvidenceKeys: binding.deniedEvidenceKeys,
+    tools: [],
+    harnessOptions: binding.harnessOptions,
+    executeTool: (call) => binding.executeTool(call)
+  };
 }
 
 /** The packet an option returned, when what it returned is one: a JSON object that names its schema. */

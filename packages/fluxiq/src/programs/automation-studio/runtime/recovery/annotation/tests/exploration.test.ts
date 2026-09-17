@@ -5,6 +5,7 @@ import {
   AutomationStudioLlmRunBudgetLedger,
   automationStudioExploredEvidenceLabel,
   type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmProvider
 } from "../../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../context.ts";
@@ -101,6 +102,56 @@ describe("runAutomationStudioRecoveryExploration", () => {
     expect(exploration.outcome).toBe("failed");
   });
 
+  // A domain's plain `tools` are its authoring set: they carry no stage, so the
+  // registry would offer them at `gather` too. They bind targets through the
+  // authoring packet map, so a handle the model copied from a recovery packet
+  // could resolve against an older authoring packet. A domain that declares
+  // recovery options explores with exactly those.
+  it("offers exactly the domain's declared options, never its plain authoring tools", async () => {
+    const calls: string[] = [];
+    const offered: string[][] = [];
+    const declared = pagesBinding(calls, { "test.inspect": { schemaVersion: "test.page.v1" }, "test.reveal": { schemaVersion: "test.page.v1" } });
+    const { exploration } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: {
+        ...declared,
+        tools: [plainTool("test.authoring.inspect"), plainTool("test.authoring.navigate")],
+        executeTool: async (call) => { calls.push(`plain:${call.toolId}`); return { schemaVersion: "test.page.v1" }; }
+      },
+      provider: recordingProvider(calls, offered, ["test.inspect"]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(exploration.outcome).toBe("evidence_gathered");
+    expect(offered.length).toBeGreaterThan(0);
+    for (const toolIds of offered) expect([...toolIds].sort()).toEqual(declared.harnessOptions!.options.map((option) => option.toolId).sort());
+    expect(calls.filter((call) => call.startsWith("plain:"))).toEqual([]);
+  });
+
+  // The fallback: a domain that binds only the plain slot has nothing else to
+  // explore with, so those tools stay reachable during a recovery.
+  it("still explores with a tools-only binding's plain tools", async () => {
+    const calls: string[] = [];
+    const offered: string[][] = [];
+    const page = { schemaVersion: "test.page.v1", controls: ["candidate.1"] };
+    const { exploration, explored } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: {
+        domainId: "test.domain",
+        deniedEvidenceKeys: [],
+        tools: [plainTool("test.inspect")],
+        executeTool: async (call) => { calls.push(`plain:${call.toolId}`); return page; }
+      },
+      provider: recordingProvider(calls, offered, ["test.inspect"]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(calls).toEqual(["provider", "plain:test.inspect", "provider"]);
+    expect(offered).toEqual([["test.inspect"], ["test.inspect"]]);
+    expect(exploration.outcome).toBe("evidence_gathered");
+    expect(explored).toEqual([{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "test.inspect", packet: page }]);
+  });
+
   it("returns no packet the loop refused, and none when the exploration never ran", async () => {
     const calls: string[] = [];
     const oversized = { schemaVersion: "test.page.v1", text: "x".repeat(5_000) };
@@ -163,6 +214,23 @@ function sequenceProvider(calls: string[], toolIds: string[]): AutomationStudioL
         ? { kind: "tool_call" as const, callId: `call.${iteration}`, toolId, input: {} }
         : { kind: "complete" as const, result: { findings: "The control is behind the disclosure." } };
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision } };
+    }
+  };
+}
+
+/** A bare tool in the plain slot: no stage and no availability of its own. */
+function plainTool(toolId: string): AutomationStudioLlmEvidenceTool {
+  return { toolId, description: `Return ${toolId}.`, inputSchema: { type: "object", additionalProperties: false, properties: {} }, effect: "observe" };
+}
+
+/** `sequenceProvider`, also recording the tool ids each request offered. */
+function recordingProvider(calls: string[], offered: string[][], toolIds: string[]): AutomationStudioLlmProvider {
+  const sequence = sequenceProvider(calls, toolIds);
+  return {
+    ...sequence,
+    runTask: async (request, execution) => {
+      offered.push((request.context.evidenceLoop?.tools ?? []).map((tool) => tool.toolId));
+      return await sequence.runTask(request, execution);
     }
   };
 }
