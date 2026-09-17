@@ -2,6 +2,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
@@ -225,7 +226,8 @@ async function executeAutomationStudioGraph(
         (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding, runState),
         remainingMs,
         options.signal,
-        () => ({ attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })
+        // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
+        () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })
       );
     const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(currentNode, attempt) } : attempt;
     const attemptIndex = attempts.length;

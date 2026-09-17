@@ -512,3 +512,47 @@ describe("captured rows carried through a run variable", () => {
     expect(JSON.stringify(saved)).not.toContain(EXCLUDED_NOTE);
   });
 });
+
+// A region timeout ends a node's attempt without the node ever returning one,
+// so the run builds that attempt itself. A replay that times out on an adapted
+// node must still name the adaptations it exercised, or its failure is never
+// recorded against them.
+describe("an attempt a region timeout ends", () => {
+  const ADAPTATION_IDS = ["adaptation.run-1.retarget.1", "adaptation.bootstrap.0"];
+  const regionFlow = (metadata?: AutomationStudioFlowNode["metadata"]): AutomationStudioFlowDocument => ({
+    ...authoredFlow,
+    flowId: "flow.region-timeout",
+    nodes: [{ ...authoredFlow.nodes[0]!, ...(metadata ? { metadata } : {}) }]
+  });
+  const inRegion = (timeoutMs: number, signal?: AbortSignal): AutomationStudioGraphExecutionOptions => ({
+    // The node never answers, so only the region can end its attempt.
+    effectDispatcher: () => new Promise(() => undefined),
+    regionRuntime: { regions: [{ id: "region.slow", timeoutMs }], handoffs: [], nodeRegionIds: { output: "region.slow" } },
+    ...(signal ? { signal } : {})
+  });
+
+  it("names the adapted node's adaptations when the region times out", async () => {
+    const trace = await runAutomationStudioGraph(regionFlow({ adaptationIds: ADAPTATION_IDS }), inRegion(20));
+
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts).toHaveLength(1);
+    expect(trace.attempts[0]).toMatchObject({ nodeId: "output", status: "failed", regionId: "region.slow", message: "Region region.slow exceeded its 20ms timeout.", adaptationIds: ADAPTATION_IDS });
+  });
+
+  it("names them when the run is cancelled while the region waits", async () => {
+    const controller = new AbortController();
+    const running = runAutomationStudioGraph(regionFlow({ adaptationIds: ADAPTATION_IDS }), inRegion(60_000, controller.signal));
+    setTimeout(() => controller.abort(), 10);
+    const trace = await running;
+
+    expect(trace.status).toBe("cancelled");
+    expect(trace.attempts[0]).toMatchObject({ nodeId: "output", status: "cancelled", adaptationIds: ADAPTATION_IDS });
+  });
+
+  it("names nothing when the timed-out node carries no adaptations", async () => {
+    const trace = await runAutomationStudioGraph(regionFlow(), inRegion(20));
+
+    expect(trace.attempts[0]).toMatchObject({ nodeId: "output", status: "failed" });
+    expect(trace.attempts[0]).not.toHaveProperty("adaptationIds");
+  });
+});

@@ -245,7 +245,6 @@ import {
   AutomationStudioServiceIndexes,
   emptyFlowAdaptationIndex,
   emptyFlowRunIndex,
-  emptyFlowSubflowIndex,
   projectArtifactDocumentFileName,
   type AutomationStudioAdaptationPolicySummary,
   type AutomationStudioAdaptationSummary,
@@ -265,6 +264,7 @@ import {
   type RecordingIndex,
   type RuntimeIndex,
 } from "./service/index.ts";
+import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
 export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
 export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
 export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
@@ -2820,16 +2820,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const metadata = mergedFlowSettingsMetadata(input.flow.metadata);
     const settings = trainingModeSettingsFromMetadata(metadata);
     const policy = adaptationPolicyFromFlowMetadata(input.flow, metadata);
-    const recentRuns = await this.listFlowRunSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.runs.filter((run) => run.runId !== input.currentRunId)).catch(() => []);
-    const recentAdaptations = await this.listFlowAdaptationSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.adaptations).catch(() => []);
+    // Each history read below propagates its failure, which fails the run's start. Read as empty, a failed read
+    // would reset the training budget and the stability score, and hide every known adaptation from the gate.
+    const recentRuns = await this.listFlowRunSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.runs.filter((run) => run.runId !== input.currentRunId));
+    const recentAdaptations = await this.listFlowAdaptationSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.adaptations);
     const metrics = computeAutomationStudioStabilityMetrics({ runs: recentRuns, adaptations: recentAdaptations, now: Date.now() });
     const budgetState = runtimeTrainingBudgetStateFromSummaries(recentRuns);
     const behavior = behaviorForAutomationStudioTrainingMode(settings, recentRuns.length, metrics.stabilityScore);
     const budgetDecision = decideAutomationStudioTrainingBudget(settings, budgetState);
     const diagnostics = runtimeAdaptationContextDiagnostics(settings, policy, behavior, budgetDecision);
     // Summaries carry no failed action, so the records themselves are loaded: a
-    // classifier given no adaptations can never match one.
-    const knownAdaptations = (await Promise.all(recentAdaptations.slice(0, AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT).map((summary) => this.getFlowAdaptation(input.projectId, summary.flowId, summary.adaptationId).catch(() => null)))).filter((adaptation): adaptation is AutomationStudioFlowAdaptation => Boolean(adaptation));
+    // classifier given no adaptations can never match one. Only an absent record is skipped.
+    const knownAdaptations = (await Promise.all(recentAdaptations.slice(0, AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT).map((summary) => this.getFlowAdaptation(input.projectId, summary.flowId, summary.adaptationId)))).filter((adaptation): adaptation is AutomationStudioFlowAdaptation => Boolean(adaptation));
     return {
       projectId: input.projectId,
       flowId: input.flow.flowId,
@@ -3536,21 +3538,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return typeof stored.proposalId === "string" ? stored as unknown as AutomationStudioFlowChangeProposal : null;
   }
 
+  // Strict at every step: a store that fails is an error, never "not held" (see service/run-detail-read).
   async getFlowRunDetail(projectId: string, runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
     await this.projects.findProject(projectId);
-    const typed = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId, options));
-    if (typed) return typed;
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).read();
-    if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
-    const session = await this.getRuntimeSession(projectId, runId);
-    if (!session) return null;
-    return await this.saveFlowRunDetail({
-      ...runtimeSessionToFlowRunDetail(session, projectId),
-      metadata: {
-        ...(session.metadata ?? {}),
-        partialWriteRecovery: { recoveredAt: Date.now(), source: "runtime-session" }
-      }
-    });
+    const access = { pool: this.runtimeProjectDatabasePool, root: this.projectPaths.root, flowPaths: this.flowPaths };
+    return await readAutomationStudioFlowRunDetail({ ...access, getRuntimeSession: (sessionProjectId, sessionRunId) => this.getRuntimeSession(sessionProjectId, sessionRunId), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail) }, projectId, runId, options);
   }
 
   async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown; cursor?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
@@ -4776,7 +4768,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async withCanonicalFlowHierarchySubflows(projectId: string, flows: AutomationStudioFlowSummary[]): Promise<AutomationStudioFlowSummary[]> {
-    const index = await this.indexes.readFlowSubflowIndex(projectId).catch(() => emptyFlowSubflowIndex());
+    // Only a missing index reads as empty; an unreadable one fails the listing.
+    const index = await this.indexes.readFlowSubflowIndex(projectId);
     const byFlowId = new Map<string, AutomationStudioSubflowSummary[]>();
     for (const subflow of index.subflows ?? []) {
       if (!subflow.flowId) continue;
