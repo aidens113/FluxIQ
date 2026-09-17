@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../model/index.ts";
+import { compareAutomationStudioTransition } from "../executor.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../executor.ts";
 import type { AutomationStudioRuntimePatch } from "../llm/index.ts";
 import { adaptationFromRuntimePatch, executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../live-patch.ts";
@@ -318,6 +319,47 @@ describe("Automation Studio live patch testing", () => {
     expect(result.adaptation).toMatchObject({ status: "rejected", validationResults: [{ status: "failed" }] });
   });
 
+  // Phase 2.4 step 1: the reported defect, built the way the run builds it. The
+  // failed node declares no expectation of its own, so
+  // `expectedTransitionForNode` fills the expected route with `failed`,
+  // inherited from the failed attempt itself. The patched trial then succeeds
+  // while taking that same `failed` route, and declares no expected outputs.
+  // Re-taking the route the failure already took is not evidence the failure is
+  // gone, so this must not report restored expected state, and must not mint a
+  // validated adaptation off the back of it.
+  it("does not report restored state when the patched run re-takes the route the failure took", async () => {
+    const flow = recoveryRouteFlowFixture();
+    const attempt = recoveryFailedAttempt();
+    const comparison = compareAutomationStudioTransition(flow.nodes[0]!, attempt);
+
+    // The comparison as the run made it: the route inherited from the failure,
+    // and nothing else to compare.
+    expect(comparison.expected.expectedRoute).toBe("failed");
+    expect(comparison.expected.expectedOutputs).toBeUndefined();
+
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: flow.flowId,
+      runId: "run.failed",
+      flow,
+      failedAttempt: { ...attempt, transitionComparison: comparison },
+      patch: { kind: "temporary_wait_retry", targetNodeId: "recover", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: comparison,
+      policy: repairPolicy(),
+      now: () => 30
+    });
+
+    // The trial succeeded, and the changed node really did take `failed` again.
+    expect(result.trace?.status).toBe("succeeded");
+    expect(result.trace?.attempts[0]).toMatchObject({ nodeId: "recover", status: "succeeded", route: "failed" });
+
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.retryOriginalAction).toBe(false);
+    expect(result.verification).toEqual({ status: "unverifiable", reason: "expectation_empty" });
+    expect(result.adaptation?.status).toBe("testing");
+    expect(result.adaptation).not.toHaveProperty("validationResults");
+  });
+
   it("verifies a rerun that produced the declared expected outputs", async () => {
     const result = await executeAutomationStudioRuntimePatch({
       projectId: "project.patch",
@@ -493,6 +535,47 @@ function failedAttempt(): AutomationStudioNodeAttemptTrace {
     attemptId: "constant.attempt.1",
     nodeId: "constant",
     definitionId: "builtin.data.constant",
+    startedAt: 1,
+    finishedAt: 2,
+    status: "failed",
+    route: "failed",
+    inputs: {},
+    outputs: {},
+    effects: [],
+    message: "Expected value was not observed."
+  };
+}
+
+/**
+ * A Flow whose first node succeeds while taking the `failed` route: Recovery
+ * with the `abort` strategy returns `status: "success", route: "failed"`. It is
+ * the case where "the run took the route it was expected to take" and "the
+ * failure happened again" are the same observation.
+ */
+function recoveryRouteFlowFixture(): AutomationStudioFlowDocument {
+  return {
+    schemaVersion: "0.1",
+    flowId: "flow.patch",
+    ownerKind: "routine",
+    ownerId: "routine.patch",
+    name: "Patch Flow",
+    createdAt: 1,
+    updatedAt: 1,
+    nodes: [
+      { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "abort" } },
+      { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+    ],
+    edges: [
+      { id: "recover.end", sourceNodeId: "recover", sourcePortId: "failed", targetNodeId: "end", targetPortId: "in" }
+    ]
+  };
+}
+
+function recoveryFailedAttempt(): AutomationStudioNodeAttemptTrace {
+  return {
+    attemptId: "recover.attempt.1",
+    nodeId: "recover",
+    definitionId: "builtin.policy.recovery",
     startedAt: 1,
     finishedAt: 2,
     status: "failed",

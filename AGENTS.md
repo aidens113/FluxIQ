@@ -236,6 +236,53 @@ the user's live test needs running, giving its local URL and relevant state
 without exposing unrelated secrets. Otherwise tell the user to run
 `pnpm --filter @fluxiq/web dev` themselves.
 
+## Branches And Worktrees
+
+Isolation is per unit of work, never per agent. A branch bounds a change, not
+a worker: workers are ephemeral, several may serve one brief, and a
+re-dispatched worker is still the same unit of work. Workers never commit, so
+agent identity travels in commit trailers rather than in a branch name.
+
+The supervisor picks the tier when it writes the brief:
+
+- **Direct on `dev`** for supervisor edits of at most two files it already
+  understands — documentation, a ledger entry, config, a one-line fix. No
+  ceremony, and this stays the common case.
+- **A task branch** for any unit of work that has a brief. `pnpm task start
+  <slug>` branches `task/t<NNN>-<slug>` off `dev`; `pnpm task finish <id>`
+  integrates `dev`, merges back `--no-ff`, and deletes the branch.
+  `pnpm task abandon <id>` discards one; `pnpm task list` shows what is open.
+- **A task branch plus its own worktree** when another agent is running
+  repository-wide validation concurrently, when the work is experimental and
+  may be thrown away, or for a long build run. The trigger is validation, not
+  editing: concurrent workers editing disjoint files in one checkout are safe,
+  but a validation run that reads a tree someone else is editing reports false
+  failures and invites a worker to "fix" a file another worker is still
+  writing.
+
+Core's `pnpm task` is branch-only. It does not provision worktrees, and there
+is no `--worktree` flag here to look for. A Core worktree is created by the
+downstream FluxIQ Web Extension repository's tooling, because that
+repository's `domain/package.json` links Core as a filesystem sibling and the
+layout is therefore downstream's to decide.
+
+Commits on a task branch carry `Task: t<NNN>`, and `Worker: <agent-label>`
+where a worker produced the change. A task merges `--no-ff` with the subject
+`Merge task t<NNN>: <title>`, so first-parent history reads as a list of tasks
+and `git revert -m 1 <merge>` undoes one cleanly. Commits are never squashed:
+they are the step-by-step record, and the merge commit is the boundary.
+
+Merge `dev` into the task branch and re-run the narrowest relevant checks
+before merging back. That is what catches two tasks that changed different
+files and still produced an incompatible system, which git cannot detect.
+
+A task spanning this repository and the downstream FluxIQ Web Extension
+repository uses one id on both sides. The id is allocated downstream and
+passed here as `pnpm task start <slug> --id t<NNN>`, so the two branches,
+their trailers, and their merge subjects name the same task. Both `dev`
+branches are pushed in the same work unit, as
+[Committing And Pushing](#committing-and-pushing) already requires.
+
 ## Committing And Pushing
 
 Only the supervisor commits or pushes.
