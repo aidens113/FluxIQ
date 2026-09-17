@@ -11,7 +11,6 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   AutomationStudioNodeRegistry,
   isAutomationNodeParameterStateBinding,
-  parseAutomationStudioRecordOutput,
   type AutomationNodeParameter,
   type AutomationNodePort,
   type AutomationStudioNodeDefinition,
@@ -29,6 +28,7 @@ import { error } from "./issues.ts";
 import { layoutNodes } from "./layout.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
+import { automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
 
 export function validateAutomationStudioFlowBootstrapPlan(input: {
@@ -161,11 +161,14 @@ function validateParameters(values: JsonObject, definition: AutomationStudioNode
   const contract = scope.registry.getParameterContract(definition.id);
   for (const parameter of definition.parameters) {
     const value = values[parameter.id];
+    const parameterPath = `${path}.parameters.${parameter.id}`;
+    const recordOutput = parameter.ui?.control === "record-output";
     if (value === undefined) {
-      if (parameter.required && parameter.defaultValue === undefined) issues.push(error("bootstrap.missing_parameter", "Required node parameter is missing.", `${path}.parameters.${parameter.id}`));
+      if (parameter.required && parameter.defaultValue === undefined) issues.push(error("bootstrap.missing_parameter", "Required node parameter is missing.", parameterPath));
+      // Not every node reads a missing record output as saving nothing.
+      else if (recordOutput) issues.push(...recordOutputIssues(undefined, definition, parameterPath));
       continue;
     }
-    const parameterPath = `${path}.parameters.${parameter.id}`;
     const namesOutput = namesOutputToRun(definition, parameter);
     if (isAutomationNodeParameterStateBinding(value)) {
       // A bound output id would let the run choose which output runs.
@@ -174,9 +177,11 @@ function validateParameters(values: JsonObject, definition: AutomationStudioNode
     }
     const nestedBindingPath = invalidStateBindingPath(value, parameter.allowStateBinding !== false, parameterPath, 0);
     if (nestedBindingPath) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", nestedBindingPath));
-    const recordOutput = parameter.ui?.control === "record-output";
-    // Null is how a record output saves nothing, as the runtime reads it.
-    if (recordOutput && value === null) continue;
+    // Null is how a record output saves nothing, on the nodes that read it so.
+    if (recordOutput && value === null) {
+      issues.push(...recordOutputIssues(null, definition, parameterPath));
+      continue;
+    }
     if (!parameterValueMatches(value, parameter)) {
       issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", parameterPath));
       continue;
@@ -214,21 +219,17 @@ function declaredOutputIds(registry: AutomationStudioNodeRegistry, resolution: A
   return ids;
 }
 
-// Parsed as the policy action and record capture parse it before they dispatch
-// or save, encryption refused included, so each code is one the run would have
-// failed with. A record output that leaves `recordsPath` out takes the path its
-// definition declares in `metadata.recordsPath`, as an importer node fills it at
-// dispatch; when the definition declares none, the missing path is refused.
-function recordOutputIssues(value: JsonValue, definition: AutomationStudioNodeDefinition, path: string): AutomationStudioFlowBootstrapIssue[] {
-  const declaredPath = definition.metadata?.recordsPath;
-  const completed = typeof declaredPath === "string" && isPlainObject(value) && !Object.hasOwn(value, "recordsPath")
-    ? { ...value, recordsPath: declaredPath }
-    : value;
-  const parsed = parseAutomationStudioRecordOutput(completed);
-  return parsed.ok ? [] : parsed.issues.map((code) => error(code, "Record output does not satisfy the record-set contract.", path));
+// Parsed with the record-set parser the nodes use, encryption refused included,
+// after reading the value as the node reads it (`./record-output-contract.ts`):
+// a missing path takes the one a definition declares in `metadata.recordsPath`,
+// Core's node that writes records replaces any path with its own and refuses
+// a missing or null record output, and the other nodes save nothing on null.
+// So each code is one the run would have failed with, and a record output
+// accepted here is one the run accepts.
+function recordOutputIssues(value: JsonValue | undefined, definition: AutomationStudioNodeDefinition, path: string): AutomationStudioFlowBootstrapIssue[] {
+  return automationStudioFlowBootstrapRecordOutputIssues(definition, value)
+    .map((code) => error(code, "Record output does not satisfy the record-set contract.", path));
 }
-
-const isPlainObject = (value: JsonValue): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 
 const CONTRACT_FAILED = "bootstrap.parameter_contract_failed";
 const CONTRACT_VIOLATION = "bootstrap.parameter_contract_violation";

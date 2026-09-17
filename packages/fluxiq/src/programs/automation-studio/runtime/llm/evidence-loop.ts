@@ -1,7 +1,12 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../loop-limits/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
-import { AutomationStudioLlmUnusableDecisionError } from "./unusable-decision.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
+  AutomationStudioLlmUnusableDecisionError,
+  automationStudioLlmUnusableDecisionFeedback,
+  automationStudioLlmUnusableDecisionIssueSet
+} from "./unusable-decision.ts";
 
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
 // bounded by the same three numbers, and a constant both directories read is
@@ -13,6 +18,7 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 // caller tells whether a failed call is that kind of failure. Part of the
 // loop's input contract, so published with it.
 export {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
   AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmTaskResultSpentWithoutDecision,
   automationStudioLlmUnusableDecisionError
@@ -20,7 +26,27 @@ export {
 
 /** Provider-neutral decision policy for bounded evidence loops. Provider adapters
  * should include this policy in their structured-decision instruction. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, and never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available.";
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, and never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's answer to your previous decision, not a tool result: correct what it names, and when it names an earlier callId, use that entry instead of asking again.";
+
+/**
+ * Unusable decisions in a row, however much their issues differ, after which a
+ * loop that asks again stops: the far backstop under the no-progress guard. A
+ * model fixing one mistake at a time is progress, so this is set well past the
+ * handful of refusals a real correction takes; the cost, token and deadline
+ * guards still bind underneath it. Held to the loop's own iterations.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW = 12;
+
+/** The evidence entry the loop's answer to a repeated request arrives under. */
+const REQUEST_CHECK_TOOL_ID = "core.request_check";
+
+/** What a request the loop answered itself, rather than running, is recorded as. */
+const ANSWERED_REQUEST = {
+  "llm_evidence_loop.already_answered": "This exact request was already answered and nothing has changed since, so it was not run again. Its result is the evidence entry named by answeredByCallId, placed just before this one. Use it, or choose a different tool or input, or complete.",
+  "llm_evidence_loop.already_observed": "This observation was already made and no action has changed anything since, so it was not run again. Its latest result is the evidence entry named by answeredByCallId, placed just before this one. Use it, change something first, or complete."
+} as const;
+
+type AnsweredRequestCode = keyof typeof ANSWERED_REQUEST;
 
 export type AutomationStudioLlmEvidenceTool = {
   toolId: string;
@@ -74,8 +100,13 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.invalid_configuration"
   | "llm_evidence_loop.invalid_decision"
   | "llm_evidence_loop.unknown_tool"
+  // These two are no longer produced. A reused call id is replaced with one the
+  // loop assigns, and a repeated request is answered, a run of them ending the
+  // loop as `repeat_without_progress`. Kept because the outcome tables callers
+  // key by this union still name them, and a stored result may carry them.
   | "llm_evidence_loop.duplicate_call"
   | "llm_evidence_loop.duplicate_tool_request"
+  /** The no-progress guard tripped: the loop kept repeating itself. */
   | "llm_evidence_loop.repeat_without_progress"
   | "llm_evidence_loop.tool_failed"
   | "llm_evidence_loop.evidence_limit"
@@ -125,25 +156,58 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   minToolCalls?: number;
   propagateDecisionErrors?: boolean;
   /**
+   * The no-progress guard: how many steps in a row may give the loop nothing
+   * new before it ends.
+   *
+   * A step gives nothing new when it asks for a tool request already answered
+   * with nothing changed since, when it asks to repeat an observation no action
+   * has changed, or when it is an unusable decision refused for a set of issues
+   * already seen since the last tool result. The loop answers the first two
+   * itself -- the earlier result is placed at the end of the evidence with a
+   * note naming it, and the tool is not run -- and tells the model about the
+   * third. A tool that runs resets the count. An unusable decision refused for
+   * issues not seen since then is new: the count starts again at one.
+   *
+   * The step that reaches the guard ends the loop: a repeated request as
+   * `llm_evidence_loop.repeat_without_progress`, an unusable decision through
+   * `unusableDecisions.stalled`.
+   *
+   * Absent, `unusableDecisions.maxConsecutive` when that is set, otherwise
+   * three, held to `maxIterations`. Given both, they must agree.
+   */
+  maxStepsWithoutProgress?: number;
+  /**
    * Ask again after an unusable decision instead of ending.
    *
    * When set, a `decide` that throws `AutomationStudioLlmUnusableDecisionError`
    * spends that iteration -- one provider call, so `maxIterations` still bounds
-   * every call the loop makes -- is recorded as an `unusable` step, and the
-   * loop asks again. A usable decision resets the count. The
-   * `maxConsecutive`-th unusable decision in a row ends the loop: `stalled`
-   * builds the error that ends it, which is then handled exactly as if
-   * `decide` had thrown it (thrown under `propagateDecisionErrors`, otherwise
-   * `llm_evidence_loop.invalid_decision`).
+   * every call the loop makes -- is recorded as an `unusable` step, the model
+   * is told the issue codes and the decision shape as evidence under
+   * `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID`, and the loop
+   * asks again. Two things end it, and `stalled` builds the error that does,
+   * which is then handled exactly as if `decide` had thrown it (thrown under
+   * `propagateDecisionErrors`, otherwise `llm_evidence_loop.invalid_decision`):
+   * an unusable decision that reaches the no-progress guard, and the
+   * `maxInARow`-th unusable decision in a row however different their issues.
+   * A usable decision resets the second count.
    *
    * Absent, the error is an ordinary decision error, as it always was. Any
    * other error `decide` throws is unaffected either way.
    *
    * A completed result that `checkCompletion` refuses is an unusable decision
-   * too, and joins the same count.
+   * too, and joins the same counts.
    */
   unusableDecisions?: {
-    maxConsecutive: number;
+    /** The no-progress guard's length, when `maxStepsWithoutProgress` is not given. */
+    maxConsecutive?: number;
+    /**
+     * The far backstop: unusable decisions in a row that end the loop however
+     * much their issues differ. At least the no-progress guard and at most
+     * `maxIterations`; absent,
+     * `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW`
+     * held to those two.
+     */
+    maxInARow?: number;
     stalled(input: {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
@@ -158,7 +222,9 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * check's feedback is added to the evidence the model sees under
    * `AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID`, and the loop
    * asks again; without it, the loop ends `llm_evidence_loop.invalid_decision`.
-   * A check that throws is a decision error.
+   * A check that throws is a decision error. Its issue codes are what decide
+   * whether the refusal is new: the feedback should name each issue and the
+   * shape that is accepted, since it is all the model has to correct from.
    */
   checkCompletion?(result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>;
   signal?: AbortSignal;
@@ -179,8 +245,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
   const toolsById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const));
   const callIds = new Set<string>();
-  const toolRequestSignatures = new Set<string>();
+  // Each request that ran, by what it asked in which mutation epoch, and the
+  // call that answered it.
+  const answeredRequests = new Map<string, string>();
   const observationEpochs = new Map<string, number>();
+  // The call that made each protected tool's latest observation.
+  const latestObservations = new Map<string, string>();
   let mutationEpoch = 0;
   const evidence: Array<{ callId: string; toolId: string; value: JsonValue }> = [];
   const initialTool = input.tools.find((tool) => tool.initialObservation);
@@ -201,19 +271,79 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.toolCalls = 1;
     accounting.evidenceBytes = evidenceBytes;
     callIds.add(callId);
-    toolRequestSignatures.add(canonicalJson([mutationEpoch, initialTool.toolId, initialInput]));
+    answeredRequests.set(canonicalJson([mutationEpoch, initialTool.toolId, initialInput]), callId);
     observationEpochs.set(initialTool.toolId, mutationEpoch);
+    latestObservations.set(initialTool.toolId, callId);
     evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence });
     trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
   }
-  let unusableStreak = 0;
-  // One more unusable decision. Returns the error that ends the loop once the
-  // streak is reached, or nothing when the loop should ask again.
+  // The no-progress guard: steps in a row that gave the loop nothing new, and
+  // the unusable issue sets seen since the last tool result.
+  let stepsWithoutProgress = 0;
+  const unusableIssueSets = new Set<string>();
+  // The far backstop: unusable decisions in a row, however they differ.
+  let unusableInARow = 0;
+  const progressed = (): void => {
+    stepsWithoutProgress = 0;
+    unusableIssueSets.clear();
+  };
+  // Counts evidence the loop itself adds against the byte limit. Returns its
+  // bytes, or nothing when it does not fit.
+  const reserveEvidence = (value: JsonValue): number | undefined => {
+    const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
+    if (accounting.evidenceBytes + bytes > limits.maxEvidenceBytes) return undefined;
+    accounting.evidenceBytes += bytes;
+    return bytes;
+  };
+  // One more unusable decision. Returns the error that ends the loop once a
+  // guard is reached, or nothing when the loop should ask again.
   const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[]): { error: unknown } | undefined => {
-    unusableStreak += 1;
+    unusableInARow += 1;
+    const issueSet = automationStudioLlmUnusableDecisionIssueSet(issueCodes);
+    if (unusableIssueSets.has(issueSet)) stepsWithoutProgress += 1;
+    else {
+      unusableIssueSets.add(issueSet);
+      stepsWithoutProgress = 1;
+    }
     trace.push(step);
-    if (unusableStreak < limits.maxConsecutiveUnusableDecisions) return undefined;
+    if (stepsWithoutProgress < limits.maxStepsWithoutProgress && unusableInARow < limits.maxUnusableDecisionsInARow) return undefined;
     return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
+  };
+  // A request the loop answers itself: the tool is not run, the result that
+  // already answers it is moved to the end of the evidence, where the model's
+  // window always reaches, and a note naming it follows. Returns the result
+  // that ends the loop, or nothing when it should ask again.
+  const answerRequest = (
+    iteration: number,
+    decision: Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_call" }>,
+    code: AnsweredRequestCode,
+    answeredByCallId: string
+  ): AutomationStudioLlmEvidenceLoopResult | undefined => {
+    stepsWithoutProgress += 1;
+    const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
+    if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
+      trace.push({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
+      return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
+    }
+    const note: JsonObject = {
+      ok: false,
+      code,
+      toolId: decision.toolId,
+      answeredByCallId,
+      stepsWithoutProgress,
+      maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
+      instruction: ANSWERED_REQUEST[code]
+    };
+    const noteBytes = reserveEvidence(note);
+    if (noteBytes === undefined) {
+      trace.push(step);
+      return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+    }
+    const earlier = evidence.findIndex((entry) => entry.callId === answeredByCallId);
+    if (earlier >= 0) evidence.push(...evidence.splice(earlier, 1));
+    evidence.push({ callId: `${REQUEST_CHECK_TOOL_ID}.${iteration}`, toolId: REQUEST_CHECK_TOOL_ID, value: note });
+    trace.push({ ...step, evidenceBytes: noteBytes });
+    return undefined;
   };
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
@@ -234,7 +364,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
         const resultCode = thrown.issueCodes[0];
         const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}) }, thrown.issueCodes);
-        if (!stalled) continue;
+        if (!stalled) {
+          // The model is told what was wrong, as evidence, before it is asked again.
+          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+          if (reserveEvidence(feedback) === undefined) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+          evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
+          continue;
+        }
         error = stalled.error;
       }
       if (input.propagateDecisionErrors) throw error;
@@ -259,9 +395,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       }
       if (!check || !input.unusableDecisions) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
       // The model is told why, as evidence, before it is asked again.
-      const feedbackBytes = Buffer.byteLength(JSON.stringify(check.feedback), "utf8");
-      if (accounting.evidenceBytes + feedbackBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
-      accounting.evidenceBytes += feedbackBytes;
+      if (reserveEvidence(check.feedback) === undefined) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
       evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: check.feedback });
       const resultCode = check.issueCodes[0];
       const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) }, check.issueCodes);
@@ -269,29 +403,33 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (input.propagateDecisionErrors) throw stalled.error;
       return failure("llm_evidence_loop.invalid_decision", trace, accounting);
     }
-    unusableStreak = 0;
+    unusableInARow = 0;
     if (!toolIds.has(decision.toolId)) return failure("llm_evidence_loop.unknown_tool", trace, accounting);
-    if (!eligibleToolIds.has(decision.toolId)) {
-      trace.push({ iteration, decision: "tool_call", toolId: decision.toolId, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
-      return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
-    }
-    if (callIds.has(decision.callId)) return failure("llm_evidence_loop.duplicate_call", trace, accounting);
-    const tool = toolsById.get(decision.toolId)!;
-    if (requiresMutationBeforeRepeat(tool) && observationEpochs.get(tool.toolId) === mutationEpoch) {
-      trace.push({ iteration, decision: "tool_call", toolId: decision.toolId, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
-      return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
-    }
+    // A repeat is answered from what the loop already holds. Checked before the
+    // call id, so a request repeated word for word is a repeat, not a clash.
     const toolRequestSignature = canonicalJson([mutationEpoch, decision.toolId, decision.input]);
-    if (toolRequestSignatures.has(toolRequestSignature)) {
-      trace.push({ iteration, decision: "tool_call", toolId: decision.toolId, resultCode: "llm_evidence_loop.rejected.duplicate_tool_request" });
-      return failure("llm_evidence_loop.duplicate_tool_request", trace, accounting);
+    const answeredBy = answeredRequests.get(toolRequestSignature);
+    // Not offered this iteration: an observation no applied action has changed.
+    // Its latest call is always recorded with its epoch.
+    const reobservation = !eligibleToolIds.has(decision.toolId);
+    if (answeredBy !== undefined || reobservation) {
+      const ended = answeredBy !== undefined
+        ? answerRequest(iteration, decision, "llm_evidence_loop.already_answered", answeredBy)
+        : answerRequest(iteration, decision, "llm_evidence_loop.already_observed", latestObservations.get(decision.toolId)!);
+      if (ended) return ended;
+      continue;
     }
+    // A call id the model already used names a different request here, so the
+    // loop gives it one of its own rather than ending: the ids are the model's
+    // bookkeeping, and the evidence only needs them to be distinct.
+    const callId = unusedCallId(callIds, decision.callId);
+    const tool = toolsById.get(decision.toolId)!;
     if (accounting.toolCalls >= limits.maxToolCalls) return failure("llm_evidence_loop.iteration_limit", trace, accounting);
-    callIds.add(decision.callId);
-    toolRequestSignatures.add(toolRequestSignature);
+    callIds.add(callId);
+    answeredRequests.set(toolRequestSignature, callId);
     let rawExecution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult;
     try {
-      rawExecution = await input.executeTool({ callId: decision.callId, toolId: decision.toolId, value: decision.input, maxEvidenceBytes: Math.max(1, Math.min(limits.maxEvidenceContextBytes - 512, limits.maxEvidenceBytes - accounting.evidenceBytes)), ...(input.signal ? { signal: input.signal } : {}) });
+      rawExecution = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, maxEvidenceBytes: Math.max(1, Math.min(limits.maxEvidenceContextBytes - 512, limits.maxEvidenceBytes - accounting.evidenceBytes)), ...(input.signal ? { signal: input.signal } : {}) });
     } catch {
       return failure(input.signal?.aborted ? "llm_evidence_loop.cancelled" : "llm_evidence_loop.tool_failed", trace, accounting);
     }
@@ -303,12 +441,30 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
+    progressed();
     if (tool.effect === "mutate" && effectApplied) mutationEpoch += 1;
-    if (requiresMutationBeforeRepeat(tool)) observationEpochs.set(tool.toolId, mutationEpoch);
-    evidence.push({ callId: decision.callId, toolId: decision.toolId, value });
-    trace.push({ iteration, decision: "tool_call", callId: decision.callId, toolId: decision.toolId, evidenceBytes, ...(tool.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
+    if (requiresMutationBeforeRepeat(tool)) {
+      observationEpochs.set(tool.toolId, mutationEpoch);
+      latestObservations.set(tool.toolId, callId);
+    }
+    evidence.push({ callId, toolId: decision.toolId, value });
+    trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(tool.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
   }
   return failure("llm_evidence_loop.iteration_limit", trace, accounting);
+}
+
+/**
+ * The requested call id when it is unused, otherwise the first of `<id>.2`,
+ * `<id>.3`, ... that is, cut to keep within the 200-character id bound. The
+ * suffix is digits and a dot, so the id stays one the provider schema accepts.
+ */
+function unusedCallId(used: ReadonlySet<string>, requested: string): string {
+  if (!used.has(requested)) return requested;
+  for (let suffix = 2; ; suffix += 1) {
+    const tail = `.${suffix}`;
+    const candidate = `${requested.slice(0, 200 - tail.length)}${tail}`;
+    if (!used.has(candidate)) return candidate;
+  }
 }
 
 function canonicalJson(value: JsonValue): string {
@@ -369,19 +525,38 @@ function parseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision 
   return undefined;
 }
 
-function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): { maxIterations: number; maxToolCalls: number; maxEvidenceBytes: number; maxEvidenceContextBytes: number; minToolCalls: number; maxConsecutiveUnusableDecisions: number } | undefined {
+type EvidenceLoopLimits = {
+  maxIterations: number;
+  maxToolCalls: number;
+  maxEvidenceBytes: number;
+  maxEvidenceContextBytes: number;
+  minToolCalls: number;
+  maxStepsWithoutProgress: number;
+  maxUnusableDecisionsInARow: number;
+};
+
+function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
   const maxEvidenceBytes = input.maxEvidenceBytes ?? 262_144;
-  const limits = {
-    maxIterations: input.maxIterations ?? 8,
+  const maxIterations = input.maxIterations ?? 8;
+  const unusable = input.unusableDecisions;
+  if (input.maxStepsWithoutProgress !== undefined && unusable?.maxConsecutive !== undefined
+    && input.maxStepsWithoutProgress !== unusable.maxConsecutive) return undefined;
+  const maxStepsWithoutProgress = input.maxStepsWithoutProgress ?? unusable?.maxConsecutive
+    ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations);
+  const limits: EvidenceLoopLimits = {
+    maxIterations,
     maxToolCalls: input.maxToolCalls ?? 8,
     maxEvidenceBytes,
     maxEvidenceContextBytes: input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes),
     minToolCalls: input.minToolCalls ?? 0,
-    maxConsecutiveUnusableDecisions: input.unusableDecisions?.maxConsecutive ?? 1
+    maxStepsWithoutProgress,
+    maxUnusableDecisionsInARow: unusable?.maxInARow
+      ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations))
   };
-  if (input.unusableDecisions && (typeof input.unusableDecisions.stalled !== "function"
-    || !Number.isInteger(limits.maxConsecutiveUnusableDecisions) || limits.maxConsecutiveUnusableDecisions < 1
-    || limits.maxConsecutiveUnusableDecisions > limits.maxIterations)) return undefined;
+  if (!Number.isInteger(limits.maxStepsWithoutProgress) || limits.maxStepsWithoutProgress < 1 || limits.maxStepsWithoutProgress > maxIterations) return undefined;
+  if (unusable && (typeof unusable.stalled !== "function"
+    || !Number.isInteger(limits.maxUnusableDecisionsInARow) || limits.maxUnusableDecisionsInARow < limits.maxStepsWithoutProgress
+    || limits.maxUnusableDecisionsInARow > maxIterations)) return undefined;
   if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
   if (!Number.isInteger(limits.maxEvidenceBytes) || limits.maxEvidenceBytes <= 0 || limits.maxEvidenceBytes > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes) return undefined;

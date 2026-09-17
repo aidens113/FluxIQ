@@ -6,7 +6,9 @@ import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "..
 // this is a copy; it exists because the domain's real definitions are what
 // squeezed the required `end` node out of a bounded catalog, and a synthetic
 // definition did not. Each action carries the domain's `expectedState`
-// parameter, whose description the catalog sends.
+// parameter, whose description the catalog sends. The list extraction's
+// `recordOutput` carries the `record-output` control, and its definition the
+// records path, as the domain declares both.
 //
 // Resolve them with runtime capability `web.actions` and permission
 // `web-automation.action`.
@@ -35,8 +37,11 @@ const extractList: AutomationNodeParameter[] = [
     example: { item: "li.product", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 } }
   }),
   { ...timeoutMs, description: "Milliseconds for the whole read. Left at the default, it grows with the pages the list may read." },
-  { id: "recordOutput", label: "Save extracted records", valueType: "json", defaultValue: null, allowStateBinding: false, description: "The dataset the rows are saved into. Leave empty to save every field of the list under a dataset named after its fields." }
+  { id: "recordOutput", label: "Save extracted records", valueType: "json", defaultValue: null, allowStateBinding: false, description: "The dataset the rows are saved into. Leave empty to save every field of the list under a dataset named after its fields.", ui: { control: "record-output" } }
 ];
+
+/** Where the list extraction's result keeps its rows (the domain's `WEB_AUTOMATION_EXTRACT_LIST_RECORDS_PATH`). */
+const EXTRACT_LIST_RECORDS_PATH = "result.extracted";
 
 type WebOutput = {
   slug: string;
@@ -96,6 +101,7 @@ export function webDomainNodeDefinitionsFixture(): AutomationStudioNodeDefinitio
       ...(output.records ? [{ id: "records", label: "Records", valueType: "array" as const, role: "data" as const }] : [])
     ],
     parameters: [...output.parameters, expectedState],
-    tags: ["web-automation", "output", ...(output.tags ?? [])]
+    tags: ["web-automation", "output", ...(output.tags ?? [])],
+    ...(output.records ? { metadata: { recordsPath: EXTRACT_LIST_RECORDS_PATH } } : {})
   }));
 }

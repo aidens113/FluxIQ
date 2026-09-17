@@ -8,12 +8,17 @@
 // created without them, so the text that helps a provider author a value must
 // never be what leaves one out: on 2026-09-16 the web domain's longer
 // parameter descriptions pushed the required end node out of a 3,000-token
-// catalog, and every Flow creation in that context was refused.
-import type { JsonValue } from "../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+// catalog, and every Flow creation in that context was refused. The nodes it
+// prefers come next, whole or else condensed, and then the rest, whole.
+import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapCatalogEntry, AutomationStudioFlowBootstrapContext } from "./contracts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "./output-schema.ts";
+import {
+  automationStudioFlowBootstrapParameterText,
+  boundedCatalogText,
+  type AutomationStudioFlowBootstrapCatalogEntryForm
+} from "./parameter-text.ts";
 import { rankBootstrapDefinitions } from "./ranking.ts";
 
 export function buildAutomationStudioFlowBootstrapContext(input: {
@@ -39,7 +44,7 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   const selected = new Map<string, AutomationStudioFlowBootstrapCatalogEntry>();
   const missingRequiredTerms: string[] = [];
   let usedBytes = 2;
-  const append = (definition: AutomationStudioNodeDefinition, form: CatalogEntryForm): boolean => {
+  const append = (definition: AutomationStudioNodeDefinition, form: AutomationStudioFlowBootstrapCatalogEntryForm): boolean => {
     if (selected.has(definition.id)) return true;
     const entry = compactDefinition(definition, form);
     const addedBytes = catalogEntryBytes(entry) + (selected.size ? 1 : 0);
@@ -65,8 +70,13 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
     usedBytes += growth;
   }
   // Preferred for a declared tag the instruction used: placed before the rest,
-  // but never essential, so one that does not fit fails nothing.
-  for (const definition of selection.preferred) append(definition, "whole");
+  // condensed when it does not fit whole, but never essential, so one that does
+  // not fit either way fails nothing. A scraping instruction prefers the list
+  // extraction this way, and dropping it outright near the budget left the
+  // model a catalog with nothing to scrape with.
+  for (const definition of selection.preferred) {
+    if (!append(definition, "whole")) append(definition, "condensed");
+  }
   for (const definition of selection.ranked) append(definition, "whole");
   const nodeCatalog = [...selected.values()].sort((left, right) => left.id.localeCompare(right.id));
   return {
@@ -86,16 +96,14 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
  * How much of a definition's text one catalog entry carries.
  *
  * A whole entry keeps a node's description, which is what a provider chooses
- * the node by, up to 240 characters. A structured parameter's description and
- * example are what the provider authors the value from, so a whole entry sends
- * them for object, json and array parameters only: the description up to 600
- * characters, and the example only when its JSON fits in 600 bytes whole.
+ * the node by, up to 240 characters, and each parameter's authoring text
+ * (`./parameter-text.ts`).
  *
  * A condensed entry is what a required node is reserved as: its description up
- * to 80 characters and no parameter description or example, which was every
- * entry's shape before structured text was sent. Its ports, parameter ids,
- * types, defaults, options, constraints and output action are unchanged, so a
- * plan built from it validates the same way.
+ * to 80 characters and no parameter authoring text but a record output's
+ * contract in brief. Its ports, parameter ids, types, defaults, options,
+ * constraints and output action are unchanged, so a plan built from it
+ * validates the same way.
  *
  * A description cut short ends in "...". Everything sent counts against the
  * catalog byte budget.
@@ -103,20 +111,14 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
 const CATALOG_TEXT_LIMITS = {
   labelCharacters: 100,
   descriptionCharacters: 240,
-  condensedDescriptionCharacters: 80,
-  parameterDescriptionCharacters: 600,
-  parameterExampleBytes: 600
+  condensedDescriptionCharacters: 80
 } as const;
-
-type CatalogEntryForm = "whole" | "condensed";
-
-const STRUCTURED_PARAMETER_TYPES: ReadonlySet<AutomationNodeParameter["valueType"]> = new Set(["object", "json", "array"]);
 
 function catalogEntryBytes(entry: AutomationStudioFlowBootstrapCatalogEntry): number {
   return Buffer.byteLength(JSON.stringify(entry), "utf8");
 }
 
-function compactDefinition(definition: AutomationStudioNodeDefinition, form: CatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry {
+function compactDefinition(definition: AutomationStudioNodeDefinition, form: AutomationStudioFlowBootstrapCatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry {
   const descriptionCharacters = form === "whole"
     ? CATALOG_TEXT_LIMITS.descriptionCharacters
     : CATALOG_TEXT_LIMITS.condensedDescriptionCharacters;
@@ -124,52 +126,16 @@ function compactDefinition(definition: AutomationStudioNodeDefinition, form: Cat
     id: definition.id,
     version: definition.version,
     label: definition.label.slice(0, CATALOG_TEXT_LIMITS.labelCharacters),
-    description: boundedText(definition.description, descriptionCharacters),
+    description: boundedCatalogText(definition.description, descriptionCharacters),
     category: definition.category,
     capabilities: Object.entries(definition.capabilities).filter(([, enabled]) => enabled === true).map(([key]) => key).sort(),
     inputs: definition.inputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.required === true ? { required: true as const } : {}), ...(port.multiple === true ? { multiple: true as const } : {}) })),
     outputs: definition.outputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.multiple === true ? { multiple: true as const } : {}) })),
-    parameters: definition.parameters.map((parameter) => compactParameter(parameter, form)),
+    parameters: definition.parameters.map((parameter) => automationStudioFlowBootstrapParameterText(definition, parameter, form)),
     ...(definition.outputAction ? { outputAction: {
       required: true as const,
       ...(definition.outputAction.fixedOutputId ? { fixed: definition.outputAction.fixedOutputId } : {}),
       ...(definition.outputAction.allowedOutputIds ? { allowed: definition.outputAction.allowedOutputIds } : {})
     } } : {})
   };
-}
-
-function compactParameter(parameter: AutomationNodeParameter, form: CatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry["parameters"][number] {
-  const structured = form === "whole" && STRUCTURED_PARAMETER_TYPES.has(parameter.valueType);
-  const description = structured && parameter.description?.trim()
-    ? boundedText(parameter.description, CATALOG_TEXT_LIMITS.parameterDescriptionCharacters)
-    : undefined;
-  const example = structured ? boundedExample(parameter.example) : undefined;
-  return {
-    id: parameter.id,
-    type: parameter.valueType,
-    ...(parameter.required === true ? { required: true as const } : {}),
-    ...(parameter.allowStateBinding === false ? { stateBindable: false as const } : {}),
-    ...(parameter.defaultValue !== undefined ? { defaultValue: parameter.defaultValue } : {}),
-    ...(parameter.options ? { options: parameter.options.map((option) => option.value) } : {}),
-    ...(parameter.constraints ? { constraints: parameter.constraints } : {}),
-    ...(description !== undefined ? { description } : {}),
-    ...(example !== undefined ? { example } : {})
-  };
-}
-
-function boundedText(value: string, limit: number): string {
-  return value.length <= limit ? value : `${value.slice(0, limit - 3)}...`;
-}
-
-// An example is sent whole or not at all: a cut example is not a valid value.
-function boundedExample(example: JsonValue | undefined): JsonValue | undefined {
-  if (example === undefined) return undefined;
-  try {
-    const serialized = JSON.stringify(example);
-    return serialized !== undefined && Buffer.byteLength(serialized, "utf8") <= CATALOG_TEXT_LIMITS.parameterExampleBytes
-      ? JSON.parse(serialized) as JsonValue
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }

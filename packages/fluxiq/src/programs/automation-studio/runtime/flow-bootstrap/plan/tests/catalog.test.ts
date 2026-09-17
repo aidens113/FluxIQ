@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry, parseAutomationStudioRecordOutput, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget } from "../../index.ts";
 import { buildAutomationStudioFlowBootstrapContext } from "../index.ts";
 import { webDomainNodeDefinitionsFixture } from "./web-domain-definitions-fixture.ts";
@@ -130,6 +131,21 @@ describe("the tags a domain declares on a node", () => {
     expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(["domain.demo.product_0", "domain.demo.product_1"]);
   });
 
+  it("bring the node in condensed when only that form fits", () => {
+    const wordy = definition("domain.demo.harvest", { label: "Harvest", description: `Reads things. ${"More words. ".repeat(20)}`, tags: ["scrape", "rows"] });
+    const at = (maxCatalogBytes: number) => buildAutomationStudioFlowBootstrapContext({
+      registry: new AutomationStudioNodeRegistry([wordy]), resolution, instructionText: "Scrape the rows", maxCatalogBytes
+    });
+    const wholeBytes = at(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes).catalogSelection.usedBytes;
+
+    const tight = at(wholeBytes - 1);
+
+    expect(tight.nodeCatalog.map((entry) => entry.id)).toEqual(["domain.demo.harvest"]);
+    expect(tight.nodeCatalog[0]?.description).toHaveLength(80);
+    expect(tight.catalogSelection.usedBytes).toBeLessThanOrEqual(wholeBytes - 1);
+    expect(at(100).nodeCatalog).toEqual([]);
+  });
+
   it("never fail the catalog when the node they pull in does not fit", () => {
     const click = definition("domain.demo.click", { label: "Click", outputAction: { fixedOutputId: "demo.click" } });
 
@@ -227,6 +243,29 @@ describe("a catalog of the web domain's real definitions", () => {
         expect(context.catalogSelection.usedBytes).toBeLessThanOrEqual(context.catalogSelection.byteBudget);
       }
     }
+  });
+
+  // A scraping instruction prefers the list extraction by its tags, so it is
+  // sent whole when that fits and condensed when only that does. Its record
+  // output was refused in live runs for keys the catalog never named, so both
+  // forms name them.
+  it("tells the model the list extraction's record output contract, condensed and whole", () => {
+    const forms = new Set<string>();
+    for (let maxCatalogBytes = 500; maxCatalogBytes <= AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes; maxCatalogBytes += 100) {
+      const context = buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText: scrapeInstruction, maxCatalogBytes });
+      const extract = context.nodeCatalog.find((entry) => entry.id === "web.output.dom-extract_list");
+      if (!extract) continue;
+      const recordOutput = extract.parameters.find((parameter) => parameter.id === "recordOutput");
+      for (const key of ["datasetId", "schema", "schemaVersion", "fields", "writeMode", "recordsPath"]) {
+        expect(recordOutput?.description, `${maxCatalogBytes} bytes: ${key}`).toContain(key);
+      }
+      const condensed = extract.description.length <= 80;
+      forms.add(condensed ? "condensed" : "whole");
+      if (condensed) continue;
+      expect(recordOutput?.description).toContain("Leave empty to save every field");
+      expect(parseAutomationStudioRecordOutput({ ...recordOutput?.example as JsonObject, recordsPath: "result.extracted" })).toMatchObject({ ok: true });
+    }
+    expect(forms).toEqual(new Set(["condensed", "whole"]));
   });
 
   it("sends the required web actions whole in the context a live Flow creation uses", () => {

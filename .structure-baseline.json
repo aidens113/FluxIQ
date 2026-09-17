@@ -133,7 +133,6 @@
       "packages/fluxiq/src/programs/_shared/storage.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/host-state.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/annotate.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/adaptations/patches.ts": 1,

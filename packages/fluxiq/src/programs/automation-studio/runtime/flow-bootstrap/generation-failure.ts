@@ -39,6 +39,7 @@ const FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES: {
   "llm.provider_request_task_mismatch": "flow_bootstrap.provider_request_task_mismatch",
   "llm.provider_recent_actions_invalid": "flow_bootstrap.provider_recent_actions_invalid",
   "llm.provider_failure_evidence_invalid": "flow_bootstrap.provider_failure_evidence_invalid",
+  "llm.provider_exploration_evidence_invalid": "flow_bootstrap.provider_exploration_evidence_invalid",
   "llm.provider_flow_bootstrap_context_invalid": "flow_bootstrap.provider_flow_bootstrap_context_invalid",
   "llm.provider_evidence_loop_context_invalid": "flow_bootstrap.provider_evidence_loop_context_invalid",
   "llm.provider_request_limits_invalid": "flow_bootstrap.provider_request_limits_invalid",
@@ -112,15 +113,21 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.evidence_invalid_configuration",
     "flow_bootstrap.evidence_invalid_decision",
     "flow_bootstrap.evidence_unknown_tool",
+    // No longer produced: the loop gives a reused call id one of its own and
+    // answers a repeated request itself. Kept so a stored diagnostic still parses.
     "flow_bootstrap.evidence_duplicate_call",
     "flow_bootstrap.evidence_duplicate_tool_request",
+    // The exploration kept repeating itself -- asking again for what it already
+    // had, or to look again with nothing changed -- until the no-progress guard.
     "flow_bootstrap.evidence_repeat_without_progress",
     "flow_bootstrap.evidence_tool_failed",
     "flow_bootstrap.evidence_limit",
     "flow_bootstrap.evidence_iteration_limit",
     "flow_bootstrap.evidence_cancelled",
     // The model kept answering with something the exploration could not use --
-    // malformed, failing Core's checks, timing out -- so it was stopped.
+    // malformed, failing Core's checks, timing out -- so it was stopped: the
+    // same refusals came back until the no-progress guard, or refusals ran
+    // unbroken to the far backstop.
     "flow_bootstrap.evidence_unusable_decision"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],

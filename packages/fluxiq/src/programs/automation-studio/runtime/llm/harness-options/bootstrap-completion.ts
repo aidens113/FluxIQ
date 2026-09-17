@@ -14,12 +14,15 @@
 // registry validation. A result that passes is handed back ready to persist. A
 // result that fails comes back with the code creation fails under, the issues
 // that refused it, and the feedback the model sees before it is asked again --
-// issue codes and plan paths, which are the plan's own structure, never page
-// content and never a validator's prose.
+// issue codes and plan paths, which are the plan's own structure, and the
+// shape each refused parameter accepts, read from its node definition
+// (`automationStudioFlowBootstrapIssueFeedback`) -- never page content and never
+// a validator's prose.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import {
+  automationStudioFlowBootstrapIssueFeedback,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
@@ -50,11 +53,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
 
 /** Issues the model is shown at once; the rest are dropped, not summarised. */
 const MAX_FEEDBACK_ISSUES = 16;
-const MAX_FEEDBACK_PATH_LENGTH = 300;
 
 const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was created. Correct every listed issue and complete again. "
+  + "Where an issue carries accepted, it is what that parameter takes: write only the keys it names, beside a handle where one belongs, and follow its example. "
   + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} instead of writing a locator of your own; `
-  + `if you explored more than one place, add "${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY}": "<the location the evidence reported for that handle>".`;
+  + `if you explored more than one place, add "${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY}": "<the location the evidence reported for that handle>". `
+  + "A code written <code>:<path> names where inside that node's parameters the issue is, with keys you chose given by their position; "
+  + "a parameter's own description names any further keys it takes beside the handle.";
 
 /** Every check a completed evidence-guided result must pass before it is built. */
 export async function checkAutomationStudioFlowBootstrapCompletion(input: {
@@ -66,12 +71,13 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters"> | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
+  const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
   if (Object.keys(result).some((key) => key !== "summary" && key !== "plan") || typeof result.summary !== "string" || !result.summary.trim()) {
     return refused("flow_bootstrap.evidence_completion_wrapper_invalid", [issue("bootstrap.completion_wrapper_invalid", "result")]);
   }
   const parsed = parseAutomationStudioFlowBootstrapPlan(result.plan);
   if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues));
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(result.plan));
   }
   if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: result.summary, plan: parsed.plan })) {
     return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")]);
@@ -83,7 +89,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     binding: input.binding,
     handlesIssued: true
   });
-  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues);
+  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan));
   let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;
   try {
     validated = validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry: input.registry, resolution: input.resolution });
@@ -92,11 +98,22 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     // ending creation with a record that cannot say what happened.
     return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")]);
   }
-  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues));
+  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan));
   return { ok: true, summary: result.summary, buildPlan: validated.validated };
 }
 
-function refused(code: AutomationStudioFlowBootstrapCompletionFailureCode, issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowBootstrapCompletionVerdict {
+/** The plan a refusal is about, and where its nodes are defined. */
+type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };
+
+/**
+ * A refusal, fed back with each issue and, where the plan it is about and the
+ * registry can say, the shape each refused parameter accepts.
+ */
+function refused(
+  code: AutomationStudioFlowBootstrapCompletionFailureCode,
+  issues: AutomationStudioFlowBootstrapIssue[],
+  about?: RefusalSubject
+): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
   return {
     ok: false,
@@ -109,7 +126,7 @@ function refused(code: AutomationStudioFlowBootstrapCompletionFailureCode, issue
         ok: false,
         code: "flow_bootstrap.completion_refused",
         refusal: code,
-        issues: shown.map((item) => ({ code: item.code, ...(item.path ? { path: boundedPath(item.path) } : {}) })),
+        issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
         instruction: FEEDBACK_INSTRUCTION
       }
     }
@@ -123,9 +140,4 @@ function errors(issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioF
 
 function issue(code: string, path: string): AutomationStudioFlowBootstrapIssue {
   return { severity: "error", code, message: "The completed result was refused.", path };
-}
-
-/** A plan path is the plan's own structure; still, it is bounded and printable. */
-function boundedPath(path: string): string {
-  return path.replace(/[\u0000-\u001f\u007f]/gu, "").slice(0, MAX_FEEDBACK_PATH_LENGTH);
 }

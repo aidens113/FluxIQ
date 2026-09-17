@@ -127,6 +127,24 @@ describe("a record output in a generated plan", () => {
     expect(codes(planWith(policyActionNode({ outputId: "demo.extract", recordOutput: withoutPath })))).toEqual(["record_output.missing_records_path"]);
   });
 
+  describe("on the node that writes records", () => {
+    const writeRecords = canonicalBuiltinAutomationNodeDefinitions.find((definition) => definition.id === "builtin.data.write-records")!;
+    const saveNode = (parameters: JsonObject): AutomationStudioFlowBootstrapNode => ({ key: "save", definitionId: writeRecords.id, definitionVersion: writeRecords.version, parameters });
+    const recordCodes = (parameters: JsonObject) => codes(planWith(saveNode(parameters))).filter((code) => code.startsWith("record_"));
+
+    it("takes the path the node sets itself, so leaving it out is not refused", () => {
+      expect(recordCodes({ recordOutput: recordOutputWithoutPath() })).toEqual([]);
+      expect(recordCodes({ recordOutput: { ...recordOutputWithoutPath(), writeMode: "sometimes" } })).toEqual(["record_output.invalid_write_mode"]);
+    });
+
+    // `run-mu4yk4u1-60a1c3a4`: a created Flow's save node passed validation
+    // and failed when it ran, because this node has nothing to save without one.
+    it("refuses it left out or null, as its run does", () => {
+      expect(recordCodes({})).toEqual(["record_output.not_object"]);
+      expect(recordCodes({ recordOutput: null })).toEqual(["record_output.not_object"]);
+    });
+  });
+
   it("keeps a recordsPath the author wrote, and refuses it when it is invalid", () => {
     expect(codes(planWith(extractNode({ items: { item: ".row" }, recordOutput: { ...VALID_RECORD_OUTPUT, recordsPath: "" } }))))
       .toEqual(["record_output.invalid_records_path"]);

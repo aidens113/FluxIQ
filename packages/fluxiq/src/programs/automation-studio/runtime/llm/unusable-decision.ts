@@ -27,11 +27,44 @@
 //
 // The runtime recovery path carries the same rule privately
 // (`recovery/annotation/exploration.ts`); this is the shared form of it.
+//
+// It also says what the model is told before it is asked again, and when two
+// unusable decisions are the same one. A model asked again with nothing to
+// say what was wrong can only guess, and a loop that counts every unusable
+// decision alike stops a model that is fixing its mistakes one at a time. So
+// the loop hands the model the issue codes and the shape a decision takes, and
+// treats a decision refused for a set of issues it has not seen as new.
 
+import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
 import type { AutomationStudioLlmTaskResult } from "./harness.ts";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
+
+/** The evidence entry an unusable decision's feedback arrives under. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID = "core.decision_check";
+
+/** The most issue codes one piece of feedback names. */
+const MAX_FEEDBACK_ISSUE_CODES = 8;
+
+/**
+ * The decision shapes an evidence loop accepts, as the model is shown them
+ * after a reply that was not one. Written as an example of each variant, not
+ * as the schema: the schema is already in the request, and what a model that
+ * missed it needs is the plainest picture of an answer.
+ */
+function acceptedDecision(): JsonObject {
+  return {
+    oneOf: [
+      { kind: "tool_call", callId: "<a new id: letters, digits, . _ : ->", toolId: "<one toolId from the decision schema>", input: "<an object matching that tool's input schema>" },
+      { kind: "complete", result: "<an object matching the completion schema, when the decision schema offers complete>" }
+    ],
+    rule: "Answer with exactly one of these objects and no other keys."
+  };
+}
+
+const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
+  + "Answer again with exactly one decision of the accepted shape. The same issues again count toward stopping this exploration.";
 
 /**
  * Thrown by a decision callback to say "the provider was asked and its answer
@@ -72,6 +105,37 @@ export function automationStudioLlmUnusableDecisionError(result: AutomationStudi
   return new AutomationStudioLlmUnusableDecisionError(result.diagnostics
     .filter((diagnostic) => diagnostic.severity === "error")
     .map((diagnostic) => diagnostic.code));
+}
+
+/**
+ * What the model is shown after an unusable decision, before it is asked
+ * again: the issue codes, how many steps in a row have given the loop nothing
+ * new and how many end it, and the shape a decision takes. Codes only, never a
+ * model's words; bounded to well under a kilobyte.
+ */
+export function automationStudioLlmUnusableDecisionFeedback(input: {
+  issueCodes: readonly string[];
+  stepsWithoutProgress: number;
+  maxStepsWithoutProgress: number;
+}): JsonObject {
+  return {
+    ok: false,
+    code: "llm_evidence_loop.decision_unusable",
+    issueCodes: [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_FEEDBACK_ISSUE_CODES),
+    stepsWithoutProgress: input.stepsWithoutProgress,
+    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    accepted: acceptedDecision(),
+    instruction: DECISION_FEEDBACK_INSTRUCTION
+  };
+}
+
+/**
+ * The key two unusable decisions share when they failed for the same reasons:
+ * their distinct issue codes, in order. The order a check lists them in and
+ * how often it repeats one are not a different failure.
+ */
+export function automationStudioLlmUnusableDecisionIssueSet(issueCodes: readonly string[]): string {
+  return JSON.stringify([...new Set(issueCodes)].sort());
 }
 
 function providerStatus(metadata: unknown): number | undefined {
