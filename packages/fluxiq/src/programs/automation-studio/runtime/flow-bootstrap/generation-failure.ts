@@ -4,8 +4,14 @@ import type {
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmUsageSummary
 } from "../llm/index.ts";
-import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmEvidenceLoopResult } from "../llm/index.ts";
+import type {
+  AutomationStudioLlmEvidenceLoopAccounting,
+  AutomationStudioLlmEvidenceLoopFailureCode,
+  AutomationStudioLlmEvidenceLoopResult,
+  AutomationStudioLlmEvidenceLoopTrace
+} from "../llm/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 
@@ -90,6 +96,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.evidence_completion_wrapper_invalid",
     "flow_bootstrap.evidence_completion_plan_invalid",
     "flow_bootstrap.evidence_completion_profile_limit_exceeded",
+    // The bound domain would not turn a completed plan's parameters into ones
+    // its nodes can run with: a handle it never issued or that went stale, a
+    // handle with no resolver bound, or parameters it refused outright.
+    "flow_bootstrap.evidence_completion_parameters_unresolved",
     "flow_bootstrap.provider_response_malformed",
     "flow_bootstrap.provider_response_oversize",
     "flow_bootstrap.provider_output_padding_truncated",
@@ -107,7 +117,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.evidence_tool_failed",
     "flow_bootstrap.evidence_limit",
     "flow_bootstrap.evidence_iteration_limit",
-    "flow_bootstrap.evidence_cancelled"
+    "flow_bootstrap.evidence_cancelled",
+    // The model kept answering with something the exploration could not use --
+    // malformed, failing Core's checks, timing out -- so it was stopped.
+    "flow_bootstrap.evidence_unusable_decision"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]
@@ -149,12 +162,21 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
       resultCode?: string;
     }>;
   };
+  /**
+   * Why a completed plan was refused, as the issue codes that refused it --
+   * validation's own, or a domain's refusal of a node's parameters. Codes
+   * only, at most sixteen, never a message.
+   */
+  issueCodes?: string[];
 };
+
+const MAX_DIAGNOSTIC_ISSUE_CODES = 16;
+const DIAGNOSTIC_ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes"])) return null;
   if (typeof value.code !== "string" || !FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE.has(value.code)) return null;
   if (!FLOW_BOOTSTRAP_FAILURE_STAGES.has(value.stage as AutomationStudioFlowBootstrapFailureStage)) return null;
   if (value.retryable !== true && value.retryable !== false) return null;
@@ -166,6 +188,9 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   if (value.accounting !== undefined && !accounting) return null;
   const evidenceLoop = parseEvidenceLoopCounts(value.evidenceLoop);
   if (value.evidenceLoop !== undefined && !evidenceLoop) return null;
+  if (value.issueCodes !== undefined && (!Array.isArray(value.issueCodes) || !value.issueCodes.length
+    || value.issueCodes.length > MAX_DIAGNOSTIC_ISSUE_CODES
+    || !value.issueCodes.every((code) => typeof code === "string" && DIAGNOSTIC_ISSUE_CODE.test(code)))) return null;
   return {
     code: value.code,
     stage: value.stage as AutomationStudioFlowBootstrapFailureStage,
@@ -173,7 +198,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     providerInvocation: value.providerInvocation,
     providerResponse: value.providerResponse,
     ...(accounting ? { accounting } : {}),
-    ...(evidenceLoop ? { evidenceLoop } : {})
+    ...(evidenceLoop ? { evidenceLoop } : {}),
+    ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {})
   };
 }
 
@@ -191,7 +217,9 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
 };
 
 export function flowBootstrapEvidenceLoopFailure(
-  result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>
+  result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>,
+  /** What the loop spent before it ended, when the caller can say. */
+  accounting?: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>
 ): AutomationStudioFlowBootstrapGenerationError {
   return new AutomationStudioFlowBootstrapGenerationError({
     code: EVIDENCE_LOOP_FAILURE_CODES[result.code],
@@ -199,7 +227,33 @@ export function flowBootstrapEvidenceLoopFailure(
     retryable: false,
     providerInvocation: "attempted",
     providerResponse: "received",
+    ...(accounting ? { accounting } : {}),
     evidenceLoop: evidenceLoopDiagnostic(result)
+  });
+}
+
+/**
+ * The exploration stopped because its decisions kept coming back unusable:
+ * malformed replies, timeouts, or completed plans that kept being refused.
+ *
+ * Built from the loop's progress at the moment it stopped, which is all a
+ * stopped loop has: it never produced a result. The last refusal's issue codes
+ * say why.
+ */
+export function flowBootstrapEvidenceUnusableDecisionFailure(
+  progress: EvidenceLoopProgress & { issueCodes: readonly string[] },
+  accounting?: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>
+): AutomationStudioFlowBootstrapGenerationError {
+  const issueCodes = diagnosticIssueCodes(progress.issueCodes);
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.evidence_unusable_decision",
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    ...(accounting ? { accounting } : {}),
+    evidenceLoop: evidenceLoopDiagnostic(progress),
+    ...(issueCodes.length ? { issueCodes } : {})
   });
 }
 
@@ -209,8 +263,12 @@ export function flowBootstrapEvidenceCompletionFailure(
   code: Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
     | "flow_bootstrap.evidence_completion_wrapper_invalid"
     | "flow_bootstrap.evidence_completion_plan_invalid"
-    | "flow_bootstrap.evidence_completion_profile_limit_exceeded">
+    | "flow_bootstrap.evidence_completion_profile_limit_exceeded"
+    | "flow_bootstrap.evidence_completion_parameters_unresolved">,
+  /** The codes that refused the plan. Anything that is not a code is dropped. */
+  issues: ReadonlyArray<{ code: string }> = []
 ): AutomationStudioFlowBootstrapGenerationError {
+  const issueCodes = diagnosticIssueCodes(issues.map((issue) => issue.code));
   return new AutomationStudioFlowBootstrapGenerationError({
     code,
     stage: "provider_output_validation",
@@ -218,12 +276,24 @@ export function flowBootstrapEvidenceCompletionFailure(
     providerInvocation: "attempted",
     providerResponse: "received",
     accounting,
-    evidenceLoop: evidenceLoopDiagnostic(result)
+    evidenceLoop: evidenceLoopDiagnostic(result),
+    ...(issueCodes.length ? { issueCodes } : {})
   });
 }
 
+/** Distinct issue codes, codes only, at most sixteen. */
+function diagnosticIssueCodes(codes: readonly string[]): string[] {
+  return [...new Set(codes.filter((code) => DIAGNOSTIC_ISSUE_CODE.test(code)))].slice(0, MAX_DIAGNOSTIC_ISSUE_CODES);
+}
+
+/** What a loop has recorded so far: a finished result's, or a stopped loop's. */
+type EvidenceLoopProgress = {
+  trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
+  accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
+};
+
 function evidenceLoopDiagnostic(
-  result: AutomationStudioLlmEvidenceLoopResult
+  result: EvidenceLoopProgress
 ): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
   return {
     iterationCount: result.accounting.iterations,
@@ -465,6 +535,7 @@ function fixedProviderFailureState(
     case "flow_bootstrap.evidence_completion_wrapper_invalid":
     case "flow_bootstrap.evidence_completion_plan_invalid":
     case "flow_bootstrap.evidence_completion_profile_limit_exceeded":
+    case "flow_bootstrap.evidence_completion_parameters_unresolved":
       return { retryable: false, providerResponse: "received" };
     default: return null;
   }
@@ -477,12 +548,13 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
   if (value === undefined) return undefined;
   if (!isRecord(value) || !hasExactFields(value, ["requestId", "estimatedInputTokens", "provider", "model", "providerStatus", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"])) return null;
   if (typeof value.requestId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(value.requestId)) return null;
-  if (!boundedInteger(value.estimatedInputTokens, 50_000)) return null;
+  // A build's totals, not one request's: an iterating build adds up every call.
+  if (!boundedInteger(value.estimatedInputTokens, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS)) return null;
   if (value.provider !== undefined && !boundedLabel(value.provider)) return null;
   if (value.model !== undefined && !boundedLabel(value.model)) return null;
   if (value.providerStatus !== undefined && safeProviderStatus(value.providerStatus) === undefined) return null;
   for (const field of ["inputTokens", "outputTokens", "totalTokens"] as const) {
-    if (value[field] !== undefined && !boundedInteger(value[field], 50_000)) return null;
+    if (value[field] !== undefined && !boundedInteger(value[field], AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS)) return null;
   }
   if (value.estimatedCostUsd !== undefined && (typeof value.estimatedCostUsd !== "number" || !Number.isFinite(value.estimatedCostUsd) || value.estimatedCostUsd < 0 || value.estimatedCostUsd > 10)) return null;
   return {
@@ -498,14 +570,25 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
   };
 }
 
+/**
+ * The most a loop can record: its ceiling on decisions, plus the one
+ * observation it may make before the first. These were sixteen, the loop's old
+ * ceiling, and were left behind when it rose -- so a diagnostic from a longer
+ * exploration failed to parse, and its named reason was replaced by a generic
+ * transport failure.
+ */
+const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
+const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps"])) return null;
-  if (!boundedInteger(value.iterationCount, 16) || !boundedInteger(value.decisionCount, 16)
-    || !boundedInteger(value.toolCallCount, 16) || !boundedInteger(value.evidenceBytes, 1_048_576)) return null;
+  if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
+    || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
+    || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
   let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
   if (value.steps !== undefined) {
-    if (!Array.isArray(value.steps) || value.steps.length > 16) return null;
+    if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_STEPS) return null;
     steps = [];
     for (const step of value.steps) {
       if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])

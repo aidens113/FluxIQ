@@ -13,7 +13,25 @@
 // This module does arithmetic only and imports nothing from `runtime/llm/`,
 // which reads this directory's values.
 
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "./evidence-loop.ts";
+
+/**
+ * The most tokens one Flow Bootstrap can record in its accounting: every call
+ * the loop may make, each at the per-request ceiling.
+ *
+ * The recorded totals used to be held to 50,000 -- the ceiling on a single
+ * request -- while an iterating build adds up every call it made. A build whose
+ * grant allowed, say, 100,000 tokens and legitimately used 60,000 was then
+ * refused after the provider had been paid for all of it, as a generic
+ * validation failure. This bound is at least any grant's
+ * `maxTotalTokensPerRun` (its calls times its per-call limit, neither of which
+ * can exceed the numbers here), and a test pins it to both, so the grant stays
+ * the thing that enforces the budget.
+ *
+ * `50_000` is `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`,
+ * written out because this directory may not read from `runtime/llm/`.
+ */
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 50_000;
 
 export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
@@ -32,6 +50,13 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
    * named no cost at all.
    */
   maxEstimatedCostUsdPerCall?: number;
+  /**
+   * Unusable decisions in a row after which the exploration stops. Each one
+   * still spends one of the loop's iterations, so the grant's call count keeps
+   * binding underneath; this is the guard that stops a loop whose replies stay
+   * bad long before that count does.
+   */
+  maxConsecutiveUnusableDecisions: number;
 };
 
 /** The loop limits and per-decision cost for one evidence-guided bootstrap. */
@@ -55,6 +80,7 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
   return {
     loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 8_000 },
-    ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {})
+    ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {}),
+    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations)
   };
 }

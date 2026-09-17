@@ -292,6 +292,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
+      // What the build spent before it ended, so a failed run can be costed.
+      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 },
       evidenceLoop: { iterationCount: 1, decisionCount: 0, toolCallCount: 0, evidenceBytes: 0 }
     });
   });

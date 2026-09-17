@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import {
   flowBootstrapEvidenceLoopFailure,
+  flowBootstrapEvidenceUnusableDecisionFailure,
   flowBootstrapHarnessFailure,
   flowBootstrapPhaseFailure,
   parseAutomationStudioFlowBootstrapFailureDiagnostic,
@@ -81,7 +83,11 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", providerInvocation: "not_attempted", providerResponse: "not_received", accounting: undefined })).toEqual({ code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", retryable: false, providerInvocation: "not_attempted", providerResponse: "not_received" });
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, prompt: "private" })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, authorization: "private" } })).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: 50_001 } })).toBeNull();
+    // A build's totals add up every call it made, so they are bounded by every
+    // call the loop may make at one request's ceiling -- not by that ceiling.
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: 50_001, totalTokens: 60_000 } })).toMatchObject({ accounting: { estimatedInputTokens: 50_001, totalTokens: 60_000 } });
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, totalTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, stage: "raw_provider_body" })).toBeNull();
   });
 
@@ -105,10 +111,61 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ...valid,
       evidenceLoop: { ...valid.evidenceLoop, steps: [{ toolId: "web.click", resultCode: "private result text!" }] }
     })).toBeNull();
+    // Bounded by the loop's own ceiling -- its decisions plus one opening
+    // observation -- not by the sixteen it used to be. A diagnostic from a
+    // longer exploration failed to parse at sixteen, and its named reason was
+    // replaced by a generic transport failure.
+    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+    const long = {
+      ...valid,
+      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
+    };
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(long)).toEqual(long);
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
       ...valid,
-      evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: 17 }, () => ({ toolId: "web.click" })) }
+      evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: longest + 1 }, () => ({ toolId: "web.click" })) }
     })).toBeNull();
+    for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
+    }
+  });
+
+  it("names an exploration stopped on unusable decisions, with its progress and why", () => {
+    const error = flowBootstrapEvidenceUnusableDecisionFailure({
+      trace: [
+        { iteration: 0, decision: "tool_call", toolId: "web.inspect", evidenceBytes: 40 },
+        { iteration: 1, decision: "unusable", resultCode: "bootstrap.invalid_parameter_value" },
+        { iteration: 2, decision: "unusable" },
+        { iteration: 3, decision: "unusable" }
+      ],
+      accounting: { iterations: 3, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+      issueCodes: ["bootstrap.invalid_parameter_value", "bootstrap.invalid_parameter_value", "a refusal in prose, not a code"]
+    }, { requestId: "evidence.1", estimatedInputTokens: 9_000, inputTokens: 7_000, totalTokens: 8_000 });
+    expect(parseAutomationStudioFlowBootstrapGenerationError(error)).toEqual({
+      code: "flow_bootstrap.evidence_unusable_decision",
+      stage: "provider_output_validation",
+      retryable: false,
+      providerInvocation: "attempted",
+      providerResponse: "received",
+      accounting: { requestId: "evidence.1", estimatedInputTokens: 9_000, inputTokens: 7_000, totalTokens: 8_000 },
+      evidenceLoop: { iterationCount: 3, decisionCount: 4, toolCallCount: 1, evidenceBytes: 40, steps: [{ toolId: "web.inspect" }] },
+      issueCodes: ["bootstrap.invalid_parameter_value"]
+    });
+  });
+
+  it("carries a refused plan's issue codes, bounded, and refuses a record whose codes are not codes", () => {
+    const valid = {
+      code: "flow_bootstrap.evidence_completion_plan_invalid",
+      stage: "provider_output_validation",
+      retryable: false,
+      providerInvocation: "attempted",
+      providerResponse: "received",
+      issueCodes: ["bootstrap.invalid_parameter_value"]
+    };
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(valid)).toEqual(valid);
+    for (const issueCodes of [[], ["not a code"], Array.from({ length: 17 }, (_, index) => `bootstrap.code_${index}`), "bootstrap.invalid_parameter_value"]) {
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, issueCodes })).toBeNull();
+    }
   });
 
   it("parses a canonical foreign-constructor error without relying on class identity", () => {

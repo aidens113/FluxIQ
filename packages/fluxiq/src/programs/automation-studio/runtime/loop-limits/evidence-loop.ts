@@ -29,3 +29,12 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
   maxToolCalls: 64,
   maxEvidenceBytes: 1_048_576
 } as const;
+
+// How many decisions in a row may come back unusable -- a malformed reply, a
+// timeout -- before a loop that asks again stops asking. It is the same number
+// as the runtime exploration's no-progress streak
+// (`AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS`), which a
+// test pins: a single bad reply is ordinary, three in a row is a model or a
+// provider that has stopped answering usefully. It lives here rather than in
+// `runtime/recovery/` because `runtime/llm/` may not read a value from there.
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS = 3;

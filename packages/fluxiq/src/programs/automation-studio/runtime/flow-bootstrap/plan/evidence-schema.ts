@@ -61,7 +61,13 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonOb
                   properties: {
                     key: bootstrapSymbolSchema(), definitionId: bootstrapIdentifierSchema(),
                     definitionVersion: boundedBootstrapTextSchema(40),
-                    parameters: { type: "object", maxProperties: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxParametersPerNode, additionalProperties: {} },
+                    // The model is shown what it observed only as opaque handles, so
+                    // this is where it learns to name one rather than invent a
+                    // locator; the bound domain resolves it before validation.
+                    parameters: {
+                      type: "object", maxProperties: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxParametersPerNode, additionalProperties: {},
+                      description: "Where a value must point at something the evidence showed (a control, a field, or a list a tool detected), write {\"handle\":\"<its handle, copied exactly>\"} as that value; after exploring more than one location, write {\"handle\":\"<handle>\",\"location\":\"<the location the evidence reported it at>\"}. Never write a locator, path or query of your own."
+                    },
                     outputActionId: bootstrapIdentifierSchema()
                   }
                 }

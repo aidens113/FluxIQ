@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { plan, mockProvider, blankFixture, grant, expectNoTopology, rejectedGenerationDiagnostic } from "./fixtures.ts";
@@ -49,11 +49,15 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
+  // A completed result that fails a check is handed back to the model with the
+  // reasons, as a refused plan is a model failure and not the end of the build.
+  // One that keeps failing stops on the unusable-decision streak -- here the
+  // grant's three calls -- and the record names the check that refused it.
   it.each([
-    ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", () => ({ summary: "Candidate.", plan: plan(), unexpected: true })],
-    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", () => ({ summary: "Candidate.", plan: { ...plan(), schemaVersion: "0.2" } })],
-    ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", () => ({ summary: "x".repeat(241), plan: plan() })],
-    ["registry validation", "flow_bootstrap.evidence_completion_plan_invalid", () => ({
+    ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", "bootstrap.completion_wrapper_invalid", () => ({ summary: "Candidate.", plan: plan(), unexpected: true })],
+    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.invalid_schema_version", () => ({ summary: "Candidate.", plan: { ...plan(), schemaVersion: "0.2" } })],
+    ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", "bootstrap.completion_profile_limit_exceeded", () => ({ summary: "x".repeat(241), plan: plan() })],
+    ["registry validation", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.definition_unavailable", () => ({
       summary: "Candidate.",
       plan: {
         ...plan(),
@@ -64,8 +68,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         }]
       }
     })]
-  ])("reports a content-free evidence completion failure for invalid %s", async (_label, expectedCode, completion) => {
-    const provider = mockProvider(async () => ({
+  ])("feeds back, then reports a content-free failure for, invalid %s", async (_label, expectedRefusal, expectedIssue, completion) => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider = mockProvider(async (request) => (requests.push(request), {
       response: {
         kind: "evidence_tool_decision",
         summary: "Complete candidate.",
@@ -90,8 +95,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceGuided: true
     }));
 
+    expect(requests).toHaveLength(3);
+    const feedback = requests[1]?.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.completion_check")?.value;
+    expect(feedback).toMatchObject({ ok: false, refusal: expectedRefusal, issues: expect.arrayContaining([expect.objectContaining({ code: expectedIssue })]) });
     expect(diagnostic).toMatchObject({
-      code: expectedCode,
+      code: "flow_bootstrap.evidence_unusable_decision",
       stage: "provider_output_validation",
       retryable: false,
       providerInvocation: "attempted",
@@ -99,18 +107,19 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 10,
-        outputTokens: 5,
-        totalTokens: 15,
-        estimatedCostUsd: 0.001
+        inputTokens: 30,
+        outputTokens: 15,
+        totalTokens: 45
       },
       evidenceLoop: {
-        iterationCount: 1,
-        decisionCount: 2,
+        iterationCount: 3,
+        decisionCount: 4,
         toolCallCount: 1,
         steps: [{ toolId: "inspect" }]
-      }
+      },
+      issueCodes: expect.arrayContaining([expectedIssue])
     });
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.003, 9);
     expect(Object.keys(diagnostic)).toEqual(expect.arrayContaining(["code", "stage", "accounting"]));
     expect(JSON.stringify(diagnostic)).not.toMatch(/Candidate|missing\.definition|unexpected/);
     await expectNoTopology(instance, project.id, flow.flowId);

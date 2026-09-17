@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "./unusable-decision.ts";
 
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
 // bounded by the same three numbers, and a constant both directories read is
@@ -8,6 +9,14 @@ import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 // surface is unchanged: every existing consumer still reads it from
 // runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
+// The error a decision callback throws to have the loop ask again, and how a
+// caller tells whether a failed call is that kind of failure. Part of the
+// loop's input contract, so published with it.
+export {
+  AutomationStudioLlmUnusableDecisionError,
+  automationStudioLlmTaskResultSpentWithoutDecision,
+  automationStudioLlmUnusableDecisionError
+} from "./unusable-decision.ts";
 
 /** Provider-neutral decision policy for bounded evidence loops. Provider adapters
  * should include this policy in their structured-decision instruction. */
@@ -30,7 +39,9 @@ export type AutomationStudioLlmEvidenceLoopDecision =
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
   iteration: number;
-  decision: "tool_call" | "complete";
+  /** `unusable` is a decision call that was made and came back as nothing the
+   * loop could act on, and was asked again. It names no tool. */
+  decision: "tool_call" | "complete" | "unusable";
   callId?: string;
   toolId?: string;
   evidenceBytes?: number;
@@ -45,6 +56,19 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
   effectApplied: boolean;
   resultCode?: string;
 };
+
+/**
+ * What a caller's check made of a completed result. A refusal names why, in
+ * issue codes, and carries the feedback the model is shown before it is asked
+ * again: bounded JSON the caller authored -- what was wrong and where -- never
+ * content the model has not already seen from its own tools.
+ */
+export type AutomationStudioLlmEvidenceCompletionCheck =
+  | { ok: true }
+  | { ok: false; issueCodes: readonly string[]; feedback: JsonObject };
+
+/** The evidence entry a refused completion's feedback arrives under. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID = "core.completion_check";
 
 export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.invalid_configuration"
@@ -100,6 +124,43 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   completionSchema?: JsonObject;
   minToolCalls?: number;
   propagateDecisionErrors?: boolean;
+  /**
+   * Ask again after an unusable decision instead of ending.
+   *
+   * When set, a `decide` that throws `AutomationStudioLlmUnusableDecisionError`
+   * spends that iteration -- one provider call, so `maxIterations` still bounds
+   * every call the loop makes -- is recorded as an `unusable` step, and the
+   * loop asks again. A usable decision resets the count. The
+   * `maxConsecutive`-th unusable decision in a row ends the loop: `stalled`
+   * builds the error that ends it, which is then handled exactly as if
+   * `decide` had thrown it (thrown under `propagateDecisionErrors`, otherwise
+   * `llm_evidence_loop.invalid_decision`).
+   *
+   * Absent, the error is an ordinary decision error, as it always was. Any
+   * other error `decide` throws is unaffected either way.
+   *
+   * A completed result that `checkCompletion` refuses is an unusable decision
+   * too, and joins the same count.
+   */
+  unusableDecisions?: {
+    maxConsecutive: number;
+    stalled(input: {
+      issueCodes: readonly string[];
+      trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
+      accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
+    }): unknown;
+  };
+  /**
+   * Check a completed result before the loop accepts it.
+   *
+   * A result the check refuses was a paid call that produced nothing usable.
+   * With `unusableDecisions` set it is recorded as an `unusable` step, the
+   * check's feedback is added to the evidence the model sees under
+   * `AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID`, and the loop
+   * asks again; without it, the loop ends `llm_evidence_loop.invalid_decision`.
+   * A check that throws is a decision error.
+   */
+  checkCompletion?(result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>;
   signal?: AbortSignal;
 };
 
@@ -145,6 +206,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
     evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence });
     trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
   }
+  let unusableStreak = 0;
+  // One more unusable decision. Returns the error that ends the loop once the
+  // streak is reached, or nothing when the loop should ask again.
+  const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[]): { error: unknown } | undefined => {
+    unusableStreak += 1;
+    trace.push(step);
+    if (unusableStreak < limits.maxConsecutiveUnusableDecisions) return undefined;
+    return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
+  };
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
@@ -158,17 +228,48 @@ export async function runAutomationStudioLlmEvidenceLoop(
     try {
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(eligibleTools, input.completionSchema, canComplete);
       decision = parseDecision(await input.decide({ iteration, tools: eligibleTools, evidence: evidenceContextWindow(evidence, limits.maxEvidenceContextBytes), decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
-    } catch (error) {
+    } catch (thrown) {
       if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+      let error = thrown;
+      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
+        const resultCode = thrown.issueCodes[0];
+        const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}) }, thrown.issueCodes);
+        if (!stalled) continue;
+        error = stalled.error;
+      }
       if (input.propagateDecisionErrors) throw error;
     }
     if (!decision) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
     addUsage(accounting, decision.usage);
     if (decision.kind === "complete") {
       if (accounting.toolCalls < limits.minToolCalls) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
-      trace.push({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
-      return { ok: true, result: decision.result, trace, accounting };
+      let check: ReturnType<typeof parseCompletionCheck> = { ok: true };
+      if (input.checkCompletion) {
+        try {
+          check = parseCompletionCheck(await input.checkCompletion(structuredClone(decision.result)));
+        } catch (error) {
+          if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+          if (input.propagateDecisionErrors) throw error;
+          return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+        }
+      }
+      if (check?.ok) {
+        trace.push({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
+        return { ok: true, result: decision.result, trace, accounting };
+      }
+      if (!check || !input.unusableDecisions) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+      // The model is told why, as evidence, before it is asked again.
+      const feedbackBytes = Buffer.byteLength(JSON.stringify(check.feedback), "utf8");
+      if (accounting.evidenceBytes + feedbackBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+      accounting.evidenceBytes += feedbackBytes;
+      evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: check.feedback });
+      const resultCode = check.issueCodes[0];
+      const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) }, check.issueCodes);
+      if (!stalled) continue;
+      if (input.propagateDecisionErrors) throw stalled.error;
+      return failure("llm_evidence_loop.invalid_decision", trace, accounting);
     }
+    unusableStreak = 0;
     if (!toolIds.has(decision.toolId)) return failure("llm_evidence_loop.unknown_tool", trace, accounting);
     if (!eligibleToolIds.has(decision.toolId)) {
       trace.push({ iteration, decision: "tool_call", toolId: decision.toolId, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
@@ -268,15 +369,19 @@ function parseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision 
   return undefined;
 }
 
-function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): { maxIterations: number; maxToolCalls: number; maxEvidenceBytes: number; maxEvidenceContextBytes: number; minToolCalls: number } | undefined {
+function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): { maxIterations: number; maxToolCalls: number; maxEvidenceBytes: number; maxEvidenceContextBytes: number; minToolCalls: number; maxConsecutiveUnusableDecisions: number } | undefined {
   const maxEvidenceBytes = input.maxEvidenceBytes ?? 262_144;
   const limits = {
     maxIterations: input.maxIterations ?? 8,
     maxToolCalls: input.maxToolCalls ?? 8,
     maxEvidenceBytes,
     maxEvidenceContextBytes: input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes),
-    minToolCalls: input.minToolCalls ?? 0
+    minToolCalls: input.minToolCalls ?? 0,
+    maxConsecutiveUnusableDecisions: input.unusableDecisions?.maxConsecutive ?? 1
   };
+  if (input.unusableDecisions && (typeof input.unusableDecisions.stalled !== "function"
+    || !Number.isInteger(limits.maxConsecutiveUnusableDecisions) || limits.maxConsecutiveUnusableDecisions < 1
+    || limits.maxConsecutiveUnusableDecisions > limits.maxIterations)) return undefined;
   if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
   if (!Number.isInteger(limits.maxEvidenceBytes) || limits.maxEvidenceBytes <= 0 || limits.maxEvidenceBytes > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes) return undefined;
@@ -285,12 +390,27 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): { maxIterat
   return limits;
 }
 
+/**
+ * A check's answer, or `undefined` when it is not one. Issue codes are kept
+ * only when they are codes; feedback only when it is bounded JSON.
+ */
+function parseCompletionCheck(value: unknown): { ok: true } | { ok: false; issueCodes: string[]; feedback: JsonObject } | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.ok === true && exactKeys(value, ["ok"])) return { ok: true };
+  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
+  const issueCodes = value.issueCodes.filter((code): code is string => typeof code === "string" && /^[a-z0-9_.:-]{1,100}$/i.test(code));
+  return { ok: false, issueCodes, feedback: structuredClone(value.feedback) };
+}
+
 function evidenceContextWindow(
   evidence: Array<{ callId: string; toolId: string; value: JsonValue }>,
   maxBytes: number
 ): Array<{ callId: string; toolId: string; value: JsonValue }> {
   const selected: Array<{ callId: string; toolId: string; value: JsonValue }> = [];
-  for (let index = evidence.length - 1; index >= 0; index -= 1) {
+  // Held to the provider's own count as well as the bytes: completion feedback
+  // adds entries that are not tool calls, and a request carrying more than a
+  // provider accepts is refused before it is sent.
+  for (let index = evidence.length - 1; index >= 0 && selected.length < AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls; index -= 1) {
     const candidate = [evidence[index]!, ...selected];
     if (Buffer.byteLength(JSON.stringify(candidate), "utf8") > maxBytes) break;
     selected.unshift(evidence[index]!);

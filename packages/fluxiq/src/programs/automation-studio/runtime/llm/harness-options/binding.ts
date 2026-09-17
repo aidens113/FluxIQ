@@ -78,6 +78,36 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     target: AutomationStudioRuntimeTargetOverrideTarget,
     failedAction: AutomationStudioRuntimeTargetOverrideFailedAction
   ): AutomationStudioRuntimeTargetOverrideEvidenceValidation;
+  /**
+   * Turn a generated plan node's parameters into the ones it really runs with,
+   * or refuse the node.
+   *
+   * The model names what it observed only by the handles this domain issued in
+   * its evidence, written as `{ "handle": "<token>" }` where a real value --
+   * a target, an extraction item -- belongs. After exploration and before the
+   * plan is validated, Core calls this once for every node of the plan, with a
+   * copy of the node's parameters as the model wrote them.
+   *
+   * - `unchanged`: the parameters stand as written. Right for a node this
+   *   domain does not own, or one that names no handle.
+   * - `resolved`: the node's complete parameters, every handle reference
+   *   replaced from the resolutions the domain retained when it issued them.
+   * - `refused`: the node cannot run as written -- a handle this domain never
+   *   issued, one that no longer points at anything, or anything else the
+   *   domain will not accept. Issue codes only (`^[a-z0-9_.:-]{1,100}$`).
+   *
+   * Core trusts none of the answer. A throw, a malformed answer, parameters
+   * that are not plain bounded JSON, or parameters that still name a handle
+   * (including `unchanged` ones) all refuse the node, and so does naming a
+   * handle when this is not implemented. A refused node fails plan validation
+   * and never reaches dispatch.
+   */
+  resolvePlanNodeParameters?(input: {
+    projectId: string;
+    flowId: string;
+    nodeDefinitionId: string;
+    parameters: JsonObject;
+  }): { status: "unchanged" } | { status: "resolved"; parameters: JsonObject } | { status: "refused"; issueCodes: readonly string[] };
 };
 
 /**
