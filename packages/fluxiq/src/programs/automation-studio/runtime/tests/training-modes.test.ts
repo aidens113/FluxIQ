@@ -143,7 +143,7 @@ describe("Automation Studio training modes", () => {
       approvalMode: "auto",
       riskLevel: "low",
       patchKinds: ["edit_expectation"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: true
     })).toEqual({
       autoApply: true,
@@ -154,28 +154,28 @@ describe("Automation Studio training modes", () => {
       approvalMode: "manual",
       riskLevel: "low",
       patchKinds: ["edit_expectation"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: true
     })).toMatchObject({ autoApply: false, requiresManualApproval: true });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "mixed",
       riskLevel: "low",
       patchKinds: ["edit_router"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: true
     })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Structural adaptations require manual review before durable promotion." });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "auto",
       riskLevel: "destructive",
       patchKinds: ["edit_action_target"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: true
     })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Destructive adaptations always require manual review." });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "auto",
       riskLevel: "low",
       patchKinds: ["edit_expectation"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: true,
       requireFirstManualReview: true,
       priorManualReviewExists: false
@@ -184,7 +184,7 @@ describe("Automation Studio training modes", () => {
       approvalMode: "auto",
       riskLevel: "low",
       patchKinds: ["edit_expectation"],
-      validated: true,
+      confidence: tierOf([trial()]),
       promoteAdaptations: false
     })).toMatchObject({ autoApply: false, requiresManualApproval: false });
   });
@@ -240,8 +240,8 @@ describe("Automation Studio training modes", () => {
     expect(claimed({ tier: "established", trials: 0, replays: 2, replaysRequired: 2 })).toMatchObject({ autoApply: false, requiresManualApproval: true });
     expect(claimed({ tier: "established", trials: Number.NaN, replays: 2, replaysRequired: 2 })).toMatchObject({ autoApply: false, requiresManualApproval: true });
     expect(claimed({ tier: "trusted", trials: 1, replays: 0, replaysRequired: 2 })).toMatchObject({ autoApply: false, requiresManualApproval: true });
-    // @ts-expect-error A caller passes the tier or the legacy claim, never both.
-    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, validated: true, confidence: tierOf([]) })).toMatchObject({ autoApply: false });
+    // @ts-expect-error The retired `validated` claim is no longer an input; an untyped caller still passing it is refused.
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, validated: true })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
   });
 
   it("decides whether a created Flow may be applied automatically from the same tier rules", () => {

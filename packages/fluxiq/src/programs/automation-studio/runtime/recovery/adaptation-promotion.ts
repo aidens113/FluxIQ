@@ -85,19 +85,6 @@ export function adaptationValidationCounts(adaptation: AutomationStudioSavedChan
   return { succeeded, failed, total: succeeded + failed };
 }
 
-/**
- * A number between 0 and 1 that no gate reads.
- *
- * @deprecated `adaptationConfidence` replaces it. It remains only because
- * `service.ts` still writes it into review metadata; remove it with that write.
- */
-export function adaptationConfidenceScore(adaptation: AutomationStudioFlowAdaptation): number {
-  const counts = adaptationValidationCounts(adaptation);
-  if (!counts.total) return 0;
-  const riskPenalty = adaptation.riskLevel === "low" ? 0 : adaptation.riskLevel === "medium" ? 0.1 : adaptation.riskLevel === "high" ? 0.25 : 0.5;
-  return Math.max(0, Math.min(1, counts.succeeded / counts.total - riskPenalty));
-}
-
 // What a person may apply a change on. A succeeded trial or replay is enough,
 // and a named approval stands in for having none. Approval never outvotes a
 // failure: an `unverified` tier with a failure on record means the latest

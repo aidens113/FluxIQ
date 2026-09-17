@@ -139,10 +139,10 @@ type AutomationStudioPromotionGateSharedInput = {
 };
 
 /** `confidence` is the tier the change's saved trials and replays earn (`adaptationConfidence`). */
-export type AutomationStudioAdaptationPromotionGateInput = AutomationStudioPromotionGateSharedInput & { patchKinds: AutomationStudioChangeProposalKind[] } & (
-  | { confidence: AutomationStudioChangeConfidenceDecision; validated?: never }
-  | { /** @deprecated A caller's claim, read only while `service.ts` still passes it; pass `confidence`. */ validated: boolean; confidence?: never }
-);
+export type AutomationStudioAdaptationPromotionGateInput = AutomationStudioPromotionGateSharedInput & {
+  patchKinds: AutomationStudioChangeProposalKind[];
+  confidence: AutomationStudioChangeConfidenceDecision;
+};
 
 /** `mode` is `create` for a blank Flow and `extend` for one that already runs; upgrade a record saved without one first. */
 export type AutomationStudioBootstrapApplyGateInput = AutomationStudioPromotionGateSharedInput & {
@@ -318,7 +318,7 @@ export function decideAutomationStudioProposalApprovalGate(input: AutomationStud
 
 export function decideAutomationStudioAdaptationPromotionGate(input: AutomationStudioAdaptationPromotionGateInput): AutomationStudioAdaptationPromotionGateDecision {
   if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Adaptation promotion is disabled by training mode or settings." };
-  const evidence = input.confidence ? promotionEvidenceRefusal(input.confidence) : input.validated === true ? undefined : UNVALIDATED_REASON;
+  const evidence = promotionEvidenceRefusal(input.confidence);
   if (evidence) return manualReview(evidence);
   const shared = sharedPromotionRefusal(input);
   if (shared) return manualReview(shared);
@@ -349,10 +349,11 @@ const UNVALIDATED_REASON = "Adaptation must pass validation before promotion.";
 
 // The tier rule both automatic gates share. Only a trial proves a change before it is applied, so
 // no succeeded trial means no promotion however many replays are listed; an `unverified` change,
-// unproven or contradicted by its latest result, waits; anything unrecognisable is refused.
-function promotionEvidenceRefusal(confidence: AutomationStudioChangeConfidenceDecision): string | undefined {
-  if (confidence.tier !== "provisional" && confidence.tier !== "established") {
-    return confidence.lastFailure ? `Its latest ${confidence.lastFailure} failed, so the change is not promoted until a new trial succeeds.` : UNVALIDATED_REASON;
+// unproven or contradicted by its latest result, waits; anything unrecognisable, or no decision at
+// all (an untyped caller still passing the retired `validated` claim), is refused.
+function promotionEvidenceRefusal(confidence: AutomationStudioChangeConfidenceDecision | undefined): string | undefined {
+  if (confidence?.tier !== "provisional" && confidence?.tier !== "established") {
+    return confidence?.lastFailure ? `Its latest ${confidence.lastFailure} failed, so the change is not promoted until a new trial succeeds.` : UNVALIDATED_REASON;
   }
   return confidence.trials >= 1 ? undefined : "A change with no succeeded trial is never promoted automatically.";
 }

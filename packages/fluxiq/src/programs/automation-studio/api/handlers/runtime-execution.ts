@@ -2,7 +2,7 @@
 // domain surfaces it reads and writes.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
-import type { AutomationStudioFlowDocument } from "../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -38,7 +38,16 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       }
       const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}) });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
-      const runDetail = projectId ? await service.getFlowRunDetail(projectId, runtimeSession.runId).catch(() => null) : null;
+      const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
+      let runDetail: AutomationStudioFlowRunDetail | null = null;
+      try {
+        runDetail = projectId ? await service.getFlowRunDetail(projectId, runtimeSession.runId) : null;
+      } catch (error) {
+        // The run has ended, so its session and link still go back. An unread detail makes this a
+        // failed answer, never one that reports no adaptations and no durable change.
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, error: `Run ${runtimeSession.runId} ended ${runtimeSession.status}, but its run detail could not be read: ${reason}`, payload: { runtimeSession, runDetailLink } };
+      }
       const durableBehaviorChanged = Boolean(runDetail?.adaptationIds?.length && runDetail.adaptationIds.some((adaptationId) => {
         const attempt = runDetail.metadata?.runtimePatchAttempts;
         return Array.isArray(attempt) && attempt.some((item) => typeof item === "object" && item && (item as any).adaptationId === adaptationId && (item as any).approvalDecision?.autoApply === true);
@@ -48,7 +57,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         payload: {
           runtimeSession,
           runSummary: runDetail?.summary,
-          runDetailLink: { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId },
+          runDetailLink,
           createdAdaptationIds: runDetail?.adaptationIds ?? [],
           interventionCount: runDetail?.summary.interventionCount ?? 0,
           terminalReason: runtimeSession.trace?.message ?? runtimeSession.status,

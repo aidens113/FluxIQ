@@ -108,7 +108,7 @@ import {
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTokenLimits
 } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantRefusal, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
@@ -265,6 +265,7 @@ import {
   type RuntimeIndex,
 } from "./service/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
+import { admitAutomationStudioRuntimeSession, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
 export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
 export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
@@ -327,8 +328,7 @@ import {
   automationStudioFilterHash,
   automationStudioPageLimit,
   decodeAutomationStudioPageCursor,
-  encodeAutomationStudioPageCursor,
-  emptyFlowSummaryIndex
+  encodeAutomationStudioPageCursor
 } from "../storage/index.ts";
 import {
   emptyRecordingIndex,
@@ -1563,7 +1563,8 @@ export class AutomationStudioService {
   }
 
   async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
-    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
+    // A missing index reads as empty; a failed read fails the listing rather than listing no Flows.
+    const index = await this.indexes.readFlowIndex(projectId);
     const metadataAwareIndex = index.ownershipMetadataVersion === 1 && index.hierarchyMetadataVersion === 1
       ? index
       : await this.repairFlowSummaryMetadataIndex(projectId, index);
@@ -2890,7 +2891,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }): Promise<AutomationStudioFlowAdaptation> {
     const now = Date.now();
     const patchKinds = input.adaptation.patch.map((patch) => patch.kind);
-    const validated = adaptationValidationCounts(input.adaptation).succeeded > 0;
+    const confidence = adaptationConfidence(input.adaptation);
     const requireFirstManualReview = input.context.settings.requireFirstManualReviewBeforeAutoPromotion === true
       || input.context.policy.preset === "autonomous" && booleanSetting(input.context.settings.metadata?.requireFirstManualReviewBeforeAutoPromotion, false);
     const priorManualReviewExists = requireFirstManualReview
@@ -2901,7 +2902,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       approvalMode: input.context.policy.proposalMode,
       riskLevel: input.adaptation.riskLevel,
       patchKinds,
-      validated,
+      confidence,
       promoteAdaptations: input.context.behavior.promoteAdaptations,
       requireFirstManualReview,
       priorManualReviewExists,
@@ -2912,7 +2913,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       mode: input.context.policy.proposalMode,
       risk: input.adaptation.riskLevel,
       patchKinds,
-      validationStatus: validated ? "validated" : "unvalidated",
+      validationStatus: confidence.tier === "unverified" ? "unvalidated" : "validated", confidence: confidence.tier,
       reason: decision.reason,
       actor: "runtime",
       decidedAt: now,
@@ -3087,8 +3088,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
       throw new Error("Explicit LLM execution does not accept idempotency keys.");
     }
+    let session: AutomationStudioRuntimeSession | undefined;
+    try {
     if (input.projectId && idempotencyKey) {
-      const matching = (await this.listRuntimeSessions(input.projectId).catch(() => [])).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
+      // A failed read refuses the run: read as "no sessions", it would start a duplicate under the same key.
+      const matching = (await this.listRuntimeSessions(input.projectId)).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
       if (matching) return matching;
     }
     const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
@@ -3103,25 +3107,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
     if (adaptiveRunRequested) startInput.metadata = { ...(startInput.metadata ?? {}), adaptiveRuntime: true, adaptiveMode: runInterventionMode };
-    let session: AutomationStudioRuntimeSession;
-    if (existing) {
-      session = existing;
-    } else if (input.projectId && adaptiveRunRequested) {
-      if (this.adaptiveRuntimeAdmissions.has(input.projectId)) throw new Error("Only one adaptive runtime run can be admitted per project at a time.");
-      this.adaptiveRuntimeAdmissions.add(input.projectId);
-      try {
-        const activeAdaptiveRuns = (await this.listRuntimeSessions(input.projectId).catch(() => [])).filter((candidate) =>
-          (candidate.status === "queued" || candidate.status === "running" || candidate.status === "waiting")
-          && candidate.metadata?.adaptiveRuntime === true
-        );
-        if (activeAdaptiveRuns.length >= 1) throw new Error("Only one adaptive runtime run can be active per project.");
-        session = await this.startRuntimeSession(startInput);
-      } finally {
-        this.adaptiveRuntimeAdmissions.delete(input.projectId);
-      }
-    } else {
-      session = await this.startRuntimeSession(startInput);
-    }
+    session = existing ?? await admitAutomationStudioRuntimeSession({ admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested);
     const startedAt = Date.now();
     const abortController = new AbortController();
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
@@ -3141,7 +3127,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
     // The run's captured rows reach the project's store under this run id. A retry or live patch reuses these options and this session, so its batches land under the same run (K4c).
     if (input.projectId && this.runDatasets.available) graphOptions.onRecordBatch = this.runDatasets.recordBatchHandler(input.projectId, session.runId);
-    const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined) : undefined;
+    // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
+    const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
     let adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
     if (adaptationContext && input.llmExecution) adaptationContext = automationStudioRuntimeAdaptationContextForGrant(adaptationContext, input.llmExecution.purpose);
@@ -3162,7 +3149,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     const runtimeCanonical = canonical && input.projectId ? await this.materializeRecordingDerivedFlow(input.projectId, canonical) : canonical;
     const runtimeFlow = input.projectId ? await this.materializeRecordingDerivedDocument(input.projectId, session.flow) : session.flow;
-    try {
     if (input.projectId && runtimeCanonical) {
       const router = await this.getFlowRouter(input.projectId, runtimeCanonical.flowId);
       if (router) {
@@ -3303,9 +3289,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       await this.saveFlowRunDetail(annotatedDetail);
     }
     return next;
+    } catch (error) {
+      // A run that throws before it records an outcome is ended failed, so it neither stays active nor holds off the next adaptive run.
+      throw input.projectId && session ? await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended) }, input.projectId, session.runId, error) : error;
     } finally {
+      // Whatever happened, a grant this run was handed ends with it.
       if (input.llmExecution) this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
-      if (input.projectId) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
+      if (input.projectId && session) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
     }
   }
 
@@ -3999,7 +3989,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.reason ? { reason: input.reason } : {})
       },
       validationCounts: adaptationValidationCounts(adaptation),
-      confidenceScore: adaptationConfidenceScore(adaptation)
+      confidence: adaptationConfidence(adaptation).tier
     } as JsonObject;
     let next: AutomationStudioFlowAdaptation = { ...adaptation, updatedAt: now, metadata };
     if (input.action === "apply" && adaptation.status === "applied") {
