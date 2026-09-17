@@ -1,5 +1,6 @@
-// Shared context for structure-audit rules: the tracked file set, cached
-// file reads and TypeScript parses, limits, and repository configuration.
+// Shared context for structure-audit rules: the audited file set (see
+// repository-files.mjs), cached file reads and TypeScript parses, limits, and
+// repository configuration.
 //
 // Rule contract. Each file in ./rules/ exports:
 //   export const id = "kebab-rule-id";
@@ -26,13 +27,18 @@
 //
 // Rules must be pure with respect to the repository: read only, no writes
 // outside update().
+//
+// ctx.files is every file the audit sees: the tracked files plus the untracked
+// files git does not ignore (repository-files.mjs). ctx.sourceFiles and
+// ctx.scriptFiles are filtered from it. A rule lists files only through these
+// and never asks git itself, so a new file is audited before it is committed.
 
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { CONFIG } from "./config.mjs";
+import { listRepositoryFiles } from "./repository-files.mjs";
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -86,22 +92,16 @@ function scriptKindFor(file) {
   }
 }
 
-function trackedFiles() {
-  const out = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return out.split("\0").filter(Boolean).map(normalize).filter((file) => {
-    const absolute = path.join(repoRoot, file);
-    return existsSync(absolute) && statSync(absolute).isFile();
-  });
-}
-
-export function createContext() {
-  const tracked = trackedFiles();
+// `root` and `config` default to this repository and its config.mjs; a test
+// passes its own to audit a fixture repository.
+export function createContext({ root = repoRoot, config = CONFIG } = {}) {
+  const files = listRepositoryFiles(root);
   const textCache = new Map();
   const astCache = new Map();
 
   const read = (file) => {
     const key = normalize(file);
-    if (!textCache.has(key)) textCache.set(key, readFileSync(path.join(repoRoot, key), "utf8"));
+    if (!textCache.has(key)) textCache.set(key, readFileSync(path.join(root, key), "utf8"));
     return textCache.get(key);
   };
 
@@ -122,13 +122,13 @@ export function createContext() {
   };
 
   return {
-    repoRoot,
+    repoRoot: root,
     LIMITS,
-    CONFIG,
+    CONFIG: config,
     ts,
-    trackedFiles: tracked,
-    sourceFiles: tracked.filter(isSourceFile),
-    scriptFiles: tracked.filter(isScriptFile),
+    files,
+    sourceFiles: files.filter(isSourceFile),
+    scriptFiles: files.filter(isScriptFile),
     isSourceFile,
     isScriptFile,
     isTestFile,

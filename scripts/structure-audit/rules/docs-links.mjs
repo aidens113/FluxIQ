@@ -7,11 +7,11 @@
 // nothing fails, so the reason is simply lost. This rule is what makes that a
 // build failure instead.
 //
-// What is checked, for every tracked Markdown file under a directory named in
-// CONFIG.docsLinkDirs:
+// What is checked, for every Markdown file the audit sees under a directory
+// named in CONFIG.docsLinkDirs:
 //
-//   - a relative link resolves to a tracked file, or to a directory that holds
-//     a README.md;
+//   - a relative link resolves to a file the audit sees, or to a directory that
+//     holds a README.md;
 //   - a link may not escape the repository;
 //   - a `#fragment` on a Markdown target names a heading in that file -- by the
 //     GitHub slug, including its `-1`, `-2` suffixes for repeated headings --
@@ -32,8 +32,10 @@
 // scripts/validate-docs.mjs, whose link-existence check it carries; it adds
 // anchors, inline-code blanking, and running inside `pnpm check` in both
 // repositories rather than only in a separate `pnpm docs:check` step. It reads
-// the tracked file set rather than the working tree, so a link into an ignored
-// build artefact is a broken link -- which it is for anyone who clones.
+// the audited file set (ctx.files: tracked files plus untracked files git does
+// not ignore) rather than the working tree, so a link into an ignored build
+// artefact is a broken link -- which it is for anyone who clones -- while a new
+// document, and a link to one, are checked before either is committed.
 
 import path from "node:path";
 
@@ -59,29 +61,29 @@ const HTML_ANCHOR = /<[a-z][^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']/gi;
 
 export function run(ctx) {
   const docs = documents(ctx);
-  const tracked = new Set(ctx.trackedFiles);
-  const directories = trackedDirectories(ctx.trackedFiles);
+  const known = new Set(ctx.files);
+  const directories = fileDirectories(ctx.files);
   const anchors = new Map();
   const findings = [];
 
   for (const file of docs) {
     const text = blankCode(ctx.read(file));
     for (const [rawTarget, index] of links(text)) {
-      const problem = check(ctx, { file, rawTarget, tracked, directories, anchors });
+      const problem = check(ctx, { file, rawTarget, known, directories, anchors });
       if (problem) findings.push(finding(file, rawTarget, lineOf(text, index), problem));
     }
   }
   return findings;
 }
 
-// The tracked Markdown under the configured directories. A directory prefix
+// The audited Markdown under the configured directories. A directory prefix
 // matches the directory itself and everything below it.
 function documents(ctx) {
   const dirs = ctx.CONFIG.docsLinkDirs ?? [];
-  return ctx.trackedFiles.filter((file) => MARKDOWN.test(file) && dirs.some((dir) => file === dir || file.startsWith(`${dir}/`)));
+  return ctx.files.filter((file) => MARKDOWN.test(file) && dirs.some((dir) => file === dir || file.startsWith(`${dir}/`)));
 }
 
-function trackedDirectories(files) {
+function fileDirectories(files) {
   const dirs = new Set();
   for (const file of files) {
     const parts = file.split("/");
@@ -92,7 +94,7 @@ function trackedDirectories(files) {
 
 // Returns the problem with `rawTarget`, or null when it resolves. The caller
 // turns a problem into a finding; this returns a sentence that ends the message.
-function check(ctx, { file, rawTarget, tracked, directories, anchors }) {
+function check(ctx, { file, rawTarget, known, directories, anchors }) {
   const target = rawTarget.startsWith("<") && rawTarget.endsWith(">") ? rawTarget.slice(1, -1) : rawTarget;
   if (target === "" || SCHEME.test(target)) return null;
 
@@ -111,11 +113,11 @@ function check(ctx, { file, rawTarget, tracked, directories, anchors }) {
     }
     const resolved = path.posix.normalize(path.posix.join(ctx.dirname(file), decoded)).replace(/\/$/, "");
     if (resolved === ".." || resolved.startsWith("../")) return "it points outside the repository.";
-    if (tracked.has(resolved)) document = resolved;
+    if (known.has(resolved)) document = resolved;
     else if (directories.has(resolved)) {
-      if (!tracked.has(`${resolved}/README.md`)) return `${resolved}/ is a directory with no README.md, so the link has nothing to open.`;
+      if (!known.has(`${resolved}/README.md`)) return `${resolved}/ is a directory with no README.md, so the link has nothing to open.`;
       document = `${resolved}/README.md`;
-    } else return `no tracked file is at ${resolved}. Point it at where the file moved to, or remove the link.`;
+    } else return `no file git tracks or would add is at ${resolved}. Point it at where the file moved to, or remove the link.`;
   }
 
   if (fragment === "" || !MARKDOWN.test(document)) return null;

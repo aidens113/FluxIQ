@@ -65,7 +65,7 @@ function section(lines, heading) {
 
 function workingDocs(ctx) {
   const dir = ctx.CONFIG.workingDocsDir;
-  return ctx.trackedFiles
+  return ctx.files
     .filter((file) => file.startsWith(`${dir}/`)
       && file.endsWith(".md")
       && !file.slice(dir.length + 1).includes("/")
@@ -291,7 +291,7 @@ export function run(ctx) {
   }
 
   const index = indexPath(ctx);
-  const current = ctx.trackedFiles.includes(index) ? ctx.read(index) : null;
+  const current = ctx.files.includes(index) ? ctx.read(index) : null;
   if (current !== generateIndex(ctx, docs)) {
     findings.push({
       rule: id, key: index, value: 1, limit: 0, path: index,

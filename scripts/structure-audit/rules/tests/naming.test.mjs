@@ -31,7 +31,7 @@ function makeCtx(files) {
     LIMITS,
     CONFIG,
     sourceFiles: files,
-    trackedFiles: files,
+    files,
     isTestFile: (f) => /\.(test|spec)\.[a-z]+$/.test(f),
     basename: (f) => f.split("/").at(-1),
     dirname: (f) => f.split("/").slice(0, -1).join("/"),

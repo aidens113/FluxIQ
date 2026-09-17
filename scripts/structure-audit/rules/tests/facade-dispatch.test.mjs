@@ -29,7 +29,7 @@ function makeCtx(files) {
   const keys = Object.keys(files);
   return {
     ts,
-    trackedFiles: keys,
+    files: keys,
     scriptFiles: keys,
     isTestFile: (file) => /\.test\.tsx?$/.test(file) || file.split("/").includes("tests"),
     normalize: (file) => file,

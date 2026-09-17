@@ -33,7 +33,7 @@ function makeCtx(files, config = CONFIG) {
   return {
     CONFIG: config,
     ts,
-    trackedFiles: Object.keys(files),
+    files: Object.keys(files),
     scriptFiles: Object.keys(files),
     read,
     parse: (file) => {

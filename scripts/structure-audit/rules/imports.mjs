@@ -67,15 +67,15 @@ function stripExtension(resolved) {
 
 function barrelDirectories(ctx) {
   const dirs = new Set();
-  for (const file of ctx.trackedFiles) {
+  for (const file of ctx.files) {
     if (BARREL_FILENAMES.includes(ctx.basename(file))) dirs.add(ctx.dirname(file));
   }
   return dirs;
 }
 
-function trackedDirectories(ctx) {
+function fileDirectories(ctx) {
   const dirs = new Set();
-  for (const file of ctx.trackedFiles) {
+  for (const file of ctx.files) {
     let dir = ctx.dirname(file);
     while (dir !== "." && dir !== "/" && !dirs.has(dir)) {
       dirs.add(dir);
@@ -90,7 +90,7 @@ export function run(ctx) {
   const forbidden = CONFIG.forbiddenImports ?? [];
   const boundaries = CONFIG.importBoundaries ?? [];
   const barrels = barrelDirectories(ctx);
-  const directories = trackedDirectories(ctx);
+  const directories = fileDirectories(ctx);
   const findings = [];
 
   for (const file of ctx.scriptFiles) {

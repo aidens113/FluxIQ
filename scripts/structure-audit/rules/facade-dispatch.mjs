@@ -32,7 +32,7 @@ function stripExtension(file) {
 // `x/service.ts` is a facade when `x/service/` also exists in the tree.
 function facadeDirectories(ctx) {
   const directories = new Set();
-  for (const file of ctx.trackedFiles) directories.add(ctx.dirname(file));
+  for (const file of ctx.files) directories.add(ctx.dirname(file));
   const facades = new Map();
   for (const file of ctx.scriptFiles) {
     if (ctx.isTestFile(file)) continue;

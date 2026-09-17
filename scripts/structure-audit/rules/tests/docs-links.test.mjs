@@ -21,7 +21,7 @@ import { run } from "../docs-links.mjs";
 function makeCtx(files, dirs = ["docs"]) {
   return {
     CONFIG: { docsLinkDirs: dirs },
-    trackedFiles: Object.keys(files),
+    files: Object.keys(files),
     read: (file) => files[file],
     dirname: (file) => path.posix.dirname(file)
   };
@@ -32,17 +32,17 @@ const messagesFor = (files, dirs) => findingsFor(files, dirs).map((finding) => f
 
 // --- Link targets ---
 
-test("a link to a tracked file passes", () => {
+test("a link to a file the audit sees passes", () => {
   assert.deepEqual(messagesFor({
     "docs/architecture/a.md": "See [b](./b.md).",
     "docs/architecture/b.md": "# B"
   }), []);
 });
 
-test("a link to a file that is not tracked fails", () => {
+test("a link to a file the audit does not see fails", () => {
   const messages = messagesFor({ "docs/architecture/a.md": "See [b](./moved.md)." });
   assert.equal(messages.length, 1);
-  assert.match(messages[0], /docs\/architecture\/a\.md:1: the link to \.\/moved\.md is broken: no tracked file is at docs\/architecture\/moved\.md/);
+  assert.match(messages[0], /docs\/architecture\/a\.md:1: the link to \.\/moved\.md is broken: no file git tracks or would add is at docs\/architecture\/moved\.md/);
 });
 
 test("a link up and across the tree resolves", () => {
@@ -90,7 +90,7 @@ test("a percent-encoded path resolves to the file it names", () => {
 test("an image target is checked like any other link", () => {
   const messages = messagesFor({ "docs/architecture/a.md": "![diagram](./diagram.png)" });
   assert.equal(messages.length, 1);
-  assert.match(messages[0], /no tracked file is at docs\/architecture\/diagram\.png/);
+  assert.match(messages[0], /no file git tracks or would add is at docs\/architecture\/diagram\.png/);
 });
 
 // --- Anchors ---

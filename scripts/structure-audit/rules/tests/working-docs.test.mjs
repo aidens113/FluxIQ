@@ -29,7 +29,7 @@ function makeCtx(files) {
   return {
     LIMITS,
     CONFIG,
-    trackedFiles: Object.keys(files),
+    files: Object.keys(files),
     read,
     lineCount,
     basename: (file) => file.split("/").at(-1)
