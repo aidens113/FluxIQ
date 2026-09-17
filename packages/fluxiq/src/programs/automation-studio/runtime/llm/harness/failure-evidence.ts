@@ -3,7 +3,29 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmRecentActionContext } from "./context-packet.ts";
 import type { AutomationStudioLlmTaskKind } from "./task-kind.ts";
 
-export const AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES = 3_000;
+/**
+ * The most a captured failure may carry, in bytes.
+ *
+ * It was 3,000, half of what a Flow being authored is allowed to see of the
+ * same page, and the difference showed. Measured against the web domain's own
+ * captures: a product catalogue arrived with its eight rows and none of their
+ * prices or ratings, a feed with its posts and no author or timestamp, and a
+ * 240-row member directory as four buttons and some navigation. A repair was
+ * being asked which record to act on while being shown nothing that tells one
+ * record from another -- and the same page, captured for creation, carried
+ * every value.
+ *
+ * There is no reason for the two halves of one loop to see different amounts
+ * of the same page, so this is now the exploration allowance: 6,000 bytes, or
+ * roughly 2,000 tokens by Core's own estimate. It is a ceiling, not a spend.
+ * What a given call actually asks for is the caller's share of that call's
+ * input allowance, which is smaller and is where the real bound lives.
+ *
+ * The cost is paid on the patch request, where a bigger failure packet sits
+ * beside the pages an exploration returned: the explored packets' share of the
+ * input allowance drops so that the request as a whole costs what it did.
+ */
+export const AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES = 6_000;
 
 export type AutomationStudioLlmFailureEvidenceCaptureInput = {
   projectId: string;

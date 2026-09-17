@@ -177,7 +177,10 @@ describe("Automation Studio LLM harness", () => {
     expect(() => packAutomationStudioLlmContext({
       ...base,
       taskKind: "runtime_diagnosis",
-      failureEvidence: { schemaVersion: "web-llm-evidence.v1", left: "x".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 2), right: "y".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 2) }
+      // Eight bounded strings rather than two big ones, so this stays a
+      // byte-limit refusal at any value of the limit: each is well inside the
+      // per-string bound, and together they are twice the packet's.
+      failureEvidence: { schemaVersion: "web-llm-evidence.v1", notes: Array.from({ length: 8 }, () => "x".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 4)) }
     })).toThrow(/byte limit/);
     // Core's bounds are structural and name no medium. A string past the limit
     // is refused whatever it is called and whoever sent it.

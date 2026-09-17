@@ -129,19 +129,37 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(result.trace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
   });
 
-  it("allows completion from an implicit one-shot initial observation when no tools remain eligible", async () => {
-    const decide = vi.fn().mockResolvedValue({ kind: "complete", result: { ready: true } });
+  // An implicit one-shot initial observation used to be shut after its free
+  // look whatever else was offered, so a caller whose policy withheld every
+  // mutating tool looked once and could never look again. "Not again until
+  // something changes" cannot gate a list in which nothing can change, so the
+  // tool is offered again -- and what stops the model simply re-asking is the
+  // duplicate-request check, which was always the thing doing that work.
+  it("offers an implicit one-shot initial observation again when nothing can mutate, and answers only the identical request from what it holds", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: {} })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "inspect", input: { scope: "wider" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
+    const executeTool = vi.fn().mockResolvedValue({ facts: ["ready"] });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
       minToolCalls: 1,
       decide,
-      executeTool: async () => ({ facts: ["ready"] })
+      executeTool
     });
 
-    expect(result).toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 1, toolCalls: 1 } });
-    expect(decide.mock.calls[0]?.[0].tools).toEqual([]);
-    expect((decide.mock.calls[0]?.[0].decisionSchema as { oneOf: unknown[] }).oneOf).toHaveLength(1);
-    expect(JSON.stringify(decide.mock.calls[0]?.[0].decisionSchema)).not.toContain('"tool_call"');
+    expect(result).toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 3, toolCalls: 2 } });
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect"]);
+    expect(JSON.stringify(decide.mock.calls[0]?.[0].decisionSchema)).toContain('"tool_call"');
+    // The free look still ran, the repeat of it was answered from the evidence
+    // already held, and only the question with a new input reached the tool.
+    expect(executeTool.mock.calls.map((call) => (call[0] as { callId: string }).callId)).toEqual(["initial.inspect", "call.2"]);
+    expect(result.trace).toMatchObject([
+      { iteration: 0, decision: "tool_call", callId: "initial.inspect" },
+      { iteration: 1, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_answered" },
+      { iteration: 2, decision: "tool_call", callId: "call.2" },
+      { iteration: 3, decision: "complete" }
+    ]);
   });
 
   it("fails closed for ambiguous or mutating initial observations", async () => {

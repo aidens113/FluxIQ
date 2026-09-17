@@ -132,6 +132,15 @@ export class AutomationStudioHarnessOptionRegistry {
    * domain's mutating option beside it. The policy is dropped in that case: it
    * only ever meant "not again until something changes", and with nothing able
    * to change anything the loop's duplicate-request check already says the same.
+   *
+   * An `initialObservation` is deliberately *not* dropped with it. The loop
+   * reads one as the same rule stated implicitly, so dropping the policy here
+   * and leaving the free first look in place used to shut the option anyway --
+   * a repair under a policy that denies side effects looked once, before it was
+   * asked anything, and never again. The loop now applies that rule only where
+   * a mutation is reachable, so the free look survives the refusal and the
+   * model may still ask for another. `sideEffectAllows` is unchanged: what a
+   * mutating option needs is still the policy's permission, never the caller's.
    */
   tools(resolution: AutomationStudioHarnessOptionResolution): AutomationStudioLlmEvidenceTool[] {
     const offered = this.list(resolution);

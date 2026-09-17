@@ -164,7 +164,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     const resolvedTokenLimits = resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits;
     const maxEvidenceBytes = Math.max(1, Math.min(
       AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
-      Math.floor(resolvedTokenLimits.maxInputTokens * 3 * 0.2)
+      Math.floor(resolvedTokenLimits.maxInputTokens * 3 * FAILURE_EVIDENCE_INPUT_SHARE)
     ));
     try {
       const captured = await ports.llmEvidenceRuntime.captureSanitizedFailureEvidence({
@@ -310,6 +310,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       instructions,
       runDetail: input.detail,
       ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
+      // The plan the stage instruction tells it to carry out. The model's own
+      // answer one call earlier, not Core's reading of it.
+      ...(result.response?.kind === "diagnosis" && result.response.diagnosis ? { diagnosis: result.response.diagnosis } : {}),
       ...(explorationEvidence ? { explorationEvidence } : {}),
       ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
       policy: input.context.policy,
@@ -412,7 +415,14 @@ function grantSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis
  * so this share bounds what exploring adds to a patch call's cost, not whether
  * the call fits.
  */
-const EXPLORATION_EVIDENCE_INPUT_SHARE = 0.5;
+/**
+ * A quarter of what a call may carry goes to the page the run failed on. At the
+ * default 8,000-token input allowance that is Core's whole 6,000-byte ceiling,
+ * which is the point: a repair sees what authoring sees. A smaller allowance
+ * scales it down rather than overshooting the gate.
+ */
+const FAILURE_EVIDENCE_INPUT_SHARE = 0.25;
+const EXPLORATION_EVIDENCE_INPUT_SHARE = 0.375;
 
 /** A configured string, or the fallback when the setting is absent or blank. */
 function settingString(value: unknown, fallback: string): string {

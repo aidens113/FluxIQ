@@ -22,6 +22,7 @@ import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
+import { AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH, type AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
 
@@ -51,6 +52,10 @@ export type AutomationStudioLlmContextPacket = {
    * order, a byte budget, and a record of what was withheld and why. Runtime
    * tasks only, like `failureEvidence`. */
   recoveryContext?: AutomationStudioRuntimeRecoveryContext;
+  /** The diagnosis the model produced one call earlier, so the stage that is
+   * told to carry out the plan it just stated is shown that plan. Runtime
+   * patch only. */
+  diagnosis?: AutomationStudioLlmDiagnosisFields;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
   reusableContext?: AutomationStudioReusableLlmContextPacket;
@@ -170,6 +175,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // flow-bootstrap packet describes a Flow that has never run, so a record of
     // how a run failed has no place in it.
     ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
+    ...(input.diagnosis ? packDiagnosisFields(input.taskKind, input.diagnosis) : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),
@@ -186,6 +192,44 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...packed,
     explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys, Buffer.byteLength(JSON.stringify(packed), "utf8"))
   };
+}
+
+/**
+ * The diagnosis the model produced, as the patch request carries it.
+ *
+ * Written field by field, never spread. The diagnosis channel is a fixed set of
+ * keys for the same reason the response reader has one -- an open object is a
+ * way to put arbitrary JSON in front of the next call -- and this is the same
+ * list on the way back out. An unrecognized key is dropped, each text is cut to
+ * the bound the reader holds it to, each verdict must be one of its three
+ * words, and each flag must be a boolean.
+ *
+ * An empty result is no slot at all: a diagnosis that answered nothing would
+ * otherwise cost bytes to say so, and the request already says the diagnosis
+ * ran. The slot is a runtime patch's; a diagnosis would be shown its own
+ * answer, and no other task has one to be shown, so any other task carrying it
+ * is refused rather than quietly dropped.
+ */
+function packDiagnosisFields(
+  taskKind: AutomationStudioLlmTaskKind,
+  diagnosis: AutomationStudioLlmDiagnosisFields
+): { diagnosis?: AutomationStudioLlmDiagnosisFields } {
+  if (taskKind !== "runtime_patch") throw new Error("The model's diagnosis is carried only to a runtime patch request.");
+  const verdict = (value: unknown): "yes" | "no" | "unknown" | undefined =>
+    value === "yes" || value === "no" || value === "unknown" ? value : undefined;
+  const text = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim() ? value.slice(0, AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) : undefined;
+  const flag = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
+  const packed: AutomationStudioLlmDiagnosisFields = {
+    ...(text(diagnosis.expected) !== undefined ? { expected: text(diagnosis.expected)! } : {}),
+    ...(text(diagnosis.observed) !== undefined ? { observed: text(diagnosis.observed)! } : {}),
+    ...(text(diagnosis.changed) !== undefined ? { changed: text(diagnosis.changed)! } : {}),
+    ...(verdict(diagnosis.stillAchievable) ? { stillAchievable: verdict(diagnosis.stillAchievable)! } : {}),
+    ...(verdict(diagnosis.deterministicRecoveryPossible) ? { deterministicRecoveryPossible: verdict(diagnosis.deterministicRecoveryPossible)! } : {}),
+    ...(flag(diagnosis.explorationNeeded) !== undefined ? { explorationNeeded: flag(diagnosis.explorationNeeded)! } : {}),
+    ...(flag(diagnosis.patchNeeded) !== undefined ? { patchNeeded: flag(diagnosis.patchNeeded)! } : {})
+  };
+  return Object.keys(packed).length ? { diagnosis: packed } : {};
 }
 
 /**

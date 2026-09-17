@@ -22,6 +22,12 @@
 // document the model is reasoning about, and without it "expected state" is not
 // in the context at all.
 //
+// **A key rule cannot see inside a sentence.** Everything above works on keys,
+// and two of the most useful fields here are free text a domain wrote. Every
+// string in the finished context therefore goes through `locator-text.ts`,
+// which removes what is shaped like a way to address an element and leaves the
+// rest of the sentence standing.
+//
 // **The priority is fixed, and it is a list rather than a score.** A ranking
 // computed per failure would make the context's shape depend on the failure,
 // and two runs of the same Flow would hand the model different evidence for
@@ -52,6 +58,7 @@ import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
+import { automationStudioWithoutLocators } from "./locator-text.ts";
 
 /**
  * Every section, most important first. The order is the contract: it is the
@@ -131,11 +138,15 @@ export type AutomationStudioRuntimeRecoveryContextInput = {
 /**
  * The default budget, in bytes.
  *
- * It sits beside the 3,000-byte failure-evidence packet under the same
- * per-call input allowance, and a runtime diagnosis defaults to 10,000 total
- * tokens for the whole run. 4,000 bytes is roughly 1,300 tokens: enough for
- * every section a typical failure produces, and small enough that the page
- * evidence and the instructions still fit beside it.
+ * It sits beside the failure-evidence packet -- 6,000 bytes at its ceiling --
+ * under the same per-call input allowance, and a runtime diagnosis defaults to
+ * 10,000 total tokens for the whole run, of which 8,000 may be input. 4,000
+ * bytes is roughly 1,300 tokens: enough for every section a typical failure
+ * produces, and small enough that the page evidence and the instructions still
+ * fit beside it. It was not reduced when the page allowance went up, because
+ * the measured diagnosis request is about 13,000 bytes against an allowance of
+ * roughly 32,000; the request that is actually near its limit is the patch,
+ * and what gives there is the explored packets' share, not this.
  */
 export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES = 4_000;
 
@@ -177,8 +188,12 @@ export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStu
       context.omitted.push({ section, reason: value === WITHHELD_SECTION ? "withheld" : "absent", byteCount: 0 });
       continue;
     }
-    context.sections[section] = value;
-    context.included.push({ section, byteCount: serializedByteCount(value) });
+    // Screened here rather than inside each builder, so the rule covers every
+    // section at once and a section added later cannot forget it. Redaction
+    // changes sizes, so it happens before anything is measured or trimmed.
+    const screened = automationStudioWithoutLocators(value);
+    context.sections[section] = screened;
+    context.included.push({ section, byteCount: serializedByteCount(screened) });
   }
   trimRecoveryContextToBudget(context);
   return context;
@@ -268,9 +283,17 @@ function failedActionRecord(detail: AutomationStudioFlowRunDetail): AutomationSt
 function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
   if (!record) return undefined;
   // Stored records are parsed again before use, as everywhere else that reads
-  // one. `message` is deliberately not carried: the failure record's own
-  // `expected` and `actual` are contractually short and free of page content,
-  // and the prose is not.
+  // one. `message` is deliberately not carried: the record's own `expected`
+  // and `actual` are contractually short, and the prose is not.
+  //
+  // What they are not is free of page content, whatever this comment used to
+  // claim. They are a domain's sentences, and the web domain's name the
+  // control the recording addressed, the candidates that were refused and what
+  // each scored. That is the most useful thing in the request and it arrived
+  // carrying a raw CSS selector, because a denied key is screened by key name
+  // and `selector` inside a free-text field is not a key. Both fields now go
+  // through `locator-text.ts` with the rest of the context: the scores and the
+  // visible names survive, and anything shaped like a locator does not.
   const failure = parseAutomationStudioFailureRecord(record.failure);
   return boundedSection({
     attemptId: record.attemptId,

@@ -244,6 +244,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
   if (!limits || !validTools(input.tools)) return failure("llm_evidence_loop.invalid_configuration", trace, accounting);
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
   const toolsById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const));
+  // Whether any mutation is reachable at all. Read once, because the offered
+  // list does not change during a loop, and because it is what decides whether
+  // a mutation-gated observation is gated or simply shut (see
+  // `requiresMutationBeforeRepeat`).
+  const mutableTools = input.tools.some((tool) => tool.effect === "mutate");
   const callIds = new Set<string>();
   // Each request that ran, by what it asked in which mutation epoch, and the
   // call that answered it.
@@ -350,7 +355,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.iterations = iteration;
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
     const eligibleTools = input.tools.filter((tool) =>
-      !requiresMutationBeforeRepeat(tool) || observationEpochs.get(tool.toolId) !== mutationEpoch
+      !requiresMutationBeforeRepeat(tool, mutableTools) || observationEpochs.get(tool.toolId) !== mutationEpoch
     );
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
     const canComplete = accounting.toolCalls >= limits.minToolCalls;
@@ -443,7 +448,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.evidenceBytes += evidenceBytes;
     progressed();
     if (tool.effect === "mutate" && effectApplied) mutationEpoch += 1;
-    if (requiresMutationBeforeRepeat(tool)) {
+    if (requiresMutationBeforeRepeat(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, mutationEpoch);
       latestObservations.set(tool.toolId, callId);
     }
@@ -475,11 +480,28 @@ function canonicalJson(value: JsonValue): string {
   return JSON.stringify(value);
 }
 
-/** An initial observation is already the tool's observation for epoch zero.
- * Treat it as protected even when the domain omitted the redundant explicit
- * repeat policy, then allow it again only after an applied mutation. */
-function requiresMutationBeforeRepeat(tool: AutomationStudioLlmEvidenceTool): boolean {
-  return tool.repeatPolicy === "after_mutation" || tool.initialObservation !== undefined;
+/**
+ * Whether an observation must wait for a mutation before it may be made again.
+ *
+ * An initial observation is already the tool's observation for epoch zero, so
+ * it is protected even when the domain omitted the redundant explicit repeat
+ * policy, and allowed again only after an applied mutation.
+ *
+ * `mutable` is why this reads the whole offered list rather than one tool. The
+ * rule only ever meant "not again until something changes", and where nothing
+ * offered can change anything it means "never again" -- so a repair whose
+ * policy withheld every mutating option looked once, for free, before it was
+ * asked anything, and could not look a second time. That is not a gate the
+ * domain asked for; it is a gate that appeared because a different gate closed.
+ * The harness-option registry already drops an explicit `repeatPolicy` for
+ * exactly this reason, and dropping it there was never enough, because an
+ * initial observation carries the same rule implicitly. With no mutation
+ * reachable the loop's own duplicate-request check is what bounds repeating:
+ * the same tool with the same input is still refused, so looking again has to
+ * ask something new.
+ */
+function requiresMutationBeforeRepeat(tool: AutomationStudioLlmEvidenceTool, mutable: boolean): boolean {
+  return mutable && (tool.repeatPolicy === "after_mutation" || tool.initialObservation !== undefined);
 }
 
 function parseToolExecutionResult(

@@ -14,7 +14,7 @@ import type { AutomationStudioLlmContextPacket } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioInstructionResolutionInput } from "./instruction.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderMetadata, AutomationStudioLlmUsageSummary } from "./provider.ts";
-import type { AutomationStudioLlmStructuredResponse } from "./structured-response.ts";
+import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmStructuredResponse } from "./structured-response.ts";
 import type { AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmTokenLimits } from "./token-limits.ts";
 
@@ -110,6 +110,16 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   /** The standardized recovery context for this failure, already built and
    * budgeted by the caller. It reaches the packet only for a runtime task. */
   recoveryContext?: AutomationStudioRuntimeRecoveryContext;
+  /** The diagnosis the model itself produced one call earlier, read off the
+   * diagnosis response. Runtime patch only: any other task carrying it is
+   * refused when the packet is built.
+   *
+   * The patch stage's instruction is "carry out the plan you just stated", and
+   * the request did not contain the plan -- so the model was asked to
+   * implement something it was never shown. It is copied field by field and
+   * bounded, never spread: the channel is a fixed set of keys, and an
+   * unrecognized one is dropped rather than carried. */
+  diagnosis?: AutomationStudioLlmDiagnosisFields;
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
   relevantRuns?: JsonObject[];
