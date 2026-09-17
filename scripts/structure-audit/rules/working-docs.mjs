@@ -9,10 +9,15 @@
 // proves the checked-in index still matches the documents' headers and
 // update() (called only by --update) rewrites it.
 //
+// Every read is line-ending neutral. The index is generated with LF endings,
+// the way git stores it, and is compared with the checked-in copy line endings
+// aside, because a Windows checkout with core.autocrlf holds that same index
+// with CRLF endings; it is not stale for that.
+//
 // The header block and section order this enforces are specified in
 // docs/working/agent-working-doc-protocol.md.
 
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const id = "working-docs";
@@ -48,6 +53,9 @@ const byName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // Split on LF and drop a trailing CR so that CRLF documents parse the same as
 // LF ones. Two working documents in this repository still use CRLF.
 const splitLines = (text) => text.split("\n").map((line) => line.replace(/\r$/, ""));
+
+// The index text as generateIndex() writes it, whatever endings a checkout gave it.
+const withLf = (text) => text.replaceAll("\r\n", "\n");
 
 // `## ` with the trailing space, so an H3 (`### `) is not read as a new section.
 const isSection = (line) => line.startsWith("## ");
@@ -291,7 +299,7 @@ export function run(ctx) {
   }
 
   const index = indexPath(ctx);
-  const current = ctx.files.includes(index) ? ctx.read(index) : null;
+  const current = ctx.files.includes(index) ? withLf(ctx.read(index)) : null;
   if (current !== generateIndex(ctx, docs)) {
     findings.push({
       rule: id, key: index, value: 1, limit: 0, path: index,
@@ -305,8 +313,11 @@ export function run(ctx) {
 
 // Called only by --update, after the baseline is written. This is the only
 // write this rule performs, and docs/working/README.md is the only file it
-// may write.
+// may write. An index that already holds this content, line endings aside, is
+// left untouched, as saveBaseline() leaves the baseline.
 export function update(ctx) {
   const text = generateIndex(ctx, workingDocs(ctx));
-  writeFileSync(path.join(ctx.repoRoot, indexPath(ctx)), text, "utf8");
+  const file = path.join(ctx.repoRoot, indexPath(ctx));
+  if (existsSync(file) && withLf(readFileSync(file, "utf8")) === text) return;
+  writeFileSync(file, text, "utf8");
 }

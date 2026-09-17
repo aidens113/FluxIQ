@@ -1,14 +1,19 @@
 // Unit tests for the working-docs rule. The rule only ever reaches the
 // repository through ctx, so these build a fake ctx by hand and hold the
-// fixtures in memory: no git, no filesystem, no import of context.mjs.
+// fixtures in memory: no git, no import of context.mjs. Only update() writes,
+// so the index tests obtain a generated index through it in a temporary
+// directory.
 //
-// run() also checks the generated index, which never matches an in-memory
-// fixture set, so every assertion filters findings down to the document under
-// test by key.
+// run() also checks the generated index, which an in-memory fixture set does
+// not hold unless a test puts it there, so every document assertion filters
+// findings down to the document under test by key.
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { run } from "../working-docs.mjs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { run, update } from "../working-docs.mjs";
 
 const LIMITS = { workingDocLines: 800, workingDocCurrentStateLines: 150 };
 const CONFIG = { workingDocsDir: "docs/working", workingDocsIndexKind: "core" };
@@ -183,4 +188,64 @@ test("CRLF documents are parsed the same as LF ones", () => {
   const keys = findingsFor(dirty).map((finding) => finding.key).sort();
 
   assert.deepEqual(keys, [`${DOC}#current-state`, `${DOC}#ledger`]);
+});
+
+// The index is checked in with LF endings; a Windows checkout with
+// core.autocrlf holds it, and every document, with CRLF.
+const INDEX = "docs/working/README.md";
+const toCrlf = (text) => text.replaceAll("\n", "\r\n");
+const indexFindings = (files) => run(makeCtx(files)).filter((finding) => finding.key === INDEX);
+
+// Runs update() against a temporary repository root holding `index` (or no
+// index), and returns what the index file holds afterwards.
+function regenerate(files, index = null) {
+  const root = mkdtempSync(path.join(tmpdir(), "working-docs-"));
+  try {
+    const file = path.join(root, INDEX);
+    mkdirSync(path.dirname(file), { recursive: true });
+    if (index !== null) writeFileSync(file, index, "utf8");
+    update({ ...makeCtx(files), repoRoot: root });
+    return readFileSync(file, "utf8");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const LF_DOC = doc([HEADER, CURRENT_STATE, LEDGER([GOOD_ENTRY])]);
+const CRLF_DOC = doc([HEADER, CURRENT_STATE, LEDGER([GOOD_ENTRY])], { crlf: true });
+
+test("the same document with CRLF and LF endings generates the same index", () => {
+  const index = regenerate({ [DOC]: LF_DOC });
+  assert.match(index, /\| \[example-plan\.md\]\(\.\/example-plan\.md\) \| supervisor \| 25 \| the example \| none \|/);
+  assert.ok(!index.includes("\r"), "the generated index uses LF endings");
+  assert.equal(regenerate({ [DOC]: CRLF_DOC }), index);
+});
+
+test("a current index checked out with CRLF endings is not reported as out of date", () => {
+  const index = regenerate({ [DOC]: LF_DOC });
+  assert.deepEqual(indexFindings({ [DOC]: LF_DOC, [INDEX]: index }), []);
+  assert.deepEqual(indexFindings({ [DOC]: CRLF_DOC, [INDEX]: toCrlf(index) }), []);
+  assert.deepEqual(indexFindings({ [DOC]: LF_DOC, [INDEX]: toCrlf(index) }), []);
+  assert.deepEqual(indexFindings({ [DOC]: CRLF_DOC, [INDEX]: index }), []);
+});
+
+test("a stale or missing index is still reported whatever its line endings", () => {
+  const stale = regenerate({ [DOC]: LF_DOC }).replace("| supervisor |", "| someone-else |");
+  for (const [docText, indexText] of [[LF_DOC, stale], [CRLF_DOC, toCrlf(stale)]]) {
+    const findings = indexFindings({ [DOC]: docText, [INDEX]: indexText });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "fail");
+    assert.equal(findings[0].ratchet, false);
+    assert.match(findings[0].message, /is out of date with the documents' header blocks/);
+  }
+  assert.equal(indexFindings({ [DOC]: CRLF_DOC }).length, 1, "a missing index is out of date");
+});
+
+test("regenerating leaves an index that differs only in line endings untouched, and rewrites a stale one", () => {
+  const index = regenerate({ [DOC]: LF_DOC });
+  const crlfIndex = toCrlf(index);
+  assert.equal(regenerate({ [DOC]: CRLF_DOC }, crlfIndex), crlfIndex);
+
+  const staleCrlf = toCrlf(index.replace("| supervisor |", "| someone-else |"));
+  assert.equal(regenerate({ [DOC]: CRLF_DOC }, staleCrlf), index);
 });
