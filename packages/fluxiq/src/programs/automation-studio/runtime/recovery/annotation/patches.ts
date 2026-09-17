@@ -106,6 +106,10 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       targetResolution: tested.metadata?.targetResolution,
       targetNodeResolution: tested.metadata?.targetNodeResolution,
       preflightOk: tested.preflight.ok,
+      // Why the domain refused the target, in Core's own words, so a reader
+      // can tell an action the domain cannot repair from a handle the model
+      // invented without parsing the issue text.
+      targetOverrideRefusal: tested.metadata?.targetOverrideRefusal,
       verification: tested.verification,
       restoredExpectedState: tested.restoredExpectedState,
       retryOriginalAction: tested.retryOriginalAction,

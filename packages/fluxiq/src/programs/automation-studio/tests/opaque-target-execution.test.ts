@@ -72,12 +72,16 @@ async function executedTarget(host: ReturnType<typeof recordingHost>): Promise<u
     runId: "run.failed",
     flow,
     failedAttempt: failedAttempt(),
+    // The model names the handle; what the node runs with is the domain's
+    // resolution of it, because an executed override passes the same domain
+    // check a proposed one does.
     patch: {
       kind: "temporary_target_override",
       targetNodeId: "constant",
-      target: { ...DOMAIN_RESOLVED_TARGET },
+      target: { handles: { ...DOMAIN_RESOLVED_TARGET.handles } },
       reason: "The control moved."
     },
+    validateTargetOverrideEvidence: () => ({ status: "resolved", target: { ...DOMAIN_RESOLVED_TARGET } }),
     policy: repairPolicy(),
     authorizedExternalSideEffects: true,
     options: { hostRuntime: host.hostRuntime },

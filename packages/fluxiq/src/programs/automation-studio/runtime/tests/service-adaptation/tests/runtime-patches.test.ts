@@ -136,7 +136,15 @@ describe("AutomationStudioService recording persistence", () => {
         maxCallsPerRun: 2,
         maxEstimatedCostUsd: 0.1,
         maxTotalEstimatedCostUsd: 0.15
-      })
+      }),
+      // A target override is proposed only once a domain has checked it against
+      // the evidence captured for the failure; with no check it is refused.
+      llmEvidenceRuntime: {
+        domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
+        executeTool: async () => ({}),
+        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "test.failure-evidence.v1", controls: ["submit-order"] }),
+        validateTargetOverrideEvidence: () => ({ status: "matched" })
+      }
     });
     const project = await service.createProject({ name: "Target override proposal" });
     const adaptive = adaptiveTrainingMetadata();
