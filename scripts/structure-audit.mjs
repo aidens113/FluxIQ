@@ -9,6 +9,13 @@
 //                                                    when a violation has no entry or grew
 //   node scripts/structure-audit.mjs --rule <id>     run one rule (repeatable); with --update,
 //                                                    only the selected rules' entries change
+//   node scripts/structure-audit.mjs --adopt <id>    record the current findings of one rule that
+//                                                    has no baseline entries yet, leaving every
+//                                                    other rule's entries as they are; exit 1 and
+//                                                    write nothing when the rule already has one.
+//                                                    It takes precedence over --update, so
+//                                                    "pnpm structure:baseline --adopt <id>" adopts
+//                                                    that rule and lowers nothing
 //   node scripts/structure-audit.mjs --json          machine-readable output
 //   node scripts/structure-audit.mjs --list          list rule ids and titles
 //
@@ -19,12 +26,20 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createContext, LIMITS, repoRoot } from "./structure-audit/context.mjs";
-import { applyRatchet, BASELINE_FILE, loadBaseline, planBaselineUpdate, saveBaseline } from "./structure-audit/baseline.mjs";
+import { applyRatchet, BASELINE_FILE, loadBaseline, planBaselineAdoption, planBaselineUpdate, saveBaseline } from "./structure-audit/baseline.mjs";
 
 const args = process.argv.slice(2);
-const flags = new Set(args.filter((arg) => arg.startsWith("--") && arg !== "--rule"));
+const flags = new Set(args.filter((arg) => arg.startsWith("--") && arg !== "--rule" && arg !== "--adopt"));
 const only = new Set();
 for (let i = 0; i < args.length; i += 1) if (args[i] === "--rule" && args[i + 1]) only.add(args[i + 1]);
+const adopt = args.flatMap((arg, i) => (arg === "--adopt" ? [args[i + 1] ?? ""] : []));
+if (adopt.length > 0) {
+  if (adopt.length > 1 || adopt[0] === "" || adopt[0].startsWith("--") || only.size > 0) {
+    console.error("structure-audit: --adopt takes exactly one rule id, and cannot be combined with --rule.");
+    process.exit(2);
+  }
+  only.add(adopt[0]);
+}
 
 const rulesDir = path.join(repoRoot, "scripts", "structure-audit", "rules");
 const ruleFiles = readdirSync(rulesDir).filter((name) => name.endsWith(".mjs")).sort();
@@ -55,6 +70,21 @@ for (const rule of selected) {
 
 const previous = loadBaseline(repoRoot);
 const byRule = (list) => list.sort((a, b) => a.rule.localeCompare(b.rule) || a.path.localeCompare(b.path));
+
+if (adopt.length > 0) {
+  const [rule] = adopt;
+  const plan = planBaselineAdoption(findings, previous, LIMITS, rule);
+  if (plan.refused) {
+    console.error(`structure-audit: --adopt refused: ${plan.refused} ${BASELINE_FILE} was not written.`);
+    process.exit(1);
+  }
+  const written = saveBaseline(repoRoot, plan.baseline);
+  for (const entry of plan.adopted) console.log(`  adopted [${rule}] ${entry.key}: ${entry.value}`);
+  const total = plan.adopted.reduce((sum, entry) => sum + entry.value, 0);
+  const outcome = written ? "baseline written" : "baseline already current, not rewritten";
+  console.log(`structure-audit: ${outcome}: adopted ${plan.adopted.length} ${rule} entries, values summing to ${total}; other rules' entries kept.`);
+  process.exit(0);
+}
 
 if (flags.has("--update")) {
   // With --rule, only the selected rules' findings are complete, so only

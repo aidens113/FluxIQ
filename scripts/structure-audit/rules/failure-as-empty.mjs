@@ -45,8 +45,9 @@
 //      aliases are followed. Truthiness of the error alone names nothing.
 //
 //   2. A `.catch` whose result is thrown away -- an expression statement,
-//      optionally under `await` or `void`. Nothing is read from it; whether a
-//      best-effort side effect is acceptable is a different question.
+//      optionally under `await`, `void` or a `.finally(...)`. Nothing is read
+//      from it; whether dropping the failure is acceptable is the
+//      swallowed-failure rule's question.
 //
 //   3. A chain that only settles. When the fulfilment side gives the promise
 //      no value, its failure turned into nothing reads nothing either -- the
@@ -72,117 +73,13 @@
 // [];` passes), or a fallback that is not empty (`.catch(() => defaults)`).
 // Existing instances are baselined per file and may only shrink.
 
+import {
+  errorNames, isDiscarded, isEmptyValue, isInlineFunction, isRejection, nonTestScripts, onlySettles,
+  promiseMethod, returnsAValue, someOwn, testsError, unwrap
+} from "../failure-handling/index.mjs";
+
 export const id = "failure-as-empty";
 export const title = "A caught failure is never turned into an empty or absent value";
-
-const EMPTY_COLLECTIONS = new Set(["Map", "Set", "WeakMap", "WeakSet", "Array"]);
-const EMPTY_FACTORY = /^empty(?:[A-Z_0-9]|$)/;
-const EQUALITY = new Set(["===", "==", "!==", "!="]);
-
-function unwrap(ts, node) {
-  let current = node;
-  while (current && (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isNonNullExpression(current)
-    || ts.isTypeAssertionExpression(current) || ts.isSatisfiesExpression(current))) {
-    current = current.expression;
-  }
-  return current;
-}
-
-const isFunctionLike = (ts, node) => ts.isFunctionLike(node) || ts.isClassLike(node);
-const isInlineFunction = (ts, node) => Boolean(node) && (ts.isArrowFunction(node) || ts.isFunctionExpression(node));
-
-// `Promise.<name>(...)`: the call's arguments, or undefined for anything else.
-function promiseStatic(ts, node, name) {
-  const value = unwrap(ts, node);
-  if (!value || !ts.isCallExpression(value)) return undefined;
-  const callee = unwrap(ts, value.expression);
-  const matches = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
-    && callee.expression.text === "Promise" && callee.name.text === name;
-  return matches ? value.arguments : undefined;
-}
-
-const isRejection = (ts, node) => promiseStatic(ts, node, "reject") !== undefined;
-
-function isEmptyValue(ts, node) {
-  const value = unwrap(ts, node);
-  if (!value) return false;
-  if (ts.isIdentifier(value)) return value.text === "undefined";
-  if (value.kind === ts.SyntaxKind.NullKeyword || ts.isVoidExpression(value)) return true;
-  if (ts.isArrayLiteralExpression(value)) return value.elements.length === 0;
-  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text === "";
-  if (ts.isObjectLiteralExpression(value)) {
-    return value.properties.every((property) => ts.isPropertyAssignment(property) && isEmptyValue(ts, property.initializer));
-  }
-  if (ts.isNewExpression(value)) {
-    return ts.isIdentifier(value.expression) && EMPTY_COLLECTIONS.has(value.expression.text)
-      && (value.arguments ?? []).every((argument) => isEmptyValue(ts, argument));
-  }
-  if (!ts.isCallExpression(value)) return false;
-  const resolved = promiseStatic(ts, value, "resolve");
-  if (resolved) return resolved.every((argument) => isEmptyValue(ts, argument));
-  const callee = unwrap(ts, value.expression);
-  const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : "";
-  return EMPTY_FACTORY.test(name);
-}
-
-// Whether any node under `root` satisfies `predicate`, without entering nested
-// functions or classes, nor -- unless `intoCatch` -- nested catch clauses,
-// which are audited on their own.
-function someOwn(ts, root, predicate, { intoCatch = false } = {}) {
-  let found = false;
-  const step = (node) => {
-    if (found || isFunctionLike(ts, node) || (!intoCatch && ts.isCatchClause(node))) return;
-    if (predicate(node)) found = true;
-    else ts.forEachChild(node, step);
-  };
-  ts.forEachChild(root, step);
-  return found;
-}
-
-function isRootedAt(ts, node, names) {
-  let current = unwrap(ts, node);
-  while (current && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))) {
-    current = unwrap(ts, current.expression);
-  }
-  return Boolean(current) && ts.isIdentifier(current) && names.has(current.text);
-}
-
-// The caught error's name, plus every local declared from a value read from
-// it or from a call it is passed to.
-function errorNames(ts, body, binding) {
-  const names = new Set();
-  if (!binding || !ts.isIdentifier(binding)) return names;
-  names.add(binding.text);
-  someOwn(ts, body, (node) => {
-    if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || !node.initializer) return false;
-    const value = unwrap(ts, node.initializer);
-    if (isRootedAt(ts, value, names) || (ts.isCallExpression(value) && value.arguments.some((argument) => isRootedAt(ts, argument, names)))) {
-      names.add(node.name.text);
-    }
-    return false;
-  });
-  return names;
-}
-
-// Whether a condition names which failure it is looking at.
-function testsError(ts, condition, names) {
-  const namesFailure = (node) => {
-    if (ts.isCallExpression(node)) {
-      const callee = unwrap(ts, node.expression);
-      return node.arguments.some((argument) => isRootedAt(ts, argument, names))
-        || (node.arguments.length > 0 && ts.isPropertyAccessExpression(callee) && isRootedAt(ts, callee.expression, names));
-    }
-    if (!ts.isBinaryExpression(node)) return false;
-    if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
-      const right = unwrap(ts, node.right);
-      return isRootedAt(ts, node.left, names) && !(ts.isIdentifier(right) && right.text === "Error");
-    }
-    if (!EQUALITY.has(ts.tokenToString(node.operatorToken.kind))) return false;
-    const compares = (side, other) => isRootedAt(ts, side, names) && !isEmptyValue(ts, other);
-    return compares(node.left, node.right) || compares(node.right, node.left);
-  };
-  return names.size > 0 && (namesFailure(condition) || someOwn(ts, condition, namesFailure));
-}
 
 function definitelyThrows(ts, statement) {
   if (!statement) return false;
@@ -217,9 +114,6 @@ function isNamedExpectedFailure(ts, block, node, names) {
     && testsError(ts, statement.expression, names) && definitelyThrows(ts, statement.thenStatement));
 }
 
-const returnsAValue = (ts, fn) => Boolean(fn?.body) && ts.isBlock(fn.body) && someOwn(ts, fn.body,
-  (node) => ts.isReturnStatement(node) && Boolean(node.expression) && !isEmptyValue(ts, node.expression), { intoCatch: true });
-
 // The empty exits of a block: returns of an empty value, bare returns when
 // `bareCounts`, and the block's own end when it can fall off it.
 function emptyExits(ts, block, { bareCounts, fallThroughCounts }) {
@@ -230,47 +124,6 @@ function emptyExits(ts, block, { bareCounts, fallThroughCounts }) {
   });
   if (fallThroughCounts && !block.statements.some((statement) => definitelyExits(ts, statement))) exits.push(block);
   return exits;
-}
-
-// Whether a fulfilment handler gives its promise no value: an empty
-// expression body, or a block that never returns a value.
-function yieldsNoValue(ts, handler) {
-  const fn = unwrap(ts, handler);
-  if (!isInlineFunction(ts, fn)) return false;
-  return ts.isBlock(fn.body) ? !returnsAValue(ts, fn) : isEmptyValue(ts, fn.body);
-}
-
-function promiseMethod(ts, call, name) {
-  const callee = unwrap(ts, call.expression);
-  return ts.isPropertyAccessExpression(callee) && callee.name.text === name ? callee : undefined;
-}
-
-// A settled promise carries no value either way when the chain's fulfilment
-// side gives none, so turning its failure into nothing reads nothing: the
-// queue-tail idioms `tail.then(() => undefined, () => undefined)` and
-// `tail = tail.then(async () => { ... }).catch(() => undefined)`. The same
-// holds when the result is only passed on to a `.then` that takes no value:
-// `previous.catch(() => undefined).then(() => next())`.
-function onlySettles(ts, call, method) {
-  if (method === "then") return yieldsNoValue(ts, call.arguments[0]);
-  const receiver = unwrap(ts, promiseMethod(ts, call, "catch").expression);
-  if (ts.isCallExpression(receiver) && promiseMethod(ts, receiver, "then") && yieldsNoValue(ts, receiver.arguments[0])) return true;
-  let node = call;
-  while (ts.isParenthesizedExpression(node.parent)) node = node.parent;
-  const access = node.parent;
-  if (!ts.isPropertyAccessExpression(access) || access.expression !== node || access.name.text !== "then") return false;
-  const next = access.parent;
-  const onFulfilled = ts.isCallExpression(next) && next.expression === access ? unwrap(ts, next.arguments[0]) : undefined;
-  return isInlineFunction(ts, onFulfilled) && onFulfilled.parameters.length === 0;
-}
-
-function isDiscarded(ts, call) {
-  let node = call;
-  while (ts.isParenthesizedExpression(node.parent) || ts.isAwaitExpression(node.parent)
-    || ts.isAsExpression(node.parent) || ts.isNonNullExpression(node.parent)) {
-    node = node.parent;
-  }
-  return ts.isExpressionStatement(node.parent) || ts.isVoidExpression(node.parent);
 }
 
 // The inline rejection handler of `.catch(handler)` or `.then(_, handler)`,
@@ -326,17 +179,9 @@ function offendingLines(ctx, file) {
   return lines.sort((a, b) => a - b);
 }
 
-function isTestSource(ctx, file) {
-  if (ctx.isTestFile(file)) return true;
-  const roots = new Set(ctx.CONFIG.testRootDirNames ?? []);
-  return ctx.normalize(file).split("/").slice(0, -1).some((segment) => roots.has(segment));
-}
-
 export function run(ctx) {
   const findings = [];
-  for (const file of ctx.scriptFiles) {
-    if (isTestSource(ctx, file)) continue;
-    const normalized = ctx.normalize(file);
+  for (const normalized of nonTestScripts(ctx)) {
     const lines = offendingLines(ctx, normalized);
     if (lines.length === 0) continue;
 

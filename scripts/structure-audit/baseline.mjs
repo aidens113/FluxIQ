@@ -7,6 +7,11 @@
 // removes an entry whose violation is gone, and it never adds or raises one.
 // A ratcheted violation with no entry, or above its entry, blocks the update
 // and nothing is written.
+//
+// --adopt <rule> is the one way entries are added. It records the current
+// findings of a rule that has no entries yet -- a rule just added to the
+// audit -- and touches no other rule. Once a rule has entries it is refused,
+// so adoption cannot be used to raise or re-add anything.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -115,6 +120,36 @@ export function planBaselineUpdate(findings, previous, limits, scope = null) {
   }
 
   return { baseline: canonical(rules, limits), blocked, lowered, removed };
+}
+
+// Plans an --adopt of `rule` from the current findings.
+//
+// Only `rule`'s ratcheted fail findings are recorded, each key at the highest
+// value among its findings; every other rule's entries are carried over
+// exactly as recorded, whatever `findings` holds for them. When `rule` already
+// has an entry the plan is refused: `refused` says why and `baseline` is null.
+//
+// Returns { baseline, adopted, refused }, with `adopted` listing each recorded
+// { key, value } in the baseline's order.
+export function planBaselineAdoption(findings, previous, limits, rule) {
+  const existing = Object.keys(previous.rules[rule] ?? {}).length;
+  if (existing > 0) {
+    const entries = existing === 1 ? "1 baseline entry" : `${existing} baseline entries`;
+    return { baseline: null, adopted: [], refused: `${rule} already has ${entries}. A rule is adopted once; after that its entries may only be lowered, with --update.` };
+  }
+
+  const entries = {};
+  for (const finding of findings) {
+    if (finding.rule !== rule || finding.severity !== "fail" || !finding.ratchet) continue;
+    if (entries[finding.key] === undefined || finding.value > entries[finding.key]) entries[finding.key] = finding.value;
+  }
+
+  const rules = {};
+  for (const [id, recorded] of Object.entries(previous.rules)) if (id !== rule) rules[id] = { ...recorded };
+  if (Object.keys(entries).length > 0) rules[rule] = entries;
+  const baseline = canonical(rules, limits);
+  const adopted = Object.entries(baseline.rules[rule] ?? {}).map(([key, value]) => ({ key, value }));
+  return { baseline, adopted, refused: null };
 }
 
 // Rules sorted by id; entries by value, highest first, then by key. An

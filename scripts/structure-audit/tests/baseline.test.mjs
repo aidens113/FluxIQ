@@ -5,14 +5,15 @@
 // The law under test: --update lowers an entry to its current value or
 // removes one whose violation is gone, and nothing else. A ratcheted violation
 // with no entry, or above its entry, blocks the update, and a rule-scoped
-// update leaves every other rule's entries alone.
+// update leaves every other rule's entries alone. --adopt is the only way an
+// entry is added: once per rule, for a rule with no entries, touching no other.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { applyRatchet, BASELINE_FILE, planBaselineUpdate, saveBaseline } from "../baseline.mjs";
+import { applyRatchet, BASELINE_FILE, planBaselineAdoption, planBaselineUpdate, saveBaseline } from "../baseline.mjs";
 
 const LIMITS = { fileLines: 800 };
 
@@ -119,6 +120,79 @@ test("every violation a successful update records is suppressed by the check", (
   assert.deepEqual(plan.blocked, []);
   assert.deepEqual(result.failures.map((finding) => finding.key), ["i.ts"]);
   assert.deepEqual(result.lowerable, []);
+});
+
+test("adopting a rule records its current findings, each key at its highest value", () => {
+  const previous = baselineOf({ "file-lines": { "a.ts": 900 } });
+  const findings = [fail("new-rule", "x.ts", 2), fail("new-rule", "y.ts", 1), fail("new-rule", "x.ts", 3), fail("file-lines", "a.ts", 900)];
+  const plan = planBaselineAdoption(findings, previous, LIMITS, "new-rule");
+
+  assert.equal(plan.refused, null);
+  assert.deepEqual(plan.baseline.rules, { "file-lines": { "a.ts": 900 }, "new-rule": { "x.ts": 3, "y.ts": 1 } });
+  assert.deepEqual(plan.adopted, [{ key: "x.ts", value: 3 }, { key: "y.ts", value: 1 }]);
+  assert.equal(plan.baseline.limits, LIMITS);
+});
+
+test("adopting a rule leaves every other rule's entries exactly as recorded, whatever their findings say", () => {
+  const previous = baselineOf({
+    "file-lines": { "grew.ts": 900, "gone.ts": 850 },
+    naming: { "n.ts": 1 }
+  });
+  // file-lines grew and lost a violation, and imports has a violation with no
+  // entry: an update would block or change all of that. Adoption touches none.
+  const findings = [fail("file-lines", "grew.ts", 990), fail("imports", "i.ts", 1), fail("new-rule", "x.ts", 1)];
+  const plan = planBaselineAdoption(findings, previous, LIMITS, "new-rule");
+
+  assert.equal(plan.refused, null);
+  assert.deepEqual(plan.baseline.rules, {
+    "file-lines": { "grew.ts": 900, "gone.ts": 850 },
+    naming: { "n.ts": 1 },
+    "new-rule": { "x.ts": 1 }
+  });
+});
+
+test("adopting a rule that already has an entry is refused and plans nothing", () => {
+  const previous = baselineOf({ "new-rule": { "x.ts": 1 }, naming: { "n.ts": 1 } });
+  const plan = planBaselineAdoption([fail("new-rule", "x.ts", 4), fail("new-rule", "y.ts", 1)], previous, LIMITS, "new-rule");
+
+  assert.equal(plan.baseline, null);
+  assert.deepEqual(plan.adopted, []);
+  assert.match(plan.refused, /^new-rule already has 1 baseline entry. A rule is adopted once; after that its entries may only be lowered, with --update.$/);
+
+  const two = planBaselineAdoption([], baselineOf({ "new-rule": { "x.ts": 1, "y.ts": 2 } }), LIMITS, "new-rule");
+  assert.match(two.refused, /already has 2 baseline entries/);
+});
+
+test("a rule recorded with no entries may be adopted, and adopting nothing adds no rule", () => {
+  const empty = planBaselineAdoption([fail("new-rule", "x.ts", 1)], baselineOf({ "new-rule": {} }), LIMITS, "new-rule");
+  assert.equal(empty.refused, null);
+  assert.deepEqual(empty.baseline.rules, { "new-rule": { "x.ts": 1 } });
+
+  const clean = planBaselineAdoption([warn("new-rule", "w.ts", 3)], baselineOf({ naming: { "n.ts": 1 } }), LIMITS, "new-rule");
+  assert.equal(clean.refused, null);
+  assert.deepEqual(clean.baseline.rules, { naming: { "n.ts": 1 } });
+  assert.deepEqual(clean.adopted, []);
+});
+
+test("adoption records neither warnings nor unratcheted failures", () => {
+  const findings = [warn("new-rule", "w.ts", 5), fail("new-rule", "u.ts", 1, false), fail("new-rule", "r.ts", 2)];
+  const plan = planBaselineAdoption(findings, baselineOf({}), LIMITS, "new-rule");
+  assert.deepEqual(plan.baseline.rules, { "new-rule": { "r.ts": 2 } });
+});
+
+test("every violation an adoption records is suppressed by the check, and a later update keeps it", () => {
+  const findings = [fail("new-rule", "x.ts", 3), fail("new-rule", "y.ts", 1)];
+  const adoption = planBaselineAdoption(findings, baselineOf({}), LIMITS, "new-rule");
+  const result = applyRatchet(findings, adoption.baseline);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.suppressed.length, 2);
+
+  const update = planBaselineUpdate(findings, adoption.baseline, LIMITS);
+  assert.deepEqual(update.blocked, []);
+  assert.deepEqual(update.baseline, adoption.baseline);
+
+  const grown = applyRatchet([fail("new-rule", "x.ts", 4)], adoption.baseline);
+  assert.equal(grown.failures.length, 1, "an adopted entry may shrink, never grow");
 });
 
 test("saveBaseline leaves a file that already holds the content untouched", () => {

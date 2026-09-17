@@ -154,6 +154,8 @@ test("a .catch whose result is discarded is not counted", () => {
   assert.equal(count("export async function f() { await cleanup().catch(() => undefined); }"), 0);
   assert.equal(count("export function f() { void work().catch(() => {}); promise.catch(() => null); }"), 0);
   assert.equal(count("export async function f() { await (cleanup().catch(() => [])); }"), 0);
+  assert.equal(count("export function f() { void cleanup().catch(() => undefined).finally(() => done()); }"), 0);
+  assert.equal(count("export const settled = cleanup().catch(() => undefined).finally(() => done());"), 1);
 });
 
 test("a queue tail that only settles is not counted", () => {

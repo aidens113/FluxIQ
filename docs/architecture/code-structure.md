@@ -202,7 +202,10 @@ The detailed procedure for each, with the current offenders, is in the
   mix two kinds of file; `storage/` was 37 source files and 35 tests in one
   folder. Tests go in the directory's `tests/` subfolder.
 - **Raising a baseline entry.** The baseline is a ratchet. If a baselined
-  file must grow, split it instead.
+  file must grow, split it instead. The one way an entry is added is
+  `pnpm structure:baseline --adopt <rule>`, which records a new rule's
+  existing violations once, and is refused for a rule that already has
+  entries.
 - **Spreading properties into a contract value.** `{ selector, ...(label ? {
   label } : {}) }` compiles clean forever: TypeScript's excess-property check
   runs on the keys a literal writes out, never on the keys a spread brings in,
@@ -213,6 +216,30 @@ The detailed procedure for each, with the current offenders, is in the
   `contract-spread` rule enforces this in the paths a repository lists under
   `contractSpreadPaths`, which is how a rule this local stays off the 1,400
   ordinary spreads elsewhere.
+- **Turning a caught failure into an empty answer.** `.catch(() => [])` or
+  `catch { return null; }` hands the caller an answer that looks exactly like
+  a real one: "there are no sessions" and "the session index could not be
+  read" both become `[]`, and the caller acts on the wrong one -- a second
+  run admitted beside an active one, a Flow listing that comes back empty.
+  Let the error propagate, fail closed with an error that says what could
+  not be read, or name the one failure that really means absent and rethrow
+  the rest: `catch (error) { if (isMissingFile(error)) return []; throw error; }`.
+  The `failure-as-empty` rule enforces this in all non-test source, with
+  existing instances baselined per file.
+- **Silently dropping a failure.**
+  `await cache.purge(id).catch(() => undefined)` and an empty `catch {}`
+  turn a failed write or side effect into apparent success: nothing fails,
+  nothing is logged, and the next reader acts on state that was never
+  written. Report the error
+  (`.catch((error) => log.warn("cache purge failed", error))`), name the one
+  expected failure and rethrow the rest, or let it propagate. Waiting for a
+  held promise that someone else awaits
+  (`await previous.catch(() => undefined)`) drops nothing. Where losing the
+  failure really is acceptable, say why inside the handler or the catch
+  block with `/* best-effort: <reason> */`; the reason needs three words or
+  more, and the same comment anywhere else does not count. The `swallowed-failure`
+  rule enforces this in all non-test source, with existing instances
+  baselined per file.
 
 ## Worked Example — `automation-studio/storage/`
 
