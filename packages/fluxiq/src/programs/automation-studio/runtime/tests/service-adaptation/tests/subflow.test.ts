@@ -220,14 +220,14 @@ describe("Automation Studio Subflow-scoped node adaptations", () => {
     expect(before.trace?.attempts.map((attempt) => attempt.nodeId)).toEqual(["action.submit"]);
 
     const path = {
-      kind: "insert_deterministic_path",
+      kind: "insert_deterministic_path" as const,
       targetId: "action.submit",
       summary: "Dismiss the banner, then finish.",
       after: {
         nodes: [{ nodeId: "recovery.dismiss", definitionId: "example.target-action", label: "Dismiss banner", target: { selector: "#dismiss" } }],
         returnToNodeId: "end"
       }
-    } as const;
+    };
 
     await service.saveFlowAdaptation({
       ...adaptationFixture({ projectId: project.id, flowId: parent.flowId, subflowId: subflow.subflowId, adaptationId: "adaptation.path" }),

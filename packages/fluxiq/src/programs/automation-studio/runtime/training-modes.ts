@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "../model/index.ts";
+import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "./service/adaptations/index.ts";
 import type { AutomationStudioChangeProposalKind, AutomationStudioChangeProposalMode, AutomationStudioChangeProposalStatus, AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow } from "../model/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "./flow-bootstrap/index.ts";
 import type { AutomationStudioChangeConfidenceDecision } from "./flow-change/index.ts";

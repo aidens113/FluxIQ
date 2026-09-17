@@ -1,4 +1,4 @@
-import type { AutomationStudioChangeProposalKind } from "./flow-adaptation.ts";
+import type { AutomationStudioChangeProposalKind } from "../../../model/index.ts";
 
 /**
  * What each kind of adaptation patch does to a Flow, and therefore which gates
