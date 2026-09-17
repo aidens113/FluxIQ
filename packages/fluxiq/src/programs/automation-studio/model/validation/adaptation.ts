@@ -1,6 +1,15 @@
-import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
+import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeOrigin, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
 import { validateConditionExpression } from "./condition.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+
+const VALIDATION_RESULT_STATUSES: ReadonlySet<unknown> = new Set(["succeeded", "failed"]);
+const VALIDATION_RESULT_KINDS: ReadonlySet<unknown> = new Set(["trial", "replay"]);
+/** A basis entry is a check code, never prose or page text. */
+const VALIDATION_BASIS_CODE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+const VALIDATION_BASIS_MAX_ENTRIES = 16;
+const ORIGIN_ID_MAX_LENGTH = 256;
+const ORIGIN_SIGNATURE_MAX_LENGTH = 512;
+const ORIGIN_MAX_INSTRUCTION_IDS = 64;
 
 export function validateAutomationStudioFlowRouter(router: AutomationStudioFlowRouter, subflows: AutomationStudioFlowSubflow[] = []): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];
@@ -116,10 +125,97 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
   if (!adaptation.patch.length) addIssue(issues, "error", "adaptation.missing_patch", "Adaptation must include at least one patch.", "patch");
   if (adaptation.updatedAt < adaptation.createdAt) addIssue(issues, "error", "adaptation.updated_before_created", "Adaptation updatedAt must be greater than or equal to createdAt.", "updatedAt");
   for (const [index, result] of (adaptation.validationResults ?? []).entries()) {
-    if (!result.runId.trim()) addIssue(issues, "error", "adaptation.validation_missing_run", "Adaptation validation result must include a runId.", `validationResults.${index}.runId`);
-    if (result.checkedAt < adaptation.createdAt) addIssue(issues, "warning", "adaptation.validation_before_created", "Adaptation validation was recorded before the adaptation was created.", `validationResults.${index}.checkedAt`);
+    const path = `validationResults.${index}`;
+    if (!result.runId.trim()) addIssue(issues, "error", "adaptation.validation_missing_run", "Adaptation validation result must include a runId.", `${path}.runId`);
+    if (result.checkedAt < adaptation.createdAt) addIssue(issues, "warning", "adaptation.validation_before_created", "Adaptation validation was recorded before the adaptation was created.", `${path}.checkedAt`);
+    if (!VALIDATION_RESULT_STATUSES.has(result.status)) addIssue(issues, "error", "adaptation.validation_invalid_status", "Adaptation validation status must be succeeded or failed.", `${path}.status`);
+    // An absent kind is a result written before kinds existed, and reads as a trial.
+    if (result.kind !== undefined && !VALIDATION_RESULT_KINDS.has(result.kind)) addIssue(issues, "error", "adaptation.validation_invalid_kind", "Adaptation validation kind must be trial or replay.", `${path}.kind`);
+    if (result.basis !== undefined) {
+      if (!isValidationBasis(result.basis)) addIssue(issues, "error", "adaptation.validation_invalid_basis", "Adaptation validation basis must list distinct check codes.", `${path}.basis`);
+      else if (result.basis.length && result.status !== "succeeded") addIssue(issues, "error", "adaptation.validation_basis_without_success", "Only a succeeded adaptation validation can name a basis.", `${path}.basis`);
+    }
+  }
+  const origin = adaptation.metadata?.origin;
+  if (origin !== undefined) {
+    const parsed = parseAutomationStudioFlowChangeOrigin(origin);
+    if (!parsed) {
+      addIssue(issues, "error", "adaptation.origin_invalid", "Adaptation metadata.origin must name one entry point and only its ids.", "metadata.origin");
+    } else if (parsed.entryPoint !== "instruction" && parsed.runId !== undefined && adaptation.sourceRunId !== undefined && parsed.runId !== adaptation.sourceRunId) {
+      addIssue(issues, "error", "adaptation.origin_run_mismatch", "Adaptation metadata.origin must name the adaptation's source run.", "metadata.origin.runId");
+    }
   }
   return result(issues);
+}
+
+/**
+ * Reads a stored change origin, or undefined when it is not exactly one of the
+ * three shapes. Every field is checked and nothing else is allowed, so page
+ * text cannot ride along. Returns a fresh copy.
+ *
+ * - `instruction`: at least one instruction id.
+ * - `run_failure`: the run, the failed node and the failure signature.
+ * - `edge_case`: instruction ids (possibly none), and a run when there are
+ *   none; a failure signature only with its run.
+ */
+export function parseAutomationStudioFlowChangeOrigin(value: unknown): AutomationStudioFlowChangeOrigin | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (record.entryPoint === "instruction") {
+    if (!hasOnlyKeys(keys, ["entryPoint", "instructionIds"])) return undefined;
+    const instructionIds = originIdList(record.instructionIds);
+    return instructionIds?.length ? { entryPoint: "instruction", instructionIds } : undefined;
+  }
+  if (record.entryPoint === "run_failure") {
+    if (!hasOnlyKeys(keys, ["entryPoint", "runId", "failedNodeId", "failureSignature"])) return undefined;
+    const { runId, failedNodeId, failureSignature } = record;
+    if (!isOriginText(runId, ORIGIN_ID_MAX_LENGTH) || !isOriginText(failedNodeId, ORIGIN_ID_MAX_LENGTH) || !isOriginText(failureSignature, ORIGIN_SIGNATURE_MAX_LENGTH)) return undefined;
+    return { entryPoint: "run_failure", runId, failedNodeId, failureSignature };
+  }
+  if (record.entryPoint === "edge_case") {
+    if (!hasOnlyKeys(keys, ["entryPoint", "instructionIds", "runId", "failureSignature"])) return undefined;
+    const instructionIds = originIdList(record.instructionIds);
+    const { runId, failureSignature } = record;
+    if (!instructionIds) return undefined;
+    if (runId !== undefined && !isOriginText(runId, ORIGIN_ID_MAX_LENGTH)) return undefined;
+    if (failureSignature !== undefined && (runId === undefined || !isOriginText(failureSignature, ORIGIN_SIGNATURE_MAX_LENGTH))) return undefined;
+    if (!instructionIds.length && runId === undefined) return undefined;
+    return {
+      entryPoint: "edge_case",
+      instructionIds,
+      ...(typeof runId === "string" ? { runId } : {}),
+      ...(typeof failureSignature === "string" ? { failureSignature } : {})
+    };
+  }
+  return undefined;
+}
+
+function isValidationBasis(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.length <= VALIDATION_BASIS_MAX_ENTRIES
+    && value.every((entry) => typeof entry === "string" && VALIDATION_BASIS_CODE.test(entry))
+    && new Set(value).size === value.length;
+}
+
+function hasOnlyKeys(keys: string[], allowed: string[]): boolean {
+  return keys.every((key) => allowed.includes(key));
+}
+
+function originIdList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length > ORIGIN_MAX_INSTRUCTION_IDS) return undefined;
+  if (!value.every((entry) => isOriginText(entry, ORIGIN_ID_MAX_LENGTH)) || new Set(value).size !== value.length) return undefined;
+  return [...value] as string[];
+}
+
+// Non-empty, bounded, no surrounding whitespace, and no C0 control character or DEL.
+function isOriginText(value: unknown, maxLength: number): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.trim() !== value) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
 }
 
 export function validateAutomationStudioAdaptationPolicy(policy: AutomationStudioAdaptationPolicy): AutomationStudioValidationResult {

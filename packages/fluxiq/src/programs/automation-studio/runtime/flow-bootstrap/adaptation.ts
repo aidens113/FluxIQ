@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
 import {
   createBlankAutomationStudioFlowArtifact,
+  type AutomationStudioFlowAdaptationValidationResult,
   type AutomationStudioFlowArtifact,
+  type AutomationStudioFlowChangeOrigin,
   type AutomationStudioFlowExpansionReferences,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowSubflow
@@ -12,6 +14,17 @@ import type {
   AutomationStudioFlowBootstrapRisk
 } from "./plan.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
+import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
+
+/**
+ * `create` builds a whole topology on a blank Flow; `extend` only adds to an
+ * existing one. A record written before modes existed has none: read it as
+ * `create`.
+ */
+export type AutomationStudioBootstrapAdaptationMode = "create" | "extend";
+
+/** A bootstrap change comes from an instruction, or from an edge case an existing Flow does not handle. */
+export type AutomationStudioBootstrapAdaptationOrigin = Extract<AutomationStudioFlowChangeOrigin, { entryPoint: "instruction" | "edge_case" }>;
 
 export type AutomationStudioBootstrapAdaptationStatus =
   | "proposed"
@@ -74,6 +87,12 @@ export type AutomationStudioBootstrapAdaptation = {
   baseDependencyDigest: string;
   baseSettingsRevision: number;
   sourceInstructionIds: string[];
+  /** Absent on records written before modes existed: read as `create`. */
+  mode?: AutomationStudioBootstrapAdaptationMode;
+  /** Absent on records written before origins existed; `upgradeAutomationStudioBootstrapAdaptation` derives it. */
+  origin?: AutomationStudioBootstrapAdaptationOrigin;
+  /** Trials of the proposed topology and replays of the applied one. */
+  validationResults?: AutomationStudioFlowAdaptationValidationResult[];
   summary: string;
   riskLevel: AutomationStudioFlowBootstrapRisk;
   accounting?: AutomationStudioBootstrapAccounting;
@@ -135,11 +154,13 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
         definitionVersion: node.definitionVersion,
         ...(node.parameters ? { parameterValues: structuredClone(node.parameters) } : {}),
         position: { ...node.position },
-        metadata: {
+        // `adaptationIds` is the neutral provenance every change stamps on the
+        // nodes it writes; `bootstrapAdaptationId` stays for ownership checks.
+        metadata: withAutomationStudioNodeAdaptationId({
           bootstrapAdaptationId: input.adaptationId,
           bootstrapSymbolicKey: node.key,
           ...(node.outputActionId ? { outputActionId: node.outputActionId } : {})
-        }
+        }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({
         id: `edge.bootstrap.${namespace}.${entry.key}.${edge.key}`,
@@ -229,6 +250,31 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
     metadata: { bootstrapAdaptationId: input.adaptationId }
   };
   return { router, subflows };
+}
+
+/**
+ * A stored Flow Bootstrap adaptation in the current shape. A record written
+ * before modes, origins and node provenance existed reads as a `create` from
+ * its source instructions, and each node it owns gains the `adaptationIds`
+ * normalization now stamps. Apply compares the stored topology with a fresh
+ * normalization, so a record read from storage must pass through here before
+ * it is applied. Idempotent; returns a copy and never changes its argument.
+ */
+export function upgradeAutomationStudioBootstrapAdaptation(adaptation: AutomationStudioBootstrapAdaptation): AutomationStudioBootstrapAdaptation {
+  const upgraded = structuredClone(adaptation);
+  if (upgraded.mode === undefined) upgraded.mode = "create";
+  if (upgraded.origin === undefined && upgraded.sourceInstructionIds.length) {
+    upgraded.origin = { entryPoint: "instruction", instructionIds: [...upgraded.sourceInstructionIds] };
+  }
+  // An id Core could not have minted cannot be stamped; such a record cannot
+  // match a fresh normalization either, so apply refuses it as before.
+  if (!isAutomationStudioAdaptationId(upgraded.adaptationId)) return upgraded;
+  for (const entry of upgraded.topology.subflows) {
+    entry.graphFlow.nodes = entry.graphFlow.nodes.map((node) => node.metadata?.bootstrapAdaptationId === upgraded.adaptationId
+      ? { ...node, metadata: withAutomationStudioNodeAdaptationId(node.metadata, upgraded.adaptationId) }
+      : node);
+  }
+  return upgraded;
 }
 
 export function assertAutomationStudioBootstrapHasNoRecordingProvenance(value: unknown): void {

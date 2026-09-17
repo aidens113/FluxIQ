@@ -7,4 +7,4 @@ export { validateStateFactReference, validateStateFact, validateNodeEvidenceBind
 export { validateNodeStateSource, validateNodeStateViewSelection, validateNodeStateRuntimeComparison } from "./node-state.ts";
 export { validateActionVisualEntityTarget } from "./visual-target.ts";
 export { validateAutomationStudioFlow } from "./flow.ts";
-export { validateAutomationStudioFlowRouter, validateAutomationStudioFlowSubflow, validateAutomationStudioFlowInstruction, validateAutomationStudioFlowChangeProposal, validateAutomationStudioFlowAdaptation, validateAutomationStudioAdaptationPolicy } from "./adaptation.ts";
+export { validateAutomationStudioFlowRouter, validateAutomationStudioFlowSubflow, validateAutomationStudioFlowInstruction, validateAutomationStudioFlowChangeProposal, validateAutomationStudioFlowAdaptation, validateAutomationStudioAdaptationPolicy, parseAutomationStudioFlowChangeOrigin } from "./adaptation.ts";

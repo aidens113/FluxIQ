@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../nodes/index.ts";
 import {
@@ -506,5 +507,60 @@ describe("writing records, which no dispatcher handles", () => {
     expect(trace.status).toBe("succeeded");
     expect(dispatched).toEqual([]);
     expect(batches).toHaveLength(1);
+  });
+});
+
+// A replay proves which saved changes it used from its attempts alone, so every
+// way an adapted node's attempt can end must name them.
+const STAMPED_IDS = ["adaptation.run-1.retarget.1", "adaptation.bootstrap.0"];
+const adaptedNode: AutomationStudioFlowNode = { ...boundNode, metadata: { adaptationIds: STAMPED_IDS } };
+const suppliedSelector = { "run.supplied.selector": "#confirm" };
+
+describe("the saved changes an attempt names", () => {
+  it.each([
+    { branch: "succeeds, in a run that withholds a resolved value", node: adaptedNode, options: { inputs: suppliedSelector, effectDispatcher: () => succeeded }, status: "succeeded" },
+    { branch: "fails in dispatch", node: adaptedNode, options: { inputs: suppliedSelector, effectDispatcher: () => ({ status: "failed", route: "failed", outputs: { ok: false } }) }, status: "failed" },
+    { branch: "throws in dispatch", node: adaptedNode, options: { inputs: suppliedSelector, effectDispatcher: () => { throw new Error("The transport closed."); } }, status: "failed" },
+    { branch: "cannot resolve a state-bound parameter", node: adaptedNode, options: {}, status: "failed" },
+    { branch: "pins a version Core does not have", node: { ...adaptedNode, definitionVersion: "2.0.0" }, options: { inputs: suppliedSelector }, status: "failed" },
+    { branch: "is not executable", node: { ...adaptedNode, definitionId: "importer.example.unregistered" }, options: { inputs: suppliedSelector }, status: "failed" },
+    { branch: "runs as a native node", node: { ...adaptedNode, definitionId: "importer.example.native" }, options: { inputs: suppliedSelector, nativeNodeExecutor: () => Promise.resolve({ result: succeeded }) }, status: "succeeded" },
+    { branch: "runs as a composite", node: { ...adaptedNode, definitionId: "importer.example.composite" }, options: { inputs: suppliedSelector, compositeExecutor: () => Promise.resolve({ result: succeeded }) }, status: "succeeded" }
+  ] satisfies Array<{ branch: string; node: AutomationStudioFlowNode; options: AutomationStudioGraphExecutionOptions; status: string }>)("names the node's adaptations when it $branch", async ({ node, options, status }) => {
+    const trace = await runAutomationStudioGraph({ ...flow, flowId: "flow.adapted-node", nodes: [node] }, options);
+
+    expect(trace.attempts[0]).toMatchObject({ nodeId: "output", status, adaptationIds: STAMPED_IDS });
+    expect(trace.attempts.length).toBeGreaterThan(0);
+    for (const attempt of trace.attempts) expect(attempt.adaptationIds).toEqual(STAMPED_IDS);
+  });
+
+  it("names nothing on the attempt of a node that carries no adaptations, beside one that does", async () => {
+    const trace = await runAutomationStudioGraph({
+      ...flow,
+      flowId: "flow.partly-adapted",
+      nodes: [{ id: "first", definitionId: "builtin.policy.action", parameterValues: { outputId: "open" } }, { ...adaptedNode, id: "second" }],
+      edges: [{ id: "first.second", sourceNodeId: "first", targetNodeId: "second", sourcePortId: "success" }]
+    }, { inputs: suppliedSelector, effectDispatcher: () => succeeded });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["first", "second"]);
+    expect(trace.attempts[0]).not.toHaveProperty("adaptationIds");
+    expect(trace.attempts[1]?.adaptationIds).toEqual(STAMPED_IDS);
+  });
+
+  it.each([
+    { case: "not a list", adaptationIds: "adaptation.run-1.retarget.1" },
+    { case: "a list holding something other than an id", adaptationIds: ["adaptation.run-1.retarget.1", 1] }
+  ] satisfies Array<{ case: string; adaptationIds: JsonValue }>)("names nothing, and runs exactly as an unadapted node, when the node's list is $case", async ({ adaptationIds }) => {
+    const run = (node: AutomationStudioFlowNode) => runAutomationStudioGraph(
+      { ...flow, flowId: "flow.malformed-provenance", nodes: [node] },
+      { inputs: suppliedSelector, effectDispatcher: () => succeeded, now: () => 1 }
+    );
+    const malformed = await run({ ...boundNode, metadata: { adaptationIds } });
+    const unadapted = await run(boundNode);
+
+    expect(malformed.status).toBe("succeeded");
+    expect(malformed.attempts[0]).not.toHaveProperty("adaptationIds");
+    expect(malformed).toEqual(unadapted);
   });
 });

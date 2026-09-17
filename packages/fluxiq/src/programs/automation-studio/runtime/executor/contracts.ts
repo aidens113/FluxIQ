@@ -141,6 +141,14 @@ export type AutomationStudioNodeAttemptTrace = {
   /** How the action's element target was resolved before dispatch, when the node dispatched one. */
   targetResolution?: AutomationNodeTargetResolution;
   hostCapabilities?: string[];
+  /**
+   * The saved changes (adaptation ids) the executed node carried in
+   * `metadata.adaptationIds`, copied when it ran, in the node's order. Present
+   * only when that list was well formed and non-empty, so a replay can name the
+   * changes it exercised without asking a model. Malformed metadata leaves it
+   * absent rather than partly trusted.
+   */
+  adaptationIds?: string[];
 };
 
 export type AutomationStudioGraphExecutionTrace = {

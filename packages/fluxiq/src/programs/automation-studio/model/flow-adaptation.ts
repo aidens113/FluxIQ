@@ -335,6 +335,42 @@ export type AutomationStudioFlowAdaptationStatus =
   | "reverted"
   | "superseded";
 
+/** Which of the three ways into the flow-improvement loop produced a change. */
+export type AutomationStudioFlowChangeEntryPoint = "instruction" | "run_failure" | "edge_case";
+
+/**
+ * Where a change came from, whichever entry point produced it. A Flow
+ * adaptation keeps it at `metadata.origin`, which the typed store saves whole,
+ * so it needs no migration; a Flow Bootstrap adaptation keeps it at `origin`.
+ * Ids and Core failure signatures only, never page text or values.
+ * `parseAutomationStudioFlowChangeOrigin` is the only reader of a stored one.
+ */
+export type AutomationStudioFlowChangeOrigin =
+  | { entryPoint: "instruction"; instructionIds: string[] }
+  | { entryPoint: "run_failure"; runId: string; failedNodeId: string; failureSignature: string }
+  | { entryPoint: "edge_case"; instructionIds: string[]; runId?: string; failureSignature?: string };
+
+/**
+ * How a validation result was observed: a `trial` of the candidate on the live
+ * page before it was saved, or a `replay`, a later run that exercised the
+ * applied change with no model call. A result written before kinds existed
+ * has none and reads as `trial`. A structural check is never a validation
+ * result; it stays in `metadata.structuralChecks`.
+ */
+export type AutomationStudioFlowChangeValidationKind = "trial" | "replay";
+
+/** One observed run of a change. */
+export type AutomationStudioFlowAdaptationValidationResult = {
+  runId: string;
+  status: "succeeded" | "failed";
+  checkedAt: number;
+  detail?: string;
+  /** Absent on records written before this field existed: read it as `trial`. */
+  kind?: AutomationStudioFlowChangeValidationKind;
+  /** The verdict's evidence, as check codes only. Present only on a success. */
+  basis?: string[];
+};
+
 export type AutomationStudioFlowAdaptation = {
   schemaVersion: "0.1";
   adaptationId: string;
@@ -350,7 +386,7 @@ export type AutomationStudioFlowAdaptation = {
   failedAction?: JsonObject;
   diagnosis?: string;
   patch: AutomationStudioChangeProposalPatch[];
-  validationResults?: Array<{ runId: string; status: "succeeded" | "failed"; checkedAt: number; detail?: string }>;
+  validationResults?: AutomationStudioFlowAdaptationValidationResult[];
   appliedTo?: Array<{ kind: "router" | "subflow" | "expectation" | "action_target" | "instruction"; id: string }>;
   status: AutomationStudioFlowAdaptationStatus;
   author: "runtime" | "llm" | "user" | "system";

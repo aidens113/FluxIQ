@@ -2,6 +2,7 @@ import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
+import { automationStudioNodeAdaptationIds } from "../flow-change/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { compareAutomationStudioTransition } from "./transition-comparison.ts";
 
@@ -35,4 +36,25 @@ export function nodeAttemptFromResult(
     ...(result.targetResolution ? { targetResolution: result.targetResolution } : {})
   };
   return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt) };
+}
+
+/**
+ * The attempt, carrying the adaptation ids its node was stamped with and no
+ * others. The node's metadata, read by `automationStudioNodeAdaptationIds`, is
+ * the only source: an `adaptationIds` the attempt already holds is dropped, and
+ * a malformed node list yields none at all rather than a trusted part of it,
+ * because a replay recorder reads this field as proof of which saved changes
+ * ran. The reader hands back a fresh array, so neither the trace nor the Flow
+ * document can change the other's list afterwards.
+ */
+export function nodeAttemptWithAdaptationIds(
+  node: AutomationStudioFlowNode,
+  attempt: AutomationStudioNodeAttemptTrace
+): AutomationStudioNodeAttemptTrace {
+  const adaptationIds = automationStudioNodeAdaptationIds(node.metadata);
+  if (adaptationIds) return { ...attempt, adaptationIds };
+  if (!("adaptationIds" in attempt)) return attempt;
+  const unstamped = { ...attempt };
+  delete unstamped.adaptationIds;
+  return unstamped;
 }

@@ -4,7 +4,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
-import { nodeAttemptFromResult } from "./attempt-trace.ts";
+import { nodeAttemptFromResult, nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
 import { collectNodeInputs } from "./node-inputs.ts";
@@ -13,7 +13,26 @@ import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
+/**
+ * Executes one node and returns its attempt, stamped with the saved changes the
+ * node carries. Every path below returns through here, so an attempt of an
+ * adapted node names its adaptations whether it succeeded or failed, and
+ * however it failed.
+ */
 export async function executeAutomationStudioNode(
+  flow: AutomationStudioFlowDocument,
+  node: AutomationStudioFlowNode,
+  values: Record<string, JsonValue>,
+  options: AutomationStudioGraphExecutionOptions,
+  attemptNumber: number,
+  withholding: AutomationStudioTraceWithholding,
+  runState: AutomationStudioRunState
+): Promise<AutomationStudioNodeAttemptTrace> {
+  const attempt = await executeNodeAttempt(flow, node, values, options, attemptNumber, withholding, runState);
+  return nodeAttemptWithAdaptationIds(node, attempt);
+}
+
+async function executeNodeAttempt(
   flow: AutomationStudioFlowDocument,
   node: AutomationStudioFlowNode,
   values: Record<string, JsonValue>,
