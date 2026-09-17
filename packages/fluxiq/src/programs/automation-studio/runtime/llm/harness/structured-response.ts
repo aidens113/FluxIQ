@@ -8,8 +8,40 @@ export type AutomationStudioLlmStructuredResponse =
   | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
   | { kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
+  | { kind: "no_repair"; summary: string; reason: AutomationStudioNoRepairReason; metadata?: JsonObject }
   | { kind: "change_proposal"; summary: string; patches: AutomationStudioChangeProposalPatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "instruction_suggestion"; summary: string; instructions: Array<{ title: string; body: string; scope?: JsonObject; tags?: string[] }>; metadata?: JsonObject };
+
+/**
+ * Why there is nothing to repair, in the five ways a page says no.
+ *
+ * A model asked for a runtime patch had no way to answer "there is no repair":
+ * under a `diagnose_and_adapt` grant the schema was one target override with at
+ * least one handle and no other shape, so the only schema-valid answer was a
+ * control -- and in the live repair campaign of 2026-09-17 every refusal task
+ * came back with one that was merely pressable. This is the answer that was
+ * missing. It is a closed list because a reason a run records is read by a
+ * person and matched on by the Lab, and free prose is neither.
+ *
+ * It is deliberately not the target-override refusal vocabulary
+ * (`runtime/live-patch/refusal-reasons.ts`): those words say why a domain
+ * refused a target the model proposed, and these say why the model proposed
+ * none. A refusal Core reached and a refusal the model reached are different
+ * facts about a run.
+ */
+export const AUTOMATION_STUDIO_NO_REPAIR_REASONS = Object.freeze({
+  control_gone: "what the step acted on is gone, and nothing takes its place",
+  control_refused: "it is still there and refuses the step on purpose: locked, read-only, guarded, or not signed in",
+  several_alike: "several things answer to the step's own description and nothing tells them apart",
+  destination_gone: "where the step led is gone, and nothing replaces it",
+  person_required: "only a person can settle this"
+} as const);
+
+export type AutomationStudioNoRepairReason = keyof typeof AUTOMATION_STUDIO_NO_REPAIR_REASONS;
+
+export function isAutomationStudioNoRepairReason(value: unknown): value is AutomationStudioNoRepairReason {
+  return typeof value === "string" && Object.hasOwn(AUTOMATION_STUDIO_NO_REPAIR_REASONS, value);
+}
 
 /**
  * The one channel through which a model may contribute to a diagnosis.
@@ -159,6 +191,7 @@ export function stripAutomationStudioLlmResponseMetadata(response: AutomationStu
       })
     };
   }
+  if (response.kind === "no_repair") return { kind: response.kind, summary: response.summary, reason: response.reason };
   if (response.kind === "change_proposal") {
     return {
       kind: response.kind,
@@ -187,6 +220,7 @@ export function summarizeAutomationStudioLlmResponse(response: AutomationStudioL
   if (response.kind === "evidence_tool_decision") return { kind: response.kind, decisionKind: response.decision.kind, ...(response.decision.kind === "tool_call" ? { toolId: response.decision.toolId } : {}) };
   if (response.kind === "diagnosis") return { kind: response.kind, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}) };
   if (response.kind === "runtime_patch") return { kind: response.kind, riskLevel: response.riskLevel, patchCount: response.patches.length, patchKinds: response.patches.map((patch) => patch.kind) };
+  if (response.kind === "no_repair") return { kind: response.kind, reason: response.reason };
   if (response.kind === "change_proposal") return { kind: response.kind, riskLevel: response.riskLevel, patchCount: response.patches.length, patchKinds: response.patches.map((patch) => patch.kind) };
   return { kind: response.kind, instructionCount: response.instructions.length };
 }

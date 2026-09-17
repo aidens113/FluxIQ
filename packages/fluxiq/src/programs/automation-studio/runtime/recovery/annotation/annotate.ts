@@ -32,6 +32,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
+  AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
@@ -54,7 +55,7 @@ import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structured-diagnosis.ts";
 import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
-import { applyAutomationStudioRuntimeRecoveryPatches } from "./patches.ts";
+import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRepairAttempt } from "./patches.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "./run-budget.ts";
 
@@ -241,11 +242,17 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
   const plan = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
-  const patchWillFollow = Boolean(plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
+  const explicitProposalGrant = input.executionGrant?.purpose === "diagnose_and_adapt";
+  // A `diagnose_and_adapt` grant buys one target override and nothing else, and
+  // its schema makes the model name one. Where the plan allows none for this
+  // failure, the call could only return a substitute, so it is not made, and
+  // the exploration that would have served it is not run either.
+  const grantSkip = explicitProposalGrant && plan.patchRequest.request ? grantSkipReason(plan) : undefined;
+  const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
-  if (plan.explorationRequested && provider && ports.llmEvidenceRuntime) {
+  if (plan.explorationRequested && !grantSkip && provider && ports.llmEvidenceRuntime) {
     const scope = await ports.flowScope(input.context.projectId, input.context.flowId);
     // The patch's call, tokens and money are set aside before the exploration
     // may spend anything, and handed back the moment it ends.
@@ -317,6 +324,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       metadata: { source: "runRuntimeSession", expectedOutput: "runtime_patch", ...executionPurpose }
     })
     : null;
+  // The model's own refusal: an answer to the patch call rather than a failure
+  // of it. It proposes nothing and changes nothing, and is recorded beside the
+  // patch attempts, where a reader asking what the recovery did will look.
+  const declined = patchResult?.response?.kind === "no_repair" ? patchResult.response : undefined;
   const applied = patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt
     ? await applyAutomationStudioRuntimeRecoveryPatches({
       ports,
@@ -326,7 +337,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       flow: input.runtimeFlow,
       failedAttempt: input.failedTraceAttempt,
       patches: patchResult.response.patches,
-      explicitProposalGrant: input.executionGrant?.purpose === "diagnose_and_adapt",
+      allowedPatchKinds: plan.allowedPatchKinds,
+      explicitProposalGrant,
       ...(failureEvidence ? { failureEvidence } : {}),
       // What the request carried, not what the exploration returned: a handle
       // is checked only against a packet the model was actually shown.
@@ -336,6 +348,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(input.graphOptions ? { graphOptions: input.graphOptions } : {})
     })
     : { attempts: [], adaptationIds: [], changeProposalIds: [] };
+  const attempts = declined ? [...applied.attempts, automationStudioDeclinedRepairAttempt(declined.reason)] : applied.attempts;
   // One line per provider call, beside the totals they add up to. The
   // interventions below keep only the diagnosis and the patch; the calls that
   // gathered evidence between them leave none, and are itemized only here.
@@ -354,20 +367,43 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
-        ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(grantSkip ? { patchSkipped: grantSkip } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(declined ? { patchDeclined: declined.reason } : {}),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
         ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
         recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
         diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
       },
-      ...(applied.attempts.length ? { runtimePatchAttempts: applied.attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), patchAttemptCount: applied.attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
+      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
     }
   };
   return {
     ...withIntervention,
     summary: flowRunSummaryWithInterventionSummaries(withIntervention)
   };
+}
+
+/**
+ * Why a patch call is not worth making under a `diagnose_and_adapt` grant,
+ * which buys one target override and nothing else.
+ *
+ * Two cases. The plan allows no target override at all for this failure -- a
+ * guarded destination, a retired page, a record only a person can unlock -- so
+ * the call could only return a substitute. Or the failure is a tie between
+ * controls the page describes alike, which the matcher already read the page to
+ * decide: a model shown the same page cannot break the tie, and under this
+ * grant its only answer would be one of them. Both are refusals the run records
+ * without paying for a call.
+ */
+function grantSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis: { failureClass: string } }): string | undefined {
+  if (!plan.allowedPatchKinds.includes("temporary_target_override")) {
+    return `The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a ${plan.diagnosis.failureClass.replace(/_/gu, " ")} failure, so no patch was requested.`;
+  }
+  if (plan.diagnosis.failureClass === "target_ambiguous") {
+    return `The diagnose_and_adapt grant buys only a target override, and ${AUTOMATION_STUDIO_NO_REPAIR_REASONS.several_alike}, so no patch was requested.`;
+  }
+  return undefined;
 }
 
 /**

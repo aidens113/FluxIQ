@@ -101,16 +101,22 @@ export function planAutomationStudioRuntimeRecovery(input: AutomationStudioRunti
   const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({ deterministic: input.deterministic, ...(input.result ? { result: input.result } : {}) });
   const { allowed, refusals } = patchKindsForPlan(diagnosis.candidateKind, input.policy);
   const patchRequest = decidePatchRequest({ chain, diagnosis, allowed, resolution: input.deterministic.resolution });
+  // An exploration is not only the patch's errand. "Let me look at the page
+  // first, and then say there is nothing to repair" has to be reachable, and
+  // cancelling the look because the verdict is already "no" would make the
+  // refusal one the model could not check before giving
+  // (`reports/w2-model-context-audit.md`).
+  const explorationRequested = diagnosis.explorationNeeded;
   return {
     schemaVersion: "automation-studio.recovery-plan.v1",
     loopStage: "plan",
     source: "deterministic",
     candidateKind: diagnosis.candidateKind,
     diagnosis,
-    steps: planSteps({ deterministic: input.deterministic, diagnosis, patchRequest, allowed }),
+    steps: planSteps({ deterministic: input.deterministic, explorationRequested, patchRequest }),
     allowedPatchKinds: allowed,
     policyRefusals: refusals,
-    explorationRequested: diagnosis.explorationNeeded,
+    explorationRequested,
     patchRequest
   };
 }
@@ -131,14 +137,20 @@ function patchKindsForPlan(candidateKind: AutomationStudioAdaptiveCandidateKind,
   }
   const refusals: string[] = [];
   const allowed = candidates.filter((kind) => {
-    const refusal = policyRefusalForPatchKind(kind, policy);
+    const refusal = automationStudioRuntimePatchKindPolicyRefusal(kind, policy);
     if (refusal) refusals.push(refusal);
     return refusal === undefined;
   });
   return { allowed: [...allowed], refusals };
 }
 
-function policyRefusalForPatchKind(kind: AutomationStudioRuntimePatchKind, policy: AutomationStudioAdaptationPolicy): string | undefined {
+/**
+ * The preflight's sentence for a patch kind this policy forbids, or undefined
+ * when it permits the kind. The patch stage reads it too, to say whether a kind
+ * the plan left out was left out by the policy or by the failure.
+ */
+export function automationStudioRuntimePatchKindPolicyRefusal(kind: AutomationStudioRuntimePatchKind, policy: AutomationStudioAdaptationPolicy): string | undefined {
+  if (!policy.allowRuntimeRecovery) return "Runtime recovery is disabled by adaptation policy.";
   if (kind === "temporary_recovery_subflow_call" && !policy.allowCreateRecoveryPaths) return "Recovery subflow calls are disabled by adaptation policy.";
   if (kind === "temporary_target_override" && !policy.allowModifyActionTargets) return "Action target overrides are disabled by adaptation policy.";
   if (kind === "temporary_reroute" && !policy.allowModifyRouter) return "Temporary reroutes are disabled by adaptation policy.";
@@ -155,6 +167,13 @@ function decidePatchRequest(input: {
     return { request: false, reason: `The deterministic diagnosis resolved this failure as ${input.resolution.replace(/_/g, " ")}, so no patch was requested.` };
   }
   if (!input.chain.request) return input.chain;
+  // The model's way of saying the page refuses this on purpose: the record is
+  // gone, locked or guarded. A patch asked for after that can only be a
+  // substitute, and a `patchNeeded` the model left out defaults to the
+  // classifier's yes, so this verdict stops the request on its own.
+  if (input.diagnosis.stillAchievable === "no") {
+    return { request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested." };
+  }
   if (!input.diagnosis.patchNeeded && !input.diagnosis.explorationNeeded) {
     return { request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested." };
   }
@@ -166,9 +185,8 @@ function decidePatchRequest(input: {
 
 function planSteps(input: {
   deterministic: AutomationStudioRuntimeDeterministicDiagnosis;
-  diagnosis: AutomationStudioRuntimeStructuredDiagnosis;
+  explorationRequested: boolean;
   patchRequest: AutomationStudioRuntimePatchRequestDecision;
-  allowed: readonly AutomationStudioRuntimePatchKind[];
 }): AutomationStudioRuntimeRecoveryPlanStep[] {
   const resolution = input.deterministic.resolution;
   if (resolution === "deterministic_recovery") {
@@ -181,7 +199,7 @@ function planSteps(input: {
     return [{ action: "request_manual_intervention", reason: input.deterministic.reason }];
   }
   const steps: AutomationStudioRuntimeRecoveryPlanStep[] = [];
-  if (input.diagnosis.explorationNeeded) steps.push({ action: "explore", reason: "The diagnosis asked for evidence to be gathered before anything is changed." });
+  if (input.explorationRequested) steps.push({ action: "explore", reason: "The diagnosis asked for evidence to be gathered before anything is changed." });
   if (input.patchRequest.request) steps.push({ action: "request_patch", reason: input.patchRequest.reason });
   if (!steps.length) steps.push({ action: "stop", reason: input.patchRequest.reason });
   return steps;

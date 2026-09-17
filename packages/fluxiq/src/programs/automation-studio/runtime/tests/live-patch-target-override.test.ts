@@ -1,3 +1,4 @@
+import type { AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
@@ -320,10 +321,163 @@ describe("Automation Studio runtime target overrides", () => {
 
       expect(preflight).toEqual({
         ok: false,
-        issues: ["Target override is ambiguous in current sanitized evidence: a handle is not one the evidence issued, and nothing else in it could stand in (handle_not_issued)."],
+        issues: ["Target override is ambiguous in current sanitized evidence: a handle is not one the evidence issued (handle_not_issued)."],
         requiresExternalSideEffectApproval: true
       });
     });
+
+    it("is refused, and nothing runs, when the failure is not one a target can fix", async () => {
+      const host = recordingHost();
+      const asked: unknown[] = [];
+      const result = await executeOverride({
+        failedAttempt: failedAttempt("navigation_unexpected"),
+        validateTargetOverrideEvidence: (_target, failedAction) => {
+          asked.push(failedAction);
+          return { status: "resolved", target: { handles: { control: "candidate" } } };
+        }
+      }, host);
+
+      expect(asked).toEqual([]);
+      expect(result.preflight).toMatchObject({ ok: false, issues: [NOT_TARGET_REPAIRABLE_ISSUE] });
+      expect(result.metadata).toEqual({ executed: false, targetOverrideRefusal: { status: "absent", reason: "failure_not_target_repairable" } });
+      expect(host.nodes).toEqual([]);
+    });
+  });
+
+  // A target override re-points what the failed action addressed, so it can
+  // fix only a failure about that target. A link guard that refused the
+  // destination and a page that was retired are not such failures, and the
+  // live repair campaign (2026-09-17: failure-surfaces-refuse-guarded-link,
+  // navigation-refuse-retired-page) proposed an override for both, against the
+  // page the run landed on. The class is Core's own classification, so the
+  // domain is never asked.
+  it.each([
+    "navigation_unexpected",
+    "blocked_by_capability_or_policy",
+    "auth_required",
+    "user_intervention_required",
+    "page_changed",
+    "output_not_observed",
+    "expected_state_missing",
+    "timeout"
+  ] as const)("refuses an override for a %s failure without asking the domain", (category) => {
+    const asked: unknown[] = [];
+    const result = proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(category),
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "candidate" } }, reason: "Use the observed target." },
+      policy: repairPolicy(),
+      proposalMode: "manual",
+      validateTargetOverrideEvidence: (_target, failedAction) => {
+        asked.push(failedAction);
+        return { status: "resolved", target: { handles: { control: "candidate" } } };
+      }
+    });
+
+    expect(asked).toEqual([]);
+    expect(result.preflight).toEqual({ ok: false, issues: [NOT_TARGET_REPAIRABLE_ISSUE], requiresExternalSideEffectApproval: true });
+    expect(result.metadata).toEqual({ proposalOnly: true, executed: false, targetOverrideRefusal: { status: "absent", reason: "failure_not_target_repairable" } });
+    expect(result).not.toHaveProperty("adaptation");
+    expect(result).not.toHaveProperty("changeProposal");
+  });
+
+  it.each([
+    ["a target that was not found", failedAttempt("target_not_found"), undefined],
+    ["a target that matched several controls", failedAttempt("target_ambiguous"), undefined],
+    // Core's classifier offers a target override for an unclassified action
+    // failure inside a subflow; the gate follows the classifier, not a second list.
+    ["an unclassified action failure in a subflow", unclassifiedAttempt(), "subflow.one"]
+  ])("asks the domain about an override for %s", (_label, attempt, subflowId) => {
+    const asked: unknown[] = [];
+    const result = proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      ...(subflowId ? { subflowId } : {}),
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: attempt,
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "candidate" } }, reason: "Use the observed target." },
+      policy: repairPolicy(),
+      proposalMode: "manual",
+      validateTargetOverrideEvidence: (_target, failedAction) => {
+        asked.push(failedAction);
+        return { status: "resolved", target: { handles: { control: "candidate" } } };
+      }
+    });
+
+    expect(asked).toHaveLength(1);
+    expect(result.preflight.ok).toBe(true);
+  });
+
+  // The domain cannot tell a renamed control from a different one without
+  // knowing what the failed action addressed. The live repair proposed "Save
+  // changes and exit" for a recorded "Save changes" and was never told.
+  it("tells the domain what a recorded step addressed, and nothing else its payload carries", () => {
+    const element = { tagName: "button", accessibleName: "Save changes", context: { formId: "settings-form" } };
+    const target = { kind: "element", fingerprint: { tagName: "button", accessibleName: "Save changes" }, source: "runtime" };
+    const validations: unknown[] = [];
+    proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: dispatchFlowFixture({ parameterValues: { outputId: "example.output.press", parameters: { selector: "#save", text: "a typed value", element, target } } }),
+      failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "builtin.policy.action" },
+      patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+      policy: repairPolicy(),
+      validateTargetOverrideEvidence: (_target, failedAction) => {
+        validations.push(failedAction);
+        return { status: "matched" };
+      }
+    });
+
+    expect(validations).toEqual([{ nodeId: "press", definitionId: "builtin.policy.action", outputId: "example.output.press", recordedTarget: { element, target } }]);
+  });
+
+  it("tells the domain what a native action node addressed", () => {
+    const target = { selector: "#save", element: { tagName: "button" } };
+    const validations: unknown[] = [];
+    proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: dispatchFlowFixture({ definitionId: "example.output-node.press", parameterValues: { target, value: "a typed value" } }),
+      failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "example.output-node.press" },
+      patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+      policy: repairPolicy(),
+      validateTargetOverrideEvidence: (_target, failedAction) => {
+        validations.push(failedAction);
+        return { status: "matched" };
+      }
+    });
+
+    expect(validations).toEqual([{ nodeId: "press", definitionId: "example.output-node.press", recordedTarget: { target } }]);
+  });
+
+  it.each([
+    ["a payload naming neither", { outputId: "example.output.press", parameters: { selector: "#save" } }],
+    ["an element that is a state binding", { outputId: "example.output.press", parameters: { element: { $state: { path: "chosen.element" } } } }],
+    ["a target that is a string and an element that is a list", { outputId: "example.output.press", parameters: { target: "#save", element: ["button"] } }],
+    ["a payload that is a state binding", { outputId: "example.output.press", parameters: { $state: { path: "payload" } } }]
+  ])("tells the domain of no recorded target for %s", (_label, parameterValues) => {
+    const validations: unknown[] = [];
+    proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: dispatchFlowFixture({ parameterValues: parameterValues as AutomationStudioFlowNode["parameterValues"] }),
+      failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "builtin.policy.action" },
+      patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+      policy: repairPolicy(),
+      validateTargetOverrideEvidence: (_target, failedAction) => {
+        validations.push(failedAction);
+        return { status: "matched" };
+      }
+    });
+
+    expect(validations).toEqual([{ nodeId: "press", definitionId: "builtin.policy.action", outputId: "example.output.press" }]);
   });
 
   it("refuses a target proposal no domain check was bound to judge", () => {
@@ -536,7 +690,10 @@ function dispatchFlowFixture(node: { definitionId?: string; parameterValues?: Au
   };
 }
 
-function failedAttempt(): AutomationStudioNodeAttemptTrace {
+const NOT_TARGET_REPAIRABLE_ISSUE = "Target override cannot repair this failure: the action did not fail for want of its target, so a different target cannot fix it (failure_not_target_repairable).";
+
+/** A failed attempt whose structured failure is `category`: by default, a target that was not found. */
+function failedAttempt(category: AutomationStudioAdaptiveFailureClass = "target_not_found"): AutomationStudioNodeAttemptTrace {
   return {
     attemptId: "constant.attempt.1",
     nodeId: "constant",
@@ -548,8 +705,15 @@ function failedAttempt(): AutomationStudioNodeAttemptTrace {
     inputs: {},
     outputs: {},
     effects: [],
-    message: "Expected value was not observed."
+    message: "Expected value was not observed.",
+    failure: { category, code: `example.${category}`, retryable: false }
   };
+}
+
+/** A failed attempt with no structured failure, which Core classifies from its status and message. */
+function unclassifiedAttempt(): AutomationStudioNodeAttemptTrace {
+  const { failure: _failure, ...attempt } = failedAttempt();
+  return attempt;
 }
 
 function repairPolicy(overrides: Partial<AutomationStudioAdaptationPolicy> = {}): AutomationStudioAdaptationPolicy {

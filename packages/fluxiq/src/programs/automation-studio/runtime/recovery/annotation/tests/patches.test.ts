@@ -82,6 +82,42 @@ describe("applyAutomationStudioRuntimeRecoveryPatches", () => {
     expect(outcome.adaptationIds).toHaveLength(1);
     expect(outcome.changeProposalIds).toHaveLength(1);
   });
+
+  // The plan narrows the patch kinds to the ones that could serve the failure,
+  // and nothing downstream read that list: under a `diagnose_and_adapt` grant
+  // the model can only answer with a target override, and one was proposed for
+  // a navigation failure whose plan allowed only a reroute or a recovery path
+  // (live repair campaign, 2026-09-17).
+  it.each([true, false])("refuses a patch kind the plan did not allow, without asking the domain or proposing it (grant: %s)", async (explicitProposalGrant) => {
+    const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
+    const outcome = await apply({
+      asked,
+      answer: { status: "resolved", target: { handles: { control: "candidate.2" } } },
+      explicitProposalGrant,
+      allowedPatchKinds: ["temporary_reroute", "temporary_recovery_subflow_call", "temporary_action_sequence"]
+    });
+
+    expect(asked).toEqual([]);
+    expect(outcome.attempts).toEqual([expect.objectContaining({
+      kind: "temporary_target_override",
+      executed: false,
+      preflightOk: false,
+      traceStatus: "not-run",
+      issues: ["The recovery plan allows no target override for this failure."],
+      targetOverrideRefusal: { status: "absent", reason: "failure_not_target_repairable" }
+    })]);
+    expect(outcome.adaptationIds).toEqual([]);
+    expect(outcome.changeProposalIds).toEqual([]);
+  });
+
+  it("refuses every patch when the plan allowed none", async () => {
+    const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
+    const outcome = await apply({ asked, answer: { status: "resolved", target: { handles: { control: "candidate.2" } } }, explicitProposalGrant: false, allowedPatchKinds: [] });
+
+    expect(asked).toEqual([]);
+    expect(outcome.attempts[0]).toMatchObject({ preflightOk: false, issues: ["The recovery plan allows no target override for this failure."] });
+    expect(outcome.adaptationIds).toEqual([]);
+  });
 });
 
 // D-3. An exploration exists to find what the failure record could not show,
@@ -219,6 +255,8 @@ async function apply(options: {
   target?: AutomationStudioRuntimeTargetOverrideTarget;
   /** Every change proposal saved. */
   proposals?: AutomationStudioFlowChangeProposal[];
+  /** The kinds the plan allowed; by default, what it allows for a target that was not found. */
+  allowedPatchKinds?: AutomationStudioRuntimePatch["kind"][];
 }) {
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
     domainId: "example.domain",
@@ -252,6 +290,7 @@ async function apply(options: {
     flow: recordedFlow(),
     failedAttempt: failedAttempt(),
     patches: [patch],
+    allowedPatchKinds: options.allowedPatchKinds ?? ["temporary_target_override", "temporary_wait_retry"],
     explicitProposalGrant: options.explicitProposalGrant ?? true,
     ...(options.failureEvidence === null ? {} : { failureEvidence: options.failureEvidence ?? FAILURE_PACKET }),
     ...(options.explorationEvidence ? { explorationEvidence: options.explorationEvidence } : {}),
@@ -291,7 +330,8 @@ function failedAttempt(): AutomationStudioNodeAttemptTrace {
     inputs: {},
     outputs: {},
     effects: [],
-    message: "The recorded control was not found."
+    message: "The recorded control was not found.",
+    failure: { category: "target_not_found", code: "example.target.not_found", retryable: true }
   };
 }
 

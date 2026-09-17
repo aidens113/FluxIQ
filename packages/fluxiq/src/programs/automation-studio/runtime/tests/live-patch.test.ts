@@ -339,12 +339,14 @@ describe("Automation Studio live patch testing", () => {
   // Fix 5: the signature was read by `adaptationMatchesFailure` and written by
   // nothing, so cross-node matching on failure class could never happen.
   it("records the failure signature the adaptation was made for", async () => {
+    // A target that was not found: the one failure both a wait and a target
+    // override are offered for, so both patches can be made for the same one.
     const executed = await executeAutomationStudioRuntimePatch({
       projectId: "project.patch",
       flowId: "flow.patch",
       runId: "run.failed",
       flow: flowFixture(),
-      failedAttempt: failedAttempt(),
+      failedAttempt: targetNotFoundAttempt(),
       patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
       policy: repairPolicy(),
       now: () => 26
@@ -354,7 +356,7 @@ describe("Automation Studio live patch testing", () => {
       flowId: "flow.patch",
       runId: "run.failed",
       flow: flowFixture(),
-      failedAttempt: failedAttempt(),
+      failedAttempt: targetNotFoundAttempt(),
       patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "submit" } }, reason: "Use the current target." },
       policy: repairPolicy(),
       proposalMode: "manual",
@@ -500,6 +502,10 @@ function failedAttempt(): AutomationStudioNodeAttemptTrace {
     effects: [],
     message: "Expected value was not observed."
   };
+}
+
+function targetNotFoundAttempt(): AutomationStudioNodeAttemptTrace {
+  return { ...failedAttempt(), failure: { category: "target_not_found", code: "example.target.not_found", retryable: true } };
 }
 
 function repairPolicy(overrides: Partial<AutomationStudioAdaptationPolicy> = {}): AutomationStudioAdaptationPolicy {

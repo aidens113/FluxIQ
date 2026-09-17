@@ -79,7 +79,7 @@ describe("Automation Studio opaque repair target", () => {
     for (const webNoun of ["selector", "xpath", "css", "locator", "queryPath"]) {
       expect(schema).not.toContain(webNoun);
     }
-    const targetSchema = (user.outputSchema as any).properties.patches.items.properties.target;
+    const targetSchema = (user.outputSchema as any).oneOf[0].properties.patches.items.properties.target;
     expect(targetSchema).toMatchObject({
       additionalProperties: false,
       required: ["handles"],

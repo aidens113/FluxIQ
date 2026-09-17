@@ -51,14 +51,17 @@ export {
 export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-check.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
+  AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_SERIALIZED_LENGTH,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
+  isAutomationStudioNoRepairReason,
   isAutomationStudioRuntimeTargetOverrideTarget,
   type AutomationStudioLlmDiagnosisFields,
   type AutomationStudioLlmStructuredResponse,
+  type AutomationStudioNoRepairReason,
   type AutomationStudioRuntimePatch,
   type AutomationStudioRuntimeTargetOverrideTarget
 } from "./structured-response.ts";
@@ -68,4 +71,5 @@ export type {
   AutomationStudioLlmTaskResult
 } from "./task-request.ts";
 export { validateAutomationStudioLlmOutput } from "./output-validation.ts";
+export { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 export { runAutomationStudioLlmHarness } from "./run.ts";

@@ -20,10 +20,12 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
-import type {
-  AutomationStudioLlmContextPacket,
-  AutomationStudioRuntimePatch,
-  AutomationStudioRuntimeTargetOverrideTarget
+import {
+  AUTOMATION_STUDIO_NO_REPAIR_REASONS,
+  type AutomationStudioLlmContextPacket,
+  type AutomationStudioNoRepairReason,
+  type AutomationStudioRuntimePatch,
+  type AutomationStudioRuntimeTargetOverrideTarget
 } from "../../llm/index.ts";
 import {
   executeAutomationStudioRuntimePatch,
@@ -31,6 +33,7 @@ import {
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction
 } from "../../live-patch.ts";
+import { automationStudioRuntimePatchKindPolicyRefusal, type AutomationStudioRuntimePatchKind } from "../plan.ts";
 import { compactJsonObject, isJsonRecord } from "../../service/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../service.ts";
 import { automationStudioExploredEvidenceHandle } from "./exploration.ts";
@@ -51,6 +54,16 @@ export type AutomationStudioRuntimeRecoveryPatchInput = {
    * refused with its own recorded reason rather than quietly executed.
    */
   explicitProposalGrant: boolean;
+  /**
+   * The patch kinds the recovery plan allowed for this failure
+   * (`AutomationStudioRuntimeRecoveryPlan.allowedPatchKinds`). Required, and
+   * never defaulted: a patch of any other kind is refused before it runs or is
+   * proposed. The model is not bound by the plan it was not shown, and under a
+   * `diagnose_and_adapt` grant it can only answer with a target override, so a
+   * navigation failure's plan -- a reroute or a recovery path -- was answered
+   * with one and it was proposed (live repair campaign, 2026-09-17).
+   */
+  allowedPatchKinds: readonly AutomationStudioRuntimePatchKind[];
   failureEvidence?: JsonObject;
   /**
    * The explored packets exactly as the patch request carried them -- its
@@ -94,6 +107,14 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
   }
   const targetCheck = targetOverrideEvidenceCheck(input);
   for (const patch of input.patches) {
+    // Only a target override is held to the plan's list. A wait or a reroute
+    // the plan did not name costs a rerun and changes nothing durable; a target
+    // override presses a control, and the plan's list is the only thing that
+    // says the failure is one a control could fix at all.
+    if (patch.kind === "temporary_target_override" && !input.allowedPatchKinds.includes(patch.kind)) {
+      attempts.push(unplannedPatchAttempt(input, patch));
+      continue;
+    }
     // Which evidence the accepted target came from, for the receipt. Set only
     // when the domain accepted it.
     let targetEvidence: TargetEvidenceSource | undefined;
@@ -232,6 +253,49 @@ function handleRoute(target: AutomationStudioRuntimeTargetOverrideTarget):
   return { kind: "qualified", evidenceId: [...qualified][0]!, target: { ...target, handles } };
 }
 
+
+/**
+ * The receipt a declined repair leaves: the model was asked, looked, and
+ * answered that there is nothing to repair. It is recorded as an attempt so a
+ * run that declined does not read like a run that was never asked, and it is
+ * never a proposal: nothing was changed and nothing is waiting for approval.
+ */
+export function automationStudioDeclinedRepairAttempt(reason: AutomationStudioNoRepairReason): JsonObject {
+  return compactJsonObject({
+    kind: "no_repair",
+    executed: false,
+    preflightOk: false,
+    declinedReason: reason,
+    verification: { status: "not_executed", reason: "declined" },
+    restoredExpectedState: false,
+    retryOriginalAction: false,
+    issues: [`The model was asked for a repair and declined: ${AUTOMATION_STUDIO_NO_REPAIR_REASONS[reason]} (${reason}).`],
+    traceStatus: "not-run"
+  });
+}
+
+/**
+ * The receipt of a patch whose kind the plan left out. The policy's own
+ * sentence where the policy was the reason; otherwise the failure was, and a
+ * target override carries the same refusal Core's check gives it, so a reader
+ * keyed on `targetOverrideRefusal` sees why.
+ */
+function unplannedPatchAttempt(input: AutomationStudioRuntimeRecoveryPatchInput, patch: AutomationStudioRuntimePatch): JsonObject {
+  const policyRefusal = automationStudioRuntimePatchKindPolicyRefusal(patch.kind, input.context.policy);
+  const targetOverride = patch.kind === "temporary_target_override";
+  return compactJsonObject({
+    kind: patch.kind,
+    proposalOnly: input.explicitProposalGrant && targetOverride ? true : undefined,
+    executed: false,
+    preflightOk: false,
+    targetOverrideRefusal: targetOverride && !policyRefusal ? { status: "absent", reason: "failure_not_target_repairable" } : undefined,
+    verification: { status: "not_executed", reason: "not_planned" },
+    restoredExpectedState: false,
+    retryOriginalAction: false,
+    issues: [policyRefusal ?? `The recovery plan allows no ${patch.kind.replace(/^temporary_/u, "").replace(/_/gu, " ")} for this failure.`],
+    traceStatus: "not-run"
+  });
+}
 
 /** What, if anything, makes this response wider than the grant that paid for it. */
 function explicitProposalIssue(input: AutomationStudioRuntimeRecoveryPatchInput): string | undefined {

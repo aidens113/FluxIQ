@@ -44,6 +44,42 @@ describe("planAutomationStudioRuntimeRecovery", () => {
     expect(plan.patchRequest).toMatchObject({ request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested." });
   });
 
+  // The model's way of saying "the page refuses this on purpose": the step's
+  // intended result can no longer be had. A patch requested after that answer
+  // can only be a substitute, and under a proposal grant the model must name
+  // one -- which is how a deleted item's click was re-pointed at another button
+  // (live repair campaign, 2026-09-17). An omitted `patchNeeded` defaults to
+  // the classifier's "yes", so the verdict has to stop the request by itself.
+  it.each([
+    ["with patchNeeded omitted", { stillAchievable: "no" }],
+    ["even beside a patchNeeded of true", { stillAchievable: "no", patchNeeded: true }],
+    ["even beside a request to explore", { stillAchievable: "no", explorationNeeded: true }]
+  ])("asks for no patch when the diagnosis says the result can no longer be achieved, %s", (_label, reported) => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(reported), policy: policy() });
+
+    expect(plan.diagnosis.stillAchievable).toBe("no");
+    expect(plan.patchRequest).toEqual({ request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested." });
+    expect(plan.steps.map((step) => step.action)).not.toContain("request_patch");
+  });
+
+  // A refusal is allowed to follow a look. Cancelling the exploration as well
+  // would make "let me see the page first, then say there is nothing to do"
+  // impossible, and that is the answer four of the six live refusal tasks
+  // needed (w2-model-context-audit).
+  it("still explores when the diagnosis says the result is unachievable but asks to look first", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "no", explorationNeeded: true }), policy: policy() });
+
+    expect(plan.explorationRequested).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
+    expect(plan.patchRequest.request).toBe(false);
+  });
+
+  it("still asks for a patch when the diagnosis cannot tell whether the result is achievable", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "unknown" }), policy: policy() });
+
+    expect(plan.patchRequest.request).toBe(true);
+  });
+
   it("still asks for a patch when the diagnosis asks for exploration, and says exploration was asked for", () => {
     const plan = planAutomationStudioRuntimeRecovery({
       deterministic: deterministic(),

@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
 import {
   parseAutomationStudioFlowChangeOrigin,
   type AutomationStudioAdaptationPolicy,
@@ -21,7 +21,13 @@ import {
   type AutomationStudioChangeVerdictEvidenceKind,
   type AutomationStudioFlowChangeTrialReport
 } from "./flow-change/index.ts";
-import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "./llm/index.ts";
+import {
+  checkAutomationStudioRuntimeTargetOverride,
+  type AutomationStudioRuntimeTargetOverrideCheck,
+  type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
+  type AutomationStudioRuntimeTargetOverrideFailedAction
+} from "./live-patch/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimeTargetOverrideTarget } from "./llm/index.ts";
 
 export type AutomationStudioRuntimePatchPreflight = {
   ok: boolean;
@@ -69,56 +75,16 @@ export type AutomationStudioRuntimePatchExecutionResult = {
   metadata?: JsonObject;
 };
 
-/**
- * Why a domain refused a proposed target, in words Core owns.
- *
- * `absent` and `ambiguous` alone described a repair of an action the domain
- * cannot repair at all, a parameter the model invented and a handle it was
- * never shown in the same two words, so a refused live repair could not say
- * which it was (`run-mu4rpka7-845d919a`). A domain may name one of these; Core
- * repeats nothing else it says.
- */
-export const AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS = Object.freeze({
-  action_not_repairable: "the failed action offers nothing a repair may re-point",
-  parameter_not_offered: "the target names a parameter the failed action does not offer",
-  parameter_missing: "the target leaves a required parameter unnamed",
-  target_malformed: "the target is not a map of parameters to handles",
-  handle_not_issued: "a handle is not one the evidence issued, and nothing else in it could stand in",
-  handle_incompatible: "a handle names something the failed action cannot use, and nothing else in the evidence could stand in",
-  handle_ambiguous: "a handle names more than one thing in the evidence",
-  no_compatible_element: "nothing in the evidence could fill a parameter",
-  evidence_unrecognized: "the evidence is not a packet the domain issued",
-  /** Core's own: no domain check was bound, or there was no evidence to check against. Never passed through. */
-  domain_check_unavailable: "no domain check is bound to judge the target"
-} as const);
-
-export type AutomationStudioRuntimeTargetOverrideRefusalReason = keyof typeof AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS;
-
-export type AutomationStudioRuntimeTargetOverrideEvidenceValidation =
-  | { status: "matched" }
-  | { status: "resolved"; target: AutomationStudioRuntimeTargetOverrideTarget }
-  | { status: "absent" | "ambiguous"; reason?: AutomationStudioRuntimeTargetOverrideRefusalReason };
-
-/** A domain's refusal as Core records it: the status, and the reason only where it is one of Core's. */
-export type AutomationStudioRuntimeTargetOverrideRefusal = {
-  status: "absent" | "ambiguous";
-  reason?: AutomationStudioRuntimeTargetOverrideRefusalReason;
-};
-
-/** Bounded, domain-neutral identity of the action whose target failed. */
-export type AutomationStudioRuntimeTargetOverrideFailedAction = Readonly<{
-  nodeId: string;
-  definitionId: string;
-  /**
-   * The registered output the failed node dispatches, where the Flow says so:
-   * a policy action's `parameterValues.outputId`, or the `outputActionId` a
-   * bootstrap wrote into the node's metadata. Absent where the Flow names
-   * none. A recorded action is a `builtin.policy.action` node, whose
-   * definition id is the same for a click, a type and a scrape, so this is the
-   * only part of the identity that says which verb failed.
-   */
-  outputId?: string;
-}>;
+// The refusal vocabulary and the contract a domain's target check answers in
+// live in `./live-patch/`, beside the check that uses them. They are public
+// exactly as they were when they were declared here.
+export {
+  AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS,
+  type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
+  type AutomationStudioRuntimeTargetOverrideFailedAction,
+  type AutomationStudioRuntimeTargetOverrideRefusal,
+  type AutomationStudioRuntimeTargetOverrideRefusalReason
+} from "./live-patch/index.ts";
 
 export type AutomationStudioRuntimePatchExecutionInput = {
   projectId: string;
@@ -159,13 +125,14 @@ export type AutomationStudioRuntimePatchExecutionInput = {
 /**
  * Whether this patch may execute. A target override is judged by the domain's
  * evidence check as well as the policy, exactly as a proposal is
- * (`checkRuntimeTargetOverride`), and is refused when no check is bound.
+ * (`checkAutomationStudioRuntimeTargetOverride`), and is refused when no check
+ * is bound or when the failure is not one a target override could fix.
  */
 export function preflightAutomationStudioRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioRuntimePatchPreflight {
-  return preflightRuntimePatch(input, input.patch.kind === "temporary_target_override" ? checkRuntimeTargetOverride(input) : undefined);
+  return preflightRuntimePatch(input, input.patch.kind === "temporary_target_override" ? checkAutomationStudioRuntimeTargetOverride(input) : undefined);
 }
 
-function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput, targetCheck: RuntimeTargetOverrideCheck | undefined): AutomationStudioRuntimePatchPreflight {
+function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput, targetCheck: AutomationStudioRuntimeTargetOverrideCheck | undefined): AutomationStudioRuntimePatchPreflight {
   const issues: string[] = [];
   const policy = input.policy;
   const sideEffecting = patchMayCauseExternalSideEffects(input.patch);
@@ -193,55 +160,6 @@ function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput
   };
 }
 
-type RuntimeTargetOverrideCheck = {
-  issues: string[];
-  /** The override as it may run or be proposed: on the failed node, with the domain's resolution. */
-  patch: AutomationStudioRuntimePatch;
-  targetResolution?: "matched" | "resolved";
-  targetNodeResolution?: "matched" | "resolved";
-  targetRefusal?: AutomationStudioRuntimeTargetOverrideRefusal;
-};
-
-/**
- * The one check every target override passes, proposed or executed.
- *
- * The override is re-aimed at the failed node, which is the node whose action
- * the domain is asked about. The domain then judges the target against the
- * evidence the model was shown and, where it accepts it, resolves it into what
- * the node can actually run; the model's own handles address nothing. No bound
- * check is a refusal, not a pass: an override nobody could judge is exactly the
- * one a domain's refusal was meant to stop, and it used to run on the executed
- * path, which never asked.
- */
-function checkRuntimeTargetOverride(input: AutomationStudioRuntimePatchExecutionInput): RuntimeTargetOverrideCheck {
-  const issues: string[] = [];
-  if (input.patch.kind !== "temporary_target_override") return { issues, patch: input.patch };
-  let patch: AutomationStudioRuntimePatch & { kind: "temporary_target_override" } = input.patch;
-  let targetNodeResolution: "matched" | "resolved" | undefined;
-  if (!input.flow.nodes.some((node) => node.id === input.failedAttempt.nodeId)) {
-    issues.push("Failed action node is not present in this Flow.");
-  } else if (patch.targetNodeId === input.failedAttempt.nodeId) {
-    targetNodeResolution = "matched";
-  } else {
-    patch = { ...patch, targetNodeId: input.failedAttempt.nodeId };
-    targetNodeResolution = "resolved";
-  }
-  const nodeResolution = targetNodeResolution ? { targetNodeResolution } : {};
-  if (!input.validateTargetOverrideEvidence) {
-    const targetRefusal: AutomationStudioRuntimeTargetOverrideRefusal = { status: "absent", reason: "domain_check_unavailable" };
-    return { issues: [...issues, targetOverrideRefusalIssue(targetRefusal)], patch, ...nodeResolution, targetRefusal };
-  }
-  const validation = input.validateTargetOverrideEvidence(input.patch.target, targetOverrideFailedAction(input.flow, input.failedAttempt));
-  if (validation.status === "matched") return { issues, patch, targetResolution: "matched", ...nodeResolution };
-  if (validation.status !== "resolved") {
-    const targetRefusal = automationStudioRuntimeTargetOverrideRefusal(validation);
-    return { issues: [...issues, targetOverrideRefusalIssue(targetRefusal)], patch, ...nodeResolution, targetRefusal };
-  }
-  if (!isAutomationStudioRuntimeTargetOverrideTarget(validation.target)) return { issues: [...issues, "Resolved target override is invalid."], patch, ...nodeResolution };
-  // Keeps the failed-node re-aim above, and takes the domain's resolution.
-  return { issues, patch: { ...patch, target: validation.target }, targetResolution: "resolved", ...nodeResolution };
-}
-
 /**
  * Validates a target override as a durable manual-review proposal without
  * authorizing or executing the proposed target against a host runtime.
@@ -250,7 +168,7 @@ export function preflightAutomationStudioRuntimeTargetOverrideProposal(input: Au
   return evaluateAutomationStudioRuntimeTargetOverrideProposal(input).preflight;
 }
 
-function evaluateAutomationStudioRuntimeTargetOverrideProposal(input: AutomationStudioRuntimePatchExecutionInput): Omit<RuntimeTargetOverrideCheck, "issues"> & {
+function evaluateAutomationStudioRuntimeTargetOverrideProposal(input: AutomationStudioRuntimePatchExecutionInput): Omit<AutomationStudioRuntimeTargetOverrideCheck, "issues"> & {
   preflight: AutomationStudioRuntimePatchPreflight;
 } {
   const issues: string[] = [];
@@ -259,64 +177,12 @@ function evaluateAutomationStudioRuntimeTargetOverrideProposal(input: Automation
   if (input.patch.kind !== "temporary_target_override" && !runtimePatchTargetsFlow(input.flow, input.patch)) {
     issues.push("Runtime patch points at a node or subflow that is not present in this Flow.");
   }
-  const { issues: checkIssues, ...check } = checkRuntimeTargetOverride(input);
+  const { issues: checkIssues, ...check } = checkAutomationStudioRuntimeTargetOverride(input);
   issues.push(...checkIssues);
   return {
     preflight: { ok: issues.length === 0, issues, requiresExternalSideEffectApproval: true },
     ...check
   };
-}
-
-/**
- * A domain's refusal, kept to what Core can vouch for. The reason is read from
- * a domain Core does not control, so only one of Core's own words is kept:
- * anything else is dropped rather than repeated into an issue a person reads.
- */
-function automationStudioRuntimeTargetOverrideRefusal(
-  validation: { status: "absent" | "ambiguous"; reason?: unknown }
-): AutomationStudioRuntimeTargetOverrideRefusal {
-  const reason = validation.reason;
-  return typeof reason === "string" && Object.hasOwn(AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS, reason)
-    ? { status: validation.status, reason: reason as AutomationStudioRuntimeTargetOverrideRefusalReason }
-    : { status: validation.status };
-}
-
-/**
- * The issue a refusal leaves. Its first sentence is the one every reader
- * already matches on; the reason, where the domain gave one, follows it.
- */
-function targetOverrideRefusalIssue(refusal: AutomationStudioRuntimeTargetOverrideRefusal): string {
-  const summary = refusal.status === "absent"
-    ? "Target override is absent from current sanitized evidence"
-    : "Target override is ambiguous in current sanitized evidence";
-  return refusal.reason
-    ? `${summary}: ${AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS[refusal.reason]} (${refusal.reason}).`
-    : `${summary}.`;
-}
-
-/**
- * The failed action as the domain is asked about it: the attempt's node and
- * definition, and the output that node dispatches wherever the Flow names one.
- * Without the output a recorded Flow's every action reads as the same
- * `builtin.policy.action`, and a domain that keys what a repair may re-point
- * on the verb finds nothing it may.
- */
-function targetOverrideFailedAction(
-  flow: AutomationStudioFlowDocument,
-  failedAttempt: AutomationStudioNodeAttemptTrace
-): AutomationStudioRuntimeTargetOverrideFailedAction {
-  const node = flow.nodes.find((candidate) => candidate.id === failedAttempt.nodeId);
-  const outputId = dispatchedOutputId(node?.parameterValues?.outputId) ?? dispatchedOutputId(node?.metadata?.outputActionId);
-  return {
-    nodeId: failedAttempt.nodeId,
-    definitionId: failedAttempt.definitionId,
-    ...(outputId ? { outputId } : {})
-  };
-}
-
-/** An output id is an identifier; a state binding, or a string no output could be named, is not one. */
-function dispatchedOutputId(value: JsonValue | undefined): string | undefined {
-  return typeof value === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9_.:-]{0,126}[A-Za-z0-9])?$/u.test(value) ? value : undefined;
 }
 
 export function proposeAutomationStudioRuntimeTargetOverride(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioRuntimePatchExecutionResult {
@@ -355,7 +221,7 @@ export function proposeAutomationStudioRuntimeTargetOverride(input: AutomationSt
 }
 
 export async function executeAutomationStudioRuntimePatch(requested: AutomationStudioRuntimePatchExecutionInput): Promise<AutomationStudioRuntimePatchExecutionResult> {
-  const targetCheck = requested.patch.kind === "temporary_target_override" ? checkRuntimeTargetOverride(requested) : undefined;
+  const targetCheck = requested.patch.kind === "temporary_target_override" ? checkAutomationStudioRuntimeTargetOverride(requested) : undefined;
   const preflight = preflightRuntimePatch(requested, targetCheck);
   if (!preflight.ok) {
     return {

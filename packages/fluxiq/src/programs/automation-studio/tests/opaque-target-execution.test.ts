@@ -180,7 +180,8 @@ function failedAttempt(): AutomationStudioNodeAttemptTrace {
     inputs: {},
     outputs: {},
     effects: [],
-    message: "The target was not found."
+    message: "The target was not found.",
+    failure: { category: "target_not_found", code: "example.target.not_found", retryable: true }
   };
 }
 

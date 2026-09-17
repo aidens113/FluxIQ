@@ -196,7 +196,7 @@ describe("Automation Studio DeepSeek provider", () => {
       recentActions: [expect.objectContaining({ nodeId: "submit", definitionId: "example.form.submit", status: "failed" })],
       failureEvidence: { schemaVersion: "example.failure-evidence.v1" }
     });
-    expect(user.outputSchema).toMatchObject({
+    expect(user.outputSchema.oneOf[0]).toMatchObject({
       properties: {
         kind: { const: "runtime_patch" },
         patches: {

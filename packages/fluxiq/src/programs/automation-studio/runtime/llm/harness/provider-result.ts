@@ -6,6 +6,7 @@ import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 import {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
+  isAutomationStudioNoRepairReason,
   stripAutomationStudioLlmResponseMetadata,
   type AutomationStudioLlmStructuredResponse
 } from "./structured-response.ts";
@@ -47,7 +48,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     return undefined;
   }
   const kind = value.kind;
-  if (kind !== "flow_bootstrap" && kind !== "evidence_tool_decision" && kind !== "diagnosis" && kind !== "runtime_patch" && kind !== "change_proposal" && kind !== "instruction_suggestion") {
+  if (kind !== "flow_bootstrap" && kind !== "evidence_tool_decision" && kind !== "diagnosis" && kind !== "runtime_patch" && kind !== "no_repair" && kind !== "change_proposal" && kind !== "instruction_suggestion") {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_kind", message: "LLM response kind is missing or unsupported.", path: "response.kind" });
     return undefined;
   }
@@ -60,6 +61,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
       ? [...commonFields, "confidence", "diagnosis"]
     : kind === "instruction_suggestion"
       ? [...commonFields, "instructions"]
+    : kind === "no_repair"
+      ? [...commonFields, "reason"]
       : [...commonFields, "patches", "riskLevel"], "response", diagnostics);
   if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_summary", message: "LLM response summary must be a bounded string.", path: "response.summary" });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "LLM response metadata must be a JSON object.", path: "response.metadata" });
@@ -78,6 +81,11 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
       else value.patches.forEach((patch, index) => validateUnknownRuntimePatch(patch, index, diagnostics));
     }
     if (!isRiskLevel(value.riskLevel)) diagnostics.push({ severity: "error", code: "llm_output.invalid_risk", message: "Runtime patch riskLevel is invalid.", path: "response.riskLevel" });
+  } else if (kind === "no_repair") {
+    // A declined repair says which of the five ways the page said no. Free
+    // prose is not one of them: a run's reason is read by a person and matched
+    // on by the Lab.
+    if (!isAutomationStudioNoRepairReason(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_no_repair_reason", message: "A declined repair must name one of Core's no-repair reasons.", path: "response.reason" });
   } else if (kind === "change_proposal") {
     if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Change proposal patches must be an array.", path: "response.patches" });
     else {

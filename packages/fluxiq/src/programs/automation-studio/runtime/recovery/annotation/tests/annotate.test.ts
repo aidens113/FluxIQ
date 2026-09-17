@@ -1,3 +1,4 @@
+import type { AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type {
@@ -190,6 +191,72 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
     expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ preflightOk: true, targetEvidence: "failure_evidence" })]);
     expect(run.detail.metadata?.llmGate).not.toHaveProperty("explorationEvidence");
   });
+
+  // A `diagnose_and_adapt` grant buys one target override and nothing else, so
+  // for a failure whose plan allows no target override the patch call can only
+  // produce a substitute: the live repair campaign's guarded link and retired
+  // page (2026-09-17) each proposed one against the page the run landed on.
+  it.each([
+    ["navigation_unexpected", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a navigation unexpected failure, so no patch was requested."],
+    ["page_changed", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a page changed failure, so no patch was requested."],
+    // Refused before the plan: Core's own diagnosis already says a person must act.
+    ["blocked_by_capability_or_policy", undefined]
+  ] as const)("under a proposal grant, makes no patch call for a %s failure, and says why", async (category, reason) => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: category });
+
+    expect(run.patchRequest).toBeUndefined();
+    expect(run.asked).toEqual([]);
+    expect(run.detail.metadata).not.toHaveProperty("runtimePatchAttempts");
+    expect(run.detail.changeProposalIds).toEqual([]);
+    expect(run.detail.adaptationIds).toEqual([]);
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.patchSkipped).toBe(reason);
+  });
+
+  // The answer the patch call had no way to give. A decline proposes nothing,
+  // changes nothing, and is recorded where a reader looking for what the
+  // recovery did will find it.
+  it("records a model's decline as a refusal that proposes nothing", async () => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, decline: "control_gone" });
+
+    expect(run.asked).toEqual([]);
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "no_repair",
+      executed: false,
+      preflightOk: false,
+      declinedReason: "control_gone",
+      issues: ["The model was asked for a repair and declined: what the step acted on is gone, and nothing takes its place (control_gone)."],
+      traceStatus: "not-run"
+    })]);
+    expect(run.detail.changeProposalIds).toEqual([]);
+    expect(run.detail.adaptationIds).toEqual([]);
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.patchDeclined).toBe("control_gone");
+  });
+
+  // A tie between equal candidates is the one target failure a model cannot
+  // resolve from the page the matcher already read, and under this grant the
+  // only answer it could give is one of the two (`ambiguous-targets-refuse-unnamed-continue`).
+  it("under a proposal grant, makes no patch call for a tie between equal candidates", async () => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: "target_ambiguous" });
+
+    expect(run.patchRequest).toBeUndefined();
+    expect(run.detail.metadata).not.toHaveProperty("runtimePatchAttempts");
+    expect(run.detail.changeProposalIds).toEqual([]);
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.patchSkipped).toBe("The diagnose_and_adapt grant buys only a target override, and several things answer to the step's own description and nothing tells them apart, so no patch was requested.");
+  });
+
+  it("under a proposal grant, explores nothing for a failure it will make no patch call for", async () => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, failure: "navigation_unexpected" });
+
+    expect(run.executed).toEqual([]);
+    expect(run.patchRequest).toBeUndefined();
+  });
+
+  it("under a proposal grant, still makes the patch call for a target that was not found", async () => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: "target_not_found" });
+
+    expect(run.patchRequest).toBeDefined();
+    expect(run.detail.changeProposalIds).toHaveLength(1);
+  });
 });
 
 const FAILURE_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.failed", controls: ["candidate.2"] };
@@ -202,8 +269,11 @@ type RepairRun = {
   executed: string[];
 };
 
-/** One recovery under a `diagnose_and_adapt` grant, whose patch names `handles`. */
-async function annotateRepair(options: { handles: Record<string, string>; explorationNeeded?: boolean }): Promise<RepairRun> {
+/**
+ * One recovery under a `diagnose_and_adapt` grant, whose patch names `handles`,
+ * of an action whose target was not found unless `failure` says otherwise.
+ */
+async function annotateRepair(options: { handles: Record<string, string>; explorationNeeded?: boolean; failure?: AutomationStudioAdaptiveFailureClass; decline?: string }): Promise<RepairRun> {
   const run: RepairRun = { detail: runDetail(), asked: [], executed: [] };
   const base: Options = { executed: run.executed, captureFailureEvidence: true, ...(options.explorationNeeded === false ? { explorationNeeded: false } : {}) };
   const policy = adaptationPolicy(false);
@@ -216,6 +286,7 @@ async function annotateRepair(options: { handles: Record<string, string>; explor
         return response.kind === "diagnosis" ? { response: { ...response, diagnosis: { ...response.diagnosis, patchNeeded: true } } } : answered;
       }
       run.patchRequest = request;
+      if (options.decline) return { response: { kind: "no_repair", summary: "Nothing here replaces it.", reason: options.decline } };
       return {
         response: {
           kind: "runtime_patch",
@@ -256,7 +327,7 @@ async function annotateRepair(options: { handles: Record<string, string>; explor
     detail: runDetail(),
     context: { ...context(base, policy), behavior: { ...behavior(), createAdaptations: true } },
     runtimeFlow: { schemaVersion: "0.1", flowId: "flow.recovery", ownerKind: "policy", ownerId: "project.recovery", name: "Recovery flow", nodes: [{ id: "node.action", definitionId: "builtin.policy.action" }], edges: [], createdAt: 1, updatedAt: 1 },
-    failedTraceAttempt: failedAttempt(),
+    failedTraceAttempt: { ...failedAttempt(), failure: { category: options.failure ?? "target_not_found", code: `test.${options.failure ?? "target_not_found"}`, retryable: false } },
     executionGrant: { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" }
   });
   return run;

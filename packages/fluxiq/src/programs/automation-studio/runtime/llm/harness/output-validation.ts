@@ -11,7 +11,10 @@ export function validateAutomationStudioLlmOutput(
 ): AutomationStudioLlmDiagnostic[] {
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
   if (containsExecutableCode(response)) diagnostics.push({ severity: "error", code: "llm_output.executable_code", message: "LLM output cannot include executable code, scripts, or function bodies." });
-  if (response.kind !== expectedOutput && !(expectedOutput === "runtime_patch" && response.kind === "diagnosis")) {
+  // A patch call may come back as a diagnosis, and it may come back declined:
+  // "there is no repair" is an answer to "repair this", and for some failures
+  // it is the only true one.
+  if (response.kind !== expectedOutput && !(expectedOutput === "runtime_patch" && (response.kind === "diagnosis" || response.kind === "no_repair"))) {
     diagnostics.push({ severity: "error", code: "llm_output.kind_mismatch", message: `Expected ${expectedOutput} output but received ${response.kind}.`, path: "kind" });
   }
   if (!response.summary.trim()) diagnostics.push({ severity: "error", code: "llm_output.missing_summary", message: "LLM output must include a human-readable summary.", path: "summary" });
