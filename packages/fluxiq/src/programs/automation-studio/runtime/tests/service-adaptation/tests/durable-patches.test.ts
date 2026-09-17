@@ -87,7 +87,8 @@ describe("AutomationStudioService recording persistence", () => {
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.durable-adaptations", name: "Durable Adaptations Flow" });
     const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
-          { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { target: { selector: "#old" } } },
+          // A recorded step: the element it acts on travels in the payload it dispatches.
+          { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { parameters: { target: { selector: "#old" } } } },
           { id: "broken", definitionId: "builtin.math.divide", parameterValues: {} },
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
@@ -139,11 +140,11 @@ describe("AutomationStudioService recording persistence", () => {
       })]
     });
     await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#new" } } })])
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { parameters: { target: { selector: "#new" } } } })])
     });
     await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.target", action: "revert" });
     await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#old" } } })])
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { parameters: { target: { selector: "#old" } } } })])
     });
 
     await service.saveFlowChangeProposal({

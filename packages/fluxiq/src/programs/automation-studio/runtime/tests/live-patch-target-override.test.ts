@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
@@ -257,6 +258,51 @@ describe("Automation Studio runtime target overrides", () => {
       expect(result.patch).toMatchObject({ targetNodeId: "constant", target: resolved });
       expect(host.nodes.find((node) => node.id === "constant")?.parameterValues?.target).toEqual(resolved);
       expect(result.adaptation?.patch).toEqual([expect.objectContaining({ kind: "edit_action_target", targetId: "constant", after: resolved })]);
+    });
+
+    // A recorded step dispatches only its `parameters` payload, so a target
+    // written beside the payload reached nothing: the trial re-clicked the
+    // recorded control and its outcome said nothing about the repair.
+    it("dispatches the repaired target from a recorded step's payload in its trial", async () => {
+      const host = recordingHost();
+      const dispatched: Array<{ type: string; payload?: JsonValue }> = [];
+      const resolved = { handles: { control: "candidate" }, selector: "#apply" };
+      const recorded = dispatchFlowFixture({ parameterValues: { outputId: "example.output.press", parameters: { selector: "#save" } } });
+      const result = await executeOverride({
+        flow: { ...recorded, edges: [{ id: "press.constant", sourceNodeId: "press", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" }, ...recorded.edges] },
+        failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "builtin.policy.action" },
+        patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+        validateTargetOverrideEvidence: () => ({ status: "resolved", target: resolved }),
+        options: {
+          hostRuntime: host.hostRuntime,
+          effectDispatcher: (effect) => {
+            dispatched.push(structuredClone(effect));
+            return { status: "success", route: "success", outputs: {} };
+          }
+        }
+      }, host);
+
+      expect(result.trace?.status).toBe("succeeded");
+      expect(dispatched).toEqual([expect.objectContaining({ type: "policy.output.dispatch", payload: expect.objectContaining({ outputId: "example.output.press", parameters: { selector: "#save", target: resolved } }) })]);
+      const executed = host.nodes.find((node) => node.id === "press");
+      expect(executed?.parameterValues).toMatchObject({ parameters: { selector: "#save", target: resolved } });
+      expect(executed?.parameterValues).not.toHaveProperty("target");
+      // The durable change is still the target itself; each applier maps it to the node.
+      expect(result.adaptation?.patch).toEqual([expect.objectContaining({ kind: "edit_action_target", targetId: "press", after: resolved })]);
+    });
+
+    it("is not tried on a recorded step whose payload cannot take a target", async () => {
+      const host = recordingHost();
+      const result = await executeOverride({
+        flow: dispatchFlowFixture({ parameterValues: { outputId: "example.output.press", parameters: { $state: { path: "payload" } } } }),
+        failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "builtin.policy.action" },
+        patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+        validateTargetOverrideEvidence: () => ({ status: "matched" })
+      }, host);
+
+      expect(result.verification).toEqual({ status: "not_executed", reason: "action_target_unwritable:press" });
+      expect(result).not.toHaveProperty("adaptation");
+      expect(host.nodes).toEqual([]);
     });
 
     it("is judged by the same check when only its preflight is asked", () => {

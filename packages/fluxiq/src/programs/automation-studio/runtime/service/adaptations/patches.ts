@@ -10,6 +10,7 @@ import {
   validateAutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import path from "node:path";
+import { actionTargetParameterValues } from "../../flow-change/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore, AutomationStudioFlowWriter } from "../flows/index.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { compactJsonObject } from "../compact-json.ts";
@@ -54,7 +55,7 @@ export class AutomationStudioAdaptationPatches {
       node.parameterValues = compactJsonObject({ ...parameterValues, ...patch.after });
     } else {
       if (patch.after === undefined) throw new Error("Action target adaptation patches must provide an after value.");
-      node.parameterValues = compactJsonObject({ ...parameterValues, target: structuredClone(patch.after) });
+      node.parameterValues = compactJsonObject({ ...parameterValues, ...actionTargetParameterValues({ nodeId: node.id, definitionId: node.definitionId, parameterValues }, structuredClone(patch.after), adaptation.adaptationId) });
     }
     const after = {
       ...before,

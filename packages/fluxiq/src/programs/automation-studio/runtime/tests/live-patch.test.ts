@@ -37,8 +37,8 @@ describe("Automation Studio live patch testing", () => {
     expect(flow).toEqual(original);
   });
 
-  it("preserves failed patches as rejected adaptation evidence", async () => {
-    const flow = flowFixture({ brokenEnd: true });
+  it("preserves a repair whose own node still fails as rejected adaptation evidence", async () => {
+    const flow = flowFixture({ brokenConstant: true });
     const result = await executeAutomationStudioRuntimePatch({
       projectId: "project.patch",
       flowId: flow.flowId,
@@ -52,7 +52,119 @@ describe("Automation Studio live patch testing", () => {
 
     expect(result.trace?.status).toBe("failed");
     expect(result.restoredExpectedState).toBe(false);
-    expect(result.adaptation).toMatchObject({ status: "rejected", validationResults: [{ status: "failed" }] });
+    expect(result.verification).toEqual({ status: "contradicted", reason: "changed_node_failed" });
+    expect(result.adaptation).toMatchObject({ status: "rejected", validationResults: [{ status: "failed", kind: "trial" }] });
+  });
+
+  // D-5: the whole rerun had to succeed, so a correct repair followed by an
+  // unrelated later failure was recorded as rejected. The change is judged at
+  // the node it changed; the later failure only ends the continuation.
+  describe("a later failure after the repaired node", () => {
+    const run = (expectedComparison?: AutomationStudioTransitionComparison) => executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture({ brokenEnd: true }),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      ...(expectedComparison ? { expectedComparison } : {}),
+      policy: repairPolicy(),
+      now: () => 12
+    });
+
+    it("does not contradict a repair its own evidence verified", async () => {
+      const result = await run(outputsComparison());
+
+      expect(result.trace?.status).toBe("failed");
+      expect(result.verification).toEqual({ status: "verified", basis: "expected_outputs" });
+      expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_outputs"], resumeFrom: { nodeId: "end", route: "success" } });
+      expect(result.restoredExpectedState).toBe(true);
+      expect(result.adaptation).toMatchObject({ status: "validated", validationResults: [{ status: "succeeded", kind: "trial", basis: ["expected_outputs"] }] });
+    });
+
+    it("leaves a repair nothing proved in testing, not rejected", async () => {
+      const result = await run();
+
+      expect(result.verification).toEqual({ status: "unverifiable", reason: "no_expectation_declared" });
+      expect(result.adaptation?.status).toBe("testing");
+      expect(result.adaptation).not.toHaveProperty("validationResults");
+    });
+  });
+
+  // D-6: the rerun was capped at 50 steps, so a continuation longer than that
+  // failed the trial. It is now bounded by what the run has left.
+  describe("the trial's step budget", () => {
+    const run = (overrides: Partial<Parameters<typeof executeAutomationStudioRuntimePatch>[0]> = {}) => executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: longFlowFixture(60),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: outputsComparison(),
+      policy: repairPolicy(),
+      now: () => 13,
+      ...overrides
+    });
+
+    it("lets a continuation run past 50 steps within the run's own budget", async () => {
+      const result = await run();
+
+      expect(result.trace?.status).toBe("succeeded");
+      expect(result.trace?.attempts).toHaveLength(62);
+      expect(result.verdict).toMatchObject({ outcome: "verified", resumeFrom: { nodeId: "step.0", route: "success" } });
+      expect(result.adaptation?.status).toBe("validated");
+    });
+
+    it("is the run's remaining steps when the caller says how many are left", async () => {
+      const result = await run({ remainingSteps: 5, options: { maxSteps: 500 } });
+
+      expect(result.trace?.attempts).toHaveLength(5);
+      expect(result.trace?.message).toBe("Maximum step count exceeded: 5.");
+      // Running out of steps after the repaired node says nothing against it.
+      expect(result.verdict).toMatchObject({ outcome: "verified", resumeFrom: { nodeId: "step.0", route: "success" } });
+    });
+
+    it("is the run's own step limit when the remaining steps are not given", async () => {
+      const result = await run({ options: { maxSteps: 9 } });
+
+      expect(result.trace?.attempts).toHaveLength(9);
+    });
+
+    it("runs nothing when the run has no steps left", async () => {
+      const result = await run({ remainingSteps: 0 });
+
+      expect(result.verification).toEqual({ status: "not_executed", reason: "no_step_budget_left" });
+      expect(result).not.toHaveProperty("trace");
+      expect(result).not.toHaveProperty("adaptation");
+    });
+  });
+
+  it("records the trial's verdict, the change's origin and the failure's state, and keeps the executed trace in memory", async () => {
+    const note = "private-note-7731";
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: { ...failedAttempt(), inputs: { note } },
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: outputsComparison(),
+      policy: repairPolicy(),
+      now: () => 14
+    });
+
+    const signature = result.adaptation?.metadata?.failureSignature;
+    expect(signature).toMatch(/^[0-9a-f]{24}$/);
+    expect(result.adaptation?.metadata).toMatchObject({
+      origin: { entryPoint: "run_failure", runId: "run.failed", failedNodeId: "constant", failureSignature: signature },
+      verdict: { outcome: "verified", basis: ["expected_outputs"], resumeFrom: { nodeId: "end", route: "success" } }
+    });
+    expect(result.adaptation?.metadata?.verdict).toEqual(result.verdict);
+    expect(result.adaptation?.observedState).toMatchObject({ status: "failed", route: "failed", comparisonStatus: "missing_expected_state", outputCount: 0, missingOutputCount: 1 });
+    expect(result.adaptation?.expectedState).toEqual({ outputCount: 1, effectCount: 0, stateCheckCount: 0 });
+    expect(result.executedTrace?.values.note).toBe(note);
+    expect(JSON.stringify([result.trace, result.adaptation])).not.toContain(note);
   });
 
   it("requires approval for side-effecting patches when policy demands it", () => {
@@ -214,7 +326,7 @@ describe("Automation Studio live patch testing", () => {
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
       patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
-      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedOutputs: { value: "ok" } } },
+      expectedComparison: outputsComparison(),
       policy: repairPolicy(),
       now: () => 23
     });
@@ -343,7 +455,7 @@ describe("Automation Studio live patch testing", () => {
   });
 });
 
-function flowFixture(input: { brokenEnd?: boolean } = {}): AutomationStudioFlowDocument {
+function flowFixture(input: { brokenEnd?: boolean; brokenConstant?: boolean } = {}): AutomationStudioFlowDocument {
   return {
     schemaVersion: "0.1",
     flowId: "flow.patch",
@@ -353,12 +465,24 @@ function flowFixture(input: { brokenEnd?: boolean } = {}): AutomationStudioFlowD
     createdAt: 1,
     updatedAt: 1,
     nodes: [
-      { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+      { id: "constant", definitionId: input.brokenConstant ? "unknown.constant" : "builtin.data.constant", parameterValues: { value: "ok" } },
       { id: "end", definitionId: input.brokenEnd ? "unknown.end" : "builtin.control.end", parameterValues: { resultStatus: "success" } }
     ],
     edges: [
       { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
     ]
+  };
+}
+
+/** The patch Flow with `length` more steps between the repaired node and the end. */
+function longFlowFixture(length: number): AutomationStudioFlowDocument {
+  const flow = flowFixture();
+  const steps = Array.from({ length }, (_, index) => ({ id: `step.${index}`, definitionId: "builtin.data.constant", parameterValues: { value: index } }));
+  const path = ["constant", ...steps.map((step) => step.id), "end"];
+  return {
+    ...flow,
+    nodes: [flow.nodes[0]!, ...steps, flow.nodes[1]!],
+    edges: path.slice(1).map((target, index) => ({ id: `${path[index]}.${target}`, sourceNodeId: path[index]!, sourcePortId: "success", targetNodeId: target, targetPortId: "in" }))
   };
 }
 
@@ -413,5 +537,15 @@ function emptyComparison(): AutomationStudioTransitionComparison {
     expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant" },
     actual: { transitionId: "actual", nodeId: "constant", definitionId: "builtin.data.constant", status: "failed", outputs: {}, effects: [], startedAt: 1 },
     diffSummary: { missingOutputIds: [], unexpectedOutputIds: [], missingEffectTypes: [], unexpectedEffectTypes: [], routeMatched: false, statusMatched: false, stateCheckCount: 0 }
+  };
+}
+
+// The failed attempt's comparison when its node declared the output it did not produce.
+function outputsComparison(): AutomationStudioTransitionComparison {
+  const empty = emptyComparison();
+  return {
+    ...empty,
+    expected: { ...empty.expected, expectedOutputs: { value: "ok" } },
+    diffSummary: { ...empty.diffSummary, missingOutputIds: ["value"] }
   };
 }
