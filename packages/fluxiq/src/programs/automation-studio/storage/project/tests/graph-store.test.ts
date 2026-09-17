@@ -214,6 +214,9 @@ describe("AutomationStudioProjectGraphRepository", () => {
     const cases: Array<{ name: string; operations: (flowId: string) => AutomationStudioGraphPatchOperation[] }> = [
       { name: "move_node", operations: () => [{ op: "move_node", nodeId: "node.b", x: 7_000, y: 7_000 }] },
       { name: "set_node_parameters", operations: () => [{ op: "set_node_parameters", nodeId: "node.b", values: { retries: 9, mode: "fast" } }] },
+      { name: "set_node_metadata", operations: () => [{ op: "set_node_metadata", nodeId: "node.b", metadata: { adaptationIds: ["adaptation.one"] } }] },
+      { name: "set_node_metadata replacing existing metadata", operations: () => [{ op: "set_node_metadata", nodeId: "node.c", metadata: { note: "replaced" } }] },
+      { name: "parameters then metadata on the same node", operations: () => [{ op: "set_node_parameters", nodeId: "node.b", values: { retries: 3 } }, { op: "set_node_metadata", nodeId: "node.b", metadata: { adaptationIds: ["adaptation.two"] } }] },
       { name: "delete_edge", operations: () => [{ op: "delete_edge", edgeId: "edge.ab" }] },
       { name: "add_node", operations: (flowId) => [{ op: "add_node", node: { nodeId: "node.new", flowId, definitionId: "builtin.new", definitionVersion: "1", label: "New", description: "", x: 900, y: 0, width: 240, height: 96, zIndex: 0, disabled: false, parameterValues: {}, metadata: {} } }] },
       { name: "add_edge", operations: (flowId) => [{ op: "add_edge", edge: { edgeId: "edge.ac", flowId, sourceNodeId: "node.a", targetNodeId: "node.c", sourcePortId: null, targetPortId: null, label: "skip", metadata: {} } }] },
@@ -230,7 +233,7 @@ describe("AutomationStudioProjectGraphRepository", () => {
         flow.nodes = [
           { id: "node.a", definitionId: "builtin.start", label: "Start", position: { x: 0, y: 0 } },
           { id: "node.b", definitionId: "builtin.step", label: "Step", description: "middle", position: { x: 200, y: 0 }, parameterValues: { retries: 2 } },
-          { id: "node.c", definitionId: "builtin.end", label: "End", position: { x: 400, y: 0 } },
+          { id: "node.c", definitionId: "builtin.end", label: "End", position: { x: 400, y: 0 }, metadata: { adaptationIds: ["adaptation.earlier"], note: "kept" } },
           { id: "node.d", definitionId: "builtin.far", label: "Far", position: { x: 2_500, y: 2_500 } }
         ];
         flow.edges = [
@@ -249,6 +252,43 @@ describe("AutomationStudioProjectGraphRepository", () => {
         expect(rolledBack.response.status, `${testCase.name} rollback should apply`).toBe("applied");
         expect(durable(await graph.exportSnapshotData(flowId)), `${testCase.name} rollback should restore the graph`).toEqual(durable(original));
       }
+    } finally {
+      await graph.close();
+      await pool.closeAll();
+    }
+  });
+
+  it("replaces only a node's metadata with set_node_metadata and records the prior metadata as its inverse", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.metadata" });
+    try {
+      const flow = createBlankAutomationStudioFlowArtifact({ flowId: "flow.metadata", projectId: "project.metadata", name: "Metadata", now: 1 });
+      flow.nodes = [
+        { id: "node.a", definitionId: "builtin.step", label: "Step", position: { x: 10, y: 20 }, parameterValues: { target: "#old" }, metadata: { width: 300, bootstrapAdaptationId: "bootstrap.one" } },
+        { id: "node.b", definitionId: "builtin.step", label: "Other", position: { x: 200, y: 0 }, metadata: { untouched: true } }
+      ];
+      await graph.importMonolithicFlowGraph(flow, { changedAt: 1 });
+      const before = await graph.getNode("node.a");
+
+      const stamped = { width: 300, bootstrapAdaptationId: "bootstrap.one", adaptationIds: ["bootstrap.one", "adaptation.repair"] };
+      const applied = appliedPatch((await graph.applyPatch({ pool, projectId: "project.metadata", flowId: "flow.metadata", baseRevision: 1, mutationId: "mutation.metadata", operations: [{ op: "set_node_metadata", nodeId: "node.a", metadata: stamped }], changedAt: 2 })).response);
+
+      expect(applied.inverseOperations).toEqual([{ op: "set_node_metadata", nodeId: "node.a", metadata: { width: 300, bootstrapAdaptationId: "bootstrap.one" } }]);
+      expect(applied.changedEntities).toEqual([{ entityKind: "node", entityId: "node.a", revision: 2 }]);
+      const after = await graph.getNode("node.a");
+      expect(after?.metadata).toEqual(stamped);
+      const withoutMetadata = (node: AutomationStudioGraphNodeRecord | null) => Object.fromEntries(Object.entries(node ?? {}).filter(([key]) => key !== "metadata" && key !== "revision" && key !== "updatedAt"));
+      expect(withoutMetadata(after)).toEqual(withoutMetadata(before));
+      await expect(graph.getNode("node.b")).resolves.toMatchObject({ metadata: { untouched: true }, revision: 1 });
+      const operations = await graph.operations(`flow.metadata:revision:${applied.revisionNumber}`);
+      expect(operations).toMatchObject([{ operationKind: "set_node_metadata", entityKind: "node", entityId: "node.a", before: { metadata: before!.metadata }, after: { metadata: stamped } }]);
+
+      await expect(graph.applyPatch({ pool, projectId: "project.metadata", flowId: "flow.metadata", baseRevision: 2, mutationId: "mutation.missing", operations: [{ op: "set_node_metadata", nodeId: "node.missing", metadata: {} }], changedAt: 3 })).rejects.toThrow(/Unknown node/);
+      for (const [index, metadata] of [null, [], "text", 7].entries()) {
+        await expect(graph.applyPatch({ pool, projectId: "project.metadata", flowId: "flow.metadata", baseRevision: 2, mutationId: `mutation.malformed.${index}`, operations: [{ op: "set_node_metadata", nodeId: "node.a", metadata: metadata as never }], changedAt: 3 })).rejects.toThrow(/metadata must be a JSON object/);
+      }
+      await expect(graph.getFlowRevision("flow.metadata")).resolves.toBe(2);
+      await expect(graph.getNode("node.a")).resolves.toMatchObject({ metadata: stamped });
     } finally {
       await graph.close();
       await pool.closeAll();

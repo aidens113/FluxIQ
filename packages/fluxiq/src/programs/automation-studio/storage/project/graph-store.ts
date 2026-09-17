@@ -4,7 +4,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioFlowEdge, Automation
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AutomationStudioProjectUnitOfWork, type AutomationStudioIdempotentMutationResult } from "./unit-of-work.ts";
+import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest, type AutomationStudioIdempotentMutationResult } from "./unit-of-work.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 export const AUTOMATION_STUDIO_GRAPH_PARTITION_SIZE = 1000;
@@ -22,6 +22,8 @@ export type AutomationStudioGraphPatchOperation =
   | { op: "add_node"; node: Omit<AutomationStudioGraphNodeRecord, "partitionId" | "revision" | "createdAt" | "updatedAt" | "deletedAt"> }
   | { op: "move_node"; nodeId: string; x: number; y: number }
   | { op: "set_node_parameters"; nodeId: string; values: JsonObject }
+  /** Replaces a node's whole metadata object, leaving every other field alone. Its inverse restores the previous object. */
+  | { op: "set_node_metadata"; nodeId: string; metadata: JsonObject }
   | { op: "delete_node"; nodeId: string }
   | { op: "add_edge"; edge: Omit<AutomationStudioGraphEdgeRecord, "revision" | "createdAt" | "updatedAt" | "deletedAt"> }
   | { op: "delete_edge"; edgeId: string };
@@ -119,7 +121,7 @@ export class AutomationStudioProjectGraphRepository {
   async applyPatch(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; baseRevision: number; mutationId: string; operations: AutomationStudioGraphPatchOperation[]; authorId?: string | null; message?: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
     const unit = await AutomationStudioProjectUnitOfWork.open({ pool: input.pool, projectId: input.projectId });
     try {
-      return await unit.runIdempotent({ mutationId: input.mutationId, operationKind: "graph.patch", ownerKind: "flow_graph", ownerId: input.flowId, request: { flowId: input.flowId, baseRevision: input.baseRevision, operations: input.operations, authorId: input.authorId ?? null, message: input.message ?? "" }, ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) }, async (context) => {
+      return await unit.runIdempotent({ mutationId: input.mutationId, operationKind: "graph.patch", ownerKind: "flow_graph", ownerId: input.flowId, request: graphPatchRequest(input), ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) }, async (context) => {
         const flow = await context.sql.get<{ graph_revision: number }>("select graph_revision from flows where flow_id = ?", [id(input.flowId, "flow")]);
         if (!flow) throw new Error(`Unknown Flow: ${input.flowId}`);
         const touchedIds = touchedEntityIds(input.operations);
@@ -251,6 +253,18 @@ export class AutomationStudioProjectGraphRepository {
   private async listPartitionsByIds(partitionIds: string[]): Promise<AutomationStudioGraphPartitionRecord[]> { if (!partitionIds.length) return []; const rows = await this.sql.all<PartitionRow>(`select * from graph_partitions where partition_id in (${q(partitionIds.length)}) order by grid_x, grid_y`, partitionIds); return rows.map(partitionFromRow); }
 }
 
+type GraphPatchRequestInput = { flowId: string; baseRevision: number; operations: AutomationStudioGraphPatchOperation[]; authorId?: string | null; message?: string };
+
+/**
+ * The request digest `applyPatch` records against its mutation id, so a caller
+ * retrying a mutation can tell which request that id was committed with.
+ */
+export function automationStudioGraphPatchRequestDigest(input: GraphPatchRequestInput): string { return automationStudioMutationDigest(graphPatchRequest(input)); }
+
+function graphPatchRequest(input: GraphPatchRequestInput): { flowId: string; baseRevision: number; operations: AutomationStudioGraphPatchOperation[]; authorId: string | null; message: string } {
+  return { flowId: input.flowId, baseRevision: input.baseRevision, operations: input.operations, authorId: input.authorId ?? null, message: input.message ?? "" };
+}
+
 type NodeRow = { node_id: string; flow_id: string; partition_id: string | null; definition_id: string; definition_version: string; label: string; description: string; x: number; y: number; width: number; height: number; z_index: number; disabled: number; parameter_values_json: string; metadata_json: string; revision: number; created_at_ms: number; updated_at_ms: number; deleted_at_ms: number | null };
 type EdgeRow = { edge_id: string; flow_id: string; source_node_id: string; target_node_id: string; source_port_id: string | null; target_port_id: string | null; label: string; metadata_json: string; revision: number; created_at_ms: number; updated_at_ms: number; deleted_at_ms: number | null };
 type PartitionRow = { partition_id: string; flow_id: string; grid_x: number; grid_y: number; min_x: number; min_y: number; max_x: number; max_y: number; node_count: number; edge_count: number; revision: number; updated_at_ms: number };
@@ -288,6 +302,18 @@ async function applyGraphOperation(sql: AutomationStudioSqlExecutor, store: Auto
       primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
       cascaded: [],
       inverse: [{ op: "set_node_parameters", nodeId: before.nodeId, values: before.parameterValues }],
+      affectedPartitionIds: partitionIds([saved.partitionId])
+    };
+  }
+  if (operation.op === "set_node_metadata") {
+    // A rollback artifact is read back from JSON, so the shape is checked here rather than trusted.
+    const metadata = jsonObjectValue(operation.metadata, "Node metadata");
+    const before = await requiredNode(store, sql, operation.nodeId, flowId);
+    const saved = await store.upsertNode({ ...stripNode(before), metadata }, changedAt, sql);
+    return {
+      primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
+      cascaded: [],
+      inverse: [{ op: "set_node_metadata", nodeId: before.nodeId, metadata: before.metadata }],
       affectedPartitionIds: partitionIds([saved.partitionId])
     };
   }
@@ -399,6 +425,7 @@ function boundsFromObject(value: JsonObject): AutomationStudioGraphBounds { cons
 function normalizeBounds(bounds: AutomationStudioGraphBounds): AutomationStudioGraphBounds { return { minX: Math.min(bounds.minX, bounds.maxX), minY: Math.min(bounds.minY, bounds.maxY), maxX: Math.max(bounds.minX, bounds.maxX), maxY: Math.max(bounds.minY, bounds.maxY) }; }
 function graphPartitionId(flowId: string, gridX: number, gridY: number): string { return `${id(flowId, "flow")}:partition:${Math.trunc(gridX)}:${Math.trunc(gridY)}`; }
 function graphRevisionId(flowId: string, revisionNumber: number): string { return `${id(flowId, "flow")}:revision:${Math.trunc(revisionNumber)}`; }
+function jsonObjectValue(value: unknown, label: string): JsonObject { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be a JSON object.`); return value as JsonObject; }
 function objectJson(value: string): JsonObject { const parsed = JSON.parse(value) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as JsonObject : {}; }
 function encodeCursor(value: unknown): string { return Buffer.from(JSON.stringify(value)).toString("base64url"); }
 function decodeCursor<T>(value: string | null | undefined): T | null { if (!value) return null; try { return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as T; } catch { throw new Error("Invalid Automation Studio graph cursor."); } }

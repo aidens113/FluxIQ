@@ -1,8 +1,10 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectAdministration } from "../administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION } from "../schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-administration-test");
 
@@ -89,6 +91,30 @@ describe("AutomationStudioProjectAdministration", () => {
     await expect(admin.migrationJobs.upsert({ jobId: "migration.1", kind: "legacy_import", cursorJson: "not json", status: "pending", errorJson: null, startedAt: null, completedAt: null })).rejects.toThrow(/valid JSON/);
     await expect(admin.migrationJobs.upsert({ jobId: "migration.1", kind: "legacy_import", cursorJson: '{"offset":10}', status: "running", errorJson: null, startedAt: 1, completedAt: null, updatedAt: 2 })).resolves.toMatchObject({ status: "running", cursorJson: '{"offset":10}' });
     await expect(admin.migrationJobs.list({ status: "running" })).resolves.toMatchObject([{ jobId: "migration.1" }]);
+    await admin.close();
+    await pool.closeAll();
+  });
+
+  it("opens a project database at the 0019 schema and upgrades it to the 0020 adaptation matching columns", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const projectId = "project.upgrade-0020";
+    const matching = AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION.id;
+    expect(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id)).toContain(matching);
+    const lease = await pool.acquire(projectId);
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id < matching) }).migrate();
+    await lease.database.run("insert into flows (flow_id, name, scope_kind, visibility, origin, source_mode, status, created_at_ms, updated_at_ms) values ('flow.old', 'Old', 'global', 'private', 'user', 'visual', 'draft', 1, 1)");
+    await lease.database.run("insert into objects (object_id, sha256, media_type, byte_count, relative_path, created_at_ms) values ('object:old', 'sha-old', 'application/json', 2, 'objects/old', 1)");
+    await lease.database.run("insert into adaptations (adaptation_id, flow_id, base_revision, proposed_revision, trigger, status, risk_level, approval_mode, patch_object_id, created_at_ms, updated_at_ms) values ('adaptation.old', 'flow.old', 1, 2, 'Old trigger.', 'draft', 'low', 'adaptive', 'object:old', 1, 1)");
+    await lease.release();
+
+    const admin = await AutomationStudioProjectAdministration.open({ pool, projectId });
+    const upgraded = await pool.acquire(projectId);
+    const ledger = await upgraded.database.all<{ migration_id: string }>("select migration_id from automation_schema_migrations order by migration_id");
+    expect(ledger.map((row) => row.migration_id)).toEqual(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id));
+    expect(ledger.at(-1)?.migration_id).toBe(matching);
+    await expect(upgraded.database.get("select trigger, failure_signature, confidence_tier, origin_entry_point from adaptations where adaptation_id = 'adaptation.old'"))
+      .resolves.toEqual({ trigger: "Old trigger.", failure_signature: null, confidence_tier: null, origin_entry_point: null });
+    await upgraded.release();
     await admin.close();
     await pool.closeAll();
   });

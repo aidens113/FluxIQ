@@ -251,6 +251,114 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     await store.close();
   });
 
+  it("stamps the adaptation id once onto each node the applied change wrote, and its rollback removes the stamp", async () => {
+    const pool = createPool();
+    const projectId = "project.stamp";
+    await seedFlow(pool, projectId, "flow.main");
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    await graph.applyPatch({ pool, projectId, flowId: "flow.main", baseRevision: 1, mutationId: "seed.metadata", operations: [{ op: "set_node_metadata", nodeId: "node.action", metadata: { adaptationIds: ["adaptation.earlier"], note: "kept" } }], changedAt: 5 });
+    await graph.close();
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const adaptation: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.stamp", patchCount: 2, updatedAt: 20 }), metadata: { baseRevision: 2, proposalModeOverride: "auto" } };
+    await store.putAdaptation({ adaptation, changedAt: 20 });
+
+    const applied = await store.applyApprovedAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 30, compile: false });
+    expect(applied.patch).toMatchObject({ status: "applied", revisionNumber: 3 });
+    await expect(readNodeMetadata(pool, projectId, "node.action")).resolves.toEqual({ adaptationIds: ["adaptation.earlier", "adaptation.stamp"], note: "kept" });
+    await expect(readNodeMetadata(pool, projectId, "node.other")).resolves.toEqual({});
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual({ target: { selector: "#submit-1" } });
+    expect(applied.adaptation.adaptation.appliedTo).toEqual([{ kind: "action_target", id: "node.action" }]);
+    const history = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    const operations = await history.operations("flow.main:revision:3");
+    await history.close();
+    expect(operations.map((operation) => `${operation.operationKind}:${operation.entityId}`)).toEqual(["set_node_parameters:node.action", "set_node_parameters:node.action", "set_node_metadata:node.action"]);
+    // Retrying the apply replays the committed, stamped request instead of stamping twice.
+    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 35, compile: false })).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 3 } });
+    await expect(readFlowRevision(pool, projectId, "flow.main")).resolves.toBe(3);
+
+    await expect(store.rollbackAdaptation({ adaptationId: "adaptation.stamp", actorId: "reviewer", changedAt: 40 })).resolves.toMatchObject({ patch: { status: "applied", revisionNumber: 4 } });
+    await expect(readNodeMetadata(pool, projectId, "node.action")).resolves.toEqual({ adaptationIds: ["adaptation.earlier"], note: "kept" });
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toEqual({ target: "#old" });
+    await store.close();
+  });
+
+  // A route-only change writes an edge, not a node. Stamping the edge's source
+  // would make every later run of that node claim the route was exercised,
+  // including runs that never took it.
+  it("stamps no node for a change that only adds a route, whose edge already names the adaptation", async () => {
+    const pool = createPool();
+    await seedFlow(pool, "project.route", "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.route" });
+    const adaptation: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.route", updatedAt: 20 }), patch: [{ kind: "edit_router", targetId: "node.action", summary: "Route failures to the other step.", after: { toNodeId: "node.other" } }] };
+    await store.putAdaptation({ adaptation, changedAt: 20 });
+
+    await store.applyApprovedAdaptation({ adaptationId: "adaptation.route", actorId: "reviewer", changedAt: 30, compile: false });
+    await expect(readNodeMetadata(pool, "project.route", "node.action")).resolves.toEqual({});
+    await expect(readNodeMetadata(pool, "project.route", "node.other")).resolves.toEqual({});
+    const lease = await pool.acquire("project.route");
+    const edge = await lease.database.get<{ metadata_json: string }>("select metadata_json from graph_edges where source_node_id = 'node.action' and deleted_at_ms is null");
+    await lease.release();
+    expect(JSON.parse(edge?.metadata_json ?? "{}")).toEqual({ adaptationId: "adaptation.route" });
+    await store.close();
+  });
+
+  it("writes the failure signature, confidence tier and entry point to typed columns on every write, and filters by them", async () => {
+    const pool = createPool();
+    const projectId = "project.matching";
+    await seedFlow(pool, projectId, "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const origin = { entryPoint: "run_failure", runId: "run.failed", failedNodeId: "node.action", failureSignature: "target_not_found:node.action" };
+    const repair: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.repair", status: "testing", updatedAt: 20 }), metadata: { baseRevision: 1, origin } };
+    await expect(store.putAdaptation({ adaptation: repair, changedAt: 20 })).resolves.toMatchObject({ failureSignature: "target_not_found:node.action", confidenceTier: "provisional", originEntryPoint: "run_failure" });
+    await expect(readMatchingColumns(pool, projectId, "adaptation.repair")).resolves.toEqual({ failure_signature: "target_not_found:node.action", confidence_tier: "provisional", origin_entry_point: "run_failure" });
+
+    // Two replays establish a low-risk change; a failed replay after them undoes that.
+    const replayed: AutomationStudioFlowAdaptation = { ...repair, updatedAt: 30, validationResults: [...repair.validationResults!, { runId: "run.replay.1", status: "succeeded", checkedAt: 25, kind: "replay" }, { runId: "run.replay.2", status: "succeeded", checkedAt: 30, kind: "replay" }] };
+    await expect(store.putAdaptation({ adaptation: replayed, changedAt: 30 })).resolves.toMatchObject({ confidenceTier: "established" });
+    const failedReplay: AutomationStudioFlowAdaptation = { ...replayed, updatedAt: 40, validationResults: [...replayed.validationResults!, { runId: "run.replay.3", status: "failed", checkedAt: 40, kind: "replay" }] };
+    await expect(store.putAdaptation({ adaptation: failedReplay, changedAt: 40 })).resolves.toMatchObject({ confidenceTier: "unverified" });
+
+    const instruction: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.instruction", updatedAt: 50 }), riskLevel: "high", validationResults: [], metadata: { baseRevision: 1, origin: { entryPoint: "instruction", instructionIds: ["instruction.flow.main"] } } };
+    await expect(store.putAdaptation({ adaptation: instruction, changedAt: 50 })).resolves.toMatchObject({ failureSignature: null, confidenceTier: "unverified", originEntryPoint: "instruction" });
+    // Live patches still record a run failure's signature at metadata.failureSignature, and the known-adaptation gate matches on it.
+    const livePatch: AutomationStudioFlowAdaptation = { ...adaptationFixture({ adaptationId: "adaptation.live-patch", updatedAt: 60 }), metadata: { baseRevision: 1, failureSignature: "target_not_found:node.action" } };
+    await expect(store.putAdaptation({ adaptation: livePatch, changedAt: 60 })).resolves.toMatchObject({ failureSignature: "target_not_found:node.action", confidenceTier: "provisional", originEntryPoint: null });
+
+    await store.setAdaptationStatus({ adaptationId: "adaptation.instruction", status: "rejected", actorId: "reviewer", metadata: { origin: { entryPoint: "edge_case", instructionIds: [], runId: "run.edge", failureSignature: "timeout:node.other" } }, changedAt: 70 });
+    await expect(readMatchingColumns(pool, projectId, "adaptation.instruction")).resolves.toEqual({ failure_signature: "timeout:node.other", confidence_tier: "unverified", origin_entry_point: "edge_case" });
+    await store.rebaseAdaptation({ adaptationId: "adaptation.repair", actorId: "reviewer", changedAt: 80 });
+    await expect(readMatchingColumns(pool, projectId, "adaptation.repair")).resolves.toEqual({ failure_signature: "target_not_found:node.action", confidence_tier: "unverified", origin_entry_point: "run_failure" });
+
+    const bySignature = await store.listAdaptationsPage({ flowId: "flow.main", failureSignature: "target_not_found:node.action" });
+    expect(bySignature.adaptations.map((summary) => summary.adaptationId).sort()).toEqual(["adaptation.live-patch", "adaptation.repair"]);
+    const provisional = await store.listAdaptationsPage({ confidenceTier: "provisional" });
+    expect(provisional.adaptations.map((summary) => summary.adaptationId)).toEqual(["adaptation.live-patch"]);
+    await expect(store.listAdaptationsPage({ confidenceTier: "high" as never })).rejects.toThrow(/confidence tier/);
+    await store.close();
+  });
+
+  it("fills the matching columns of rows written before migration 0020 when the store opens", async () => {
+    const pool = createPool();
+    const projectId = "project.backfill";
+    await seedFlow(pool, projectId, "flow.main");
+    let store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const replays = [{ runId: "run.replay.1", status: "succeeded" as const, checkedAt: 21, kind: "replay" as const }, { runId: "run.replay.2", status: "succeeded" as const, checkedAt: 22, kind: "replay" as const }];
+    const risky = adaptationFixture({ adaptationId: "adaptation.risky", updatedAt: 22 });
+    await store.putAdaptation({ adaptation: { ...risky, riskLevel: "high", validationResults: [...risky.validationResults!, ...replays], metadata: { baseRevision: 1, failureSignature: "target_not_found:node.action" } }, changedAt: 22 });
+    await store.putAdaptation({ adaptation: adaptationFixture({ adaptationId: "adaptation.corrupt", updatedAt: 23 }), changedAt: 23 });
+    await store.close();
+    const lease = await pool.acquire(projectId);
+    await lease.database.run("update adaptations set failure_signature = null, confidence_tier = null, origin_entry_point = null");
+    await lease.database.run("update adaptations set status_detail_json = 'not json' where adaptation_id = 'adaptation.corrupt'");
+    await lease.release();
+
+    store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    // A high-risk change needs a third replay, so two leave it provisional.
+    await expect(readMatchingColumns(pool, projectId, "adaptation.risky")).resolves.toEqual({ failure_signature: "target_not_found:node.action", confidence_tier: "provisional", origin_entry_point: null });
+    await expect(readMatchingColumns(pool, projectId, "adaptation.corrupt")).resolves.toEqual({ failure_signature: null, confidence_tier: "unverified", origin_entry_point: null });
+    await store.close();
+  });
+
   function createPool(): AutomationStudioProjectDatabasePool {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     pools.push(pool);
@@ -340,6 +448,25 @@ async function readNodeParameters(pool: AutomationStudioProjectDatabasePool, pro
   try {
     const row = await lease.database.get<{ parameter_values_json: string }>("select parameter_values_json from graph_nodes where node_id = ?", [nodeId]);
     return JSON.parse(row?.parameter_values_json ?? "{}") as Record<string, unknown>;
+  } finally {
+    await lease.release();
+  }
+}
+
+async function readNodeMetadata(pool: AutomationStudioProjectDatabasePool, projectId: string, nodeId: string): Promise<Record<string, unknown>> {
+  const lease = await pool.acquire(projectId);
+  try {
+    const row = await lease.database.get<{ metadata_json: string }>("select metadata_json from graph_nodes where node_id = ?", [nodeId]);
+    return JSON.parse(row?.metadata_json ?? "{}") as Record<string, unknown>;
+  } finally {
+    await lease.release();
+  }
+}
+
+async function readMatchingColumns(pool: AutomationStudioProjectDatabasePool, projectId: string, adaptationId: string): Promise<Record<string, unknown> | undefined> {
+  const lease = await pool.acquire(projectId);
+  try {
+    return await lease.database.get<Record<string, unknown>>("select failure_signature, confidence_tier, origin_entry_point from adaptations where adaptation_id = ?", [adaptationId]);
   } finally {
     await lease.release();
   }
