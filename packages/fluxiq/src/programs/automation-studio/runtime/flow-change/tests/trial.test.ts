@@ -73,11 +73,14 @@ describe("trialAutomationStudioFlowChange", () => {
     expect(result.verdict.checks).toContainEqual({ kind: "changed_node_succeeded", status: "failed", nodeId: "changed", code: "changed_node_failed" });
   });
 
-  it("reports a node that merely succeeded as unverifiable", async () => {
+  it("reports a node that merely succeeded as unverifiable, and never resumable", async () => {
     const result = await trial({ candidate: flowOf([constant("changed"), END], [["changed", "end"]]) });
 
     expect(result.verdict).toMatchObject({ outcome: "unverifiable", basis: [] });
-    expect(result.verdict).not.toHaveProperty("resumeFrom");
+    // The run reached the end node, so there is a place to continue from; an
+    // action that merely did not fail is still no reason to continue.
+    expect(result.verdict.resumeFrom).toEqual({ nodeId: "end", route: "success" });
+    expect(result.verdict).toMatchObject({ resumable: false, notResumableCode: "no_evidence" });
   });
 
   it("starts at the graph's start when no start node is named, and at the named node otherwise", async () => {
@@ -95,7 +98,17 @@ describe("trialAutomationStudioFlowChange", () => {
     const result = await trial({ candidate: flowOf([constant("changed", { expectedOutputs: { value: "ok" } })]) });
 
     expect(result.savedTrace.status).toBe("succeeded");
-    expect(result.verdict).toMatchObject({ outcome: "verified", resumeFrom: { completed: true } });
+    expect(result.verdict).toMatchObject({ outcome: "verified", resumeFrom: { completed: true }, resumable: true });
+  });
+
+  // A node id is unique only within its own graph, so a continuation inside a
+  // Subflow that named a bare node id would read as a node of the parent Flow.
+  it("names the Subflow the run's options put it in on the resume point", async () => {
+    const candidate = flowOf([constant("changed", { expectedOutputs: { value: "ok" } }), constant("next"), END], [["changed", "next"], ["next", "end"]]);
+    const result = await trial({ candidate, options: { currentSubflowId: "subflow.primary" } });
+
+    expect(result.verdict.resumeFrom).toEqual({ nodeId: "next", route: "success", subflowId: "subflow.primary" });
+    expect(result.verdict.resumable).toBe(true);
   });
 
   it("says a trial that never reached a changed node was not executed", async () => {
@@ -134,7 +147,30 @@ describe("trialAutomationStudioFlowChange", () => {
       const result = await trial({ candidate: candidate(), options: { hostRuntime: host.hostRuntime } });
 
       expect(host.asked).toEqual(["changed.attempt.1"]);
-      expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_state"] });
+      expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_state"], resumable: true });
+    });
+
+    // Phase 2.4, the fail-open this phase exists to close, end to end. A host
+    // answers `passed: true` with a short `checkedConditionCount` for "nothing
+    // I could look at said otherwise" -- the common answer when a model authors
+    // a condition naming something the page cannot be asked. Reading `passed`
+    // alone recorded that as evidence, and a recovery whose evidence nobody had
+    // looked at came back verified and resumable, which is exactly the claim
+    // this phase must never make.
+    it.each([
+      ["judged none of what it was asked", 1, 0],
+      ["judged only some of what it was asked", 2, 1]
+    ])("is unknown, not a pass, when the host %s", async (_label, conditionCount, checkedConditionCount) => {
+      const conditions = Array.from({ length: conditionCount }, (_, index) => ({ kind: "text", text: `Saved ${index}` }));
+      const host = evaluatingHost(() => ({ passed: true, checkedConditionCount }));
+      const result = await trial({
+        candidate: flowOf([constant("changed", { expectedState: { conditions } }), END], [["changed", "end"]]),
+        options: { hostRuntime: host.hostRuntime }
+      });
+
+      expect(host.asked).toEqual(["changed.attempt.1"]);
+      expect(result.verdict.checks).toContainEqual({ kind: "expected_state", status: "unknown", nodeId: "changed", code: "expected_state_unevaluated" });
+      expect(result.verdict).toMatchObject({ outcome: "unverifiable", basis: [], resumable: false, notResumableCode: "check_unknown" });
     });
 
     it("contradicts the change when the host rejects it", async () => {
@@ -165,7 +201,7 @@ describe("trialAutomationStudioFlowChange", () => {
           this.#points.push(`${input.attemptId}:${input.point}`);
           return { stateSnapshotId: `state.${this.#points.length}`, stateRef: `ref.${this.#points.length}`, capturedAt: 1 };
         }
-        expectationEvaluator(): AutomationNodeExpectationEvaluation { return { passed: true }; }
+        expectationEvaluator(conditions: JsonValue[]): AutomationNodeExpectationEvaluation { return { passed: true, checkedConditionCount: conditions.length }; }
       }
       const result = await trial({ candidate: candidate(), options: { hostRuntime: new Host(captured) } });
 

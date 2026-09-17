@@ -20,6 +20,9 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
  *   route the failure being repaired took.
  * - `expected_outputs`: a changed node produced every output id it declares.
  * - `records`: a changed node that saves records captured at least its minimum.
+ *   With no minimum declared it passes on rows alone and carries the code
+ *   `records_minimum_undeclared`, which the resume decision reads as unknown:
+ *   nothing said how many rows the extraction owed.
  * - `downstream_assertion`: a node whose definition declares
  *   `metadata.verifiesState`, run after the first changed attempt, succeeded.
  * - `continuation`: the route the last changed node took led to a node that
@@ -36,6 +39,19 @@ export type AutomationStudioChangeVerdictCheckKind =
 
 /** The check kinds that count as evidence. Success alone and continuation never do. */
 export type AutomationStudioChangeVerdictEvidenceKind = Exclude<AutomationStudioChangeVerdictCheckKind, "changed_node_succeeded" | "continuation">;
+
+/**
+ * The evidence kinds, in the order a verdict's `basis` lists them. Declared
+ * with the kinds themselves so the verdict and the resume decision read one
+ * list rather than each keeping its own idea of what counts as evidence.
+ */
+export const AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS: readonly AutomationStudioChangeVerdictEvidenceKind[] = Object.freeze([
+  "expected_state",
+  "expected_route",
+  "expected_outputs",
+  "records",
+  "downstream_assertion"
+]);
 
 /** `unknown` is never a pass: a check that could not be evaluated proves nothing. */
 export type AutomationStudioChangeVerdictCheckStatus = "passed" | "failed" | "not_applicable" | "unknown";
@@ -57,16 +73,59 @@ export type AutomationStudioChangeVerdictCheck = {
  */
 export type AutomationStudioChangeVerdictOutcome = "verified" | "contradicted" | "unverifiable" | "not_executed";
 
-/** Where a run continues after a verified change: the node the changed path led to and the route that led there, or a finished run. */
-export type AutomationStudioChangeResumePoint = { nodeId: string; route: string } | { completed: true };
+/**
+ * Where a run continues after a change: the node the changed path led to and
+ * the route that led there, or a finished run. `subflowId` names the Subflow
+ * whose graph those node ids belong to, when the trial ran inside one, so a
+ * continuation inside a Subflow can be expressed rather than read as a node of
+ * the parent graph.
+ *
+ * A resume point is a fact about where the trial got to, not permission to go
+ * there. `AutomationStudioChangeVerdict.resumable` is the permission.
+ */
+export type AutomationStudioChangeResumePoint = ({ nodeId: string; route: string } | { completed: true }) & { subflowId?: string };
+
+/**
+ * Whether normal deterministic execution may continue, decided from the checks
+ * a trial made rather than from what it proved. `code` names why not, and is
+ * present exactly when `resumable` is false:
+ *
+ * - `no_checks`: the trial judged nothing, so there is nothing to continue from.
+ * - `check_failed`: a check contradicted the change.
+ * - `check_unknown`: a check the trial made could not be evaluated. Unknown is
+ *   never a pass here either, so an unevaluated check ends the continuation.
+ * - `no_resume_point`: the continuation is not well defined, so there is no
+ *   node to resume at.
+ * - `no_evidence`: nothing observed proves the change. Success alone is not
+ *   evidence, so a run that merely did not fail is not resumable.
+ */
+export type AutomationStudioChangeResumeDecision = {
+  resumable: boolean;
+  code?: string;
+};
 
 export type AutomationStudioChangeVerdict = {
-  schemaVersion: "automation-studio.change-verdict.v1";
+  schemaVersion: "automation-studio.change-verdict.v2";
   outcome: AutomationStudioChangeVerdictOutcome;
   /** The evidence kinds that passed, in canonical order. Non-empty exactly when `outcome` is `verified`. */
   basis: AutomationStudioChangeVerdictEvidenceKind[];
   checks: AutomationStudioChangeVerdictCheck[];
-  /** Present only on a `verified` verdict whose continuation passed. */
+  /**
+   * Whether normal deterministic execution may continue from `resumeFrom`.
+   * Decided on the checks themselves and never inherited from `outcome`: false
+   * while any check is failed or unknown, false with no resume point, and false
+   * with no passed evidence check, so a changed node that merely succeeded is
+   * never resumable. True implies `resumeFrom` is present.
+   */
+  resumable: boolean;
+  /** A Core code naming why the run may not continue. Present exactly when `resumable` is false. */
+  notResumableCode?: string;
+  /**
+   * Where the run would continue. Present whenever the continuation is well
+   * defined, whatever the outcome: a change that proved nothing, or that was
+   * contradicted, still leaves the run somewhere, and the loop needs to know
+   * where. Whether it may go there is `resumable`, never this field's presence.
+   */
   resumeFrom?: AutomationStudioChangeResumePoint;
   /** Core's sentence. */
   reason: string;
@@ -117,6 +176,12 @@ export type AutomationStudioChangeVerdictInput = {
   endNodeId?: string;
   /** The route the failure being repaired took. An expected route equal to it is never evidence. */
   failureRoute?: string;
+  /**
+   * The Subflow whose graph the trial ran, when it ran inside one. The resume
+   * point carries it, so a continuation inside a Subflow names the graph its
+   * node id belongs to instead of reading as a node of the parent Flow.
+   */
+  subflowId?: string;
   /** A Core code naming why the trial did not run, when it did not. */
   notExecutedCode?: string;
 };

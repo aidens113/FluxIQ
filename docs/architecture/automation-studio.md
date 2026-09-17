@@ -736,6 +736,53 @@ starts from that graph's start, not from the failed node. The retry passes the r
 graph options, which set no `startNodeId`, so the executor chooses the start
 node as it does for a new run.
 
+### What a trial proved, and whether the run may continue
+
+A trial of one change answers two questions, and Core keeps them apart because
+the cost of confusing them is not symmetric. `decideAutomationStudioChangeVerdict`
+(`runtime/flow-change/verdict.ts`) answers **was the change proved?** over the
+attempts the trial made, per changed node and from observed evidence only.
+`decideAutomationStudioChangeResume` (`runtime/flow-change/resume.ts`) answers
+**may normal deterministic execution continue, and from where?** It reads the
+same checks and never the proof outcome, so neither answer can stand in for the
+other.
+
+A verdict therefore carries three things beside its outcome. `checks` is what
+was looked at and how each came back. `resumeFrom` is where the run reached —
+the node the last changed node’s route led to and that route, or a finished
+run, naming the Subflow whose graph holds that node id when the trial ran inside
+one. It is present whatever the outcome, because where a run got to is a fact
+the trial observed: a change that proved nothing, or that was contradicted,
+still left the run somewhere and the loop still needs to know where. `resumable`
+is the permission, and it is false unless all of the following hold:
+
+- There is a resume point.
+- No check failed.
+- No check is `unknown`. A check exists because something declared it, so
+  "could not tell" is not "held", and that outranks other evidence that did
+  pass: a change proved by a later assertion whose own node’s declared state
+  the host could not evaluate is verified and **not** resumable.
+- At least one evidence check passed. An action that ran without failing has
+  shown nothing, so success alone never makes a run resumable.
+
+`notResumableCode` names which of those refused: `no_checks`, `check_failed`,
+`check_unknown`, `no_resume_point` or `no_evidence`.
+
+A check that passed only because the seam feeding it is inert is read as
+`unknown` by the resume decision rather than as a pass. The `records` check is
+the one such seam today: nothing writes a declared minimum until extraction
+does, so rows captured against no minimum still prove the change — they are a
+real observation — but the check carries `records_minimum_undeclared` and the
+run does not continue on it.
+
+The same rule governs the host’s answer about expected state. A host reports
+`checkedConditionCount` beside `passed`, and `passed: true` over a short count
+is its documented answer for "nothing I could look at said otherwise", not "the
+evidence held" — the common answer when a condition names something the host
+cannot be asked. The trial counts such an answer as `unknown`, so it never
+becomes `expected_state: passed`, and a change whose evidence nobody looked at
+is neither verified nor resumable.
+
 ### Iterating adaptations and their bounds
 
 A recovery under an adapting grant is a diagnosis, then an exploration that may

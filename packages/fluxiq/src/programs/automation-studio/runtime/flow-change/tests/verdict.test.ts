@@ -29,12 +29,24 @@ function checkOf(verdict: AutomationStudioChangeVerdict, kind: string, nodeId?: 
 
 // A verdict's basis is non-empty exactly when it is verified, in canonical
 // order, and only names evidence checks that passed.
+//
+// Resumability is the other half, and it is its own answer: a verdict may only
+// say the run can continue when it knows where to continue from, when nothing
+// it looked at failed or came back undecided, and when something actually
+// proved the change. `resumeFrom` does not imply any of that -- it is where the
+// trial got to, which is a fact about a contradicted change too.
 function expectWellFormed(verdict: AutomationStudioChangeVerdict): void {
   expect(verdict.schemaVersion).toBe(AUTOMATION_STUDIO_CHANGE_VERDICT_SCHEMA_VERSION);
   expect(verdict.basis.length > 0).toBe(verdict.outcome === "verified");
   expect(verdict.basis).toEqual(AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS.filter((kind) => verdict.basis.includes(kind)));
   for (const kind of verdict.basis) expect(verdict.checks.some((check) => check.kind === kind && check.status === "passed")).toBe(true);
-  if (verdict.outcome !== "verified") expect(verdict).not.toHaveProperty("resumeFrom");
+  expect(typeof verdict.resumable).toBe("boolean");
+  expect(Object.hasOwn(verdict, "notResumableCode")).toBe(!verdict.resumable);
+  if (verdict.resumable) {
+    expect(verdict.resumeFrom).toBeDefined();
+    expect(verdict.checks.filter((check) => check.status === "failed" || check.status === "unknown")).toEqual([]);
+    expect(verdict.basis.length).toBeGreaterThan(0);
+  }
   expect(verdict.reason.trim()).not.toBe("");
 }
 
@@ -71,6 +83,10 @@ describe("change verdict: success is not evidence", () => {
     expect(verdict.outcome).toBe("unverifiable");
     expect(checkOf(verdict, "changed_node_succeeded")).toEqual({ kind: "changed_node_succeeded", status: "passed", nodeId: "node.changed" });
     expect(checkOf(verdict, "continuation")?.status).toBe("passed");
+    // The run finished and the trial knows it, but nothing the node did says
+    // the change works, and a node that ran without failing is not evidence.
+    expect(verdict.resumeFrom).toEqual({ completed: true });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "no_evidence" });
   });
 
   it("is contradicted when a changed node failed", () => {
@@ -120,6 +136,7 @@ describe("change verdict: expected state", () => {
     expectWellFormed(verdict);
     expect(verdict.outcome).toBe("unverifiable");
     expect(checkOf(verdict, "expected_state")).toMatchObject({ status: "unknown", code: "expected_state_unevaluated" });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_unknown" });
   });
 
   it("is unknown when one attempt passed and another could not be evaluated", () => {
@@ -169,6 +186,10 @@ describe("change verdict: expected route", () => {
     expectWellFormed(verdict);
     expect(verdict.outcome).toBe("unverifiable");
     expect(checkOf(verdict, "expected_route")).toMatchObject({ status: "not_applicable", code: "expected_route_repeats_failure" });
+    // The recovery node ran and the run moved on, so the continuation is known;
+    // re-taking the failure's route is still no reason to take it.
+    expect(verdict.resumeFrom).toEqual({ nodeId: "node.recovery", route: "failed" });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "no_evidence" });
   });
 
   it("ignores a blank declared route", () => {
@@ -241,6 +262,10 @@ describe("change verdict: downstream assertion", () => {
     expectWellFormed(verdict);
     expect(verdict.outcome).toBe("contradicted");
     expect(checkOf(verdict, "downstream_assertion")).toMatchObject({ status: "failed", code: "downstream_assertion_failed" });
+    // Where the run stands is still worth saying; a contradicted change is the
+    // one case where nothing may act on it.
+    expect(verdict.resumeFrom).toEqual({ nodeId: "node.assert", route: "success" });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_failed" });
   });
 
   it("ignores a verification node that ran before the change", () => {
@@ -320,10 +345,16 @@ describe("change verdict: continuation", () => {
     expect(verdict.resumeFrom).toEqual({ nodeId: "node.after", route: "next" });
   });
 
-  it("offers no resume point on a verdict that proved nothing", () => {
+  // Phase 2.4: a resume point used to be emitted only on a verified verdict, so
+  // a change whose continuation was perfectly well defined but whose evidence
+  // proved nothing left the run with nowhere to go. Where the run reached is
+  // observed, not proved, and every outcome that has one now reports it.
+  it("offers a resume point on a verdict that proved nothing, without calling it resumable", () => {
     const verdict = decide({ attempts: [attempt("node.changed"), attempt("node.next")] });
+    expectWellFormed(verdict);
     expect(verdict.outcome).toBe("unverifiable");
-    expect(verdict).not.toHaveProperty("resumeFrom");
+    expect(verdict.resumeFrom).toEqual({ nodeId: "node.next", route: "success" });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "no_evidence" });
   });
 
   it("judges only the changed nodes the trial reached", () => {
@@ -333,6 +364,96 @@ describe("change verdict: continuation", () => {
     });
     expect(verdict.outcome).toBe("verified");
     expect(checkOf(verdict, "changed_node_succeeded", "node.branch")).toBeUndefined();
+  });
+});
+
+// Phase 2.4: whether normal deterministic execution may continue, answered
+// beside what the trial proved rather than read off it. Every rule fails
+// closed, because continuing a run whose evidence nobody looked at is the
+// defect this phase exists to close.
+describe("change verdict: resumable", () => {
+  it("resumes when the continuation is known, every check was decided, and something proved the change", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { expectedState: "passed" }), attempt("node.next")] });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", resumable: true, resumeFrom: { nodeId: "node.next", route: "success" } });
+    expect(verdict).not.toHaveProperty("notResumableCode");
+  });
+
+  // The fail-closed rule, and the one that separates this answer from the
+  // proof: a downstream assertion proves the change, so the verdict is
+  // verified, but the changed node's own declared state was never evaluated.
+  // The run does not continue on evidence nobody could read.
+  it("refuses to resume while a check the trial made is unknown, although another check proved the change", () => {
+    const verdict = decide({
+      attempts: [attempt("node.changed", { expectedState: "unknown" }), attempt("node.assert", { verifiesState: true })]
+    });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", basis: ["downstream_assertion"] });
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_unknown" });
+  });
+
+  it("refuses to resume when the run stopped heading somewhere the trial never reached", () => {
+    const verdict = decide({
+      runStatus: "failed",
+      endNodeId: "node.next",
+      attempts: [attempt("node.changed", { expectedState: "passed" })]
+    });
+    expectWellFormed(verdict);
+    expect(verdict.outcome).toBe("verified");
+    expect(verdict).not.toHaveProperty("resumeFrom");
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_unknown" });
+  });
+
+  it("refuses to resume a contradicted change whose continuation is known", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { expectedState: "failed" }), attempt("node.next")] });
+    expectWellFormed(verdict);
+    expect(verdict.resumeFrom).toEqual({ nodeId: "node.next", route: "success" });
+    expect(verdict).toMatchObject({ outcome: "contradicted", resumable: false, notResumableCode: "check_failed" });
+  });
+
+  it("refuses to resume a trial that judged nothing", () => {
+    const verdict = decide({ attempts: [] });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "not_executed", resumable: false, notResumableCode: "no_checks" });
+  });
+
+  // `records.minimum` has a reader and no writer: nothing declares how many
+  // rows an extraction owes until it lands. Rows alone are still an
+  // observation, so they keep proving the change, but an inert seam must not
+  // read as a pass to "is it safe to carry on?".
+  it("refuses to resume on captured rows alone while no minimum is declared", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { records: { captured: 3 } }), attempt("node.next")] });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", basis: ["records"] });
+    expect(checkOf(verdict, "records")).toMatchObject({ status: "passed", code: "records_minimum_undeclared" });
+    // Read as unknown, not merely as "no evidence": what the check looked at
+    // cannot answer the question it was asked.
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_unknown" });
+  });
+
+  it("resumes on records once the node declares the minimum it met", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { records: { captured: 3, minimum: 2 } }), attempt("node.next")] });
+    expectWellFormed(verdict);
+    expect(checkOf(verdict, "records")).toEqual({ kind: "records", status: "passed", nodeId: "node.changed" });
+    expect(verdict.resumable).toBe(true);
+  });
+
+  // A node id is unique only within the graph that holds it, and a Subflow
+  // keeps its own, so a resume point inside one that named a bare node id would
+  // read as a node of the parent Flow.
+  it("names the Subflow the trial ran in on either shape of resume point", () => {
+    const continued = decide({ subflowId: "subflow.primary", attempts: [attempt("node.changed", { expectedState: "passed" }), attempt("node.next")] });
+    const finished = decide({ subflowId: "subflow.primary", attempts: [attempt("node.changed", { expectedState: "passed" })] });
+
+    expect(continued.resumeFrom).toEqual({ nodeId: "node.next", route: "success", subflowId: "subflow.primary" });
+    expect(finished.resumeFrom).toEqual({ completed: true, subflowId: "subflow.primary" });
+    expect(continued.resumable).toBe(true);
+  });
+
+  it("names no Subflow for a trial that ran in the parent Flow", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { expectedState: "passed" }), attempt("node.next")] });
+    expect(verdict.resumeFrom).toEqual({ nodeId: "node.next", route: "success" });
+    expect(Object.hasOwn(verdict.resumeFrom ?? {}, "subflowId")).toBe(false);
   });
 });
 

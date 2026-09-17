@@ -8,8 +8,9 @@
 //   for a repair is what the run has left: the trial is also the run's
 //   continuation, so no smaller cap applies.
 // - A declared expected state counts only when the host was asked about that
-//   attempt and answered. The host runtime is wrapped to observe its answers,
-//   and every other member of it is left as it was.
+//   attempt, answered, and judged every condition it was asked about. The host
+//   runtime is wrapped to observe its answers, and every other member of it is
+//   left as it was.
 // - The executed trace, with real values, is returned for continuing the run
 //   and is never to be stored. The saved trace is the one to keep.
 // - Where the change came from, and what the failure it answers observed and
@@ -87,7 +88,10 @@ export async function trialAutomationStudioFlowChange(request: AutomationStudioF
     attempts: executedTrace.attempts.map((attempt) => verdictAttempt(attempt, request.candidate, request, comparison, changed, evaluations)),
     runStatus: executedTrace.status,
     ...(executedTrace.currentNodeId !== undefined ? { endNodeId: executedTrace.currentNodeId } : {}),
-    ...(failureRoute !== undefined ? { failureRoute } : {})
+    ...(failureRoute !== undefined ? { failureRoute } : {}),
+    // The Subflow the run's own options name, so the resume point says which
+    // graph its node id belongs to.
+    ...(request.options.currentSubflowId !== undefined ? { subflowId: request.options.currentSubflowId } : {})
   });
   const origin = request.origin === undefined ? undefined : parseAutomationStudioFlowChangeOrigin(request.origin);
   const failureState = request.failedAttempt ? automationStudioFlowChangeFailureState(request.failedAttempt, comparison) : undefined;
@@ -238,6 +242,16 @@ function isJsonObject(value: unknown): value is JsonObject {
  * Flow child reusing an id can cause, is `unknown`. A throw is `unknown` and is
  * passed on unchanged. Every other member is read from the host itself, with
  * methods bound to it, so a host that keeps private state still works.
+ *
+ * A host's `passed` counts only once it has judged every condition it was
+ * asked about, which is what `checkedConditionCount` reports. `passed: true` on
+ * a short count is the host's documented answer for "nothing I could look at
+ * said otherwise", not "the evidence held": a condition that names something
+ * the page cannot be asked — the common case when a model authors them — comes
+ * back unjudged and counted out. Reading `passed` alone turned that into
+ * `expected_state: passed`, and a change nobody had evidence for into a
+ * verified, resumable one. A short count is `unknown` here, which is never a
+ * pass, so the change stays unproved and the run stays put.
  */
 function observedHostRuntime(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
@@ -258,7 +272,10 @@ function observedHostRuntime(
       record(context, "unknown");
       throw error;
     }
-    record(context, evaluation?.passed === true ? "passed" : evaluation?.passed === false ? "failed" : "unknown");
+    // Asked about nothing is judged nothing, so a `passed` over an empty list
+    // is unknown too rather than vacuously true.
+    const judged = conditions.length > 0 && (evaluation?.checkedConditionCount ?? 0) >= conditions.length;
+    record(context, evaluation?.passed === true && judged ? "passed" : evaluation?.passed === false ? "failed" : "unknown");
     return evaluation;
   };
   // The proxy's own target is an empty object, so a frozen host cannot trip the
