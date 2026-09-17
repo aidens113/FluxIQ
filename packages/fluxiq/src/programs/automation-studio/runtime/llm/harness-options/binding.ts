@@ -73,6 +73,22 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     signal?: AbortSignal;
   }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
+  /**
+   * Judge a repair target against one packet this domain issued, and resolve it.
+   *
+   * `evidence` is exactly one packet the patch request showed the model: the
+   * failure packet, or a packet one of this domain's exploration options
+   * returned during the same recovery. Core asks about the one packet the
+   * target's handles came from and passes the handles as this domain issued
+   * them; Core's own `<evidenceId>:` qualifier, which says which explored
+   * packet a handle came from, is removed first. A target whose handles come
+   * from more than one packet, or name an explored packet the request did not
+   * carry, is refused by Core without asking. So a domain that numbers its
+   * handles per packet needs nothing new: each call is one packet, as before.
+   *
+   * `matched` means the target stands as it was passed here, without the
+   * qualifier. Every call is guarded: a throw is read as `absent`.
+   */
   validateTargetOverrideEvidence?(
     evidence: JsonObject,
     target: AutomationStudioRuntimeTargetOverrideTarget,

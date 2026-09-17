@@ -50,10 +50,9 @@ import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summ
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
 import { startAutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
-import type { AutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structured-diagnosis.ts";
-import { runAutomationStudioRecoveryExploration } from "./exploration.ts";
+import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches } from "./patches.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
@@ -245,7 +244,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const patchWillFollow = Boolean(plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
-  let exploration: AutomationStudioRuntimeExploration | undefined;
+  let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
   if (plan.explorationRequested && provider && ports.llmEvidenceRuntime) {
     const scope = await ports.flowScope(input.context.projectId, input.context.flowId);
     // The patch's call, tokens and money are set aside before the exploration
@@ -254,7 +253,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall })
       : undefined;
     try {
-      exploration = scope ? await runAutomationStudioRecoveryExploration({
+      explorationResult = scope ? await runAutomationStudioRecoveryExploration({
         binding: ports.llmEvidenceRuntime,
         scope,
         // Authoritative over side effects. `allowSideEffectsWithoutPolicy` is
@@ -285,6 +284,14 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       patchReserve?.release();
     }
   }
+  const exploration = explorationResult?.exploration;
+  // Stage D sees what the exploration saw. Without this the patch was shown
+  // the failure packet alone, and a control only the exploration revealed
+  // could not be named in the repair. No packets, no slot: the request is the
+  // one it always was.
+  const explorationEvidence = explorationResult && explorationResult.explored.length > 0
+    ? { packets: explorationResult.explored, maxBytes: Math.max(1, Math.floor(resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens * 3 * EXPLORATION_EVIDENCE_INPUT_SHARE)) }
+    : undefined;
   const patchResult = patchWillFollow && provider && input.runtimeFlow && input.failedTraceAttempt
     ? await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
@@ -296,6 +303,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       instructions,
       runDetail: input.detail,
       ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
+      ...(explorationEvidence ? { explorationEvidence } : {}),
       ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
       policy: input.context.policy,
       provider,
@@ -320,6 +328,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       patches: patchResult.response.patches,
       explicitProposalGrant: input.executionGrant?.purpose === "diagnose_and_adapt",
       ...(failureEvidence ? { failureEvidence } : {}),
+      // What the request carried, not what the exploration returned: a handle
+      // is checked only against a packet the model was actually shown.
+      ...(patchResult.request.context.explorationEvidence ? { explorationEvidence: patchResult.request.context.explorationEvidence } : {}),
       ...(reusableContextResult ? { reusableContextMetadata: reusableContextResult.metadata } : {}),
       ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
       ...(input.graphOptions ? { graphOptions: input.graphOptions } : {})
@@ -345,6 +356,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         providerCallsOmitted: providerCalls.omitted,
         ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
+        ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
         recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
         diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
@@ -357,6 +369,14 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     summary: flowRunSummaryWithInterventionSummaries(withIntervention)
   };
 }
+
+/**
+ * At most half of what a patch request may carry goes to explored packets.
+ * The packet builder also holds them to the room the rest of the request left,
+ * so this share bounds what exploring adds to a patch call's cost, not whether
+ * the call fits.
+ */
+const EXPLORATION_EVIDENCE_INPUT_SHARE = 0.5;
 
 /** A configured string, or the fallback when the setting is absent or blank. */
 function settingString(value: unknown, fallback: string): string {

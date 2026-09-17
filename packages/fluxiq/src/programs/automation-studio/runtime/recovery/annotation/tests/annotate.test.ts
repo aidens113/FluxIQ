@@ -143,6 +143,125 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   });
 });
 
+// D-3, through the whole recovery path: the exploration looks, finds a control
+// the failure packet did not show, and the patch that follows can name it.
+// The domain stub numbers handles per packet, as the web domain does, so the
+// handle has to say which packet it came from.
+describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to repair", () => {
+  it("shows the patch the pages the exploration returned, and accepts a repair naming a control only they show", async () => {
+    const run = await annotateRepair({ handles: { control: "explored.1:candidate.7" } });
+
+    expect(run.patchRequest?.context.explorationEvidence).toEqual({
+      schemaVersion: "automation-studio.exploration-evidence.v1",
+      packets: [{ evidenceId: "explored.1", toolId: "test.inspect", packet: REVEALED_PAGE }],
+      withheldPackets: 0
+    });
+    expect(run.patchRequest?.context.failureEvidence).toEqual(FAILURE_PAGE);
+    expect(run.asked).toEqual([{ page: "page.revealed", handles: { control: "candidate.7" } }]);
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "temporary_target_override",
+      proposalOnly: true,
+      preflightOk: true,
+      targetResolution: "resolved",
+      targetEvidence: "exploration_evidence"
+    })]);
+    expect(run.detail.changeProposalIds).toHaveLength(1);
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.explorationEvidence).toEqual({ carriedPackets: 1, withheldPackets: 0 });
+  });
+
+  it("still refuses a handle no packet issued, with the refusal it always had", async () => {
+    for (const control of ["candidate.9", "explored.1:candidate.9", "explored.2:candidate.7"]) {
+      const run = await annotateRepair({ handles: { control } });
+
+      expect(run.detail.metadata?.runtimePatchAttempts, control).toEqual([expect.objectContaining({
+        preflightOk: false,
+        targetOverrideRefusal: { status: "absent", reason: "handle_not_issued" }
+      })]);
+      expect(run.detail.changeProposalIds, control).toEqual([]);
+    }
+  });
+
+  it("sends the patch request it always did when there was no exploration", async () => {
+    const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false });
+
+    expect(run.executed).toEqual([]);
+    expect(run.patchRequest?.context).not.toHaveProperty("explorationEvidence");
+    expect(run.asked).toEqual([{ page: "page.failed", handles: { control: "candidate.2" } }]);
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ preflightOk: true, targetEvidence: "failure_evidence" })]);
+    expect(run.detail.metadata?.llmGate).not.toHaveProperty("explorationEvidence");
+  });
+});
+
+const FAILURE_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.failed", controls: ["candidate.2"] };
+const REVEALED_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.revealed", controls: ["candidate.7"] };
+
+type RepairRun = {
+  detail: AutomationStudioFlowRunDetail;
+  patchRequest?: AutomationStudioLlmTaskRequest;
+  asked: Array<{ page: unknown; handles: unknown }>;
+  executed: string[];
+};
+
+/** One recovery under a `diagnose_and_adapt` grant, whose patch names `handles`. */
+async function annotateRepair(options: { handles: Record<string, string>; explorationNeeded?: boolean }): Promise<RepairRun> {
+  const run: RepairRun = { detail: runDetail(), asked: [], executed: [] };
+  const base: Options = { executed: run.executed, captureFailureEvidence: true, ...(options.explorationNeeded === false ? { explorationNeeded: false } : {}) };
+  const policy = adaptationPolicy(false);
+  const patchingProvider: AutomationStudioLlmProvider = {
+    metadata: { provider: "mock", model: "debug-model" },
+    runTask: async (request) => {
+      if (request.expectedOutput !== "runtime_patch") {
+        const answered = await provider(base).runTask(request);
+        const response = (answered as { response: { kind: string; diagnosis?: JsonObject } }).response;
+        return response.kind === "diagnosis" ? { response: { ...response, diagnosis: { ...response.diagnosis, patchNeeded: true } } } : answered;
+      }
+      run.patchRequest = request;
+      return {
+        response: {
+          kind: "runtime_patch",
+          summary: "Point the action at the control the exploration found.",
+          riskLevel: "medium",
+          patches: [{ kind: "temporary_target_override", targetNodeId: "node.action", target: { handles: options.handles }, reason: "The control is behind a disclosure." }]
+        }
+      };
+    }
+  };
+  const pages: AutomationStudioLlmEvidenceRuntimeBinding = {
+    ...binding(base),
+    harnessOptions: {
+      ...harnessOptions(base),
+      implementations: {
+        ...harnessOptions(base).implementations,
+        "test.inspect": async () => {
+          run.executed.push("test.inspect");
+          return { kind: "llm_evidence_tool_execution", evidence: REVEALED_PAGE, effectApplied: false };
+        }
+      }
+    },
+    captureSanitizedFailureEvidence: async () => FAILURE_PAGE,
+    validateTargetOverrideEvidence: (evidence, target) => {
+      run.asked.push({ page: evidence.page, handles: target.handles });
+      const issued = Array.isArray(evidence.controls) ? evidence.controls : [];
+      return Object.values(target.handles).every((handle) => issued.includes(handle))
+        ? { status: "resolved", target: { handles: target.handles, page: evidence.page ?? null } }
+        : { status: "absent", reason: "handle_not_issued" };
+    }
+  };
+  run.detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
+    ports: {
+      ...ports(base),
+      resolveLlmProvider: () => ({ provider: patchingProvider, maxCallsPerRun: 6, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 } }),
+      llmEvidenceRuntime: pages
+    },
+    detail: runDetail(),
+    context: { ...context(base, policy), behavior: { ...behavior(), createAdaptations: true } },
+    runtimeFlow: { schemaVersion: "0.1", flowId: "flow.recovery", ownerKind: "policy", ownerId: "project.recovery", name: "Recovery flow", nodes: [{ id: "node.action", definitionId: "builtin.policy.action" }], edges: [], createdAt: 1, updatedAt: 1 },
+    failedTraceAttempt: failedAttempt(),
+    executionGrant: { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" }
+  });
+  return run;
+}
+
 type Options = {
   executed: string[];
   /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */

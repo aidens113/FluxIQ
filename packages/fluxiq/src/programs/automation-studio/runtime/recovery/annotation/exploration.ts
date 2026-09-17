@@ -27,8 +27,16 @@
 // runtime path never had: the Flow-bootstrap path has had this shape since
 // evidence-guided bootstrap landed, and the runtime path had no equivalent, so
 // `decide` was a parameter with no argument anyone could pass.
+//
+// **It keeps what the domain returned, for the patch.** An exploration exists
+// to find what the failure record could not show -- a control behind a
+// disclosure, a page one step on -- and the patch that follows used to be
+// shown the failure packet alone, so a control only the exploration revealed
+// could not be named in the repair. The packets the bound domain's own options
+// returned, and the loop accepted, come back beside the exploration, each
+// labelled so a handle taken from it can say which packet it came from.
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
   AutomationStudioFlowInstruction,
@@ -39,8 +47,11 @@ import {
   automationStudioHarnessOptionRegistry,
   automationStudioLlmProviderFailureSpendsCall,
   runAutomationStudioLlmHarness,
+  type AutomationStudioHarnessOptionLoopBinding,
   type AutomationStudioLlmEvidenceLoopInput,
   type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioLlmEvidenceToolExecutionResult,
+  type AutomationStudioLlmHarnessInput,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetDiagnostic,
   type AutomationStudioLlmRunBudgetLedger,
@@ -108,14 +119,64 @@ export type AutomationStudioRecoveryExplorationInput = {
   now?: () => number;
 };
 
+/** One packet an exploration returned, labelled for the runtime patch request. */
+export type AutomationStudioRecoveryExploredPacket = NonNullable<AutomationStudioLlmHarnessInput["explorationEvidence"]>["packets"][number];
+
+export type AutomationStudioRecoveryExplorationResult = {
+  exploration: AutomationStudioRuntimeExploration;
+  /**
+   * The packets the bound domain's own options returned and the loop
+   * accepted, oldest first, labelled `explored.1`, `explored.2`, ... Empty when
+   * it returned none. Whatever the outcome: a page seen before a limit ended
+   * the exploration was still seen. Unbounded here; the patch request bounds
+   * what it carries.
+   */
+  explored: AutomationStudioRecoveryExploredPacket[];
+};
+
+/** Core's label for an explored packet, and the qualifier a handle taken from it carries. */
+const EXPLORED_PACKET_LABEL_PREFIX = "explored.";
+const QUALIFIED_HANDLE = /^(explored\.[1-9][0-9]{0,2}):(.+)$/u;
+
+/**
+ * A handle as a runtime patch wrote it, read the one way Core writes it.
+ *
+ * `qualified` names the explored packet it was taken from, by the label this
+ * module gave it, and carries the handle as that packet issued it. Anything
+ * without the qualifier is `unqualified` and stands exactly as written: a
+ * handle taken from the failure packet, which is how every handle was read
+ * before explored packets reached a patch.
+ */
+export function automationStudioExploredEvidenceHandle(
+  handle: string
+): { kind: "unqualified"; handle: string } | { kind: "qualified"; evidenceId: string; handle: string } {
+  const qualified = QUALIFIED_HANDLE.exec(handle);
+  return qualified ? { kind: "qualified", evidenceId: qualified[1]!, handle: qualified[2]! } : { kind: "unqualified", handle };
+}
+
 /** One bounded exploration on the recovery path, ending in one named outcome. */
 export async function runAutomationStudioRecoveryExploration(
   input: AutomationStudioRecoveryExplorationInput
-): Promise<AutomationStudioRuntimeExploration> {
-  const loop = automationStudioHarnessOptionRegistry({ binding: input.binding }).evidenceLoopBinding(
+): Promise<AutomationStudioRecoveryExplorationResult> {
+  const registryLoop = automationStudioHarnessOptionRegistry({ binding: input.binding }).evidenceLoopBinding(
     { projectId: input.context.projectId, flowId: input.context.flowId, runId: input.context.runId },
     { scope: input.scope, stage: "gather", policy: input.policy }
   );
+  // Only the bound domain's own options issue packets whose handles its target
+  // check can resolve. Core's neutral options may return evidence too; it is
+  // not a page, and carrying it to the patch would cost bytes and name nothing.
+  const domainToolIds = new Set(input.binding.tools.map((tool) => tool.toolId));
+  if (input.binding.harnessOptions) for (const option of input.binding.harnessOptions.options) domainToolIds.add(option.toolId);
+  const returned: Array<{ callId: string; toolId: string; packet: JsonObject }> = [];
+  const loop: AutomationStudioHarnessOptionLoopBinding = {
+    tools: registryLoop.tools,
+    executeTool: async (call) => {
+      const execution = await registryLoop.executeTool(call);
+      const packet = domainToolIds.has(call.toolId) ? returnedPacket(execution) : undefined;
+      if (packet) returned.push({ callId: call.callId, toolId: call.toolId, packet });
+      return execution;
+    }
+  };
   // The exploration is billed to the run's own LLM budget, beside the diagnosis
   // and the patch, because it is model spend on this run. That budget is bounded
   // by tokens and money, not by a small call count -- a two-call run is what
@@ -140,13 +201,30 @@ export async function runAutomationStudioRecoveryExploration(
   // limit, not a fault, so it is renamed -- and only here, because the
   // exploration's own ledger always outranks this: a wall clock or an action cap
   // that fired first leaves an outcome that is not `failed` and is left alone.
-  if (!runBudgetRefusal || exploration.outcome !== "failed") return exploration;
-  return {
+  const ended = !runBudgetRefusal || exploration.outcome !== "failed" ? exploration : {
     ...exploration,
     outcome: AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET[runBudgetRefusal],
     reason: "The run's own LLM budget could not pay for the next exploration decision, so the exploration stopped.",
     endedBy: runBudgetRefusal
   };
+  // The loop records an accepted step with its call id and the bytes it
+  // carried; a step it refused -- too large, a repeat -- has neither, and its
+  // packet was never evidence.
+  const accepted = new Set(ended.trace.flatMap((step) => step.decision === "tool_call" && step.callId !== undefined && step.evidenceBytes !== undefined ? [step.callId] : []));
+  const explored = returned
+    .filter((entry) => accepted.has(entry.callId))
+    .map((entry, index) => ({ evidenceId: `${EXPLORED_PACKET_LABEL_PREFIX}${index + 1}`, toolId: entry.toolId, packet: entry.packet }));
+  return { exploration: ended, explored };
+}
+
+/** The packet an option returned, when what it returned is one: a JSON object that names its schema. */
+function returnedPacket(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): JsonObject | undefined {
+  const evidence: unknown = isRecord(execution) && execution.kind === "llm_evidence_tool_execution" ? execution.evidence : execution;
+  return isRecord(evidence) && typeof evidence.schemaVersion === "string" ? evidence as JsonObject : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**

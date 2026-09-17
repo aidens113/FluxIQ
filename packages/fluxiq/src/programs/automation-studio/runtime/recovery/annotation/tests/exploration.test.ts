@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import {
   AutomationStudioLlmRunBudgetLedger,
@@ -17,7 +18,7 @@ import { runAutomationStudioRecoveryExploration } from "../exploration.ts";
 describe("runAutomationStudioRecoveryExploration", () => {
   it("stops before the first provider call when the whole recovery is already out of time", async () => {
     const calls: string[] = [];
-    const exploration = await runAutomationStudioRecoveryExploration({
+    const { exploration } = await runAutomationStudioRecoveryExploration({
       ...base(calls),
       recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: 0, maxDurationMs: 1 }),
       now: () => 10_000
@@ -37,7 +38,7 @@ describe("runAutomationStudioRecoveryExploration", () => {
 
   it("ends in unsafe_action_blocked when the domain refuses what the model asked for", async () => {
     const calls: string[] = [];
-    const exploration = await runAutomationStudioRecoveryExploration({
+    const { exploration } = await runAutomationStudioRecoveryExploration({
       ...base(calls, "test.refused.unsafe"),
       recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() }),
       budget: resolveAutomationStudioExplorationBudget({ maxRefusedActions: 1 })
@@ -52,7 +53,94 @@ describe("runAutomationStudioRecoveryExploration", () => {
     });
     expect(exploration.result).toBeUndefined();
   });
+
+  // The patch that follows is shown what the exploration saw. What comes back
+  // is the domain's own packets, in the order they were returned, each with the
+  // label a handle taken from it will carry -- and nothing that was not a page.
+  it("returns the domain's packets the loop accepted, labelled in order, and no refusal", async () => {
+    const calls: string[] = [];
+    const first = { schemaVersion: "test.page.v1", controls: ["candidate.1"] };
+    const second = { schemaVersion: "test.page.v1", controls: ["candidate.1", "candidate.2"] };
+    const { exploration, explored } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: pagesBinding(calls, { "test.inspect": first, "test.refused": { ok: false, code: "test.nothing_there" }, "test.reveal": second }),
+      provider: sequenceProvider(calls, ["test.inspect", "test.refused", "test.reveal"]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(calls).toEqual(["provider", "test.inspect", "provider", "test.refused", "provider", "test.reveal", "provider"]);
+    expect(exploration.outcome).toBe("evidence_gathered");
+    expect(explored).toEqual([
+      { evidenceId: "explored.1", toolId: "test.inspect", packet: first },
+      { evidenceId: "explored.2", toolId: "test.reveal", packet: second }
+    ]);
+  });
+
+  it("returns no packet the loop refused, and none when the exploration never ran", async () => {
+    const calls: string[] = [];
+    const oversized = { schemaVersion: "test.page.v1", text: "x".repeat(5_000) };
+    const refused = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: pagesBinding(calls, { "test.inspect": oversized }),
+      provider: sequenceProvider(calls, ["test.inspect"]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() }),
+      budget: resolveAutomationStudioExplorationBudget({ maxEvidenceBytes: 4_096 })
+    });
+    expect(calls).toEqual(["provider", "test.inspect"]);
+    expect(refused.exploration.outcome).not.toBe("evidence_gathered");
+    expect(refused.explored).toEqual([]);
+
+    const notRun = await runAutomationStudioRecoveryExploration({
+      ...base([]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: 0, maxDurationMs: 1 }),
+      now: () => 10_000
+    });
+    expect(notRun.explored).toEqual([]);
+  });
 });
+
+/** Observing options that each return a fixed value, recorded as they run. */
+function pagesBinding(calls: string[], pages: Record<string, JsonObject>): AutomationStudioLlmEvidenceRuntimeBinding {
+  return {
+    domainId: "test.domain",
+    deniedEvidenceKeys: [],
+    tools: [],
+    harnessOptions: {
+      schemaVersion: "0.1",
+      domainId: "test.domain",
+      options: Object.keys(pages).map((toolId) => ({
+        toolId,
+        description: `Return ${toolId}.`,
+        inputSchema: { type: "object", additionalProperties: false, properties: {} },
+        effect: "observe" as const,
+        availability: { kind: "domain" as const, domainId: "test.domain" },
+        safety: { sideEffect: "observe" as const },
+        stages: ["gather" as const, "iterate" as const]
+      })),
+      implementations: Object.fromEntries(Object.entries(pages).map(([toolId, page]) => [toolId, async () => {
+        calls.push(toolId);
+        return { kind: "llm_evidence_tool_execution" as const, evidence: page, effectApplied: false };
+      }]))
+    },
+    executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); }
+  };
+}
+
+/** Calls each tool once, in order, then completes. */
+function sequenceProvider(calls: string[], toolIds: string[]): AutomationStudioLlmProvider {
+  return {
+    metadata: { provider: "mock", model: "debug-model" },
+    runTask: async (request) => {
+      calls.push("provider");
+      const iteration = request.context.evidenceLoop?.iteration ?? 0;
+      const toolId = toolIds[iteration - 1];
+      const decision = toolId
+        ? { kind: "tool_call" as const, callId: `call.${iteration}`, toolId, input: {} }
+        : { kind: "complete" as const, result: { findings: "The control is behind the disclosure." } };
+      return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision } };
+    }
+  };
+}
 
 function base(calls: string[], resultCode?: string) {
   const detail = runDetail();

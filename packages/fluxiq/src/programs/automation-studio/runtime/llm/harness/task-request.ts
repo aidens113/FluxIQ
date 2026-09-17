@@ -43,6 +43,23 @@ export type AutomationStudioLlmTaskResult = {
   intervention: AutomationStudioFlowIntervention;
 };
 
+/**
+ * One packet a recovery's exploration returned, as a runtime patch is shown it.
+ *
+ * A domain numbers its handles per packet, so `target.3` in the failure packet
+ * and `target.3` in a page the exploration revealed are different controls.
+ * `evidenceId` is Core's label for the packet within one request, and a handle
+ * taken from it is written `<evidenceId>:<handle>`, which is how the target
+ * check knows which packet to ask the domain about. It never contains a colon.
+ */
+export type AutomationStudioLlmExploredEvidencePacket = {
+  evidenceId: string;
+  /** The option that returned the packet. */
+  toolId: string;
+  /** The packet exactly as the domain issued it. Core bounds it and never edits it. */
+  packet: JsonObject;
+};
+
 export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolutionInput & {
   taskKind: AutomationStudioLlmTaskKind;
   /** Which stage of the loop's fixed order this call belongs to. Naming one
@@ -70,6 +87,16 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
   failureEvidence?: JsonObject;
+  /** The packets a bounded exploration returned before a runtime patch was
+   * asked for, oldest first, and the most bytes they may take. Runtime patch
+   * only: any other task carrying them is refused when the packet is built.
+   * The packet carries the newest that fit and counts the rest as withheld, so
+   * what the model was shown -- `context.explorationEvidence` -- is the only
+   * list a handle may be checked against. Requires `deniedEvidenceKeys`. */
+  explorationEvidence?: {
+    packets: readonly AutomationStudioLlmExploredEvidencePacket[];
+    maxBytes: number;
+  };
   /** The standardized recovery context for this failure, already built and
    * budgeted by the caller. It reaches the packet only for a runtime task. */
   recoveryContext?: AutomationStudioRuntimeRecoveryContext;
