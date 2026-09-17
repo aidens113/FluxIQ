@@ -68,11 +68,27 @@ describe("decideAutomationStudioRuntimeLlmInvocation", () => {
       settings: settings(),
       policy: policy(),
       failedAttempt: failedAttempt([]),
-      adaptations: [knownAdaptation()]
+      adaptations: [knownAdaptation("validated")]
     });
 
     expect(decision).toMatchObject({ invoke: false, knownAdaptationAvailable: true, requiredPriorAction: "known_adaptation" });
-    expect(decision.diagnosis?.resolution).toBe("known_adaptation");
+    expect(decision.diagnosis).toMatchObject({ resolution: "known_adaptation", knownAdaptationIds: ["adaptation.known"] });
+  });
+
+  // D-2. An applied repair is already part of the Flow, so the same node
+  // failing again means the repair did not hold. Treating it as the known answer
+  // left a repaired node that drifted again with nothing that could ever fix it.
+  it("asks the model again when a node with an applied repair fails again", () => {
+    const decision = decideAutomationStudioRuntimeLlmInvocation({
+      ...runIdentity(),
+      settings: settings(),
+      policy: policy(),
+      failedAttempt: failedAttempt([]),
+      adaptations: [knownAdaptation("applied")]
+    });
+
+    expect(decision).toMatchObject({ invoke: true, knownAdaptationAvailable: false, requiredPriorAction: "none" });
+    expect(decision.diagnosis).toMatchObject({ resolution: "model_required", knownAdaptationIds: [], recurredAdaptationIds: ["adaptation.known"] });
   });
 
   it.each(["blocked_by_capability_or_policy", "auth_required", "user_intervention_required", "graph_validation_or_unknown_node", "external_side_effect_denied"] as const)(
@@ -122,7 +138,7 @@ function failedAttempt(candidates: NonNullable<AutomationStudioNodeAttemptTrace[
     : trace;
 }
 
-function knownAdaptation(): AutomationStudioFlowAdaptation {
+function knownAdaptation(status: AutomationStudioFlowAdaptation["status"]): AutomationStudioFlowAdaptation {
   return {
     schemaVersion: "0.1",
     adaptationId: "adaptation.known",
@@ -132,7 +148,7 @@ function knownAdaptation(): AutomationStudioFlowAdaptation {
     failedAction: { nodeId: "node.action", definitionId: "builtin.policy.action" },
     patch: [{ kind: "edit_expectation", targetId: "node.action", summary: "Wait longer." }],
     validationResults: [{ runId: "run.earlier", status: "succeeded", checkedAt: 1 }],
-    status: "applied",
+    status,
     author: "runtime",
     riskLevel: "low",
     createdAt: 1,

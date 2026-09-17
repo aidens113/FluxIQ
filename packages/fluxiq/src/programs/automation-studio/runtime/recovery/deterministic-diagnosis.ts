@@ -10,7 +10,9 @@
 // That ordering is not a cost optimization, or not only one. A run whose
 // failure already has a deterministic recovery, or a validated adaptation that
 // matched it before, has a *known* answer; asking a model at that point
-// substitutes a guess for it. And a failure that needs a person -- a sign-in, a
+// substitutes a guess for it. An *applied* adaptation is not a known answer:
+// it is already in the Flow, so its failure recurring means it did not hold,
+// and the model is asked (D-2). And a failure that needs a person -- a sign-in, a
 // dialog, a policy refusal, a graph that does not validate -- is not made
 // answerable by asking more cleverly. In both cases the honest result is the
 // deterministic one, and this module is where it is produced.
@@ -76,8 +78,17 @@ export type AutomationStudioRuntimeDeterministicDiagnosis = {
   deterministicRecoveryAvailable: boolean;
   rerouteAvailable: boolean;
   knownAdaptationAvailable: boolean;
-  /** Identity only. A patch is never carried here; see `context.ts`. */
+  /**
+   * The validated adaptations that answer this failure: what should be applied
+   * next. Identity only. A patch is never carried here; see `context.ts`.
+   */
   knownAdaptationIds: string[];
+  /**
+   * Applied adaptations that match this failure, which happened again with them
+   * already in the Flow. They are why the model is asked rather than an answer.
+   * Present only when there is at least one. Identity only.
+   */
+  recurredAdaptationIds?: string[];
 };
 
 export type AutomationStudioRuntimeDeterministicDiagnosisInput = {
@@ -143,6 +154,7 @@ export function buildAutomationStudioRuntimeDeterministicDiagnosis(
     knownAdaptationAvailable
   });
   const rerouteAvailable = failure.deterministicRecoveryCandidates.some((candidate) => candidate.kind === "reroute");
+  const recurredAdaptationIds = failure.knownAdaptationMatches.filter((match) => match.status === "applied").map((match) => match.adaptationId);
   return {
     schemaVersion: "automation-studio.deterministic-diagnosis.v1",
     failureClass: failure.failureClass,
@@ -156,7 +168,8 @@ export function buildAutomationStudioRuntimeDeterministicDiagnosis(
     deterministicRecoveryAvailable,
     rerouteAvailable,
     knownAdaptationAvailable,
-    knownAdaptationIds: failure.knownAdaptationMatches.map((match) => match.adaptationId)
+    knownAdaptationIds: failure.knownAdaptationMatches.filter((match) => match.known).map((match) => match.adaptationId),
+    ...(recurredAdaptationIds.length ? { recurredAdaptationIds } : {})
   };
 }
 

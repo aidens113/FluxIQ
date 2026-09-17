@@ -27,6 +27,38 @@ describe("automationStudioRuntimeRecoveryTrace", () => {
     expect(trace.stages[3]?.detail).toMatchObject({ outcome: "deterministic_recovery_required" });
   });
 
+  it("names the validated adaptation that answered the failure, and says the model was not asked", () => {
+    const known = deterministic({ resolution: "known_adaptation", modelNeeded: false, knownAdaptationAvailable: true, requiredPriorAction: "known_adaptation", stillAchievable: "yes", knownAdaptationIds: ["adaptation.validated"], reason: "A validated adaptation matches this failure." });
+    const trace = automationStudioRuntimeRecoveryTrace({
+      invocation: invocation({ invoke: false, reason: known.reason, requiredPriorAction: "known_adaptation", knownAdaptationAvailable: true, diagnosis: known }),
+      policy: policy()
+    });
+
+    expect(trace.stages.map((entry) => [entry.stage, entry.status, entry.providerCalled])).toEqual([
+      ["diagnosis", "completed", false],
+      ["recovery_plan", "completed", false],
+      ["exploration", "skipped", false],
+      ["resolution", "skipped", false]
+    ]);
+    expect(trace.stages[0]?.detail).toMatchObject({ knownAdaptationIds: ["adaptation.validated"] });
+    expect(trace.stages[3]).toMatchObject({ detail: { outcome: "known_adaptation_available", knownAdaptationIds: ["adaptation.validated"] } });
+    expect(trace.stages[3]?.reason).toContain("adaptation.validated");
+    expect(trace.stages[3]?.reason).toContain("not asked");
+    expect(trace.refused).toEqual([]);
+  });
+
+  // D-2: a repair already in the Flow that did not hold is why the model is
+  // asked, and the trace says which one.
+  it("names the applied adaptation whose node failed again when the model is asked because of it", () => {
+    const recurred = deterministic({ recurredAdaptationIds: ["adaptation.applied"], reason: "An applied adaptation matches this failure and it happened again with that change in place." });
+    const trace = automationStudioRuntimeRecoveryTrace({ invocation: invocation({ diagnosis: recurred }), policy: policy(), diagnosisOk: true, patchRequested: false });
+
+    expect(trace.stages[0]).toMatchObject({ stage: "diagnosis", status: "completed", providerCalled: true, detail: { recurredAdaptationIds: ["adaptation.applied"] } });
+    expect(trace.stages[0]?.reason).toContain("applied adaptation");
+    expect(trace.stages[0]?.detail).not.toHaveProperty("knownAdaptationIds");
+    expect(trace.stages[3]?.detail).not.toHaveProperty("knownAdaptationIds");
+  });
+
   it("names the loop-protocol stage each recovery stage drove, and only where one was driven", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy() });
     const trace = automationStudioRuntimeRecoveryTrace({

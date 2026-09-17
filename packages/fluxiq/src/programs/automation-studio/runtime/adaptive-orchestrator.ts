@@ -40,7 +40,20 @@ export type AutomationStudioAdaptiveFailure = {
   candidateKind: AutomationStudioAdaptiveCandidateKind;
   routeDecisionId?: string;
   deterministicRecoveryCandidates: AutomationStudioRecoveryCandidate[];
-  knownAdaptationMatches: Array<{ adaptationId: string; status: AutomationStudioFlowAdaptation["status"]; riskLevel: AutomationStudioFlowAdaptation["riskLevel"] }>;
+  /**
+   * Every recorded adaptation that matches this failure, whatever its status.
+   * `known` marks the ones that answer it (see `KNOWN_ADAPTATION_STATUSES`);
+   * the rest are listed because a repair that matched and did not hold is
+   * itself evidence. `matchedBy` says whether the record's own failure
+   * signature matched, or, for a record written without one, its node.
+   */
+  knownAdaptationMatches: Array<{
+    adaptationId: string;
+    status: AutomationStudioFlowAdaptation["status"];
+    riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
+    matchedBy: "failure_signature" | "node_identity";
+    known: boolean;
+  }>;
   llmEligibility: {
     eligible: boolean;
     reason: string;
@@ -67,10 +80,6 @@ export function classifyAutomationStudioAdaptiveFailure(input: AutomationStudioA
   const failureClass = adaptiveFailureClassForAttempt(input.attempt, comparisonStatus);
   const candidateKind = adaptiveCandidateKindForFailure(failureClass, input);
   const deterministicRecoveryCandidates = deterministicRecoveryCandidatesForAttempt(input.attempt);
-  const knownAdaptationMatches = knownAdaptationMatchesForFailure(input, failureClass);
-  const knownRecoveryAvailable = deterministicRecoveryCandidates.length > 0;
-  const knownAdaptationAvailable = knownAdaptationMatches.some((adaptation) => adaptation.status === "applied" || adaptation.status === "validated");
-  const llmEligibility = llmEligibilityForFailure(failureClass, knownRecoveryAvailable, knownAdaptationAvailable);
   const signature = adaptiveFailureSignature(adaptiveFailureSignatureInput({
     flowId: input.flowId,
     subflowId: input.subflowId,
@@ -79,6 +88,11 @@ export function classifyAutomationStudioAdaptiveFailure(input: AutomationStudioA
     comparisonStatus,
     failureClass
   }));
+  const knownAdaptationMatches = knownAdaptationMatchesForFailure(input, signature);
+  const knownRecoveryAvailable = deterministicRecoveryCandidates.length > 0;
+  const knownAdaptationAvailable = knownAdaptationMatches.some((adaptation) => adaptation.known);
+  const appliedAdaptationRecurred = knownAdaptationMatches.some((adaptation) => adaptation.status === "applied");
+  const llmEligibility = llmEligibilityForFailure({ failureClass, knownRecoveryAvailable, knownAdaptationAvailable, appliedAdaptationRecurred });
   return {
     failureId: `adaptive-failure.${input.runId}.${input.attempt.attemptId}`,
     signature,
@@ -178,36 +192,67 @@ function deterministicRecoveryCandidatesForAttempt(attempt: AutomationStudioNode
   return (attempt.recoveryDecision?.candidates ?? []).filter((candidate) => candidate.kind !== "llm_diagnosis");
 }
 
-function knownAdaptationMatchesForFailure(input: AutomationStudioAdaptiveFailureInput, failureClass: AutomationStudioAdaptiveFailureClass): AutomationStudioAdaptiveFailure["knownAdaptationMatches"] {
-  return (input.adaptations ?? [])
-    .filter((adaptation) => adaptationMatchesFailure(adaptation, input, failureClass))
-    .map((adaptation) => ({ adaptationId: adaptation.adaptationId, status: adaptation.status, riskLevel: adaptation.riskLevel }));
+/**
+ * The adaptation statuses that are a known answer to a failure they match.
+ *
+ * Only `validated`: a change that was verified or approved and is not yet part
+ * of the Flow, so applying it is the next move and asking a model would put a
+ * guess in place of a known answer. `applied` is left out on purpose. An applied
+ * change is already in the Flow, so the failure it matches happening again is
+ * the evidence that it did not hold, and only a fresh diagnosis can answer that.
+ * Treating it as known left a repaired node that drifted again with nothing that
+ * could ever repair it (D-2). Every other status is a change nobody has shown to
+ * work.
+ */
+const KNOWN_ADAPTATION_STATUSES: ReadonlySet<AutomationStudioFlowAdaptation["status"]> = new Set(["validated"]);
+
+function knownAdaptationMatchesForFailure(input: AutomationStudioAdaptiveFailureInput, signature: string): AutomationStudioAdaptiveFailure["knownAdaptationMatches"] {
+  return (input.adaptations ?? []).flatMap((adaptation) => {
+    const matchedBy = adaptationMatchBasis(adaptation, input, signature);
+    return matchedBy
+      ? [{ adaptationId: adaptation.adaptationId, status: adaptation.status, riskLevel: adaptation.riskLevel, matchedBy, known: KNOWN_ADAPTATION_STATUSES.has(adaptation.status) }]
+      : [];
+  });
 }
 
-function adaptationMatchesFailure(adaptation: AutomationStudioFlowAdaptation, input: AutomationStudioAdaptiveFailureInput, failureClass: AutomationStudioAdaptiveFailureClass): boolean {
+/**
+ * How a recorded adaptation matches this failure, or `undefined` when it does not.
+ *
+ * A record that names the failure it was written for is matched by that name and
+ * nothing else. The signature carries the failure class, so the same node failing
+ * for a different reason is a different failure, and a repair for the first says
+ * nothing about the second. It never falls back to its node.
+ *
+ * A record written before signatures existed is matched by the node it repaired,
+ * and only by that: the same node and definition, in the same Subflow when both
+ * name one. The earlier free-text match on the trigger is gone, because it
+ * matched any node in a Subflow whose trigger happened to name the class.
+ */
+function adaptationMatchBasis(
+  adaptation: AutomationStudioFlowAdaptation,
+  input: AutomationStudioAdaptiveFailureInput,
+  signature: string
+): AutomationStudioAdaptiveFailure["knownAdaptationMatches"][number]["matchedBy"] | undefined {
+  const recorded = adaptation.metadata?.failureSignature;
+  if (typeof recorded === "string" && recorded.length > 0) return recorded === signature ? "failure_signature" : undefined;
+  if (adaptation.subflowId && input.subflowId && adaptation.subflowId !== input.subflowId) return undefined;
   const failedAction = adaptation.failedAction as JsonObject | undefined;
-  if (failedAction?.nodeId === input.attempt.nodeId && failedAction?.definitionId === input.attempt.definitionId) return true;
-  if (adaptation.subflowId && input.subflowId && adaptation.subflowId === input.subflowId && adaptation.trigger.toLowerCase().includes(failureClass.replace(/_/g, " "))) return true;
-  return adaptation.metadata?.failureSignature === adaptiveFailureSignature(adaptiveFailureSignatureInput({
-    flowId: input.flowId,
-    subflowId: input.subflowId,
-    nodeId: input.attempt.nodeId,
-    definitionId: input.attempt.definitionId,
-    comparisonStatus: input.attempt.transitionComparison?.status,
-    failureClass
-  }));
+  return failedAction?.nodeId === input.attempt.nodeId && failedAction?.definitionId === input.attempt.definitionId ? "node_identity" : undefined;
 }
 
-function llmEligibilityForFailure(
-  failureClass: AutomationStudioAdaptiveFailureClass,
-  knownRecoveryAvailable: boolean,
-  knownAdaptationAvailable: boolean
-): AutomationStudioAdaptiveFailure["llmEligibility"] {
+function llmEligibilityForFailure(input: {
+  failureClass: AutomationStudioAdaptiveFailureClass;
+  knownRecoveryAvailable: boolean;
+  knownAdaptationAvailable: boolean;
+  appliedAdaptationRecurred: boolean;
+}): AutomationStudioAdaptiveFailure["llmEligibility"] {
+  const { failureClass, knownRecoveryAvailable, knownAdaptationAvailable } = input;
   if (knownRecoveryAvailable) return { eligible: false, reason: "A deterministic recovery candidate is available and should run before LLM intervention.", knownRecoveryAvailable, knownAdaptationAvailable };
-  if (knownAdaptationAvailable) return { eligible: false, reason: "A known validated/applied adaptation matches this failure.", knownRecoveryAvailable, knownAdaptationAvailable };
+  if (knownAdaptationAvailable) return { eligible: false, reason: "A validated adaptation matches this failure and is not yet applied.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (failureClass === "blocked_by_capability_or_policy" || failureClass === "external_side_effect_denied") return { eligible: false, reason: "Policy, authorization, or side-effect gates blocked execution.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (failureClass === "auth_required" || failureClass === "user_intervention_required") return { eligible: false, reason: "A person must authenticate or intervene before the run can continue.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (failureClass === "graph_validation_or_unknown_node") return { eligible: false, reason: "Graph validation or missing implementation must be fixed structurally before LLM runtime repair.", knownRecoveryAvailable, knownAdaptationAvailable };
+  if (input.appliedAdaptationRecurred) return { eligible: true, reason: "An applied adaptation matches this failure and it happened again with that change in place, so the failure is unresolved.", knownRecoveryAvailable, knownAdaptationAvailable };
   return { eligible: true, reason: "Failure is unresolved after deterministic recovery lookup.", knownRecoveryAvailable, knownAdaptationAvailable };
 }
 

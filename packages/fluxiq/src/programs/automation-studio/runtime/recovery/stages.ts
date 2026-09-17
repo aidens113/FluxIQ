@@ -15,6 +15,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy } from "../../model/index.ts";
+import type { AutomationStudioRuntimeDeterministicDiagnosis } from "./deterministic-diagnosis.ts";
 import type { AutomationStudioRuntimeLlmInvocationDecision } from "./llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery, type AutomationStudioRuntimeRecoveryPlan } from "./plan.ts";
 import { automationStudioExplorationTraceEvent, type AutomationStudioRuntimeExploration } from "./runtime-exploration.ts";
@@ -67,7 +68,8 @@ function diagnosisEvent(input: AutomationStudioRuntimeRecoveryTraceInput, plan: 
       stillAchievable: plan.diagnosis.stillAchievable,
       deterministicRecoveryPossible: plan.diagnosis.deterministicRecoveryPossible,
       modelFieldCount: plan.diagnosis.modelFields.length,
-      refusalCount: plan.diagnosis.refusals.length
+      refusalCount: plan.diagnosis.refusals.length,
+      ...adaptationIdentity(deterministic)
     }
     : { resolution: "unclassified" };
   if (!deterministic) {
@@ -117,6 +119,9 @@ function resolutionEvent(input: AutomationStudioRuntimeRecoveryTraceInput, plan:
   const patchAttemptCount = input.patchAttemptCount ?? 0;
   const outcome = resolutionOutcome({ plan, adaptationCount, changeProposalCount, diagnosisFailed: input.diagnosisOk === false || Boolean(input.diagnosisFailure) });
   const produced = adaptationCount > 0 || changeProposalCount > 0;
+  // The known adaptation is named where it is the outcome, so a reader can tell
+  // which change the run is waiting on without opening the plan.
+  const knownAdaptationIds = outcome === "known_adaptation_available" ? input.invocation?.diagnosis?.knownAdaptationIds ?? [] : [];
   return {
     stage: "resolution",
     status: produced ? "completed" : "skipped",
@@ -124,8 +129,20 @@ function resolutionEvent(input: AutomationStudioRuntimeRecoveryTraceInput, plan:
     ...(input.patchRequested === true ? { loopStage: AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES.resolution } : {}),
     // Never "the recovery worked": what was produced is observable now, whether
     // it works is a verdict from evidence observed afterwards.
-    reason: resolutionReason(outcome),
-    detail: { outcome, adaptationCount, changeProposalCount, patchAttemptCount }
+    reason: resolutionReason(outcome, knownAdaptationIds),
+    detail: { outcome, adaptationCount, changeProposalCount, patchAttemptCount, ...(knownAdaptationIds.length ? { knownAdaptationIds: [...knownAdaptationIds] } : {}) }
+  };
+}
+
+/**
+ * Which recorded adaptations the diagnosis turned on, by id and nothing else.
+ * Adaptation ids are Core's own identifiers, so naming them keeps the trace
+ * free of page content and of any repair target.
+ */
+function adaptationIdentity(diagnosis: AutomationStudioRuntimeDeterministicDiagnosis): JsonObject {
+  return {
+    ...(diagnosis.knownAdaptationIds.length ? { knownAdaptationIds: [...diagnosis.knownAdaptationIds] } : {}),
+    ...(diagnosis.recurredAdaptationIds?.length ? { recurredAdaptationIds: [...diagnosis.recurredAdaptationIds] } : {})
   };
 }
 
@@ -154,9 +171,12 @@ function resolutionOutcome(input: {
   return "no_change_produced";
 }
 
-function resolutionReason(outcome: AutomationStudioRecoveryResolutionOutcome): string {
+function resolutionReason(outcome: AutomationStudioRecoveryResolutionOutcome, knownAdaptationIds: readonly string[]): string {
   if (outcome === "deterministic_recovery_required") return "A deterministic recovery is available and is what should run next.";
-  if (outcome === "known_adaptation_available") return "A known adaptation already matches this failure and is what should be applied.";
+  if (outcome === "known_adaptation_available") {
+    const named = knownAdaptationIds.length ? `Validated adaptation ${knownAdaptationIds.join(", ")}` : "A validated adaptation";
+    return `${named} already matches this failure and is not yet applied, so the model was not asked. Applying it is what should happen next.`;
+  }
   if (outcome === "manual_intervention_required") return "This failure needs a person, so the loop produced no change.";
   if (outcome === "adaptation_recorded") return "An adaptation was recorded. Whether it repairs the failure is decided from evidence observed afterwards.";
   if (outcome === "proposal_recorded") return "A change proposal was recorded for review, and nothing was applied.";

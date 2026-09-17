@@ -83,11 +83,52 @@ describe("Automation Studio adaptive failure classifier", () => {
       adaptations: [adaptation]
     });
 
-    expect(failure.knownAdaptationMatches).toEqual([{ adaptationId: "adaptation.submit", status: "validated", riskLevel: "low" }]);
+    expect(failure.knownAdaptationMatches).toEqual([{ adaptationId: "adaptation.submit", status: "validated", riskLevel: "low", matchedBy: "node_identity", known: true }]);
     expect(failure.llmEligibility).toMatchObject({
       eligible: false,
       knownAdaptationAvailable: true
     });
+  });
+
+  // D-2: an applied change is already in the Flow. Its node failing again is
+  // the evidence that it did not hold, not a known answer to the failure.
+  it("still lists an applied adaptation that matches, and keeps the failure eligible for the model", () => {
+    const failure = classify(failedAttempt(), [adaptation({ status: "applied" })]);
+
+    expect(failure.knownAdaptationMatches).toEqual([{ adaptationId: "adaptation.submit", status: "applied", riskLevel: "low", matchedBy: "node_identity", known: false }]);
+    expect(failure.llmEligibility).toMatchObject({ eligible: true, knownAdaptationAvailable: false });
+    expect(failure.llmEligibility.reason).toContain("applied");
+    expect(compactAutomationStudioAdaptiveFailure(failure)).toMatchObject({ knownAdaptationIds: ["adaptation.submit"], llmEligibility: { eligible: true } });
+  });
+
+  it("matches a record that carries a failure signature by that signature alone", () => {
+    const targetMiss = failedAttempt({ failure: { category: "target_not_found", code: "web.target.selector_miss", retryable: true } });
+    const timeout = failedAttempt({ failure: { category: "timeout", code: "output_dispatch.timed_out", retryable: true } });
+    const signed = adaptation({ status: "validated", metadata: { failureSignature: classify(targetMiss).signature } });
+
+    expect(classify(targetMiss, [signed])).toMatchObject({
+      knownAdaptationMatches: [{ adaptationId: "adaptation.submit", matchedBy: "failure_signature", known: true }],
+      llmEligibility: { eligible: false, knownAdaptationAvailable: true }
+    });
+    // Same node and definition, different failure: the signed record does not
+    // fall back to node identity.
+    expect(classify(timeout, [signed])).toMatchObject({ knownAdaptationMatches: [], llmEligibility: { eligible: true, knownAdaptationAvailable: false } });
+  });
+
+  it("matches a record without a signature by node identity only", () => {
+    const otherNode = adaptation({ status: "validated", failedAction: { nodeId: "elsewhere", definitionId: "builtin.policy.action" } });
+    const otherDefinition = adaptation({ status: "validated", failedAction: { nodeId: "submit", definitionId: "builtin.policy.other" } });
+    const otherSubflow = adaptation({ status: "validated", subflowId: "subflow.other" });
+    // The old heuristic matched any node in the Subflow whose trigger text named
+    // the failure class. That is not node identity, and it no longer matches.
+    const triggerOnly = adaptation({ status: "validated", subflowId: "subflow.primary", trigger: "Previous action failed", failedAction: { nodeId: "elsewhere", definitionId: "builtin.policy.action" } });
+
+    for (const record of [otherNode, otherDefinition, otherSubflow, triggerOnly]) {
+      expect(classifyAutomationStudioAdaptiveFailure({ ...runIdentity(), subflowId: "subflow.primary", attempt: failedAttempt(), adaptations: [record] }))
+        .toMatchObject({ failureClass: "action_failed", knownAdaptationMatches: [], llmEligibility: { eligible: true } });
+    }
+    expect(classify(failedAttempt(), [adaptation({ status: "validated", subflowId: "subflow.other" })]))
+      .toMatchObject({ knownAdaptationMatches: [{ matchedBy: "node_identity", known: true }] });
   });
 
   it("classifies policy and graph failures as diagnosis-only or structural fixes", () => {
@@ -158,8 +199,30 @@ describe("Automation Studio adaptive failure classifier", () => {
   });
 });
 
-function classify(attempt: AutomationStudioNodeAttemptTrace) {
-  return classifyAutomationStudioAdaptiveFailure({ projectId: "project.adaptive", flowId: "flow.checkout", runId: "run.failed", attempt });
+function classify(attempt: AutomationStudioNodeAttemptTrace, adaptations?: AutomationStudioFlowAdaptation[]) {
+  return classifyAutomationStudioAdaptiveFailure({ ...runIdentity(), attempt, ...(adaptations ? { adaptations } : {}) });
+}
+
+function runIdentity(): { projectId: string; flowId: string; runId: string } {
+  return { projectId: "project.adaptive", flowId: "flow.checkout", runId: "run.failed" };
+}
+
+function adaptation(overrides: Pick<AutomationStudioFlowAdaptation, "status"> & Partial<AutomationStudioFlowAdaptation>): AutomationStudioFlowAdaptation {
+  return {
+    schemaVersion: "0.1",
+    adaptationId: "adaptation.submit",
+    flowId: "flow.checkout",
+    projectId: "project.adaptive",
+    sourceRunId: "run.previous",
+    trigger: "A repair for the submit action.",
+    failedAction: { nodeId: "submit", definitionId: "builtin.policy.action" },
+    patch: [{ kind: "edit_action_target", targetId: "submit", summary: "Use visible submit button." }],
+    author: "runtime",
+    riskLevel: "low",
+    createdAt: 1,
+    updatedAt: 2,
+    ...overrides
+  };
 }
 
 function failedAttempt(overrides: Partial<AutomationStudioNodeAttemptTrace> = {}): AutomationStudioNodeAttemptTrace {
