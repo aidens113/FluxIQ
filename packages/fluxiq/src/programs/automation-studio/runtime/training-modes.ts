@@ -1,5 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioChangeProposalKind, AutomationStudioChangeProposalMode, AutomationStudioChangeProposalStatus, AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow } from "../model/index.ts";
+import type { AutomationStudioBootstrapAdaptationMode } from "./flow-bootstrap/index.ts";
+import type { AutomationStudioChangeConfidenceDecision } from "./flow-change/index.ts";
 
 export type AutomationStudioTrainingAdaptationSummary = {
   adaptationId: string;
@@ -126,15 +128,26 @@ export type AutomationStudioProposalApprovalGateDecision = {
   reason: string;
 };
 
-export type AutomationStudioAdaptationPromotionGateInput = {
+/** What every automatic promotion gate weighs besides the change's own shape. */
+type AutomationStudioPromotionGateSharedInput = {
   approvalMode: AutomationStudioChangeProposalMode;
   riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
-  patchKinds: AutomationStudioChangeProposalKind[];
-  validated: boolean;
   promoteAdaptations: boolean;
   requireFirstManualReview?: boolean;
   priorManualReviewExists?: boolean;
   hasExternalSideEffects?: boolean;
+};
+
+/** `confidence` is the tier the change's saved trials and replays earn (`adaptationConfidence`). */
+export type AutomationStudioAdaptationPromotionGateInput = AutomationStudioPromotionGateSharedInput & { patchKinds: AutomationStudioChangeProposalKind[] } & (
+  | { confidence: AutomationStudioChangeConfidenceDecision; validated?: never }
+  | { /** @deprecated A caller's claim, read only while `service.ts` still passes it; pass `confidence`. */ validated: boolean; confidence?: never }
+);
+
+/** `mode` is `create` for a blank Flow and `extend` for one that already runs; upgrade a record saved without one first. */
+export type AutomationStudioBootstrapApplyGateInput = AutomationStudioPromotionGateSharedInput & {
+  mode: AutomationStudioBootstrapAdaptationMode;
+  confidence: AutomationStudioChangeConfidenceDecision;
 };
 
 export type AutomationStudioAdaptationPromotionGateDecision = {
@@ -305,16 +318,57 @@ export function decideAutomationStudioProposalApprovalGate(input: AutomationStud
 
 export function decideAutomationStudioAdaptationPromotionGate(input: AutomationStudioAdaptationPromotionGateInput): AutomationStudioAdaptationPromotionGateDecision {
   if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Adaptation promotion is disabled by training mode or settings." };
-  if (!input.validated) return { autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." };
-  if (input.riskLevel === "destructive") return { autoApply: false, requiresManualApproval: true, reason: "Destructive adaptations always require manual review." };
-  if (input.riskLevel === "high") return { autoApply: false, requiresManualApproval: true, reason: "High-risk adaptations require manual review." };
-  if (input.hasExternalSideEffects) return { autoApply: false, requiresManualApproval: true, reason: "External side effects require manual review before durable promotion." };
-  if (input.requireFirstManualReview && !input.priorManualReviewExists) return { autoApply: false, requiresManualApproval: true, reason: "First automatic promotion is blocked until a manual review has been completed." };
-  if (input.approvalMode === "manual") return { autoApply: false, requiresManualApproval: true, reason: "Manual adaptation approval mode requires explicit review." };
+  const evidence = input.confidence ? promotionEvidenceRefusal(input.confidence) : input.validated === true ? undefined : UNVALIDATED_REASON;
+  if (evidence) return manualReview(evidence);
+  const shared = sharedPromotionRefusal(input);
+  if (shared) return manualReview(shared);
   const structuralPatch = input.patchKinds.some((kind) => kind === "create_subflow" || kind === "edit_subflow" || kind === "edit_router" || kind === "edit_recovery" || kind === "promote_adaptation");
-  if (structuralPatch) return { autoApply: false, requiresManualApproval: true, reason: "Structural adaptations require manual review before durable promotion." };
-  if (input.riskLevel !== "low") return { autoApply: false, requiresManualApproval: true, reason: "Only low-risk adaptations can be promoted automatically." };
+  if (structuralPatch) return manualReview("Structural adaptations require manual review before durable promotion.");
+  if (input.riskLevel !== "low") return manualReview("Only low-risk adaptations can be promoted automatically.");
   return { autoApply: true, requiresManualApproval: false, reason: "Validated low-risk non-structural adaptation can be applied automatically." };
+}
+
+/**
+ * Whether a Flow Bootstrap proposal may be applied without a person, by the same tier rules as a
+ * runtime adaptation. Only a `create` qualifies: a blank Flow has nothing in place to break. An
+ * `extend` changes a running Flow, which is structural; mixed mode routes a new Subflow to a person.
+ */
+export function decideAutomationStudioBootstrapApplyGate(input: AutomationStudioBootstrapApplyGateInput): AutomationStudioAdaptationPromotionGateDecision {
+  if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Automatic application of created Flows is disabled by training mode or settings." };
+  const evidence = promotionEvidenceRefusal(input.confidence);
+  if (evidence) return manualReview(evidence);
+  if (input.mode !== "create") return manualReview("Extending an existing Flow is a structural change and requires manual review.");
+  const shared = sharedPromotionRefusal(input);
+  if (shared) return manualReview(shared);
+  if (input.approvalMode !== "auto") return manualReview("Only auto approval mode applies a created Flow without review; mixed mode sends a new Subflow to a person.");
+  if (input.riskLevel !== "low") return manualReview("Only a low-risk created Flow can be applied automatically.");
+  return { autoApply: true, requiresManualApproval: false, reason: "A created Flow whose trial succeeded, at low risk, can be applied automatically." };
+}
+
+const UNVALIDATED_REASON = "Adaptation must pass validation before promotion.";
+
+// The tier rule both automatic gates share. Only a trial proves a change before it is applied, so
+// no succeeded trial means no promotion however many replays are listed; an `unverified` change,
+// unproven or contradicted by its latest result, waits; anything unrecognisable is refused.
+function promotionEvidenceRefusal(confidence: AutomationStudioChangeConfidenceDecision): string | undefined {
+  if (confidence.tier !== "provisional" && confidence.tier !== "established") {
+    return confidence.lastFailure ? `Its latest ${confidence.lastFailure} failed, so the change is not promoted until a new trial succeeds.` : UNVALIDATED_REASON;
+  }
+  return confidence.trials >= 1 ? undefined : "A change with no succeeded trial is never promoted automatically.";
+}
+
+// The refusals every automatic promotion shares, in the order they are reported.
+function sharedPromotionRefusal(input: AutomationStudioPromotionGateSharedInput): string | undefined {
+  if (input.riskLevel === "destructive") return "Destructive adaptations always require manual review.";
+  if (input.riskLevel === "high") return "High-risk adaptations require manual review.";
+  if (input.hasExternalSideEffects) return "External side effects require manual review before durable promotion.";
+  if (input.requireFirstManualReview && !input.priorManualReviewExists) return "First automatic promotion is blocked until a manual review has been completed.";
+  if (input.approvalMode === "manual") return "Manual adaptation approval mode requires explicit review.";
+  return undefined;
+}
+
+function manualReview(reason: string): AutomationStudioAdaptationPromotionGateDecision {
+  return { autoApply: false, requiresManualApproval: true, reason };
 }
 
 export function automationStudioScopeIsFrozen(settings: AutomationStudioTrainingModeSettings, scope: AutomationStudioFrozenScope): boolean {
