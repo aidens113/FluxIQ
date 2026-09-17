@@ -30,12 +30,13 @@ import type { AutomationStudioProjectStore } from "../projects/index.ts";
 import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore } from "../flows/index.ts";
 import { AutomationStudioSqlSummaryPaging } from "./sql-paging.ts";
-import { SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, adaptiveRuntimeMetricsFromRunDetail, flowRunSummaryWithInterventionSummaries, instructionSummaryFromInstruction, runtimeSessionToFlowRunDetail, runtimeSummaryFromSession } from "./conversions.ts";
+import { SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, instructionSummaryFromInstruction, runtimeSessionToFlowRunDetail, runtimeSummaryFromSession } from "./conversions.ts";
 import type { AutomationStudioAdaptationSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "../indexes/index.ts";
-import { mapWithConcurrency, uniqueStrings, upsertBy } from "../collections.ts";
-import { emptyFlowAdaptationIndex, emptyFlowRunIndex, emptyFlowSubflowIndex, type FlowAdaptationIndex, type FlowInstructionIndex, type FlowRunIndex, type FlowSubflowIndex, type RuntimeIndex } from "../indexes/index.ts";
+import { mapWithConcurrency, uniqueStrings } from "../collections.ts";
+import type { FlowAdaptationIndex, FlowInstructionIndex, FlowRunIndex, FlowSubflowIndex, RuntimeIndex } from "../indexes/index.ts";
 import { subflowSummaryFromSubflow } from "../flows/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
+import { AutomationStudioRunDetailWriter } from "./run-detail-writer.ts";
 
 // The summary indexes every list view reads, their SQL-backed repositories and
 // paging, and the JSONL stream store that run details are appended to. The four
@@ -69,9 +70,12 @@ export class AutomationStudioSummaryStore {
     // on the public method is still honoured. See service/facade-ports.ts.
     private readonly facade: AutomationStudioFacadePorts,
     private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
-  ) {}
+  ) {
+    this.runDetails = new AutomationStudioRunDetailWriter(paths, flowPaths, projects, indexes, this, runtimeProjectDatabasePool);
+  }
 
   private readonly paging = new AutomationStudioSqlSummaryPaging();
+  private readonly runDetails: AutomationStudioRunDetailWriter;
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
     const index = await this.indexes.readRuntimeIndex(projectId);
@@ -89,28 +93,9 @@ export class AutomationStudioSummaryStore {
     return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
   }
 
+  // Merged onto the detail already stored for the run; see run-detail-writer.ts.
   async saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
-    const detailWithMetrics: AutomationStudioFlowRunDetail = {
-      ...detail,
-      metadata: {
-        ...(detail.metadata ?? {}),
-        adaptiveMetrics: adaptiveRuntimeMetricsFromRunDetail(detail)
-      }
-    };
-    const normalizedDetail = { ...detailWithMetrics, summary: flowRunSummaryWithInterventionSummaries(detailWithMetrics) };
-    const { projectId, runId } = normalizedDetail.summary;
-    await this.projects.ensureProjectStructure(projectId);
-    if (await this.tryPersistRuntimeRunDetail(normalizedDetail)) return normalizedDetail;
-    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
-    await Promise.all([
-      this.writeJsonLines(this.flowPaths.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
-      this.writeJsonLines(this.flowPaths.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
-      this.writeJsonLines(this.flowPaths.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
-      this.writeJsonLines(this.flowPaths.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
-    ]);
-    await this.indexes.writeFlowRunIndex(projectId, (index) => ({ schemaVersion: "0.1", runs: upsertBy(index.runs ?? [], "runId", normalizedDetail.summary) }));
-    if (this.paths.root) await this.writeFlowRunSummary(projectId, normalizedDetail.summary);
-    return normalizedDetail;
+    return await this.runDetails.save(detail);
   }
 
   async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
@@ -124,7 +109,10 @@ export class AutomationStudioSummaryStore {
   async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
     await this.projects.findProject(projectId);
     if (!this.paths.root) return;
-    const index = await this.indexes.readFlowAdaptationIndex(projectId).catch(emptyFlowAdaptationIndex);
+    // A missing index reads as empty. One that is present but unreadable throws
+    // here, in every ensure method below: it is an error for an operator to see,
+    // never a reason to rebuild as though nothing had been stored.
+    const index = await this.indexes.readFlowAdaptationIndex(projectId);
     if (!(index.adaptations ?? []).length) {
       await this.flowAdaptationSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
       return;
@@ -138,7 +126,7 @@ export class AutomationStudioSummaryStore {
   async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
     await this.projects.findProject(projectId);
     if (!this.paths.root) return;
-    let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId).catch(() => ({ schemaVersion: "0.1", instructions: [] }));
+    let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId);
     if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
       const details = (await Promise.all((index.instructions ?? []).map((summary) => this.getFlowInstruction(projectId, summary.instructionId))))
         .filter((instruction): instruction is AutomationStudioFlowInstruction => Boolean(instruction));
@@ -156,10 +144,16 @@ export class AutomationStudioSummaryStore {
   async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
     await this.projects.findProject(projectId);
     if (!this.paths.root) return;
-    const index = await this.indexes.readFlowRunIndex(projectId).catch(emptyFlowRunIndex);
+    const index = await this.indexes.readFlowRunIndex(projectId);
     if (!(index.runs ?? []).length) {
-      const sessions = await this.listRuntimeSessions(projectId).catch(() => []);
-      for (const session of sessions) await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
+      // With the typed runtime store in use this index is never written, so an
+      // empty one is the normal state rather than a sign of an unindexed project.
+      // Only a session with no stored detail at all is rebuilt; a run that has
+      // one keeps it, whatever it holds beyond the session.
+      for (const session of await this.listRuntimeSessions(projectId)) {
+        if (await this.runDetails.hasStored(projectId, session.runId)) continue;
+        await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
+      }
       await this.flowRunSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
       return;
     }
@@ -172,7 +166,7 @@ export class AutomationStudioSummaryStore {
   async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
     await this.projects.findProject(projectId);
     if (!this.paths.root) return;
-    let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
+    let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId);
     const repository = this.flowMutations.flowSubflowSummaryRepository(projectId);
     const page = await repository.listPage({}, { limit: 1, offset: 0 });
     const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
@@ -197,7 +191,7 @@ export class AutomationStudioSummaryStore {
   async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
     await this.projects.findProject(projectId);
     if (!this.paths.root) return;
-    const index = await this.indexes.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
+    const index = await this.indexes.readRuntimeIndex(projectId);
     if (!(index.sessions ?? []).length) {
       await this.runtimeSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
       return;
@@ -307,16 +301,6 @@ export class AutomationStudioSummaryStore {
 
   runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
     return new SQLiteRepository<JsonObject>({ rootDir: this.paths.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
-  }
-
-  async tryPersistRuntimeRunDetail(detail: AutomationStudioFlowRunDetail): Promise<boolean> {
-    const { projectId, flowId } = detail.summary;
-    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
-      await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: detail.summary.startedAt ?? detail.summary.updatedAt });
-      await store.putRunDetail(detail);
-      return true;
-    });
-    return written === true;
   }
 
   async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
@@ -550,16 +534,23 @@ export class AutomationStudioSummaryStore {
       ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
       return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
-    const typedPage = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunSummaries({
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(search ? { search } : {}),
-      sort,
-      direction,
-      limit,
-      offset
-    }));
-    if (typedPage && typedPage.total > 0) return typedPage;
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => {
+      const page = await store.listRunSummaries({
+        ...(input.flowId ? { flowId: input.flowId } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(search ? { search } : {}),
+        sort,
+        direction,
+        limit,
+        offset
+      });
+      // Once the typed store holds any run, it is the project's run record, and a
+      // filter that matches none of its runs is an answer, not a reason to fall
+      // back to the legacy index -- that fallback re-saved every run.
+      const holdsRuns = page.total > 0 || (await store.listRunSummaries({ limit: 1, offset: 0 })).total > 0;
+      return { page, holdsRuns };
+    });
+    if (typed?.holdsRuns) return typed.page;
     await this.ensureFlowRunSummaryIndex(input.projectId);
     return await this.listSqlFlowRunSummaryPage(this.flowRunSummaryRepository(input.projectId), {
       ...(input.flowId ? { flowId: input.flowId } : {}),
@@ -667,4 +658,3 @@ export class AutomationStudioSummaryStore {
     return result;
   }
 }
-

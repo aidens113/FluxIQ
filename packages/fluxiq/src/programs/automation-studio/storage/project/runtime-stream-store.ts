@@ -163,9 +163,12 @@ export class AutomationStudioProjectRuntimeStreamStore {
   }
 
   async putRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
+    const desired = runtimeEventsFromDetail(detail);
+    // A detail the store cannot hold is refused before its summary row or any
+    // event is written, so a refusal never leaves the run half-updated.
+    runtimeActionSummaryRows(detail.summary.runId, desired);
     await this.upsertRunSummary(detail.summary);
     const existing = await this.readAllRuntimeEvents(detail.summary.runId, 5_000);
-    const desired = runtimeEventsFromDetail(detail);
     const existingIds = new Set(existing.filter((event) => event.eventKind !== "run_summary").map((event) => event.eventId));
     const latestEnvelope = [...existing].reverse().find((event) => event.eventKind === "run_summary")?.payload;
     const nextEnvelope = desired.find((event) => event.eventKind === "run_summary")?.payload;
@@ -211,8 +214,12 @@ export class AutomationStudioProjectRuntimeStreamStore {
     const runId = requiredId(input.runId, "run");
     const firstSequence = await this.getRunLastSequence(runId) + 1;
     const events = normalizeRuntimeEvents(input.events, firstSequence);
+    // Every action row is built, and so validated, before anything is written: a
+    // rejected batch used to leave its chunk behind with the run's sequence
+    // unmoved, and the service then kept a stale detail over the run it wrote.
+    const actionRows = runtimeActionSummaryRows(runId, events);
     const chunk = await this.chunks.writeChunk({ streamKind: "runtime", streamId: runId, events, maxEvents: input.maxEvents ?? 2_000 });
-    await this.projectActionSummaries(runId, events);
+    await this.writeActionSummaries(actionRows);
     await this.lease.database.run("update runtime_runs set last_event_sequence = ?, action_count = action_count + ?, updated_at_ms = ? where run_id = ?", [chunk.lastSequence, events.filter((event) => event.eventKind === "action_attempt").length, Date.now(), runId]);
     return { events, nextCursor: String(chunk.lastSequence), hasMore: false, lastSequence: chunk.lastSequence };
   }
@@ -410,19 +417,8 @@ export class AutomationStudioProjectRuntimeStreamStore {
     return events;
   }
 
-  private async projectActionSummaries(runId: string, events: AutomationStudioRuntimeStreamEvent[]): Promise<void> {
-    const actions = events.filter((event) => event.eventKind === "action_attempt" && event.payload);
-    if (!actions.length) return;
-    const rows = actions.map((event) => {
-      const action = event.payload as unknown as AutomationStudioFlowRunActionAttemptRecord;
-      const finishedAt = optionalInteger(action.finishedAt);
-      const startedAt = nonNegativeInteger(action.startedAt, "action started at");
-      const evidenceCount = Array.isArray((action as any).evidence) ? (action as any).evidence.length : Array.isArray((action as any).effects) ? (action as any).effects.length : 0;
-      const messageSummary = typeof action.message === "string" ? action.message.slice(0, 1_000) : null;
-      const errorSummary = action.status === "failed" ? messageSummary : null;
-      const durationMs = optionalInteger(action.durationMs) ?? (finishedAt === null ? null : Math.max(0, finishedAt - startedAt));
-      return [runId, event.sequence, requiredId(action.attemptId, "action attempt"), requiredId(action.nodeId, "action node"), requiredId(action.definitionId, "action definition"), String(action.status ?? "unknown"), action.route ?? null, action.comparisonStatus ?? null, messageSummary, startedAt, finishedAt, durationMs, evidenceCount, errorSummary, JSON.stringify(action)] as const;
-    });
+  private async writeActionSummaries(rows: RuntimeActionSummaryInsertRow[]): Promise<void> {
+    if (!rows.length) return;
     await this.lease.database.transaction(async (sql) => {
       for (let offset = 0; offset < rows.length; offset += 200) {
         const batch = rows.slice(offset, offset + 200);
@@ -444,7 +440,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
     let afterSequence = 0;
     for (;;) {
       const page = await this.listRuntimeEvents({ runId, afterSequence, limit: 500, includePayload: true });
-      await this.projectActionSummaries(runId, page.events);
+      await this.writeActionSummaries(runtimeActionSummaryRows(runId, page.events));
       if (!page.hasMore || page.lastSequence <= afterSequence) break;
       afterSequence = page.lastSequence;
     }
@@ -457,6 +453,21 @@ type RecordingRow = { recording_id: string; name: string; task_id: string | null
 type StateSnapshotRow = { snapshot_id: string; source_kind: string; source_id: string; sequence: number; captured_at_ms: number; state_object_id: string | null; screenshot_object_id: string | null; previous_snapshot_id: string | null; digest: string; metadata_json: string };
 type StatePathRow = { snapshot_id: string; namespace: string; path: string; value_type: string; scalar_text: string | null; scalar_number: number | null; scalar_boolean: number | null; value_object_id: string | null };
 type RuntimeEventCandidate = Omit<AutomationStudioRuntimeStreamEvent, "sequence" | "payload"> & { order: number; payload: JsonObject };
+
+type RuntimeActionSummaryInsertRow = readonly [string, number, string, string, string, string, string | null, string | null, string | null, number, number | null, number | null, number, string | null, string];
+
+function runtimeActionSummaryRows(runId: string, events: AutomationStudioRuntimeStreamEvent[]): RuntimeActionSummaryInsertRow[] {
+  return events.filter((event) => event.eventKind === "action_attempt" && event.payload).map((event) => {
+    const action = event.payload as unknown as AutomationStudioFlowRunActionAttemptRecord;
+    const finishedAt = optionalInteger(action.finishedAt);
+    const startedAt = nonNegativeInteger(action.startedAt, "action started at");
+    const evidenceCount = Array.isArray((action as any).evidence) ? (action as any).evidence.length : Array.isArray((action as any).effects) ? (action as any).effects.length : 0;
+    const messageSummary = typeof action.message === "string" ? action.message.slice(0, 1_000) : null;
+    const errorSummary = action.status === "failed" ? messageSummary : null;
+    const durationMs = optionalInteger(action.durationMs) ?? (finishedAt === null ? null : Math.max(0, finishedAt - startedAt));
+    return [runId, event.sequence, requiredId(action.attemptId, "action attempt"), requiredId(action.nodeId, "action node"), actionDefinitionId(action.definitionId), String(action.status ?? "unknown"), action.route ?? null, action.comparisonStatus ?? null, messageSummary, startedAt, finishedAt, durationMs, evidenceCount, errorSummary, JSON.stringify(action)] as const;
+  });
+}
 
 function runtimeEventsFromDetail(detail: AutomationStudioFlowRunDetail): AutomationStudioRuntimeStreamEvent[] {
   const candidates: RuntimeEventCandidate[] = [
@@ -630,6 +641,9 @@ function isRuntimeEventKind(value: unknown): value is AutomationStudioRuntimeEve
 function recordingEventIsActionLike(event: unknown): boolean { const value = event as { type?: unknown; actionType?: unknown; eventType?: unknown }; return value.type === "action" || value.type === "domain_event" || typeof value.actionType === "string" || typeof value.eventType === "string"; }
 function recordingEventIsStateSnapshotLike(event: unknown): boolean { const value = event as { type?: unknown; observationType?: unknown }; return value.type === "state_checkpoint" || value.observationType === "client.state_snapshot"; }
 function sqlRuntimeStatus(status: AutomationStudioFlowRunStatus): "queued" | "running" | "succeeded" | "failed" | "cancelled" { return status === "waiting" ? "running" : status; }
+// A definition id is a stored value, not a key: a Call Flow node's is
+// `composite.flow.<encoded flow id>@<version>`, which the key pattern rejects.
+function actionDefinitionId(value: unknown): string { const id = typeof value === "string" ? value.trim() : ""; if (!id || id.length > 1_000 || /[\u0000-\u001f\u007f]/.test(id)) throw new Error("Invalid action definition ID."); return id; }
 function requiredId(value: string, kind: string): string { const id = value.trim(); if (!id || id.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(id)) throw new Error(`Invalid ${kind} ID.`); return id; }
 function positiveInteger(value: number, label: string): number { const normalized = Math.trunc(value); if (!Number.isFinite(normalized) || normalized < 1) throw new Error(`${label} must be a positive integer.`); return normalized; }
 function nonNegativeInteger(value: unknown, label: string): number { const normalized = Math.trunc(Number(value)); if (!Number.isFinite(normalized) || normalized < 0) throw new Error(`${label} must be a non-negative integer.`); return normalized; }

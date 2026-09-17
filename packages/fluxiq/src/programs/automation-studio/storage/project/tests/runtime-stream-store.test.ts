@@ -239,6 +239,41 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await store.close();
     await pool.closeAll();
   });
+
+  it("holds a Call Flow attempt, whose definition id carries the called Flow's version", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    const call = { ...action("call.attempt.1", 1, 40), nodeId: "call", definitionId: "composite.flow.flow.orders.child%2Fgraph@1.0.0" };
+    await store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: runSummary({ actionAttemptCount: 1 }), actionAttempts: [call] });
+
+    await expect(store.listRunActions({ runId: "run.checkout", limit: 10, offset: 0 })).resolves.toMatchObject({ total: 1, actions: [{ attemptId: "call.attempt.1", definitionId: call.definitionId }] });
+    await expect(store.getRunDetail("run.checkout")).resolves.toMatchObject({ actionAttempts: [{ definitionId: call.definitionId }] });
+    await store.close();
+    await pool.closeAll();
+  });
+
+  it("refuses a detail it cannot hold before writing any of it, and keeps the run's stream consistent", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    await store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: { ...runSummary({ actionAttemptCount: 0 }), status: "running" }, metadata: { stage: "queued" } });
+    const before = await store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 10 });
+
+    const unholdable = { ...action("attempt with spaces", 1, 40) };
+    await expect(store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: runSummary({ actionAttemptCount: 1 }), actionAttempts: [unholdable], metadata: { stage: "finished" } })).rejects.toThrow("Invalid action attempt ID.");
+    await expect(store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: runSummary({ actionAttemptCount: 1 }), actionAttempts: [{ ...action("attempt.1", 1, 40), definitionId: "  " }] })).rejects.toThrow("Invalid action definition ID.");
+
+    await expect(store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 10 })).resolves.toEqual(before);
+    await expect(store.getRunSummary("run.checkout")).resolves.toMatchObject({ status: "running", actionAttemptCount: 0, metadata: { lastEventSequence: before.lastSequence } });
+    await expect(store.getRunDetail("run.checkout")).resolves.toMatchObject({ metadata: { stage: "queued" } });
+    await store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: runSummary({ actionAttemptCount: 1 }), actionAttempts: [action("attempt.1", 1, 40)], metadata: { stage: "finished" } });
+    const after = await store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 10 });
+    expect(after.events.map((item) => item.sequence)).toEqual(after.events.map((_, index) => index + 1));
+    await expect(store.getRunDetail("run.checkout")).resolves.toMatchObject({ summary: { status: "succeeded" }, actionAttempts: [{ attemptId: "attempt.1" }], metadata: { stage: "finished" } });
+    await store.close();
+    await pool.closeAll();
+  });
 });
 
 // Obviously synthetic: the assertion is that this string is absent from every
