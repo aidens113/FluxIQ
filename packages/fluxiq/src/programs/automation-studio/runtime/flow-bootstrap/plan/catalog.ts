@@ -2,6 +2,13 @@
 // byte-bounded node catalog, ranked by the instruction and compacted so each
 // entry carries only what a provider needs to select, wire and parameterize a
 // node.
+//
+// The nodes an instruction requires are reserved first, each in its condensed
+// form, and only then sent whole while the budget allows. A Flow cannot be
+// created without them, so the text that helps a provider author a value must
+// never be what leaves one out: on 2026-09-16 the web domain's longer
+// parameter descriptions pushed the required end node out of a 3,000-token
+// catalog, and every Flow creation in that context was refused.
 import type { JsonValue } from "../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapCatalogEntry, AutomationStudioFlowBootstrapContext } from "./contracts.ts";
@@ -27,29 +34,41 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
     AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries,
     Math.trunc(input.maxCatalogEntries ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries)
   ));
-  const nodeCatalog: AutomationStudioFlowBootstrapCatalogEntry[] = [];
-  const selectedIds = new Set<string>();
+  // Keyed by definition id. The catalog's JSON is "[", the entries joined by
+  // ",", then "]", which is what usedBytes counts.
+  const selected = new Map<string, AutomationStudioFlowBootstrapCatalogEntry>();
   const missingRequiredTerms: string[] = [];
   let usedBytes = 2;
-  const append = (definition: AutomationStudioNodeDefinition): boolean => {
-    if (selectedIds.has(definition.id)) return true;
-    const entry = compactDefinition(definition);
-    const entryBytes = Buffer.byteLength(JSON.stringify(entry), "utf8") + (nodeCatalog.length ? 1 : 0);
-    if (nodeCatalog.length >= maxCatalogEntries
-      || usedBytes + entryBytes > byteBudget) return false;
-    nodeCatalog.push(entry);
-    selectedIds.add(definition.id);
-    usedBytes += entryBytes;
+  const append = (definition: AutomationStudioNodeDefinition, form: CatalogEntryForm): boolean => {
+    if (selected.has(definition.id)) return true;
+    const entry = compactDefinition(definition, form);
+    const addedBytes = catalogEntryBytes(entry) + (selected.size ? 1 : 0);
+    if (selected.size >= maxCatalogEntries
+      || usedBytes + addedBytes > byteBudget) return false;
+    selected.set(definition.id, entry);
+    usedBytes += addedBytes;
     return true;
   };
+  const reserved: AutomationStudioNodeDefinition[] = [];
   for (const required of selection.required) {
-    if (!required.definition || !append(required.definition)) missingRequiredTerms.push(required.term);
+    if (!required.definition || !append(required.definition, "condensed")) missingRequiredTerms.push(required.term);
+    else reserved.push(required.definition);
+  }
+  // A condensed entry is the whole entry with text taken out, so sending it
+  // whole never costs fewer bytes. One whose growth does not fit stays
+  // condensed, and a later, smaller one may still grow.
+  for (const definition of reserved) {
+    const whole = compactDefinition(definition, "whole");
+    const growth = catalogEntryBytes(whole) - catalogEntryBytes(selected.get(definition.id)!);
+    if (usedBytes + growth > byteBudget) continue;
+    selected.set(definition.id, whole);
+    usedBytes += growth;
   }
   // Preferred for a declared tag the instruction used: placed before the rest,
   // but never essential, so one that does not fit fails nothing.
-  for (const definition of selection.preferred) append(definition);
-  for (const definition of selection.ranked) append(definition);
-  nodeCatalog.sort((left, right) => left.id.localeCompare(right.id));
+  for (const definition of selection.preferred) append(definition, "whole");
+  for (const definition of selection.ranked) append(definition, "whole");
+  const nodeCatalog = [...selected.values()].sort((left, right) => left.id.localeCompare(right.id));
   return {
     outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
     nodeCatalog,
@@ -66,34 +85,51 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
 /**
  * How much of a definition's text one catalog entry carries.
  *
- * A node's description is what a provider chooses the node by, so it is kept
- * whole up to 240 characters. A structured parameter's description and example
- * are what the provider authors the value from, so they are sent for object,
- * json and array parameters only: the description up to 600 characters, and the
- * example only when its JSON fits in 600 bytes whole. A description cut short
- * ends in "...". Everything sent still counts against the catalog byte budget,
- * so a longer entry can leave a lower-ranked one out.
+ * A whole entry keeps a node's description, which is what a provider chooses
+ * the node by, up to 240 characters. A structured parameter's description and
+ * example are what the provider authors the value from, so a whole entry sends
+ * them for object, json and array parameters only: the description up to 600
+ * characters, and the example only when its JSON fits in 600 bytes whole.
+ *
+ * A condensed entry is what a required node is reserved as: its description up
+ * to 80 characters and no parameter description or example, which was every
+ * entry's shape before structured text was sent. Its ports, parameter ids,
+ * types, defaults, options, constraints and output action are unchanged, so a
+ * plan built from it validates the same way.
+ *
+ * A description cut short ends in "...". Everything sent counts against the
+ * catalog byte budget.
  */
 const CATALOG_TEXT_LIMITS = {
   labelCharacters: 100,
   descriptionCharacters: 240,
+  condensedDescriptionCharacters: 80,
   parameterDescriptionCharacters: 600,
   parameterExampleBytes: 600
 } as const;
 
+type CatalogEntryForm = "whole" | "condensed";
+
 const STRUCTURED_PARAMETER_TYPES: ReadonlySet<AutomationNodeParameter["valueType"]> = new Set(["object", "json", "array"]);
 
-function compactDefinition(definition: AutomationStudioNodeDefinition): AutomationStudioFlowBootstrapCatalogEntry {
+function catalogEntryBytes(entry: AutomationStudioFlowBootstrapCatalogEntry): number {
+  return Buffer.byteLength(JSON.stringify(entry), "utf8");
+}
+
+function compactDefinition(definition: AutomationStudioNodeDefinition, form: CatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry {
+  const descriptionCharacters = form === "whole"
+    ? CATALOG_TEXT_LIMITS.descriptionCharacters
+    : CATALOG_TEXT_LIMITS.condensedDescriptionCharacters;
   return {
     id: definition.id,
     version: definition.version,
     label: definition.label.slice(0, CATALOG_TEXT_LIMITS.labelCharacters),
-    description: boundedText(definition.description, CATALOG_TEXT_LIMITS.descriptionCharacters),
+    description: boundedText(definition.description, descriptionCharacters),
     category: definition.category,
     capabilities: Object.entries(definition.capabilities).filter(([, enabled]) => enabled === true).map(([key]) => key).sort(),
     inputs: definition.inputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.required === true ? { required: true as const } : {}), ...(port.multiple === true ? { multiple: true as const } : {}) })),
     outputs: definition.outputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.multiple === true ? { multiple: true as const } : {}) })),
-    parameters: definition.parameters.map(compactParameter),
+    parameters: definition.parameters.map((parameter) => compactParameter(parameter, form)),
     ...(definition.outputAction ? { outputAction: {
       required: true as const,
       ...(definition.outputAction.fixedOutputId ? { fixed: definition.outputAction.fixedOutputId } : {}),
@@ -102,8 +138,8 @@ function compactDefinition(definition: AutomationStudioNodeDefinition): Automati
   };
 }
 
-function compactParameter(parameter: AutomationNodeParameter): AutomationStudioFlowBootstrapCatalogEntry["parameters"][number] {
-  const structured = STRUCTURED_PARAMETER_TYPES.has(parameter.valueType);
+function compactParameter(parameter: AutomationNodeParameter, form: CatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry["parameters"][number] {
+  const structured = form === "whole" && STRUCTURED_PARAMETER_TYPES.has(parameter.valueType);
   const description = structured && parameter.description?.trim()
     ? boundedText(parameter.description, CATALOG_TEXT_LIMITS.parameterDescriptionCharacters)
     : undefined;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget } from "../../index.ts";
 import { buildAutomationStudioFlowBootstrapContext } from "../index.ts";
+import { webDomainNodeDefinitionsFixture } from "./web-domain-definitions-fixture.ts";
 
 // What the model is told about a node: enough of its description to choose
 // it, the shape of a structured parameter it has to author, and a ranking that
@@ -135,5 +137,135 @@ describe("the tags a domain declares on a node", () => {
 
     expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(["domain.demo.click"]);
     expect(context.catalogSelection).toMatchObject({ requiredTerms: ["submit"], missingRequiredTerms: [] });
+  });
+});
+
+describe("the nodes an instruction requires", () => {
+  const start = definition("domain.demo.start", { label: "Start", category: "control" });
+  const end = definition("domain.demo.end", { label: "End", category: "control" });
+  const expectedState: AutomationNodeParameter = { id: "expectedState", label: "Expected State", valueType: "object", description: "Post-conditions checked after this action. ".repeat(12).trim() };
+  const click = definition("domain.demo.click", {
+    label: "Click",
+    description: "Clicks one element of the page, waiting for it to be visible and enabled before the click is dispatched to it.",
+    outputAction: { fixedOutputId: "demo.click" },
+    parameters: [{ id: "selector", label: "Selector", valueType: "string", required: true }, expectedState]
+  });
+  const context = (maxCatalogBytes: number) => buildAutomationStudioFlowBootstrapContext({
+    registry: new AutomationStudioNodeRegistry([start, end, click, definition("domain.demo.other", { label: "Other click" })]),
+    resolution,
+    instructionText: "Click the button",
+    maxCatalogBytes
+  });
+  const whole = context(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes);
+  const requiredWholeBytes = 2 + 2 + ["domain.demo.click", "domain.demo.start", "domain.demo.end"]
+    .reduce((sum, id) => sum + Buffer.byteLength(JSON.stringify(whole.nodeCatalog.find((entry) => entry.id === id)), "utf8"), 0);
+
+  it("are all kept when their whole text does not fit, with the text a model can do without left out", () => {
+    const tight = context(requiredWholeBytes - 1);
+
+    expect(tight.catalogSelection).toMatchObject({ requiredTerms: ["click", "start", "end"], missingRequiredTerms: [] });
+    expect(tight.nodeCatalog.map((entry) => entry.id)).toEqual(expect.arrayContaining(["domain.demo.click", "domain.demo.end", "domain.demo.start"]));
+    const condensed = tight.nodeCatalog.find((entry) => entry.id === "domain.demo.click");
+    expect(condensed?.parameters).toEqual([{ id: "selector", type: "string", required: true }, { id: "expectedState", type: "object" }]);
+    expect(condensed?.description).toHaveLength(80);
+    expect(condensed?.description.endsWith("...")).toBe(true);
+    expect(tight.catalogSelection.usedBytes).toBe(Buffer.byteLength(JSON.stringify(tight.nodeCatalog), "utf8"));
+    expect(tight.catalogSelection.usedBytes).toBeLessThanOrEqual(tight.catalogSelection.byteBudget);
+  });
+
+  it("are sent whole once the budget allows, before any other node is added", () => {
+    const exact = context(requiredWholeBytes);
+
+    expect(exact.nodeCatalog.map((entry) => entry.id)).toEqual(["domain.demo.click", "domain.demo.end", "domain.demo.start"]);
+    expect(exact.nodeCatalog).toEqual(whole.nodeCatalog.filter((entry) => entry.id !== "domain.demo.other"));
+    expect(exact.catalogSelection.usedBytes).toBe(requiredWholeBytes);
+  });
+
+  it("are still reported missing when not even their shortest form fits", () => {
+    const starved = context(600);
+
+    expect(starved.catalogSelection.missingRequiredTerms).not.toEqual([]);
+    expect(starved.catalogSelection.usedBytes).toBe(Buffer.byteLength(JSON.stringify(starved.nodeCatalog), "utf8"));
+    expect(starved.catalogSelection.usedBytes).toBeLessThanOrEqual(600);
+  });
+});
+
+describe("a catalog of the web domain's real definitions", () => {
+  const web = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry();
+  for (const webDefinition of webDomainNodeDefinitionsFixture()) registry.register(webDefinition);
+  // The web domain's own acceptance test builds its catalog for exactly this
+  // instruction in a 3,000-token context.
+  const formInstruction = "Using the connected browser page, enter Ada in Name, choose Team for Plan, submit the form, and verify the result says Submitted: Ada / team.";
+  const scrapeInstruction = "Open the catalogue page, scrape every product name and price across every page, click Next until the last page, and verify the table has rows.";
+  const catalogAt = (instructionText: string, maxInputTokens: number, instructionBytes = Buffer.byteLength(instructionText, "utf8")) => buildAutomationStudioFlowBootstrapContext({
+    registry,
+    resolution: web,
+    instructionText,
+    maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({ maxInputTokens, instructionBytes })
+  });
+
+  it("keeps every node the form instruction requires in the web domain's 3,000-token context", () => {
+    const context = catalogAt(formInstruction, 3_000);
+
+    expect(context.catalogSelection.requiredTerms).toEqual(["enter", "choose", "submit", "verify", "start", "end"]);
+    expect(context.catalogSelection.missingRequiredTerms).toEqual([]);
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(expect.arrayContaining([
+      "builtin.control.end", "builtin.control.start", "web.output.dom-click", "web.output.dom-select", "web.output.dom-type", "web.output.dom-wait_for_text"
+    ]));
+    expect(context.catalogSelection.usedBytes).toBeLessThanOrEqual(context.catalogSelection.byteBudget);
+  });
+
+  it("keeps every required node at every budget from that context up to the largest", () => {
+    // A 1,536-byte instruction leaves too little of a 3,000-token context for
+    // five nodes in any form, so that case starts at the live context.
+    for (const [instructionText, instructionBytes, fromTokens] of [[formInstruction, 145, 3_000], [scrapeInstruction, 1_536, 4_000]] as const) {
+      for (let maxInputTokens = fromTokens; maxInputTokens <= 20_000; maxInputTokens += 250) {
+        const context = catalogAt(instructionText, maxInputTokens, instructionBytes);
+        expect(context.catalogSelection.missingRequiredTerms, `${maxInputTokens} tokens, ${context.catalogSelection.byteBudget} bytes`).toEqual([]);
+        expect(context.catalogSelection.usedBytes).toBe(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8"));
+        expect(context.catalogSelection.usedBytes).toBeLessThanOrEqual(context.catalogSelection.byteBudget);
+      }
+    }
+  });
+
+  it("sends the required web actions whole in the context a live Flow creation uses", () => {
+    const context = catalogAt(formInstruction, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens, 1_536);
+
+    const click = context.nodeCatalog.find((entry) => entry.id === "web.output.dom-click");
+    expect(click?.parameters.find((parameter) => parameter.id === "expectedState")?.description).toContain("web.dom.assert conditions");
+  });
+});
+
+describe("an instruction to fill in a form", () => {
+  const web = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry();
+  for (const webDefinition of webDomainNodeDefinitionsFixture()) registry.register(webDefinition);
+  // The live campaign's form task, as evidence-guided creation words it: the
+  // instruction's title, then its body, in a 12-entry catalog. Its "Team plan"
+  // is a choice list, but no word of it names choosing.
+  const instructionText = "Evidence-guided generation goal\nFill in the form with Ada as the name and the Team plan, then submit it.";
+  const catalog = (maxCatalogBytes: number) => buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText, maxCatalogEntries: 12, maxCatalogBytes });
+
+  it("offers the node that sets a choice list, without requiring it", () => {
+    const context = catalog(automationStudioFlowBootstrapCatalogByteBudget({ maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens, instructionBytes: 442 }));
+
+    expect(context.catalogSelection).toMatchObject({ requiredTerms: ["fill", "submit", "start", "end"], missingRequiredTerms: [] });
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(expect.arrayContaining(["web.output.dom-type", "web.output.dom-click", "web.output.dom-select"]));
+  });
+
+  it("still builds when that node does not fit", () => {
+    const required = catalog(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes).nodeCatalog
+      .filter((entry) => ["web.output.dom-type", "web.output.dom-click", "builtin.control.start", "builtin.control.end"].includes(entry.id));
+    const context = catalog(Buffer.byteLength(JSON.stringify(required), "utf8"));
+
+    expect(context.catalogSelection.missingRequiredTerms).toEqual([]);
+    expect(context.nodeCatalog.map((entry) => entry.id)).not.toContain("web.output.dom-select");
+  });
+
+  it("does not offer it to an instruction that only enters text", () => {
+    const context = buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText: "Enter Ada in the name field.", maxCatalogEntries: 12 });
+
+    expect(context.nodeCatalog.map((entry) => entry.id)).not.toContain("web.output.dom-select");
   });
 });

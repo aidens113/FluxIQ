@@ -1,7 +1,7 @@
 // Ranking node definitions against an instruction so the catalog handed to a
 // provider leads with what the instruction actually asks for. Intent
-// equivalents pin one definition per requested verb; a tag the instruction uses
-// prefers the definition that declares it; the rest are scored.
+// equivalents pin one definition per requested verb; an implied intent, and a
+// tag the instruction uses, prefer a definition; the rest are scored.
 //
 // Tags are how a domain declares its own intent words ("scrape", "collect")
 // without Core learning them: a tag word scores like a label word, and a tag
@@ -19,6 +19,20 @@ const BOOTSTRAP_INTENT_EQUIVALENTS = [
   ["keypress", "keyboard", "key"],
   ["capture", "snapshot"]
 ] as const;
+
+/**
+ * Intents an instruction carries without naming them, as the intent group it
+ * implies. Filling in a form sets whatever controls it has, and its values do
+ * not say which are choice lists: "Fill in the form with Ada as the name and
+ * the Team plan" sets a select element, yet no word of it scores the select
+ * node, so a live Flow was built without one and could not set the plan.
+ *
+ * The implied group's best definition is preferred, never required, so a
+ * domain without one, or a catalog without room for it, fails nothing.
+ */
+const BOOTSTRAP_IMPLIED_INTENTS: ReadonlyArray<{ word: string; implies: readonly string[] }> = [
+  { word: "fill", implies: BOOTSTRAP_INTENT_EQUIVALENTS[1] }
+];
 
 /**
  * A tag word carried by more available definitions than this names a family,
@@ -40,7 +54,10 @@ export function rankBootstrapDefinitions(
   instructionText: string
 ): {
   required: Array<{ term: string; definition?: AutomationStudioNodeDefinition }>;
-  /** Definitions whose declared tag the instruction used, best first; wanted, but never essential. */
+  /**
+   * Definitions an implied intent names, then those whose declared tag the
+   * instruction used, best first; wanted, but never essential.
+   */
   preferred: AutomationStudioNodeDefinition[];
   ranked: AutomationStudioNodeDefinition[];
 } {
@@ -52,27 +69,28 @@ export function rankBootstrapDefinitions(
   for (const equivalents of BOOTSTRAP_INTENT_EQUIVALENTS) {
     const requested = equivalents.find((term) => tokens.has(term));
     if (!requested) continue;
-    const candidates = definitions
-      .map((definition) => ({ definition, score: scoreBootstrapDefinition(searchable.get(definition.id)!, equivalents) }))
-      .filter((candidate) => candidate.score > 0)
-      .sort((left, right) => right.score - left.score || left.definition.id.localeCompare(right.definition.id));
-    const definition = candidates[0]?.definition;
+    const definition = bestBootstrapDefinition(definitions, searchable, equivalents);
     if (definition) requiredIds.add(definition.id);
     required.push({ term: requested, ...(definition ? { definition } : {}) });
   }
   for (const foundation of [["start", "begin", "entry"], ["end", "finish", "terminal", "complete"]] as const) {
-    const candidates = definitions
-      .map((definition) => ({ definition, score: scoreBootstrapDefinition(searchable.get(definition.id)!, foundation) }))
-      .filter((candidate) => candidate.score > 0)
-      .sort((left, right) => right.score - left.score || left.definition.id.localeCompare(right.definition.id));
-    const definition = candidates[0]?.definition;
+    const definition = bestBootstrapDefinition(definitions, searchable, foundation);
     if (definition && !requiredIds.has(definition.id)) {
       requiredIds.add(definition.id);
       required.push({ term: foundation[0], definition });
     }
   }
+  const implied: AutomationStudioNodeDefinition[] = [];
+  for (const intent of BOOTSTRAP_IMPLIED_INTENTS) {
+    if (!tokens.has(intent.word)) continue;
+    const definition = bestBootstrapDefinition(definitions, searchable, intent.implies);
+    if (definition && !requiredIds.has(definition.id) && !implied.includes(definition)) implied.push(definition);
+  }
   const instructionTerms = [...tokens].filter((term) => !BOOTSTRAP_STOP_WORDS.has(term));
-  const preferred = preferTaggedDefinitions(definitions, searchable, instructionTerms, requiredIds);
+  const preferred = [
+    ...implied,
+    ...preferTaggedDefinitions(definitions, searchable, instructionTerms, new Set([...requiredIds, ...implied.map((definition) => definition.id)]))
+  ];
   const chosenIds = new Set([...requiredIds, ...preferred.map((definition) => definition.id)]);
   const ranked = definitions
     .filter((definition) => !chosenIds.has(definition.id))
@@ -86,6 +104,19 @@ export function rankBootstrapDefinitions(
   return { required, preferred, ranked };
 }
 
+// The highest-scoring definition for any of the terms, ties broken by id, or
+// none when no definition scores.
+function bestBootstrapDefinition(
+  definitions: AutomationStudioNodeDefinition[],
+  searchable: ReadonlyMap<string, BootstrapSearchFields>,
+  terms: readonly string[]
+): AutomationStudioNodeDefinition | undefined {
+  return definitions
+    .map((definition) => ({ definition, score: scoreBootstrapDefinition(searchable.get(definition.id)!, terms) }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.definition.id.localeCompare(right.definition.id))[0]?.definition;
+}
+
 // For each instruction word, in order, that is a tag word of at most
 // MAX_DEFINITIONS_PER_INTENT_TAG definitions and none of them is chosen yet,
 // the best-scoring carrier is preferred.
@@ -93,13 +124,13 @@ function preferTaggedDefinitions(
   definitions: AutomationStudioNodeDefinition[],
   searchable: ReadonlyMap<string, BootstrapSearchFields>,
   instructionTerms: readonly string[],
-  requiredIds: ReadonlySet<string>
+  alreadyChosenIds: ReadonlySet<string>
 ): AutomationStudioNodeDefinition[] {
   const carriers = new Map<string, AutomationStudioNodeDefinition[]>();
   for (const definition of definitions) for (const word of searchable.get(definition.id)!.tagWords) {
     carriers.set(word, [...(carriers.get(word) ?? []), definition]);
   }
-  const chosen = new Set(requiredIds);
+  const chosen = new Set(alreadyChosenIds);
   const preferred: AutomationStudioNodeDefinition[] = [];
   for (const term of instructionTerms) {
     if (preferred.length >= MAX_TAG_PREFERENCES) break;
