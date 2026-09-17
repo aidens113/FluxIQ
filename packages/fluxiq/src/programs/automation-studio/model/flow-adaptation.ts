@@ -154,8 +154,48 @@ export type AutomationStudioChangeProposalKind =
   | "edit_expectation"
   | "edit_action_target"
   | "edit_recovery"
+  | "insert_deterministic_path"
   | "promote_adaptation"
   | "edit_instruction";
+
+/**
+ * One action node a deterministic recovery path inserts into the graph it
+ * repairs. It is a whole node, not a hint: a definition the node runtime can
+ * dispatch, the parameters it runs with, the target it acts on, and the
+ * expectation its transition is compared against. `edit_recovery` carried only
+ * `actionDefinitionIds`, which named definitions but said nothing about what to
+ * run them on, so no applier could build a node from it.
+ *
+ * `target` is written through `actionTargetParameterValues`, so a policy action
+ * is re-pointed inside its output payload exactly as an `edit_action_target`
+ * patch re-points one, and `expectation` merges over the parameters.
+ */
+export type AutomationStudioDeterministicPathNode = {
+  nodeId: string;
+  definitionId: string;
+  definitionVersion?: string;
+  label?: string;
+  parameters?: JsonObject;
+  target?: JsonValue;
+  expectation?: JsonObject;
+};
+
+/**
+ * The `after` value of an `insert_deterministic_path` patch: the nodes to
+ * insert, and optionally the node the path rejoins once they succeed.
+ *
+ * The patch's `targetId` is the node that failed. Applying it wires that node's
+ * `failed` port into `nodes[0]`, chains each node's `success` port into the
+ * next and, when `returnToNodeId` is set, chains the last node's `success` port
+ * back into that node. Every inserted node is therefore reachable from the
+ * failure it recovers, and only from it, so the recovery ladder's existing
+ * `deterministic_path` candidate picks the new failed edge up with no executor
+ * change at all.
+ */
+export type AutomationStudioDeterministicPath = {
+  nodes: AutomationStudioDeterministicPathNode[];
+  returnToNodeId?: string;
+};
 
 export type AutomationStudioChangeProposalPatch = {
   kind: AutomationStudioChangeProposalKind;

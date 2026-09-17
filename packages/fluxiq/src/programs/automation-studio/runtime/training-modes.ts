@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
+import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "../model/index.ts";
 import type { AutomationStudioChangeProposalKind, AutomationStudioChangeProposalMode, AutomationStudioChangeProposalStatus, AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow } from "../model/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "./flow-bootstrap/index.ts";
 import type { AutomationStudioChangeConfidenceDecision } from "./flow-change/index.ts";
@@ -308,7 +309,7 @@ export function decideAutomationStudioProposalApprovalGate(input: AutomationStud
   if (input.proposalMode === "manual") {
     return { createProposal: true, status: "pending", requiresManualApproval: true, reason: "Manual proposal mode requires review before approval." };
   }
-  const majorPatch = input.patchKinds.some((kind) => kind === "create_subflow" || kind === "edit_router" || kind === "edit_recovery" || kind === "promote_adaptation");
+  const majorPatch = input.patchKinds.some((kind) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[kind]?.major !== false);
   const highRisk = input.riskLevel === "high" || input.riskLevel === "destructive";
   if (input.proposalMode === "mixed" && (majorPatch || highRisk)) {
     return { createProposal: true, status: "pending", requiresManualApproval: true, reason: "Mixed proposal mode routes major or high-risk changes to manual review." };
@@ -322,7 +323,7 @@ export function decideAutomationStudioAdaptationPromotionGate(input: AutomationS
   if (evidence) return manualReview(evidence);
   const shared = sharedPromotionRefusal(input);
   if (shared) return manualReview(shared);
-  const structuralPatch = input.patchKinds.some((kind) => kind === "create_subflow" || kind === "edit_subflow" || kind === "edit_router" || kind === "edit_recovery" || kind === "promote_adaptation");
+  const structuralPatch = input.patchKinds.some((kind) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[kind]?.structural !== false);
   if (structuralPatch) return manualReview("Structural adaptations require manual review before durable promotion.");
   if (input.riskLevel !== "low") return manualReview("Only low-risk adaptations can be promoted automatically.");
   return { autoApply: true, requiresManualApproval: false, reason: "Validated low-risk non-structural adaptation can be applied automatically." };

@@ -1,4 +1,5 @@
-import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeOrigin, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
+import type { AutomationStudioAdaptationPolicy, AutomationStudioDeterministicPath, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeOrigin, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { validateConditionExpression } from "./condition.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
 
@@ -10,6 +11,12 @@ const VALIDATION_BASIS_MAX_ENTRIES = 16;
 const ORIGIN_ID_MAX_LENGTH = 256;
 const ORIGIN_SIGNATURE_MAX_LENGTH = 512;
 const ORIGIN_MAX_INSTRUCTION_IDS = 64;
+/** How many nodes one deterministic recovery path may insert. */
+const DETERMINISTIC_PATH_MAX_NODES = 16;
+const DETERMINISTIC_PATH_ID_MAX_LENGTH = 256;
+const DETERMINISTIC_PATH_LABEL_MAX_LENGTH = 200;
+const DETERMINISTIC_PATH_NODE_KEYS = ["nodeId", "definitionId", "definitionVersion", "label", "parameters", "target", "expectation"];
+const DETERMINISTIC_PATH_KEYS = ["nodes", "returnToNodeId"];
 
 export function validateAutomationStudioFlowRouter(router: AutomationStudioFlowRouter, subflows: AutomationStudioFlowSubflow[] = []): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];
@@ -136,6 +143,17 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
       else if (result.basis.length && result.status !== "succeeded") addIssue(issues, "error", "adaptation.validation_basis_without_success", "Only a succeeded adaptation validation can name a basis.", `${path}.basis`);
     }
   }
+  // A deterministic path is checked here as well as where it is applied, so a
+  // change that could never be wired is refused on the way into the store
+  // rather than at the apply that a reviewer already approved.
+  for (const [index, patch] of adaptation.patch.entries()) {
+    if (patch.kind !== "insert_deterministic_path") continue;
+    const path = `patch.${index}`;
+    if (!patch.targetId?.trim()) addIssue(issues, "error", "adaptation.path_missing_target", "A deterministic path patch must name the node whose failure it recovers.", `${path}.targetId`);
+    if (!parseAutomationStudioDeterministicPath(patch.after)) {
+      addIssue(issues, "error", "adaptation.path_invalid", "A deterministic path patch must list the nodes to insert, each with a node id and a definition id.", `${path}.after`);
+    }
+  }
   const origin = adaptation.metadata?.origin;
   if (origin !== undefined) {
     const parsed = parseAutomationStudioFlowChangeOrigin(origin);
@@ -146,6 +164,64 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
     }
   }
   return result(issues);
+}
+
+/**
+ * Reads the `after` value of an `insert_deterministic_path` patch, or undefined
+ * when it is not exactly that shape. Every field is checked and nothing else is
+ * allowed, so an LLM response cannot smuggle page text or extra node fields
+ * through into a graph write. Returns a fresh copy.
+ *
+ * A path must insert at least one node, because a patch that inserts none would
+ * wire the failed node's `failed` port to nothing and report a repair that never
+ * happened -- the defect this patch kind exists to end.
+ */
+export function parseAutomationStudioDeterministicPath(value: unknown): AutomationStudioDeterministicPath | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(Object.keys(value), DETERMINISTIC_PATH_KEYS)) return undefined;
+  if (!Array.isArray(value.nodes) || !value.nodes.length || value.nodes.length > DETERMINISTIC_PATH_MAX_NODES) return undefined;
+  const nodes: AutomationStudioDeterministicPathNode[] = [];
+  for (const entry of value.nodes) {
+    const node = parseDeterministicPathNode(entry);
+    if (!node || nodes.some((existing) => existing.nodeId === node.nodeId)) return undefined;
+    nodes.push(node);
+  }
+  const returnToNodeId = value.returnToNodeId;
+  if (returnToNodeId !== undefined && !isOriginText(returnToNodeId, DETERMINISTIC_PATH_ID_MAX_LENGTH)) return undefined;
+  // Rejoining an inserted node would make the path a loop with no exit.
+  if (typeof returnToNodeId === "string" && nodes.some((node) => node.nodeId === returnToNodeId)) return undefined;
+  return { nodes, ...(typeof returnToNodeId === "string" ? { returnToNodeId } : {}) };
+}
+
+function parseDeterministicPathNode(value: unknown): AutomationStudioDeterministicPathNode | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(Object.keys(value), DETERMINISTIC_PATH_NODE_KEYS)) return undefined;
+  const { nodeId, definitionId, definitionVersion, label, parameters, target, expectation } = value;
+  if (!isOriginText(nodeId, DETERMINISTIC_PATH_ID_MAX_LENGTH) || !isOriginText(definitionId, DETERMINISTIC_PATH_ID_MAX_LENGTH)) return undefined;
+  if (definitionVersion !== undefined && !isOriginText(definitionVersion, DETERMINISTIC_PATH_ID_MAX_LENGTH)) return undefined;
+  if (label !== undefined && !isOriginText(label, DETERMINISTIC_PATH_LABEL_MAX_LENGTH)) return undefined;
+  if (parameters !== undefined && !isRecord(parameters)) return undefined;
+  if (expectation !== undefined && !isRecord(expectation)) return undefined;
+  if (target !== undefined && !isJsonValue(target)) return undefined;
+  return {
+    nodeId,
+    definitionId,
+    ...(typeof definitionVersion === "string" ? { definitionVersion } : {}),
+    ...(typeof label === "string" ? { label } : {}),
+    ...(parameters === undefined ? {} : { parameters: structuredClone(parameters) as JsonObject }),
+    ...(target === undefined ? {} : { target: structuredClone(target) as JsonValue }),
+    ...(expectation === undefined ? {} : { expectation: structuredClone(expectation) as JsonObject })
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Whether a value survives the JSON round trip a graph write puts it through. */
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isRecord(value) && Object.values(value).every(isJsonValue);
 }
 
 /**

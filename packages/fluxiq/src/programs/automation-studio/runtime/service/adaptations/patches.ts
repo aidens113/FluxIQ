@@ -39,6 +39,13 @@ export class AutomationStudioAdaptationPatches {
     // Only the two patch kinds that write a parameter the executor actually
     // reads may be applied to a node. Anything else is refused here rather than
     // written and reported as applied. See `durable.ts` for `edit_recovery`.
+    //
+    // `insert_deterministic_path` never reaches this applier: it inserts nodes
+    // and edges, which only the transactional graph store can do as one
+    // reversible unit, so `isGraphTransactionCompatibleAdaptation` claims it and
+    // `graphPatchOperationsForAdaptation` builds it. Saving the whole Flow
+    // document, which is all this file can do, has no inverse that restores the
+    // edges a later delete would cascade.
     if (patch.kind !== "edit_expectation" && patch.kind !== "edit_action_target") {
       throw new Error(`Adaptation patch ${patch.kind} has no Flow node application; ${adaptation.adaptationId} refused.`);
     }
