@@ -19,7 +19,16 @@ import {
   type AutomationStudioLlmExecutionGrantResolvePolicy
 } from "./grant-capabilities.ts";
 
-const LIMITS: AutomationStudioLlmTokenLimits = { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 };
+// Sized to deepseek-chat's real 64k context, less room for the reply, rather
+// than to a number nobody chose. At 8000 in and 10000 total, describing a real
+// page did not fit: measured 2026-09-17, the input guard fired before the
+// request was sent on every realistic page in the live corpus -- an infinite
+// feed, a multi-tab lookup, an auth gate, an admin console with a virtualised
+// list -- and the grant ends on that error, so those runs built nothing at all.
+// An empty table tripped it too. A run is bounded by cost, its per-run token
+// budget and its deadline; never by a per-request ceiling that makes a real
+// page impossible to describe.
+const LIMITS: AutomationStudioLlmTokenLimits = { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 };
 const TIMEOUT_MS = 20_000;
 const COST_USD = 0.25;
 const MAX_TTL_MS = 300_000;

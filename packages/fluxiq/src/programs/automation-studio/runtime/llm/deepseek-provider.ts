@@ -385,7 +385,7 @@ function validateDeepSeekRequest(request: AutomationStudioLlmTaskRequest): void 
   if (!Number.isInteger(request.estimatedInputTokens) || request.estimatedInputTokens < 0
     || !Number.isFinite(request.maxEstimatedCostUsd) || request.maxEstimatedCostUsd <= 0 || request.maxEstimatedCostUsd > 10
     || !Number.isInteger(limits.maxInputTokens) || !Number.isInteger(limits.maxOutputTokens) || !Number.isInteger(limits.maxTotalTokens)
-    || limits.maxInputTokens <= 0 || limits.maxOutputTokens <= 0 || limits.maxTotalTokens <= 0 || limits.maxTotalTokens > 50_000
+    || limits.maxInputTokens <= 0 || limits.maxOutputTokens <= 0 || limits.maxTotalTokens <= 0 || limits.maxTotalTokens > 64_000
     || limits.maxInputTokens > limits.maxTotalTokens || limits.maxOutputTokens > limits.maxTotalTokens
     || request.estimatedInputTokens > limits.maxInputTokens || request.estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens) {
     refuse("llm.provider_request_limits_invalid", "DeepSeek request token or cost limits are invalid.");

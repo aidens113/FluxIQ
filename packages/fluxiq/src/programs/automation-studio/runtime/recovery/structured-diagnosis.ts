@@ -129,7 +129,7 @@ export function buildAutomationStudioRuntimeStructuredDiagnosis(
     source: "deterministic",
     stillAchievable: deterministic.stillAchievable,
     deterministicRecoveryPossible: deterministic.deterministicRecoveryAvailable ? "yes" : "unknown",
-    explorationNeeded: false,
+    explorationNeeded: deterministicExplorationNeeded(deterministic),
     patchNeeded: deterministicPatchNeeded(deterministic),
     modelFields: [],
     refusals: []
@@ -204,6 +204,38 @@ export function summarizeAutomationStudioRuntimeStructuredDiagnosis(
  */
 function deterministicPatchNeeded(diagnosis: AutomationStudioRuntimeDeterministicDiagnosis): boolean {
   return diagnosis.candidateKind !== "diagnosis_only" && diagnosis.candidateKind !== "instruction_suggestion";
+}
+
+/**
+ * Core's own answer for `explorationNeeded` when the model does not give one.
+ *
+ * Omission is the EXPECTED case, not an error: the prompt tells the model to
+ * "omit a field you cannot answer rather than guessing it", and whether looking
+ * at the page would help is exactly the kind of thing it often cannot answer
+ * before looking. This field used to fall back to a hard `false` while its
+ * neighbour `patchNeeded` fell back to Core's classifier, and that asymmetry
+ * ended recoveries silently: `plan.ts` reads `explorationRequested` straight
+ * from here, so a model following its instructions stopped the loop.
+ *
+ * Measured 2026-09-17, thirteen live repair-lane runs against DeepSeek: every
+ * one made a single diagnosis call, every one reported
+ * `exploration.requested: false`, and not one attempted a repair -- one call
+ * spent of the twenty-six granted. The lane's only genuine repair task failed;
+ * the rest were refusals, which pass precisely because stopping after diagnosis
+ * is the right answer for them, so the number looked healthy while the repair
+ * capability was zero.
+ *
+ * So Core answers it: if Core's deterministic analysis already has a recovery
+ * in hand there is nothing to go looking for, and otherwise looking is the only
+ * way to learn anything. This deliberately does NOT consult `stillAchievable`.
+ * Exploration is not only the patch's errand -- "let me look at the page first,
+ * and then say there is nothing to repair" has to stay reachable, or a refusal
+ * is one the model could never check before giving it (`plan.ts`, and
+ * `reports/w2-model-context-audit.md`). The cost of looking is bounded by the
+ * run's own cost, token and deadline guards, never by this flag.
+ */
+function deterministicExplorationNeeded(diagnosis: AutomationStudioRuntimeDeterministicDiagnosis): boolean {
+  return !diagnosis.deterministicRecoveryAvailable;
 }
 
 /**
