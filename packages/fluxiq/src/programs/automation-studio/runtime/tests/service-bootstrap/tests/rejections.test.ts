@@ -115,7 +115,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         iterationCount: 3,
         decisionCount: 4,
         toolCallCount: 1,
-        steps: [{ toolId: "inspect" }]
+        // The opening observation, then each refused plan and the first code that refused it.
+        steps: [{ toolId: "inspect" }, ...Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]
       },
       issueCodes: expect.arrayContaining([expectedIssue])
     });

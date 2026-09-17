@@ -3,5 +3,6 @@
 // taxonomy. The export list matches what runtime/index.ts published for these
 // modules before they moved here.
 export * from "./adaptation.ts";
+export * from "./decision-step-ids.ts";
 export * from "./generation-failure.ts";
 export * from "./plan.ts";

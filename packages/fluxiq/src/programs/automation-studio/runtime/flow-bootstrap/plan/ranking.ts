@@ -20,18 +20,33 @@ const BOOTSTRAP_INTENT_EQUIVALENTS = [
   ["capture", "snapshot"]
 ] as const;
 
+const ENTER_INTENT = BOOTSTRAP_INTENT_EQUIVALENTS[0];
+const CHOOSE_INTENT = BOOTSTRAP_INTENT_EQUIVALENTS[1];
+const PRESS_INTENT = BOOTSTRAP_INTENT_EQUIVALENTS[2];
+
 /**
  * Intents an instruction carries without naming them, as the intent group it
- * implies. Filling in a form sets whatever controls it has, and its values do
- * not say which are choice lists: "Fill in the form with Ada as the name and
- * the Team plan" sets a select element, yet no word of it scores the select
- * node, so a live Flow was built without one and could not set the plan.
+ * implies; a word may imply more than one.
+ *
+ * - Filling in a form sets whatever controls it has, and its values do not say
+ *   which are choice lists: "Fill in the form with Ada as the name and the Team
+ *   plan" sets a select element, yet no word of it scores the select node, so
+ *   a live Flow was built without one and could not set the plan.
+ * - Giving something a new value enters it, and "change", "set" or "update"
+ *   do not say whether the control takes text or a choice. "Rename the
+ *   workspace to Aurora Field Team and save the settings" names no action word
+ *   at all: only start and end were reserved, the one node that scored was the
+ *   web domain's "Clear Field", and four live Flows only cleared the name.
+ * - Saving, applying or confirming a form is pressing its control.
  *
  * The implied group's best definition is preferred, never required, so a
  * domain without one, or a catalog without room for it, fails nothing.
  */
 const BOOTSTRAP_IMPLIED_INTENTS: ReadonlyArray<{ word: string; implies: readonly string[] }> = [
-  { word: "fill", implies: BOOTSTRAP_INTENT_EQUIVALENTS[1] }
+  { word: "fill", implies: CHOOSE_INTENT },
+  ...["rename", "change", "set", "update", "edit", "replace"].map((word) => ({ word, implies: ENTER_INTENT })),
+  ...["change", "set", "update"].map((word) => ({ word, implies: CHOOSE_INTENT })),
+  ...["save", "apply", "confirm", "send"].map((word) => ({ word, implies: PRESS_INTENT }))
 ];
 
 /**

@@ -269,3 +269,38 @@ describe("an instruction to fill in a form", () => {
     expect(context.nodeCatalog.map((entry) => entry.id)).not.toContain("web.output.dom-select");
   });
 });
+
+describe("an instruction whose verbs are not the catalog's own action words", () => {
+  const web = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry();
+  for (const webDefinition of webDomainNodeDefinitionsFixture()) registry.register(webDefinition);
+  const catalog = (body: string, maxCatalogBytes = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes) => buildAutomationStudioFlowBootstrapContext({
+    registry, resolution: web, instructionText: `Evidence-guided generation goal\n${body}`, maxCatalogEntries: 12, maxCatalogBytes
+  });
+
+  // The live campaign's rename task: no word of it is "type", "enter",
+  // "click" or "submit", so only start and end were reserved, the one web node
+  // that scored was "Clear Field" (on "field"), and four created Flows only
+  // cleared the name (`run-mu4vx5hj-fbb98886` and three variants).
+  it("offers the nodes that enter a value and press a control, without requiring them", () => {
+    const context = catalog("Rename the workspace to Aurora Field Team and save the settings.");
+
+    expect(context.catalogSelection).toMatchObject({ requiredTerms: ["start", "end"], missingRequiredTerms: [] });
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(expect.arrayContaining(["web.output.dom-type", "web.output.dom-click"]));
+  });
+
+  it("offers both ways of giving a control a new value to a word that does not say which", () => {
+    const ids = catalog("Change the plan to Team and apply it.").nodeCatalog.map((entry) => entry.id);
+
+    expect(ids).toEqual(expect.arrayContaining(["web.output.dom-type", "web.output.dom-select", "web.output.dom-click"]));
+  });
+
+  it("still builds when the offered nodes do not fit", () => {
+    const required = catalog("Rename the workspace and save it.").nodeCatalog
+      .filter((entry) => ["builtin.control.start", "builtin.control.end"].includes(entry.id));
+    const context = catalog("Rename the workspace and save it.", Buffer.byteLength(JSON.stringify(required), "utf8"));
+
+    expect(context.catalogSelection.missingRequiredTerms).toEqual([]);
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(["builtin.control.end", "builtin.control.start"]);
+  });
+});

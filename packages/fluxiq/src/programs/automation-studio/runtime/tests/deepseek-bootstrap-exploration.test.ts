@@ -276,7 +276,7 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       providerResponse: "received",
       // Three malformed replies were paid for nothing, so the record says so.
       accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-chat", inputTokens: 0, totalTokens: 0 }),
-      evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0, evidenceBytes: 0 },
+      evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0, evidenceBytes: 0, steps: Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" })) },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(run.adaptationCount).toBe(0);

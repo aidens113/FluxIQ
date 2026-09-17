@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../decision-step-ids.ts";
 import {
   flowBootstrapEvidenceLoopFailure,
   flowBootstrapEvidenceUnusableDecisionFailure,
@@ -135,7 +136,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       trace: [
         { iteration: 0, decision: "tool_call", toolId: "web.inspect", evidenceBytes: 40 },
         { iteration: 1, decision: "unusable", resultCode: "bootstrap.invalid_parameter_value" },
-        { iteration: 2, decision: "unusable" },
+        { iteration: 2, decision: "unusable", resultCode: "a refusal in prose, not a code" },
         { iteration: 3, decision: "unusable" }
       ],
       accounting: { iterations: 3, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
@@ -148,9 +149,41 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       providerInvocation: "attempted",
       providerResponse: "received",
       accounting: { requestId: "evidence.1", estimatedInputTokens: 9_000, inputTokens: 7_000, totalTokens: 8_000 },
-      evidenceLoop: { iterationCount: 3, decisionCount: 4, toolCallCount: 1, evidenceBytes: 40, steps: [{ toolId: "web.inspect" }] },
+      // Every decision, in order: the refused ones by Core's own step name and
+      // the code that refused each, so the record says what each call came to.
+      evidenceLoop: {
+        iterationCount: 3,
+        decisionCount: 4,
+        toolCallCount: 1,
+        evidenceBytes: 40,
+        steps: [
+          { toolId: "web.inspect" },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable, resultCode: "bootstrap.invalid_parameter_value" },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable }
+        ]
+      },
       issueCodes: ["bootstrap.invalid_parameter_value"]
     });
+  });
+
+  it("records a loop that never called a tool by its decisions alone, and an accepted completion by name", () => {
+    const stalled = flowBootstrapEvidenceUnusableDecisionFailure({
+      trace: [{ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" }],
+      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+      issueCodes: ["llm.provider_malformed_response"]
+    });
+    expect(stalled.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" }]);
+    const ended = flowBootstrapEvidenceLoopFailure({
+      ok: false,
+      code: "llm_evidence_loop.iteration_limit",
+      trace: [{ iteration: 1, decision: "complete" }],
+      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
+    });
+    expect(ended.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_complete" }]);
+    // The names fit the step shape a reader already parses.
+    expect(parseAutomationStudioFlowBootstrapGenerationError(stalled)).toEqual(stalled.diagnostic);
+    expect(parseAutomationStudioFlowBootstrapGenerationError(ended)).toEqual(ended.diagnostic);
   });
 
   it("carries a refused plan's issue codes, bounded, and refuses a record whose codes are not codes", () => {

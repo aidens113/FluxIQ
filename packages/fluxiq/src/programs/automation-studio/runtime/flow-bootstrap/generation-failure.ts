@@ -12,6 +12,7 @@ import type {
 } from "../llm/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 
@@ -156,6 +157,13 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
     decisionCount: number;
     toolCallCount: number;
     evidenceBytes: number;
+    /**
+     * Every decision the loop recorded, in order. A decision that called a
+     * tool is named by that tool. One that called none is named by
+     * `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS`, with the first code
+     * that refused it as its `resultCode` -- so a build stopped on refused
+     * plans says, decision by decision, what refused each one.
+     */
     steps?: Array<{
       toolId: string;
       effectApplied?: boolean;
@@ -292,22 +300,28 @@ type EvidenceLoopProgress = {
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
 };
 
+type EvidenceLoopStep = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]>[number];
+
 function evidenceLoopDiagnostic(
   result: EvidenceLoopProgress
 ): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
+  const steps = result.trace.flatMap(evidenceLoopStep);
   return {
     iterationCount: result.accounting.iterations,
     decisionCount: result.trace.length,
     toolCallCount: result.accounting.toolCalls,
     evidenceBytes: result.accounting.evidenceBytes,
-    ...(result.trace.some((entry) => entry.decision === "tool_call" && entry.toolId) ? {
-      steps: result.trace.flatMap((entry) => entry.decision === "tool_call" && entry.toolId ? [{
-        toolId: entry.toolId,
-        ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}),
-        ...(entry.resultCode ? { resultCode: entry.resultCode } : {})
-      }] : [])
-    } : {})
+    ...(steps.length ? { steps } : {})
   };
+}
+
+/** One recorded decision as a step: codes and names only, never what the tool returned or the model wrote. */
+function evidenceLoopStep(entry: AutomationStudioLlmEvidenceLoopTrace): EvidenceLoopStep[] {
+  const resultCode = entry.resultCode && DIAGNOSTIC_ISSUE_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {};
+  if (entry.decision === "tool_call") {
+    return entry.toolId ? [{ toolId: entry.toolId, ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}), ...resultCode }] : [];
+  }
+  return [{ toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS[entry.decision], ...resultCode }];
 }
 
 const FLOW_BOOTSTRAP_FAILURE_STAGES = new Set<AutomationStudioFlowBootstrapFailureStage>([
