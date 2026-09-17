@@ -371,6 +371,15 @@
       "packages/fluxiq/src/programs/identity-access/runtime/credential-seal.ts": 1,
       "packages/fluxiq/src/programs/secret-keys/runtime/service.ts": 1
     },
+    "web-vocabulary": {
+      "packages/fluxiq/src/programs/automation-studio/fingerprinting/element-fingerprint.ts": 42,
+      "packages/fluxiq/src/programs/automation-studio/model/action-element-target.ts": 19,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service/object-documents.ts": 3,
+      "packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts": 3,
+      "packages/contracts/src/automation-studio.ts": 1,
+      "packages/contracts/src/client-gateway.ts": 1,
+      "packages/fluxiq/src/programs/automation-studio/model/actions.ts": 1
+    },
     "working-docs": {
       "docs/working/ui-ux-upgrade-audit-plan.md": 6007,
       "docs/working/llm-assisted-deterministic-automation-expansion-plan.md": 3466,

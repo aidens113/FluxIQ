@@ -71,6 +71,20 @@ export const CONFIG = {
     }
   ],
 
+  // Path prefixes whose source must stay neutral about any single domain: the
+  // web-vocabulary rule reads every name declared or read under them and fails
+  // on a web or DOM word that is not already baselined.
+  //
+  // `packages/` is the whole of it, and deliberately so. It is what a domain
+  // repository installs and imports, so a web word that lands there becomes a
+  // field every other domain carries. `apps/web` is out: it is Core's own
+  // Next.js interface, and a React component legitimately owns a class name, a
+  // click handler and a scroll container -- that is the DOM used as a UI
+  // toolkit, not Core learning one domain's vocabulary. `scripts/` is out for
+  // the same reason; the docs-links rule parses HTML anchors because Markdown
+  // contains them.
+  domainNeutralPaths: ["packages"],
+
   // Path prefixes exempt from the depth limit because a framework dictates
   // their layout. The Next.js app router encodes routes as directories.
   depthExemptPrefixes: ["apps/web/src/app"],
