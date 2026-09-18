@@ -50,6 +50,12 @@ import {
   type AutomationStudioExplorationOutcome,
   type AutomationStudioExplorationStopReason
 } from "./exploration-outcome.ts";
+import {
+  AutomationStudioExplorationStateRecorder,
+  type AutomationStudioExplorationStateDigestFailure,
+  type AutomationStudioExplorationStateDigestSource,
+  type AutomationStudioExplorationStepRecord
+} from "./exploration-state/index.ts";
 import { automationStudioExplorationEvidenceDigest, type AutomationStudioExplorationNoProgressReason } from "./progress-guard.ts";
 import type { AutomationStudioRecoveryDeadline } from "./recovery-deadline.ts";
 import { AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES, type AutomationStudioRecoveryTraceEvent } from "./trace.ts";
@@ -80,6 +86,17 @@ export type AutomationStudioRuntimeExplorationInput = {
   recoveryDeadline?: AutomationStudioRecoveryDeadline;
   completionSchema?: JsonObject;
   classifyRefusal?: AutomationStudioExplorationRefusalClassifier;
+  /**
+   * What the state was, asked once before each action and once after it.
+   *
+   * Core cannot answer it: the digest it already computes is of the evidence a
+   * step returned, which is what the step said rather than what the world was.
+   * The contract the answer must satisfy is stated in
+   * `exploration-state/digest-source.ts`, and it is the contract a reduction
+   * rests on. Absent, the exploration still records what each action was asked
+   * to do, and nothing can be reduced.
+   */
+  captureStateDigest?: AutomationStudioExplorationStateDigestSource;
   now?: () => number;
   /** Cancellation from outside. Its own outcome: neither a limit nor a fault. */
   signal?: AbortSignal;
@@ -105,6 +122,17 @@ export type AutomationStudioRuntimeExploration = {
   unusableDecisions: number;
   accounting: AutomationStudioLlmEvidenceLoopAccounting;
   trace: AutomationStudioLlmEvidenceLoopTrace[];
+  /**
+   * The two facts the trace cannot carry, per action that ran: the argument it
+   * was given, and the state either side of it. Joined to `trace` by `callId`,
+   * because one exploration has one record and a second one disagrees with it.
+   * Empty when no action ran; digests absent when nothing observed the state.
+   */
+  steps: readonly AutomationStudioExplorationStepRecord[];
+  /** Moments whose digest was asked for and threw. Never fails a step. */
+  stateDigestFailures: readonly AutomationStudioExplorationStateDigestFailure[];
+  /** Whether anything was bound to say what the state was during this exploration. */
+  observedState: boolean;
   durationMs: number;
 };
 
@@ -122,6 +150,10 @@ export async function runAutomationStudioRuntimeExploration(
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
   let unusableDecisions = 0;
+  // The exploration's own step record, taken where the action is called because
+  // that is the only place that holds both the argument the loop discards and
+  // the two moments either side of the step.
+  const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -153,7 +185,11 @@ export async function runAutomationStudioRuntimeExploration(
           const signature = actionSignature(call.toolId, call.value);
           const admitted = ledger.admitAction(signature);
           if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
-          const execution = await input.loop.executeTool(call);
+          // The state either side of the step, and the argument it was given,
+          // recorded around the call itself. Deliberately not the evidence
+          // digest below: that is what the step said, and a reduction needs
+          // what the world was.
+          const execution = await recorder.around(call, () => input.loop.executeTool(call));
           // What the step asked for and what came back, recorded together. The
           // ledger needs both to answer whether the exploration is still
           // learning: a repeated request and a new request that returned an
@@ -179,7 +215,7 @@ export async function runAutomationStudioRuntimeExploration(
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
       });
-    return classify({ loopResult, ledger, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
+    return classify({ loopResult, ledger, recorder, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();
   }
@@ -252,11 +288,13 @@ type LoopResult = Awaited<ReturnType<typeof runAutomationStudioLlmEvidenceLoop>>
 function classify(input: {
   loopResult: LoopResult | undefined;
   ledger: AutomationStudioExplorationBudgetLedger;
+  recorder: AutomationStudioExplorationStateRecorder;
   unusableDecisions: number;
   externallyCancelled: boolean;
   durationMs: number;
 }): AutomationStudioRuntimeExploration {
   const accounting = input.loopResult?.accounting ?? emptyAccounting();
+  const trace = input.loopResult?.trace ?? [];
   const base = {
     schemaVersion: "automation-studio.exploration.v1" as const,
     actions: input.ledger.actions,
@@ -264,7 +302,13 @@ function classify(input: {
     refusedActions: input.ledger.refusedActions,
     unusableDecisions: input.unusableDecisions,
     accounting,
-    trace: input.loopResult?.trace ?? [],
+    trace,
+    // Written on every branch, not just the successful one: a step that ran
+    // before a limit stopped the exploration still ran, and a receipt that
+    // dropped it would be shorter than the truth.
+    steps: input.recorder.stepsAlongside(trace),
+    stateDigestFailures: input.recorder.digestFailures,
+    observedState: input.recorder.observesState,
     durationMs: input.durationMs
   };
   const stopReason = input.ledger.stopReason;

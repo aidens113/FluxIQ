@@ -482,6 +482,9 @@ function blankExploration(): AutomationStudioRuntimeExploration {
     unusableDecisions: 0,
     accounting: { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
     trace: [],
+    steps: [],
+    stateDigestFailures: [],
+    observedState: false,
     durationMs: 0
   };
 }
