@@ -154,7 +154,8 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(AUTOMATION_STUDIO_LLM_CONSERVATIVE_UTF8_BYTES_PER_TOKEN).toBe(3);
     expect(automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens)).toBe(12_000);
     expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(12_000)).toBe(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens);
-    expect(firstLiveCatalogBytes).toBe(5_366);
+    // 248 bytes fewer than before 2026-09-18: the schema now carries each route rule's condition.
+    expect(firstLiveCatalogBytes).toBe(5_118);
   });
 
   it("publishes the strict parser shape and conditional catalog-bound node fields", () => {

@@ -87,7 +87,7 @@ import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResu
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
-import { runAutomationStudioRouter } from "./router-runtime.ts";
+import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
 import {
   annotateRunDetailWithTrainingMode,
@@ -1894,6 +1894,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let instructedConsequences: readonly AutomationStudioInstructedConsequence[] | undefined;
         let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
         let accounting: AutomationStudioBootstrapAccounting;
+        const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs });
         if (input.evidenceGuided) {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pre_provider_validation_failed");
           let estimatedInputTokens = 0;
@@ -1917,7 +1918,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             },
             completionSchema, signal: permissions.signal,
             ...bootstrapLoopLimits.loop,
-            decide: async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+            decide: routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
               if (input.useReusableContext === true && evidence.length) {
                 reusableContextResult = await this.reusableLlmContextForFreshEvidence({
                   optedIn: true, taskKind: "flow_bootstrap", projectId, flowId,
@@ -1932,7 +1933,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 // Reserve evidence-decision input capacity for the dynamic tool
                 // schema and accumulated evidence instead of allowing the node
                 // catalog to consume the ordinary Bootstrap input allocation.
-                flowBootstrap: { registry, resolution, maxInputTokens: 5_000 },
+                flowBootstrap: { registry, resolution, maxInputTokens: 5_000, routing: routing.context() },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
                 ...(bootstrapLoopLimits.maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall } : {}),
@@ -1942,7 +1943,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               estimatedInputTokens += decision.request.estimatedInputTokens;
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
-            },
+            }),
             executeTool: permissions.executeTool
           });
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
@@ -1958,7 +1959,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         } else {
           const result = await this.runFlowBootstrapLlmHarness({
             taskKind: "flow_bootstrap", projectId, flowId, instructions,
-            flowBootstrap: { registry, resolution, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens },
+            flowBootstrap: { registry, resolution, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens, routing: routing.context() },
             provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
             ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
             ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
@@ -2012,7 +2013,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           baseDependencyDigest: adaptation.baseDependencyDigest,
           baseSettingsRevision: adaptation.baseSettingsRevision,
           accounting: structuredClone(accounting)
-
         };
       });
     } catch (error) {
@@ -2192,7 +2192,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }> {
     return await this.flowGraphPatch.applyFlowGraphPatch(input);
   }
-
 
   async compileAndSaveFlowSource(input: { projectId: string; flowId: string; moduleId: string; sourceText: string }): Promise<{ compilation: AutomationStudioFlowCompilation; flow?: AutomationStudioFlowArtifact }> {
     const existing = await this.getFlow(input.projectId, input.flowId);
@@ -3151,13 +3150,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if (router) {
         const subflowPage = await this.listFlowSubflowSummaries({ projectId: input.projectId, flowId: runtimeCanonical.flowId, limit: 100, offset: 0 });
         const subflows = await Promise.all(subflowPage.subflows.map((item) => this.getFlowSubflow(input.projectId!, runtimeCanonical.flowId, item.subflowId)));
-        const route = runAutomationStudioRouter({
+        const route = await routeAutomationStudioRun({
           projectId: input.projectId,
           flowId: runtimeCanonical.flowId,
           router,
           subflows: subflows.filter((item): item is AutomationStudioFlowSubflow => Boolean(item)),
           inputs: graphOptions.inputs as JsonObject,
-          currentStateSummary: jsonObjectFromUnknown((graphOptions.inputs as Record<string, unknown>).state) ?? {},
+          callerState: jsonObjectFromUnknown((graphOptions.inputs as Record<string, unknown>).state),
+          hostRuntime: this.hostRuntime, signal: abortController.signal,
           now: () => startedAt
         });
         const selectedFlowId = route.selectedSubflow?.graphFlowId ?? "";

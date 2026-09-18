@@ -44,6 +44,15 @@
 // copies whatever shape the example shows, so the example must show the right
 // shape and the surrounding line must say it is a shape. That is what these
 // two now do together.
+//
+// The routing lines were rewritten on 2026-09-18. The format used to say that
+// `step: run subflow <label>` reaches a block, and Core read that as a route
+// rule with no condition -- which always holds, so every Flow built with a
+// block ran that block and nothing else, whatever the page showed. A block now
+// says when it runs with a `when:` line, the router tests those before any
+// step runs, and the steps outside every block are what runs when none holds.
+// The paths a condition may read, and the values exploration saw for them,
+// arrive beside the format under `routing`.
 
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",
@@ -57,8 +66,11 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
   "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
-  "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists.",
-  "`subflow <label>:` starts a named block of steps and `end` closes it; `step: run subflow <label>` reaches that block.",
+  "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists, and never the step written next.",
+  "When the run can start in different situations that need different steps -- the instruction says so, or routing.situations shows it -- give each such situation a block: `subflow <label>: <the situation>`, then `when: <condition>`, then its steps, then `end`. The steps outside every block are what runs when no block's condition holds.",
+  "The router checks the blocks in the order written, before any step runs, and runs only the first whose `when:` holds; nothing else runs. So a block holds every step its situation needs, including the ones it shares with the others.",
+  "A condition is `<path> <test> [value]`, for example `when: state.page.dialog exists` or `when: inputs.mode is retry`. The path is one listed in routing.paths; the test is exists, is missing, is, is not, contains, does not contain, matches, starts with, greater than, less than, is true or is false. Two `when:` lines must both hold.",
+  "One situation needs no block and no `when:`: write its steps and nothing else.",
   "A line with no `key:` continues the value above it on a new line.",
   "Where a step names something you observed, its value is the handle the evidence printed for it, copied exactly. The handles in the examples below are the shape, not the value: read the real one out of the evidence, and never invent one, describe one, or reuse one from an example.",
   "Example:",
@@ -92,5 +104,19 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "step: read what is left",
   "  node: web.dom.extract_list",
   "  extractList: extraction.1",
-  "  extractList.minItems: 0"
+  "  extractList.minItems: 0",
+  "Example, two situations the run can start in:",
+  "flow: Export this week's orders",
+  "subflow notice: a notice stands in front of the orders",
+  "  when: state.page.dialog exists",
+  "  step: close the notice",
+  "    node: web.dom.click",
+  "    target: target.9",
+  "  step: read the orders",
+  "    node: web.dom.extract_list",
+  "    extractList: extraction.1",
+  "end",
+  "step: read the orders",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.1"
 ].join("\n");

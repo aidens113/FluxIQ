@@ -491,11 +491,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
       projectId: request.context.projectId,
       flowId: request.context.flowId,
       instructions: request.context.instructions,
-      flowBootstrap: {
-        nodeCatalog: request.context.flowBootstrap.nodeCatalog,
-        catalogTruncated: request.context.flowBootstrap.catalogTruncated,
-        catalogSelection: request.context.flowBootstrap.catalogSelection
-      },
+      flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap),
       ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
     }
     : request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop
@@ -515,11 +511,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
           })),
           evidence: request.context.evidenceLoop.evidence
         },
-        ...(request.context.flowBootstrap ? { flowBootstrap: {
-          nodeCatalog: request.context.flowBootstrap.nodeCatalog,
-          catalogTruncated: request.context.flowBootstrap.catalogTruncated,
-          catalogSelection: request.context.flowBootstrap.catalogSelection
-        } } : {}),
+        ...(request.context.flowBootstrap ? { flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap) } : {}),
         ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
       }
       : request.context;
@@ -530,6 +522,12 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
     ...(outputSchemaForRequest(request) ? { outputSchema: outputSchemaForRequest(request) } : {}),
     context
   };
+}
+
+/** What a build is shown of its catalog context: the catalog, and the routing context when the build has one. */
+function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): JsonObjectLike {
+  const { nodeCatalog, catalogTruncated, catalogSelection, routing } = context;
+  return { nodeCatalog, catalogTruncated, catalogSelection, ...(routing ? { routing } : {}) };
 }
 
 function outputSchemaForRequest(request: AutomationStudioLlmTaskRequest): JsonObjectLike | undefined {
