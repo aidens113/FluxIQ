@@ -160,6 +160,12 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       verification: tested.verification,
       restoredExpectedState: tested.restoredExpectedState,
       retryOriginalAction: tested.retryOriginalAction,
+      // The trial's own answer to whether the run may carry on, and from where.
+      // The retry is the only caller, it runs long after the trial is over, and
+      // this receipt is the only copy of the verdict it can still see.
+      resumable: tested.verdict?.resumable,
+      notResumableCode: tested.verdict?.notResumableCode,
+      resumeFrom: tested.verdict?.resumeFrom,
       issues: tested.preflight.issues,
       traceStatus: tested.trace?.status ?? "not-run",
       adaptationId: tested.adaptation?.adaptationId,

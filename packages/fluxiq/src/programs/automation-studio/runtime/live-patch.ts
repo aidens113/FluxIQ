@@ -285,9 +285,15 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
  * The run's own options for the trial, bounded by the steps the run has left
  * when the caller says how many that is. Undefined when none is left: a trial
  * that may take no step runs nothing.
+ *
+ * The options also name the Subflow being patched, when one is. The verdict's
+ * resume point is read off them (`trialAutomationStudioFlowChange`), and a
+ * node id is unique only inside the graph that holds it, so without this the
+ * trial would hand back a node id belonging to no named graph and a caller
+ * resuming on it could aim at a same-named node of the parent Flow.
  */
 function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioGraphExecutionOptions | undefined {
-  const options = input.options ?? {};
+  const options = { ...(input.options ?? {}), ...(input.subflowId ? { currentSubflowId: input.subflowId } : {}) };
   if (input.remainingSteps === undefined) return options;
   const remaining = Math.floor(input.remainingSteps);
   return Number.isFinite(remaining) && remaining >= 1 ? { ...options, maxSteps: remaining } : undefined;
