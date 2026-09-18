@@ -266,7 +266,7 @@ import {
   type RuntimeIndex,
 } from "./service/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
 export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
 export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
@@ -2787,7 +2787,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async startRuntimeSession(input: {
-    projectId?: string | null;
+    projectId?: string | null; runId?: string;
     targetKind?: AutomationStudioRuntimeSession["targetKind"];
     targetId?: string;
     flow?: AutomationStudioFlowDocument;
@@ -2804,7 +2804,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const now = Date.now();
     const session: AutomationStudioRuntimeSession = {
       schemaVersion: "0.1",
-      runId: randomUUID(),
+      runId: input.runId ?? randomUUID(),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       targetKind: input.targetKind ?? (canonical ? "flow" : flow.ownerKind === "policy" ? "flow" : flow.ownerKind),
       targetId: input.targetId ?? canonical?.flowId ?? flow.ownerId,
@@ -3062,7 +3062,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async runRuntimeSession(input: {
     projectId?: string | null;
-    runId?: string;
+    runId?: string; newRunId?: string;
     flow?: AutomationStudioFlowDocument;
     flowId?: string;
     inputs?: JsonObject;
@@ -3099,9 +3099,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
     if (existing?.status === "cancelled") return existing;
     const startInput: Parameters<AutomationStudioService["startRuntimeSession"]>[0] = {};
-    for (const field of ["projectId", "flow", "flowId", "inputs", "authorizedDomainIds"] as const) {
-      if (input[field] !== undefined) Object.assign(startInput, { [field]: input[field] });
-    }
+    for (const field of ["projectId", "flow", "flowId", "inputs", "authorizedDomainIds"] as const) if (input[field] !== undefined) Object.assign(startInput, { [field]: input[field] });
+    const requestedRunId = await automationStudioRequestedRunId({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), refused: () => { if (input.llmExecution) this.revokeLlmExecutionGrant?.(input.llmExecution.grantId); } }, input);
+    if (requestedRunId) startInput.runId = requestedRunId;
     if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
     const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
