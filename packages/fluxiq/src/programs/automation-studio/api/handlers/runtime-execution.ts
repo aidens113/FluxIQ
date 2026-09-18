@@ -24,7 +24,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     permission: "runtime.control",
     classification: "authoring",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
       if ((payload as Record<string, unknown>).useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
       // Every purpose a runtime session runs under, named in one place, so
       // `explore_and_adapt` is reachable from a failed run rather than being a
@@ -32,6 +32,9 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       const runIntent = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((purpose) => purpose === payload.runIntent);
       const llmExecution = runIntent && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: runIntent } : undefined;
       if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A supported explicit LLM intent and grant are required together." };
+      // `newRunId` is not this: it names the session the run is about to create,
+      // so the caller can read the run back if its own request is cut short
+      // (`runtime/service/runtime-session/requested-run-id.ts`).
       if (llmExecution && payload.runId !== undefined) {
         llmExecutionGrants?.revoke(llmExecution.grantId);
         return { ok: false, error: "An explicit LLM run must create a fresh runtime session." };

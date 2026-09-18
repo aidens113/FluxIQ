@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import {
   automationStudioHarnessOptionRegistry,
   type AutomationStudioLlmEvidenceTool,
@@ -342,7 +343,7 @@ type Scenario = {
   decide?: (decision: { signal?: AbortSignal }) => Promise<unknown>;
 };
 
-type ExploreExecute = (input: { callId: string; toolId: string; value: JsonObject }) => Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+type ExploreExecute = (input: { callId: string; toolId: string; value: JsonObject; permission: AutomationStudioActionPermissionCheck }) => Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
 
 /** Every ending, each reached a different way, in one table. */
 function SCENARIOS(): Array<[string, string, string, Scenario]> {
@@ -380,10 +381,13 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
       budget: { maxRefusedActions: 1 },
       execute: refusingExecution("test.refused.scope")
     }],
-    ["refusal that needs a person", "user_intervention_required", "operator_approval_required", {
-      decisions: [call("test.inspect", { area: "one" }), complete({ finding: "unreached" })],
-      budget: { maxRefusedActions: 1 },
-      execute: refusingExecution("test.refused.operator")
+    // Only the permission gate raises `operator_approval_required`, with a
+    // request in hand: here the domain asks before a consequential step and
+    // the run holds no grant. A domain code read as that reason is reported
+    // as the refusal it is (`runtime-exploration-permission.test.ts`).
+    ["step a person has not allowed", "user_intervention_required", "operator_approval_required", {
+      decisions: [call("test.reveal", { control: "Refund" }), complete({ finding: "unreached" })],
+      execute: askingExecution
     }],
     ["cancellation from outside", "cancelled", "exploration.cancelled", {
       decisions: [complete({ finding: "unreached" })],
@@ -454,6 +458,14 @@ const defaultExecution: ExploreExecute = async (input) => ({
   effectApplied: input.toolId === "test.reveal",
   resultCode: "test.ok"
 });
+
+/** A domain that asks before a step that would move money, and acts only when told it may. */
+const askingExecution: ExploreExecute = async (input) => {
+  if (input.toolId === "test.reveal" && !(await input.permission({ consequences: ["move_money"], control: { name: "Refund" }, verb: "press" })).permitted) {
+    return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "test.refused.permission" }, effectApplied: false, resultCode: "test.refused.permission" };
+  }
+  return defaultExecution(input);
+};
 
 function refusingExecution(resultCode: string): ExploreExecute {
   return async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: resultCode }, effectApplied: false, resultCode });

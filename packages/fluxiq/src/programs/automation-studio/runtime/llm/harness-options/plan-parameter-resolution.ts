@@ -18,6 +18,7 @@
 // `createFlowBootstrapAdaptation` directly, or read back to be applied.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
@@ -55,13 +56,21 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   binding?: ParameterResolver | undefined;
   /** Whether this generation explored, so the model can have been shown handles at all. */
   handlesIssued: boolean;
+  /**
+   * The build's permission check for one step, named by its definition and
+   * `<subflow key>.<node key>`. Absent, every step is handed
+   * `automationStudioActionPermissionDenied`: a plan resolved with no build
+   * behind it has nobody to ask, so no step with a lasting consequence passes.
+   */
+  permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
 }): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const resolvedNodeKeys: string[] = [];
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
-      const outcome = await resolveNode(node, input);
+      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref: `${subflow.key}.${node.key}` }) ?? automationStudioActionPermissionDenied;
+      const outcome = await resolveNode(node, input, permission);
       if (outcome.status === "refused") {
         const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
         for (const code of outcome.issueCodes) issues.push(parameterIssue(code, path));
@@ -94,7 +103,8 @@ type NodeOutcome =
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean }
+  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean },
+  permission: AutomationStudioActionPermissionCheck
 ): Promise<NodeOutcome> {
   const found = automationStudioPlanNodeHandleSites(node.parameters);
   if (found.malformed) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.malformed);
@@ -110,7 +120,8 @@ async function resolveNode(
       projectId: input.projectId,
       flowId: input.flowId,
       nodeDefinitionId: node.definitionId,
-      parameters: structuredClone(node.parameters ?? {})
+      parameters: structuredClone(node.parameters ?? {}),
+      permission
     });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);

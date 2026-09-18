@@ -20,6 +20,7 @@
 // a validator's prose.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import {
   acceptAutomationStudioFlowBootstrapResult,
@@ -76,6 +77,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters"> | undefined;
+  /** The build's permission check for each step, handed to the domain as it resolves the step. */
+  permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -106,7 +109,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     projectId: input.projectId,
     flowId: input.flowId,
     binding: input.binding,
-    handlesIssued: true
+    handlesIssued: true,
+    permissionFor: input.permissionFor
   });
   if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan));
   let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;

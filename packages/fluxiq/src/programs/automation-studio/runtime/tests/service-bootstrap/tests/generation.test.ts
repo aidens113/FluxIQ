@@ -108,7 +108,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       executionGrant
     });
 
-    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, executionGrant });
+    // The grant as the service read it: a grant that named no consequences permits none.
+    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, executionGrant: { ...executionGrant, permittedConsequences: [] } });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       taskKind: "flow_bootstrap",

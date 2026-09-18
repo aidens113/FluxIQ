@@ -27,8 +27,17 @@
 // cannot read a finding out of an exploration that was stopped, refused or
 // empty. `evidence_gathered` itself is constructible only from an action that
 // returned evidence -- Phase D's rule, applied one layer further out.
+//
+// **An action the run was not allowed is a question for a person, and ends
+// the exploration.** Every action is handed the run's permission check. When
+// the domain declares a lasting consequence the run does not hold, the gate
+// raises a request and the exploration stops there with
+// `operator_approval_required`, carrying it. Nothing else raises that reason:
+// a domain's own refusal code cannot, because a stop with no request in hand
+// would ask a person a question nobody can answer.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
@@ -97,6 +106,20 @@ export type AutomationStudioRuntimeExplorationInput = {
    * to do, and nothing can be reduced.
    */
   captureStateDigest?: AutomationStudioExplorationStateDigestSource;
+  /**
+   * The consequences the run's grant permits. Absent permits nothing: an
+   * action with a lasting consequence then ends the exploration with a
+   * request, which is the fail-closed answer rather than a silent refusal.
+   */
+  permittedConsequences?: readonly string[];
+  /** The instructions the run is carrying out, cited by a request as its reason. */
+  instructionIds?: readonly string[];
+  /**
+   * Evidence the model was shown before the first action -- the failure
+   * packet, for a recovery. A request may name a control from it; without it,
+   * a name only the failure packet held is withheld from the request.
+   */
+  shownEvidence?: readonly JsonValue[];
   now?: () => number;
   /** Cancellation from outside. Its own outcome: neither a limit nor a fault. */
   signal?: AbortSignal;
@@ -115,6 +138,12 @@ export type AutomationStudioRuntimeExploration = {
   noProgressReason?: AutomationStudioExplorationNoProgressReason;
   /** Present only on `evidence_gathered`. There is no other branch that writes it. */
   result?: JsonObject;
+  /**
+   * Present exactly when the exploration stopped on `operator_approval_required`:
+   * the action it needed, its consequences, the control as a person would
+   * name it and why. What a person grants or refuses from.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
   actions: number;
   observedActions: number;
   refusedActions: number;
@@ -154,6 +183,13 @@ export async function runAutomationStudioRuntimeExploration(
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
   const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
+  const gate = new AutomationStudioActionPermissionGate({
+    permittedConsequences: input.permittedConsequences,
+    stage: "recovery",
+    instructionIds: input.instructionIds,
+    now
+  });
+  for (const shown of input.shownEvidence ?? []) gate.observe(shown);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -189,7 +225,10 @@ export async function runAutomationStudioRuntimeExploration(
           // recorded around the call itself. Deliberately not the evidence
           // digest below: that is what the step said, and a reduction needs
           // what the world was.
-          const execution = await recorder.around(call, () => input.loop.executeTool(call));
+          const permission = gate.checkFor({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+          const execution = await recorder.around(call, () => input.loop.executeTool({ ...call, permission }));
+          gate.observe(execution);
+          const needsPermission = gate.raisedDuring(call.callId);
           // What the step asked for and what came back, recorded together. The
           // ledger needs both to answer whether the exploration is still
           // learning: a repeated request and a new request that returned an
@@ -201,8 +240,12 @@ export async function runAutomationStudioRuntimeExploration(
             signature,
             evidenceDigest: automationStudioExplorationEvidenceDigest(evidenceText),
             evidenceBytes: emptyEvidence(evidence) ? 0 : Buffer.byteLength(evidenceText, "utf8"),
-            ...refusal(execution, input.classifyRefusal)
+            ...(needsPermission ? { refused: "operator_approval_required" as const } : refusal(execution, input.classifyRefusal))
           });
+          // Terminal, not parked: the step is recorded, and the exploration
+          // ends here rather than asking the model for something else to try.
+          // `classify` reads the gate before anything the loop reports.
+          if (needsPermission) throw new Error("exploration stopped: operator_approval_required");
           return execution;
         },
         // The ledger is the binding limit on actions and provider calls, so it
@@ -215,7 +258,7 @@ export async function runAutomationStudioRuntimeExploration(
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
       });
-    return classify({ loopResult, ledger, recorder, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
+    return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();
   }
@@ -256,6 +299,10 @@ export function automationStudioExplorationTraceEvent(input: {
       endedBy: exploration.endedBy,
       ...(exploration.stopReason ? { stopReason: exploration.stopReason } : {}),
       ...(exploration.noProgressReason ? { noProgressReason: exploration.noProgressReason } : {}),
+      // The one detail that is not a count: what a person is being asked to
+      // allow. Bounded and built by Core, with a control name only when the
+      // model had already been shown it.
+      ...(exploration.permissionRequest ? { permissionRequest: exploration.permissionRequest } : {}),
       actions: exploration.actions,
       observedActions: exploration.observedActions,
       refusedActions: exploration.refusedActions,
@@ -289,6 +336,7 @@ function classify(input: {
   loopResult: LoopResult | undefined;
   ledger: AutomationStudioExplorationBudgetLedger;
   recorder: AutomationStudioExplorationStateRecorder;
+  permissionRequest: AutomationStudioActionPermissionRequest | undefined;
   unusableDecisions: number;
   externallyCancelled: boolean;
   durationMs: number;
@@ -311,6 +359,20 @@ function classify(input: {
     observedState: input.recorder.observesState,
     durationMs: input.durationMs
   };
+  // A request outranks every other ending. The exploration stopped because of
+  // it, at the moment it was raised, and it is the one ending a person can do
+  // something about; a clock that ran out while the step unwound must not
+  // replace it with a number to raise.
+  if (input.permissionRequest) {
+    return {
+      ...base,
+      outcome: AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.operator_approval_required,
+      reason: input.permissionRequest.sentence,
+      endedBy: "operator_approval_required",
+      stopReason: "operator_approval_required",
+      permissionRequest: input.permissionRequest
+    };
+  }
   const stopReason = input.ledger.stopReason;
   if (stopReason) {
     const noProgressReason = input.ledger.noProgressReason;
@@ -375,7 +437,7 @@ const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReaso
   destructive_action_refused: "The exploration asked to do something destructive and was refused.",
   out_of_scope_refused: "The exploration asked to go outside the scope it was given and was refused.",
   refusal_limit: "Every action the exploration had left to try was refused.",
-  operator_approval_required: "The exploration cannot go further without a person."
+  operator_approval_required: "The exploration needed an action the run was not permitted to take, and stopped to ask a person for it."
 });
 
 function refusal(
@@ -386,6 +448,10 @@ function refusal(
   const resultCode = executionResultCode(execution);
   if (resultCode === undefined) return {};
   const refused = classifyRefusal(resultCode);
+  // Only the gate raises `operator_approval_required`, because only the gate
+  // holds a request to raise it with. A domain code read as one here is a
+  // refusal with nobody to ask, and is reported as the refusal it is.
+  if (refused === "operator_approval_required") return { refused: "destructive_action_refused" };
   return refused ? { refused } : {};
 }
 
