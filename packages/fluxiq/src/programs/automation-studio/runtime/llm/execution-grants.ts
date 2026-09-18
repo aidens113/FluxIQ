@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../action-permissions/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
 import type { SecretKeysService } from "../../../secret-keys/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
@@ -135,6 +136,8 @@ export type AutomationStudioLlmExecutionGrantMetadata = {
    * runs on its own lease, `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`. */
   expiresAtMs: number;
   remainingUses: number;
+  /** The lasting consequences a person allowed the run's actions to have. Empty permits none. */
+  permittedConsequences: AutomationStudioActionConsequence[];
 };
 
 type StoredGrant = AutomationStudioLlmExecutionGrantMetadata & {
@@ -171,6 +174,8 @@ type RequestedExecutionLimits = {
   timeoutMs?: number;
   providerRetryCount?: number;
   purpose?: AutomationStudioLlmExecutionGrantPurpose;
+  /** What the person allows the run's actions to do. Absent is none; an unrecognised class refuses the grant. */
+  permittedConsequences?: AutomationStudioActionConsequence[];
 };
 
 type GrantScope = {
@@ -229,6 +234,7 @@ export class AutomationStudioLlmExecutionGrantService {
     if (!Number.isFinite(maxTotalEstimatedCostUsd) || maxTotalEstimatedCostUsd <= 0 || maxTotalEstimatedCostUsd > MAX_TOTAL_COST_USD || maxTotalEstimatedCostUsd < maxEstimatedCostUsd) throw new Error("LLM total estimated-cost limit is invalid.");
     const timeoutMs = input.timeoutMs ?? TIMEOUT_MS;
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS) throw new Error("LLM timeout limit is invalid.");
+    const permittedConsequences = parseAutomationStudioPermittedConsequences(input.permittedConsequences);
     return {
       keyId: key.id,
       provider: "deepseek",
@@ -245,7 +251,8 @@ export class AutomationStudioLlmExecutionGrantService {
       maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd,
       timeoutMs,
-      providerRetryCount: 0
+      providerRetryCount: 0,
+      permittedConsequences
     };
   }
 
@@ -731,7 +738,8 @@ function publicGrant(grant: StoredGrant): AutomationStudioLlmExecutionGrantMetad
     timeoutMs: grant.timeoutMs,
     providerRetryCount: 0,
     expiresAtMs: grant.expiresAtMs,
-    remainingUses: grant.remainingUses
+    remainingUses: grant.remainingUses,
+    permittedConsequences: [...grant.permittedConsequences]
   };
 }
 

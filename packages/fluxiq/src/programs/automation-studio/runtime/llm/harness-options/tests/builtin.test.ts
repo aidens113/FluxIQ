@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { automationStudioActionPermissionDenied } from "../../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS, builtinAutomationStudioHarnessOptions } from "../builtin.ts";
 import type { AutomationStudioHarnessOptionHost } from "../host.ts";
 import { automationStudioHarnessOptionIssues } from "../option.ts";
@@ -25,7 +26,7 @@ function fullHost(): AutomationStudioHarnessOptionHost {
 }
 
 function call(optionId: string, value: Record<string, unknown>) {
-  return { projectId: "project.one", flowId: "flow.one", callId: "call.1", optionId, value: value as never, maxEvidenceBytes: 1_000 };
+  return { projectId: "project.one", flowId: "flow.one", callId: "call.1", optionId, value: value as never, maxEvidenceBytes: 1_000, permission: automationStudioActionPermissionDenied };
 }
 
 /** Source with comments removed, so a sentence explaining that Core carries no

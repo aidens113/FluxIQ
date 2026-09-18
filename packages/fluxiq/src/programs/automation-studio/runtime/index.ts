@@ -1,4 +1,5 @@
 export * from "./adaptation-confidence/index.ts";
+export * from "./action-permissions/index.ts";
 export * from "./adapters.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
