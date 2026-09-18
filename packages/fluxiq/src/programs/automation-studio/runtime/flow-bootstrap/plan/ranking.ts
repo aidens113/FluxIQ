@@ -102,9 +102,11 @@ export function rankBootstrapDefinitions(
     if (definition && !requiredIds.has(definition.id) && !implied.includes(definition)) implied.push(definition);
   }
   const instructionTerms = [...tokens].filter((term) => !BOOTSTRAP_STOP_WORDS.has(term));
+  const tagPreferred = preferTaggedDefinitions(definitions, searchable, instructionTerms, new Set([...requiredIds, ...implied.map((definition) => definition.id)]));
   const preferred = [
     ...implied,
-    ...preferTaggedDefinitions(definitions, searchable, instructionTerms, new Set([...requiredIds, ...implied.map((definition) => definition.id)]))
+    ...tagPreferred,
+    ...actingDefinitions(definitions, searchable, new Set([...requiredIds, ...implied.map((item) => item.id), ...tagPreferred.map((item) => item.id)]))
   ];
   const chosenIds = new Set([...requiredIds, ...preferred.map((definition) => definition.id)]);
   const ranked = definitions
@@ -117,6 +119,45 @@ export function rankBootstrapDefinitions(
     .sort((left, right) => right.score - left.score || left.definition.id.localeCompare(right.definition.id))
     .map((candidate) => candidate.definition);
   return { required, preferred, ranked };
+}
+
+/**
+ * A way to enter a value, a way to choose one, and a way to press something --
+ * offered whether or not the instruction named them.
+ *
+ * Every other selection here answers the instruction's words, and for an
+ * acting node that is the wrong question. A job that reads part of a
+ * collection has to narrow it first, and an instruction that asks for one is
+ * written as a request for data, not as a list of actions: "Export the coming
+ * week's schedule for the Northwind Trails account as a table with columns
+ * account, post, scheduled and status" contains no verb in any acting intent
+ * group, so the catalog built for it live was `[end, start, write-records,
+ * database.query, dom-extract_list]` -- nothing that could set a control or
+ * press one. The Flow script format was telling the model, in the same
+ * request, that narrowing first is required and returning everything is a
+ * wrong answer. It had no node to do it with, and it returned everything.
+ *
+ * Preferred rather than required, so a domain that registers none of them
+ * fails nothing, and last among the preferred, so a tag preference the
+ * instruction actually used -- the extraction a scraping job cannot do without
+ * -- is reserved before these are. On a budget too small for them they are
+ * dropped like any other preference, which is where a catalog without them
+ * stood already.
+ */
+function actingDefinitions(
+  definitions: AutomationStudioNodeDefinition[],
+  searchable: ReadonlyMap<string, BootstrapSearchFields>,
+  alreadyChosenIds: ReadonlySet<string>
+): AutomationStudioNodeDefinition[] {
+  const chosen = new Set(alreadyChosenIds);
+  const offered: AutomationStudioNodeDefinition[] = [];
+  for (const intent of [CHOOSE_INTENT, PRESS_INTENT, ENTER_INTENT]) {
+    const definition = bestBootstrapDefinition(definitions, searchable, intent);
+    if (!definition || chosen.has(definition.id)) continue;
+    chosen.add(definition.id);
+    offered.push(definition);
+  }
+  return offered;
 }
 
 // The highest-scoring definition for any of the terms, ties broken by id, or

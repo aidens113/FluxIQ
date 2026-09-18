@@ -302,9 +302,60 @@ describe("an instruction to fill in a form", () => {
     expect(context.nodeCatalog.map((entry) => entry.id)).not.toContain("web.output.dom-select");
   });
 
-  it("does not offer it to an instruction that only enters text", () => {
+  it("does not make it something an instruction that only enters text asked for", () => {
     const context = buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText: "Enter Ada in the name field.", maxCatalogEntries: 12 });
 
+    // "enter" implies entering and not choosing, so the choice node is nothing
+    // this instruction named: it is not reserved, and the test above shows that
+    // a budget which cannot carry it drops it. It is still offered while there
+    // is room, because an instruction cannot be relied on to name what the Flow
+    // has to do -- see the job below, which names no action at all.
+    expect(context.catalogSelection.requiredTerms).toEqual(["enter", "start", "end"]);
+  });
+});
+
+describe("an instruction that asks for data rather than for actions", () => {
+  const web = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry();
+  for (const webDefinition of webDomainNodeDefinitionsFixture()) registry.register(webDefinition);
+
+  // The live campaign's week-ahead task, worded the way a person asks for a
+  // report. It names no action, and its answer is 14 rows of 280, so the Flow
+  // has to set two controls before it reads anything. Ranked by this text
+  // alone the catalog held `[end, start, write-records, database.query,
+  // dom-extract_list]`: the model was told that narrowing first was required
+  // and handed nothing to narrow with, and it returned all 280 rows
+  // (`run-mu6cwk2q-2d7d4200`).
+  const instructionText = "Evidence-guided generation goal\nExport the coming week's schedule for the Northwind Trails account as a table with columns account, post, scheduled and status.";
+
+  it("still offers a way to choose, to press and to enter", () => {
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry,
+      resolution: web,
+      instructionText,
+      maxCatalogEntries: 12,
+      maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({ maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens, instructionBytes: 442 })
+    });
+
+    expect(context.catalogSelection).toMatchObject({ requiredTerms: ["start", "end"], missingRequiredTerms: [] });
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(expect.arrayContaining(["web.output.dom-select", "web.output.dom-click", "web.output.dom-type"]));
+  });
+
+  it("reserves the extraction a scraping job cannot do without before any of them", () => {
+    // The acting nodes are offered last of the preferences, so a budget with
+    // room for one preference spends it on the list extraction rather than on
+    // a node the instruction never named.
+    const whole = buildAutomationStudioFlowBootstrapContext({ registry, resolution: web, instructionText, maxCatalogEntries: 12 });
+    const reserved = whole.nodeCatalog.filter((entry) => ["builtin.control.start", "builtin.control.end", "web.output.dom-extract_list"].includes(entry.id));
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry,
+      resolution: web,
+      instructionText,
+      maxCatalogEntries: 12,
+      maxCatalogBytes: Buffer.byteLength(JSON.stringify(reserved), "utf8")
+    });
+
+    expect(context.nodeCatalog.map((entry) => entry.id)).toContain("web.output.dom-extract_list");
     expect(context.nodeCatalog.map((entry) => entry.id)).not.toContain("web.output.dom-select");
   });
 });

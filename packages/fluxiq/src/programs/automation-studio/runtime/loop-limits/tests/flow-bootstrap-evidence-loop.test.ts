@@ -37,7 +37,7 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
   it("lets a default 26-call grant iterate 26 times, past the old cap of eight", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 8_000 });
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 24_000 });
     // Each decision reserves a twenty-sixth of $2, never the $0.25 per-call
     // cap: at $0.25 the grant would refuse the ninth decision on cost.
     expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(2 / 26, 8);

@@ -12,6 +12,19 @@
 //
 // This module does arithmetic only and imports nothing from `runtime/llm/`,
 // which reads this directory's values.
+//
+// `maxEvidenceContextBytes` was 8,000, and the loop sizes each observation at
+// that figure less 512, so one observation could fill the window and leave 512
+// bytes for everything that came after it. It did: a live build's page
+// observation was 7,120 bytes of an 8,000-byte window, and the second small
+// tool result after it pushed the page out. The decision that writes the Flow
+// is never the first one, so the evidence the Flow has to be written from was
+// gone by the time it was written, every run. `AUTOMATION_STUDIO_EVIDENCE_
+// CONTEXT_BYTES` is sized instead for what a window has to hold at once: two
+// observations at a domain's largest packet, and the smaller results beside
+// them. It is far below a request's token ceiling -- the live builds spent
+// about 7,000 input tokens of the 48,000 their grant allowed -- so what bounds
+// a build stays the grant's cost, tokens and calls rather than this.
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../llm/harness/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "./evidence-loop.ts";
@@ -33,6 +46,17 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDE
  * written out because this directory may not read from `runtime/llm/`.
  */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST;
+
+/**
+ * How much evidence one decision may carry.
+ *
+ * Room for two observations at the largest packet a domain may return, and the
+ * smaller tool results and feedback entries beside them, so an observation is
+ * never squeezed out by what followed it. The loop offers each tool this
+ * figure less 512 bytes; a domain that caps its own packets lower keeps its own
+ * cap, which is what the web domain does.
+ */
+export const AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES = 24_000;
 
 export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
@@ -80,7 +104,7 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;
   const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
   return {
-    loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 8_000 },
+    loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES },
     ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {}),
     maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations)
   };
