@@ -22,11 +22,13 @@ export type AutomationStudioPackReusableLlmContextsRequest = {
 
 /**
  * What an LLM execution grant authorizes. A purpose says what may be asked
- * for, never how many times: `diagnosis_only` is one call, and every other
- * purpose iterates under a call limit that is configuration on the grant.
+ * for, never how many times: `diagnosis_only` and `verify_result` are one call
+ * each, and every other purpose iterates under a call limit that is
+ * configuration on the grant. `verify_result` asks only whether a finished
+ * run's result answers the request, and leaves the run itself deterministic.
  * Absent means `diagnosis_only`.
  */
-export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt";
+export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt" | "verify_result";
 
 /** The purposes `run-runtime-session` accepts as its `runIntent`, together
  * with an `llmExecutionGrantId` of that purpose. Creating a Flow from nothing,

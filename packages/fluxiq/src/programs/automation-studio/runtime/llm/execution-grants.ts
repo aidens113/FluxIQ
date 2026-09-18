@@ -211,7 +211,7 @@ export class AutomationStudioLlmExecutionGrantService {
     // takes its number from the caller, or from the single configured default.
     const iterates = automationStudioLlmExecutionGrantIterates(purpose);
     const maxCalls = iterates ? input.maxCalls ?? AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS : 1;
-    if (!iterates && input.maxCalls !== undefined && input.maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
+    if (!iterates && input.maxCalls !== undefined && input.maxCalls !== 1) throw new Error(`${purpose} permits exactly one LLM call.`);
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
     if ((input.providerRetryCount ?? 0) !== 0) throw new Error("LLM execution grants do not permit provider retries.");
     const tokenResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits ?? LIMITS);
