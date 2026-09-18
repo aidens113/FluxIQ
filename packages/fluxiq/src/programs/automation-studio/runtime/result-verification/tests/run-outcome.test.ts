@@ -96,15 +96,17 @@ function harness(options: {
   answer?: string | undefined;
   datasets?: AutomationStudioRunDatasetSummary[];
   rows?: JsonObject[];
+  schema?: AutomationStudioRecordSchema;
   withProvider?: boolean;
   datasetsUnavailable?: boolean;
   listThrows?: boolean;
+  pageLimits?: unknown[];
 } = {}): Harness {
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const datasets = options.datasets ?? [datasetSummary()];
-  const page: AutomationStudioRunDatasetPage = { summary: datasets[0] ?? datasetSummary(), schema, rows: options.rows ?? [{ name: "Hollis Abbott", role: "member" }], nextCursor: null };
+  const page: AutomationStudioRunDatasetPage = { summary: datasets[0] ?? datasetSummary(), schema: options.schema ?? schema, rows: options.rows ?? [{ name: "Hollis Abbott", role: "member" }], nextCursor: null };
   const ports: AutomationStudioResultVerificationPorts = {
     flowInstructionSet: async () => [],
     getFlowRunDetail: async () => runDetail(),
@@ -116,7 +118,10 @@ function harness(options: {
         if (options.listThrows) throw new Error("SQLITE_CANTOPEN");
         return datasets;
       },
-      getRunDatasetPage: async () => page
+      getRunDatasetPage: async (request) => {
+        options.pageLimits?.push(request.limit);
+        return { ...page, rows: page.rows.slice(0, typeof request.limit === "number" ? request.limit : page.rows.length) };
+      }
     }),
     ...(options.withProvider === false ? {} : { resolveProvider: async () => ({ provider: provider(options.answer, requests) }) })
   };
@@ -217,6 +222,60 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(recorded.code).toBe("core.result.unreadable");
     expect(String(recorded.observation)).not.toContain("SQLITE_CANTOPEN");
     expect(context.requests).toHaveLength(0);
+  });
+
+  it("fails a run whose stored rows leave a required field empty, without spending a call", async () => {
+    // Measured live on 2026-09-18: rows came back with required fields empty
+    // and the run reported `passed`. Mutation: let a row missing a required
+    // value through the free check -- the model is then asked, answers `yes`,
+    // and the session comes back `succeeded`.
+    const homes: AutomationStudioRecordSchema = {
+      schemaVersion: "0.1",
+      fields: [{ id: "address", label: "Address", valueType: "string", required: true }, { id: "price", label: "Price", valueType: "string", required: true }]
+    };
+    const rows = Array.from({ length: 10 }, (_row, index) => ({ address: `${index} Kelford Row`, price: index === 0 ? "£410,000" : "" }));
+    const context = harness({ answer: ANSWER.yes, schema: homes, rows, datasets: [datasetSummary({ datasetId: "homes", recordCount: 10 })] });
+    const next = await verify(context);
+    expect(next.status).toBe("failed");
+    const recorded = next.metadata?.resultVerification as JsonObject;
+    expect(recorded.code).toBe("core.result.required_values_missing");
+    expect(recorded.basis).toBe("core_observation");
+    expect(recorded.status).toBe("refuted");
+    expect(String(recorded.observation)).toBe("9 of 10 rows checked, of 10 stored, have no value for a required field (price).");
+    expect(context.requests).toHaveLength(0);
+    expect(context.saved.at(-1)?.metadata?.resultVerificationFailure).toEqual({ category: "output_not_observed", code: "core.result.required_values_missing" });
+  });
+
+  it("reads a full page of rows to check, and still shows the model only a few", async () => {
+    const pageLimits: unknown[] = [];
+    const rows = Array.from({ length: 30 }, (_row, index) => ({ name: `Hollis ${index}`, role: "admin" }));
+    const context = harness({ answer: ANSWER.yes, rows, pageLimits });
+    await verify(context);
+    expect(pageLimits).toEqual([200]);
+    const sent = context.requests[0]?.context.resultSummary?.recordSets[0];
+    expect(sent?.rowsChecked).toBe(30);
+    expect(sent?.sampleRows?.length).toBeLessThanOrEqual(4);
+  });
+
+  it("records a result nobody judged as unverified, never as confirmed", async () => {
+    // Mutation: read a skipped verification as a pass. `status` then says
+    // `confirmed` for a result no model saw, and this fails.
+    const next = await verify(harness({ withProvider: false }));
+    expect(next.status).toBe("succeeded");
+    expect((next.metadata?.resultVerification as JsonObject).status).toBe("unverified");
+  });
+
+  it("records a judged result as confirmed or refuted, and a run with nothing to judge as having no result", async () => {
+    expect(((await verify(harness({ answer: ANSWER.yes }))).metadata?.resultVerification as JsonObject).status).toBe("confirmed");
+    expect(((await verify(harness({ answer: ANSWER.no }))).metadata?.resultVerification as JsonObject).status).toBe("refuted");
+    expect(((await verify(harness({ answer: ANSWER.unknown }))).metadata?.resultVerification as JsonObject).status).toBe("refuted");
+    expect(((await verify(harness({ datasetsUnavailable: true }))).metadata?.resultVerification as JsonObject).status).toBe("no_result");
+  });
+
+  it("writes the same status onto the run detail a reader of the run sees", async () => {
+    const context = harness({ withProvider: false });
+    await verify(context);
+    expect((context.saved.at(-1)?.metadata?.resultVerification as JsonObject).status).toBe("unverified");
   });
 
   it("leaves a run that already failed alone, and asks nothing", async () => {

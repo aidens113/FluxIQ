@@ -16,8 +16,12 @@
 // absolute backstop in `execution-grants.ts` that exists only to stop a runaway
 // loop.
 //
-// Three purposes reach a runtime session, and they are not interchangeable:
+// Four purposes reach a runtime session, and they are not interchangeable:
 //
+// - `verify_result` changes nothing about how the run executes. It is a run
+//   with no grant, plus the one call that asks whether the finished run's
+//   result answers the request. Without it a run's result could never be
+//   judged unless the person had also authorized a recovery.
 // - `diagnosis_only` asks one question and changes nothing.
 // - `diagnose_and_adapt` is the narrow grant a person may already hold. It now
 //   iterates and may gather evidence, because that is what diagnosing actually
@@ -34,7 +38,7 @@ import type { AutomationStudioLlmTaskKind } from "./harness.ts";
 
 /** The grant purposes a runtime session will run under. `build_and_adapt` is
  * absent on purpose: creating a Flow from nothing is a different entry point. */
-export const AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES = ["diagnosis_only", "diagnose_and_adapt", "explore_and_adapt"] as const;
+export const AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES = ["diagnosis_only", "diagnose_and_adapt", "explore_and_adapt", "verify_result"] as const;
 
 export type AutomationStudioRuntimeSessionGrantPurpose = (typeof AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES)[number];
 
@@ -100,6 +104,18 @@ export function automationStudioRuntimeAdaptationContextForGrant(
   purpose: AutomationStudioRuntimeSessionGrantPurpose
 ): AutomationStudioRuntimeAdaptationContext {
   if (purpose === "diagnosis_only") return context;
+  if (purpose === "verify_result") {
+    // The grant authorizes no diagnosis, so the run may not ask for one: with
+    // `invokeLlm` off the recovery is never offered the model and records why,
+    // rather than resolving a provider only to have the grant refuse the call.
+    // Deterministic recovery stays as configured, exactly as for a run with no
+    // grant at all.
+    return {
+      ...context,
+      behavior: { ...context.behavior, invokeLlm: false, createAdaptations: false, promoteAdaptations: false },
+      diagnostics: [...context.diagnostics, "Explicit verify_result run executes without LLM intervention; its one call judges the finished run's result."]
+    };
+  }
   if (purpose === "diagnose_and_adapt") {
     return {
       ...context,
