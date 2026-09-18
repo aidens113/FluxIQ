@@ -11,6 +11,7 @@
 // own options appear beside them as soon as a host port is bound.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   AutomationStudioRuntimeTargetOverrideFailedAction
@@ -71,6 +72,12 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     value: JsonObject;
     maxEvidenceBytes: number;
     signal?: AbortSignal;
+    /**
+     * The run's permission check for this action. A tool whose action has a
+     * lasting consequence calls it before acting and acts only on
+     * `permitted: true`; see `AutomationStudioHarnessOptionExecution.permission`.
+     */
+    permission: AutomationStudioActionPermissionCheck;
   }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   /**
    * What the state was at one moment, as an opaque digest Core only ever
@@ -149,8 +156,21 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     flowId: string;
     nodeDefinitionId: string;
     parameters: JsonObject;
-  }): { status: "unchanged" } | { status: "resolved"; parameters: JsonObject } | { status: "refused"; issueCodes: readonly string[] };
+    /**
+     * The build's permission check for this step of the Flow. A step whose
+     * action would have a lasting consequence every time the Flow runs -- the
+     * domain knows, having just resolved what the step acts on -- is declared
+     * here, and a step the build is not permitted is refused. Core then ends
+     * the build with the request rather than handing the refusal back to the
+     * model, so a Flow that would refund, delete or send is never built
+     * without the person having said it may.
+     */
+    permission: AutomationStudioActionPermissionCheck;
+  }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
+
+/** A domain answer about one plan node. May be awaited: asking permission is. */
+export type AutomationStudioPlanNodeResolution = { status: "unchanged" } | { status: "resolved"; parameters: JsonObject } | { status: "refused"; issueCodes: readonly string[] };
 
 /**
  * The registry for one host: Core's own options for whatever host port is
@@ -234,6 +254,7 @@ function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId
     toolId,
     value: input.value,
     maxEvidenceBytes: input.maxEvidenceBytes,
-    ...(input.signal !== undefined ? { signal: input.signal } : {})
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    permission: input.permission
   });
 }

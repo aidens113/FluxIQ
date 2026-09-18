@@ -16,6 +16,7 @@
 // gate metadata has to be dropped at the boundary rather than travel with it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from "../../../model/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
@@ -65,6 +66,15 @@ export type AutomationStudioHarnessOptionLoopBinding = {
     value: JsonObject;
     maxEvidenceBytes: number;
     signal?: AbortSignal;
+    /**
+     * The run's permission check for this one action, from the run's
+     * `AutomationStudioActionPermissionGate`. Both of Core's callers -- Flow
+     * authoring and the recovery exploration -- always pass one. Absent, the
+     * option is handed `automationStudioActionPermissionDenied`: an action
+     * driven with no run behind it has nobody to ask, so nothing with a
+     * lasting consequence is permitted.
+     */
+    permission?: AutomationStudioActionPermissionCheck;
   }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
 };
 
@@ -158,13 +168,15 @@ export class AutomationStudioHarnessOptionRegistry {
    * not only in the grammar it was given.
    */
   async execute(
-    input: AutomationStudioHarnessOptionExecution,
+    input: Omit<AutomationStudioHarnessOptionExecution, "permission"> & { permission?: AutomationStudioActionPermissionCheck },
     resolution: AutomationStudioHarnessOptionResolution
   ): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> {
     if (!this.get(input.optionId, resolution)) throw new Error(`Automation Studio harness option "${input.optionId}" is not offered in this scope.`);
     const implementation = this.implementations.get(input.optionId);
     if (!implementation) throw new Error(`Automation Studio harness option "${input.optionId}" has no implementation.`);
-    return implementation(input);
+    // An option always has a check to call. One driven with no run behind it
+    // has nobody to ask, so its check permits nothing lasting.
+    return implementation({ ...input, permission: input.permission ?? automationStudioActionPermissionDenied });
   }
 
   /**
@@ -177,7 +189,7 @@ export class AutomationStudioHarnessOptionRegistry {
   ): AutomationStudioHarnessOptionLoopBinding {
     return {
       tools: this.tools(resolution),
-      executeTool: ({ callId, toolId, value, maxEvidenceBytes, signal }) => this.execute({
+      executeTool: ({ callId, toolId, value, maxEvidenceBytes, signal, permission }) => this.execute({
         projectId: context.projectId,
         flowId: context.flowId,
         ...(context.runId !== undefined ? { runId: context.runId } : {}),
@@ -185,7 +197,8 @@ export class AutomationStudioHarnessOptionRegistry {
         optionId: toolId,
         value,
         maxEvidenceBytes,
-        ...(signal !== undefined ? { signal } : {})
+        ...(signal !== undefined ? { signal } : {}),
+        ...(permission !== undefined ? { permission } : {})
       }, resolution)
     };
   }

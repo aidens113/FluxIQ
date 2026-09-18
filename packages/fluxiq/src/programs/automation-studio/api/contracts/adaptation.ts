@@ -1,3 +1,4 @@
+import type { AutomationStudioActionPermissionRequest } from "../../runtime/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
 
 export type AutomationStudioFlowBootstrapGenerationReadiness = {
@@ -128,6 +129,13 @@ export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {
     totalTokens?: number;
     estimatedCostUsd?: number;
   };
+  /**
+   * Present exactly when `code` is `flow_bootstrap.permission_required`: the
+   * build needed an action with a lasting consequence its grant did not
+   * permit. Ask the person with it, and issue the next build's grant with the
+   * consequences it lists as `missing` if they agree.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
 };
 
 export type GenerateFlowBootstrapAdaptationResponse = {

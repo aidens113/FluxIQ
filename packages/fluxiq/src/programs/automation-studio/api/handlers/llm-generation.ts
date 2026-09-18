@@ -35,7 +35,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       }
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
       if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
-      return { ok: true, payload: { preflight: await llmExecutionGrants.preflight({ keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount } as Parameters<AutomationStudioLlmExecutionGrantService["preflight"]>[0]) } };
+      return { ok: true, payload: { preflight: await llmExecutionGrants.preflight({ keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["preflight"]>[0]) } };
     }
   });
   registry.register({
@@ -53,7 +53,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
       if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
-      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
     }
   });
   registry.register({
@@ -115,7 +115,10 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
             actorSessionId: request.actor.sessionId,
             purpose: "build_and_adapt",
             executionDigest: grant.executionDigest,
-            settingsRevision: grant.settingsRevision
+            settingsRevision: grant.settingsRevision,
+            // What the person allowed the build's actions to do, carried from
+            // the grant they issued. A build whose grant holds none asks.
+            permittedConsequences: grant.permittedConsequences
           },
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {})

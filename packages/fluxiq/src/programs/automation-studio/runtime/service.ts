@@ -113,7 +113,8 @@ import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudi
 import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioInstructedConsequence } from "./action-permissions/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   normalizeAutomationStudioFlowBuildPlan,
@@ -263,10 +264,10 @@ import {
   type FlowRunIndex,
   type FlowSubflowIndex,
   type RecordingIndex,
-  type RuntimeIndex,
+  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority
 } from "./service/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
 export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
 export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
@@ -414,6 +415,8 @@ export type AutomationStudioBuildAndAdaptExecutionGrant = {
   purpose: "build_and_adapt";
   executionDigest: string;
   settingsRevision: number;
+  /** The lasting consequences the person allowed this build's actions. Absent permits none. */
+  permittedConsequences?: AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
@@ -1818,14 +1821,7 @@ export class AutomationStudioService {
       if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
       if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
       if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
-      assertExactObjectFields(unsafeGrant, [
-        "grantId",
-        "actorUserId",
-        "actorSessionId",
-        "purpose",
-        "executionDigest",
-        "settingsRevision"
-      ], "Flow Bootstrap execution grant");
+      assertExactObjectFields(unsafeGrant, ["grantId", "actorUserId", "actorSessionId", "purpose", "executionDigest", "settingsRevision", "permittedConsequences"], "Flow Bootstrap execution grant");
       if (unsafeGrant.purpose !== "build_and_adapt") throw new Error("Flow Bootstrap generation requires a build_and_adapt execution grant.");
       const projectId = requiredBootstrapCommandId(unsafeInput.projectId, "project");
       const flowId = requiredBootstrapCommandId(unsafeInput.flowId, "Flow");
@@ -1835,7 +1831,8 @@ export class AutomationStudioService {
         actorSessionId: requiredBootstrapCommandId(unsafeGrant.actorSessionId, "actor session"),
         purpose: "build_and_adapt",
         executionDigest: requiredBootstrapDigest(unsafeGrant.executionDigest),
-        settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision)
+        settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision),
+        permittedConsequences: parseAutomationStudioPermittedConsequences(unsafeGrant.permittedConsequences)
       };
       failureCode = "flow_bootstrap.pre_provider_validation_failed";
       return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
@@ -1853,21 +1850,13 @@ export class AutomationStudioService {
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
         failureCode = "flow_bootstrap.pre_provider_validation_failed";
         const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
-        const resolvedInstructions = resolveAutomationStudioLlmInstructions({
-          instructions,
-          projectId,
-          flowId
-        });
+        const resolvedInstructions = resolveAutomationStudioLlmInstructions({ instructions, projectId, flowId });
         if (!resolvedInstructions.instructions.length
           || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
           throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.active_instructions_required");
         }
         const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
-        const resolution = this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? {
-          scope: parent.scope,
-          runtimeCapabilities: [],
-          permissions: []
-        };
+        const resolution = this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? { scope: parent.scope, runtimeCapabilities: [], permissions: [] };
 const bootstrapInstructionText = resolvedInstructions.instructions
           .map((instruction) => `${instruction.title}\n${instruction.body}`)
           .join("\n");
@@ -1902,6 +1891,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let generatedSummary: string;
         let buildPlan: AutomationStudioFlowBuildPlan;
         let evidenceTrace: AutomationStudioLlmEvidenceLoopTrace[] | undefined;
+        let instructedConsequences: readonly AutomationStudioInstructedConsequence[] | undefined;
         let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
         let accounting: AutomationStudioBootstrapAccounting;
         if (input.evidenceGuided) {
@@ -1910,20 +1900,22 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
           const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
           const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
-          const loopAccounting = (spent: AutomationStudioLlmEvidenceLoopResult["accounting"]) => sanitizedBootstrapAccounting({ requestId: `evidence.${randomUUID()}`, estimatedInputTokens,
+          const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
+          const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive });
+          const loopAccounting = (spent: AutomationStudioLlmEvidenceLoopResult["accounting"]) => sanitizedBootstrapAccounting({ requestId: `evidence.${randomUUID()}`, estimatedInputTokens: estimatedInputTokens + authority.usage.estimatedInputTokens,
             provider: unresolvedProvider.provider.metadata.provider, model: unresolvedProvider.provider.metadata.model,
-            inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, totalTokens: spent.totalTokens, estimatedCostUsd: spent.estimatedCostUsd });
+            inputTokens: spent.inputTokens + authority.usage.inputTokens, outputTokens: spent.outputTokens + authority.usage.outputTokens, totalTokens: spent.totalTokens + authority.usage.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + authority.usage.estimatedCostUsd });
           const accepted: { verdict?: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: true }> | undefined } = {};
           const loop = await runAutomationStudioLlmEvidenceLoop({
             tools: harnessOptions.tools,
-            propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
+            propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
             checkCompletion: async (result) => {
-              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime });
+              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.ok ? { ok: true } : verdict.check;
             },
-            completionSchema,
+            completionSchema, signal: permissions.signal,
             ...bootstrapLoopLimits.loop,
             decide: async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
               if (input.useReusableContext === true && evidence.length) {
@@ -1951,10 +1943,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             },
-            executeTool: harnessOptions.executeTool
+            executeTool: permissions.executeTool
           });
+          const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
+          if (askedPermission) throw askedPermission;
           if (!loop.ok) throw flowBootstrapEvidenceLoopFailure(loop, loopAccounting(loop.accounting));
-          evidenceTrace = loop.trace;
+          evidenceTrace = loop.trace; instructedConsequences = permissions.instructed();
           failureStage = "provider_output_validation";
           accounting = loopAccounting(loop.accounting);
           failureAccounting = accounting;
@@ -2004,6 +1998,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           buildPlan,
           accounting,
           ...(evidenceTrace ? { evidenceTrace } : {}),
+          ...(instructedConsequences?.length ? { instructedConsequences: [...instructedConsequences] } : {}),
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {}),
           actorId: executionGrant.actorUserId
         });
@@ -2038,6 +2033,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     accounting?: AutomationStudioBootstrapAccounting;
     evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[];
     reusableContext?: JsonObject;
+    instructedConsequences?: AutomationStudioInstructedConsequence[];
     actorId?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
     return await this.locks.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
@@ -2091,6 +2087,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.accounting ? { accounting: sanitizedBootstrapAccounting(input.accounting) } : {}),
         ...(input.evidenceTrace ? { evidenceTrace: sanitizeEvidenceLoopTrace(input.evidenceTrace) } : {}),
         ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}),
+        ...(input.instructedConsequences?.length ? { instructedConsequences: structuredClone(input.instructedConsequences) } : {}),
         buildPlan,
         topology: normalizeAutomationStudioFlowBuildPlan({
           adaptationId,
@@ -2787,7 +2784,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async startRuntimeSession(input: {
-    projectId?: string | null;
+    projectId?: string | null; runId?: string;
     targetKind?: AutomationStudioRuntimeSession["targetKind"];
     targetId?: string;
     flow?: AutomationStudioFlowDocument;
@@ -2804,7 +2801,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const now = Date.now();
     const session: AutomationStudioRuntimeSession = {
       schemaVersion: "0.1",
-      runId: randomUUID(),
+      runId: input.runId ?? randomUUID(),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       targetKind: input.targetKind ?? (canonical ? "flow" : flow.ownerKind === "policy" ? "flow" : flow.ownerKind),
       targetId: input.targetId ?? canonical?.flowId ?? flow.ownerId,
@@ -3062,7 +3059,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async runRuntimeSession(input: {
     projectId?: string | null;
-    runId?: string;
+    runId?: string; newRunId?: string;
     flow?: AutomationStudioFlowDocument;
     flowId?: string;
     inputs?: JsonObject;
@@ -3099,9 +3096,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
     if (existing?.status === "cancelled") return existing;
     const startInput: Parameters<AutomationStudioService["startRuntimeSession"]>[0] = {};
-    for (const field of ["projectId", "flow", "flowId", "inputs", "authorizedDomainIds"] as const) {
-      if (input[field] !== undefined) Object.assign(startInput, { [field]: input[field] });
-    }
+    for (const field of ["projectId", "flow", "flowId", "inputs", "authorizedDomainIds"] as const) if (input[field] !== undefined) Object.assign(startInput, { [field]: input[field] });
+    const requestedRunId = await automationStudioRequestedRunId({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), refused: () => { if (input.llmExecution) this.revokeLlmExecutionGrant?.(input.llmExecution.grantId); } }, input);
+    if (requestedRunId) startInput.runId = requestedRunId;
     if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
     const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
@@ -4144,7 +4141,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           metadata: {
             ...(parent.metadata ?? {}),
             bootstrapAdaptationId: adaptation.adaptationId,
-            bootstrapSourceInstructionIds: [...adaptation.sourceInstructionIds]
+            bootstrapSourceInstructionIds: [...adaptation.sourceInstructionIds],
+            // Read at run time by `currentAutomationStudioInstructedConsequences`, with no model, while each instruction's text is unchanged.
+            ...(adaptation.instructedConsequences?.length ? { bootstrapInstructedConsequences: structuredClone(adaptation.instructedConsequences) } : {})
           }
         }
       });

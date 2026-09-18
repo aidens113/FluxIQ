@@ -16,6 +16,13 @@ export const AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS = Object.freeze({
   maxRecordSets: 4,
   /** Sample rows per record set. */
   maxSampleRowsPerSet: 4,
+  /**
+   * Stored rows per record set that Core reads for its own checks -- a field
+   * the record schema declares required and a row carries no value for. They
+   * are counted, never sent, so this bounds a local read rather than a call:
+   * one page of the run's record store, whose page size is capped at this.
+   */
+  maxRowsCheckedPerSet: 200,
   /** Sample rows across the whole summary. */
   maxSampleRows: 8,
   /** Columns listed per record set. */

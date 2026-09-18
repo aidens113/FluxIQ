@@ -19,6 +19,14 @@ import type {
  * diagnosis and one target-override proposal, and `diagnosis_only` asks one
  * question and changes nothing.
  *
+ * `verify_result` is the narrowest of all: one question about a finished run's
+ * result -- does what came back answer what was asked? -- and nothing else. It
+ * exists because every provider call needs a person's grant, a run carrying no
+ * grant therefore could never have its result judged, and on 2026-09-18 seven
+ * newly built Flows returned the wrong records and reported `passed` for
+ * exactly that reason. A run under it executes as deterministically as one
+ * with no grant at all: it may not diagnose, gather, patch or propose.
+ *
  * A purpose says what may be *asked for*. It no longer says how many times.
  * `diagnose_and_adapt` used to mean "exactly two calls and no exploration",
  * which read as a consent boundary and behaved as a defect: the model's first
@@ -28,7 +36,7 @@ import type {
  * purpose may do it, and what still separates the purposes is what they may
  * change afterwards.
  */
-export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt";
+export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt" | "verify_result";
 
 export type AutomationStudioLlmExecutionGrantResolvePolicy = {
   allowedTaskKinds?: readonly AutomationStudioLlmTaskKind[];
@@ -49,6 +57,7 @@ export function parseAutomationStudioLlmExecutionGrantPurpose(value: unknown): A
   if (value === "diagnose_and_adapt") return "diagnose_and_adapt";
   if (value === "explore_and_adapt") return "explore_and_adapt";
   if (value === "build_and_adapt") return "build_and_adapt";
+  if (value === "verify_result") return "verify_result";
   throw new Error("LLM execution grant purpose is unsupported.");
 }
 
@@ -71,6 +80,11 @@ const DIAGNOSIS_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
 // Deliberately not extended to `diagnosis_only`, whose one call is a diagnosis.
 const LOOP_PROTOCOL_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
   { taskKind: "loop_plan", expectedOutput: "diagnosis" },
+  { taskKind: "loop_verification", expectedOutput: "diagnosis" }
+]);
+
+/** Judging a finished run's result, and only that: the one verification call. */
+const VERIFICATION_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
   { taskKind: "loop_verification", expectedOutput: "diagnosis" }
 ]);
 
@@ -100,7 +114,10 @@ const GRANT_CAPABILITIES: Readonly<Record<AutomationStudioLlmExecutionGrantPurpo
   // patch stage still holds it to one target override, as a proposal.
   diagnose_and_adapt: { iterates: true, taskKinds: RECOVERY_TASK_KINDS },
   explore_and_adapt: { iterates: true, taskKinds: EXPLORE_TASK_KINDS },
-  build_and_adapt: { iterates: true, taskKinds: Object.freeze([...EXPLORE_TASK_KINDS, { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" } as GrantTaskAllowance]) }
+  build_and_adapt: { iterates: true, taskKinds: Object.freeze([...EXPLORE_TASK_KINDS, { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" } as GrantTaskAllowance]) },
+  // One call, never a loop: a verification that cannot tell from what it was
+  // shown answers `unknown`, and asking again would buy the same answer twice.
+  verify_result: { iterates: false, taskKinds: VERIFICATION_TASK_KINDS }
 });
 
 /** Whether a purpose may make more than one call. Never how many. */

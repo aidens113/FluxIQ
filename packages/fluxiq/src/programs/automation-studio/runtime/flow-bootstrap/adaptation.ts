@@ -13,6 +13,7 @@ import type {
   AutomationStudioFlowBuildPlan,
   AutomationStudioFlowBootstrapRisk
 } from "./plan.ts";
+import type { AutomationStudioInstructedConsequence } from "../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 
@@ -98,6 +99,12 @@ export type AutomationStudioBootstrapAdaptation = {
   accounting?: AutomationStudioBootstrapAccounting;
   evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[];
   reusableContext?: JsonObject;
+  /**
+   * What the person's instruction was read to ask for, when the build met an
+   * action with a lasting consequence. Copied to the Flow on apply, where a
+   * run reads it without a model while each instruction's text is unchanged.
+   */
+  instructedConsequences?: AutomationStudioInstructedConsequence[];
   buildPlan: AutomationStudioFlowBuildPlan;
   topology: AutomationStudioBootstrapTopology;
   status: AutomationStudioBootstrapAdaptationStatus;

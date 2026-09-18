@@ -9,6 +9,7 @@ export * from "./evidence/index.ts";
 export * from "./facade-ports.ts";
 export * from "./flows/index.ts";
 export * from "./indexes/index.ts";
+export * from "./instruction-authority.ts";
 export * from "./json-values.ts";
 export * from "./legacy/index.ts";
 export * from "./locks.ts";

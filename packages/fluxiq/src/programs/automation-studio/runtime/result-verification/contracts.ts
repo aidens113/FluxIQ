@@ -59,6 +59,16 @@ export type AutomationStudioResultRecordSetSummary = {
   columns: string[];
   /** True when the column list was cut. */
   columnsWithheld: boolean;
+  /**
+   * Stored rows Core read back for its own required-value check: at most
+   * `maxRowsCheckedPerSet`, so fewer than `recordCount` on a large set, and 0
+   * when the set's rows or its schema could not be read.
+   */
+  rowsChecked: number;
+  /** Of `rowsChecked`, the rows carrying no value for a field the set's own schema declares required. */
+  rowsMissingRequired: number;
+  /** The required field ids some checked row lacked, in schema order, bounded by `maxColumns`. Ids, never values. */
+  missingRequiredColumns: string[];
   /** A few stored rows, each value bounded. Absent when the set stored none. */
   sampleRows?: JsonObject[];
 };
@@ -79,6 +89,8 @@ export type AutomationStudioRunResultSummary = {
   totalRecordCount: number;
   /** Rows refused across every record set. */
   totalRefusedCount: number;
+  /** Checked rows lacking a required value, across every record set summarized. */
+  totalRowsMissingRequired: number;
   /** Record sets the run stored, including the ones not summarized. */
   recordSetCount: number;
   recordSets: AutomationStudioResultRecordSetSummary[];

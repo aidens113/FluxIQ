@@ -68,6 +68,15 @@ export const CONFIG = {
       path: "packages/fluxiq/src/programs/automation-studio/runtime/service/datasets",
       reason: "the run datasets collaborator builds the store batches, audit events, and export answers that dataset endpoints return",
       remedy: "Write each field by name, passing an absent optional field as `undefined`."
+    },
+    {
+      // The permission request is what a person grants or refuses from, and
+      // the gate is the one place it is built. A field that stopped arriving --
+      // the consequence, the control's name -- would ask a person a question
+      // they cannot answer, with every gate green.
+      path: "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions",
+      reason: "the action-permission gate builds the request a run carries out to a person, and the grant's permission set",
+      remedy: "Write each field by name, passing an absent value as `null`."
     }
   ],
 
