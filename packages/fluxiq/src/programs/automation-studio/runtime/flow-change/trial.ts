@@ -17,7 +17,7 @@
 //   expected, are returned as ids, codes and counts only, never values.
 import type { JsonObject } from "../../../../core/index.ts";
 import { parseAutomationStudioFlowChangeOrigin, type AutomationStudioFlowChangeOrigin, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../model/index.ts";
-import { getAutomationNodeDefinition, type AutomationNodeExpectationEvaluationContext, type AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
+import type { AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import {
   runAutomationStudioGraph,
   type AutomationStudioGraphExecutionOptions,
@@ -26,7 +26,8 @@ import {
   type AutomationStudioTransitionComparison
 } from "../executor/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
-import { automationStudioDefinitionVerifiesState, type AutomationStudioChangeTrialInput, type AutomationStudioChangeTrialResult, type AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
+import { automationStudioAttemptCapturedRecords, automationStudioAttemptVerifiesState } from "./attempt-projection.ts";
+import type { AutomationStudioChangeTrialInput, AutomationStudioChangeTrialResult, AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
 import { decideAutomationStudioChangeVerdict } from "./verdict.ts";
 
 export type AutomationStudioFlowChangeTrialRequest = AutomationStudioChangeTrialInput & {
@@ -173,8 +174,8 @@ function verdictAttempt(
   const outputIds = Object.keys(attempt.outputs).filter((outputId) => attempt.outputs[outputId] !== undefined);
   const expectedOutputIds = declaredOutputIds(own, failed, changed.has(attempt.nodeId) ? comparison?.expected : undefined, outputIds);
   const declaresState = Object.keys(own?.expectedState ?? {}).length > 0;
-  const records = capturedRecords(attempt);
-  const verifiesState = definitionVerifiesState(attempt.definitionId) || (node !== undefined && request.verifiesState?.(node) === true);
+  const records = automationStudioAttemptCapturedRecords(attempt);
+  const verifiesState = automationStudioAttemptVerifiesState(attempt) || (node !== undefined && request.verifiesState?.(node) === true);
   return {
     nodeId: attempt.nodeId,
     status: attempt.status,
@@ -209,32 +210,6 @@ function declaredOutputIds(
   return answeredOutputIds.every((outputId) => outputIds.includes(outputId)) ? answeredOutputIds : [];
 }
 
-/** The rows an attempt saved, for a node that saves records: a policy output with a record output, or Write Records. */
-function capturedRecords(attempt: AutomationStudioNodeAttemptTrace): { captured: number } | undefined {
-  const saves = attempt.effects.some((effect) => effect.type === "records.write" || (effect.type === "policy.output.dispatch" && declaresRecordOutput(effect.payload)));
-  if (!saves) return undefined;
-  const rows = attempt.outputs.records;
-  return { captured: Array.isArray(rows) ? rows.length : 0 };
-}
-
-// Present and not null declares a record output, as the executor reads it.
-function declaresRecordOutput(payload: unknown): boolean {
-  if (!isJsonObject(payload)) return false;
-  const declared = payload.recordOutput;
-  return declared !== undefined && declared !== null;
-}
-
-// A definition declares metadata only once node definitions carry it; until
-// then no built-in counts, and the request's own answer is the only one.
-function definitionVerifiesState(definitionId: string): boolean {
-  const definition = getAutomationNodeDefinition(definitionId);
-  const metadata: unknown = definition && "metadata" in definition ? definition.metadata : undefined;
-  return isJsonObject(metadata) && automationStudioDefinitionVerifiesState(metadata);
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 /**
  * The host runtime with its expectation evaluator observed, keyed by the
