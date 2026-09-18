@@ -12,6 +12,10 @@
 // already telling the truth, and spending a model call to add a second reason
 // to it would buy nothing.
 //
+// A run whose result could not be put to a model at all keeps the status its
+// steps earned and is recorded `unverified`, never `confirmed`
+// (`verification-status.ts` says why it is not failed instead).
+//
 // Everything it reaches outside itself is a port, for the reason
 // `recovery/annotation/ports.ts` states: the service is a six-thousand-line
 // class at its own line budget, and a path that can only be driven by standing
@@ -32,6 +36,7 @@ import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts
 import type { AutomationStudioResultVerificationOutcome } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
+import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { verifyAutomationStudioRunResult } from "./verify.ts";
 
 /**
@@ -167,7 +172,15 @@ function costCeiling(
   return ceilings.length ? Math.min(...ceilings) : undefined;
 }
 
-/** The run's stored record sets, with the first rows of each one that is summarized. */
+/**
+ * The run's stored record sets, each with the rows Core checks for required
+ * values and, of those, the first few a sample may be drawn from.
+ *
+ * One read serves both: the check needs more rows than a sample does, and a
+ * sample is the head of the same page. The sample keeps its own, smaller
+ * source, so what the model may be shown -- and whether the summary calls
+ * itself partial -- is exactly what it was before the check read further.
+ */
 async function readRecordSets(
   ports: AutomationStudioResultVerificationPorts,
   projectId: string,
@@ -175,13 +188,16 @@ async function readRecordSets(
 ): Promise<AutomationStudioResultRecordSetInput[]> {
   if (!ports.listRunDatasets) return [];
   const readPage = ports.getRunDatasetPage;
+  const limits = AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS;
   const summaries = await ports.listRunDatasets({ projectId, runId });
-  const listed = summaries.slice(0, AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRecordSets);
+  const listed = summaries.slice(0, limits.maxRecordSets);
   return await Promise.all(listed.map(async (summary) => {
     const page = readPage && summary.recordCount > 0
-      ? await readPage({ projectId, runId, datasetId: summary.datasetId, limit: AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxSampleRowsPerSet })
+      ? await readPage({ projectId, runId, datasetId: summary.datasetId, limit: limits.maxRowsCheckedPerSet })
       : null;
-    return { summary, ...(page ? { schema: page.schema, rows: page.rows } : {}) };
+    if (!page) return { summary };
+    const checkedRows = page.rows.slice(0, limits.maxRowsCheckedPerSet);
+    return { summary, schema: page.schema, rows: checkedRows.slice(0, limits.maxSampleRowsPerSet), checkedRows };
   }));
 }
 
@@ -205,11 +221,16 @@ function errorName(error: unknown): string {
   return error instanceof Error && error.name ? error.name : "unknown error";
 }
 
-/** The verification as a run record holds it: verdicts, codes and Core's own words. */
+/**
+ * The verification as a run record holds it: verdicts, codes and Core's own
+ * words, led by the one word a reader of the run acts on. `status` is what
+ * keeps a result nobody judged from reading as a result that was right.
+ */
 function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
+  const status = automationStudioResultVerificationStatus(outcome);
   return outcome.performed === false
-    ? { performed: false, code: outcome.code, reason: outcome.reason }
-    : { performed: true, verdict: outcome.verdict, basis: outcome.basis, code: outcome.code, reason: outcome.reason, observation: outcome.observation };
+    ? { status, performed: false, code: outcome.code, reason: outcome.reason }
+    : { status, performed: true, verdict: outcome.verdict, basis: outcome.basis, code: outcome.code, reason: outcome.reason, observation: outcome.observation };
 }
 
 async function recordOnRunDetail(

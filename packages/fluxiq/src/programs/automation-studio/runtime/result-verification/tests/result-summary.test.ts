@@ -113,3 +113,90 @@ describe("summarizeAutomationStudioRunResult", () => {
     expect(summary.withheld).toBe(true);
   });
 });
+
+describe("the required-value check", () => {
+  // Only what the Flow declared counts. The schema below requires `address`
+  // and `price` and leaves `listed` optional, which is how a built Flow marks
+  // a field its source may not always show.
+  const homes: AutomationStudioRecordSchema = {
+    schemaVersion: "0.1",
+    fields: [
+      { id: "address", label: "Address", valueType: "string", required: true },
+      { id: "price", label: "Price", valueType: "string", required: true },
+      { id: "listed", label: "Listed", valueType: "string" }
+    ]
+  };
+
+  it("counts a row whose required value is empty or only whitespace, and names the field, never the value", () => {
+    // Mutation: treat an empty string as a value. Every row then carries its
+    // required fields, `rowsMissingRequired` is 0, and this fails.
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{
+        summary: datasetSummary({ datasetId: "homes", recordCount: 3 }),
+        schema: homes,
+        rows: [
+          { address: "4 Kelford Row", price: "" },
+          { address: "   ", price: "£410,000" },
+          { address: "9 Mill Lane", price: "£395,000" }
+        ]
+      }],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets[0]?.rowsChecked).toBe(3);
+    expect(summary.recordSets[0]?.rowsMissingRequired).toBe(2);
+    expect(summary.recordSets[0]?.missingRequiredColumns).toEqual(["address", "price"]);
+    expect(summary.totalRowsMissingRequired).toBe(2);
+  });
+
+  it("does not demand a field the schema leaves optional, however many rows lack it", () => {
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{
+        summary: datasetSummary({ datasetId: "homes", recordCount: 2 }),
+        schema: homes,
+        rows: [{ address: "4 Kelford Row", price: "£410,000" }, { address: "9 Mill Lane", price: "£395,000", listed: "" }]
+      }],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.totalRowsMissingRequired).toBe(0);
+    expect(summary.recordSets[0]?.missingRequiredColumns).toEqual([]);
+  });
+
+  it("checks the rows it was given to check, not only the few it samples, and still samples only a few", () => {
+    const good = { address: "9 Mill Lane", price: "£395,000" };
+    const checkedRows = [good, good, good, good, good, { address: "12 Dene Road", price: "" }];
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ datasetId: "homes", recordCount: 6 }), schema: homes, rows: checkedRows.slice(0, 4), checkedRows }],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets[0]?.rowsChecked).toBe(6);
+    expect(summary.recordSets[0]?.rowsMissingRequired).toBe(1);
+    expect(summary.recordSets[0]?.sampleRows?.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxSampleRowsPerSet);
+  });
+
+  it("checks whether or not any row may be sampled, since nothing it reads is sent", () => {
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ datasetId: "homes", recordCount: 1 }), schema: homes, rows: [{ address: "", price: "£1" }] }]
+    });
+    expect(summary.recordSets[0]?.sampleRows).toBeUndefined();
+    expect(summary.totalRowsMissingRequired).toBe(1);
+  });
+
+  it("checks no row of a set whose schema could not be read, rather than passing rows it never compared", () => {
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ datasetId: "homes", recordCount: 5 }), rows: [{ address: "" }] }],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets[0]?.rowsChecked).toBe(0);
+    expect(summary.totalRowsMissingRequired).toBe(0);
+  });
+
+  it("reads no more than its own bound of rows per set", () => {
+    const row = { address: "9 Mill Lane", price: "" };
+    const many = Array.from({ length: AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRowsCheckedPerSet + 50 }, () => row);
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ datasetId: "homes", recordCount: many.length }), schema: homes, checkedRows: many }],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets[0]?.rowsChecked).toBe(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRowsCheckedPerSet);
+  });
+});

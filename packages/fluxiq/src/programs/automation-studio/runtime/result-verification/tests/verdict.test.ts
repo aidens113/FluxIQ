@@ -13,6 +13,7 @@ const summary: AutomationStudioRunResultSummary = {
   schemaVersion: "automation-studio.run-result-summary.v1",
   totalRecordCount: 240,
   totalRefusedCount: 0,
+  totalRowsMissingRequired: 0,
   recordSetCount: 1,
   recordSets: [],
   flowShape: [{ nodeId: "n1", definitionId: "navigate" }, { nodeId: "n2", definitionId: "extract" }],

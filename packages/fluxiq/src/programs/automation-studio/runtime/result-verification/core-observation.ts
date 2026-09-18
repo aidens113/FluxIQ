@@ -13,6 +13,15 @@
 // Both are counts Core already holds on the run's dataset summaries. Nothing
 // here reads a row, a column, or the request.
 //
+// A third needs no model either, and was measured live on 2026-09-18: rows
+// stored with a field the Flow's own record schema declares required, and no
+// value in it. Validation refuses a row whose required field is absent, but a
+// string with nothing in it is a value to validation, so the row is stored and
+// the run reported `passed`. `result-summary.ts` counts those rows against the
+// schema the Flow itself declared; this reads the count. It never consults a
+// list of fields anyone *expected* -- a person running their own automation has
+// no answer key, so Core may only hold a Flow to what the Flow says.
+//
 // A deterministic finding wins outright: it is not a hint to a model call, it
 // is the answer. Zero rows cannot answer a request for rows, and there is no
 // reading of a request under which it could, so spending a call to be told so
@@ -24,7 +33,8 @@ import type { AutomationStudioResultVerdict, AutomationStudioResultVerification,
 /** Core's codes for a verdict it reached itself. */
 export const AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES = Object.freeze({
   everyRecordRefused: "core.result.every_record_refused",
-  noRecords: "core.result.no_records"
+  noRecords: "core.result.no_records",
+  requiredValuesMissing: "core.result.required_values_missing"
 } as const);
 
 /**
@@ -36,7 +46,7 @@ export const AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES = Object.freeze({
  */
 export function automationStudioResultCoreObservation(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerification | undefined {
   if (summary.recordSetCount === 0) return undefined;
-  if (summary.totalRecordCount > 0) return undefined;
+  if (summary.totalRecordCount > 0) return summary.totalRowsMissingRequired > 0 ? requiredValuesMissing(summary) : undefined;
   const codes = AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES;
   if (summary.totalRefusedCount > 0) {
     return refused({
@@ -81,6 +91,23 @@ export function automationStudioResultFailureRecord(input: { verdict: Automation
 function boundedObservation(observation: string): string {
   const limit = AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.textMaxLength;
   return observation.length <= limit ? observation : `${observation.slice(0, limit - 1)}…`;
+}
+
+/**
+ * Rows that lack a value the Flow's own schema requires. Any one such row
+ * settles it, as it does for the extraction that produced it: a row missing a
+ * required field is an invalid row by the schema's own definition, so a result
+ * built from it cannot be the result the Flow was declared to produce.
+ */
+function requiredValuesMissing(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerification {
+  const checked = summary.recordSets.reduce((total, set) => total + set.rowsChecked, 0);
+  const fields = [...new Set(summary.recordSets.flatMap((set) => set.missingRequiredColumns))];
+  const missing = summary.totalRowsMissingRequired;
+  return refused({
+    code: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.requiredValuesMissing,
+    reason: "Rows the run stored carry no value for fields the Flow's own record schema declares required, so its result cannot answer the request.",
+    observation: `${missing} of ${checked} ${checked === 1 ? "row" : "rows"} checked, of ${summary.totalRecordCount} stored, ${missing === 1 ? "has" : "have"} no value for a required field${fields.length ? ` (${fields.join(", ")})` : ""}.`
+  });
 }
 
 function refused(input: { code: string; reason: string; observation: string }): AutomationStudioResultVerification {
