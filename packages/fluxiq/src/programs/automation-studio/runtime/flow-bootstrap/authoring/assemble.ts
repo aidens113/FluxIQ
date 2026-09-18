@@ -7,6 +7,15 @@
 // for the model is what only it knows -- which node, which values, and where a
 // branch goes.
 //
+// A block's `when:` lines are its route. The router tests the blocks in the
+// order written, runs the first whose condition holds, and runs the steps
+// outside every block when none does; so the steps outside every block are
+// the fallback, and a block with no `when:` that is not the fallback could
+// never run and is refused. A `step: run subflow <label>` line names a route
+// the block's `when:` already states -- the router, not a step, decides -- so
+// it adds nothing, and one naming a block with no `when:` is refused rather
+// than read as a rule that always holds.
+//
 // Order carries the meaning. Steps connect in the order they were written, on
 // the node's first output port that no branch claimed, into the target's first
 // free input port. An `on <port>: go to <label>` line claims a port and sends
@@ -29,8 +38,10 @@ import type {
   AutomationStudioFlowBootstrapSubflow
 } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
-import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
-import { authoringError } from "./issue.ts";
+import type { AutomationStudioFlowBootstrapRouteCondition } from "../plan/index.ts";
+import { combineAutomationStudioRouteConditions, readAutomationStudioRouteCondition } from "./condition.ts";
+import type { AutomationStudioFlowScript, AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptStep } from "./contracts.ts";
+import { authoringError, authoringWarning } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
@@ -62,6 +73,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     }
   }
   const blockLabels = new Map(blocks.flatMap((block, index) => block.label ? [[block.label, index] as const] : []));
+  const routes = blockRoutes(blocks, issues);
   const subflows: AutomationStudioFlowBootstrapSubflow[] = [];
   const rules: AutomationStudioFlowBootstrapPlan["router"]["rules"] = [];
   for (const [blockIndex, block] of blocks.entries()) {
@@ -80,18 +92,33 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
         issues.push(authoringError("flow_script.unknown_block", `The step at line ${step.line} runs "${step.runsBlock}", which no subflow block declares.`, `flow.line.${step.line}`));
         continue;
       }
+      if (!blocks[target]!.when?.length) {
+        issues.push(authoringError("flow_script.route_condition_missing", `The step at line ${step.line} runs "${step.runsBlock}", but that block has no \`when:\` line. The router picks a block before any step runs, so say in the block when it runs.`, `flow.line.${step.line}`));
+        continue;
+      }
+      issues.push(authoringWarning("flow_script.run_subflow_ignored", `The step at line ${step.line} was left out: the router runs "${step.runsBlock}" by its \`when:\` line, not from a step.`, `flow.line.${step.line}`));
+    }
+    const condition = routes.conditions.get(blockIndex);
+    if (condition) {
       rules.push({
         key: `r${rules.length + 1}`,
-        name: bounded(step.description || step.runsBlock, NAME_LIMIT),
-        targetSubflowKey: subflowKeys[target]!,
-        routeTags: [step.runsBlock.slice(0, 100)]
+        name: bounded(block.name, NAME_LIMIT),
+        targetSubflowKey: subflowKeys[blockIndex]!,
+        routeTags: [(block.label ?? block.name).slice(0, 100)],
+        condition
       });
     }
-    if (!built.nodes.length) continue;
+    if (!built.nodes.length) {
+      // A fallback with no step of its own -- steps outside every block that
+      // only named blocks -- is no fallback: a run no route matches fails.
+      if (blockIndex === routes.fallback) routes.fallback = undefined;
+      continue;
+    }
+    const primary = blockIndex === routes.primary;
     subflows.push({
       key: subflowKeys[blockIndex]!,
       name: bounded(block.name, NAME_LIMIT),
-      role: block.role ?? (blockIndex === 0 ? "primary" : "utility"),
+      role: primary ? "primary" : block.role && block.role !== "primary" ? block.role : "utility",
       nodes: built.nodes,
       edges: built.edges
     });
@@ -102,7 +129,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     router: {
       name: bounded(input.summary, NAME_LIMIT),
       rules,
-      fallback: { kind: "subflow", targetSubflowKey: subflows.find((subflow) => subflow.role === "primary")?.key ?? "main" }
+      fallback: routes.fallback === undefined ? { kind: "fail" } : { kind: "subflow", targetSubflowKey: subflowKeys[routes.fallback]! }
     },
     subflows
   };
@@ -114,6 +141,59 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
   // re-proposed the same key until the budget ended them.
   if (issues.some((issue) => issue.severity === "error")) return { refusedPlan: plan, issues };
   return { plan, issues };
+}
+
+/**
+ * Which block each route runs, which block runs when no route holds, and
+ * which block is the Flow's primary Subflow.
+ *
+ * The steps outside every block are the fallback. With none, a lone block
+ * with no `when:` is; with no such block either, a run no route matches
+ * fails, which is the honest answer when every situation the model named
+ * has its own condition. The primary Subflow -- the one the Flow's inputs
+ * and outputs map to -- is the fallback, or the first block when there is
+ * none.
+ */
+function blockRoutes(blocks: readonly AutomationStudioFlowScriptBlock[], issues: AutomationStudioFlowBootstrapIssue[]): {
+  conditions: Map<number, AutomationStudioFlowBootstrapRouteCondition>;
+  fallback: number | undefined;
+  primary: number;
+} {
+  const conditions = new Map<number, AutomationStudioFlowBootstrapRouteCondition>();
+  const unconditioned: number[] = [];
+  let main: number | undefined;
+  for (const [index, block] of blocks.entries()) {
+    const written = block.when ?? [];
+    if (block.label === undefined) {
+      main = index;
+      for (const line of written) {
+        issues.push(authoringError("flow_script.when_outside_block", `The \`when:\` at line ${line.line} is outside every block. The steps outside every block run when no block's condition holds, so they take no condition; put this situation's steps in a \`subflow <label>:\` block with the \`when:\` inside it.`, `flow.line.${line.line}`));
+      }
+      continue;
+    }
+    if (!written.length) {
+      unconditioned.push(index);
+      continue;
+    }
+    const read: AutomationStudioFlowBootstrapRouteCondition[] = [];
+    for (const line of written) {
+      const reading = readAutomationStudioRouteCondition(line.text);
+      if (!reading.ok) {
+        issues.push(authoringError("flow_script.invalid_condition", `The condition at line ${line.line} could not be read: ${reading.reason}`, `flow.line.${line.line}`));
+        continue;
+      }
+      read.push(line.negate ? { type: "none", conditions: [reading.condition] } : reading.condition);
+    }
+    const combined = combineAutomationStudioRouteConditions(read);
+    if (combined && read.length === written.length) conditions.set(index, combined);
+  }
+  const fallback = main ?? (unconditioned.length ? unconditioned[0] : undefined);
+  for (const index of unconditioned) {
+    if (index === fallback) continue;
+    const block = blocks[index]!;
+    issues.push(authoringError("flow_script.subflow_unreachable", `The block "${block.label}" at line ${block.line} has no \`when:\` line, so the router would never run it. Say when it runs, or put its steps outside every block.`, `flow.line.${block.line}`));
+  }
+  return { conditions, fallback, primary: fallback ?? 0 };
 }
 
 /** One block's nodes and the edges the order and the branches imply. */
@@ -261,6 +341,20 @@ function wire(input: {
       claimed.get(sourceKey)!.add(port.id);
       branches.push({ sourceKey, port, targetKey });
     }
+  }
+  // A branch to the step written next takes that step's one way in. When the
+  // source still has a port no branch claimed, that is the port it falls
+  // through on, and the fall-through would have nowhere to go: the run would
+  // stop there -- which is what a live build's "close it if it is showing;
+  // on failed: go to the next step" did on 2026-09-18. Branching every port
+  // of a step is fine; leaving one to fall into a taken step is refused.
+  for (const branch of branches) {
+    const index = input.nodes.findIndex((node) => node.key === branch.sourceKey);
+    if (branch.targetKey !== input.nodes[index + 1]?.key) continue;
+    const outputs = input.definitionByKey.get(branch.sourceKey)?.outputs ?? [];
+    if (!outputs.some((port) => !claimed.get(branch.sourceKey)!.has(port.id))) continue;
+    const line = input.steps[index]?.branches.find((written) => input.keyByLabel.get(written.target) === branch.targetKey)?.line ?? input.steps[index]?.line ?? 0;
+    input.issues.push(authoringError("flow_script.branch_to_next_step", `The branch at line ${line} goes to the step written next, which the step already falls into; a step takes one way in, so the run would stop after this step. To do different things in different situations the run can start in, give each situation a \`subflow <label>:\` block with a \`when:\` line.`, `flow.line.${line}`));
   }
   for (const branch of branches) {
     const target = targetPort(branch.targetKey, input.definitionByKey, used);

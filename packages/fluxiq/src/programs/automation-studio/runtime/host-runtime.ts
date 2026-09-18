@@ -9,7 +9,8 @@ export type AutomationStudioHostRuntimeCapability =
   | "wait-observe"
   | "external-side-effect"
   | "rollback-hint"
-  | "expectation-evaluation";
+  | "expectation-evaluation"
+  | "route-state";
 
 export type AutomationStudioHostStateSnapshotRef = {
   stateSnapshotId: string;
@@ -25,8 +26,26 @@ export type AutomationStudioHostRuntimeActionContext = {
   previousStateRef?: AutomationStudioHostStateSnapshotRef;
 };
 
+/** One `state.*` path a Router condition may test, and what it holds, in the host's own words. */
+export type AutomationStudioHostRouteStatePath = {
+  /** The whole path a condition writes, `state.` included. */
+  path: string;
+  description: string;
+};
+
 export type AutomationStudioHostRuntimeBoundary = {
   capabilities: Iterable<AutomationStudioHostRuntimeCapability | string>;
+  /**
+   * The state a Router's `state.*` conditions read, observed now: the host's
+   * bounded, sanitized view of where a run stands before any step has run.
+   * Core calls it before routing a run and while a Flow is being built, so
+   * the router decides on the state the model was shown. It is evaluated
+   * where it is observed and never persisted; a host returns nothing it would
+   * not put in evidence.
+   */
+  observeRouteState?(input: { projectId: string; flowId: string; signal?: AbortSignal }): JsonObject | Promise<JsonObject>;
+  /** The `state.*` paths `observeRouteState` fills, so a model can write a condition on one that is absent right now. */
+  routeStatePaths?: readonly AutomationStudioHostRouteStatePath[];
   captureStateSnapshot?(input: AutomationStudioHostRuntimeActionContext & { point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }): AutomationStudioHostStateSnapshotRef | Promise<AutomationStudioHostStateSnapshotRef>;
   inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string }): JsonObject | Promise<JsonObject>;
   rollbackHint?(input: AutomationStudioHostRuntimeActionContext): JsonObject | Promise<JsonObject>;

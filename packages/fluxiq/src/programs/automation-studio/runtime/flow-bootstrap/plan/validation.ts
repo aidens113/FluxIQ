@@ -30,6 +30,7 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
 import { automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
+import { automationStudioFlowBootstrapRouteIssues } from "./route-validation.ts";
 
 export function validateAutomationStudioFlowBootstrapPlan(input: {
   plan: AutomationStudioFlowBootstrapPlan;
@@ -63,6 +64,7 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
   if (input.plan.router.fallback.kind === "subflow" && !subflowKeys.has(input.plan.router.fallback.targetSubflowKey)) {
     issues.push(error("bootstrap.unknown_router_fallback", "Router fallback targets an unknown Subflow key.", "plan.router.fallback.targetSubflowKey"));
   }
+  issues.push(...automationStudioFlowBootstrapRouteIssues(input.plan));
   if (issues.some((issue) => issue.severity === "error")) return { ok: false, issues };
   const subflows = input.plan.subflows.map((subflow) => ({
     ...subflow,

@@ -47,7 +47,7 @@ function parseRouter(value: unknown, issues: AutomationStudioFlowBootstrapIssue[
       issues.push(error("bootstrap.invalid_router_rule", "Router rule must be an object.", path));
       return;
     }
-    rejectFields(rule, ["key", "name", "targetSubflowKey", "routeTags"], path, issues);
+    rejectFields(rule, ["key", "name", "targetSubflowKey", "routeTags", "condition"], path, issues);
     symbolic(rule.key, `${path}.key`, issues);
     boundedText(rule.name, `${path}.name`, issues);
     symbolic(rule.targetSubflowKey, `${path}.targetSubflowKey`, issues);

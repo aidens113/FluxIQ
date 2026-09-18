@@ -39,12 +39,23 @@ export type AutomationStudioFlowScriptStep = {
   line: number;
 };
 
+/** A `when:` or `unless:` line: when the router runs the block it sits in. */
+export type AutomationStudioFlowScriptCondition = {
+  /** The condition as written, after the colon. */
+  text: string;
+  /** `unless:` -- the block runs when the condition does not hold. */
+  negate?: true;
+  line: number;
+};
+
 /** A block of steps: the main sequence, or a named subflow. */
 export type AutomationStudioFlowScriptBlock = {
   /** The label a `subflow <label>:` line gave; absent for the main block. */
   label?: string;
   name: string;
   role?: AutomationStudioFlowBootstrapPlan["subflows"][number]["role"];
+  /** When the router runs this block; every line must hold. Absent, nothing routes to it by condition. */
+  when?: AutomationStudioFlowScriptCondition[];
   steps: AutomationStudioFlowScriptStep[];
   line: number;
 };

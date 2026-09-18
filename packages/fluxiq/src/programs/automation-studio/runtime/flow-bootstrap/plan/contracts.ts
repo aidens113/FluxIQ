@@ -3,6 +3,8 @@
 // plan handed on to Bootstrap Adaptations.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeParameter, AutomationNodeValueType } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowBootstrapRouteCondition } from "./route-condition.ts";
+import type { AutomationStudioFlowBootstrapRoutingContext } from "./routing-context.ts";
 
 export type AutomationStudioFlowBootstrapRisk = "low" | "medium" | "high";
 
@@ -35,6 +37,13 @@ export type AutomationStudioFlowBootstrapRouter = {
     name: string;
     targetSubflowKey: string;
     routeTags: string[];
+    /**
+     * When the router takes this rule. Required by validation: a rule with
+     * none always holds, and nothing after it could ever run. Optional in the
+     * type only so a stored plan written before conditions existed still
+     * reads, and is then refused on apply rather than misread.
+     */
+    condition?: AutomationStudioFlowBootstrapRouteCondition;
   }>;
   fallback: { kind: "subflow"; targetSubflowKey: string } | { kind: "fail" };
 };
@@ -80,6 +89,8 @@ export type AutomationStudioFlowBootstrapContext = {
     requiredTerms: string[];
     missingRequiredTerms: string[];
   };
+  /** What the model routes with: the structure as it stands, what a condition can test, and what exploration saw. */
+  routing?: AutomationStudioFlowBootstrapRoutingContext;
 };
 
 export type AutomationStudioFlowBootstrapIssue = {

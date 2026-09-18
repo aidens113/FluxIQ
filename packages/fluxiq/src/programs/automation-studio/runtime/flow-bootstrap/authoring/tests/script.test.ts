@@ -192,7 +192,7 @@ describe("branching, which order alone cannot express", () => {
     ]);
   });
 
-  it("runs a named block from the main sequence", () => {
+  it("reaches a named block by its when line, and reads a step that runs it as naming that route", () => {
     const { accepted, validated } = build([
       "flow: Open the catalogue and read it",
       "step: open the catalogue",
@@ -200,6 +200,7 @@ describe("branching, which order alone cannot express", () => {
       "  url: https://shop.test/products",
       "step: run subflow read prices",
       "subflow read prices:",
+      "when: state.page.path is /products",
       "step: read the product list",
       "  node: web.dom.extract_list",
       "  extractList.item: li.product",
@@ -215,8 +216,9 @@ describe("branching, which order alone cannot express", () => {
       ["read-prices", "utility", 1]
     ]);
     expect(accepted.plan.router.rules).toEqual([
-      { key: "r1", name: "run subflow read prices", targetSubflowKey: "read-prices", routeTags: ["read prices"] }
+      { key: "r1", name: "read prices", targetSubflowKey: "read-prices", routeTags: ["read prices"], condition: { signalPath: "state.page.path", operator: "equals", expected: "/products" } }
     ]);
+    expect(codes(accepted.issues)).toContain("flow_script.run_subflow_ignored");
   });
 
   it("refuses a branch to a label no step carries, naming the label", () => {

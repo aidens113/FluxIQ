@@ -58,7 +58,7 @@ describe("Automation Studio LLM execution API contract", () => {
 
   it("lists every runtime-session purpose Core accepts, and not build_and_adapt", () => {
     const intents: readonly AutomationStudioRuntimeSessionLlmIntent[] = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES;
-    expect([...intents].sort()).toEqual(["diagnose_and_adapt", "diagnosis_only", "explore_and_adapt"]);
+    expect([...intents].sort()).toEqual(["diagnose_and_adapt", "diagnosis_only", "explore_and_adapt", "verify_result"]);
     expect(intents).not.toContain("build_and_adapt");
   });
 

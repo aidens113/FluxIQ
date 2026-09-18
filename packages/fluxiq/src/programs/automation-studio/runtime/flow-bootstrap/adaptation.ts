@@ -240,6 +240,9 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
       target: { kind: "subflow", subflowId: subflowIds.get(rule.targetSubflowKey)! },
       order: index * 10,
       status: "active",
+      // The rule's whole meaning. A rule written without it always held, so
+      // a router with one never reached a second Subflow or its fallback.
+      ...(rule.condition ? { condition: structuredClone(rule.condition) } : {}),
       createdAt: input.now,
       updatedAt: input.now,
       metadata: {
