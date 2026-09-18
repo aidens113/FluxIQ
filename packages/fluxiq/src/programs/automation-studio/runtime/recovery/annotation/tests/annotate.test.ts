@@ -259,6 +259,64 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
   });
 });
 
+// The early return that used to leave no trace. A Flow built from an instruction
+// is created with LLM intervention off and its playback carries no execution
+// grant, so its first failure -- in the live corpus, a retryable
+// `web.target.not_found` -- stops here. It wrote an `llmGate` and nothing else,
+// which read exactly like a recovery that ran and found nothing to change. Each
+// test fails if the trace is dropped from this return again.
+describe("a recovery the Flow's settings refuse", () => {
+  const TRAINING_REFUSAL = "Current training mode or settings do not allow LLM intervention.";
+
+  it("states the refusal in all four stages and asks no provider, for a retryable target failure", async () => {
+    const taskKinds: string[] = [];
+    const detail = await annotateRefused({ taskKinds, invokeLlm: false });
+
+    expect(taskKinds).toEqual([]);
+    expect(detail.interventions).toEqual([]);
+    expect(detail.metadata?.llmGate).toEqual({ invoked: false, code: "llm.gate.training_mode", reason: TRAINING_REFUSAL });
+    expect(detail.metadata?.recoveryTrace).toEqual({
+      schemaVersion: "automation-studio.recovery-trace.v1",
+      stages: ["diagnosis", "recovery_plan", "exploration", "resolution"].map((stage) => ({ stage, status: "refused", providerCalled: false, reason: TRAINING_REFUSAL })),
+      refused: []
+    });
+  });
+
+  it("names the spent budget when that is what refused, and still traces every stage", async () => {
+    const detail = await annotateRefused({ taskKinds: [], invokeLlm: true, exhausted: ["max cost per training window"] });
+    const reason = "Training budget exhausted: max cost per training window.";
+    const stages = (detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages ?? [];
+
+    expect(detail.metadata?.llmGate).toEqual({ invoked: false, code: "llm.gate.training_budget_exhausted", reason });
+    expect(stages.map((stage) => [stage.stage, stage.status, stage.reason])).toEqual([
+      ["diagnosis", "refused", reason],
+      ["recovery_plan", "refused", reason],
+      ["exploration", "refused", reason],
+      ["resolution", "refused", reason]
+    ]);
+  });
+});
+
+/** A failed run the gate refuses: settings with LLM intervention off, or a spent training budget, and no grant. */
+async function annotateRefused(options: { taskKinds: string[]; invokeLlm: boolean; exhausted?: string[] }): Promise<AutomationStudioFlowRunDetail> {
+  const base: Options = { executed: [], taskKinds: options.taskKinds };
+  const policy = adaptationPolicy(false);
+  const exhausted = options.exhausted ?? [];
+  return await annotateAutomationStudioRunDetailWithRuntimeLlm({
+    ports: ports(base),
+    detail: runDetail(),
+    context: {
+      ...context(base, policy),
+      behavior: { ...behavior(), invokeLlm: options.invokeLlm },
+      budgetDecision: { ok: exhausted.length === 0, exhausted, behavior: exhausted.length ? "ask" : "continue" }
+    },
+    failedTraceAttempt: {
+      ...failedAttempt(),
+      failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" }
+    }
+  });
+}
+
 const FAILURE_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.failed", controls: ["candidate.2"] };
 const REVEALED_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.revealed", controls: ["candidate.7"] };
 

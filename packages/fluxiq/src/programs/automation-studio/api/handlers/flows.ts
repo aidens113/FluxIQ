@@ -1,6 +1,8 @@
 // Flow listings, metadata, create/read/save, settings, and graph editing.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../contracts.ts";
+import type { JsonObject } from "../../../../core/index.ts";
+import { AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, withAutomationStudioInterventionMode } from "../../model/index.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -99,7 +101,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
         ...(patch.visibility === "private" || patch.visibility === "public" ? { visibility: patch.visibility } : {}),
         ...(patch.interface && typeof patch.interface === "object" ? { interface: patch.interface } : {}),
         ...(patch.executionDefaults && typeof patch.executionDefaults === "object" ? { executionDefaults: patch.executionDefaults } : {}),
-        metadata: { ...(current.metadata ?? {}), ...metadata },
+        metadata: withStatedInterventionMode({ ...(current.metadata ?? {}), ...metadata }, metadata),
         ...(current.source?.mode === "code" && patch.source?.mode === "code"
           ? { source: { ...current.source, declaredDependencies: Array.isArray(patch.source.declaredDependencies) ? patch.source.declaredDependencies : current.source.declaredDependencies } }
           : {})
@@ -161,4 +163,23 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       };
     }
   });
+}
+
+/**
+ * The settings a caller meant when it named an intervention mode and nothing
+ * else. `update-flow-settings` merges the patch over the stored metadata, so a
+ * patch that sets `adaptationMode` alone left the training and policy settings
+ * the mode governs at whatever they were -- for a new Flow, the creation
+ * defaults, `normal` and `locked`. The document then said `manual_approval` and
+ * "no LLM" at once. This applies the mode to those settings, the same mapping
+ * the web settings view applies when a person picks one. A patch that supplies
+ * its own training or policy settings is taken as written, and a patch that
+ * names no valid mode changes nothing here.
+ */
+function withStatedInterventionMode(merged: JsonObject, patch: Record<string, unknown>): JsonObject {
+  const mode = patch.adaptationMode;
+  if (patch.adaptationModeVersion !== AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION) return merged;
+  if (mode !== "fully_adaptive" && mode !== "manual_approval" && mode !== "no_llm_intervention") return merged;
+  if (patch.trainingModeSettings !== undefined || patch.adaptationPolicySettings !== undefined) return merged;
+  return withAutomationStudioInterventionMode(merged, mode);
 }
