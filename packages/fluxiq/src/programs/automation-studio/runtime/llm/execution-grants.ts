@@ -65,7 +65,23 @@ export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS = 64;
  */
 export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS = 26;
 const MAX_TOTAL_COST_USD = 2;
-export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = 100_000;
+/**
+ * When a run's token budget is large enough to be worth confirming.
+ *
+ * Ten full calls, derived from the per-call limit rather than written down as
+ * an absolute, because an absolute silently changes meaning the moment a call
+ * gets bigger. It was 100_000 beside a 10_000-token call -- ten calls. When the
+ * per-call limit rose to deepseek-chat's real context it became under two
+ * calls, and that broke recovery outright: the ledger's pot is capped by this
+ * threshold, the patch reserve holds one call's worth of it, and each
+ * exploration decision reserves another, so ZERO decisions could fit and every
+ * default-grant recovery stopped without exploring. The campaign never saw it,
+ * because it passes its own larger run budget.
+ *
+ * Cost remains the real bound: a grant may not exceed MAX_TOTAL_COST_USD
+ * whatever its token budget allows.
+ */
+export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = LIMITS.maxTotalTokens * 10;
 
 /**
  * How long a claimed grant may keep making calls.

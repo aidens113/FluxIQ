@@ -115,6 +115,28 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
     await expect(sent.provider.runTask(diagnosisRequest({ schemaVersion: "web-llm-evidence.v2", elements: [{ target: "target.1", name: "Submit" }] }))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
   });
 
+  it("holds a result verification's summary to the same rule, under its own code", async () => {
+    const cases: Array<[string, AutomationStudioLlmTaskRequest, string | undefined]> = [
+      ["a denied key in a sampled row", verificationRequest(resultSummary([{ name: "Hollis", selector: DENIED_VALUE }])), DENIED_VALUE],
+      ["a provider API key in a sampled value", verificationRequest(resultSummary([{ name: `key ${API_KEY}` }])), API_KEY],
+      ["no declared keys", undeclared(verificationRequest(resultSummary([{ name: "Hollis" }]))), undefined],
+      ["a task that has no finished result to judge", { ...verificationRequest(resultSummary([{ name: "Hollis" }])), taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" }, undefined],
+      ["a summary past its byte ceiling", verificationRequest(resultSummary([{ name: "y".repeat(5_000) }])), undefined]
+    ];
+    for (const [label, request, value] of cases) {
+      const recorded = recordingProvider({ kind: "diagnosis", summary: "Judged." });
+      const failure = await refusal(recorded.provider.runTask(request), "llm.provider_result_summary_invalid", label);
+      expect(recorded.calls, label).toEqual({ secrets: 0, transport: 0 });
+      if (value) expect(JSON.stringify(normalizedAutomationStudioLlmProviderFailure(failure)) + failure.message).not.toContain(value);
+    }
+    const sent = recordingProvider({ kind: "diagnosis", summary: "Judged." });
+    await expect(sent.provider.runTask(verificationRequest(resultSummary([{ name: "Hollis Abbott", role: "member" }])))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
+  });
+
+  it("is a pre-flight refusal of its own", () => {
+    expect(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES).toContain("llm.provider_result_summary_invalid");
+  });
+
   it("holds an evidence loop's gathered results to the same rule, under the loop's code", async () => {
     const cases: Array<[string, AutomationStudioLlmTaskRequest, string | undefined]> = [
       ["a denied key", decisionRequest([{ callId: "call.1", toolId: "web.recovery.inspect", value: { schemaVersion: "web-llm-evidence.v2", cookies: DENIED_VALUE } }]), DENIED_VALUE],
@@ -174,6 +196,30 @@ function patchRequest(explorationEvidence: unknown, overrides: Partial<Automatio
     promptVersion: "automation-studio.runtime-patch.v1",
     expectedOutput: "runtime_patch",
     context: { ...base.context, taskKind: "runtime_patch", promptVersion: "automation-studio.runtime-patch.v1", nodeId: "submit", explorationEvidence: explorationEvidence as never },
+    ...overrides
+  };
+}
+
+function resultSummary(rows: JsonObject[]): JsonObject {
+  return {
+    schemaVersion: "automation-studio.run-result-summary.v1",
+    totalRecordCount: 240,
+    totalRefusedCount: 0,
+    recordSetCount: 1,
+    recordSets: [{ datasetId: "members", recordCount: 240, refusedCount: 0, truncated: false, columns: Object.keys(rows[0] ?? {}), columnsWithheld: false, sampleRows: rows }],
+    flowShape: [{ nodeId: "n1", definitionId: "builtin.navigate" }],
+    withheld: true
+  };
+}
+
+function verificationRequest(summary: JsonObject, overrides: Partial<AutomationStudioLlmTaskRequest> = {}): AutomationStudioLlmTaskRequest {
+  const base = baseRequest();
+  return {
+    ...base,
+    taskKind: "loop_verification",
+    promptVersion: "automation-studio.loop-verification.v1",
+    expectedOutput: "diagnosis",
+    context: { ...base.context, taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v1", resultSummary: summary as never },
     ...overrides
   };
 }

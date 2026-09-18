@@ -19,6 +19,7 @@
 // Each slot refuses with its own pre-flight code and a code only. The refused
 // value is never read into an error.
 
+import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { isAutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
@@ -38,6 +39,7 @@ export function automationStudioLlmRequestEvidenceRefusal(request: AutomationStu
   const deniedKeys = declaredKeys(request.deniedEvidenceKeys);
   if (context.failureEvidence !== undefined && !sendableFailureEvidence(request, deniedKeys)) return "llm.provider_failure_evidence_invalid";
   if (context.explorationEvidence !== undefined && !sendableExplorationEvidence(request, deniedKeys)) return "llm.provider_exploration_evidence_invalid";
+  if (context.resultSummary !== undefined && !sendableResultSummary(request, deniedKeys)) return "llm.provider_result_summary_invalid";
   const gathered: unknown = context.evidenceLoop?.evidence;
   if (Array.isArray(gathered) && gathered.length > 0 && !sendableGatheredEvidence(gathered, deniedKeys)) return "llm.provider_evidence_loop_context_invalid";
   return undefined;
@@ -67,6 +69,33 @@ function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, de
   const slot = request.context.explorationEvidence;
   return deniedKeys !== undefined && request.taskKind === "runtime_patch"
     && isAutomationStudioLlmExploredEvidenceSlot(slot, deniedKeys) && credentialFree(slot);
+}
+
+/**
+ * A result summary small enough to send, free of the declared keys where the
+ * domain's own values sit, and free of credentials anywhere.
+ *
+ * The declared keys are looked for in the sampled rows and nowhere else: a
+ * sampled row's keys are the record schema's field ids, which come from the
+ * medium, and every other key in the summary is Core's own envelope. That is
+ * the same rule the other slots follow -- a domain's list is matched against
+ * what the domain supplied, never against the names Core wraps it in.
+ */
+function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKeys: readonly string[] | undefined): boolean {
+  const summary = request.context.resultSummary;
+  if (!deniedKeys || summary === undefined || request.taskKind !== "loop_verification") return false;
+  if (!credentialFree(summary)) return false;
+  const sampled = summary.recordSets.flatMap((set) => set.sampleRows ?? []);
+  if (screenAutomationStudioLlmEvidence(sampled, deniedKeys).deniedKey) return false;
+  return serializedBytes(summary) <= AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes;
+}
+
+function serializedBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 /** Each gathered value free of the declared keys, and each entry free of credentials. */

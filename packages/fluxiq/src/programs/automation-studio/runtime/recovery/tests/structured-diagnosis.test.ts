@@ -20,7 +20,12 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
       source: "deterministic",
       candidateKind: "action_target_override",
       patchNeeded: true,
-      explorationNeeded: false,
+      // Core's own answer when the model gives none: there is no deterministic
+      // recovery in hand, so looking is the only way to learn anything. This
+      // was a hard `false`, and a model told to omit what it cannot answer
+      // therefore ended every recovery -- measured across thirteen live runs,
+      // none of which ever explored.
+      explorationNeeded: true,
       stillAchievable: "unknown",
       deterministicRecoveryPossible: "unknown",
       modelFields: [],
@@ -89,7 +94,8 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
     });
 
     expect(diagnosis.expected).toBeUndefined();
-    expect(diagnosis.explorationNeeded).toBe(false);
+    // A refused field falls back to Core's answer, not to a bare false.
+    expect(diagnosis.explorationNeeded).toBe(true);
     expect(diagnosis.stillAchievable).toBe("unknown");
     expect(diagnosis.refusals).toEqual([
       expect.stringContaining("expected: 501 characters"),
@@ -119,7 +125,8 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
     expect(diagnosis.expected).toBeUndefined();
     expect(diagnosis.observed).toBeUndefined();
     expect(diagnosis.stillAchievable).toBe("unknown");
-    expect(diagnosis.explorationNeeded).toBe(false);
+    // A refused field falls back to Core's answer, not to a bare false.
+    expect(diagnosis.explorationNeeded).toBe(true);
     // The one that matters: the patch call is still asked for, because nothing
     // Core validated said it should not be.
     expect(diagnosis.patchNeeded).toBe(true);
@@ -166,7 +173,8 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
     });
 
     expect(diagnosis.patchNeeded).toBe(false);
-    expect(diagnosis.explorationNeeded).toBe(false);
+    // A refused field falls back to Core's answer, not to a bare false.
+    expect(diagnosis.explorationNeeded).toBe(true);
     expect(diagnosis.modelFields).toEqual(["patchNeeded"]);
     expect(diagnosis.refusals).toEqual([expect.stringContaining("explorationNeeded, patchNeeded arrived in response.metadata")]);
   });

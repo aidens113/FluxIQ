@@ -307,7 +307,10 @@ describe("a failed call that ends the grant", () => {
     expect(fixture.service.activeGrantCount()).toBe(0);
 
     fixture = setup();
-    ({ provider } = await adapting(fixture, { maxTotalTokensPerRun: 25_000 }));
+    // The per-call ceiling is named, not defaulted: a run budget may never be
+    // below one call's ceiling, and the default is now 56,000. These are
+    // `request()`'s own limits, which is what a spent call is charged.
+    ({ provider } = await adapting(fixture, { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxTotalTokensPerRun: 25_000 }));
     fixture.script.push(reply("not json"), reply("not json"));
     await expect(provider.runTask(next())).rejects.toMatchObject({ code: "llm.provider_malformed_response" });
     await expect(provider.runTask(next())).rejects.toMatchObject({ code: "llm.provider_malformed_response" });

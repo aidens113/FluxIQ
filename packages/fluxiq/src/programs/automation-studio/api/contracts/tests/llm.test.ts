@@ -62,23 +62,31 @@ describe("Automation Studio LLM execution API contract", () => {
     expect(intents).not.toContain("build_and_adapt");
   });
 
+  // 60,000 rather than a round 40,000: a run budget may never be below one
+  // call's ceiling, and that is now 56,000. It is still well under the default
+  // run budget, which is ten of those calls, and that is what makes this a
+  // caller asking for less.
   it("gets an explore_and_adapt preflight with a run token budget from the real grant service", async () => {
     const service = contractGrantService();
-    const request: AutomationStudioLlmExecutionPreflightRequest = { projectId: "project.one", flowId: "flow.one", keyId: "secret:key", purpose: "explore_and_adapt", maxTotalTokensPerRun: 40_000 };
+    const request: AutomationStudioLlmExecutionPreflightRequest = { projectId: "project.one", flowId: "flow.one", keyId: "secret:key", purpose: "explore_and_adapt", maxTotalTokensPerRun: 60_000 };
     const preflight: AutomationStudioLlmExecutionPreflight = await service.preflight(request);
-    expect(preflight).toMatchObject({ purpose: "explore_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS, maxTotalTokensPerRun: 40_000, providerRetryCount: 0 });
+    expect(preflight).toMatchObject({ purpose: "explore_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS, maxTotalTokensPerRun: 60_000, providerRetryCount: 0 });
   });
 
   it("describes the defaults the grant service applies when a request names no count or budget", async () => {
     const service = contractGrantService();
     const request: AutomationStudioLlmExecutionPreflightRequest = { projectId: "project.one", flowId: "flow.one", keyId: "secret:key", purpose: "diagnose_and_adapt" };
     const preflight = await service.preflight(request);
-    // What the field comments in the contract promise.
+    // What the field comments in the contract promise. The per-call limits are
+    // deepseek-chat's own 64k context less room for the reply; the call count
+    // did not move with them, and the run budget is the confirmation threshold,
+    // which is ten of those calls rather than a number written down beside
+    // them -- written down, it stopped being ten calls the moment a call grew.
     expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS).toBe(26);
     expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS).toBe(64);
-    expect(AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD).toBe(100_000);
-    expect(preflight.tokenLimits).toEqual({ maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 });
-    expect(preflight).toMatchObject({ maxCalls: 26, maxTotalTokensPerRun: 100_000 });
+    expect(preflight.tokenLimits).toEqual({ maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 });
+    expect(AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD).toBe(preflight.tokenLimits.maxTotalTokens * 10);
+    expect(preflight).toMatchObject({ maxCalls: 26, maxTotalTokensPerRun: AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD });
     await expect(service.preflight({ ...request, purpose: "diagnosis_only", maxCalls: 2 })).rejects.toThrow("exactly one");
     await expect(service.preflight({ ...request, maxCalls: 65 })).rejects.toThrow("call limit");
     await expect(service.preflight({ ...request, maxTotalTokensPerRun: 9_999 })).rejects.toThrow("total token limit");

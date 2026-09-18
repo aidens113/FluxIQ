@@ -97,7 +97,7 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     expect(system).toContain("Put your reading of the failure in the diagnosis object");
     expect(user.outputSchema.properties.diagnosis?.additionalProperties).toBe(false);
     expect(Object.keys(user.outputSchema.properties.diagnosis?.properties ?? {})).toEqual([
-      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "explorationNeeded", "patchNeeded"
+      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"
     ]);
     // And the provider's own parse returns what the model put there.
     expect(answered.response).toEqual({ kind: "diagnosis", summary: "The target is gone.", diagnosis: fields });

@@ -118,14 +118,14 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
     return;
   }
-  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"], path, diagnostics);
   for (const field of ["expected", "observed", "changed"] as const) {
     if (value[field] === undefined) continue;
     if (typeof value[field] !== "string" || !(value[field] as string).length || (value[field] as string).length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) {
       diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string of at most ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH} characters.`, path: `${path}.${field}` });
     }
   }
-  for (const field of ["stillAchievable", "deterministicRecoveryPossible"] as const) {
+  for (const field of ["stillAchievable", "deterministicRecoveryPossible", "answersRequest"] as const) {
     if (value[field] !== undefined && value[field] !== "yes" && value[field] !== "no" && value[field] !== "unknown") {
       diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_verdict", message: `Diagnosis ${field} must be "yes", "no", or "unknown".`, path: `${path}.${field}` });
     }

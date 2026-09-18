@@ -3,8 +3,8 @@
 // and every consumer of ../harness.ts saw an unchanged surface. Added since:
 // the explored-packet label, which `runtime/recovery` writes and reads, and the
 // pre-send evidence check a provider runs. Modules not named here (json-bounds,
-// provider-result, intervention, task-kind's task mappers, explored-evidence,
-// evidence-screen) are harness internals and stay unexported.
+// provider-result, intervention, task-kind's task mappers, explored-evidence)
+// are harness internals and stay unexported.
 export type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 export {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
@@ -49,6 +49,11 @@ export {
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
 export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-check.ts";
+// The screen itself, for the one caller outside this directory that has to run
+// it before a slot exists: the result verification bounds a run's stored rows
+// into a summary, and a row that fails the screen must be dropped there rather
+// than refused at the provider, where the only answer left is to send nothing.
+export { screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,

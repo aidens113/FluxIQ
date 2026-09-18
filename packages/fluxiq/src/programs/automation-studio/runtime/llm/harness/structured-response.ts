@@ -72,6 +72,16 @@ export type AutomationStudioLlmDiagnosisFields = {
   explorationNeeded?: boolean;
   /** Whether a change to the Flow is needed at all. The one field that can stop the patch call. */
   patchNeeded?: boolean;
+  /**
+   * Whether the result a finished run produced answers what was asked for.
+   *
+   * The one field a `loop_verification` call is made for, and the reason that
+   * call needs no response kind of its own: it is the same three words as the
+   * two verdicts above, read the same way. `yes` answers, `no` does not, and
+   * `unknown` -- like an omitted field -- is a run nobody confirmed, which the
+   * result verification fails closed on rather than letting it read as a pass.
+   */
+  answersRequest?: "yes" | "no" | "unknown";
 };
 
 /**
