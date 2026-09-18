@@ -1,3 +1,4 @@
+import type { AutomationStudioActionConsequence } from "../../runtime/index.ts";
 import type { AutomationStudioReusableLlmContextList, AutomationStudioReusableLlmContextTag, AutomationStudioReusableLlmContextWrite } from "../../storage/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
 
@@ -49,6 +50,14 @@ export type AutomationStudioLlmExecutionLimitRequest = {
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
   providerRetryCount?: number;
+  /**
+   * The lasting consequences the run's actions may have: `move_money`,
+   * `delete`, `send_or_publish`, `modify_existing`, `create_new`. Absent is
+   * none. A class Core does not recognise refuses the request rather than
+   * being dropped. This is how a person's answer to a permission request
+   * reaches the next run: grant what the request listed as `missing`.
+   */
+  permittedConsequences?: AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioLlmExecutionPreflightRequest = FlowIdProjectRequest & AutomationStudioLlmExecutionLimitRequest & {
@@ -92,6 +101,8 @@ export type AutomationStudioLlmExecutionPreflight = {
   maxTotalEstimatedCostUsd: number;
   timeoutMs: number;
   providerRetryCount: 0;
+  /** What the run's actions are permitted to do, in Core's order. Empty permits nothing lasting. */
+  permittedConsequences: AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioLlmExecutionPreflightResponse = { preflight: AutomationStudioLlmExecutionPreflight };

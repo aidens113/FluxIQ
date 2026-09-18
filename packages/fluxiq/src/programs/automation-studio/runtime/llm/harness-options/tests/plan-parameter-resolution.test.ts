@@ -126,7 +126,10 @@ describe("resolving a generated plan's parameters through the bound domain", () 
       projectId: "project.ledger",
       flowId: "flow.close",
       nodeDefinitionId: "ledger.read_rows",
-      parameters: { item: { handle: "record.row" }, total: { handle: "record.total" }, maxItems: 10 }
+      parameters: { item: { handle: "record.row" }, total: { handle: "record.total" }, maxItems: 10 },
+      // Every step is handed a permission check; with no build behind this
+      // resolution it is the one that permits nothing lasting.
+      permission: expect.any(Function)
     });
     // A node with no parameters is asked about with an empty object, and keeps having none.
     expect(resolver.mock.calls[0]![0].parameters).toEqual({});

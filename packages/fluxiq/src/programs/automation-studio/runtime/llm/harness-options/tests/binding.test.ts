@@ -59,8 +59,8 @@ describe("Automation Studio harness option binding", () => {
     expect(result).toMatchObject({ ok: true, result: { done: true } });
     // The initial observation the slot declared still runs, and the host still
     // receives exactly the request shape it received before the registry.
-    expect(executeTool).toHaveBeenNthCalledWith(1, { projectId: "project.one", flowId: "flow.one", callId: "initial.erp.inspect", toolId: "erp.inspect", value: {}, maxEvidenceBytes: expect.any(Number) });
-    expect(executeTool).toHaveBeenNthCalledWith(2, { projectId: "project.one", flowId: "flow.one", callId: "call.1", toolId: "erp.advance", value: { to: "2026-10" }, maxEvidenceBytes: expect.any(Number) });
+    expect(executeTool).toHaveBeenNthCalledWith(1, { projectId: "project.one", flowId: "flow.one", callId: "initial.erp.inspect", toolId: "erp.inspect", value: {}, maxEvidenceBytes: expect.any(Number), permission: expect.any(Function) });
+    expect(executeTool).toHaveBeenNthCalledWith(2, { projectId: "project.one", flowId: "flow.one", callId: "call.1", toolId: "erp.advance", value: { to: "2026-10" }, maxEvidenceBytes: expect.any(Number), permission: expect.any(Function) });
   });
 
   it("scopes the adapted options to the binding's domain and reads their side effect off the loop's own field", () => {

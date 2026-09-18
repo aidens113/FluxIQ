@@ -11,6 +11,7 @@ import type {
   AutomationStudioLlmEvidenceLoopTrace
 } from "../llm/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
+import { parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 
@@ -129,7 +130,12 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // malformed, failing Core's checks, timing out -- so it was stopped: the
     // same refusals came back until the no-progress guard, or refusals ran
     // unbroken to the far backstop.
-    "flow_bootstrap.evidence_unusable_decision"
+    "flow_bootstrap.evidence_unusable_decision",
+    // Building the Flow needed an action with a lasting consequence the build
+    // was not permitted. Not a failure of the build: the diagnostic carries
+    // the request a person grants or refuses, and a build whose grant holds
+    // what it asks for can take the action.
+    "flow_bootstrap.permission_required"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]
@@ -184,6 +190,12 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * only, at most sixteen, never a message.
    */
   issueCodes?: string[];
+  /**
+   * Present exactly when the code is `flow_bootstrap.permission_required`:
+   * what the build needed to do, its consequences, the control as a person
+   * would recognise it, and why. What FluxIQ asks the person with.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
 };
 
 const MAX_DIAGNOSTIC_ISSUE_CODES = 16;
@@ -192,7 +204,7 @@ const DIAGNOSTIC_ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest"])) return null;
   if (typeof value.code !== "string" || !FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE.has(value.code)) return null;
   if (!FLOW_BOOTSTRAP_FAILURE_STAGES.has(value.stage as AutomationStudioFlowBootstrapFailureStage)) return null;
   if (value.retryable !== true && value.retryable !== false) return null;
@@ -207,6 +219,11 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   if (value.issueCodes !== undefined && (!Array.isArray(value.issueCodes) || !value.issueCodes.length
     || value.issueCodes.length > MAX_DIAGNOSTIC_ISSUE_CODES
     || !value.issueCodes.every((code) => typeof code === "string" && DIAGNOSTIC_ISSUE_CODE.test(code)))) return null;
+  // A request travels with its code and never without it: a needs-permission
+  // ending with nothing to ask is not one, and a request on any other ending
+  // would ask a person about a build that stopped for another reason.
+  const permissionRequest = value.permissionRequest === undefined ? undefined : parseAutomationStudioActionPermissionRequest(value.permissionRequest);
+  if (permissionRequest === null || (value.code === "flow_bootstrap.permission_required") !== (permissionRequest !== undefined)) return null;
   return {
     code: value.code,
     stage: value.stage as AutomationStudioFlowBootstrapFailureStage,
@@ -215,7 +232,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     providerResponse: value.providerResponse,
     ...(accounting ? { accounting } : {}),
     ...(evidenceLoop ? { evidenceLoop } : {}),
-    ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {})
+    ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {}),
+    ...(permissionRequest ? { permissionRequest } : {})
   };
 }
 
@@ -294,6 +312,32 @@ export function flowBootstrapEvidenceCompletionFailure(
     accounting,
     evidenceLoop: evidenceLoopDiagnostic(result),
     ...(issueCodes.length ? { issueCodes } : {})
+  });
+}
+
+/**
+ * The build stopped to ask a person: an action it needed would have had a
+ * lasting consequence its grant did not permit.
+ *
+ * Built from the loop's progress at the moment the request was raised, which
+ * ended it; the request is Core's own, already bounded by the gate that raised
+ * it. Not retryable as it stands -- the same grant would ask the same question
+ * -- but a build whose grant adds `permissionRequest.missing` can go on.
+ */
+export function flowBootstrapPermissionRequiredFailure(
+  request: AutomationStudioActionPermissionRequest,
+  progress: EvidenceLoopProgress,
+  accounting?: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>
+): AutomationStudioFlowBootstrapGenerationError {
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.permission_required",
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    ...(accounting ? { accounting } : {}),
+    evidenceLoop: evidenceLoopDiagnostic(progress),
+    permissionRequest: request
   });
 }
 

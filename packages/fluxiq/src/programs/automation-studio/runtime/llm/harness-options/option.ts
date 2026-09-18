@@ -13,6 +13,7 @@
 // is what makes the loop the same loop for every domain.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { isAutomationStudioLoopStage, type AutomationStudioLoopStage } from "../stages/index.ts";
@@ -67,6 +68,15 @@ export type AutomationStudioHarnessOptionExecution = {
   value: JsonObject;
   maxEvidenceBytes: number;
   signal?: AbortSignal;
+  /**
+   * Ask before doing anything that outlasts the action. An option whose action
+   * would move money, delete, send or publish, change what already exists or
+   * create something new calls this first, with the consequences it would
+   * have and the control as a person would name it, and takes the action only
+   * on `permitted: true`. Core holds what the run was allowed; the option never
+   * decides that for itself. An option that only looks never calls it.
+   */
+  permission: AutomationStudioActionPermissionCheck;
 };
 
 export type AutomationStudioHarnessOptionImplementation = (
