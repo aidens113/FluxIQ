@@ -4,6 +4,7 @@
 // run may resume from it, and the confidence tier its saved validation results
 // earn.
 export * from "./action-target-parameters.ts";
+export * from "./attempt-projection.ts";
 export * from "./confidence.ts";
 export * from "./contracts.ts";
 export * from "./resume.ts";
