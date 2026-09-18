@@ -1,3 +1,4 @@
+import { AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES } from "../../../loop-limits/index.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -174,7 +175,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 8_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
     expect(requests[0]?.context).not.toHaveProperty("reusableContext");
-    expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" }, maxEvidenceBytes: 7_488 }));
+    expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" },
+      // The first observation is sized to the evidence context window less the
+      // loop's own framing. Derived rather than pinned: it was 7_488 beside an
+      // 8,000-byte window, which one realistic page filled on its own, so the
+      // page was evicted on the very decision that writes the Flow.
+      maxEvidenceBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES - 512 }));
     expect(result.accounting).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 });
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
     expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
