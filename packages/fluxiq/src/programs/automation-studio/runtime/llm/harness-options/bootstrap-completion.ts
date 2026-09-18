@@ -60,7 +60,13 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} instead of writing a locator of your own; `
   + `if you explored more than one place, add "${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY}": "<the location the evidence reported for that handle>". `
   + "A code written <code>:<path> names where inside that node's parameters the issue is, with keys you chose given by their position; "
-  + "a parameter's own description names any further keys it takes beside the handle.";
+  + "a parameter's own description names any further keys it takes beside the handle. "
+  // A live build authored the right acting steps, had each one refused for a
+  // handle it had invented, and completed again with those steps deleted and
+  // the wrong answer in their place. A refusal is about how a step was
+  // written, never about whether the instruction needed it.
+  + "Correct each refused step; never delete one the instruction needs, and never replace it with a step that answers something else. "
+  + "A handle is refused when it is not one the evidence printed: reread the evidence and copy that token exactly, rather than writing one that looks like it.";
 
 /** Every check a completed evidence-guided result must pass before it is built. */
 export async function checkAutomationStudioFlowBootstrapCompletion(input: {
@@ -82,7 +88,12 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
   const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
-  if (!accepted.ok) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(written));
+  // A refused Flow script carries the plan its steps got as far as, and the
+  // issues' paths are that plan's. Read from the reply instead, as it was
+  // before, and `bootstrap.unknown_parameter` came back naming a path into a
+  // plan the model never wrote with nothing beside it -- so it wrote the same
+  // key again. The nested JSON plan is the model's own writing and stays.
+  if (!accepted.ok) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written));
   const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
   if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
     return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan));

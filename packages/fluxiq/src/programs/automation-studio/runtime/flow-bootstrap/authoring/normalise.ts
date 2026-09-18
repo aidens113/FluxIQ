@@ -18,7 +18,7 @@ import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "..
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey } from "./keys.ts";
-import { matchAuthoringParameter } from "./matching.ts";
+import { matchAuthoringParameter, matchAuthoringParameterContaining } from "./matching.ts";
 import { normaliseAuthoringRecordOutput } from "./record-output.ts";
 import { AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY, isAuthoringHandleToken, isJsonObject } from "./values.ts";
 
@@ -37,7 +37,17 @@ export function normaliseAuthoringNodeParameters(input: {
   for (const [key, value] of Object.entries(input.written)) {
     const parameter = matchAuthoringParameter(key, input.definition);
     if (!parameter) {
-      issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${key}`));
+      // A key exactly one structured parameter declares as its own is read as
+      // having been written inside it, as `./matching.ts` explains.
+      const inside = matchAuthoringParameterContaining(key, input.definition);
+      if (!inside) {
+        issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${key}`));
+        continue;
+      }
+      const existing = parameters[inside.id];
+      const base: JsonObject = isJsonObject(existing) ? existing : {};
+      if (base[key] === undefined) base[key] = value;
+      parameters[inside.id] = base;
       continue;
     }
     if (parameters[parameter.id] === undefined) parameters[parameter.id] = coerce(value, parameter);

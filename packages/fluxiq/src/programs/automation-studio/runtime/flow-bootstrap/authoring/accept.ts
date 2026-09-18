@@ -35,7 +35,8 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
     const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary });
     const issues = [...read.issues, ...assembled.issues];
-    return assembled.plan ? { ok: true, summary, plan: assembled.plan, issues } : { ok: false, issues };
+    if (assembled.plan) return { ok: true, summary, plan: assembled.plan, issues };
+    return { ok: false, issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}) };
   }
   const written = planValue(input.result);
   const summary = boundedSummary(stated);

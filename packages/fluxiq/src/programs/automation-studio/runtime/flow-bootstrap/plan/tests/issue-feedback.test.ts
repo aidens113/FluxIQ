@@ -76,7 +76,7 @@ describe("the feedback on a refused plan", () => {
         type: "object",
         required: true,
         description: expect.stringContaining("item: CSS selector of each record"),
-        example: { item: "li.product", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 } }
+        example: { item: "li.product", fields: { name: ".name", price: ".price", url: "a@href" }, paginate: { mode: "next", next: "a.next", maxPages: 5 }, minItems: 1 }
       }
     }]);
   });

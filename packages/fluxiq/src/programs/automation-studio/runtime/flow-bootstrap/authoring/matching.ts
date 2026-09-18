@@ -79,6 +79,39 @@ export function matchAuthoringParameter(key: string, definition: AutomationStudi
   return undefined;
 }
 
+/**
+ * The structured parameter a written key belongs *inside*, when exactly one
+ * declares it and nothing else claims the key.
+ *
+ * A model writes what it was told to write. The list-extraction tool's own
+ * description says to name the list's columns under `fields`, so live builds
+ * wrote `fields:` as a line of the step -- beside the parameter rather than
+ * inside it -- and were refused `bootstrap.unknown_parameter`. `paginate` went
+ * the same way. Where it goes is not a guess: the parameter's own `example`
+ * declares the key, so the value is set at `<parameter>.<key>` exactly as a
+ * dotted key would have.
+ *
+ * Deterministic or nothing. The key must be declared by exactly one structured
+ * parameter of this node, and a parameter whose value is filled from a
+ * contract rather than written -- a record output -- never claims one.
+ */
+export function matchAuthoringParameterContaining(key: string, definition: AutomationStudioNodeDefinition): AutomationNodeParameter | undefined {
+  const written = authoringKey(key);
+  if (!written) return undefined;
+  const carriers = definition.parameters.filter((parameter) =>
+    (parameter.valueType === "object" || parameter.valueType === "json")
+    && parameter.ui?.control !== "record-output"
+    && exampleKeys(parameter).includes(written));
+  return carriers.length === 1 ? carriers[0] : undefined;
+}
+
+/** The top-level keys a parameter's declared example shows, in `authoringKey` form. */
+function exampleKeys(parameter: AutomationNodeParameter): string[] {
+  const example = parameter.example;
+  if (typeof example !== "object" || example === null || Array.isArray(example)) return [];
+  return Object.keys(example).map(authoringKey);
+}
+
 /** The port a written name means among a node's ports, or `undefined`. */
 export function matchAuthoringPort(name: string, ports: readonly AutomationNodePort[]): AutomationNodePort | undefined {
   const written = authoringKey(name);

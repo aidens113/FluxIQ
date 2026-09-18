@@ -56,7 +56,15 @@ export type AutomationStudioFlowScript = {
   blocks: AutomationStudioFlowScriptBlock[];
 };
 
-/** A result the acceptor could read, or the issues that refused it. */
+/**
+ * A result the acceptor could read, or the issues that refused it.
+ *
+ * A refusal may carry `refusedPlan`: the plan the script got as far as, so a
+ * refusal's feedback can read each node's definition out of it and answer with
+ * the parameters that node does declare. Nothing builds, validates or persists
+ * from it -- it holds at least one refused node by construction -- and it is
+ * deliberately not called `plan`, so no caller reaches it by widening a check.
+ */
 export type AutomationStudioFlowBootstrapAcceptance =
   | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] }
-  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[] };
+  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[]; refusedPlan?: AutomationStudioFlowBootstrapPlan };

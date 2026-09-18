@@ -10,6 +10,40 @@
 //
 // Kept to one string so the prompt, the completion schema and the refusal
 // feedback can never describe the format differently.
+//
+// Two statements were added after the first four live campaign slices, in
+// which not one built Flow contained a step that acted on its target: every
+// Flow was "go there, read the whole list", and a task that asked for 14 of
+// 280 rows returned 280 and reported success. Neither the format nor the
+// validator ever refused an acting step -- a script naming a click, an entry
+// and a choice builds and validates today -- so what was missing was the
+// statement that one is allowed and, where the instruction asks for part of a
+// collection, required. The model had been told the opposite by inference: the
+// evidence tools it was offered refuse to act for anything but revealing
+// hidden structure, so "I may not do this" was the only reading available to
+// it.
+//
+// The third is about where a key goes. Live builds were refused
+// `bootstrap.unknown_parameter` for a bare `fields:`, `paginate:` or
+// `location:` line -- words the tool descriptions themselves use -- because
+// each belongs inside a parameter rather than beside it.
+//
+// The fourth is the sentence about handles, and it was learned twice. With the
+// statements above in place, the first live build authored exactly the right
+// narrowing Flow -- choose, choose, press, read -- and named each control by a
+// handle shaped like this example's old ones (`control.7`, `field.2`), which
+// the evidence never issued, so all three acting steps were refused
+// `web.handle.malformed` (`run-mu6b6lvl-db87c27f`) and the build that followed
+// went back to reading everything. Its extraction handle was right, because
+// the detection tool spells that shape out.
+//
+// Replacing the example handles with descriptions of the handle to copy --
+// `target: <the handle for the status filter>` -- made it worse: the next
+// build wrote the description as the value, and all three steps were refused
+// `bootstrap.invalid_parameter_value` (`run-mu6bgyc8-3d355b20`). A model
+// copies whatever shape the example shows, so the example must show the right
+// shape and the surrounding line must say it is a shape. That is what these
+// two now do together.
 
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",
@@ -19,10 +53,14 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "`step: <what this step does>` starts a step. Write `step <label>: <what it does>` when another line needs to point at this step; the label is a name you invent.",
   "`node: <an id or label from nodeCatalog>` chooses the node for the step.",
   "Every other line in a step sets one of that node's parameters by its id, `url: https://example.test/a`. Reach inside a structured parameter with a dotted key, `extractList.fields.name: product-name`. A list is comma separated. Leave a parameter out and its default is used.",
+  "A key a parameter takes is written inside it: `extractList.minItems: 0`, `target.location: https://shop.test/members`.",
+  "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
+  "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
   "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists.",
   "`subflow <label>:` starts a named block of steps and `end` closes it; `step: run subflow <label>` reaches that block.",
   "A line with no `key:` continues the value above it on a new line.",
+  "Where a step names something you observed, its value is the handle the evidence printed for it, copied exactly. The handles in the examples below are the shape, not the value: read the real one out of the evidence, and never invent one, describe one, or reuse one from an example.",
   "Example:",
   "flow: Rename a member",
   "step: open the members page",
@@ -30,13 +68,29 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "  url: https://shop.test/members",
   "step row: click the member's row",
   "  node: web.dom.click",
-  "  target: control.7",
+  "  target: target.7",
   "  on failed: go to shout",
   "step: type the new name",
   "  node: web.dom.type",
-  "  target: field.2",
+  "  target: target.2",
   "  text: Ada Lovelace",
   "step shout: check the page said why",
   "  node: web.dom.wait_for_text",
-  "  text: could not be renamed"
+  "  text: could not be renamed",
+  "Example, narrowing before reading:",
+  "flow: Orders awaiting dispatch",
+  "step: open the orders page",
+  "  node: web.browser.navigate",
+  "  url: https://shop.test/orders",
+  "step: filter to awaiting dispatch",
+  "  node: web.dom.select",
+  "  target: target.4",
+  "  value: awaiting-dispatch",
+  "step: apply it",
+  "  node: web.dom.click",
+  "  target: target.5",
+  "step: read what is left",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.1",
+  "  extractList.minItems: 0"
 ].join("\n");

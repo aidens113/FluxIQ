@@ -32,7 +32,7 @@ import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
-import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringPort } from "./matching.ts";
+import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, isJsonObject } from "./values.ts";
 
@@ -44,7 +44,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   summary: string;
-}): { plan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
+}): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const definitions = input.registry.list(input.resolution);
   const blocks = input.script.blocks;
@@ -97,19 +97,23 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     });
   }
   if (!subflows.some((subflow) => subflow.role === "primary") && subflows[0]) subflows[0].role = "primary";
-  if (issues.some((issue) => issue.severity === "error")) return { issues };
-  return {
-    plan: {
-      schemaVersion: "0.1",
-      router: {
-        name: bounded(input.summary, NAME_LIMIT),
-        rules,
-        fallback: { kind: "subflow", targetSubflowKey: subflows.find((subflow) => subflow.role === "primary")?.key ?? "main" }
-      },
-      subflows
+  const plan: AutomationStudioFlowBootstrapPlan = {
+    schemaVersion: "0.1",
+    router: {
+      name: bounded(input.summary, NAME_LIMIT),
+      rules,
+      fallback: { kind: "subflow", targetSubflowKey: subflows.find((subflow) => subflow.role === "primary")?.key ?? "main" }
     },
-    issues
+    subflows
   };
+  // A refused script still yields the plan its steps got as far as, under a
+  // name nothing builds from. It is what the refusal's feedback reads the node
+  // definition out of, so `bootstrap.unknown_parameter` can answer with the
+  // parameters the node does declare; without it a script refusal carried a
+  // path into a plan the model never wrote and nothing else, and live builds
+  // re-proposed the same key until the budget ended them.
+  if (issues.some((issue) => issue.severity === "error")) return { refusedPlan: plan, issues };
+  return { plan, issues };
 }
 
 /** One block's nodes and the edges the order and the branches imply. */
@@ -158,10 +162,20 @@ function buildNode(input: {
   const written: Record<string, JsonValue> = {};
   let outputActionId: string | undefined;
   for (const entry of input.step.entries) {
-    const segments = entry.key.split(".").map((segment) => segment.trim()).filter(Boolean);
-    const head = segments[0] ?? "";
+    let segments = entry.key.split(".").map((segment) => segment.trim()).filter(Boolean);
+    let head = segments[0] ?? "";
     const text = entry.lines.join("\n").trim();
-    const parameter = matchAuthoringParameter(head, input.definition);
+    let parameter = matchAuthoringParameter(head, input.definition);
+    // A key that names no parameter but that exactly one structured parameter
+    // declares as one of its own is read as having been written inside it.
+    if (!parameter && !(segments.length === 1 && OUTPUT_ACTION_WORDS.has(authoringKey(head)))) {
+      const inside = matchAuthoringParameterContaining(head, input.definition);
+      if (inside) {
+        parameter = inside;
+        segments = [inside.id, ...segments];
+        head = inside.id;
+      }
+    }
     if (!parameter) {
       if (segments.length === 1 && OUTPUT_ACTION_WORDS.has(authoringKey(head))) outputActionId = text;
       else issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`));

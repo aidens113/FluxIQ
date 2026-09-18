@@ -46,14 +46,25 @@ export function authoringParameterValue(text: string, parameter: AutomationNodeP
   }
 }
 
-/** A value written under a dotted key, read without a declared type to guide it. */
+/**
+ * A value written under a dotted key, read without a declared type to guide it.
+ *
+ * A number is read before a word is. `0` and `1` are in the word sets, because
+ * a *declared* boolean parameter written `1` means true -- and that reading is
+ * made by `authoringParameterValue`, where the declaration says so. Here there
+ * is no declaration, and reading the word first turned `extractList.minItems:
+ * 0` into `false` and `extractList.maxItems: 1` into `true`: a count silently
+ * replaced by a boolean, which the request reader then refused as malformed.
+ * Under a dotted key, anything that is a number is a number.
+ */
 export function authoringNestedValue(text: string): JsonValue {
   const parsed = jsonValue(text);
   if (parsed !== undefined) return parsed;
+  const numeric = numberValue(text);
+  if (numeric !== undefined) return numeric;
   if (TRUE_WORDS.has(authoringKey(text))) return true;
   if (FALSE_WORDS.has(authoringKey(text))) return false;
-  const numeric = numberValue(text);
-  return numeric ?? text;
+  return text;
 }
 
 /** Write `value` at `path` inside `target`, creating the objects on the way. */
