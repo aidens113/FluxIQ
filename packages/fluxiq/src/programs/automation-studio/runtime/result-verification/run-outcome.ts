@@ -1,0 +1,234 @@
+// What a finished run's verification does to the run's own record.
+//
+// A verdict nobody acts on is a comment. Four live runs on 2026-09-17 each
+// reported `passed` while returning the wrong thing, and the only reason that
+// was visible at all is that the test facility holds a written answer key. So
+// this is the half that makes the verdict count: a run whose result does not
+// answer the request, or whose result nobody could confirm, is written back as
+// `failed`, with the code, the reason and the observation on the run, exactly
+// as any other failure is.
+//
+// It runs only on a run that reported success. A run that already failed is
+// already telling the truth, and spending a model call to add a second reason
+// to it would buy nothing.
+//
+// Everything it reaches outside itself is a port, for the reason
+// `recovery/annotation/ports.ts` states: the service is a six-thousand-line
+// class at its own line budget, and a path that can only be driven by standing
+// up a project directory and a live run is a path nobody writes an assertion
+// about.
+
+import type { AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import type { JsonObject } from "../../../../core/index.ts";
+import type {
+  AutomationStudioAdaptationPolicy,
+  AutomationStudioFlowDocument,
+  AutomationStudioFlowInstruction,
+  AutomationStudioFlowRunDetail,
+  AutomationStudioRuntimeSession
+} from "../../model/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
+import type { AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import { automationStudioResultFailureRecord } from "./core-observation.ts";
+import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
+import { verifyAutomationStudioRunResult } from "./verify.ts";
+
+/**
+ * A resolver's answer, normalized to the one shape the verification reads.
+ *
+ * Core's provider resolver answers either a provider or a resolution around
+ * one, and every caller has to tell them apart. Doing it here keeps that one
+ * line out of the run service, which is at its own line budget, and keeps the
+ * two shapes from being told apart twice and differently.
+ */
+export function automationStudioResultVerificationProvider(
+  resolved: AutomationStudioLlmProvider | AutomationStudioResultVerificationProvider | undefined
+): AutomationStudioResultVerificationProvider | undefined {
+  if (!resolved) return undefined;
+  return "provider" in resolved ? resolved : { provider: resolved };
+}
+
+/** The model that judges a result, with whatever the resolution bounds it to. */
+export type AutomationStudioResultVerificationProvider = {
+  provider: AutomationStudioLlmProvider;
+  tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
+  timeoutMs?: number;
+  maxEstimatedCostUsd?: number;
+};
+
+/** Everything the verification reaches outside itself. */
+export type AutomationStudioResultVerificationPorts = {
+  /**
+   * The run's stored record sets. Absent where the deployment stores no records
+   * at all, which is a configuration and not a failure: a run that could never
+   * have stored a record set has no result of this kind to judge, and the run
+   * records that rather than a verdict.
+   */
+  listRunDatasets?: ((input: { projectId: string; runId: string }) => Promise<AutomationStudioRunDatasetSummary[]>) | undefined;
+  getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;
+  flowInstructionSet(input: { projectId: string; flowId: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]>;
+  getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
+  saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
+  writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<unknown>;
+  /**
+   * Resolves the model that judges this run's result, or answers nothing.
+   *
+   * Nothing means the question cannot be put at all -- no model is configured
+   * for this Flow, or this run was not authorized to ask one. That is recorded
+   * as a verification that did not happen, which is a different fact from a
+   * verdict and must never be read as a pass.
+   */
+  resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
+  /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
+  deniedEvidenceKeys?: readonly string[] | undefined;
+};
+
+export type AutomationStudioRuntimeSessionVerificationInput = {
+  ports: AutomationStudioResultVerificationPorts;
+  projectId: string;
+  session: AutomationStudioRuntimeSession;
+  /** The Flow that ran, for its authored shape. */
+  flow?: AutomationStudioFlowDocument | undefined;
+  subflowId?: string | undefined;
+  policy?: AutomationStudioAdaptationPolicy | undefined;
+  maxEstimatedCostUsd?: number | undefined;
+  signal?: AbortSignal | undefined;
+};
+
+/**
+ * The session a run reports, after its result has been judged.
+ *
+ * The session that comes back is the one the caller returns to whoever started
+ * the run, so a failed verification reaches the caller as a failed run and not
+ * as a note filed somewhere.
+ */
+export async function verifyAutomationStudioRuntimeSessionResult(
+  input: AutomationStudioRuntimeSessionVerificationInput
+): Promise<AutomationStudioRuntimeSession> {
+  if (input.session.status !== "succeeded") return input.session;
+  const report = await runVerification(input);
+  const outcome = report.outcome;
+  const failing = outcome.performed === true && outcome.verdict !== "answers";
+  const next: AutomationStudioRuntimeSession = failing
+    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } }
+    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } };
+  await input.ports.writeRuntimeSession(input.projectId, next);
+  await recordOnRunDetail(input, next, outcome, report.intervention);
+  return next;
+}
+
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>> {
+  const session = input.session;
+  let recordSets: AutomationStudioResultRecordSetInput[];
+  try {
+    recordSets = await readRecordSets(input.ports, input.projectId, session.runId);
+  } catch (error) {
+    // A result that could not be read is a result nobody checked, which is the
+    // one thing this module refuses to report as success. The read's own code
+    // is carried into the verdict so the run says what went wrong.
+    return { outcome: unreadableResult(error) };
+  }
+  const summary = summarizeAutomationStudioRunResult({
+    recordSets,
+    ...(input.flow ? { flowNodes: input.flow.nodes } : {}),
+    ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
+  });
+  if (summary.recordSetCount === 0) {
+    return await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] });
+  }
+  const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+  const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
+  const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
+  return await verifyAutomationStudioRunResult({
+    projectId: input.projectId,
+    flowId: session.flowId,
+    runId: session.runId,
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    summary,
+    instructions,
+    ...(runDetail ? { runDetail } : {}),
+    ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {}),
+    ...(resolved ? { provider: resolved.provider } : {}),
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(resolved?.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
+    ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
+    ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
+    ...(input.signal ? { signal: input.signal } : {})
+  });
+}
+
+/** The narrower of what the caller allows this call and what the resolution allows it. */
+function costCeiling(
+  input: AutomationStudioRuntimeSessionVerificationInput,
+  resolved: AutomationStudioResultVerificationProvider | undefined
+): number | undefined {
+  const ceilings = [input.maxEstimatedCostUsd, resolved?.maxEstimatedCostUsd].filter((value): value is number => typeof value === "number" && value > 0);
+  return ceilings.length ? Math.min(...ceilings) : undefined;
+}
+
+/** The run's stored record sets, with the first rows of each one that is summarized. */
+async function readRecordSets(
+  ports: AutomationStudioResultVerificationPorts,
+  projectId: string,
+  runId: string
+): Promise<AutomationStudioResultRecordSetInput[]> {
+  if (!ports.listRunDatasets) return [];
+  const readPage = ports.getRunDatasetPage;
+  const summaries = await ports.listRunDatasets({ projectId, runId });
+  const listed = summaries.slice(0, AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRecordSets);
+  return await Promise.all(listed.map(async (summary) => {
+    const page = readPage && summary.recordCount > 0
+      ? await readPage({ projectId, runId, datasetId: summary.datasetId, limit: AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxSampleRowsPerSet })
+      : null;
+    return { summary, ...(page ? { schema: page.schema, rows: page.rows } : {}) };
+  }));
+}
+
+function unreadableResult(error: unknown): AutomationStudioResultVerificationOutcome {
+  const code = "core.result.unreadable";
+  const observation = `The run's stored records could not be read: ${errorName(error)}.`;
+  return {
+    schemaVersion: "automation-studio.result-verification.v1",
+    performed: true,
+    verdict: "unsure",
+    basis: "model_unavailable",
+    code,
+    reason: "What the run produced could not be read, so whether it answers the request was never judged.",
+    observation,
+    failure: automationStudioResultFailureRecord({ verdict: "unsure", code, observation })
+  };
+}
+
+/** The error's own name, never its message: a message can carry what the store was holding. */
+function errorName(error: unknown): string {
+  return error instanceof Error && error.name ? error.name : "unknown error";
+}
+
+/** The verification as a run record holds it: verdicts, codes and Core's own words. */
+function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
+  return outcome.performed === false
+    ? { performed: false, code: outcome.code, reason: outcome.reason }
+    : { performed: true, verdict: outcome.verdict, basis: outcome.basis, code: outcome.code, reason: outcome.reason, observation: outcome.observation };
+}
+
+async function recordOnRunDetail(
+  input: AutomationStudioRuntimeSessionVerificationInput,
+  session: AutomationStudioRuntimeSession,
+  outcome: AutomationStudioResultVerificationOutcome,
+  intervention: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["intervention"]
+): Promise<void> {
+  const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
+  if (!detail) return;
+  const failed = outcome.performed === true && outcome.verdict !== "answers";
+  await input.ports.saveFlowRunDetail({
+    ...detail,
+    summary: { ...detail.summary, status: session.status, updatedAt: session.finishedAt ?? detail.summary.updatedAt },
+    ...(intervention ? { interventions: [...detail.interventions, intervention] } : {}),
+    metadata: {
+      ...(detail.metadata ?? {}),
+      resultVerification: recordedOutcome(outcome),
+      ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})
+    }
+  });
+}
