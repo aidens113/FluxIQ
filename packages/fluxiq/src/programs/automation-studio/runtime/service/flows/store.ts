@@ -7,6 +7,7 @@ import {
   type AutomationStudioFlowOrigin,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowSubflow,
+  automationStudioInterventionMode,
   createBlankAutomationStudioFlowArtifact
 } from "../../../model/index.ts";
 import {
@@ -306,6 +307,12 @@ export class AutomationStudioFlowStore {
         createdAt: flow.createdAt,
         updatedAt: flow.updatedAt,
         settings: {
+          // The mode the Flow's document states, read the way the runtime reads
+          // it. Left out, the repository re-derived it from the training and
+          // policy blobs, which a caller setting only `adaptationMode` never
+          // touches: a Flow saved as `manual_approval` over its creation
+          // defaults was stored, and shown, as `no_llm_intervention`.
+          interventionMode: automationStudioInterventionMode(metadata),
           executionDefaults: (flow.executionDefaults ?? {}) as JsonObject,
           training: jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {},
           adaptation: {

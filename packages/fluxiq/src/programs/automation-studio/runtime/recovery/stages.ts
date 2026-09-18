@@ -21,6 +21,7 @@ import { planAutomationStudioRuntimeRecovery, type AutomationStudioRuntimeRecove
 import { automationStudioExplorationTraceEvent, type AutomationStudioRuntimeExploration } from "./runtime-exploration.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES,
+  AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES,
   buildAutomationStudioRecoveryTrace,
   type AutomationStudioRecoveryTrace,
   type AutomationStudioRecoveryTraceEvent
@@ -44,6 +45,34 @@ export type AutomationStudioRuntimeRecoveryTraceInput = {
   adaptationIds?: readonly string[];
   changeProposalIds?: readonly string[];
 };
+
+/**
+ * The four stages of a recovery that was never allowed to begin.
+ *
+ * One entry point refused before anything was classified: the Flow's settings
+ * do not permit LLM intervention, or the training budget is spent. It wrote an
+ * `llmGate` and no trace, and that absence was the whole defect. A reader --
+ * the web UI, a Lab assertion, the next agent -- saw four stages for every
+ * other outcome and nothing at all for this one, so "the loop declined to
+ * repair this Flow" and "the loop ran and produced no change" were the same
+ * silence. A Flow built from an instruction lands in exactly this case: it is
+ * created with LLM intervention off and its playback carries no execution
+ * grant, so the first failure it hits is refused here and says so nowhere.
+ *
+ * Every stage is `refused`, which is `trace.ts`'s own word for "something
+ * declined to let it", and each carries Core's sentence for why. No provider
+ * was resolved and none was called, so `providerCalled` is false throughout,
+ * and no stage claims a loop stage it did not drive. The refusal is stated,
+ * never repaired: this widens nothing and spends nothing.
+ */
+export function automationStudioRuntimeRecoveryRefusedTrace(reason: string): AutomationStudioRecoveryTrace {
+  return buildAutomationStudioRecoveryTrace(AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES.map((stage) => ({
+    stage,
+    status: "refused" as const,
+    providerCalled: false,
+    reason
+  })));
+}
 
 /** The four stages of one runtime recovery, in order, content-free. */
 export function automationStudioRuntimeRecoveryTrace(input: AutomationStudioRuntimeRecoveryTraceInput): AutomationStudioRecoveryTrace {

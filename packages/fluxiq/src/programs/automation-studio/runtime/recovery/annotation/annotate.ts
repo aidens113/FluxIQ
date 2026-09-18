@@ -51,7 +51,7 @@ import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summ
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
 import { startAutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
-import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
+import { automationStudioRuntimeRecoveryRefusedTrace, automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structured-diagnosis.ts";
 import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
@@ -88,15 +88,23 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const grantPurpose = input.executionGrant?.purpose;
   const explicitGrantBudget = grantPurpose === "diagnose_and_adapt" || grantPurpose === "diagnosis_only" || grantPurpose === "explore_and_adapt";
   const executionPurpose = grantPurpose === "diagnose_and_adapt" || grantPurpose === "explore_and_adapt" ? { executionPurpose: grantPurpose } : {};
+  // The one early return that used to leave no trace. A run refused here is a
+  // run nothing will ever repair, so it has to say so in the same four-stage
+  // vocabulary as every other outcome; without that, a Flow created with LLM
+  // intervention off looked exactly like a Flow whose recovery ran and found
+  // nothing to change. The `code` is the same answer for a reader that must
+  // not carry a sentence, such as an evaluation.
   if (!input.context.behavior.invokeLlm || (!explicitGrantBudget && !input.context.budgetDecision.ok)) {
+    const trainingRefused = !input.context.behavior.invokeLlm;
+    const refusal = trainingRefused
+      ? "Current training mode or settings do not allow LLM intervention."
+      : `Training budget exhausted: ${input.context.budgetDecision.exhausted.join(", ")}.`;
     return {
       ...input.detail,
       metadata: {
         ...(input.detail.metadata ?? {}),
-        llmGate: {
-          invoked: false,
-          reason: !input.context.behavior.invokeLlm ? "Current training mode or settings do not allow LLM intervention." : `Training budget exhausted: ${input.context.budgetDecision.exhausted.join(", ")}.`
-        }
+        llmGate: { invoked: false, code: trainingRefused ? "llm.gate.training_mode" : "llm.gate.training_budget_exhausted", reason: refusal },
+        recoveryTrace: automationStudioRuntimeRecoveryRefusedTrace(refusal) as unknown as JsonObject
       }
     };
   }
@@ -108,7 +116,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const recoveryDeadline = startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() });
   const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
   // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
-  if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
+  if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, code: `llm.gate.${invocation.requiredPriorAction}`, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
   const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
   const providerId = settingString(input.context.policy.metadata?.llmProvider, settingString(input.context.policy.policyId, "host"));
   let provider: AutomationStudioLlmProvider | undefined;
