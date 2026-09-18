@@ -3232,12 +3232,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           adaptationContext,
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
         }) : null;
-        // Two changes meet here and both are needed. The retry now carries its
-        // own session and a declined code, so a run that may not resume says
-        // why; and a run that was not retried has its RESULT verified before it
-        // is returned, because nothing else asks whether the result answers the
-        // request. A retried session is not verified here: it came back through
-        // the change verdict, which already judged it.
         if (retry?.session) return retry.session;
         await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
         return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
