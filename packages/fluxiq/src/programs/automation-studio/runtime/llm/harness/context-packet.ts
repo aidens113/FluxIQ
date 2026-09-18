@@ -15,6 +15,7 @@ import {
   buildAutomationStudioFlowBootstrapContext
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
@@ -56,6 +57,10 @@ export type AutomationStudioLlmContextPacket = {
    * told to carry out the plan it just stated is shown that plan. Runtime
    * patch only. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
+  /** The bounded account of what a finished run produced, and of the shape of
+   * the Flow that produced it. Result verification only: it is the whole
+   * subject of that call, and no other task has a finished result to read. */
+  resultSummary?: AutomationStudioRunResultSummary;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
   reusableContext?: AutomationStudioReusableLlmContextPacket;
@@ -176,6 +181,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // how a run failed has no place in it.
     ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
     ...(input.diagnosis ? packDiagnosisFields(input.taskKind, input.diagnosis) : {}),
+    // Held to its own task kind for the same reason failure evidence is: a
+    // result summary describes a run that finished, and no other call is
+    // looking at one.
+    ...(input.resultSummary && input.taskKind === "loop_verification" ? { resultSummary: input.resultSummary } : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),

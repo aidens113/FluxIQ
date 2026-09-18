@@ -14,9 +14,12 @@ export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>
   const tokens = value.tokenLimits;
   if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) throw new Error("LLM token limits are invalid.");
   const tokenLimits = tokens as Record<string, unknown>;
-  const maxInputTokens = boundedWholeNumber(tokenLimits.maxInputTokens, 1, 50_000);
-  const maxOutputTokens = boundedWholeNumber(tokenLimits.maxOutputTokens, 1, 50_000);
-  const maxTotalTokens = boundedWholeNumber(tokenLimits.maxTotalTokens, 1, 50_000);
+  // 64k is deepseek-chat's own context window. These were 50_000, the sixth and
+  // last place holding a ceiling that between them made a real page impossible
+  // to describe -- see the provider's own limit check and the Lab's budget.
+  const maxInputTokens = boundedWholeNumber(tokenLimits.maxInputTokens, 1, 64_000);
+  const maxOutputTokens = boundedWholeNumber(tokenLimits.maxOutputTokens, 1, 64_000);
+  const maxTotalTokens = boundedWholeNumber(tokenLimits.maxTotalTokens, 1, 64_000);
   if (maxInputTokens + maxOutputTokens > maxTotalTokens) throw new Error("LLM input and output limits exceed the total-token limit.");
   boundedWholeNumber(value.maxCalls, 1, AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS);
   boundedWholeNumber(value.timeoutMs, 1, 25_000);

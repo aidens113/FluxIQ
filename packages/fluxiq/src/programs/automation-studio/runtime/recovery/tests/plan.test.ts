@@ -1,3 +1,9 @@
+// A diagnosis Core never got is not a diagnosis saying "give up". Before
+// 2026-09-17 a failed, malformed or absent diagnosis planned `stop`, and three
+// of thirteen live repair tasks were scored as correctly refusing on exactly
+// that path -- the system failing to get an answer read the same as the system
+// deciding there was nothing to do. Core now plans `explore`, bounded by the
+// run's cost, tokens and deadline.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../../model/index.ts";
 import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../../llm/index.ts";
@@ -13,10 +19,11 @@ describe("planAutomationStudioRuntimeRecovery", () => {
   it("asks for a patch when the diagnosis calls for one and the policy permits a kind that serves it", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy() });
 
-    expect(plan).toMatchObject({ loopStage: "plan", source: "deterministic", candidateKind: "action_target_override", explorationRequested: false });
+    // No deterministic recovery is available on this fixture, so Core asks to look.
+    expect(plan).toMatchObject({ loopStage: "plan", source: "deterministic", candidateKind: "action_target_override", explorationRequested: true });
     expect(plan.allowedPatchKinds).toEqual(["temporary_target_override", "temporary_wait_retry"]);
     expect(plan.patchRequest.request).toBe(true);
-    expect(plan.steps.map((step) => step.action)).toEqual(["request_patch"]);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore", "request_patch"]);
   });
 
   // Phase D's rule, reused rather than restated: the patch is a continuation of
@@ -29,7 +36,7 @@ describe("planAutomationStudioRuntimeRecovery", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), ...(result ? { result } : {}), policy: policy() });
 
     expect(plan.patchRequest).toMatchObject({ request: false, reason: expect.stringContaining(reason) });
-    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
   });
 
   // L5's second clause. A diagnosis that asks for neither is a report, and a
@@ -152,6 +159,10 @@ describe("planAutomationStudioRuntimeRecovery", () => {
   it("plans nothing, and asks for nothing, when no failed attempt was classified", () => {
     const plan = planAutomationStudioRuntimeRecovery({ result: diagnosisResult(), policy: policy() });
 
+    // Still `stop`, and deliberately so. The raised `explorationNeeded` default
+    // is Core's answer for a diagnosis it *did* make; with no failed attempt
+    // there is nothing classified to explore from, so `plan.ts` answers on its
+    // own unclassified path and never reads the flag.
     expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
     expect(plan.diagnosis.refusals).toEqual(["No failed attempt reached the diagnosis, so nothing was classified."]);
   });

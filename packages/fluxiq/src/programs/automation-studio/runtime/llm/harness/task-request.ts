@@ -7,6 +7,7 @@ import type {
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmRunBudgetAllowance, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
@@ -120,6 +121,10 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * bounded, never spread: the channel is a fixed set of keys, and an
    * unrecognized one is dropped rather than carried. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
+  /** What a finished run produced, already bounded and screened by
+   * `summarizeAutomationStudioRunResult`. Result verification only: any other
+   * task carrying one leaves it out of the packet. */
+  resultSummary?: AutomationStudioRunResultSummary;
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
   relevantRuns?: JsonObject[];

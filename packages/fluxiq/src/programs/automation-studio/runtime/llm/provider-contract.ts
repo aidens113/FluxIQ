@@ -23,6 +23,9 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES = Object.freez
   // The explored packets a runtime patch carries, re-checked like failure
   // evidence: the packet builder's rule, the domain's keys, no credentials.
   "llm.provider_exploration_evidence_invalid",
+  // The bounded result summary a verification carries, re-checked the same way:
+  // its own rule, the domain's keys, no credentials.
+  "llm.provider_result_summary_invalid",
   "llm.provider_flow_bootstrap_context_invalid",
   "llm.provider_evidence_loop_context_invalid",
   "llm.provider_request_limits_invalid",

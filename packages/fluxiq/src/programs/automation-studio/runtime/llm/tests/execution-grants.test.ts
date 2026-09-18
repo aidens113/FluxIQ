@@ -3,10 +3,25 @@ import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import {
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS,
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS,
-  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS
+  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS,
+  AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD
 } from "../execution-grants.ts";
 import { automationStudioRuntimeSessionGrantTaskKinds } from "../runtime-session-grant.ts";
 import { evidenceRequest, gatherRequest, issueInput, patchRequest, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
+
+/**
+ * The high-token confirmation threshold, taken from the code rather than
+ * written down here.
+ *
+ * It is ten full calls, not an absolute, so it follows the per-call limit when
+ * that moves. It was the literal 100_000 on both sides -- in the code and in
+ * these titles -- and when the per-call limit rose to deepseek-chat's real
+ * context that silently became under two calls' worth. The titles below take
+ * the formatted number from the same place the assertions do, so no title here
+ * can state a number the code no longer uses.
+ */
+const THRESHOLD = AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD;
+const THRESHOLD_LABEL = THRESHOLD.toLocaleString("en-US");
 
 afterEach(() => vi.useRealTimers());
 
@@ -55,37 +70,45 @@ describe("Automation Studio LLM execution grants", () => {
     expect(fixture.revealAuthorizationCount).toBe(0);
   });
 
-  it("requires explicit confirmation when a future supported profile exceeds 100,000 total tokens", async () => {
+  it(`requires explicit confirmation when a future supported profile exceeds ${THRESHOLD_LABEL} total tokens`, async () => {
     const fixture = setup();
     const ordinary = await fixture.service.preflight(issueInput());
     vi.spyOn(fixture.service, "preflight").mockResolvedValue({
       ...ordinary,
-      tokenLimits: { maxInputTokens: 100_000, maxOutputTokens: 1_000, maxTotalTokens: 100_001 }
+      tokenLimits: { maxInputTokens: THRESHOLD, maxOutputTokens: 1_000, maxTotalTokens: THRESHOLD + 1 }
     });
     await expect(fixture.service.issue(issueInput())).rejects.toThrow("explicit confirmation");
     await expect(fixture.service.issue({ ...issueInput(), highTokenConfirmation: true })).resolves.toMatchObject({
-      tokenLimits: { maxTotalTokens: 100_001 }
+      tokenLimits: { maxTotalTokens: THRESHOLD + 1 }
     });
   });
 
   // The confirmation is about tokens, not calls. A grant's run token budget
   // defaults to its calls times the per-call limit held to the threshold, so
   // many calls alone never ask; a run budget above the threshold always does.
-  it("requires confirmation only when the run's token budget exceeds 100,000 tokens", async () => {
+  //
+  // The call counts are the threshold's own arithmetic rather than chosen
+  // numbers: it is ten full calls, so one call short of ten sits under it and
+  // one call past ten is held down to it. Written that way, the case still
+  // reads correctly the next time the per-call limit moves.
+  it(`requires confirmation only when the run's token budget exceeds ${THRESHOLD_LABEL} tokens`, async () => {
     const fixture = setup();
     fixture.exactBinding = true;
-    const aggregate = { ...issueInput(), purpose: "build_and_adapt" as const, maxCalls: 3, maxUses: 3, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_333, maxTotalTokens: 33_333 }, maxTotalEstimatedCostUsd: 0.75 };
-    const larger = { ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 } };
-    await expect(fixture.service.issue(aggregate)).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 99_999 });
-    // 3 x 33,334 is past the threshold, so by default the run is held to it.
-    await expect(fixture.service.issue(larger)).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 100_000 });
-    // Asking for the whole exposure is asking for more than 100,000: confirm it.
-    await expect(fixture.service.issue({ ...larger, maxTotalTokensPerRun: 100_002 })).rejects.toThrow("explicit confirmation");
-    await expect(fixture.service.issue({ ...larger, maxTotalTokensPerRun: 100_002, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: 3, maxTotalTokensPerRun: 100_002 });
+    const perCall = (await fixture.service.preflight(issueInput())).tokenLimits.maxTotalTokens;
+    const callsToThreshold = THRESHOLD / perCall;
+    expect(callsToThreshold).toBe(10);
+    const under = { ...issueInput(), purpose: "build_and_adapt" as const, maxCalls: callsToThreshold - 1, maxUses: callsToThreshold - 1 };
+    const over = { ...under, maxCalls: callsToThreshold + 1, maxUses: callsToThreshold + 1 };
+    await expect(fixture.service.issue(under)).resolves.toMatchObject({ maxCalls: callsToThreshold - 1, maxTotalTokensPerRun: perCall * (callsToThreshold - 1) });
+    // Eleven calls' worth is past the threshold, so by default the run is held to it.
+    await expect(fixture.service.issue(over)).resolves.toMatchObject({ maxCalls: callsToThreshold + 1, maxTotalTokensPerRun: THRESHOLD });
+    // Asking for more than the threshold is asking to confirm it.
+    await expect(fixture.service.issue({ ...over, maxTotalTokensPerRun: THRESHOLD + 1 })).rejects.toThrow("explicit confirmation");
+    await expect(fixture.service.issue({ ...over, maxTotalTokensPerRun: THRESHOLD + 1, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: callsToThreshold + 1, maxTotalTokensPerRun: THRESHOLD + 1 });
     // A run budget is at least one call and at most every call.
-    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 100_003 })).rejects.toThrow("total token limit");
-    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 33_333 })).rejects.toThrow("total token limit");
-    await expect(fixture.service.preflight({ ...larger, maxTotalTokensPerRun: 40_000.5 })).rejects.toThrow("total token limit");
+    await expect(fixture.service.preflight({ ...over, maxTotalTokensPerRun: perCall * (callsToThreshold + 1) + 1 })).rejects.toThrow("total token limit");
+    await expect(fixture.service.preflight({ ...over, maxTotalTokensPerRun: perCall - 1 })).rejects.toThrow("total token limit");
+    await expect(fixture.service.preflight({ ...over, maxTotalTokensPerRun: perCall + 0.5 })).rejects.toThrow("total token limit");
   });
 
   it("rechecks active state after a delayed just-in-time reveal crosses the run lease", async () => {
@@ -158,7 +181,7 @@ describe("Automation Studio LLM execution grants", () => {
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 45_000
     });
-    await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxTotalTokens: 50_001 } })).rejects.toThrow("token limits");
+    await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxTotalTokens: 64_001 } })).rejects.toThrow("token limits");
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxCalls: 2 })).rejects.toThrow("exactly one");
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxEstimatedCostUsd: 0.251 })).rejects.toThrow("cost");
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", timeoutMs: 45_001 })).rejects.toThrow("timeout");
@@ -235,9 +258,9 @@ describe("Automation Studio LLM execution grants", () => {
     expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS).toBeGreaterThanOrEqual(32);
     expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS).toBeGreaterThan(2);
     const beyondDefault = AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS + 1;
-    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS })).resolves.toMatchObject({ maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, maxTotalTokensPerRun: 100_000 });
-    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001 })).rejects.toThrow("High-token");
-    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: beyondDefault, maxTotalTokensPerRun: 100_001 });
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS })).resolves.toMatchObject({ maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, maxTotalTokensPerRun: THRESHOLD });
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: THRESHOLD + 1 })).rejects.toThrow("High-token");
+    await expect(fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxCalls: beyondDefault, maxTotalTokensPerRun: THRESHOLD + 1, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: beyondDefault, maxTotalTokensPerRun: THRESHOLD + 1 });
 
     const forbidden = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
     const forbiddenResolved = await fixture.service.resolve({ ...resolveInput(forbidden.grantId), purpose: "diagnose_and_adapt" }, {
@@ -492,7 +515,7 @@ describe("Automation Studio LLM execution grants", () => {
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS + 1 })).rejects.toThrow("call limit");
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", providerRetryCount: 1 })).rejects.toThrow("retries");
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", maxTotalEstimatedCostUsd: Number.POSITIVE_INFINITY })).rejects.toThrow("total estimated-cost");
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", tokenLimits: { maxTotalTokens: 50_001 } })).rejects.toThrow("token limits");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", tokenLimits: { maxTotalTokens: 64_001 } })).rejects.toThrow("token limits");
   });
 
   it("accepts authenticated sessions regardless of credential-configuration metadata and rejects incompatible provider metadata", async () => {
@@ -507,7 +530,15 @@ describe("Automation Studio LLM execution grants", () => {
   // enough calls for the recovery's own guards to be what stops it, a run token
   // budget that sits exactly at the confirmation threshold, $2.00, and no
   // high-token prompt.
-  it.each(["diagnose_and_adapt", "explore_and_adapt", "build_and_adapt"] as const)("issues a default %s grant as 26 calls, 100,000 tokens and $2.00, with no confirmation", async (purpose) => {
+  //
+  // The per-call limits are deepseek-chat's own 64k context, less room for the
+  // reply: 48,000 in, 8,000 out, 56,000 together. They were 8,000/2,000/10,000,
+  // at which describing a real page did not fit and the input guard ended the
+  // grant before a request was sent. The run budget is 26 x 56,000 held to the
+  // confirmation threshold, and the threshold is ten of those calls: it used to
+  // be a fixed 100,000, which beside a 56,000-token call was under two calls'
+  // worth and left a default recovery no room to explore at all.
+  it.each(["diagnose_and_adapt", "explore_and_adapt", "build_and_adapt"] as const)(`issues a default %s grant as 26 calls, ${THRESHOLD_LABEL} tokens and $2.00, with no confirmation`, async (purpose) => {
     const fixture = setup();
     fixture.exactBinding = true;
     const grant = await fixture.service.issue({ ...issueInput(), purpose });
@@ -515,17 +546,22 @@ describe("Automation Studio LLM execution grants", () => {
       purpose,
       maxCalls: 26,
       remainingUses: 26,
-      maxTotalTokensPerRun: 100_000,
+      maxTotalTokensPerRun: THRESHOLD,
       maxEstimatedCostUsd: 0.25,
       maxTotalEstimatedCostUsd: 2,
-      tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }
+      tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }
     });
+    // Ten full calls, so the threshold still means what it was written to mean.
+    expect(THRESHOLD).toBe(grant.tokenLimits.maxTotalTokens * 10);
     expect(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS).toBe(26);
     expect(fixture.revealAuthorizationCount).toBe(26);
     const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose });
-    expect(resolved).toMatchObject({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
+    expect(resolved).toMatchObject({ maxCallsPerRun: 26, maxTotalTokensPerRun: THRESHOLD, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
     fixture.service.close();
   });
+
+  /** What one call of the run-budget example may spend: `request()`'s own limits. */
+  const perCallLimits = { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 };
 
   // The grant enforces the token budget it was issued with, whoever holds it --
   // a recovery's own ledger refuses first, but a Flow Bootstrap has no ledger.
@@ -534,7 +570,11 @@ describe("Automation Studio LLM execution grants", () => {
     const fixture = setup();
     fixture.exactBinding = true;
     fixture.usage = { prompt_tokens: 6_000, completion_tokens: 2_000, total_tokens: 8_000 };
-    const grant = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxTotalTokensPerRun: 25_000 });
+    // The per-call ceiling is named rather than defaulted. A run budget may
+    // never be below one call's ceiling, and the default is now 56,000, which
+    // would swamp a three-call example. This is what `request()` asks for, so it
+    // is also what each call here is charged. The property is the run budget.
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", tokenLimits: perCallLimits, maxTotalTokensPerRun: 25_000 });
     expect(grant.maxTotalTokensPerRun).toBe(25_000);
     const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "diagnose_and_adapt" });
     await expect(resolved.provider.runTask({ ...request(), requestId: "request.t1", idempotencyKey: "request.t1" })).resolves.toBeDefined();
@@ -546,7 +586,7 @@ describe("Automation Studio LLM execution grants", () => {
 
     // Small replies leave room for many calls under the same budget.
     fixture.usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
-    const roomy = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", maxTotalTokensPerRun: 25_000 });
+    const roomy = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt", tokenLimits: perCallLimits, maxTotalTokensPerRun: 25_000 });
     const roomyResolved = await fixture.service.resolve({ ...resolveInput(roomy.grantId), purpose: "diagnose_and_adapt" });
     for (let index = 0; index < 10; index += 1) {
       await expect(roomyResolved.provider.runTask({ ...request(), requestId: `request.r${index}`, idempotencyKey: `request.r${index}`, maxEstimatedCostUsd: 2 / 26 })).resolves.toBeDefined();

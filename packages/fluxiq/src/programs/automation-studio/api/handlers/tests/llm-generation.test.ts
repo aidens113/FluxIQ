@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../contracts.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
+import { AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
 function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true } } {
@@ -128,20 +128,25 @@ describe("Automation Studio LLM execution API", () => {
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({ runRuntimeSession: vi.fn() }) as any, undefined, undefined, undefined, grants);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
-    const limits = { purpose: "diagnose_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxTotalTokensPerRun: 40_000 };
+    // Under the default run budget and above one call's 56,000 ceiling, which
+    // is the floor a run budget may not go below. The default is the
+    // confirmation threshold, which moves with the per-call limit, so the
+    // assertion below is what keeps this caller's budget the lower one.
+    const limits = { purpose: "diagnose_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxTotalTokensPerRun: 60_000 };
+    expect(limits.maxTotalTokensPerRun).toBeLessThan(AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD);
     try {
       const preflight = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: limits });
-      expect(preflight).toMatchObject({ ok: true, payload: { preflight: { maxCalls: 26, maxTotalTokensPerRun: 40_000 } } });
+      expect(preflight).toMatchObject({ ok: true, payload: { preflight: { maxCalls: 26, maxTotalTokensPerRun: 60_000 } } });
       const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...limits, authSessionId: "session.one" } });
-      expect(issued).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: 40_000 } } });
+      expect(issued).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: 60_000 } } });
       const grantId = (issued as unknown as { payload: { grant: { grantId: string } } }).payload.grant.grantId;
       // Stored: the run that claims the grant is held to it.
       const resolved = await grants.resolve({ grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: "project.one", flowId: "flow.one", purpose: "diagnose_and_adapt" });
-      expect(resolved.maxTotalTokensPerRun).toBe(40_000);
+      expect(resolved.maxTotalTokensPerRun).toBe(60_000);
 
       const { maxTotalTokensPerRun: _omitted, ...withoutBudget } = limits;
       const defaulted = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...withoutBudget, authSessionId: "session.one" } });
-      expect(defaulted).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: 100_000 } } });
+      expect(defaulted).toMatchObject({ ok: true, payload: { grant: { maxCalls: 26, maxTotalTokensPerRun: AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD } } });
       // A budget the grant cannot hold is refused, not silently replaced.
       const invalid = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { ...limits, maxTotalTokensPerRun: "40000" } });
       expect(invalid.ok).toBe(false);
@@ -415,7 +420,8 @@ describe("Automation Studio LLM execution API", () => {
       sourceInstructionIds: [],
       baseDependencyDigest: "digest.one",
       baseSettingsRevision: 7,
-      accounting: { requestId: "request.one", estimatedInputTokens: 50_001 }
+      // Past what one request may carry, which is the model's 64k context.
+      accounting: { requestId: "request.one", estimatedInputTokens: 64_001 }
     });
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, { inspectAvailable } as any);

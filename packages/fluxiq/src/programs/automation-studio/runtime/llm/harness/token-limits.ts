@@ -1,7 +1,17 @@
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 
-export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST = 50_000;
+/**
+ * deepseek-chat's own 64k context, which is what a request may actually carry.
+ *
+ * This was 50_000 and is the deepest of the seven places that held a ceiling of
+ * this kind -- the Lab's default budget and contract cap, the Lab plan's bound,
+ * the campaign's own arguments, this program's grant default, the API handler's
+ * settings bound, and the provider's final check. Every one of them had to move
+ * together: raising any single one was silently clamped by the next, which is
+ * why the first attempt at this changed nothing observable.
+ */
+export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST = 64_000;
 export const AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD = 0.25;
 export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD = 10;
 
