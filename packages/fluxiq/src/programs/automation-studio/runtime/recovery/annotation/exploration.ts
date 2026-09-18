@@ -51,6 +51,7 @@ import {
   type AutomationStudioHarnessOptionLoopBinding,
   type AutomationStudioLlmEvidenceLoopInput,
   type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceToolExecutionResult,
   type AutomationStudioLlmHarnessInput,
   type AutomationStudioLlmProvider,
@@ -63,6 +64,11 @@ import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-ll
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET } from "../exploration-outcome.ts";
+import {
+  reviewAutomationStudioExplorationReduction,
+  type AutomationStudioExplorationReductionReview,
+  type AutomationStudioExplorationStateDigestRequest
+} from "../exploration-state/index.ts";
 import type { AutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
 import { runAutomationStudioRuntimeExploration, type AutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 import { AutomationStudioExplorationUnusableDecisionError } from "../unusable-decision.ts";
@@ -133,6 +139,17 @@ export type AutomationStudioRecoveryExplorationResult = {
    * still seen. Unbounded here; the patch request bounds what it carries.
    */
   explored: AutomationStudioRecoveryExploredPacket[];
+  /**
+   * What the exploration reduces to: the shortest sequence that still reaches
+   * the state the success was observed in, the states that bound it, a receipt
+   * for every step left out, and Core's verdict on whether it may be replayed.
+   *
+   * Present only when the exploration gathered evidence, because a reduction is
+   * the path that *worked* and nothing worked in the other endings. A reduction
+   * whose `replayable` is false is a receipt, not a fix; the sentence beside it
+   * says which of the three things went wrong.
+   */
+  reduced?: AutomationStudioExplorationReductionReview;
 };
 
 // The label and the qualified-handle reader are defined once, beside the packet
@@ -174,6 +191,15 @@ export async function runAutomationStudioRecoveryExploration(
   // refusal is what ended the exploration, and it is kept so the ending can be
   // named as tokens or as money rather than as a fault.
   let runBudgetRefusal: AutomationStudioLlmRunBudgetDiagnostic["code"] | undefined;
+  const capture = input.binding.captureStateDigest?.bind(input.binding);
+  const stateDigest = capture === undefined ? undefined : (request: AutomationStudioExplorationStateDigestRequest) => capture({
+    projectId: input.context.projectId,
+    flowId: input.context.flowId,
+    callId: request.callId,
+    toolId: request.toolId,
+    phase: request.phase,
+    ...(request.signal ? { signal: request.signal } : {})
+  });
   const exploration = await runAutomationStudioRuntimeExploration({
     loop,
     decide: (decision) => explorationDecision(input, decision, (code) => { runBudgetRefusal ??= code; }),
@@ -181,6 +207,12 @@ export async function runAutomationStudioRecoveryExploration(
     recoveryDeadline: input.recoveryDeadline,
     completionSchema: AUTOMATION_STUDIO_RECOVERY_EXPLORATION_COMPLETION_SCHEMA,
     ...(input.binding.classifyRefusal ? { classifyRefusal: input.binding.classifyRefusal } : {}),
+    // The digests come from here because here is the only place that holds both
+    // the domain that can observe its own state and the project and Flow the
+    // observation belongs to. The runner asks for a moment; this adds the
+    // context and passes the question straight to the domain, so there is one
+    // record of the exploration rather than the runner's and the caller's.
+    ...(stateDigest ? { captureStateDigest: stateDigest } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     ...(input.now ? { now: input.now } : {})
   });
@@ -202,7 +234,44 @@ export async function runAutomationStudioRecoveryExploration(
   const explored = returned
     .filter((entry) => accepted.has(entry.callId))
     .map((entry, index) => ({ evidenceId: automationStudioExploredEvidenceLabel(index + 1), toolId: entry.toolId, packet: entry.packet }));
-  return { exploration: ended, explored };
+  return { exploration: ended, explored, ...(reduced(input, ended, registryLoop.tools) ?? {}) };
+}
+
+/**
+ * The exploration reduced to the path that worked, or nothing.
+ *
+ * Only `evidence_gathered` is reduced, and that is the whole gate: a reduction
+ * is the shortest sequence that reaches the state *success was observed in*, so
+ * an exploration that was stopped, refused or came back empty has no such state
+ * and reducing it would answer with a fix for a success that never happened.
+ *
+ * The verdict is read, never assumed. `reviewAutomationStudioExplorationReduction`
+ * refuses a reduction whose chain of states has a hole in it -- which is also
+ * how an action that mutates while its tool table declares it observing shows
+ * up, since an undeclared effect defaults to `observe` and such a step is
+ * dropped from every reduction -- and a caller that ignored the flag would
+ * publish a sequence that is missing the step the success depended on.
+ */
+function reduced(
+  input: AutomationStudioRecoveryExplorationInput,
+  exploration: AutomationStudioRuntimeExploration,
+  tools: readonly AutomationStudioLlmEvidenceTool[]
+): { reduced: AutomationStudioExplorationReductionReview } | undefined {
+  if (exploration.outcome !== "evidence_gathered") return undefined;
+  const classifyRefusal = input.binding.classifyRefusal;
+  return {
+    reduced: reviewAutomationStudioExplorationReduction({
+      trace: exploration.trace,
+      tools,
+      steps: exploration.steps,
+      observedState: exploration.observedState,
+      digestFailures: exploration.stateDigestFailures,
+      // The domain declares once how it reads its own result codes, and a code
+      // it reads as a refusal is a step that did not happen. Asking it for a
+      // second, differently-worded table would be two declarations of one fact.
+      ...(classifyRefusal ? { classifyOutcome: (resultCode: string) => (classifyRefusal(resultCode) ? "refused" as const : undefined) } : {})
+    })
+  };
 }
 
 /**

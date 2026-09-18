@@ -15,7 +15,7 @@ import type {
   AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   AutomationStudioRuntimeTargetOverrideFailedAction
 } from "../../live-patch.ts";
-import type { AutomationStudioExplorationRefusalClassifier } from "../../recovery/index.ts";
+import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExplorationStateDigestPhase } from "../../recovery/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
@@ -72,6 +72,32 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     maxEvidenceBytes: number;
     signal?: AbortSignal;
   }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * What the state was at one moment, as an opaque digest Core only ever
+   * compares for equality.
+   *
+   * Asked once before each exploration action and once after it, and it is the
+   * one input a reduction of that exploration cannot be computed without: Core
+   * knows which action ran and what it returned, and nothing at all about
+   * whether the world changed. The contract the answer must satisfy -- stable
+   * across a step that changed nothing the automation depends on, different
+   * after a step that did -- is stated in full beside the type, in
+   * `runtime/recovery/exploration-state/digest-source.ts`.
+   *
+   * Optional, because a domain that has no way to observe its own state should
+   * say nothing rather than invent a digest: an exploration with no digests is
+   * simply not reduced, and says so. What it must never be is a digest of the
+   * evidence the step returned, which is what the step said rather than what
+   * the world was.
+   */
+  captureStateDigest?(input: {
+    projectId: string;
+    flowId: string;
+    callId: string;
+    toolId: string;
+    phase: AutomationStudioExplorationStateDigestPhase;
+    signal?: AbortSignal;
+  }): Promise<string | undefined>;
   captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
   /**
    * Judge a repair target against one packet this domain issued, and resolve it.
