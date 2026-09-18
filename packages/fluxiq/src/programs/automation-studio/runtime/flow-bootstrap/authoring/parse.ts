@@ -30,6 +30,9 @@ const BLOCK_WORDS = new Set(["subflow", "block"]);
 const SUMMARY_WORDS = new Set(["flow", "summary", "goal", "title", "purpose"]);
 const NODE_WORDS = new Set(["node", "use", "uses", "definition", "definitionid", "nodeid"]);
 const ROLE_WORDS = new Set(["role", "kind"]);
+/** A line that says when the block it sits in runs. Read wherever it appears in the block. */
+const WHEN_WORDS = new Set(["when", "runwhen", "onlywhen", "routewhen"]);
+const UNLESS_WORDS = new Set(["unless"]);
 const SUBFLOW_ROLES = new Set(["primary", "integration", "recovery", "fallback", "utility"]);
 const RUNS_BLOCK = /^(?:run|call|enter)\s+(?:the\s+)?(?:subflow|block)\s+(.+)$/iu;
 const GO_TO = /^(?:go\s*to|goto|->|=>|jump\s+to|then)\s+/iu;
@@ -83,6 +86,7 @@ class ScriptReader {
     const rest = words.slice(1).join(" ");
     if (BLOCK_WORDS.has(keyword)) return this.startBlock(rest, value, line);
     if (STEP_WORDS.has(keyword)) return this.startStep(rest, value, line);
+    if (WHEN_WORDS.has(authoringKey(head)) || UNLESS_WORDS.has(authoringKey(head))) return this.addCondition(value, UNLESS_WORDS.has(authoringKey(head)), line);
     if (keyword === "on" && rest) return this.branch(rest, value, line);
     const step = this.currentStep();
     if (!step) {
@@ -109,6 +113,12 @@ class ScriptReader {
     const role = authoringKey(value);
     if (!SUBFLOW_ROLES.has(role)) return this.unrecognized(line);
     this.blocks[this.current]!.role = role as NonNullable<AutomationStudioFlowScriptBlock["role"]>;
+  }
+
+  private addCondition(text: string, negate: boolean, line: number): void {
+    const block = this.blocks[this.current]!;
+    (block.when ??= []).push({ text, ...(negate ? { negate: true as const } : {}), line });
+    this.open = undefined;
   }
 
   private startBlock(label: string, name: string, line: number): void {

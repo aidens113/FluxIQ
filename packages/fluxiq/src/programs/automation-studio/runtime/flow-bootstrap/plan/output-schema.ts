@@ -52,13 +52,18 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA: JsonObject = {
     rule: {
       type: "object",
       additionalProperties: false,
-      required: ["key", "name", "targetSubflowKey", "routeTags"],
+      required: ["key", "name", "targetSubflowKey", "routeTags", "condition"],
       properties: {
         key: { $ref: "#/$defs/symbol" },
         name: { $ref: "#/$defs/text" },
         targetSubflowKey: { $ref: "#/$defs/symbol" },
-        routeTags: { type: "array", minItems: 0, maxItems: 16, items: { type: "string", minLength: 1, maxLength: 100 } }
+        routeTags: { type: "array", minItems: 0, maxItems: 16, items: { type: "string", minLength: 1, maxLength: 100 } },
+        condition: { $ref: "#/$defs/condition" }
       }
+    },
+    condition: {
+      type: "object",
+      description: "{signalPath: inputs.<id> or state.<path>, operator, expected?} or {type: all|any|none, conditions: [...]}; the router tests it before any step runs."
     },
     fallback: {
       oneOf: [

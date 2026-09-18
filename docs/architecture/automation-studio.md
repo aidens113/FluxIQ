@@ -403,6 +403,33 @@ existence, numeric comparison, text containment, regex matching, boolean
 checks, and normalized text comparison. Operators that require transition
 history fail closed until divergence detection provides that history.
 
+`state.*` is what the host observes where the run starts, not what a caller
+passed. Before routing, `runRuntimeSession` asks the bound host runtime's
+optional `observeRouteState` for the state (`runtime/route-state.ts`), but only
+when an active rule reads a `state.*` path; keys the host returns replace the
+same keys in a caller's `inputs.state`. A host declares the paths it fills in
+`routeStatePaths`, so a model can write a condition on a path that is absent
+right now. The decision record keeps each rule's verdict, the matcher's reason
+(which names the path and the test, never a value read), and which state paths
+were read and whether the host observed them; the observed values themselves
+are never stored.
+
+A model-authored Router always carries conditions. In the Flow script a route
+is a block -- `subflow <label>: <situation>`, one or more `when: <condition>`
+lines, its steps, `end` -- and the steps outside every block are the fallback.
+Core reads each `when:` line into an `AutomationConditionExpression`
+(`runtime/flow-bootstrap/authoring/condition.ts`) and derives rule keys, order,
+ids and wiring. Plan validation (`plan/route-validation.ts`) refuses a rule
+with no condition (`bootstrap.route_condition_missing`: it would always hold,
+so nothing after it could run), two rules testing the same thing
+(`bootstrap.route_shadowed`), a condition the router cannot evaluate, and a
+Subflow no rule and no fallback reaches (`bootstrap.subflow_unreachable`).
+A Flow build is shown `flowBootstrap.routing` (`plan/routing-context.ts`): how
+the router decides, the Flow's current structure, every path a condition can
+test with its description, and the distinct states the host observed -- where
+a run starts, then after each exploration step -- screened with the domain's
+denied evidence keys, with credential-shaped values left out.
+
 When a canonical Flow has a saved router, `runRuntimeSession` evaluates the
 router before graph execution. A matching route executes the selected subflow's
 `graphFlowId` through the existing canonical Flow executor. The selected graph

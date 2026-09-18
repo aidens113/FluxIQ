@@ -12,7 +12,8 @@ import type {
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   automationStudioFlowBootstrapCatalogByteBudget,
-  buildAutomationStudioFlowBootstrapContext
+  buildAutomationStudioFlowBootstrapContext,
+  type AutomationStudioFlowBootstrapRoutingContext
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
@@ -150,7 +151,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions, { toolsOffered }) : []
   );
   const deniedEvidenceKeys = declaredDeniedEvidenceKeys(input);
-  const flowBootstrap = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
+  const catalogContext = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
       resolution: input.flowBootstrap.resolution,
@@ -161,6 +162,8 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
       })
     })
     : undefined;
+  const routing = catalogContext && input.flowBootstrap?.routing ? packRoutingContext(input.flowBootstrap.routing, deniedEvidenceKeys) : undefined;
+  const flowBootstrap = catalogContext && routing ? { ...catalogContext, routing } : catalogContext;
   const packed: AutomationStudioLlmContextPacket = {
     schemaVersion: "0.1",
     taskKind: input.taskKind,
@@ -201,6 +204,25 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...packed,
     explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys, Buffer.byteLength(JSON.stringify(packed), "utf8"))
   };
+}
+
+/**
+ * The routing context, carrying nothing the bound domain denies.
+ *
+ * The situations are state the host observed, which makes them evidence: a
+ * denied key refuses the request as it refuses any evidence, and a value
+ * shaped like a credential is left out of its situation -- the path still
+ * listed, the value not -- rather than sent.
+ */
+function packRoutingContext(routing: AutomationStudioFlowBootstrapRoutingContext, deniedKeys: readonly string[]): AutomationStudioFlowBootstrapRoutingContext {
+  if (screenAutomationStudioLlmEvidence(routing, deniedKeys).deniedKey) {
+    throw new Error("The routing context carries a key the bound domain denies, so the request is refused rather than sent.");
+  }
+  const situations = routing.situations.map((situation) => ({
+    seen: situation.seen,
+    state: Object.fromEntries(Object.entries(situation.state).filter(([, value]) => !screenAutomationStudioLlmEvidence(value, deniedKeys).secretShaped))
+  }));
+  return { ...structuredClone(routing), situations };
 }
 
 /**
@@ -283,7 +305,8 @@ function packEvidenceLoop(
 function declaredDeniedEvidenceKeys(input: AutomationStudioLlmHarnessInput): readonly string[] {
   if (input.deniedEvidenceKeys !== undefined) return input.deniedEvidenceKeys;
   const gathered = input.taskKind === "evidence_tool_decision" && (input.evidenceLoop?.evidence.length ?? 0) > 0;
-  if (input.failureEvidence !== undefined || input.explorationEvidence !== undefined || input.reusableContext !== undefined || gathered) {
+  const observed = (input.flowBootstrap?.routing?.situations.length ?? 0) > 0;
+  if (input.failureEvidence !== undefined || input.explorationEvidence !== undefined || input.reusableContext !== undefined || gathered || observed) {
     throw new Error("Automation Studio LLM context carrying failure evidence, exploration evidence, gathered evidence-loop evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
   }
   return [];

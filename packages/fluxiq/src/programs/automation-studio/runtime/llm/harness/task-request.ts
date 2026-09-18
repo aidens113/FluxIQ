@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowBootstrapRoutingContext } from "../../flow-bootstrap/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
   AutomationStudioFlowIntervention,
@@ -132,7 +133,13 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   reusableContext?: AutomationStudioReusableLlmContextPacket;
   subflows?: AutomationStudioFlowSubflow[];
   availableActions?: JsonObject[];
-  flowBootstrap?: { registry?: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution; maxInputTokens?: number };
+  flowBootstrap?: {
+    registry?: AutomationStudioNodeRegistry;
+    resolution: AutomationStudioNodeRegistryResolution;
+    maxInputTokens?: number;
+    /** What the model routes with; built by `buildAutomationStudioFlowBootstrapRoutingContext`. */
+    routing?: AutomationStudioFlowBootstrapRoutingContext;
+  };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;
   provider?: AutomationStudioLlmProvider;
