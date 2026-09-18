@@ -54,7 +54,12 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
       const ownDeadline = snapshot.executionDefaults?.timeoutMs ? now + snapshot.executionDefaults.timeoutMs : undefined;
       const deadlineAt = Math.min(parentOptions.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
       const boundedDeadline = Number.isFinite(deadlineAt) ? deadlineAt : undefined;
-      const childOptions: AutomationStudioGraphExecutionOptions = { ...parentOptions, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
+      // A start node belongs to the graph that named it. A child Flow starts at
+      // its own start node, so a parent resuming mid-graph never sends its node
+      // id across the boundary, where nothing would match it and the child would
+      // fail with "No start node is available in this flow."
+      const { startNodeId: _parentStartNodeId, ...childBase } = parentOptions;
+      const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
       const maxAttempts = Math.max(1, Number((node.parameterValues?.retry as { maxAttempts?: unknown } | undefined)?.maxAttempts ?? 1));
       let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

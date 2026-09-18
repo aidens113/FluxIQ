@@ -715,7 +715,9 @@ kinds. Each path reaches a model as follows:
   pass from the promotion gates, not a PIN.
 - **The retry after an applied patch:** no grant purpose. The retry runs only
   when a runtime patch was applied automatically and marked the original action
-  retryable, which the shipped app never produces. A run with an explicit grant
+  retryable, which the shipped app never produces — and then only when that
+  patch’s trial also vouched for continuing, after which it resumes at the
+  trial’s resume point instead of the Flow’s start. A run with an explicit grant
   skips the retry at both of its call sites in `runRuntimeSession`.
 - **Training modes:** every canonical run in a project still computes its
   training-mode behavior, records it in run detail, and takes its recovery
@@ -767,6 +769,24 @@ is the permission, and it is false unless all of the following hold:
 
 `notResumableCode` names which of those refused: `no_checks`, `check_failed`,
 `check_unknown`, `no_resume_point` or `no_evidence`.
+
+The retry after an applied patch is what reads that permission.
+`decideAutomationStudioAdaptiveRetry`
+(`runtime/service/adaptations/adaptive-retry.ts`) takes it back off the run’s own
+`runtimePatchAttempts` receipts, which carry `resumable`, `notResumableCode` and
+`resumeFrom`: by the time `runRuntimeSession` reaches the retry the trial is
+over, and the receipt is the only copy of its verdict left. A retry the verdict
+declined to vouch for does not run, and the run detail records
+`adaptiveRetry: { attempted: false, notResumableCode }`, so a person reading the
+run afterwards sees which check refused rather than a bare stop. A retry that
+does run starts at `resumeFrom.nodeId`, not at the Flow’s start node:
+re-running a Flow from its beginning takes every side effect it had already
+caused a second time. The caller fails closed on top of the decision, and adds
+four codes of its own — `resume_decision_missing` for a receipt that never
+answered the question, `resume_point_subflow_mismatch` for a point that does not
+name the Subflow graph the retry would run, `resume_point_completed` for a Flow
+the trial already ran to its end, and `resume_points_disagree` for two repairs
+that vouched for different continuations.
 
 A check that passed only because the seam feeding it is inert is read as
 `unknown` by the resume decision rather than as a pass. The `records` check is

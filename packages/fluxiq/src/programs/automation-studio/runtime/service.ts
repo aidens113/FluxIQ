@@ -206,7 +206,7 @@ import {
   subflowParentCategoryId,
   uniqueStrings,
   upsertBy,
-  compactJsonObject,
+  compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioRunDetailWithDeclinedAdaptiveRetry,
   errorMessage,
   AutomationStudioProposalGeneration,
   AutomationStudioFlowSubflowMigration,
@@ -2981,11 +2981,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     graphOptions: Parameters<typeof runAutomationStudioGraph>[1];
     adaptationContext: AutomationStudioRuntimeAdaptationContext;
     subflowId?: string;
-  }): Promise<AutomationStudioRuntimeSession | null> {
+  }): Promise<{ session?: AutomationStudioRuntimeSession; declinedCode?: string } | null> {
     if (input.session.status !== "failed") return null;
-    const attempts = Array.isArray(input.detail.metadata?.runtimePatchAttempts) ? input.detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
-    const shouldRetry = attempts.some((attempt) => attempt.retryOriginalAction === true && isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
-    if (!shouldRetry) return null;
+    const decision = decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: input.detail.metadata?.runtimePatchAttempts, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+    if (!decision) return null;
+    if ("declined" in decision) return { declinedCode: decision.declined.notResumableCode };
     let updatedFlow: AutomationStudioFlowArtifact | null = null;
     if (input.subflowId) {
       const selectedSubflow = await this.getFlowSubflow(input.projectId, input.session.flowId, input.subflowId).catch(() => null);
@@ -3001,7 +3001,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     if (!updatedFlow) return null;
     if (input.subflowId) await this.flowWriter.assertOwnedSubflowGraph(input.projectId, updatedFlow);
-    const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.catalogue.listPublishedFlowSnapshots(), input.graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
+    const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.catalogue.listPublishedFlowSnapshots(), { ...input.graphOptions, startNodeId: decision.resume.nodeId }, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
     const retrySession: AutomationStudioRuntimeSession = {
       ...input.session,
       status: retryTrace.status,
@@ -3056,7 +3056,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         }
       }
     });
-    return retrySession;
+    return { session: retrySession };
   }
 
   async runRuntimeSession(input: {
@@ -3232,8 +3232,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           adaptationContext,
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
         }) : null;
-        if (retry) return retry;
-        await this.saveFlowRunDetail(annotatedDetail);
+        if (retry?.session) return retry.session;
+        await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
         return next;
       }
     }
@@ -3285,8 +3285,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         graphOptions,
         adaptationContext
       });
-      if (retry) return retry;
-      await this.saveFlowRunDetail(annotatedDetail);
+      if (retry?.session) return retry.session;
+      await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
     }
     return next;
     } catch (error) {
