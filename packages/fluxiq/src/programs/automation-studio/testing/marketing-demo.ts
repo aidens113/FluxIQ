@@ -37,10 +37,6 @@ export function createAutomationStudioMarketingDemo(nowMs = 1_000): AutomationSt
       label: candidate.target?.label ?? candidate.actionType ?? candidate.noteId ?? entry.type,
     };
   });
-  const openDialog = events.find((event) => event.label === "Open Dialog");
-  const confirm = events.find((event) => event.label === "Confirm");
-  if (!openDialog || !confirm) throw new Error("Automation Studio marketing demo requires action events");
-
   return {
     schemaVersion: "0.1",
     source: "automation-studio-fixtures",
@@ -56,15 +52,19 @@ export function createAutomationStudioMarketingDemo(nowMs = 1_000): AutomationSt
       subflows: flowFixture.subflows.map(({ subflowId, name, role }) => ({ id: subflowId, name, role })),
       graph: {
         nodes: [
-          { id: "start", label: "Start", kind: "control" },
-          { id: openDialog.id, label: openDialog.label, kind: "action" },
-          { id: confirm.id, label: confirm.label, kind: "action" },
-          { id: "report-ready", label: "Report ready", kind: "state" },
+          { id: "start", label: "Start catalog read", kind: "control" },
+          { id: "find-product-cards", label: "Find product cards", kind: "extract" },
+          { id: "read-fields", label: "Read name, price, rating", kind: "extract" },
+          { id: "follow-next", label: "Follow pagination", kind: "control" },
+          { id: "validate-records", label: "Validate records", kind: "policy" },
+          { id: "save-dataset", label: "Save dataset", kind: "state" },
         ],
         edges: [
-          { id: "start-open-dialog", source: "start", target: openDialog.id },
-          { id: "open-dialog-confirm", source: openDialog.id, target: confirm.id },
-          { id: "confirm-report-ready", source: confirm.id, target: "report-ready" },
+          { id: "start-find-cards", source: "start", target: "find-product-cards" },
+          { id: "find-cards-read-fields", source: "find-product-cards", target: "read-fields" },
+          { id: "read-fields-follow-next", source: "read-fields", target: "follow-next" },
+          { id: "follow-next-validate", source: "follow-next", target: "validate-records" },
+          { id: "validate-save", source: "validate-records", target: "save-dataset" },
         ],
       },
     },
