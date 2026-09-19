@@ -16,5 +16,7 @@ describe("createAutomationStudioMarketingDemo", () => {
       "state_delta",
     ]);
     expect(demo.flow.subflows.map((subflow) => subflow.name)).toEqual(["Primary path", "Dismiss popup"]);
+    expect(demo.flow.graph.nodes.map((node) => node.label)).toEqual(["Start", "Open Dialog", "Confirm", "Report ready"]);
+    expect(demo.flow.graph.edges).toHaveLength(3);
   });
 });
