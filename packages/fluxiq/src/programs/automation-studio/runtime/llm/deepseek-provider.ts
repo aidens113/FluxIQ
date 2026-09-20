@@ -650,8 +650,10 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
       || typeof item.callId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.callId)
       || typeof item.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.toolId) || !boundedJson(item.value)) return false;
   }
-  return isRecord(loop.completionSchema) && typeof loop.canComplete === "boolean"
-    && JSON.stringify(loop.decisionSchema) === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete));
+  if (!isRecord(loop.completionSchema) || typeof loop.canComplete !== "boolean") return false;
+  const decisionSchema = JSON.stringify(loop.decisionSchema);
+  return decisionSchema === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, false))
+    || decisionSchema === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, true));
 }
 
 function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest): AutomationStudioLlmStructuredResponse {
