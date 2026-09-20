@@ -88,6 +88,9 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
   evidence: JsonValue;
   effectApplied: boolean;
+  /** True only when every target handle from before this mutation still names
+   * the same target afterwards. Consumers may omit it and stay conservative. */
+  targetsUnchanged?: boolean;
   resultCode?: string;
 };
 
@@ -515,11 +518,12 @@ function requiresMutationBeforeRepeat(tool: AutomationStudioLlmEvidenceTool, mut
 function parseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; resultCode?: string } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+      || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(value.resultCode)))) return undefined;
-    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
+    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };

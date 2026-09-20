@@ -24,6 +24,14 @@ failure. Downstream live run `run-muabdpmu-6c1f639d` returned normally and
 persisted the outcome; `pnpm --filter fluxiq build` passed after all temporary
 tracing was removed.
 
+Paired task t026 adds an optional `targetsUnchanged` member to a domain tool
+execution result. Core validates and preserves the boolean while remaining
+compatible with domains that omit it. The downstream authoring runtime has
+already proved the signal live in Chromium: opening a modal returned false,
+then four form entries returned true. The field is the stop/continue seam for
+the next optional multi-action exploration task; t026 integration gates are
+still pending.
+
 **Phase, as of 2026-09-15: the user reshaped the plan as L12-L16, approved the
 five defect fixes, and instructed that they be planned and not started; no Core
 code changed for the loop.** The downstream document owns the plan, decisions,
