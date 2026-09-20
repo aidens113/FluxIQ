@@ -1,7 +1,22 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { projectModalConfig } from "../ProjectModal";
 
 describe("Automation Studio project dialog configuration", () => {
+  it("marks ordinary project and hierarchy fields as non-credential autofill", () => {
+    const project = readFileSync(new URL("../ProjectModal.tsx", import.meta.url), "utf8");
+    const hierarchy = readFileSync(new URL("../AutomationHierarchyDialog.tsx", import.meta.url), "utf8");
+
+    expect(project).toContain('name="automation-project-name"');
+    expect(project).toContain('name="automation-project-description"');
+    expect(project).toContain('name="automation-project-category-name"');
+    expect(project).toContain('name="automation-project-authorization-pin"');
+    expect(project.match(/autoComplete="off"/g)).toHaveLength(4);
+    expect(hierarchy).toContain('name="automation-hierarchy-item-name"');
+    expect(hierarchy.match(/name="automation-hierarchy-authorization-pin"/g)).toHaveLength(2);
+    expect(hierarchy.match(/autoComplete="off"/g)).toHaveLength(3);
+  });
+
   it("describes complete project deletion and uses a destructive command", () => {
     const config = projectModalConfig({
       mode: "delete",

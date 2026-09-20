@@ -56,16 +56,16 @@ export function AutomationProjectModalView(props: {
         {isProjectForm ? (
           <>
             <Field label="Project name" required>
-              <input autoFocus maxLength={120} value={props.name} onChange={(event) => props.onNameChange(event.target.value)} />
+              <input autoComplete="off" autoFocus maxLength={120} name="automation-project-name" value={props.name} onChange={(event) => props.onNameChange(event.target.value)} />
             </Field>
             <Field hint="Optional. This appears in project search results." label="Description">
-              <textarea maxLength={500} rows={3} value={props.description} onChange={(event) => props.onDescriptionChange(event.target.value)} />
+              <textarea autoComplete="off" maxLength={500} name="automation-project-description" rows={3} value={props.description} onChange={(event) => props.onDescriptionChange(event.target.value)} />
             </Field>
           </>
         ) : null}
         {isCategoryForm ? (
           <Field label="Category name" required>
-            <input autoFocus maxLength={120} value={props.categoryName} onChange={(event) => props.onCategoryNameChange(event.target.value)} />
+            <input autoComplete="off" autoFocus maxLength={120} name="automation-project-category-name" value={props.categoryName} onChange={(event) => props.onCategoryNameChange(event.target.value)} />
           </Field>
         ) : null}
         {props.mode === "move" ? <KeyValue rows={[
@@ -86,6 +86,7 @@ export function AutomationProjectModalView(props: {
               autoFocus={isDelete || props.mode === "move" || props.mode === "move-category"}
               inputMode="numeric"
               maxLength={12}
+              name="automation-project-authorization-pin"
               type="password"
               value={props.pin}
               onChange={(event) => props.onPinChange(event.target.value)}

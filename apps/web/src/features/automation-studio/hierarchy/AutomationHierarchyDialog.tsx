@@ -57,10 +57,10 @@ export const AutomationHierarchyDialog = memo(function AutomationHierarchyDialog
           <div><strong>{transaction.createKind === "subflow" ? "New subflow" : transaction.createKind === "folder" ? "New folder" : "New Flow"}</strong><span>{subflowParent ? "Subflows" : automationHierarchyCategoryLabel(transaction.category)}</span></div>
         </div>
         <div className="automation-hierarchy-create-fields">
-          <Field label="Name"><input autoFocus value={transaction.name} onChange={(event) => props.store.dispatch({ type: "set-name", name: event.target.value })} placeholder={transaction.createKind === "subflow" ? "Subflow name" : transaction.createKind === "folder" ? "Folder name" : "Flow name"} /></Field>
+          <Field label="Name"><input autoComplete="off" autoFocus name="automation-hierarchy-item-name" value={transaction.name} onChange={(event) => props.store.dispatch({ type: "set-name", name: event.target.value })} placeholder={transaction.createKind === "subflow" ? "Subflow name" : transaction.createKind === "folder" ? "Folder name" : "Flow name"} /></Field>
           {transaction.createKind === "flow" ? <Field label="Flow preset"><select value={transaction.flowOrigin} onChange={(event) => props.store.dispatch({ type: "set-flow-origin", flowOrigin: event.target.value as AutomationHierarchyFlowOrigin })}><option value="blank">Blank visual Flow</option><option value="deterministic">Deterministic workflow</option><option value="recorded">Recorded automation</option><option value="integration">Integration Flow</option><option value="scheduled">Scheduled Flow</option><option value="api-endpoint">API endpoint</option><option value="reusable">Reusable component</option></select></Field> : null}
           <Field label="Location"><select value={transaction.parentId ?? ""} onChange={(event) => props.store.dispatch({ type: "set-parent", parentId: event.target.value || null })}>{subflowParent ? null : <option value="">{automationHierarchyCategoryLabel(transaction.category)}</option>}{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></Field>
-          <Field label="Security PIN"><input inputMode="numeric" type="password" value={transaction.authorizationPin} onChange={(event) => props.store.dispatch({ type: "set-pin", authorizationPin: event.target.value })} placeholder="Enter PIN" /></Field>
+          <Field label="Security PIN"><input autoComplete="off" inputMode="numeric" name="automation-hierarchy-authorization-pin" type="password" value={transaction.authorizationPin} onChange={(event) => props.store.dispatch({ type: "set-pin", authorizationPin: event.target.value })} placeholder="Enter PIN" /></Field>
         </div>
         <StatusText value={transaction.error} />
         <div className="modal-actions">
@@ -70,7 +70,7 @@ export const AutomationHierarchyDialog = memo(function AutomationHierarchyDialog
         </div>
       </div> : <>
         <VisualAlert tone="warning" title={"Delete " + transaction.node.label + "?"} message="This removes the selected item and its contained hierarchy items." />
-        <Field label="Security PIN"><input autoFocus inputMode="numeric" type="password" value={transaction.authorizationPin} onChange={(event) => props.store.dispatch({ type: "set-pin", authorizationPin: event.target.value })} /></Field>
+        <Field label="Security PIN"><input autoComplete="off" autoFocus inputMode="numeric" name="automation-hierarchy-authorization-pin" type="password" value={transaction.authorizationPin} onChange={(event) => props.store.dispatch({ type: "set-pin", authorizationPin: event.target.value })} /></Field>
         <StatusText value={transaction.error} />
         <div className="modal-actions">
           <button className="button" disabled={transaction.status === "submitting"} onClick={props.store.close} type="button">Cancel</button>
