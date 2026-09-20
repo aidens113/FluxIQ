@@ -471,3 +471,9 @@ rejects divergent stable-ID collisions, archives recognized sources under
 marker. External overrides are inventoried but never moved automatically. An
 incomplete pre-commit migration can be resumed by calling `migrateStorage()`
 again or rolled back with `rollbackStorageMigration()`.
+
+The web panel awaits storage readiness before serving requests. It initializes
+only a genuinely fresh root, serializing concurrent startup through one
+runtime-owned promise. A v1 or incomplete-migration root fails startup without
+mutation and must use the protected migration or rollback path explicitly;
+authentication must never create state before the v2 commit marker exists.
