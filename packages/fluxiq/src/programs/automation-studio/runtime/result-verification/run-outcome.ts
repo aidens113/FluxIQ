@@ -139,7 +139,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.flow ? { flowNodes: input.flow.nodes } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
-  if (summary.recordSetCount === 0) {
+  if (summary.totalRecordCount === 0) {
     return await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] });
   }
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
