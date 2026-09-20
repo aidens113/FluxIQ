@@ -5966,6 +5966,16 @@ function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]
       if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
       clean.evidenceBytes = item.evidenceBytes;
     }
+    if (item.effectApplied !== undefined) clean.effectApplied = item.effectApplied;
+    if (item.resultCode !== undefined && /^[a-z0-9_.:-]{1,100}$/i.test(item.resultCode)) clean.resultCode = item.resultCode;
+    if (item.batch !== undefined) {
+      const { position, size, stoppedBy } = item.batch;
+      if (!Number.isInteger(position) || !Number.isInteger(size) || position < 1 || position > size || size > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION
+        || (stoppedBy !== undefined && !["action_refused", "effect_not_applied", "targets_may_have_changed", "action_limit", "batch_limit"].includes(stoppedBy))) {
+        throw new Error("Flow Bootstrap evidence batch trace is invalid.");
+      }
+      clean.batch = { position, size, ...(stoppedBy ? { stoppedBy } : {}) };
+    }
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
@@ -5973,6 +5983,18 @@ function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]
 function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[]): JsonObject {
   const clean = sanitizeEvidenceLoopTrace(trace);
   const providerDecisions = [...new Set(clean.filter((item) => item.iteration > 0).map((item) => item.iteration))];
+  const batchDecisions = providerDecisions.flatMap((decision) => {
+    const actions = clean.filter((item) => item.iteration === decision && item.batch !== undefined);
+    if (!actions.length) return [];
+    const actionCount = actions[0]!.batch!.size;
+    const stop = actions.find((item) => item.batch?.stoppedBy !== undefined)?.batch?.stoppedBy;
+    return [{
+      decision,
+      actionCount,
+      actions: actions.map((item) => ({ ordinal: item.batch!.position, resultCode: item.resultCode ?? null })),
+      stopCode: stop ? `llm_evidence_loop.batch.${stop}` : null
+    }];
+  });
   return {
     evidenceGuided: true,
     // Retained for compatibility with existing audit readers. This is the
@@ -5984,7 +6006,8 @@ function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[])
     decisionCount: providerDecisions.length,
     toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
     evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
-    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort()
+    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort(),
+    batchDecisions
   };
 }
 function sanitizedBootstrapAccounting(value: AutomationStudioBootstrapAccounting): AutomationStudioBootstrapAccounting {

@@ -12,7 +12,7 @@ import type {
 } from "../llm/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
 import { parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION } from "../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
@@ -182,6 +182,12 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
       toolId: string;
       effectApplied?: boolean;
       resultCode?: string;
+      batch?: {
+        decision: number;
+        position: number;
+        size: number;
+        stoppedBy?: "action_refused" | "effect_not_applied" | "targets_may_have_changed" | "action_limit" | "batch_limit";
+      };
     }>;
   };
   /**
@@ -371,7 +377,7 @@ function evidenceLoopDiagnostic(
 function evidenceLoopStep(entry: AutomationStudioLlmEvidenceLoopTrace): EvidenceLoopStep[] {
   const resultCode = entry.resultCode && DIAGNOSTIC_ISSUE_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {};
   if (entry.decision === "tool_call") {
-    return entry.toolId ? [{ toolId: entry.toolId, ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}), ...resultCode }] : [];
+    return entry.toolId ? [{ toolId: entry.toolId, ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}), ...resultCode, ...(entry.batch ? { batch: { decision: entry.iteration, ...entry.batch } } : {}) }] : [];
   }
   return [{ toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS[entry.decision], ...resultCode }];
 }
@@ -659,14 +665,17 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
     if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_STEPS) return null;
     steps = [];
     for (const step of value.steps) {
-      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])
+      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode", "batch"])
         || typeof step.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(step.toolId)
         || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
         || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(step.resultCode)))) return null;
+      const batch = step.batch === undefined ? undefined : parseEvidenceBatchStep(step.batch);
+      if (step.batch !== undefined && !batch) return null;
       steps.push({
         toolId: step.toolId,
         ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
-        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {})
+        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {}),
+        ...(batch ? { batch } : {})
       });
     }
   }
@@ -676,6 +685,21 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
     toolCallCount: value.toolCallCount as number,
     evidenceBytes: value.evidenceBytes as number,
     ...(steps ? { steps } : {})
+  };
+}
+
+function parseEvidenceBatchStep(value: unknown): NonNullable<EvidenceLoopStep["batch"]> | null {
+  if (!isRecord(value) || !hasExactFields(value, ["decision", "position", "size", "stoppedBy"])
+    || !boundedInteger(value.decision, EVIDENCE_LOOP_MAX_ITERATIONS)
+    || !boundedInteger(value.position, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION)
+    || !boundedInteger(value.size, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION)
+    || (value.decision as number) < 1 || (value.position as number) < 1 || (value.size as number) < 2 || (value.position as number) > (value.size as number)
+    || (value.stoppedBy !== undefined && !["action_refused", "effect_not_applied", "targets_may_have_changed", "action_limit", "batch_limit"].includes(value.stoppedBy as string))) return null;
+  return {
+    decision: value.decision as number,
+    position: value.position as number,
+    size: value.size as number,
+    ...(value.stoppedBy === undefined ? {} : { stoppedBy: value.stoppedBy as Exclude<NonNullable<EvidenceLoopStep["batch"]>["stoppedBy"], undefined> })
   };
 }
 
