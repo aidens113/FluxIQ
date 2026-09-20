@@ -73,7 +73,7 @@ describe("Automation Studio LLM evidence loop", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.observe.2", toolId: "inspect", input: {} })
       .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
     await expect(runAutomationStudioLlmEvidenceLoop({ tools: progressTools, decide: progressiveDecide, executeTool: async ({ toolId }) => toolId === "act"
-      ? { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true }
+      ? { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: true }
       : { observed: true } }))
       .resolves.toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 4, toolCalls: 3 } });
     expect(progressiveDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
