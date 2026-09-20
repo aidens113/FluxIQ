@@ -126,7 +126,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
  * of `answers`.
  */
 function nothingToJudge(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerificationOutcome | undefined {
-  if (summary.recordSetCount > 0) return undefined;
+  if (summary.totalRecordCount > 0 || summary.totalRefusedCount > 0) return undefined;
   return {
     schemaVersion: "automation-studio.result-verification.v1",
     performed: false,
