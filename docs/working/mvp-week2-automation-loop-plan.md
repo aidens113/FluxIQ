@@ -1,9 +1,9 @@
 # MVP Week 2 Automation Loop Plan (Core share)
 
 Status: Active
-Status detail: Plan written 2026-09-15 from the downstream scoping reports; nothing is built, and the user reviews the plan before any loop phase starts.
+Status detail: Executing 2026-09-20. The downstream live-first campaign has proved the created-Flow runtime path; Core's empty-result verification fix is ready to integrate.
 Created: 2026-09-15
-Last updated: 2026-09-15
+Last updated: 2026-09-20
 Owner: Senior supervisor agent
 Scope: Core's share of the downstream MVP Week 2 automation loop (Phases 2.1-2.9): the runtime recovery coordinator, recovery context, deterministic diagnosis gate, recovery plan and trace, bounded runtime exploration, the recovery verdict, adaptation reduction, confidence tiers, persistence, resume, per-attempt adaptation provenance, and a test-only scripted provider for the Testing Lab.
 Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week2-automation-loop-plan.md`
@@ -12,6 +12,17 @@ Related: [automation studio](../architecture/automation-studio.md), [code struct
 ---
 
 ## Current State
+
+**Update, 2026-09-20:** the 2026-09-15 snapshot below is historical and the
+paired downstream document is authoritative for current sequencing. Phases
+2.1-2.8 have substantial landed implementation. In paired task t024, live
+schedule-post creation exposed an empty dataset shell entering provider
+resolution and hanging after successful 9/9 playback. Core now settles runs
+with zero stored rows before provider resolution: zero stored and zero refused
+records become `no_result`, while all-refused output remains a deterministic
+failure. Downstream live run `run-muabdpmu-6c1f639d` returned normally and
+persisted the outcome; `pnpm --filter fluxiq build` passed after all temporary
+tracing was removed.
 
 **Phase, as of 2026-09-15: the user reshaped the plan as L12-L16, approved the
 five defect fixes, and instructed that they be planned and not started; no Core
@@ -117,6 +128,16 @@ entry.
 None yet; downstream scoping briefs are in the paired document.
 
 ## Work Ledger
+
+### 2026-09-20 — Empty action results settle without a provider
+- Agent: supervisor with downstream t024 live worker.
+- Changed: result verification uses total stored rows, not dataset-shell count,
+  to select its provider-free path; `no_result` requires zero stored and zero
+  refused rows, preserving the all-refused failure.
+- Validation: downstream live schedule-post run `run-muabdpmu-6c1f639d`
+  returned normally after 9 actions and persisted `no_result`; Core package
+  build passed after diagnostic tracing was removed.
+- Outcome: Accepted for paired integration.
 
 ### 2026-09-15 — Core share of the loop plan recorded
 - Agent: downstream supervisor; downstream workers `w2-scope-context-recovery`,
