@@ -38,3 +38,16 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
 // provider that has stopped answering usefully. It lives here rather than in
 // `runtime/recovery/` because `runtime/llm/` may not read a value from there.
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS = 3;
+
+// The most actions one decision may list (`runtime/llm/evidence-batch/`).
+//
+// A decision used to name exactly one action, so every action was a paid
+// provider round trip that re-sent the whole growing context. A decision may
+// now list several, run in order in one turn. This bounds the list, not the
+// run: the loop's tool-call ceiling above still counts every action, and one
+// batch reports back in one evidence entry, whose size is held to the same
+// context window a single result is. Sixteen is a form of a dozen fields and
+// the controls around them, and past it the per-action outcome lines alone
+// start to crowd the page evidence out of the window. A longer list is not
+// refused: its first sixteen run and the rest are reported as not run.
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION = 16;

@@ -644,7 +644,9 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
  * transport failure.
  */
 const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
-const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+// A decision may list several actions and leave one step for each, so the
+// bound is every decision's step plus every action's, not one per decision.
+const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls;
 
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;

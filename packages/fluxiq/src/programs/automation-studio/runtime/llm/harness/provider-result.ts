@@ -1,4 +1,5 @@
 import { parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { readAutomationStudioLlmEvidenceBatch } from "../evidence-batch/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
@@ -143,6 +144,12 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
     diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision must be an object.", path });
     return;
   }
+  // Several actions in order, read forgivingly but never with a key it does
+  // not know (../evidence-batch/decision.ts). A lone call is not a list and
+  // keeps the strict reading below.
+  const listed = readAutomationStudioLlmEvidenceBatch(value);
+  if (listed === "malformed") diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_calls", message: "Evidence tool calls must list actions, each naming a toolId and an optional object input.", path });
+  if (listed !== undefined) return;
   if (value.kind === "tool_call") {
     rejectUnexpectedFields(value, ["kind", "callId", "toolId", "input"], path, diagnostics);
     if (!validRequestIdentity(value.callId as string) || !validRequestIdentity(value.toolId as string) || !isJsonObject(value.input)) {

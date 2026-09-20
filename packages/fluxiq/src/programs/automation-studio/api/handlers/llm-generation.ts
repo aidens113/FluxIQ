@@ -87,6 +87,8 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
+      if (payload.maxActionsPerDecision !== undefined && payload.maxActionsPerDecision !== 1 && payload.maxActionsPerDecision !== 16) return { ok: false, error: "Flow bootstrap generation request contains an invalid actions-per-decision setting." };
+      if (payload.maxActionsPerDecision !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap actions-per-decision requires evidence-guided generation." };
       const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       if (!llmExecutionGrants) return { ok: false, error: "Flow bootstrap generation is unavailable." };
@@ -121,7 +123,8 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
             permittedConsequences: grant.permittedConsequences
           },
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
-          ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {})
+          ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
+          ...(payload.maxActionsPerDecision !== undefined ? { maxActionsPerDecision: payload.maxActionsPerDecision } : {})
         });
       } catch (error) {
         const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
@@ -145,7 +148,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "llmExecutionGrantId",
   "authSessionId",
   "evidenceGuided",
-  "useReusableContext"
+  "useReusableContext",
+  "maxActionsPerDecision"
 ]);
 
 function flowBootstrapGenerationReadiness(
