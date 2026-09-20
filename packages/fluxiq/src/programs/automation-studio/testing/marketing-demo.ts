@@ -1,4 +1,4 @@
-import { createAutomationStudioFixture, createAutomationStudioFlowExpansionFixture } from "../model/fixtures.js";
+import { createAutomationStudioFixture, createAutomationStudioFlowExpansionFixture } from "../model/index.ts";
 
 export type AutomationStudioMarketingDemo = {
   schemaVersion: "0.1";
