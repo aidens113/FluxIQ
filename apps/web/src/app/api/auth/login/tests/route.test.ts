@@ -50,7 +50,12 @@ describe("login credential validation", () => {
   });
 });
 
-describe("login attempt bounds", () => {
+// Every case drives the durable attempt store: each login takes up to six
+// locked read-modify-write cycles on disk. Alone a case finishes in under half a
+// second, but under the parallel suite on Windows a 25-login case measured over
+// 5 s, and a case that times out keeps running and rewrites the shared mocks
+// under the next case. The budget matches the whole-panel case below.
+describe("login attempt bounds", { timeout: 60_000 }, () => {
   beforeEach(async () => {
     // A fresh attempt store and route module per test, so no count carries over.
     fixture.root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-login-route-"));

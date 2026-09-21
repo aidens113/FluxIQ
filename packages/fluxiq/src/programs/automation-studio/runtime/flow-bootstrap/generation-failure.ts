@@ -498,7 +498,30 @@ export function flowBootstrapHarnessFailure(input: {
   });
 }
 
-function preProviderHarnessFailureCode(code: unknown): AutomationStudioFlowBootstrapPhaseFailureCode {
+/**
+ * The codes a harness refusal made before the provider call is projected to.
+ * Unlike every other pre-provider failure, each keeps the request's
+ * accounting, so the parser admits accounting for exactly these codes. A
+ * `pre_provider_` prefix test would also catch the phase's default code, which
+ * never carries accounting, and so refuse a diagnostic Core itself produced.
+ */
+const FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES = [
+  "flow_bootstrap.harness_preflight_failed",
+  "flow_bootstrap.pre_provider_input_budget_exceeded",
+  "flow_bootstrap.pre_provider_request_context_unbounded",
+  "flow_bootstrap.pre_provider_request_limits_invalid",
+  "flow_bootstrap.pre_provider_request_construction_failed",
+  "flow_bootstrap.pre_provider_request_setup_failed",
+  "flow_bootstrap.pre_provider_input_limit_exceeded",
+  "flow_bootstrap.pre_provider_request_total_exceeded",
+  "flow_bootstrap.pre_provider_invalid_cost_limit",
+  "flow_bootstrap.pre_provider_invalid_timeout",
+  "flow_bootstrap.pre_provider_invalid_token_limits",
+  "flow_bootstrap.pre_provider_context_invalid"
+] as const satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[];
+const FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET: ReadonlySet<string> = new Set(FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES);
+
+function preProviderHarnessFailureCode(code: unknown): typeof FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES[number] {
   switch (code) {
     case "llm.provider_input_budget_exceeded": return "flow_bootstrap.pre_provider_input_budget_exceeded";
     case "llm.provider_request_context_unbounded": return "flow_bootstrap.pre_provider_request_context_unbounded";
@@ -604,7 +627,7 @@ function phaseFailureStateMatches(
   if (value.stage !== stage) return false;
   if (stage === "pre_provider_validation" || stage === "provider_resolution") {
     const harnessAccounting = stage === "pre_provider_validation" && typeof value.code === "string"
-      && (value.code === "flow_bootstrap.harness_preflight_failed" || value.code.startsWith("flow_bootstrap.pre_provider_"));
+      && FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET.has(value.code);
     return value.retryable === false
       && value.providerInvocation === "not_attempted"
       && value.providerResponse === "not_received"
