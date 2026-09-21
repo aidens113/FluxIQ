@@ -37,6 +37,13 @@ The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
 
+`fluxiq/automation-studio/action-permissions` is the browser-safe display seam
+for a permission request Core already produced. It exports the consequence
+phrases, request type, and strict request parser only. Browser panels use this
+subpath instead of reaching into runtime source or importing the Node-oriented
+`fluxiq/automation-studio` barrel; permission declaration, gating, instruction
+authority, services, and storage remain server-only implementation surfaces.
+
 `fluxiq` is a Node.js package, but one of its subpaths is not. The runtime is
 the only place the element matcher lives, and a host that scores element
 candidates does so where the elements are — in a browser. So

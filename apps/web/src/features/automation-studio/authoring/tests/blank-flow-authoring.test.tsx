@@ -44,6 +44,22 @@ const explorationPayload = {
   purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat",
   tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 560_000, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0
 };
+const actionPermissionRequest = {
+  schemaVersion: "automation-studio.action-permission-request.v1",
+  requestId: "permission.one",
+  requestedAtMs: 1,
+  action: { kind: "exploration_step", id: "web.enter_field", ref: "call.one", verb: "enter" },
+  control: { name: "Shipping address", kind: "text field" },
+  consequences: ["modify_existing"],
+  missing: ["modify_existing"],
+  reason: { stage: "authoring", instructionIds: ["instruction.generation"] },
+  authority: { granted: [], instructed: [] },
+  sentence: "The run needs approval to change something that already exists."
+};
+
+function permissionFailure(permissionRequest: unknown = actionPermissionRequest) {
+  return { ok: false, payload: { diagnostic: { code: "flow_bootstrap.permission_required", permissionRequest } } };
+}
 
 function button(renderer: ReactTestRenderer, text: string) {
   return renderer.root.findAllByType("button").find((candidate) => candidate.children.some((child) => child === text));
@@ -342,6 +358,135 @@ describe("blank Flow instruction authoring", () => {
     expect(rendered).toContain("Start closer to the target page or make the website task more specific");
     expect(rendered).not.toContain("private-provider-error");
     expect(rendered).not.toContain("private-provider-output");
+    await act(async () => renderer.unmount());
+  });
+
+  it("refuses malformed permission requests", async () => {
+    const generateFromWebsite = vi.fn(async () => permissionFailure({ ...actionPermissionRequest, unexpected: true }));
+    const authoringCommands = commands({ generateFromWebsite });
+    const { renderer } = await mount(authoringCommands);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm Flow action consequences" })).toHaveLength(0);
+    expect(renderedText(renderer.toJSON())).toContain("Website exploration did not create a Flow proposal");
+    await act(async () => renderer.unmount());
+  });
+
+  it("retains an exact bound request across cancel, reopen, and equivalent revalidation, then grants only missing consequences", async () => {
+    const generateFromWebsite = vi.fn()
+      .mockResolvedValueOnce(permissionFailure())
+      .mockResolvedValue({ ok: true, payload: { adaptation: { flowId: flow.flowId, adaptationId: "adaptation.after.permission", status: "proposed" } } });
+    const authoringCommands = commands({ generateFromWebsite });
+    const onOpenAdaptation = vi.fn();
+    const { renderer } = await mount(authoringCommands, onOpenAdaptation);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm Flow action consequences" })).toHaveLength(1);
+    expect(renderedText(renderer.toJSON())).toContain("change something that already exists");
+    authoringCommands.issueLlmGrant.mockClear();
+
+    await act(async () => button(renderer, "Cancel")!.props.onClick());
+    expect(authoringCommands.issueLlmGrant).not.toHaveBeenCalled();
+    expect(onOpenAdaptation).not.toHaveBeenCalled();
+    expect(button(renderer, "Review requested permissions")).toBeDefined();
+
+    await act(async () => renderer.update(<BlankFlowAuthoringPanel commands={authoringCommands} flow={{ ...flow, metadata: { ...flow.metadata } }} onOpenAdaptation={vi.fn()} projectId="project.one" readiness={{ ...readiness, instructions: [...readiness.instructions] }} />));
+    await act(async () => button(renderer, "Review requested permissions")!.props.onClick());
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm Flow action consequences" })).toHaveLength(1);
+    await act(async () => button(renderer, "Allow and continue")!.props.onClick());
+    expect(authoringCommands.issueLlmGrant).toHaveBeenCalledWith({ ...explorationPayload, permittedConsequences: ["modify_existing"], ttlMs: 60_000 });
+    expect(authoringCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("highTokenConfirmation");
+    await act(async () => renderer.unmount());
+  });
+
+  it.each([
+    ["task", { projectId: "project.one", flow: { ...flow }, instruction: "Use a different address" }],
+    ["project", { projectId: "project.two", flow: { ...flow }, instruction: null }],
+    ["Flow", { projectId: "project.one", flow: { ...flow, flowId: "flow.other" }, instruction: null }]
+  ])("clears a pending permission request when the %s changes", async (_label, change) => {
+    const generateFromWebsite = vi.fn(async () => permissionFailure());
+    const authoringCommands = commands({ generateFromWebsite });
+    const { renderer } = await mount(authoringCommands);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    await act(async () => button(renderer, "Cancel")!.props.onClick());
+    if (change.instruction) {
+      await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: change.instruction } }));
+    } else {
+      await act(async () => renderer.update(<BlankFlowAuthoringPanel commands={authoringCommands} flow={change.flow} onOpenAdaptation={vi.fn()} projectId={change.projectId} readiness={readiness} />));
+    }
+    expect(button(renderer, "Review requested permissions")).toBeUndefined();
+    await act(async () => renderer.unmount());
+  });
+
+  it.each([
+    ["project", "project.two", { ...flow }],
+    ["Flow", "project.one", { ...flow, flowId: "flow.other" }]
+  ])("rejects a stale continuation when the %s changes during deferred preflight", async (_label, nextProjectId, nextFlow) => {
+    const normalPreflight = { ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 5_000 } } } };
+    const highPreflight = { ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 100_001 } } } };
+    let resolveContinuationPreflight!: (value: typeof highPreflight) => void;
+    const continuationPreflight = new Promise<typeof highPreflight>((resolve) => { resolveContinuationPreflight = resolve; });
+    const preflightLlm = vi.fn()
+      .mockResolvedValueOnce(normalPreflight)
+      .mockResolvedValueOnce(normalPreflight)
+      .mockImplementationOnce(() => continuationPreflight)
+      .mockResolvedValue(normalPreflight);
+    const authoringCommands = commands({ preflightLlm, generateFromWebsite: vi.fn(async () => permissionFailure()) });
+    const { renderer } = await mount(authoringCommands);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    authoringCommands.issueLlmGrant.mockClear();
+    await act(async () => { button(renderer, "Allow and continue")!.props.onClick(); await Promise.resolve(); });
+    expect(preflightLlm).toHaveBeenCalledTimes(3);
+
+    await act(async () => renderer.update(<BlankFlowAuthoringPanel commands={authoringCommands} flow={nextFlow} onOpenAdaptation={vi.fn()} projectId={nextProjectId} readiness={readiness} />));
+    await act(async () => { resolveContinuationPreflight(highPreflight); await continuationPreflight; await Promise.resolve(); });
+
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm high-token Flow Build" })).toHaveLength(0);
+    expect(authoringCommands.issueLlmGrant).not.toHaveBeenCalled();
+    expect(button(renderer, "Review requested permissions")).toBeUndefined();
+    expect(renderedText(renderer.toJSON())).toContain("Start a new exploration before approving consequences");
+    await act(async () => renderer.unmount());
+  });
+
+  it("retains truthful high-token confirmation on a permission continuation", async () => {
+    const highPreflight = { ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 100_001 } } } };
+    const preflightLlm = vi.fn(async () => highPreflight);
+    const generateFromWebsite = vi.fn()
+      .mockResolvedValueOnce(permissionFailure())
+      .mockResolvedValue({ ok: true, payload: { adaptation: { flowId: flow.flowId, adaptationId: "adaptation.after.permission", status: "proposed" } } });
+    const authoringCommands = commands({ preflightLlm, generateFromWebsite });
+    const { renderer } = await mount(authoringCommands);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    await act(async () => button(renderer, "Continue high-token build")!.props.onClick());
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm Flow action consequences" })).toHaveLength(1);
+    authoringCommands.issueLlmGrant.mockClear();
+    await act(async () => button(renderer, "Allow and continue")!.props.onClick());
+    expect(authoringCommands.issueLlmGrant).toHaveBeenCalledWith({ ...explorationPayload, highTokenConfirmation: true, permittedConsequences: ["modify_existing"], ttlMs: 60_000 });
+    await act(async () => renderer.unmount());
+  });
+
+  it("retains the permission request while a continuation newly requires high-token confirmation", async () => {
+    const normalPreflight = { ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 5_000 } } } };
+    const highPreflight = { ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 100_001 } } } };
+    const preflightLlm = vi.fn()
+      .mockResolvedValueOnce(normalPreflight)
+      .mockResolvedValueOnce(normalPreflight)
+      .mockResolvedValueOnce(highPreflight)
+      .mockResolvedValue(highPreflight);
+    const generateFromWebsite = vi.fn(async () => permissionFailure());
+    const authoringCommands = commands({ preflightLlm, generateFromWebsite });
+    const { renderer } = await mount(authoringCommands);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Update the saved shipping address" } }));
+    await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+    authoringCommands.issueLlmGrant.mockClear();
+    await act(async () => button(renderer, "Allow and continue")!.props.onClick());
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm high-token Flow Build" })).toHaveLength(1);
+    expect(authoringCommands.issueLlmGrant).not.toHaveBeenCalled();
+    await act(async () => button(renderer, "Continue high-token build")!.props.onClick());
+    expect(authoringCommands.issueLlmGrant).toHaveBeenCalledWith({ ...explorationPayload, highTokenConfirmation: true, permittedConsequences: ["modify_existing"], ttlMs: 60_000 });
     await act(async () => renderer.unmount());
   });
 
