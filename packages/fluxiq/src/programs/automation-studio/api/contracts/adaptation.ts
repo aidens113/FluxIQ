@@ -110,7 +110,6 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   llmExecutionGrantId: string;
   evidenceGuided?: true;
   useReusableContext?: true;
-  maxActionsPerDecision?: 1 | 16;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

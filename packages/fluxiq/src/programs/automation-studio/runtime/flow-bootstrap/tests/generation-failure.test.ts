@@ -112,9 +112,11 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ...valid,
       evidenceLoop: { ...valid.evidenceLoop, steps: [{ toolId: "web.click", resultCode: "private result text!" }] }
     })).toBeNull();
-    // A batched decision can leave one trace step per action, so the public
-    // diagnostic is bounded by both the decision and tool-call ceilings.
-    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls;
+    // Bounded by the loop's own ceiling -- its decisions plus one opening
+    // observation -- not by the sixteen it used to be. A diagnostic from a
+    // longer exploration failed to parse at sixteen, and its named reason was
+    // replaced by a generic transport failure.
+    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
     const long = {
       ...valid,
       evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
@@ -127,29 +129,6 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
     }
-  });
-
-  it.each(["action_refused", "effect_not_applied", "targets_may_have_changed", "action_limit", "batch_limit"] as const)("publishes the closed %s batch stop without action inputs or evidence", (stoppedBy) => {
-    const failure = flowBootstrapEvidenceLoopFailure({
-      ok: false,
-      code: "llm_evidence_loop.iteration_limit",
-      trace: [{
-        iteration: 2,
-        decision: "tool_call",
-        callId: "private.call",
-        toolId: "web.enter_field",
-        resultCode: "web.action_completed",
-        batch: { position: 2, size: 4, stoppedBy }
-      }],
-      accounting: { iterations: 2, toolCalls: 2, evidenceBytes: 123, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
-    });
-    expect(failure.diagnostic.evidenceLoop?.steps).toEqual([{
-      toolId: "web.enter_field",
-      resultCode: "web.action_completed",
-      batch: { decision: 2, position: 2, size: 4, stoppedBy }
-    }]);
-    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
-    expect(JSON.stringify(failure)).not.toContain("private.call");
   });
 
   it("names an exploration stopped on unusable decisions, with its progress and why", () => {

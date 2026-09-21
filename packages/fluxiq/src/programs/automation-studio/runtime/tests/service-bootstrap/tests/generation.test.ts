@@ -57,12 +57,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService();
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
-      nativeNodeRegistryConfigured: false
+      nativeNodeRegistryConfigured: false,
+      llmEvidenceRuntime: { bound: false, toolCount: 0 }
     });
     (instance as any).nativeNodeRuntime = new AutomationStudioNativeNodeRuntime();
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
-      nativeNodeRegistryConfigured: false
+      nativeNodeRegistryConfigured: false,
+      llmEvidenceRuntime: { bound: false, toolCount: 0 }
     });
   });
 
@@ -195,37 +197,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       toolIds: ["inspect"]
     });
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
-  });
-
-  it("publishes content-free per-decision telemetry when a bootstrap decision runs several actions", async () => {
-    const provider = mockProvider(async (request) => {
-      const iteration = request.context.evidenceLoop?.iteration ?? 0;
-      const decision = iteration === 1
-        ? { kind: "tool_calls", calls: [1, 2, 3].map((ordinal) => ({ toolId: "inspect", input: { ordinal } })) }
-        : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
-      return { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision } };
-    });
-    const instance = createService({
-      provider,
-      resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: {
-        domainId: "test.domain",
-        deniedEvidenceKeys: [],
-        tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe" }],
-        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { privatePageContent: "never published" }, effectApplied: false, resultCode: "test.evidence_captured" })
-      }
-    });
-    const { project, flow } = await blankFixture(instance);
-    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
-    const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
-
-    expect(stored?.auditEvents[0]?.detail.batchDecisions).toEqual([{
-      decision: 1,
-      actionCount: 3,
-      actions: [1, 2, 3].map((ordinal) => ({ ordinal, resultCode: "test.evidence_captured" })),
-      stopCode: null
-    }]);
-    expect(JSON.stringify(stored?.auditEvents[0]?.detail.batchDecisions)).not.toContain("privatePageContent");
   });
 
   // The loop used to stop at `min(calls, 8)` decisions. A grant's call count is

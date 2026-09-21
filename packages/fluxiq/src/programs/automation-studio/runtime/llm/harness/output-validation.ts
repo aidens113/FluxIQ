@@ -26,7 +26,7 @@ export function validateAutomationStudioLlmOutput(
       resolution: flowBootstrap.resolution
     }).issues);
   }
-  if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_call" && typeof response.decision.toolId === "string" && !response.decision.toolId.trim()) {
+  if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_call" && !response.decision.toolId.trim()) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool", message: "Evidence tool decision requires a tool identifier.", path: "decision.toolId" });
   }
   if (response.kind === "runtime_patch") validateRuntimePatches(response.patches, diagnostics);

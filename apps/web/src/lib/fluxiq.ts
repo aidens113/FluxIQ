@@ -41,7 +41,7 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
   const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
-  const llmEvidenceRuntime = state.instance.programs.automationStudio.llmEvidenceRuntimeStatus();
+  const { llmEvidenceRuntime } = state.instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
   const reusableLlmContext = state.instance.programs.automationStudio.reusableLlmContextStatus();
   return {
     runtimeId: state.runtimeId,

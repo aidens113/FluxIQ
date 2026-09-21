@@ -65,31 +65,10 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(systemPrompt).toContain("Do not call a mutating tool merely to unlock another observation");
     expect(systemPrompt).toContain("recoverable tool result shaped like {ok:false,code:string}");
     expect(payload.outputSchema).toMatchObject({ properties: { kind: { const: "evidence_tool_decision" }, decision: evidenceLoop.decisionSchema } });
-    expect(payload.outputSchema.properties.decision.oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete", "tool_call", "tool_calls"]);
+    expect(payload.outputSchema.properties.decision.oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete", "tool_call"]);
     expect(userPayload.indexOf('\"kind\":{\"const\":\"complete\"}')).toBeLessThan(userPayload.indexOf('\"tools\"'));
     expect(payload.context.evidenceLoop.tools).toEqual([{ toolId: "inspect", description: "Collect bounded evidence." }]);
     expect(response.response).toEqual({ kind: "evidence_tool_decision", summary: "Enough evidence.", decision: { kind: "complete", result: { candidateId: "candidate.1" } } });
-  });
-
-  it("sends the canonical single-action decision schema through DeepSeek", async () => {
-    let secrets = 0;
-    const provider = createAutomationStudioDeepSeekProvider({
-      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
-      resolveSecret: async () => { secrets += 1; return "test-secret"; },
-      fetchImpl: (async () => new Response(JSON.stringify({
-        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "Inspect once.", decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: {} } }) } }],
-        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
-      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
-    });
-    const singleActionLoop = {
-      ...evidenceLoop,
-      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true, false)
-    };
-
-    await expect(provider.runTask(request({ context: { ...request().context, evidenceLoop: singleActionLoop } }))).resolves.toMatchObject({
-      response: { kind: "evidence_tool_decision", decision: { kind: "tool_call", toolId: "inspect" } }
-    });
-    expect(secrets).toBe(1);
   });
 
   it("rejects altered decision schemas before secret resolution", async () => {

@@ -105,9 +105,13 @@ import {
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   type AutomationStudioLlmFailureEvidenceCaptureInput,
+  type AutomationStudioBuildAndAdaptExecutionGrant,
   type AutomationStudioLlmProvider,
+  type AutomationStudioLlmProviderResolution,
+  type AutomationStudioLlmProviderResolverInput,
   type AutomationStudioLlmTokenLimits
 } from "./llm/index.ts";
+export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
@@ -123,7 +127,7 @@ import {
   type AutomationStudioBootstrapAuditEvent
 } from "./flow-bootstrap/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION, automationStudioFlowBootstrapEvidenceLoopLimits } from "./loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, automationStudioFlowBootstrapEvidenceLoopLimits } from "./loop-limits/index.ts";
 import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "./reusable-llm-context.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
@@ -388,45 +392,12 @@ export type AutomationStudioReusableLlmContextFeatureStatus = {
   blockerCode?: "reusable_context.content_protection_unavailable";
 };
 
-export type AutomationStudioLlmProviderResolution = {
-  provider: AutomationStudioLlmProvider;
-  tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
-  maxCallsPerRun?: number;
-  /** The whole run's token budget, when the resolver was issued for one. It caps the run however many calls it may make. */
-  maxTotalTokensPerRun?: number;
-  maxEstimatedCostUsd?: number;
-  maxTotalEstimatedCostUsd?: number;
-  timeoutMs?: number;
-};
-
-export type AutomationStudioLlmProviderResolverInput = {
-  projectId: string;
-  flowId: string;
-  providerId?: string;
-  modelId?: string;
-  metadata?: JsonObject;
-  executionGrant?: AutomationStudioRuntimeSessionGrant | AutomationStudioBuildAndAdaptExecutionGrant;
-};
-
-export type AutomationStudioBuildAndAdaptExecutionGrant = {
-  grantId: string;
-  actorUserId: string;
-  actorSessionId: string;
-  purpose: "build_and_adapt";
-  executionDigest: string;
-  settingsRevision: number;
-  /** The lasting consequences the person allowed this build's actions. Absent permits none. */
-  permittedConsequences?: AutomationStudioActionConsequence[];
-};
-
 export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   projectId: string;
   flowId: string;
   executionGrant: AutomationStudioBuildAndAdaptExecutionGrant;
   evidenceGuided?: true;
   useReusableContext?: true;
-  /** Live A/B seam: one action per decision or Core's bounded batch. */
-  maxActionsPerDecision?: 1 | 16;
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
@@ -768,13 +739,6 @@ export class AutomationStudioService {
   bindLlmEvidenceRuntime(runtime: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>): this {
     this.llmEvidenceRuntime = runtime;
     return this;
-  }
-
-  llmEvidenceRuntimeStatus(): { bound: boolean; toolCount: number } {
-    return {
-      bound: this.llmEvidenceRuntime !== undefined,
-      toolCount: this.llmEvidenceRuntime?.tools.length ?? 0
-    };
   }
 
   bindReusableLlmContext(configuration: AutomationStudioReusableLlmContextHostConfiguration): this {
@@ -1771,6 +1735,8 @@ export class AutomationStudioService {
   getFlowBootstrapGenerationRuntimeReadiness(): {
     providerResolverConfigured: boolean;
     nativeNodeRegistryConfigured: boolean;
+    /** Whether a host bound the evidence tools that evidence-guided generation needs, and how many. */
+    llmEvidenceRuntime: { bound: boolean; toolCount: number };
   } {
     const native = this.nativeNodeRuntime;
     const nativeDefinitions = native?.listDefinitions() ?? [];
@@ -1781,7 +1747,8 @@ export class AutomationStudioService {
     const hasExecutableDomainNode = nativeDefinitions.some((definition) => definition.id !== "builtin.control.start" && definition.id !== "builtin.control.end" && definition.capabilities.executable === true);
     return {
       providerResolverConfigured: typeof this.llmProviderResolver === "function",
-      nativeNodeRegistryConfigured: hasControlFoundation && hasExecutableDomainNode
+      nativeNodeRegistryConfigured: hasControlFoundation && hasExecutableDomainNode,
+      llmEvidenceRuntime: { bound: this.llmEvidenceRuntime !== undefined, toolCount: this.llmEvidenceRuntime?.tools.length ?? 0 }
     };
   }
 
@@ -1825,12 +1792,10 @@ export class AutomationStudioService {
     let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
     let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
     try {
-      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext", "maxActionsPerDecision"], "Flow Bootstrap generation input");
+      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext"], "Flow Bootstrap generation input");
       if (unsafeInput.evidenceGuided !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Evidence-guided generation flag is invalid.");
       if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
       if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
-      if (unsafeInput.maxActionsPerDecision !== undefined && unsafeInput.maxActionsPerDecision !== 1 && unsafeInput.maxActionsPerDecision !== 16) throw new Error("Flow Bootstrap actions-per-decision setting is invalid.");
-      if (unsafeInput.maxActionsPerDecision !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Actions-per-decision requires evidence-guided generation.");
       if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
       assertExactObjectFields(unsafeGrant, ["grantId", "actorUserId", "actorSessionId", "purpose", "executionDigest", "settingsRevision", "permittedConsequences"], "Flow Bootstrap execution grant");
       if (unsafeGrant.purpose !== "build_and_adapt") throw new Error("Flow Bootstrap generation requires a build_and_adapt execution grant.");
@@ -1912,8 +1877,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           let estimatedInputTokens = 0;
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
           const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
-          const maxActionsPerDecision = input.maxActionsPerDecision ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION;
-          const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, maxActionsPerDecision);
+          const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
           const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
           const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive });
           const loopAccounting = (spent: AutomationStudioLlmEvidenceLoopResult["accounting"]) => sanitizedBootstrapAccounting({ requestId: `evidence.${randomUUID()}`, estimatedInputTokens: estimatedInputTokens + authority.usage.estimatedInputTokens,
@@ -1930,7 +1894,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               return verdict.ok ? { ok: true } : verdict.check;
             },
             completionSchema, signal: permissions.signal,
-            maxActionsPerDecision,
             ...bootstrapLoopLimits.loop,
             decide: routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
               if (input.useReusableContext === true && evidence.length) {
@@ -5964,7 +5927,7 @@ function bootstrapAdaptationAuditEvent(input: {
   };
 }
 function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
-  if (!Array.isArray(trace) || trace.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  if (!Array.isArray(trace) || trace.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) throw new Error("Flow Bootstrap evidence trace is invalid.");
   return trace.map((item) => {
     if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations || !["tool_call", "complete", "unusable"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
     const clean: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
@@ -5974,35 +5937,13 @@ function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]
       if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
       clean.evidenceBytes = item.evidenceBytes;
     }
-    if (item.effectApplied !== undefined) clean.effectApplied = item.effectApplied;
-    if (item.resultCode !== undefined && /^[a-z0-9_.:-]{1,100}$/i.test(item.resultCode)) clean.resultCode = item.resultCode;
-    if (item.batch !== undefined) {
-      const { position, size, stoppedBy } = item.batch;
-      if (!Number.isInteger(position) || !Number.isInteger(size) || position < 1 || position > size || size > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION
-        || (stoppedBy !== undefined && !["action_refused", "effect_not_applied", "targets_may_have_changed", "action_limit", "batch_limit"].includes(stoppedBy))) {
-        throw new Error("Flow Bootstrap evidence batch trace is invalid.");
-      }
-      clean.batch = { position, size, ...(stoppedBy ? { stoppedBy } : {}) };
-    }
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
 }
 function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[]): JsonObject {
   const clean = sanitizeEvidenceLoopTrace(trace);
-  const providerDecisions = [...new Set(clean.filter((item) => item.iteration > 0).map((item) => item.iteration))];
-  const batchDecisions = providerDecisions.flatMap((decision) => {
-    const actions = clean.filter((item) => item.iteration === decision && item.batch !== undefined);
-    if (!actions.length) return [];
-    const actionCount = actions[0]!.batch!.size;
-    const stop = actions.find((item) => item.batch?.stoppedBy !== undefined)?.batch?.stoppedBy;
-    return [{
-      decision,
-      actionCount,
-      actions: actions.map((item) => ({ ordinal: item.batch!.position, resultCode: item.resultCode ?? null })),
-      stopCode: stop ? `llm_evidence_loop.batch.${stop}` : null
-    }];
-  });
+  const providerDecisions = clean.filter((item) => item.iteration > 0);
   return {
     evidenceGuided: true,
     // Retained for compatibility with existing audit readers. This is the
@@ -6014,8 +5955,7 @@ function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[])
     decisionCount: providerDecisions.length,
     toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
     evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
-    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort(),
-    batchDecisions
+    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort()
   };
 }
 function sanitizedBootstrapAccounting(value: AutomationStudioBootstrapAccounting): AutomationStudioBootstrapAccounting {

@@ -27,7 +27,7 @@
 // a build stays the grant's cost, tokens and calls rather than this.
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../llm/harness/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "./evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "./evidence-loop.ts";
 
 /**
  * The most tokens one Flow Bootstrap can record in its accounting: every call
@@ -89,25 +89,16 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   maxCallsPerRun?: number | undefined;
   maxEstimatedCostUsd?: number | undefined;
   maxTotalEstimatedCostUsd?: number | undefined;
-}, maxActionsPerDecision = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION): AutomationStudioFlowBootstrapEvidenceLoopLimits {
+}): AutomationStudioFlowBootstrapEvidenceLoopLimits {
   const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
   const declared = typeof resolution.maxCallsPerRun === "number" && Number.isFinite(resolution.maxCallsPerRun) && resolution.maxCallsPerRun >= 1
     ? Math.trunc(resolution.maxCallsPerRun)
     : undefined;
   const maxIterations = Math.min(declared ?? ceiling.maxIterations, ceiling.maxIterations);
-  // Every decision's worth of actions, and the first observation made before
-  // any decision, so tool calls never bind before the call count does. This
-  // was one more than the decisions, which was the same thing while a decision
-  // named one action; with a decision listing up to
-  // `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION`, keeping
-  // it would have made a count of calls the thing that stops a form half
-  // filled. What bounds actions is the call budget they ride on, the evidence
-  // budget each packet is charged against, the no-progress guard, and Core's
-  // ceiling underneath.
-  const actionsPerDecision = Number.isInteger(maxActionsPerDecision) && maxActionsPerDecision >= 1
-    ? Math.min(maxActionsPerDecision, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION)
-    : AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_ACTIONS_PER_DECISION;
-  const maxToolCalls = Math.min(maxIterations * actionsPerDecision + 1, ceiling.maxToolCalls);
+  // One more tool call than decisions: the loop's first observation is a tool
+  // call made before any decision, and the last decision completes. So tool
+  // calls never bind before the call count does.
+  const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
   const perCall = resolution.maxEstimatedCostUsd;
   const total = resolution.maxTotalEstimatedCostUsd;
   const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;

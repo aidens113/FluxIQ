@@ -9,9 +9,9 @@ import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATIO
 import { AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
-function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true } } {
+function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true; llmEvidenceRuntime: { bound: true; toolCount: number } } } {
   return Object.assign({
-    getFlowBootstrapGenerationRuntimeReadiness: () => ({ providerResolverConfigured: true as const, nativeNodeRegistryConfigured: true as const })
+    getFlowBootstrapGenerationRuntimeReadiness: () => ({ providerResolverConfigured: true as const, nativeNodeRegistryConfigured: true as const, llmEvidenceRuntime: { bound: true as const, toolCount: 1 } })
   }, service);
 }
 
