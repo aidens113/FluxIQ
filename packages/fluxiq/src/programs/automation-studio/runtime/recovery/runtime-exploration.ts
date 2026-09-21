@@ -107,6 +107,16 @@ export type AutomationStudioRuntimeExplorationInput = {
    */
   captureStateDigest?: AutomationStudioExplorationStateDigestSource;
   /**
+   * The run's own permission gate, when the caller holds one. A recovery
+   * builds one gate for the whole recovery, so the exploration and the patch
+   * stage answer to one authority and end on one request. It is used as-is:
+   * its grant, the instructed set it was given, and what it was already shown.
+   * Passing it together with `permittedConsequences`, `instructionIds` or
+   * `shownEvidence` throws, because those build a gate of their own, and two
+   * sources for one answer is how they come to disagree.
+   */
+  gate?: AutomationStudioActionPermissionGate;
+  /**
    * The consequences the run's grant permits. Absent permits nothing: an
    * action with a lasting consequence then ends the exploration with a
    * request, which is the fail-closed answer rather than a silent refusal.
@@ -170,6 +180,9 @@ export async function runAutomationStudioRuntimeExploration(
   input: AutomationStudioRuntimeExplorationInput
 ): Promise<AutomationStudioRuntimeExploration> {
   const now = input.now ?? (() => Date.now());
+  // First, before the clock starts: a caller that handed both a gate and the
+  // fields that build one is refused before anything is held open.
+  const gate = explorationPermissionGate(input, now);
   const startedAtMs = now();
   const ledger = new AutomationStudioExplorationBudgetLedger({
     budget: input.budget,
@@ -183,13 +196,6 @@ export async function runAutomationStudioRuntimeExploration(
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
   const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
-  const gate = new AutomationStudioActionPermissionGate({
-    permittedConsequences: input.permittedConsequences,
-    stage: "recovery",
-    instructionIds: input.instructionIds,
-    now
-  });
-  for (const shown of input.shownEvidence ?? []) gate.observe(shown);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -262,6 +268,27 @@ export async function runAutomationStudioRuntimeExploration(
   } finally {
     ledger.close();
   }
+}
+
+/**
+ * The gate every action of this exploration is checked against: the caller's
+ * own, or one built here from the loose fields. Never both.
+ */
+function explorationPermissionGate(input: AutomationStudioRuntimeExplorationInput, now: () => number): AutomationStudioActionPermissionGate {
+  if (input.gate) {
+    if (input.permittedConsequences !== undefined || input.instructionIds !== undefined || input.shownEvidence !== undefined) {
+      throw new Error("A runtime exploration takes a permission gate or the fields that build one, never both.");
+    }
+    return input.gate;
+  }
+  const gate = new AutomationStudioActionPermissionGate({
+    permittedConsequences: input.permittedConsequences,
+    stage: "recovery",
+    instructionIds: input.instructionIds,
+    now
+  });
+  for (const shown of input.shownEvidence ?? []) gate.observe(shown);
+  return gate;
 }
 
 /**

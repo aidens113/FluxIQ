@@ -381,6 +381,8 @@ export class AutomationStudioLlmExecutionGrantService {
     maxTotalEstimatedCostUsd: number;
     timeoutMs: number;
     providerRetryCount: 0;
+    /** What the person allowed this run's actions to do: a copy, so the grant's own set is never handed out. */
+    permittedConsequences: AutomationStudioActionConsequence[];
   }> {
     try {
       parseAutomationStudioLlmExecutionGrantPurpose(input.purpose);
@@ -460,7 +462,8 @@ export class AutomationStudioLlmExecutionGrantService {
       maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
       timeoutMs: grant.timeoutMs,
-      providerRetryCount: 0
+      providerRetryCount: 0,
+      permittedConsequences: [...grant.permittedConsequences]
     };
   }
   revoke(grantId: string, reason?: unknown): void {

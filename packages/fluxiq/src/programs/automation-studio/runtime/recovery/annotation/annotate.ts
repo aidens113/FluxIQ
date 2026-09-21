@@ -21,6 +21,10 @@
 // 4. **Resolution.** One `runtime_patch` call, then each patch executed or
 //    proposed, with a receipt either way.
 //
+// One permission gate stands over the stages that can act (`permissions.ts`).
+// A request it raises ends the recovery: the patch call is not made, and the
+// request is what the run carries out to the person.
+//
 // Every early return carries a `recoveryTrace`, and that is the property to
 // keep. A recovery that stopped at the gate, one whose provider would not
 // resolve and one that ran all four stages each describe themselves in the same
@@ -56,6 +60,7 @@ import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structur
 import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRepairAttempt } from "./patches.ts";
+import { automationStudioRecoveryPermissionGate } from "./permissions.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "./run-budget.ts";
 
@@ -214,6 +219,18 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       };
     }
   }
+  // The parent Flow, read once: where it is authored, which decides the
+  // exploration's options, and what its build stored about what the person's
+  // instruction asks for. The subflow graph that ran carries neither.
+  const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
+  // One gate for the whole recovery, built once the provider has resolved,
+  // because the resolution is where the grant's permitted set arrives.
+  const permissions = provider ? automationStudioRecoveryPermissionGate({
+    granted: providerResolution?.permittedConsequences,
+    storedInstructed: recoveryFlow?.metadata?.bootstrapInstructedConsequences,
+    instructions,
+    failureEvidence
+  }) : undefined;
   const runBudget = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
   const reusableContextResult = input.useReusableContext === true && failureEvidence
     ? await ports.reusableLlmContextForFreshEvidence({
@@ -239,6 +256,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
     ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
     policy: input.context.policy,
+    // The diagnosis plans what the recovery may do, so it is told what the
+    // gate permits rather than the side-effect flag the gate has replaced.
+    ...(permissions ? { actionPermissions: permissions.summary() } : {}),
     ...(provider ? { provider } : {}),
     runBudget,
     ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
@@ -257,7 +277,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // the exploration that would have served it is not run either.
   const grantSkip = explicitProposalGrant && plan.patchRequest.request ? grantSkipReason(plan) : undefined;
   const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
-  const patchSkippedCode = grantSkip
+  const plannedPatchSkippedCode = grantSkip
     ? "llm.runtime_patch_grant_scope_refused"
     : !plan.patchRequest.request
       ? "llm.runtime_patch_not_requested"
@@ -268,7 +288,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
   if (plan.explorationRequested && plan.patchRequest.request && !grantSkip && provider && ports.llmEvidenceRuntime) {
-    const scope = (await ports.flowForRecovery(input.context.projectId, input.context.flowId))?.scope;
+    const scope = recoveryFlow?.scope;
     // The patch's call, tokens and money are set aside before the exploration
     // may spend anything, and handed back the moment it ends.
     const patchReserve = scope && patchWillFollow
@@ -278,10 +298,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
         binding: ports.llmEvidenceRuntime,
         scope,
-        // Authoritative over side effects. `allowSideEffectsWithoutPolicy` is
-        // absent because a runtime recovery always has a policy, so a mutating
-        // option appears exactly when the policy allows external side effects.
         policy: input.context.policy,
+        // The authority over what an action may lastingly do. The policy's
+        // side-effect flag is not read: a mutating option is offered, and the
+        // gate permits its action or raises the request that ends the recovery.
+        ...(permissions ? { permissionGate: permissions.gate, actionPermissions: permissions.summary() } : {}),
         provider,
         context: {
           projectId: input.context.projectId,
@@ -307,6 +328,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     }
   }
   const exploration = explorationResult?.exploration;
+  // A request raised while exploring ends the recovery. The patch call is not
+  // made: a repair built without the step the person has not yet allowed would
+  // be a guess, and the person's answer is what the next run needs.
+  const permissionRequest = permissions?.gate.request;
+  const heldForPermission = Boolean(permissionRequest && patchWillFollow);
+  const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : plannedPatchSkippedCode;
   // Stage D sees what the exploration saw. Without this the patch was shown
   // the failure packet alone, and a control only the exploration revealed
   // could not be named in the repair. No packets, no slot: the request is the
@@ -314,7 +341,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const explorationEvidence = explorationResult && explorationResult.explored.length > 0
     ? { packets: explorationResult.explored, maxBytes: Math.max(1, Math.floor(resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens * 3 * EXPLORATION_EVIDENCE_INPUT_SHARE)) }
     : undefined;
-  const patchResult = patchWillFollow && provider && input.runtimeFlow && input.failedTraceAttempt
+  const patchResult = patchWillFollow && !heldForPermission && provider && input.runtimeFlow && input.failedTraceAttempt
     ? await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
       projectId: input.context.projectId,
@@ -393,8 +420,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
-        ...(grantSkip ? { patchSkipped: grantSkip } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(grantSkip ? { patchSkipped: grantSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(patchSkippedCode ? { patchSkippedCode } : {}),
+        // Classes only: what the recovery held, and why. The request below says what it lacked.
+        ...(permissions ? { permissions: permissions.summary() } : {}),
         ...(declined ? { patchDeclined: declined.reason } : {}),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
         ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
@@ -402,6 +431,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
       },
+      // The person's question, where the run's reader looks for it: the same
+      // `automation-studio.action-permission-request.v1` a build carries, at stage `recovery`.
+      ...(permissionRequest ? { permissionRequest: permissionRequest as unknown as JsonObject } : {}),
       ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(patchFailureCode ? { patchFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
     }
   };

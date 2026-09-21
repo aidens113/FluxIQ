@@ -104,7 +104,10 @@ describe("AutomationStudioService recording persistence", () => {
             expect(request.context.recentActions?.[0]).not.toHaveProperty("metadata");
             expect(request.context.recentActions?.[0]).not.toHaveProperty("message");
             expect(request.estimatedInputTokens).toBeLessThanOrEqual(request.tokenLimits.maxInputTokens);
-            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false, allowModifyActionTargets: true });
+            // The diagnosis is told what the recovery's permission gate permits --
+            // this resolver granted nothing -- not the side-effect flag the gate replaced.
+            expect(request.context.policyGates).toMatchObject({ allowModifyActionTargets: true, actionPermissions: { permitted: [] } });
+            expect(request.context.policyGates).not.toHaveProperty("allowExternalSideEffects");
             return { response: { kind: "diagnosis", summary: "The recorded target drifted." }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
           }
         },

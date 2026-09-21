@@ -933,6 +933,40 @@ output and 48,000 input tokens. A confirmed maximum grant can cost about USD
 about USD 0.06 to 0.19. DeepSeek refuses a reply above a call's token limits,
 so no single call can spend more tokens than it reserved.
 
+### What a recovery may do that outlasts it
+
+A recovery is capable by default and asks rather than refuses. It builds one
+permission gate once its provider has resolved
+(`runtime/recovery/annotation/permissions.ts`), and the exploration and the
+patch stage share it. The gate's authority is the grant's
+`permittedConsequences`, which the provider resolution now carries, plus the
+set the Flow's build stored as what the person's instruction asks for
+(`metadata.bootstrapInstructedConsequences`), keeping an entry only while its
+instruction is active and its text unchanged. A recovery never asks a model to
+read the instruction again.
+
+**`policy.allowExternalSideEffects` is no longer read on the recovery
+exploration path.** The exploration is offered the domain's `mutate` options
+whatever that flag says (`mutationsGovernedByPermission` on the harness-option
+resolution), and never a `destructive` one. Each action the domain declares
+with a lasting consequence is checked by the gate. The first one neither the
+grant nor the instruction covers ends the recovery: the patch call is not made
+(`llmGate.patchSkippedCode: "llm.runtime_patch_permission_required"`), and the
+run detail carries the request at `metadata.permissionRequest`
+(`automation-studio.action-permission-request.v1`, `reason.stage: "recovery"`),
+beside `metadata.llmGate.permissions`, which lists the classes `granted`,
+`instructed` and `lapsed`. A person's answer reaches the next run as that
+run's grant. The patch stage's own preflight still reads the flag until a
+side-effecting patch is gated the same way.
+
+The model is told the same thing. On the diagnosis and on each exploration
+decision, `policyGates` carries `actionPermissions` -- the classes `permitted`,
+`granted` and `instructed`, and Core's sentence that any other lasting
+consequence is asked for rather than refused, and never makes a step
+unachievable -- in place of `allowExternalSideEffects` and
+`requireApprovalForExternalSideEffects`. The patch call is still told the flag,
+because its preflight still enforces it.
+
 ### LLM execution grant lifetime
 
 A grant has two lifetimes, and they bound different things.
