@@ -31,7 +31,8 @@ export const BLANK_FLOW_AUTHORING_LIMITS = Object.freeze({
  *   Core's packages, so it is restated here and pinned by a test.
  */
 export const WEBSITE_EXPLORATION_LIMITS = Object.freeze({
-  tokenLimits: Object.freeze({ maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }),
+  tokenLimits: Object.freeze({ maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }),
+  maxTotalTokensPerRun: 560_000,
   timeoutMs: 45_000,
   maxEstimatedCostUsd: 0.25,
   maxTotalEstimatedCostUsd: 1,
@@ -163,6 +164,7 @@ export function blankFlowExplorationRequest(projectId: string | null, flow: any,
     payload: {
       ...base.payload,
       tokenLimits: { ...limits.tokenLimits },
+      maxTotalTokensPerRun: limits.maxTotalTokensPerRun,
       timeoutMs: limits.timeoutMs,
       maxEstimatedCostUsd: limits.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: limits.maxTotalEstimatedCostUsd,

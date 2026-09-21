@@ -257,10 +257,17 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // the exploration that would have served it is not run either.
   const grantSkip = explicitProposalGrant && plan.patchRequest.request ? grantSkipReason(plan) : undefined;
   const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
+  const patchSkippedCode = grantSkip
+    ? "llm.runtime_patch_grant_scope_refused"
+    : !plan.patchRequest.request
+      ? "llm.runtime_patch_not_requested"
+      : !patchWillFollow
+        ? "llm.runtime_patch_unavailable"
+        : undefined;
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
-  if (plan.explorationRequested && !grantSkip && provider && ports.llmEvidenceRuntime) {
+  if (plan.explorationRequested && plan.patchRequest.request && !grantSkip && provider && ports.llmEvidenceRuntime) {
     const scope = await ports.flowScope(input.context.projectId, input.context.flowId);
     // The patch's call, tokens and money are set aside before the exploration
     // may spend anything, and handed back the moment it ends.
@@ -339,6 +346,14 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // of it. It proposes nothing and changes nothing, and is recorded beside the
   // patch attempts, where a reader asking what the recovery did will look.
   const declined = patchResult?.response?.kind === "no_repair" ? patchResult.response : undefined;
+  // A patch call can end before it has a response (provider preflight, budget,
+  // transport, or structured-output validation). That is a resolution-stage
+  // failure, not the same outcome as a valid call that produced no change.
+  // Preserve only Core's categorical code; provider text never enters the
+  // recovery trace.
+  const patchFailureCode = patchResult && !patchResult.ok
+    ? patchResult.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code ?? "llm.runtime_patch_failed"
+    : undefined;
   const applied = patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt
     ? await applyAutomationStudioRuntimeRecoveryPatches({
       ports,
@@ -379,6 +394,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
         ...(grantSkip ? { patchSkipped: grantSkip } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(patchSkippedCode ? { patchSkippedCode } : {}),
         ...(declined ? { patchDeclined: declined.reason } : {}),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
         ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
@@ -386,7 +402,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
       },
-      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
+      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(patchFailureCode ? { patchFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
     }
   };
   return {

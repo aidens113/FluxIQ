@@ -79,7 +79,8 @@ describe("Phase 11 shell and connector source contracts", () => {
   });
 
   it("source contract: connector domain scopes are destination-local", () => {
-    const connected = readFileSync(new URL("../../live/view-host/canonical-connected-views.tsx", import.meta.url), "utf8");
+    // Compared as committed (LF): a checkout with core.autocrlf=true writes CRLF.
+    const connected = readFileSync(new URL("../../live/view-host/canonical-connected-views.tsx", import.meta.url), "utf8").replace(/\r\n/gu, "\n");
 
     expect(connected).toContain('const recordingScopes = () => [\n  automationEntityScope("recordings"),');
     expect(connected).toContain('const runtimeScopes = () => [\n  automationEntityScope("flows"),');

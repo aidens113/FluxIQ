@@ -9,9 +9,9 @@ import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATIO
 import { AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
-function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true } } {
+function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true; llmEvidenceRuntime: { bound: true; toolCount: number } } } {
   return Object.assign({
-    getFlowBootstrapGenerationRuntimeReadiness: () => ({ providerResolverConfigured: true as const, nativeNodeRegistryConfigured: true as const })
+    getFlowBootstrapGenerationRuntimeReadiness: () => ({ providerResolverConfigured: true as const, nativeNodeRegistryConfigured: true as const, llmEvidenceRuntime: { bound: true as const, toolCount: 1 } })
   }, service);
 }
 
@@ -179,7 +179,7 @@ describe("Automation Studio LLM execution API", () => {
     const unknown = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { purpose: "unbounded_build", keyId: "secret:key", projectId: "project.one", flowId: "flow.one" } });
     expect(unknown).toEqual({ ok: false, error: "LLM execution grant purpose is unsupported." });
     const stale = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { purpose: "build_and_adapt", authSessionId: "session.one", authorizationPassword: "private-password", authorizationPin: "654321", keyId: "secret:key", projectId: "project.one", flowId: "flow.one" } });
-    expect(stale).toEqual({ ok: false, error: "Flow or settings changed during grant authorization." });
+    expect(stale).toEqual({ ok: false, error: "llm_grant.binding_changed" });
     expect(JSON.stringify({ unknown, stale })).not.toContain("private-password");
     expect(JSON.stringify({ unknown, stale })).not.toContain("654321");
   });

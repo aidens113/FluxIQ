@@ -53,7 +53,11 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
       if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
-      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+      try {
+        return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+      } catch (error) {
+        return { ok: false, error: llmExecutionGrantIssueCode(error) };
+      }
     }
   });
   registry.register({
@@ -236,4 +240,20 @@ const BUILD_GRANT_INCOMPATIBLE_FLAGS = [
 
 function hasIncompatibleBuildGrantFlags(payload: Record<string, unknown>): boolean {
   return BUILD_GRANT_INCOMPATIBLE_FLAGS.some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+}
+
+function llmExecutionGrantIssueCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/actor session is unavailable/iu.test(message)) return "llm_grant.actor_session_unavailable";
+  if (/High-token LLM execution requires explicit confirmation/iu.test(message)) return "llm_grant.high_token_confirmation_required";
+  if (/Secret key session unlock is unavailable/iu.test(message)) return "llm_grant.key_session_locked";
+  if (/Secret reveal authorization was refused/iu.test(message)) return "llm_grant.reveal_authorization_refused";
+  if (/Secret reveal authorization TTL is invalid/iu.test(message)) return "llm_grant.reveal_authorization_ttl_invalid";
+  if (/key changed during grant authorization/iu.test(message)) return "llm_grant.key_changed";
+  if (/Flow or settings changed during grant authorization/iu.test(message)) return "llm_grant.binding_changed";
+  if (/token limit is invalid/iu.test(message)) return "llm_grant.token_limit_invalid";
+  if (/call limit is invalid/iu.test(message)) return "llm_grant.call_limit_invalid";
+  if (/estimated-cost limit is invalid/iu.test(message)) return "llm_grant.cost_limit_invalid";
+  if (/timeout limit is invalid/iu.test(message)) return "llm_grant.timeout_invalid";
+  return "llm_grant.issue_failed";
 }

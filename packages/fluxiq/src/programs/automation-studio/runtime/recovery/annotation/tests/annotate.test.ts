@@ -30,6 +30,22 @@ import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";
 // if the call into `runAutomationStudioRecoveryExploration` is removed, and the
 // second fails if the result is not passed into the trace.
 describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
+  it("does not spend an exploration call when diagnosis requests exploration but no patch", async () => {
+    const executed: string[] = [];
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed, taskKinds, patchNeeded: false, stillAchievable: "no" });
+
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    expect(executed).toEqual([]);
+    expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
+      patchSkippedCode: "llm.runtime_patch_not_requested",
+      costAccounting: { calls: 1, explorationCalls: 0 }
+    });
+    expect(explorationStage(detail)).toMatchObject({ status: "skipped", detail: { requested: true } });
+    expect((detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages?.find((stage) => stage.stage === "resolution"))
+      .toMatchObject({ status: "skipped", detail: { outcome: "no_change_produced", skipCode: "llm.runtime_patch_not_requested" } });
+  });
+
   it("runs a bounded exploration when the plan asks for one, and takes an action to do it", async () => {
     const executed: string[] = [];
     const detail = await annotate({ executed });
@@ -406,6 +422,10 @@ type Options = {
   captureFailureEvidence?: boolean;
   /** Every task kind the provider was actually asked for, in order. */
   taskKinds?: string[];
+  /** Whether diagnosis requests a patch after exploration. */
+  patchNeeded?: boolean;
+  /** A terminal diagnosis verdict that prevents any patch request. */
+  stillAchievable?: "no";
 };
 
 async function annotate(options: Options): Promise<AutomationStudioFlowRunDetail> {
@@ -454,7 +474,7 @@ function provider(options: Options): AutomationStudioLlmProvider {
           response: {
             kind: "diagnosis",
             summary: "The action could not find its control.",
-            diagnosis: { explorationNeeded: options.explorationNeeded !== false, patchNeeded: false }
+            diagnosis: { explorationNeeded: options.explorationNeeded !== false, patchNeeded: options.patchNeeded !== false, ...(options.stillAchievable ? { stillAchievable: options.stillAchievable } : {}) }
           }
         };
       }
