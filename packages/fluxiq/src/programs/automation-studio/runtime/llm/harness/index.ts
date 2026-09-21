@@ -33,6 +33,7 @@ export {
   AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   isAutomationStudioLlmRecentActionContext,
   packAutomationStudioLlmContext,
+  type AutomationStudioLlmActionPermissions,
   type AutomationStudioLlmContextPacket,
   type AutomationStudioLlmRecentActionContext
 } from "./context-packet.ts";
