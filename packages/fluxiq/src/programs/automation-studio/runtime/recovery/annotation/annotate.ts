@@ -268,7 +268,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
   if (plan.explorationRequested && plan.patchRequest.request && !grantSkip && provider && ports.llmEvidenceRuntime) {
-    const scope = await ports.flowScope(input.context.projectId, input.context.flowId);
+    const scope = (await ports.flowForRecovery(input.context.projectId, input.context.flowId))?.scope;
     // The patch's call, tokens and money are set aside before the exploration
     // may spend anything, and handed back the moment it ends.
     const patchReserve = scope && patchWillFollow

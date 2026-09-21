@@ -180,7 +180,7 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
     reusableLlmContextForFreshEvidence: async () => undefined,
-    flowScope: async () => ({ kind: "domain", domainId: "web-automation" }),
+    flowForRecovery: async () => ({ scope: { kind: "domain", domainId: "web-automation" } }),
     saveFlowChangeProposal: async (proposal) => proposal,
     saveFlowAdaptation: async (adaptation) => adaptation,
     promoteRuntimeAdaptation: async (input) => input.adaptation

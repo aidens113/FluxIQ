@@ -51,14 +51,16 @@ export type AutomationStudioRuntimeRecoveryPorts = {
     input: AutomationStudioReusableLlmContextFreshEvidenceInput & { optedIn: boolean; maxInputTokens: number; actorId?: string; now?: number }
   ): Promise<{ packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined>;
   /**
-   * Where this Flow is authored, which decides which harness options the
-   * exploration may be offered.
+   * The Flow as recovery reads it: where it is authored, which decides which
+   * harness options the exploration may be offered, and its stored metadata,
+   * which holds what its build recorded about it. This is the parent Flow; the
+   * subflow graph that ran carries neither.
    *
    * It answers `undefined` when the Flow cannot be read. That is not the same
    * as "anywhere": an exploration with no scope is not run at all, and the
    * trace records that the plan asked for one and none happened.
    */
-  flowScope(projectId: string, flowId: string): Promise<AutomationStudioFlowScope | undefined>;
+  flowForRecovery(projectId: string, flowId: string): Promise<{ scope: AutomationStudioFlowScope; metadata?: JsonObject | undefined } | undefined>;
   saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal>;
   saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation>;
   promoteRuntimeAdaptation(input: {
