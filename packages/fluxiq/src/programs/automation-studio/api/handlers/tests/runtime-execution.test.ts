@@ -24,6 +24,38 @@ async function runWith(getFlowRunDetail: () => Promise<unknown>) {
   return { response, runRuntimeSession };
 }
 
+// A granted run holds its grant from the moment it starts, so a Flow whose
+// step fails after the grant's claim window still has its recovery.
+describe("the run endpoint and a run's grant", () => {
+  const granted = { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt", llmExecutionGrantId: "llm-grant:one" };
+
+  it("holds the grant for the run before the run starts", async () => {
+    const order: string[] = [];
+    const grants = { holdForRun: vi.fn(async () => { order.push("hold"); }), revoke: vi.fn() };
+    const runRuntimeSession = vi.fn(async () => { order.push("run"); return { runId: "run.one", status: "failed" }; });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })) } as any, undefined, undefined, undefined, grants as any);
+
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: granted });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(grants.holdForRun).toHaveBeenCalledWith({ grantId: "llm-grant:one", actorUserId: "user.one", actorSessionId: "session.one", purpose: "explore_and_adapt", projectId: "project.one", flowId: "flow.one" });
+    expect(order).toEqual(["hold", "run"]);
+  });
+
+  it("refuses the run, and runs nothing, when its grant cannot be held", async () => {
+    const grants = { holdForRun: vi.fn(async () => { throw new Error("LLM execution grant is unavailable."); }), revoke: vi.fn() };
+    const runRuntimeSession = vi.fn();
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession } as any, undefined, undefined, undefined, grants as any);
+
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: granted });
+
+    expect(response).toEqual({ ok: false, error: "LLM execution grant is unavailable." });
+    expect(runRuntimeSession).not.toHaveBeenCalled();
+  });
+});
+
 describe("the run endpoint's answer", () => {
   it("reports the run's summary, adaptations and durable change from its detail", async () => {
     const { response } = await runWith(async () => ({

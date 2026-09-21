@@ -183,6 +183,35 @@ describe("Automation Studio live patch testing", () => {
     expect(preflight.issues).toContain("External side-effecting patch requires explicit authorization.");
   });
 
+  // A recovery's permission gate is the authority over what a repair may
+  // lastingly do. When it said yes -- nothing lasting declared, or every class
+  // allowed by the person's grant or instruction -- that is the explicit
+  // authorization both side-effect lines ask for, so neither applies. Every
+  // other check still does.
+  it("lets a patch the permission gate allowed past both side-effect lines, and nothing else", () => {
+    const withheld = repairPolicy({ allowExternalSideEffects: false, requireApprovalForExternalSideEffects: true });
+    const input = {
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_action_sequence" as const, targetNodeId: "constant", actionDefinitionIds: ["builtin.constant"], reason: "Press the renamed control." },
+      policy: withheld,
+      authorizedExternalSideEffects: false
+    };
+
+    const asked = preflightAutomationStudioRuntimePatch(input);
+    expect(asked.issues).toEqual(["External side effects are disabled by adaptation policy.", "External side-effecting patch requires explicit authorization."]);
+    expect(asked.requiresExternalSideEffectApproval).toBe(true);
+
+    const permitted = preflightAutomationStudioRuntimePatch({ ...input, sideEffectPermission: "permitted" });
+    expect(permitted).toEqual({ ok: true, issues: [], requiresExternalSideEffectApproval: false });
+
+    const stillChecked = preflightAutomationStudioRuntimePatch({ ...input, sideEffectPermission: "permitted", policy: { ...withheld, allowRuntimeRecovery: false }, hostCapabilities: [] });
+    expect(stillChecked.issues).toEqual(["Runtime recovery is disabled by adaptation policy.", "Runtime patch requires host capability action-dispatch."]);
+  });
+
   it("blocks host-bound patches when the host does not declare required capabilities", () => {
     const preflight = preflightAutomationStudioRuntimePatch({
       projectId: "project.patch",

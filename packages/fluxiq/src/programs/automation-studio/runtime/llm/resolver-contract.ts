@@ -15,6 +15,13 @@ export type AutomationStudioLlmProviderResolution = {
   maxEstimatedCostUsd?: number;
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
+  /**
+   * The lasting consequences the person allowed the run's actions to have, as
+   * the grant the resolver was issued for holds them. Absent permits none: a
+   * resolver that says nothing about permission has granted nothing, and a
+   * recovery then asks rather than acts.
+   */
+  permittedConsequences?: readonly AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioLlmProviderResolverInput = {

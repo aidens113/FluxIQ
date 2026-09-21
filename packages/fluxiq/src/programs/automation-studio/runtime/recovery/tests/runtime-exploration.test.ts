@@ -268,6 +268,53 @@ describe("runAutomationStudioRuntimeExploration", () => {
     }
   });
 
+  // A recovery ran its loop with a thrown tool ending the exploration outright,
+  // so one flaky step threw away everything the recovery had learned. It now
+  // runs as a build does (`toolFailures: "observe"`): the failure is recorded
+  // under its call, shown to the model with a closed code and no error text,
+  // and the model tries something else.
+  it("shows a tool that threw to the model under its call, and carries on", async () => {
+    const shown: unknown[] = [];
+    const script = [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), complete({ finding: "the control moved" })];
+    let thrown = false;
+    const run = await explore({
+      decisions: [],
+      decide: async (decision) => {
+        shown.push((decision as { evidence?: unknown }).evidence);
+        return script[shown.length - 1] ?? complete({});
+      },
+      execute: async (input) => {
+        if (!thrown) {
+          thrown = true;
+          throw new Error("the host went away: secret detail");
+        }
+        return defaultExecution(input);
+      }
+    });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.result).toEqual({ finding: "the control moved" });
+    expect(run.trace.map((step) => step.resultCode)).toEqual(["llm_evidence_loop.tool_failed", "test.ok", undefined]);
+    const failure = JSON.stringify(shown[1]);
+    expect(failure).toContain("llm_evidence_loop.tool_failed");
+    expect(failure).not.toContain("secret detail");
+  });
+
+  it("still ends on the request the gate raised, however failures are handled", async () => {
+    const run = await explore({
+      decisions: [call("test.reveal", { control: "Refund" }), call("test.inspect", { area: "unreached" }), complete({ finding: "unreached" })],
+      execute: async (input) => {
+        await input.permission({ consequences: ["move_money"], control: { name: "Refund" }, verb: "press" });
+        throw new Error("the domain threw after it was refused");
+      }
+    });
+
+    expect(run.outcome).toBe("user_intervention_required");
+    expect(run.endedBy).toBe("operator_approval_required");
+    expect(run.permissionRequest?.missing).toEqual(["move_money"]);
+    expect(run.accounting.iterations).toBe(1);
+  });
+
   it("charges refused actions against the action budget rather than only the successful ones", async () => {
     const run = await explore({
       decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
@@ -394,8 +441,10 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
       signal: AbortSignal.abort()
     }],
     ["decision the loop cannot read", "failed", "llm_evidence_loop.invalid_decision", { decisions: [{ kind: "something_else" }] }],
-    ["action that threw", "failed", "llm_evidence_loop.tool_failed", {
-      decisions: [call("test.inspect", { area: "one" })],
+    // One failed tool is shown to the model, not the end (see the test below).
+    // A run of them reaching the progress guard is.
+    ["tool that kept throwing", "failed", "llm_evidence_loop.tool_failed", {
+      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
       execute: async () => { throw new Error("the host went away"); }
     }]
   ];

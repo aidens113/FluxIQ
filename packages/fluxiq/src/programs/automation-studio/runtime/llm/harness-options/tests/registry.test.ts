@@ -209,6 +209,36 @@ describe("Automation Studio harness option registry", () => {
     expect(destructive.list({ ...LEDGER_SCOPE, policy: permissivePolicy() })).toEqual([]);
   });
 
+  // A recovery's actions each pass its permission gate, so there the gate is
+  // the permission a mutating option needs: offered whatever the policy flag
+  // says, and each lasting consequence permitted or asked for. Destruction is
+  // still never on offer.
+  it("offers a mutating option when mutations are governed by permission, whatever the policy says, and never a destructive one", () => {
+    const registry = new AutomationStudioHarnessOptionRegistry();
+    registry.register(ledgerBundle());
+    const governed = { ...LEDGER_SCOPE, mutationsGovernedByPermission: true };
+    expect(registry.list({ ...governed, policy: { ...permissivePolicy(), allowExternalSideEffects: false } }).map((option) => option.toolId))
+      .toEqual(["erp.ledger_balances", "erp.open_period"]);
+    expect(registry.list(governed).map((option) => option.toolId)).toEqual(["erp.ledger_balances", "erp.open_period"]);
+    // Said false, or not said at all, the policy decides exactly as before.
+    expect(registry.list({ ...LEDGER_SCOPE, mutationsGovernedByPermission: false, policy: { ...permissivePolicy(), allowExternalSideEffects: false } }).map((option) => option.toolId))
+      .toEqual(["erp.ledger_balances"]);
+
+    const destructive = new AutomationStudioHarnessOptionRegistry();
+    destructive.register(ledgerBundle({
+      options: [{
+        toolId: "erp.void_period",
+        description: "Void an accounting period and everything posted in it.",
+        inputSchema: { type: "object" },
+        effect: "mutate",
+        availability: { kind: "domain", domainId: LEDGER_DOMAIN_ID },
+        safety: { sideEffect: "destructive" }
+      }],
+      implementations: { "erp.void_period": async () => ({}) }
+    }));
+    expect(destructive.list({ ...governed, policy: permissivePolicy() })).toEqual([]);
+  });
+
   it("gates on scope, runtime capability, permission, stage and operator approval", () => {
     const registry = new AutomationStudioHarnessOptionRegistry({ host: fullHost() });
     registry.register(ledgerBundle());

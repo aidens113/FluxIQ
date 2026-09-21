@@ -76,8 +76,10 @@ export type AutomationStudioLlmExecutionGrantRequest = AutomationStudioLlmExecut
    * above 100,000 tokens. The call count alone never requires it. */
   highTokenConfirmation?: boolean;
   /** The claim window in milliseconds, from 1,000 to 300,000 (default
-   * 60,000): how long the grant may wait to be claimed by a run. A claimed
-   * grant runs under its own 600-second lease instead. */
+   * 60,000): how long the grant may wait for the run it authorizes to start.
+   * A runtime run holds its grant from the moment it starts, so its recovery
+   * may claim it at any point in the run; a claimed grant runs under its own
+   * 600-second lease. */
   ttlMs?: number;
   /** When given, must equal the grant's call limit. */
   maxUses?: number;

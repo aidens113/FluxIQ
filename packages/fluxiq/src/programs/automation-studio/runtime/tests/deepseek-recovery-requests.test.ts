@@ -98,6 +98,21 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
     expect(explorationStage(run.detail)).toMatchObject({ status: "completed", detail: { outcome: "evidence_gathered", observedActions: 18 } });
   });
 
+  // L4's live runs found the gate's account of what the run may lastingly do
+  // reached the diagnosis and never an exploration decision: the adapter
+  // projected a decision's context down to its instructions and its loop. The
+  // explorer is the one deciding whether to press, so it is told too.
+  it("shows every exploration decision what the run may lastingly do, and what becomes of anything else", async () => {
+    const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.production!, explore: true, patch: true, looks: 2 });
+
+    const decisions = run.sent.filter((call) => call.taskKind === "evidence_tool_decision");
+    expect(decisions).toHaveLength(3);
+    for (const decision of decisions) {
+      expect(decision.policyGates).toMatchObject({ actionPermissions: { permitted: [], granted: [], instructed: [], otherwise: expect.stringContaining("asks the person for permission") } });
+      expect(decision.policyGates).not.toHaveProperty("allowExternalSideEffects");
+    }
+  });
+
   // One bad answer used to end the whole recovery: the grant was revoked on
   // the first failed call, so every later call -- the patch included -- was
   // refused as "grant unavailable". A bad answer is now a spent call. The grant
@@ -142,7 +157,7 @@ type RecoveryOptions = {
   timeoutMs?: number;
 };
 
-type SentCall = { url: string; taskKind: string; iteration?: number; recentActions?: JsonObject[] };
+type SentCall = { url: string; taskKind: string; iteration?: number; recentActions?: JsonObject[]; policyGates?: JsonObject };
 
 type Recovery = { detail: AutomationStudioFlowRunDetail; sent: SentCall[]; revealed: string[] };
 
@@ -240,10 +255,10 @@ function deepSeekEndpoint(options: RecoveryOptions, sent: SentCall[]): typeof fe
     const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
     const user = JSON.parse(body.messages.find((message) => message.role === "user")?.content ?? "{}") as {
       taskKind: string;
-      context: { recentActions?: JsonObject[]; evidenceLoop?: { iteration: number } };
+      context: { recentActions?: JsonObject[]; evidenceLoop?: { iteration: number }; policyGates?: JsonObject };
     };
     const iteration = user.context.evidenceLoop?.iteration;
-    sent.push({ url: String(url), taskKind: user.taskKind, ...(iteration !== undefined ? { iteration } : {}), ...(user.context.recentActions ? { recentActions: user.context.recentActions } : {}) });
+    sent.push({ url: String(url), taskKind: user.taskKind, ...(iteration !== undefined ? { iteration } : {}), ...(user.context.recentActions ? { recentActions: user.context.recentActions } : {}), ...(user.context.policyGates ? { policyGates: user.context.policyGates } : {}) });
     if (user.taskKind === "evidence_tool_decision" && options.decisionReply === "hang") {
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("The request was aborted.", "AbortError")), { once: true });

@@ -39,6 +39,18 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         llmExecutionGrants?.revoke(llmExecution.grantId);
         return { ok: false, error: "An explicit LLM run must create a fresh runtime session." };
       }
+      // The run starts now, so the grant is held for it: its claim window runs
+      // to the run's own lease rather than the issue TTL, because its recovery
+      // claims the grant only once a step fails, which may be minutes from now.
+      // A grant that cannot be held -- lapsed, spent, another run's, or out of
+      // scope -- refuses the run here rather than letting it fail without one.
+      if (llmExecution && llmExecutionGrants && typeof payload.projectId === "string" && typeof payload.flowId === "string") {
+        try {
+          await llmExecutionGrants.holdForRun({ ...llmExecution, projectId: payload.projectId, flowId: payload.flowId });
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : "LLM execution grant is unavailable." };
+        }
+      }
       const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}) });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };

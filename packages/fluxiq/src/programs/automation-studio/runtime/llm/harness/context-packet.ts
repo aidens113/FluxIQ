@@ -4,6 +4,7 @@ import {
   type AutomationStudioAdaptiveFailureClass
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
   AutomationStudioFlowRunActionAttemptRecord,
@@ -79,6 +80,29 @@ export type AutomationStudioLlmContextPacket = {
   policyGates?: JsonObject;
   metadata?: JsonObject;
 };
+
+/**
+ * What a run's permission gate lets its actions do, by consequence class. Given
+ * to a call whose actions the gate governs, it takes the place of the policy's
+ * side-effect flags in `policyGates`: the gate, not those flags, is what
+ * decides such an action, and a model told "no external side effects" would
+ * avoid the press a person's grant or instruction allowed.
+ */
+export type AutomationStudioLlmActionPermissions = {
+  /** The classes the person's grant allowed this run. */
+  granted: readonly AutomationStudioActionConsequence[];
+  /** The classes the person's own instruction asks for, as the Flow's build stored them and they still stand. */
+  instructed: readonly AutomationStudioActionConsequence[];
+};
+
+/**
+ * Core's sentence for what happens to any other lasting consequence. Never a
+ * model's. The last clause is load-bearing: a diagnosis is told to answer
+ * "not achievable" where only a person can settle a step, and told only that a
+ * person is asked, it read a press it had not been granted as exactly that --
+ * and ended the recovery with no request, the silent refusal this replaces.
+ */
+const ACTION_PERMISSIONS_OTHERWISE = "An action with any other lasting consequence is still within reach: when the recovery needs one, the run asks the person for permission at that step instead of taking it. Needing permission never makes a step's result unachievable.";
 
 export const AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS = 12;
 
@@ -195,7 +219,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.availableActions?.length ? { availableActions: input.availableActions.slice(0, 100) } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
     ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: packEvidenceLoop(input.evidenceLoop, deniedEvidenceKeys) } : {}),
-    ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy) } : {}),
+    ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
   // Packed last, because what it may take is what the rest of the request left.
@@ -386,7 +410,22 @@ function compactSubflowForLlm(subflow: AutomationStudioFlowSubflow): NonNullable
   };
 }
 
-function adaptationPolicyGates(policy: AutomationStudioAdaptationPolicy): JsonObject {
+/**
+ * The policy as the model is told it. Where a permission gate governs the
+ * call's actions, the side-effect flags are replaced by what the gate permits:
+ * the classes, and what becomes of anything else.
+ */
+function adaptationPolicyGates(policy: AutomationStudioAdaptationPolicy, permissions: AutomationStudioLlmActionPermissions | undefined): JsonObject {
+  const sideEffects: JsonObject = permissions
+    ? {
+      actionPermissions: {
+        permitted: automationStudioConsequencesInOrder([...permissions.granted, ...permissions.instructed]),
+        granted: automationStudioConsequencesInOrder([...permissions.granted]),
+        instructed: automationStudioConsequencesInOrder([...permissions.instructed]),
+        otherwise: ACTION_PERMISSIONS_OTHERWISE
+      }
+    }
+    : { allowExternalSideEffects: policy.allowExternalSideEffects, requireApprovalForExternalSideEffects: policy.requireApprovalForExternalSideEffects };
   return {
     preset: policy.preset,
     allowRuntimeRecovery: policy.allowRuntimeRecovery,
@@ -397,9 +436,8 @@ function adaptationPolicyGates(policy: AutomationStudioAdaptationPolicy): JsonOb
     allowModifyExpectations: policy.allowModifyExpectations,
     allowModifyActionTargets: policy.allowModifyActionTargets,
     allowDeleteOrDisableBehavior: policy.allowDeleteOrDisableBehavior,
-    allowExternalSideEffects: policy.allowExternalSideEffects,
     requireApprovalForDestructiveChanges: policy.requireApprovalForDestructiveChanges,
-    requireApprovalForExternalSideEffects: policy.requireApprovalForExternalSideEffects,
+    ...sideEffects,
     ...(policy.maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun: policy.maxInterventionsPerRun } : {}),
     ...(policy.maxEstimatedCostUsdPerRun !== undefined ? { maxEstimatedCostUsdPerRun: policy.maxEstimatedCostUsdPerRun } : {})
   };

@@ -933,17 +933,94 @@ output and 48,000 input tokens. A confirmed maximum grant can cost about USD
 about USD 0.06 to 0.19. DeepSeek refuses a reply above a call's token limits,
 so no single call can spend more tokens than it reserved.
 
+### What a recovery may do that outlasts it
+
+A recovery is capable by default and asks rather than refuses. It builds one
+permission gate once its provider has resolved
+(`runtime/recovery/annotation/permissions.ts`), and the exploration and the
+patch stage share it. The gate's authority is the grant's
+`permittedConsequences`, which the provider resolution now carries, plus the
+set the Flow's build stored as what the person's instruction asks for
+(`metadata.bootstrapInstructedConsequences`), keeping an entry only while its
+instruction is active and its text unchanged. A recovery never asks a model to
+read the instruction again.
+
+**`policy.allowExternalSideEffects` is no longer read on the recovery
+exploration path.** The exploration is offered the domain's `mutate` options
+whatever that flag says (`mutationsGovernedByPermission` on the harness-option
+resolution), and never a `destructive` one. Each action the domain declares
+with a lasting consequence is checked by the gate. The first one neither the
+grant nor the instruction covers ends the recovery: the patch call is not made
+(`llmGate.patchSkippedCode: "llm.runtime_patch_permission_required"`), and the
+run detail carries the request at `metadata.permissionRequest`
+(`automation-studio.action-permission-request.v1`, `reason.stage: "recovery"`),
+beside `metadata.llmGate.permissions`, which lists the classes `granted`,
+`instructed` and `lapsed`. A person's answer reaches the next run as that
+run's grant.
+
+**A repair that would lastingly act asks the same gate.** The patch schema a
+model is shown requires `consequences` on each acting patch that may run
+(`temporary_target_override`, `temporary_action_sequence`): Core's classes,
+`[]` when the new target only opens, shows or chooses
+(`runtime/llm/harness/runtime-patch-schema.ts`). A proposal under a
+`diagnose_and_adapt` grant runs nothing and is asked for none. Before a target
+override runs, the patch stage (`runtime/recovery/annotation/patches.ts`)
+records a `permissionOutcome` on its receipt:
+
+- `not_asked`: another check -- the domain's target check, a policy toggle,
+  a host capability -- would refuse it whatever the person said, so it runs
+  into that refusal and nobody is asked.
+- `undeclared`: it said nothing about its consequences, so it does not run.
+- `permitted`: it declared nothing lasting, or the grant or the instruction
+  covers every class it declared. It runs with `sideEffectPermission:
+  "permitted"`, which is the explicit authorization both policy side-effect
+  lines ask for, so neither applies (`runtime/live-patch.ts`).
+- `required`: a class nobody allowed. The gate raises a `flow_step` request at
+  stage `recovery` ("To repair the step that failed, the Flow would press ...
+  each time it runs"), naming the control the domain's target check described
+  (`control: { name, kind }` on its answer) when that name was in evidence the
+  model was shown. The receipt carries `permissionRequired: true`,
+  `requestId` and `missing`; the recovery ends there, with
+  `metadata.permissionRequest`, `llmGate.patchHeldCode:
+  "llm.runtime_patch_permission_required"` and the resolution stage's
+  `failureCode` of the same name.
+
+`policy.allowExternalSideEffects` therefore no longer decides a target override
+a recovery would run: the gate does. A direct caller of
+`executeAutomationStudioRuntimePatch` that passes no `sideEffectPermission` is
+still judged by the flag.
+
+The model is told the same thing. On the diagnosis, on each exploration
+decision, and on a patch call that may run, `policyGates` carries
+`actionPermissions` -- the classes `permitted`, `granted` and `instructed`,
+and Core's sentence that any other lasting consequence is asked for rather
+than refused, and never makes a step unachievable -- in place of
+`allowExternalSideEffects` and `requireApprovalForExternalSideEffects`. A
+proposal-only patch call is still told the flag.
+
+An exploration shows the model a tool that failed rather than ending on it: the
+loop runs with `toolFailures: "observe"`, as a build does, and the gate's
+request and the exploration ledger's limits stop it through its signal.
+
 ### LLM execution grant lifetime
 
 A grant has two lifetimes, and they bound different things.
 
-- **The claim window** bounds how long an issued grant may wait for a run to
-  claim it. It is the issue request's `ttlMs`: 60 seconds by default, from one
-  to 300 seconds. Secret Keys never lets an authorization outlive the actor's
+- **The claim window** bounds how long an issued grant may wait for the run
+  it authorizes. It is the issue request's `ttlMs`: 60 seconds by default,
+  from one to 300 seconds. A runtime run holds its grant the moment it starts
+  (`holdForRun`, called by the `run-runtime-session` endpoint): the window then
+  runs to the run's own lease, 600 seconds from the start, because the run's
+  recovery claims the grant only once a step fails, which may be minutes in.
+  A grant is held once, by one run, and a grant that cannot be held refuses
+  the run. The host still revokes the grant when the run ends. Before the
+  hold, a recorded Flow that failed 87 seconds in lost its recovery to
+  `llm.provider_resolution_failed` with no provider call. Secret Keys never lets an authorization outlive the actor's
   session unlock, so the window also ends no later than that unlock. Every
   reveal authorization minted at issue, one per authorized call, lives only as
-  long as this window. The grant's public `expiresAtMs` is the end of the
-  window, not the end of the grant's life once claimed. An unclaimed grant is
+  long as the window it was issued with; a hold does not extend them. The
+  grant's public `expiresAtMs` is the end of the window, held or not, and not
+  the end of the grant's life once claimed. An unclaimed grant is
   revoked when its window ends, together with every authorization minted for
   it, and a claim made after the window is refused even if the timer has not
   yet run.

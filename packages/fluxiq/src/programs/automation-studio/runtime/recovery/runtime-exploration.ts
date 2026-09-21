@@ -35,6 +35,17 @@
 // `operator_approval_required`, carrying it. Nothing else raises that reason:
 // a domain's own refusal code cannot, because a stop with no request in hand
 // would ask a person a question nobody can answer.
+//
+// **A tool that fails is shown to the model, not the end of the exploration.**
+// The loop runs with `toolFailures: "observe"`, as a build does: a call that
+// throws is recorded under its own call id with a closed code, the model sees
+// that record on its next decision and tries something else, and only a run of
+// them reaching the progress guard ends it. Before, one thrown tool ended every
+// runtime recovery's exploration outright. The two stops this module throws on
+// purpose -- a limit the ledger refused, and a request the gate raised -- are
+// not failures to observe: each aborts the loop's signal first (the ledger's
+// own, and the gate's, joined), and a failure seen under an aborted signal
+// ends the loop as `cancelled`, which `classify` then names precisely.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
@@ -107,6 +118,16 @@ export type AutomationStudioRuntimeExplorationInput = {
    */
   captureStateDigest?: AutomationStudioExplorationStateDigestSource;
   /**
+   * The run's own permission gate, when the caller holds one. A recovery
+   * builds one gate for the whole recovery, so the exploration and the patch
+   * stage answer to one authority and end on one request. It is used as-is:
+   * its grant, the instructed set it was given, and what it was already shown.
+   * Passing it together with `permittedConsequences`, `instructionIds` or
+   * `shownEvidence` throws, because those build a gate of their own, and two
+   * sources for one answer is how they come to disagree.
+   */
+  gate?: AutomationStudioActionPermissionGate;
+  /**
    * The consequences the run's grant permits. Absent permits nothing: an
    * action with a lasting consequence then ends the exploration with a
    * request, which is the fail-closed answer rather than a silent refusal.
@@ -170,6 +191,9 @@ export async function runAutomationStudioRuntimeExploration(
   input: AutomationStudioRuntimeExplorationInput
 ): Promise<AutomationStudioRuntimeExploration> {
   const now = input.now ?? (() => Date.now());
+  // First, before the clock starts: a caller that handed both a gate and the
+  // fields that build one is refused before anything is held open.
+  const gate = explorationPermissionGate(input, now);
   const startedAtMs = now();
   const ledger = new AutomationStudioExplorationBudgetLedger({
     budget: input.budget,
@@ -183,13 +207,10 @@ export async function runAutomationStudioRuntimeExploration(
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
   const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
-  const gate = new AutomationStudioActionPermissionGate({
-    permittedConsequences: input.permittedConsequences,
-    stage: "recovery",
-    instructionIds: input.instructionIds,
-    now
-  });
-  for (const shown of input.shownEvidence ?? []) gate.observe(shown);
+  // The loop stops on whichever comes first: a limit the ledger refused, or the
+  // request the gate raised. With failures observed rather than ending the
+  // loop, the request has to stop it by signal as the ledger already does.
+  const stopSignal = AbortSignal.any([ledger.signal, gate.signal]);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -256,12 +277,34 @@ export async function runAutomationStudioRuntimeExploration(
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
-        signal: ledger.signal
+        toolFailures: "observe",
+        signal: stopSignal
       });
     return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();
   }
+}
+
+/**
+ * The gate every action of this exploration is checked against: the caller's
+ * own, or one built here from the loose fields. Never both.
+ */
+function explorationPermissionGate(input: AutomationStudioRuntimeExplorationInput, now: () => number): AutomationStudioActionPermissionGate {
+  if (input.gate) {
+    if (input.permittedConsequences !== undefined || input.instructionIds !== undefined || input.shownEvidence !== undefined) {
+      throw new Error("A runtime exploration takes a permission gate or the fields that build one, never both.");
+    }
+    return input.gate;
+  }
+  const gate = new AutomationStudioActionPermissionGate({
+    permittedConsequences: input.permittedConsequences,
+    stage: "recovery",
+    instructionIds: input.instructionIds,
+    now
+  });
+  for (const shown of input.shownEvidence ?? []) gate.observe(shown);
+  return gate;
 }
 
 /**

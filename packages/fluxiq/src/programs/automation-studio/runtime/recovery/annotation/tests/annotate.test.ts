@@ -93,24 +93,20 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     });
   });
 
-  // The policy governs the call, so it decides the side effects, and the
-  // recovery path passes no `allowSideEffectsWithoutPolicy` that could reach
-  // past it. The mutating option is simply not in the grammar the model is given.
-  it("withholds a mutating option from the exploration while the policy forbids side effects", async () => {
-    const executed: string[] = [];
-    const offered: string[][] = [];
-    await annotate({ executed, offered });
+  // The recovery's permission gate governs every action, so the policy's
+  // side-effect flag no longer withholds the option: the model is offered it
+  // either way, and an action with a lasting consequence is permitted or asked
+  // about (`recovery-permissions.test.ts`). Offering is not taking: here the
+  // model only looks.
+  it("offers a mutating option to the exploration whatever the policy's side-effect flag says", async () => {
+    for (const allowExternalSideEffects of [false, true]) {
+      const executed: string[] = [];
+      const offered: string[][] = [];
+      await annotate({ executed, offered, allowExternalSideEffects });
 
-    expect(offered[0]).toEqual(["test.inspect"]);
-    expect(executed).toEqual(["test.inspect"]);
-  });
-
-  it("offers the same mutating option once the policy allows external side effects", async () => {
-    const executed: string[] = [];
-    const offered: string[][] = [];
-    await annotate({ executed, offered, allowExternalSideEffects: true });
-
-    expect(offered[0]).toEqual(["test.inspect", "test.reveal"]);
+      expect(offered[0], String(allowExternalSideEffects)).toEqual(["test.inspect", "test.reveal"]);
+      expect(executed, String(allowExternalSideEffects)).toEqual(["test.inspect"]);
+    }
   });
 
   // A resolver that says how many calls it will authorise is taken at its word

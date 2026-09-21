@@ -12,7 +12,7 @@ import type { AutomationStudioRunResultSummary } from "../../result-verification
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmRunBudgetAllowance, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
-import type { AutomationStudioLlmContextPacket } from "./context-packet.ts";
+import type { AutomationStudioLlmActionPermissions, AutomationStudioLlmContextPacket } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioInstructionResolutionInput } from "./instruction.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderMetadata, AutomationStudioLlmUsageSummary } from "./provider.ts";
@@ -142,6 +142,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;
+  /**
+   * What the run's permission gate lets its actions do, when a gate governs
+   * them: described to the model in place of the policy's side-effect flags,
+   * which the gate has replaced as the authority (`context-packet.ts`).
+   */
+  actionPermissions?: AutomationStudioLlmActionPermissions;
   provider?: AutomationStudioLlmProvider;
   dryRun?: boolean;
   expectedOutput?: AutomationStudioLlmTaskRequest["expectedOutput"];

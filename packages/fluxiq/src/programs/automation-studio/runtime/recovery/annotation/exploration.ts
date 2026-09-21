@@ -16,12 +16,15 @@
 // naming the stage here is what makes them reachable during a recovery and
 // unreachable while a Flow is being authored.
 //
-// **It passes the adaptation policy, and never `allowSideEffectsWithoutPolicy`.**
-// A runtime recovery always has a policy. Where a policy governs the call the
-// policy is authoritative, so a mutating option appears exactly when
-// `policy.allowExternalSideEffects` is true, and the caller's own opt-in -- the
-// thing Flow authoring needs because nothing governs it there -- has no
-// business being reachable from here at all.
+// **It hands every action to the recovery's permission gate, and says so.** The
+// registry is told `mutationsGovernedByPermission`, so a mutating option is
+// offered whatever `policy.allowExternalSideEffects` says, and each action it
+// would take with a lasting consequence is permitted by the person's grant or
+// instruction, or ends the recovery with a request they can answer. That flag
+// used to withhold the option outright, which left a recovery unable to press
+// anything and with nobody to ask. A destructive option is still never offered,
+// and `allowSideEffectsWithoutPolicy` -- Flow authoring's opt-in -- is never
+// passed from here.
 //
 // **It turns one provider call into one loop decision.** That is the piece the
 // runtime path never had: the Flow-bootstrap path has had this shape since
@@ -49,6 +52,7 @@ import {
   automationStudioLlmProviderFailureSpendsCall,
   runAutomationStudioLlmHarness,
   type AutomationStudioHarnessOptionLoopBinding,
+  type AutomationStudioLlmActionPermissions,
   type AutomationStudioLlmEvidenceLoopInput,
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmEvidenceTool,
@@ -60,6 +64,7 @@ import {
   type AutomationStudioLlmTaskResult,
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
+import type { AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
@@ -104,8 +109,16 @@ export type AutomationStudioRecoveryExplorationInput = {
   binding: AutomationStudioLlmEvidenceRuntimeBinding;
   /** Where the Flow is authored. Decides which options the registry will offer. */
   scope: AutomationStudioFlowScope;
-  /** Authoritative over side effects. There is no path here that bypasses it. */
+  /** The recovery's adaptation policy, carried to every decision call. Not what decides an action: the gate does. */
   policy: AutomationStudioAdaptationPolicy;
+  /**
+   * The recovery's one permission gate, shared with the patch stage. Absent,
+   * the exploration builds its own from nothing, which permits nothing: an
+   * action with a lasting consequence then ends it with a request.
+   */
+  permissionGate?: AutomationStudioActionPermissionGate;
+  /** What that gate permits, by class: what each decision call describes in place of the policy's side-effect flags. */
+  actionPermissions?: AutomationStudioLlmActionPermissions;
   provider: AutomationStudioLlmProvider;
   context: { projectId: string; flowId: string; runId: string; subflowId?: string; nodeId?: string };
   instructions: AutomationStudioFlowInstruction[];
@@ -165,7 +178,7 @@ export async function runAutomationStudioRecoveryExploration(
   const binding = explorationRegistryBinding(input.binding);
   const registryLoop = automationStudioHarnessOptionRegistry({ binding }).evidenceLoopBinding(
     { projectId: input.context.projectId, flowId: input.context.flowId, runId: input.context.runId },
-    { scope: input.scope, stage: "gather", policy: input.policy }
+    { scope: input.scope, stage: "gather", policy: input.policy, mutationsGovernedByPermission: true }
   );
   // Only the bound domain's own options issue packets whose handles its target
   // check can resolve. Core's neutral options may return evidence too; it is
@@ -206,6 +219,7 @@ export async function runAutomationStudioRecoveryExploration(
     budget: input.budget ?? resolveAutomationStudioExplorationBudget(),
     recoveryDeadline: input.recoveryDeadline,
     completionSchema: AUTOMATION_STUDIO_RECOVERY_EXPLORATION_COMPLETION_SCHEMA,
+    ...(input.permissionGate ? { gate: input.permissionGate } : {}),
     ...(input.binding.classifyRefusal ? { classifyRefusal: input.binding.classifyRefusal } : {}),
     // The digests come from here because here is the only place that holds both
     // the domain that can observe its own state and the project and Flow the
@@ -368,6 +382,7 @@ async function explorationDecision(
       canComplete: decision.canComplete
     },
     policy: input.policy,
+    ...(input.actionPermissions ? { actionPermissions: input.actionPermissions } : {}),
     provider: input.provider,
     runBudget: input.runBudget,
     // Declared, not inferred. The ledger reads an undeclared reservation as an
