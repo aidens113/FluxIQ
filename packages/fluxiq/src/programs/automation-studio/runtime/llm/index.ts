@@ -32,3 +32,4 @@ export type {
   AutomationStudioLlmRunCallRecord
 } from "./run-call-record.ts";
 export * from "./runtime-session-grant.ts";
+export * from "./resolver-contract.ts";

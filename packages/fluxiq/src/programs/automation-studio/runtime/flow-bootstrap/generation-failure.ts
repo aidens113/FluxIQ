@@ -66,13 +66,30 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
   pre_provider_validation: [
     "flow_bootstrap.pre_provider_validation_failed",
     "flow_bootstrap.invalid_input",
+    "flow_bootstrap.generation_lock_failed",
     "flow_bootstrap.blank_target_required",
     "flow_bootstrap.canonical_settings_binding_unavailable",
     "flow_bootstrap.stale_grant_binding",
     "flow_bootstrap.pending_adaptation_exists",
+    "flow_bootstrap.pending_adaptation_check_failed",
     "flow_bootstrap.active_instructions_required",
+    "flow_bootstrap.instruction_resolution_failed",
+    "flow_bootstrap.bootstrap_context_failed",
     "flow_bootstrap.node_catalog_unavailable",
-    "flow_bootstrap.required_capabilities_unavailable"
+    "flow_bootstrap.required_capabilities_unavailable",
+    "flow_bootstrap.evidence_runtime_unavailable",
+    "flow_bootstrap.harness_preflight_failed",
+    "flow_bootstrap.pre_provider_input_budget_exceeded",
+    "flow_bootstrap.pre_provider_request_context_unbounded",
+    "flow_bootstrap.pre_provider_request_limits_invalid",
+    "flow_bootstrap.pre_provider_request_construction_failed",
+    "flow_bootstrap.pre_provider_request_setup_failed",
+    "flow_bootstrap.pre_provider_input_limit_exceeded",
+    "flow_bootstrap.pre_provider_request_total_exceeded",
+    "flow_bootstrap.pre_provider_invalid_cost_limit",
+    "flow_bootstrap.pre_provider_invalid_timeout",
+    "flow_bootstrap.pre_provider_invalid_token_limits",
+    "flow_bootstrap.pre_provider_context_invalid"
   ],
   provider_resolution: [
     "flow_bootstrap.provider_resolution_failed",
@@ -444,11 +461,21 @@ export function flowBootstrapHarnessFailure(input: {
   provider?: AutomationStudioLlmProviderMetadata;
   usage?: AutomationStudioLlmUsageSummary;
 }): AutomationStudioFlowBootstrapGenerationError {
-  if (!input.provider) return flowBootstrapPhaseFailure("pre_provider_validation");
   // Harness-owned provider/output diagnostics are appended after instruction
   // diagnostics. Select the newest error so an earlier instruction diagnostic
   // cannot mask the actual provider failure at this projection boundary.
   const error = findLastError(input.diagnostics);
+  if (!input.provider) return new AutomationStudioFlowBootstrapGenerationError({
+    code: preProviderHarnessFailureCode(error?.code),
+    stage: "pre_provider_validation",
+    retryable: false,
+    providerInvocation: "not_attempted",
+    providerResponse: "not_received",
+    accounting: {
+      requestId: input.request.requestId,
+      estimatedInputTokens: input.request.estimatedInputTokens
+    }
+  });
   const providerStatus = safeProviderStatus(error?.metadata?.providerStatus);
   const failure = providerHarnessFailureProjection(error?.code, providerStatus);
   return new AutomationStudioFlowBootstrapGenerationError({
@@ -469,6 +496,53 @@ export function flowBootstrapHarnessFailure(input: {
       ...(input.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: input.usage.estimatedCostUsd } : {})
     }
   });
+}
+
+/**
+ * The codes a harness refusal made before the provider call is projected to.
+ * Unlike every other pre-provider failure, each keeps the request's
+ * accounting, so the parser admits accounting for exactly these codes. A
+ * `pre_provider_` prefix test would also catch the phase's default code, which
+ * never carries accounting, and so refuse a diagnostic Core itself produced.
+ */
+const FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES = [
+  "flow_bootstrap.harness_preflight_failed",
+  "flow_bootstrap.pre_provider_input_budget_exceeded",
+  "flow_bootstrap.pre_provider_request_context_unbounded",
+  "flow_bootstrap.pre_provider_request_limits_invalid",
+  "flow_bootstrap.pre_provider_request_construction_failed",
+  "flow_bootstrap.pre_provider_request_setup_failed",
+  "flow_bootstrap.pre_provider_input_limit_exceeded",
+  "flow_bootstrap.pre_provider_request_total_exceeded",
+  "flow_bootstrap.pre_provider_invalid_cost_limit",
+  "flow_bootstrap.pre_provider_invalid_timeout",
+  "flow_bootstrap.pre_provider_invalid_token_limits",
+  "flow_bootstrap.pre_provider_context_invalid"
+] as const satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[];
+const FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET: ReadonlySet<string> = new Set(FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES);
+
+function preProviderHarnessFailureCode(code: unknown): typeof FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODES[number] {
+  switch (code) {
+    case "llm.provider_input_budget_exceeded": return "flow_bootstrap.pre_provider_input_budget_exceeded";
+    case "llm.provider_request_context_unbounded": return "flow_bootstrap.pre_provider_request_context_unbounded";
+    case "llm.provider_request_limits_invalid": return "flow_bootstrap.pre_provider_request_limits_invalid";
+    case "llm.provider_request_construction_failed": return "flow_bootstrap.pre_provider_request_construction_failed";
+    case "llm.provider_request_setup_failed": return "flow_bootstrap.pre_provider_request_setup_failed";
+    case "llm_budget.input_limit_exceeded": return "flow_bootstrap.pre_provider_input_limit_exceeded";
+    case "llm_budget.request_total_exceeded": return "flow_bootstrap.pre_provider_request_total_exceeded";
+    case "llm_budget.invalid_cost_limit": return "flow_bootstrap.pre_provider_invalid_cost_limit";
+    case "llm.provider_invalid_timeout": return "flow_bootstrap.pre_provider_invalid_timeout";
+    case "llm_budget.invalid_token_limit":
+    case "llm_budget.absolute_token_ceiling":
+    case "llm_budget.input_exceeds_total":
+    case "llm_budget.output_exceeds_total": return "flow_bootstrap.pre_provider_invalid_token_limits";
+    case "evidence_loop.context_missing":
+    case "bootstrap.registry_context_missing":
+    case "bootstrap.instructions_missing":
+    case "bootstrap.catalog_empty":
+    case "bootstrap.catalog_essentials_missing": return "flow_bootstrap.pre_provider_context_invalid";
+    default: return "flow_bootstrap.harness_preflight_failed";
+  }
 }
 
 function findLastError(diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmDiagnostic | undefined {
@@ -552,10 +626,12 @@ function phaseFailureStateMatches(
 ): boolean {
   if (value.stage !== stage) return false;
   if (stage === "pre_provider_validation" || stage === "provider_resolution") {
+    const harnessAccounting = stage === "pre_provider_validation" && typeof value.code === "string"
+      && FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET.has(value.code);
     return value.retryable === false
       && value.providerInvocation === "not_attempted"
       && value.providerResponse === "not_received"
-      && value.accounting === undefined;
+      && (harnessAccounting ? value.accounting !== undefined : value.accounting === undefined);
   }
   if (value.providerInvocation !== "attempted") return false;
   if (value.code === "flow_bootstrap.provider_request_failed") {

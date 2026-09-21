@@ -1,4 +1,4 @@
-export const FLOW_LLM_HARD_MAX_TOKENS = 50_000;
+export const FLOW_LLM_HARD_MAX_TOKENS = 64_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
 export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
 export const FLOW_LLM_EXECUTION_DEFAULTS = {
@@ -169,7 +169,7 @@ export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIn
     ["Total-token limit", draft.llmMaxTotalTokens]
   ] as const;
   for (const [label, value] of tokenFields) {
-    if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > FLOW_LLM_HARD_MAX_TOKENS) errors.push(label + " must be a whole number from 1 to 50,000.");
+    if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > FLOW_LLM_HARD_MAX_TOKENS) errors.push(label + " must be a whole number from 1 to 64,000.");
   }
   if (Number(draft.llmMaxInputTokens) + Number(draft.llmMaxOutputTokens) > Number(draft.llmMaxTotalTokens)) errors.push("Input and output token limits together cannot exceed the total-token limit.");
   if (!Number.isInteger(Number(draft.llmTimeoutSeconds)) || Number(draft.llmTimeoutSeconds) < 1 || Number(draft.llmTimeoutSeconds) > FLOW_LLM_MAX_TIMEOUT_SECONDS) errors.push("LLM timeout must be a whole number from 1 to 25 seconds.");

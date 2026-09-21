@@ -17,6 +17,7 @@ type FluxIQWebGlobal = typeof globalThis & {
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     runtimeId: string;
     automationStudioContexts: Record<string, AutomationStudioWebContext>;
+    initializationPromise?: Promise<void> | null;
     closePromise?: Promise<void> | null;
     shutdownHandlers?: { sigint: () => void; sigterm: () => void } | null;
   };
@@ -28,10 +29,19 @@ export function getFluxIQ(): FluxIQ {
   return state.instance;
 }
 
+export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
+  await loadFluxIQHostModule();
+  const state = getWebRuntimeState();
+  await initializeFluxIQWebRuntimeState(state);
+  startSharedClientGateway(state);
+  return state.instance;
+}
+
 export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
   const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
+  const { llmEvidenceRuntime } = state.instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
   const reusableLlmContext = state.instance.programs.automationStudio.reusableLlmContextStatus();
   return {
     runtimeId: state.runtimeId,
@@ -51,6 +61,7 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
       nativeImporterRuntimeBound: nativeRuntime.bound,
       nativeNodeDefinitionCount: nativeRuntime.definitionCount,
       recordingMapperCount: nativeRuntime.recordingMapperCount,
+      llmEvidenceRuntime,
       reusableLlmContext
     }
   };
@@ -73,10 +84,29 @@ export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
     await state.instance.close();
   }
   state.instance = createFluxIQWebInstance();
+  state.initializationPromise = null;
+  await initializeFluxIQWebRuntimeState(state);
   state.closePromise = null;
   state.automationStudioContexts = {};
   startSharedClientGateway(state);
   return state.instance;
+}
+
+async function initializeFluxIQWebRuntimeState(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): Promise<void> {
+  state.initializationPromise ??= initializeFluxIQWebStorage(state.instance);
+  await state.initializationPromise;
+}
+
+async function initializeFluxIQWebStorage(fluxiq: FluxIQ): Promise<void> {
+  const initial = fluxiq.inspectStorage();
+  if (initial.layout === "fresh") await fluxiq.setup();
+  else if (initial.layout !== "v2") {
+    throw new Error(`FluxIQ web runtime requires storage layout v2; found ${initial.layout}. Use the protected framework storage migration before starting the panel.`);
+  }
+  const ready = fluxiq.inspectStorage();
+  if (ready.layout !== "v2") {
+    throw new Error(`FluxIQ web runtime storage initialization did not reach layout v2; found ${ready.layout}.`);
+  }
 }
 
 export async function closeFluxIQWebRuntime(): Promise<void> {

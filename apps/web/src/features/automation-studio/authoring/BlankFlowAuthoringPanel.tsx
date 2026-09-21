@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
 import { Modal } from "../../programs/shared-ui";
 import { AUTOMATION_LLM_PROGRESS_LABELS, blankFlowAuthoringRequest, blankFlowExplorationRequest, BLANK_FLOW_AUTHORING_LIMITS, llmRequestRequiresHighTokenWarning, WEBSITE_EXPLORATION_LIMITS, type BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
 import { llmPreflightRunLimits } from "./llm-preflight-run-limits";
@@ -9,6 +10,22 @@ const WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH = 4_000;
 const WEBSITE_EXPLORATION_RUN_MINUTES = WEBSITE_EXPLORATION_LIMITS.runLeaseMs / 60_000;
 
 type PreflightRunLimits = ReturnType<typeof llmPreflightRunLimits>;
+
+type PendingPermissionContinuation = {
+  request: AutomationStudioActionPermissionRequest;
+  projectId: string;
+  flowId: string;
+  instructionBody: string;
+  highTokenConfirmed: boolean;
+};
+
+type PermissionContext = Pick<PendingPermissionContinuation, "projectId" | "flowId" | "instructionBody">;
+
+function permissionMatchesContext(pending: PendingPermissionContinuation, context: PermissionContext): boolean {
+  return pending.projectId === context.projectId
+    && pending.flowId === context.flowId
+    && pending.instructionBody === context.instructionBody;
+}
 
 function wholeNumber(value: number): string {
   return value.toLocaleString("en-US");
@@ -96,7 +113,12 @@ export function BlankFlowAuthoringPanel(props: {
   const [preflightRevision, setPreflightRevision] = useState(0);
   const [explorationRunTokenBudget, setExplorationRunTokenBudget] = useState<number | undefined>(undefined);
   const [pendingRunLimits, setPendingRunLimits] = useState<PreflightRunLimits>(undefined);
+  const [permissionContinuation, setPermissionContinuation] = useState<PendingPermissionContinuation | null>(null);
+  const [permissionOpen, setPermissionOpen] = useState(false);
   const generationRef = useRef(0);
+  const permissionContextRef = useRef<PermissionContext>({ projectId: props.projectId ?? "", flowId: props.flow?.flowId ?? "", instructionBody: instruction.trim() });
+  permissionContextRef.current = { projectId: props.projectId ?? "", flowId: props.flow?.flowId ?? "", instructionBody: instruction.trim() };
+  const permissionRequest = permissionContinuation?.request ?? null;
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -116,7 +138,11 @@ export function BlankFlowAuthoringPanel(props: {
     });
   }, [preflightRequest, preflightRevision, props.commands]);
 
-  useEffect(() => setInstruction(""), [props.flow?.flowId]);
+  useEffect(() => {
+    setInstruction("");
+    setPermissionContinuation(null);
+    setPermissionOpen(false);
+  }, [props.projectId, props.flow?.flowId]);
   useEffect(() => {
     if (explorationPhase !== "exploring") { setExplorationElapsedSeconds(0); return; }
     const startedAt = Date.now();
@@ -132,12 +158,23 @@ export function BlankFlowAuthoringPanel(props: {
     setError("");
     setOpen(false);
   };
-  const generate = async (mode: "build" | "explore", highTokenConfirmation = false) => {
+  const generate = async (mode: "build" | "explore", highTokenConfirmation = false, continuation?: PendingPermissionContinuation) => {
     const request = mode === "build" ? buildRequest : explorationRequest;
     const normalizedInstruction = instruction.trim();
     if (!request.ok || (mode === "explore" && !normalizedInstruction)) return;
+    const requestContext = { projectId: request.payload.projectId, flowId: request.payload.flowId, instructionBody: normalizedInstruction };
+    if (continuation && (!permissionMatchesContext(continuation, requestContext) || !permissionMatchesContext(continuation, permissionContextRef.current))) {
+      setPermissionContinuation(null);
+      setPermissionOpen(false);
+      setError("The website task or Flow changed. Start a new exploration before approving consequences.");
+      return;
+    }
+    const effectiveHighTokenConfirmation = highTokenConfirmation || continuation?.highTokenConfirmed === true;
     setBusy(true);
     setError("");
+    // Confirmation has been consumed. Leaving this modal mounted hides the
+    // later consequence request behind it when the bounded build stops to ask.
+    if (highTokenConfirmation) setOpen(false);
     if (mode === "explore") setExplorationPhase("authorizing");
     try {
       if (mode === "explore") {
@@ -146,13 +183,21 @@ export function BlankFlowAuthoringPanel(props: {
       }
       const preflight = await props.commands.preflightLlm(request.payload);
       if (!preflight.ok || !preflight.payload?.preflight) { if (mode === "explore") setExplorationPhase("idle"); setError("Flow authoring preflight was rejected. Review the saved limits and enabled key."); return; }
-      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setPendingMode(mode); setPendingRunLimits(llmPreflightRunLimits(preflight.payload)); setOpen(true); if (mode === "explore") setExplorationPhase("idle"); return; }
+      if (continuation && !permissionMatchesContext(continuation, permissionContextRef.current)) {
+        setPermissionContinuation(null);
+        setPermissionOpen(false);
+        if (mode === "explore") setExplorationPhase("idle");
+        setError("The website task or Flow changed. Start a new exploration before approving consequences.");
+        return;
+      }
+      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !effectiveHighTokenConfirmation) { setPendingMode(mode); setPendingRunLimits(llmPreflightRunLimits(preflight.payload)); setPermissionOpen(false); setOpen(true); if (mode === "explore") setExplorationPhase("idle"); return; }
       // The build is one call on a one-use grant. An exploration names no uses:
       // Core sizes its grant, and `ttlMs` is only how long the grant may wait
       // to be claimed. Once claimed it runs on Core's run lease.
       const issued = await props.commands.issueLlmGrant({
         ...request.payload,
-        ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}),
+        ...(effectiveHighTokenConfirmation ? { highTokenConfirmation: true } : {}),
+        ...(continuation ? { permittedConsequences: [...continuation.request.missing] } : {}),
         ...(mode === "explore" ? { ttlMs: WEBSITE_EXPLORATION_LIMITS.grantClaimWindowMs } : { maxUses: BLANK_FLOW_AUTHORING_LIMITS.maxCalls })
       });
       const grantId = issued.payload?.grant?.grantId;
@@ -162,8 +207,26 @@ export function BlankFlowAuthoringPanel(props: {
         ? await props.commands.generateFromWebsite({ projectId: request.payload.projectId, flowId: request.payload.flowId, llmExecutionGrantId: grantId })
         : await props.commands.generateBootstrap({ projectId: request.payload.projectId, flowId: request.payload.flowId, llmExecutionGrantId: grantId });
       const adaptation = generated.payload?.adaptation;
-      if (!generated.ok || adaptation?.status !== "proposed" || typeof adaptation?.adaptationId !== "string") { if (mode === "explore") setExplorationPhase("idle"); setError(generationFailureMessage(generated, mode)); return; }
+      if (!generated.ok || adaptation?.status !== "proposed" || typeof adaptation?.adaptationId !== "string") {
+        const requested = generated.payload?.diagnostic?.code === "flow_bootstrap.permission_required"
+          ? parseAutomationStudioActionPermissionRequest(generated.payload?.diagnostic?.permissionRequest)
+          : null;
+        if (mode === "explore") setExplorationPhase("idle");
+        if (requested?.reason.stage === "authoring") {
+          if (!permissionMatchesContext({ request: requested, ...requestContext, highTokenConfirmed: effectiveHighTokenConfirmation }, permissionContextRef.current)) {
+            setError("The website task or Flow changed. Start a new exploration before approving consequences.");
+            return;
+          }
+          setPermissionContinuation({ request: requested, ...requestContext, highTokenConfirmed: effectiveHighTokenConfirmation });
+          setPermissionOpen(true);
+          setError("");
+          return;
+        }
+        setError(generationFailureMessage(generated, mode)); return;
+      }
       setOpen(false);
+      setPermissionContinuation(null);
+      setPermissionOpen(false);
       setError("");
       if (mode === "explore") setExplorationPhase("review");
       props.onOpenAdaptation?.(adaptation.flowId ?? request.payload.flowId, adaptation.adaptationId);
@@ -179,18 +242,25 @@ export function BlankFlowAuthoringPanel(props: {
     <header><div><strong>Build Flow from instructions</strong><span className="automation-flow-authoring-description">{explorationRequest.ok ? "Describe the result you want, then let the connected browser gather evidence and propose the Flow." : "Create a proposed Router and Subflow structure from this blank Flow's active instructions."}</span></div></header>
     {preflightState === "checking" ? <div className="automation-flow-exploration-progress"><progress aria-label="Checking Flow authoring availability" /> <span aria-atomic="true" aria-live="polite" role="status">Checking Flow authoring availability...</span></div> : null}
     {preflightState === "rejected" ? <div className="automation-runtime-message" role="alert"><strong>Flow authoring is not available.</strong> Check the enabled model key and saved Flow limits, then retry. <button className="button" onClick={() => setPreflightRevision((value) => value + 1)} type="button">Retry availability check</button></div> : null}
-    {preflightState === "ready" && explorationRequest.ok ? <><label className="automation-flow-exploration-task"><span>Website task</span><textarea aria-describedby="website-task-help" aria-label="Website task" disabled={busy} maxLength={WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} onChange={(event) => { setInstruction(event.target.value); setError(""); setExplorationPhase("idle"); }} placeholder="For example: Find a product, add it to the cart, and capture the order total." rows={4} value={instruction} /><small id="website-task-help">{instruction.length}/{WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} characters. This instruction is saved with the proposal for review.</small></label>
+    {preflightState === "ready" && explorationRequest.ok ? <><label className="automation-flow-exploration-task"><span>Website task</span><textarea aria-describedby="website-task-help" aria-label="Website task" disabled={busy} maxLength={WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} onChange={(event) => { const nextInstruction = event.target.value; if (permissionContinuation && nextInstruction.trim() !== permissionContinuation.instructionBody) { setPermissionContinuation(null); setPermissionOpen(false); } setInstruction(nextInstruction); setError(""); setExplorationPhase("idle"); }} placeholder="For example: Find a product, add it to the cart, and capture the order total." rows={4} value={instruction} /><small id="website-task-help">{instruction.length}/{WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} characters. This instruction is saved with the proposal for review.</small></label>
     <div className="automation-runtime-run-command"><div><small>Browser actions happen on the connected website during exploration. The generated Flow remains a proposal and is never applied until you review it.</small><small>{explorationBoundsText(explorationRunTokenBudget)}</small></div><button className="button button-primary" disabled={busy || !instruction.trim()} onClick={() => void generate("explore")} type="button">{explorationPhase === "authorizing" ? "Preparing exploration..." : explorationPhase === "exploring" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Explore and create proposal"}</button></div></> : null}
     {explorationPhase === "authorizing" ? <div className="automation-flow-exploration-progress"><progress aria-label="Preparing website exploration" /> <span aria-atomic="true" aria-live="polite" role="status">Preparing a bounded exploration request. The generated Flow will still require review.</span></div> : null}
     {explorationPhase === "exploring" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Collecting bounded page evidence; {AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal.toLowerCase()} follows in this request. Keep the browser and target tab connected.</span> <span aria-hidden="true">({explorationElapsedSeconds}s elapsed)</span></div> : null}
     {explorationPhase === "review" ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> No generated changes have been applied. Review the Router, Subflows, and actions before applying the Adaptation.</p> : null}
+    {permissionRequest && !permissionOpen ? <p className="automation-runtime-message" role="status"><strong>Flow action approval is still required.</strong> No proposal was created. <button className="button" disabled={busy} onClick={() => setPermissionOpen(true)} type="button">Review requested permissions</button></p> : null}
     {preflightState === "ready" && buildRequest.ok ? <div className="automation-runtime-run-command"><div><small>Or build a proposal from the Flow&apos;s existing active instructions without exploring a website.</small></div><button className="button" disabled={busy} onClick={() => void generate("build")} type="button">{busy && explorationPhase === "idle" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : "Build proposal from active instructions"}</button></div> : null}
     {error && !open ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
     {open ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm high-token Flow Build" onClose={close}><div className="automation-modal-form">
       <p className="automation-router-modal-intro">This request can use more than 100,000 tokens. Review the configured limits before continuing.</p>
       <dl aria-label="Flow build request limits">{confirmationRows(pendingMode, pendingRunLimits).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
-      <div className="modal-actions"><button className="button" disabled={busy} onClick={close} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={busy} onClick={() => void generate(pendingMode, true)} type="button">{busy ? "Building..." : "Continue high-token build"}</button></div>
+      <div className="modal-actions"><button className="button" disabled={busy} onClick={close} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={busy} onClick={() => void generate(pendingMode, true, pendingMode === "explore" ? permissionContinuation ?? undefined : undefined)} type="button">{busy ? "Building..." : "Continue high-token build"}</button></div>
+    </div></Modal> : null}
+    {permissionRequest && permissionOpen ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm Flow action consequences" onClose={() => { if (!busy) setPermissionOpen(false); }}><div className="automation-modal-form">
+      <p className="automation-router-modal-intro">{permissionRequest.sentence}</p>
+      <ul aria-label="Consequences requiring approval">{permissionRequest.missing.map((consequence) => <li key={consequence}>{AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]}</li>)}</ul>
+      <p>No Flow proposal has been created or applied. Continuing starts a new bounded build grant with only these consequences.</p>
+      <div className="modal-actions"><button className="button" disabled={busy} onClick={() => setPermissionOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={busy} onClick={() => { setPermissionOpen(false); if (permissionContinuation) void generate("explore", false, permissionContinuation); }} type="button">{busy ? "Continuing..." : "Allow and continue"}</button></div>
     </div></Modal> : null}
   </section>;
 }

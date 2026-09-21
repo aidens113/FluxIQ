@@ -1,10 +1,10 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
+import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
 
 const originalEnv = {
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
@@ -156,6 +156,59 @@ module.exports.registerFluxIQHost = (fluxiq) => {
 });
 
 describe("FluxIQ web runtime lifecycle", () => {
+  it("serializes fresh storage initialization before the web runtime is used", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-initialize-"));
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
+    delete globalState.__fluxiqWebRuntime;
+    try {
+      const [first, second] = await Promise.all([
+        initializeFluxIQWebRuntime(),
+        initializeFluxIQWebRuntime(),
+      ]);
+      const config = JSON.parse(readFileSync(path.join(root, ".fluxiq", "config.json"), "utf8")) as { version?: unknown; layoutVersion?: unknown };
+
+      expect(second).toBe(first);
+      expect(config).toMatchObject({ version: 2, layoutVersion: 2 });
+      expect(first.inspectStorage().layout).toBe("v2");
+    } finally {
+      await closeFluxIQWebRuntime();
+      delete globalState.__fluxiqWebRuntime;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { label: "legacy", journal: false, expected: "v1" },
+    { label: "incomplete migration", journal: true, expected: "migration_incomplete" },
+  ])("refuses $label storage without mutating it", async ({ journal, expected }) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-refuse-"));
+    const fluxiqRoot = path.join(root, ".fluxiq");
+    const sentinel = path.join(fluxiqRoot, "data", "sentinel.txt");
+    mkdirSync(path.dirname(sentinel), { recursive: true });
+    writeFileSync(sentinel, "preserve", "utf8");
+    if (journal) {
+      const journalPath = path.join(fluxiqRoot, ".migration", "v2", "journal.json");
+      mkdirSync(path.dirname(journalPath), { recursive: true });
+      writeFileSync(journalPath, JSON.stringify({ version: 1, stage: "inventory" }), "utf8");
+    }
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
+    delete globalState.__fluxiqWebRuntime;
+    try {
+      await expect(initializeFluxIQWebRuntime()).rejects.toThrow(`found ${expected}`);
+      expect(readFileSync(sentinel, "utf8")).toBe("preserve");
+      expect(existsSync(path.join(fluxiqRoot, "config.json"))).toBe(false);
+      expect(existsSync(path.join(fluxiqRoot, "global.sqlite"))).toBe(false);
+    } finally {
+      await closeFluxIQWebRuntime();
+      delete globalState.__fluxiqWebRuntime;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("closes the previous instance on reload and the active instance on owner shutdown", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-lifecycle-"));
     process.env.FLUXIQ_IMPORTER_ROOT = root;

@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), "utf8");
+// Sources are compared as committed (LF): a checkout with core.autocrlf=true writes CRLF.
+const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), "utf8").replace(/\r\n/gu, "\n");
 
 const bootstrap = read("../components/AutomationStudioComposition.tsx");
 const composition = read("../components/AutomationStudioSession.tsx");

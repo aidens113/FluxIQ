@@ -57,12 +57,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService();
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
-      nativeNodeRegistryConfigured: false
+      nativeNodeRegistryConfigured: false,
+      llmEvidenceRuntime: { bound: false, toolCount: 0 }
     });
     (instance as any).nativeNodeRuntime = new AutomationStudioNativeNodeRuntime();
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
-      nativeNodeRegistryConfigured: false
+      nativeNodeRegistryConfigured: false,
+      llmEvidenceRuntime: { bound: false, toolCount: 0 }
     });
   });
 

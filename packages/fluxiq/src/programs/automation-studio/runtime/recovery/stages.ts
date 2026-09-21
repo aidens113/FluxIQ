@@ -41,6 +41,10 @@ export type AutomationStudioRuntimeRecoveryTraceInput = {
   exploration?: AutomationStudioRuntimeExploration;
   /** Whether a patch call was made. The receipt for the `implement` stage. */
   patchRequested?: boolean;
+  /** Core's categorical reason when that call returned no usable response. */
+  patchFailureCode?: string;
+  /** Core's categorical reason when no patch call could follow the plan. */
+  patchSkippedCode?: string;
   patchAttemptCount?: number;
   adaptationIds?: readonly string[];
   changeProposalIds?: readonly string[];
@@ -146,20 +150,20 @@ function resolutionEvent(input: AutomationStudioRuntimeRecoveryTraceInput, plan:
   const adaptationCount = input.adaptationIds?.length ?? 0;
   const changeProposalCount = input.changeProposalIds?.length ?? 0;
   const patchAttemptCount = input.patchAttemptCount ?? 0;
-  const outcome = resolutionOutcome({ plan, adaptationCount, changeProposalCount, diagnosisFailed: input.diagnosisOk === false || Boolean(input.diagnosisFailure) });
+  const outcome = resolutionOutcome({ plan, adaptationCount, changeProposalCount, diagnosisFailed: input.diagnosisOk === false || Boolean(input.diagnosisFailure), patchFailed: Boolean(input.patchFailureCode) });
   const produced = adaptationCount > 0 || changeProposalCount > 0;
   // The known adaptation is named where it is the outcome, so a reader can tell
   // which change the run is waiting on without opening the plan.
   const knownAdaptationIds = outcome === "known_adaptation_available" ? input.invocation?.diagnosis?.knownAdaptationIds ?? [] : [];
   return {
     stage: "resolution",
-    status: produced ? "completed" : "skipped",
+    status: produced ? "completed" : input.patchFailureCode ? "failed" : "skipped",
     providerCalled: input.patchRequested === true,
     ...(input.patchRequested === true ? { loopStage: AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES.resolution } : {}),
     // Never "the recovery worked": what was produced is observable now, whether
     // it works is a verdict from evidence observed afterwards.
     reason: resolutionReason(outcome, knownAdaptationIds),
-    detail: { outcome, adaptationCount, changeProposalCount, patchAttemptCount, ...(knownAdaptationIds.length ? { knownAdaptationIds: [...knownAdaptationIds] } : {}) }
+    detail: { outcome, adaptationCount, changeProposalCount, patchAttemptCount, ...(input.patchFailureCode ? { failureCode: input.patchFailureCode } : {}), ...(input.patchSkippedCode ? { skipCode: input.patchSkippedCode } : {}), ...(knownAdaptationIds.length ? { knownAdaptationIds: [...knownAdaptationIds] } : {}) }
   };
 }
 
@@ -182,6 +186,7 @@ type AutomationStudioRecoveryResolutionOutcome =
   | "adaptation_recorded"
   | "proposal_recorded"
   | "diagnosis_failed"
+  | "patch_failed"
   | "no_change_produced";
 
 function resolutionOutcome(input: {
@@ -189,6 +194,7 @@ function resolutionOutcome(input: {
   adaptationCount: number;
   changeProposalCount: number;
   diagnosisFailed: boolean;
+  patchFailed: boolean;
 }): AutomationStudioRecoveryResolutionOutcome {
   const action = input.plan.steps[0]?.action;
   if (action === "apply_known_recovery") return "deterministic_recovery_required";
@@ -197,6 +203,7 @@ function resolutionOutcome(input: {
   if (input.adaptationCount > 0) return "adaptation_recorded";
   if (input.changeProposalCount > 0) return "proposal_recorded";
   if (input.diagnosisFailed) return "diagnosis_failed";
+  if (input.patchFailed) return "patch_failed";
   return "no_change_produced";
 }
 
@@ -210,6 +217,7 @@ function resolutionReason(outcome: AutomationStudioRecoveryResolutionOutcome, kn
   if (outcome === "adaptation_recorded") return "An adaptation was recorded. Whether it repairs the failure is decided from evidence observed afterwards.";
   if (outcome === "proposal_recorded") return "A change proposal was recorded for review, and nothing was applied.";
   if (outcome === "diagnosis_failed") return "The diagnosis did not complete, so no change was produced.";
+  if (outcome === "patch_failed") return "The patch call failed before it produced a usable repair, so no change was produced.";
   return "No change was produced.";
 }
 

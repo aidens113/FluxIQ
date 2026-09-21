@@ -92,11 +92,20 @@ describe("automationStudioRuntimeRecoveryTrace", () => {
 
   it("marks the resolution skipped, with no loop stage, when no patch call was made", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ patchNeeded: false }), policy: policy() });
-    const trace = automationStudioRuntimeRecoveryTrace({ invocation: invocation({}), policy: policy(), plan, diagnosisOk: true, patchRequested: false });
+    const trace = automationStudioRuntimeRecoveryTrace({ invocation: invocation({}), policy: policy(), plan, diagnosisOk: true, patchRequested: false, patchSkippedCode: "llm.runtime_patch_not_requested" });
     const resolution = trace.stages.find((entry) => entry.stage === "resolution");
 
-    expect(resolution).toMatchObject({ status: "skipped", providerCalled: false, detail: { outcome: "no_change_produced" } });
+    expect(resolution).toMatchObject({ status: "skipped", providerCalled: false, detail: { outcome: "no_change_produced", skipCode: "llm.runtime_patch_not_requested" } });
     expect(resolution?.loopStage).toBeUndefined();
+  });
+
+  it("records a categorical patch failure instead of claiming no change was produced", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy() });
+    const trace = automationStudioRuntimeRecoveryTrace({ invocation: invocation({}), policy: policy(), plan, diagnosisOk: true, patchRequested: true, patchFailureCode: "llm.provider_output_invalid" });
+    const resolution = trace.stages.find((entry) => entry.stage === "resolution");
+
+    expect(resolution).toMatchObject({ status: "failed", providerCalled: true, loopStage: "implement", detail: { outcome: "patch_failed", failureCode: "llm.provider_output_invalid", patchAttemptCount: 0 } });
+    expect(resolution?.reason).toContain("failed before it produced a usable repair");
   });
 
   it("records a failed diagnosis stage when the provider call did not produce one", () => {
