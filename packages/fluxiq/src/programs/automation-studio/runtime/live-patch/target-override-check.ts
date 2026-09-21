@@ -17,6 +17,7 @@ import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRun
 import { automationStudioRuntimeTargetOverrideFailedAction } from "./failed-action.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS,
+  type AutomationStudioRuntimeTargetOverrideControl,
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction,
   type AutomationStudioRuntimeTargetOverrideRefusal,
@@ -45,7 +46,13 @@ export type AutomationStudioRuntimeTargetOverrideCheck = {
   targetResolution?: "matched" | "resolved";
   targetNodeResolution?: "matched" | "resolved";
   targetRefusal?: AutomationStudioRuntimeTargetOverrideRefusal;
+  /** What the accepted target names, as the domain described it; absent when it said nothing readable. */
+  control?: AutomationStudioRuntimeTargetOverrideControl;
 };
+
+/** How long a carried name may be before the domain's word is not carried at all. The gate cuts what it shows far shorter. */
+const MAX_CONTROL_NAME = 2_000;
+const CONTROL_KIND = /^[a-z][a-z -]{0,31}$/u;
 
 /** Refusal reasons Core gives itself, which read as Core's judgement rather than as the evidence's. */
 const CORE_JUDGEMENTS: ReadonlySet<AutomationStudioRuntimeTargetOverrideRefusalReason> = new Set(["failure_not_target_repairable"]);
@@ -72,11 +79,29 @@ export function checkAutomationStudioRuntimeTargetOverride(input: AutomationStud
   if (!targetOverrideServesFailure(input)) return refused({ status: "absent", reason: "failure_not_target_repairable" });
   if (!input.validateTargetOverrideEvidence) return refused({ status: "absent", reason: "domain_check_unavailable" });
   const validation = input.validateTargetOverrideEvidence(input.patch.target, automationStudioRuntimeTargetOverrideFailedAction(input.flow, input.failedAttempt));
-  if (validation.status === "matched") return { issues, patch, targetResolution: "matched", ...nodeResolution };
+  const control = carriedControl(validation);
+  const described = control ? { control } : {};
+  if (validation.status === "matched") return { issues, patch, targetResolution: "matched", ...nodeResolution, ...described };
   if (validation.status !== "resolved") return refused(domainRefusal(validation));
   if (!isAutomationStudioRuntimeTargetOverrideTarget(validation.target)) return { issues: [...issues, "Resolved target override is invalid."], patch, ...nodeResolution };
   // Keeps the failed-node re-aim above, and takes the domain's resolution.
-  return { issues, patch: { ...patch, target: validation.target }, targetResolution: "resolved", ...nodeResolution };
+  return { issues, patch: { ...patch, target: validation.target }, targetResolution: "resolved", ...nodeResolution, ...described };
+}
+
+/**
+ * The domain's description of what an accepted target names, kept only where
+ * it is plain: a non-empty bounded name, and a kind in the permission
+ * declaration's own vocabulary. Anything else is dropped rather than repaired,
+ * and a request then names "a control it cannot name here" -- which asks the
+ * person the same question with less said.
+ */
+function carriedControl(validation: AutomationStudioRuntimeTargetOverrideEvidenceValidation): AutomationStudioRuntimeTargetOverrideControl | undefined {
+  if (validation.status !== "matched" && validation.status !== "resolved") return undefined;
+  const control: unknown = validation.control;
+  if (!control || typeof control !== "object" || Array.isArray(control)) return undefined;
+  const { name, kind } = control as { name?: unknown; kind?: unknown };
+  if (typeof name !== "string" || !name.trim() || name.length > MAX_CONTROL_NAME) return undefined;
+  return typeof kind === "string" && CONTROL_KIND.test(kind) ? { name, kind } : { name };
 }
 
 /** Whether Core's own classification of the failure is one it offers a target override for. */

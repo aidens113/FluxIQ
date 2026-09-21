@@ -45,9 +45,19 @@ export const AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS = Object.
 
 export type AutomationStudioRuntimeTargetOverrideRefusalReason = keyof typeof AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS;
 
+/**
+ * The thing an accepted target names, as a person would recognise it: its name
+ * exactly as the evidence the model was shown printed it, and one plain word or
+ * two for what sort of thing it is, in the domain's own vocabulary. A domain
+ * supplies it with an accepted target so a repair that needs permission can say
+ * what it would act on. Core carries it only to the permission gate, which
+ * withholds a name that never appeared in evidence already shown.
+ */
+export type AutomationStudioRuntimeTargetOverrideControl = { name: string; kind?: string };
+
 export type AutomationStudioRuntimeTargetOverrideEvidenceValidation =
-  | { status: "matched" }
-  | { status: "resolved"; target: AutomationStudioRuntimeTargetOverrideTarget }
+  | { status: "matched"; control?: AutomationStudioRuntimeTargetOverrideControl }
+  | { status: "resolved"; target: AutomationStudioRuntimeTargetOverrideTarget; control?: AutomationStudioRuntimeTargetOverrideControl }
   | { status: "absent" | "ambiguous"; reason?: AutomationStudioRuntimeTargetOverrideRefusalReason };
 
 /** A domain's refusal as Core records it: the status, and the reason only where it is one of Core's. */

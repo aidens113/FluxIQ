@@ -38,6 +38,10 @@ type Setup = {
   permittedConsequences?: string[];
   storedInstructed?: unknown;
   instructions?: AutomationStudioFlowInstruction[];
+  /** Whether the diagnosis asks for an exploration first. Default yes. */
+  explore?: boolean;
+  /** The repair the patch call answers with: a target override declaring these classes. Absent, it declines. */
+  repair?: { consequences: string[] };
 };
 
 describe("a recovery under its permission gate", () => {
@@ -102,6 +106,38 @@ describe("a recovery under its permission gate", () => {
     expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["modify_existing"], authority: { instructed: [] } });
     expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: [], lapsed: ["modify_existing"] });
   });
+
+  // Item 4. The same gate stands over the patch stage: a repair that would
+  // press something lasting each time the Flow runs, and that nobody allowed,
+  // is the request the recovery ends on -- not the preflight refusal it was.
+  it("turns a repair that would lastingly act into the request, and runs nothing", async () => {
+    const run = await recover({ explore: false, repair: { consequences: ["create_new"] } });
+
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(run.detail.metadata?.permissionRequest).toMatchObject({
+      action: { kind: "flow_step", id: "builtin.policy.action", ref: "node.action", verb: "press" },
+      control: { name: "Pick and pack", kind: "button" },
+      consequences: ["create_new"],
+      missing: ["create_new"],
+      reason: { stage: "recovery" },
+      sentence: expect.stringMatching(/^To repair the step that failed, the Flow would press "Pick and pack" \(button\) each time it runs/)
+    });
+    const gate = run.detail.metadata?.llmGate as JsonObject;
+    expect(gate.patchHeldCode).toBe("llm.runtime_patch_permission_required");
+    expect(gate).not.toHaveProperty("patchSkippedCode");
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionRequired: true, executed: false, missing: ["create_new"] })]);
+    expect(run.detail.adaptationIds).toEqual([]);
+    expect(stage(run.detail, "resolution")).toMatchObject({ status: "failed", providerCalled: true, detail: { failureCode: "llm.runtime_patch_permission_required" } });
+  });
+
+  it("runs the repair as authorized when the grant holds its classes, and raises nothing", async () => {
+    const run = await recover({ explore: false, repair: { consequences: ["create_new"] }, permittedConsequences: ["create_new"] });
+
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionOutcome: "permitted", preflightOk: true })]);
+    expect(run.detail.adaptationIds).toHaveLength(1);
+    expect(run.detail.metadata?.llmGate).not.toHaveProperty("patchHeldCode");
+  });
 });
 
 async function recover(setup: Setup): Promise<Recovery> {
@@ -112,7 +148,7 @@ async function recover(setup: Setup): Promise<Recovery> {
       run.taskKinds.push(request.taskKind);
       if (request.expectedOutput === "diagnosis") {
         run.diagnosisGates = request.context.policyGates;
-        return { response: { kind: "diagnosis", summary: "The dispatch control was relabelled.", diagnosis: { explorationNeeded: true, patchNeeded: true } } };
+        return { response: { kind: "diagnosis", summary: "The dispatch control was relabelled.", diagnosis: { explorationNeeded: setup.explore ?? true, patchNeeded: true } } };
       }
       if (request.expectedOutput === "evidence_tool_decision") {
         run.offered.push((request.context.evidenceLoop?.tools ?? []).map((tool) => tool.toolId));
@@ -120,6 +156,9 @@ async function recover(setup: Setup): Promise<Recovery> {
           ? { kind: "tool_call" as const, callId: "call.press", toolId: "test.press", input: {} }
           : { kind: "complete" as const, result: { findings: "Pick and pack starts the dispatch." } };
         return { response: { kind: "evidence_tool_decision", summary: "Trying the control.", decision } };
+      }
+      if (setup.repair) {
+        return { response: { kind: "runtime_patch", summary: "Re-point the failed step.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.action", target: { handles: { control: "target.1" } }, consequences: setup.repair.consequences as never, reason: "It was relabelled." }] } };
       }
       return { response: { kind: "no_repair", summary: "Nothing to change.", reason: "control_gone" } };
     }
@@ -133,7 +172,8 @@ async function recover(setup: Setup): Promise<Recovery> {
         tools: [],
         harnessOptions: options(run),
         executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); },
-        captureSanitizedFailureEvidence: async () => FAILURE_PAGE
+        captureSanitizedFailureEvidence: async () => FAILURE_PAGE,
+        validateTargetOverrideEvidence: (_evidence, target) => ({ status: "resolved", target: { handles: target.handles, resolvedBy: "test.domain" }, control: { name: "Pick and pack", kind: "button" } })
       },
       reusableLlmContextEnabled: false,
       flowInstructionSet: async () => setup.instructions ?? [],

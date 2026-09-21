@@ -76,6 +76,7 @@ export type {
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmTaskResult
 } from "./task-request.ts";
+export { automationStudioRuntimePatchOutputSchema } from "./runtime-patch-schema.ts";
 export { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 export { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 export { runAutomationStudioLlmHarness } from "./run.ts";

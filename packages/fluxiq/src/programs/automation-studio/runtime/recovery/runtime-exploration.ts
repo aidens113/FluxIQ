@@ -35,6 +35,17 @@
 // `operator_approval_required`, carrying it. Nothing else raises that reason:
 // a domain's own refusal code cannot, because a stop with no request in hand
 // would ask a person a question nobody can answer.
+//
+// **A tool that fails is shown to the model, not the end of the exploration.**
+// The loop runs with `toolFailures: "observe"`, as a build does: a call that
+// throws is recorded under its own call id with a closed code, the model sees
+// that record on its next decision and tries something else, and only a run of
+// them reaching the progress guard ends it. Before, one thrown tool ended every
+// runtime recovery's exploration outright. The two stops this module throws on
+// purpose -- a limit the ledger refused, and a request the gate raised -- are
+// not failures to observe: each aborts the loop's signal first (the ledger's
+// own, and the gate's, joined), and a failure seen under an aborted signal
+// ends the loop as `cancelled`, which `classify` then names precisely.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
@@ -196,6 +207,10 @@ export async function runAutomationStudioRuntimeExploration(
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
   const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
+  // The loop stops on whichever comes first: a limit the ledger refused, or the
+  // request the gate raised. With failures observed rather than ending the
+  // loop, the request has to stop it by signal as the ledger already does.
+  const stopSignal = AbortSignal.any([ledger.signal, gate.signal]);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -262,7 +277,8 @@ export async function runAutomationStudioRuntimeExploration(
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
-        signal: ledger.signal
+        toolFailures: "observe",
+        signal: stopSignal
       });
     return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {

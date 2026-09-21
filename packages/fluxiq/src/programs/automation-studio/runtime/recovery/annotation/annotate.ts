@@ -22,8 +22,9 @@
 //    proposed, with a receipt either way.
 //
 // One permission gate stands over the stages that can act (`permissions.ts`).
-// A request it raises ends the recovery: the patch call is not made, and the
-// request is what the run carries out to the person.
+// A request it raises ends the recovery, and the request is what the run
+// carries out to the person: raised while exploring, the patch call is not
+// made; raised by a patch that would lastingly act, that patch does not run.
 //
 // Every early return carries a `recoveryTrace`, and that is the property to
 // keep. A recovery that stopped at the gate, one whose provider would not
@@ -358,6 +359,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(explorationEvidence ? { explorationEvidence } : {}),
       ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
       policy: input.context.policy,
+      // A repair that may run is judged by the gate, not by the side-effect
+      // flag, so it is told what the gate permits and that anything else is
+      // asked of the person. A proposal runs nothing, and keeps the policy.
+      ...(permissions && !explicitProposalGrant ? { actionPermissions: permissions.summary() } : {}),
       provider,
       runBudget,
       ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
@@ -398,9 +403,18 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(patchResult.request.context.explorationEvidence ? { explorationEvidence: patchResult.request.context.explorationEvidence } : {}),
       ...(reusableContextResult ? { reusableContextMetadata: reusableContextResult.metadata } : {}),
       ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
+      // The same gate the exploration answered to: a repair that would
+      // lastingly act is allowed by it, or becomes its request.
+      ...(permissions ? { permissionGate: permissions.gate } : {}),
       ...(input.graphOptions ? { graphOptions: input.graphOptions } : {})
     })
     : { attempts: [], adaptationIds: [], changeProposalIds: [] };
+  // Read again after the patches: a repair that needed a permission nobody gave
+  // raised the request there, and the run carries it exactly as it would one
+  // raised while exploring. The resolution records why nothing ran.
+  const raisedRequest = permissions?.gate.request;
+  const patchHeldForPermission = Boolean(raisedRequest && !permissionRequest);
+  const resolutionFailureCode = patchFailureCode ?? (patchHeldForPermission ? "llm.runtime_patch_permission_required" : undefined);
   const attempts = declined ? [...applied.attempts, automationStudioDeclinedRepairAttempt(declined.reason)] : applied.attempts;
   // One line per provider call, beside the totals they add up to. The
   // interventions below keep only the diagnosis and the patch; the calls that
@@ -422,6 +436,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         providerCallsOmitted: providerCalls.omitted,
         ...(grantSkip ? { patchSkipped: grantSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(patchSkippedCode ? { patchSkippedCode } : {}),
+        ...(patchHeldForPermission ? { patchHeldCode: "llm.runtime_patch_permission_required" } : {}),
         // Classes only: what the recovery held, and why. The request below says what it lacked.
         ...(permissions ? { permissions: permissions.summary() } : {}),
         ...(declined ? { patchDeclined: declined.reason } : {}),
@@ -433,8 +448,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       },
       // The person's question, where the run's reader looks for it: the same
       // `automation-studio.action-permission-request.v1` a build carries, at stage `recovery`.
-      ...(permissionRequest ? { permissionRequest: permissionRequest as unknown as JsonObject } : {}),
-      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(patchFailureCode ? { patchFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
+      ...(raisedRequest ? { permissionRequest: raisedRequest as unknown as JsonObject } : {}),
+      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(resolutionFailureCode ? { patchFailureCode: resolutionFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
     }
   };
   return {
