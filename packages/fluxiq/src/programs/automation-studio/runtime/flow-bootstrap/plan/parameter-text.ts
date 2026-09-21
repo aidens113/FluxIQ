@@ -46,6 +46,7 @@ export function automationStudioFlowBootstrapParameterText(
     ...(parameter.defaultValue !== undefined ? { defaultValue: parameter.defaultValue } : {}),
     ...(parameter.options ? { options: parameter.options.map((option) => option.value) } : {}),
     ...(parameter.constraints ? { constraints: parameter.constraints } : {}),
+    ...(parameter.executableSource ? { executableSource: parameter.executableSource.language } : {}),
     ...(text.description !== undefined ? { description: text.description } : {}),
     ...(text.example !== undefined ? { example: text.example } : {})
   };
@@ -60,7 +61,7 @@ export function boundedCatalogText(value: string, limit: number): string {
 type ParameterText = { description?: string; example?: JsonValue };
 
 function structuredText(parameter: AutomationNodeParameter, form: AutomationStudioFlowBootstrapCatalogEntryForm): ParameterText {
-  if (form !== "whole" || !STRUCTURED_PARAMETER_TYPES.has(parameter.valueType)) return {};
+  if (form !== "whole" || (!STRUCTURED_PARAMETER_TYPES.has(parameter.valueType) && !parameter.executableSource)) return {};
   const description = parameter.description?.trim() ? boundedCatalogText(parameter.description, PARAMETER_DESCRIPTION_CHARACTERS) : undefined;
   const example = boundedExample(parameter.example);
   return { ...(description !== undefined ? { description } : {}), ...(example !== undefined ? { example } : {}) };

@@ -11,6 +11,7 @@ import {
   type FluxIQRuntimeCommand,
   type FluxIQRuntimeCommandAttempt,
   type FluxIQRuntimeCommandResult,
+  type FluxIQRuntimeEvent,
   type FluxIQRuntimeExecutionContext,
   type FluxIQRuntimeTransport
 } from "../index.ts";
@@ -354,6 +355,80 @@ describe("RuntimeService", () => {
     expect(runtime.commandAttemptsList()).toMatchObject([{ command: { parameters: { selector: "#field", text: "hello", retries: 3 } }, message: "Typed hello.", result: { message: "Typed hello." } }]);
   });
 
+  it("omits whole parameters from the kept and saved attempt while the adapter executes them", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-withheld-parameters-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const received: Array<{ command: FluxIQRuntimeCommand; context: FluxIQRuntimeExecutionContext }> = [];
+      runtime.registerAdapter({
+        adapterId: "private-parameters",
+        label: "Private parameters",
+        transport: "direct",
+        capabilities: () => [{ id: "private.actions", kind: "action", actionTypes: ["private.run"] }],
+        execute: (command, context) => {
+          received.push({ command, context });
+          return { commandId: command.commandId ?? "command.private", status: "succeeded" };
+        }
+      });
+
+      await runtime.dispatch(
+        { commandId: "command.private", kind: "execute_action", actionType: "private.run", parameters: { secret: SUPPLIED } },
+        { withheldCommandParameters: true }
+      );
+      await runtime.ready();
+
+      expect(received[0]?.command.parameters).toEqual({ secret: SUPPLIED });
+      expect(received[0]?.context).not.toHaveProperty("withheldCommandParameters");
+      const [kept] = runtime.commandAttemptsList();
+      expect(kept?.command).not.toHaveProperty("parameters");
+      const saved = await readFile(path.join(root, "command-attempts", kept!.attemptId, "attempt.json"), "utf8");
+      expect(saved).not.toContain(SUPPLIED);
+      expect((JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt.command).not.toHaveProperty("parameters");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds private command and result details from every public event while ordinary events stay unchanged", async () => {
+    const events: FluxIQRuntimeEvent[] = [];
+    const received: FluxIQRuntimeCommand[] = [];
+    const runtime = new RuntimeService();
+    runtime.onEvent((event) => { events.push(event); });
+    runtime.registerAdapter({
+      adapterId: "event-boundary",
+      label: "Event boundary",
+      transport: "direct",
+      capabilities: () => [{ id: "event.actions", kind: "action", actionTypes: ["event.run"] }],
+      execute: (command) => {
+        received.push(command);
+        return command.commandId === "command.private-event"
+          ? { commandId: command.commandId, status: "failed", message: `${SUPPLIED}-message`, error: `${SUPPLIED}-error`, payload: { result: `${SUPPLIED}-result` } }
+          : { commandId: command.commandId ?? "command.ordinary-event", status: "succeeded", message: "ordinary message", payload: { result: "ordinary result" } };
+      }
+    });
+
+    const privateResult = await runtime.dispatch(
+      { commandId: "command.private-event", kind: "execute_action", actionType: "event.run", parameters: { source: `${SUPPLIED}-source`, inputs: { marker: `${SUPPLIED}-input` } } },
+      { withheldCommandParameters: true, withheldResultPayload: true }
+    );
+    const ordinaryResult = await runtime.dispatch(
+      { commandId: "command.ordinary-event", kind: "execute_action", actionType: "event.run", parameters: { value: "ordinary input" } }
+    );
+
+    expect(received[0]?.parameters).toEqual({ source: `${SUPPLIED}-source`, inputs: { marker: `${SUPPLIED}-input` } });
+    expect(privateResult).toMatchObject({ message: `${SUPPLIED}-message`, error: `${SUPPLIED}-error`, payload: { result: `${SUPPLIED}-result` } });
+    expect(ordinaryResult).toMatchObject({ message: "ordinary message", payload: { result: "ordinary result" } });
+    const publicJson = JSON.stringify(events);
+    expect(publicJson).not.toContain(SUPPLIED);
+    const dispatched = events.filter((event) => event.type === "command.dispatched");
+    const results = events.filter((event) => event.type === "command.result");
+    expect(dispatched[0]).toMatchObject({ command: { commandId: "command.private-event" } });
+    expect((dispatched[0] as Extract<FluxIQRuntimeEvent, { type: "command.dispatched" }>).command).not.toHaveProperty("parameters");
+    expect(results[0]).toMatchObject({ result: { message: FLUXIQ_RUNTIME_WITHHELD_VALUE, error: FLUXIQ_RUNTIME_WITHHELD_VALUE, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE } });
+    expect(dispatched[1]).toMatchObject({ command: { commandId: "command.ordinary-event", parameters: { value: "ordinary input" } } });
+    expect(results[1]).toMatchObject({ result: { message: "ordinary message", payload: { result: "ordinary result" } } });
+  });
+
   it("withholds the result payload from the attempt it keeps and saves when asked, while the caller receives it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-withheld-payload-"));
     try {
@@ -386,12 +461,12 @@ describe("RuntimeService", () => {
       const saved = await readFile(path.join(root, "command-attempts", kept!.attemptId, "attempt.json"), "utf8");
       expect(saved).not.toContain(SUPPLIED);
       const savedAttempt = (JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt;
-      // Only the payload is replaced; the command and the rest of the result are kept as given.
+      // Private result details are replaced; command data not separately marked private stays.
       expect(savedAttempt).toMatchObject({
         status: "succeeded",
-        message: "Extracted 1 row.",
+        message: FLUXIQ_RUNTIME_WITHHELD_VALUE,
         command: { parameters: { selector: "#list" } },
-        result: { commandId: "command.extracting", status: "succeeded", message: "Extracted 1 row.", payload: FLUXIQ_RUNTIME_WITHHELD_VALUE }
+        result: { commandId: "command.extracting", status: "succeeded", message: FLUXIQ_RUNTIME_WITHHELD_VALUE, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE }
       });
       // Withheld when settled, so memory, snapshots, and disk hold the same attempt.
       expect(runtime.commandAttemptsList()).toEqual([savedAttempt]);
@@ -425,9 +500,9 @@ describe("RuntimeService", () => {
 
     const attempts = runtime.commandAttemptsList();
     expect(attempts.map((attempt) => attempt.result)).toEqual([
-      { commandId: "command.both", status: "failed", error: `Stopped at ${FLUXIQ_RUNTIME_WITHHELD_VALUE}.`, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE },
+      { commandId: "command.both", status: "failed", error: FLUXIQ_RUNTIME_WITHHELD_VALUE, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE },
       { commandId: "command.unasked", status: "succeeded", payload: { rows: [{ name: "Synthetic kept row" }] } },
-      { commandId: "command.empty", status: "succeeded", message: "Nothing to extract." }
+      { commandId: "command.empty", status: "succeeded", message: FLUXIQ_RUNTIME_WITHHELD_VALUE }
     ]);
     expect(attempts[2]?.result).not.toHaveProperty("payload");
   });

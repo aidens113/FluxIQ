@@ -277,7 +277,7 @@ import { createRecord, SQLiteRepository } from "../../database-manager/storage/s
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
-import type { RuntimeService } from "../../../runtime/index.ts";
+import { FLUXIQ_RUNTIME_WITHHELD_VALUE, type RuntimeService } from "../../../runtime/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
 import {
   type CanonicalAutomationStudioRepositories,
@@ -640,6 +640,31 @@ export type RecordingSummaryList = {
   pageSize: number;
   total: number;
 };
+
+function runtimeSessionForPersistence(
+  session: AutomationStudioRuntimeSession,
+  ioRuntime: { io: IoRegistry; domainId: string | null } | undefined,
+  nativeRuntime: AutomationStudioNativeNodeRuntime | undefined
+): AutomationStudioRuntimeSession {
+  if (!ioRuntime) return session;
+  let changed = false;
+  const nodes = session.flow.nodes.map((node) => {
+    const parameters = node.parameterValues;
+    if (!parameters) return node;
+    const definition = nativeRuntime?.getDefinition(node.definitionId);
+    const outputId = node.definitionId === "builtin.policy.action" && typeof parameters.outputId === "string"
+      ? parameters.outputId
+      : definition?.outputAction?.fixedOutputId;
+    const privateParameters = definition?.metadata?.withholdParametersFromPersistence === true
+      || (outputId ? ioRuntime.io.getOutput(ioRuntime.domainId, outputId)?.definition.metadata?.withholdParametersFromPersistence === true : false);
+    if (!privateParameters) return node;
+    changed = true;
+    if (node.definitionId !== "builtin.policy.action") return { ...node, parameterValues: {} };
+    if (!Object.hasOwn(parameters, "parameters")) return node;
+    return { ...node, parameterValues: { ...parameters, parameters: FLUXIQ_RUNTIME_WITHHELD_VALUE } };
+  });
+  return changed ? { ...session, flow: { ...session.flow, nodes } } : session;
+}
 
 export class AutomationStudioService {
   private readonly repositories: CanonicalAutomationStudioRepositories;
@@ -4880,8 +4905,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+    const persisted = runtimeSessionForPersistence(session, this.ioRuntime, this.nativeNodeRuntime);
     await this.projects.ensureProjectStructure(projectId);
-    await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
+    await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: persisted as unknown as JsonObject });
     await new ProgramJsonStore<RuntimeIndex>(this.projectPaths.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({
       sessions: upsertBy(index.sessions ?? [], "runId", {
         runId: session.runId,
@@ -4891,8 +4917,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         updatedAt: Date.now()
       })
     }));
-    await this.summaries.writeRuntimeSummary(projectId, session);
-    await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
+    await this.summaries.writeRuntimeSummary(projectId, persisted);
+    await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(persisted, projectId));
   }
 
   private async withReusableLlmContextStore<T>(projectId: string, operation: (store: AutomationStudioProjectReusableLlmContextStore) => Promise<T>): Promise<T> {

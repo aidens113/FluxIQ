@@ -407,17 +407,18 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(codes).toEqual(expect.arrayContaining(["bootstrap.invalid_text", "bootstrap.plan_too_large"]));
   });
 
-  it("derives high risk from privileged definitions instead of accepting model-supplied risk", () => {
+  it("derives high risk from a reviewed executable-source definition instead of accepting model-supplied risk", () => {
     const highRegistry = registry().register(definition({
-      id: "domain.demo.privileged",
-      source: { kind: "importer", domainId: "demo", implementationKey: "demo.privileged" },
-      safety: { privileged: true, runtime: { childProcess: true } },
+      id: "domain.demo.javascript",
+      source: { kind: "importer", domainId: "demo", implementationKey: "demo.javascript" },
+      safety: { privileged: true, requiresOperatorApproval: true },
+      capabilities: { executable: true },
       inputs: [],
-      parameters: [],
+      parameters: [{ id: "source", label: "Source", valueType: "string", allowStateBinding: false, executableSource: { language: "javascript" } }],
       outputAction: undefined
     }));
     const value = plan();
-    value.subflows[0]!.nodes = [{ key: "privileged", definitionId: "domain.demo.privileged", definitionVersion: "1.2.3" }];
+    value.subflows[0]!.nodes = [{ key: "javascript", definitionId: "domain.demo.javascript", definitionVersion: "1.2.3", parameters: { source: "return null;" } }];
     value.subflows[0]!.edges = [];
     const result = validateAutomationStudioFlowBootstrapPlan({ plan: value, registry: highRegistry, resolution });
     expect(result.validated?.risk).toBe("high");

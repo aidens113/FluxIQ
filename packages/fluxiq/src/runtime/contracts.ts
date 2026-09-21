@@ -179,10 +179,17 @@ export type FluxIQRuntimeDispatchContext = FluxIQRuntimeExecutionContext & {
    */
   withheldValues?: FluxIQRuntimeWithheldValues;
   /**
+   * Omits the complete `command.parameters` object from the attempt the runtime
+   * keeps and saves. The adapter or transport still executes the original
+   * command. Use this only when a trusted output definition declares that none
+   * of its parameters may become durable runtime evidence.
+   */
+  withheldCommandParameters?: boolean;
+  /**
    * The attempt the runtime keeps and saves holds `FLUXIQ_RUNTIME_WITHHELD_VALUE`
-   * in place of `result.payload`; the caller still receives it. A result with no
-   * payload gains none. Like `withheldValues`, never handed to the adapter or
-   * transport.
+   * in place of private result details; the caller still receives the real
+   * result. A trusted transport may consume this flag only to project its
+   * independently forwarded public event; it is never sent to the client.
    */
   withheldResultPayload?: boolean;
 };
@@ -228,7 +235,7 @@ export type FluxIQRuntimeEvent =
   | { type: "run.started"; run: FluxIQRuntimeRun }
   | { type: "run.finished"; run: FluxIQRuntimeRun }
   | { type: "command.dispatched"; runId?: string; command: FluxIQRuntimeCommand }
-  | { type: "command.result"; runId?: string; result: FluxIQRuntimeCommandResult }
+  | { type: "command.result"; runId?: string; result: FluxIQRuntimeCommandAttemptResult }
   | { type: "state.update"; client: FluxIQRuntimeClient; payload: JsonObject }
   | { type: "snapshot"; client: FluxIQRuntimeClient; payload: JsonObject }
   | { type: "recording.event"; client: FluxIQRuntimeClient; payload: JsonObject }

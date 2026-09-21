@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAutomationStudioFlowExpansionFixture } from "../../../../model/index.ts";
+import { defineOutput, IoRegistry } from "../../../../../../io/index.ts";
+import { RuntimeService } from "../../../../../../runtime/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { installPrimaryRouter, createRunnableCanonicalFlow, adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 let tempRoot: string;
@@ -57,6 +60,110 @@ describe("AutomationStudioService recording persistence", () => {
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "flows", flow.flowId, "flow.json"), "utf8")).resolves.toContain("\"flowId\"");
     await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
+  });
+
+  it("keeps private output data ephemeral across a full saved runtime session", async () => {
+    const source = "synthetic-session-source-that-must-not-persist";
+    const input = "synthetic-session-input-that-must-not-persist";
+    const returned = "synthetic-session-result-that-must-not-persist";
+    const io = new IoRegistry();
+    io.registerOutput("example", defineOutput({
+      definition: {
+        id: "private-output",
+        title: "Private output",
+        metadata: {
+          resultPath: "result.extracted",
+          withholdParametersFromPersistence: true,
+          withholdResultPayloadFromPersistence: true
+        }
+      },
+      mode: "request",
+      dispatch: (request) => ({ ok: true, outputId: request.outputId })
+    }));
+    const runtime = new RuntimeService();
+    const executed: unknown[] = [];
+    runtime.registerAdapter({
+      adapterId: "private-output",
+      label: "Private output",
+      transport: "direct",
+      domainId: "example",
+      capabilities: () => [{ id: "private-output", kind: "action", domainId: "example", outputIds: ["private-output"] }],
+      execute: (command) => {
+        executed.push(command.parameters);
+        return { commandId: command.commandId ?? "command.private", status: "succeeded", payload: { result: { extracted: { marker: returned } } } };
+      }
+    });
+    const native = new AutomationStudioNativeNodeRuntime().register({
+      schemaVersion: "0.1",
+      sdkVersion: "0.1",
+      packageId: "example.private",
+      packageVersion: "1.0.0",
+      domainId: "example",
+      nodes: [{
+        schemaVersion: "0.1",
+        id: "example.private-node",
+        version: "1.0.0",
+        label: "Private node",
+        description: "Synthetic private output node.",
+        category: "Example",
+        source: { kind: "importer", domainId: "example", packageId: "example.private", implementationKey: "private-node" },
+        availability: { kind: "domain", domainId: "example" },
+        capabilities: { executable: true },
+        inputs: [],
+        outputs: [{ id: "result", label: "Result", valueType: "json" }],
+        parameters: [
+          { id: "source", label: "Source", valueType: "string" },
+          { id: "inputs", label: "Inputs", valueType: "object" }
+        ],
+        outputAction: { fixedOutputId: "private-output" },
+        metadata: { withholdParametersFromPersistence: true }
+      }]
+    }, {
+      packageId: "example.private",
+      packageVersion: "1.0.0",
+      implementations: {
+        "private-node": ({ parameters }) => ({
+          status: "success",
+          route: "success",
+          outputs: {},
+          effects: [{ type: "policy.output.dispatch", payload: { outputId: "private-output", parameters } }]
+        })
+      }
+    });
+    const service = createService({ dataDir: tempRoot, seedFixture: false })
+      .bindIoRuntime(io, "example")
+      .bindNativeNodeRuntime(native)
+      .bindRuntimeService(runtime);
+    const project = await service.createProject({ name: "Private runtime session" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.private", name: "Private Flow" });
+    await service.saveProjectArtifact({
+      projectId: project.id,
+      kind: "flow",
+      artifact: {
+        ...flow,
+        nodes: [
+          { id: "output", definitionId: "example.private-node", definitionVersion: "1.0.0", parameterValues: { source, inputs: { marker: input } } },
+          { id: "store", definitionId: "builtin.data.set-variable", parameterValues: { name: "observed", writeMode: "replace" } }
+        ],
+        edges: [
+          { id: "output.store.control", sourceNodeId: "output", sourcePortId: "success", targetNodeId: "store", targetPortId: "in" },
+          { id: "output.store.result", sourceNodeId: "output", sourcePortId: "result", targetNodeId: "store", targetPortId: "value" }
+        ]
+      }
+    });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, authorizedDomainIds: ["example"], adaptiveMode: "no_llm_intervention" });
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    const saved = await readFile(path.join(projectRoot, "runtime", "sessions", `${run.runId}.json`), "utf8");
+    const authored = await readFile(path.join(projectRoot, "flows", flow.flowId, "flow.json"), "utf8");
+
+    expect(run.status).toBe("succeeded");
+    expect(executed).toEqual([{ source, inputs: { marker: input } }]);
+    expect(saved).not.toContain(source);
+    expect(saved).not.toContain(input);
+    expect(saved).not.toContain(returned);
+    expect(authored).toContain(source);
+    expect(authored).toContain(input);
   });
 
   it("pages runtime run summaries from the runtime SQL index without loading traces", async () => {

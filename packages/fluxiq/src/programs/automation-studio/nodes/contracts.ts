@@ -52,6 +52,13 @@ export type AutomationNodeParameter = {
   required?: boolean;
   /** Parameters are state-bindable by default; set false to restrict this field to manual values. */
   allowStateBinding?: boolean;
+  /**
+   * Marks the one literal parameter whose string is executable source rather
+   * than ordinary data. Generated output may carry it only on the registered
+   * node that declares this contract; review surfaces keep the literal value
+   * visible like any other parameter.
+   */
+  executableSource?: { language: "javascript" };
   example?: JsonValue;
   constraints?: {
     minimum?: number;

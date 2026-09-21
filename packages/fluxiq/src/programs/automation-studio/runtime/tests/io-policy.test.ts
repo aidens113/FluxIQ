@@ -62,6 +62,45 @@ describe("policy output dispatch failures", () => {
     expect(plain).not.toHaveProperty("failure");
   });
 
+  it("projects a declared result path through direct IO dispatch", async () => {
+    const value = { marker: "reviewed", count: 3 };
+    const result = await dispatchPolicyOutput(
+      ioWith(() => ({ ok: true, outputId: "activate-element", payload: { result: { extracted: value } } }), { resultPath: "result.extracted" }),
+      "example",
+      action
+    );
+    expect(result.outputs?.result).toEqual(value);
+  });
+
+  it("projects a declared result path through runtime dispatch", async () => {
+    const value = { marker: "reviewed", count: 3 };
+    const result = await createRuntimePolicyEffectDispatcher(
+      ioWith(undefined, { resultPath: "result.extracted" }),
+      "example",
+      runtimeReturning({ status: "succeeded", payload: { result: { extracted: value } } })
+    )(effect);
+    expect(result?.outputs?.result).toEqual(value);
+  });
+
+  it.each(["result.missing", "result..extracted"])("withholds a result whose declared path is missing or invalid: %s", async (resultPath) => {
+    const result = await dispatchPolicyOutput(
+      ioWith(() => ({ ok: true, outputId: "activate-element", payload: { result: { extracted: { marker: "reviewed" } } } }), { resultPath }),
+      "example",
+      action
+    );
+    expect(result.outputs).not.toHaveProperty("result");
+  });
+
+  it("keeps an ordinary output envelope unchanged, including one with recordsPath metadata", async () => {
+    const payload = { result: { extracted: [{ name: "one" }] } };
+    const result = await dispatchPolicyOutput(
+      ioWith(() => ({ ok: true, outputId: "activate-element", payload }), { recordsPath: "result.extracted" }),
+      "example",
+      action
+    );
+    expect(result.outputs?.result).toEqual(payload);
+  });
+
   it("names Core's own pre-dispatch rejections", async () => {
     expect((await dispatchPolicyOutput(ioWith(), "example", { actionType: "", parameters: {} })).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "output_dispatch.missing_output_id" });
     expect((await dispatchPolicyOutput(ioWith(), "example", { ...action, outputId: "missing" })).failure).toMatchObject({ category: "blocked_by_capability_or_policy", code: "output_dispatch.output_not_registered" });
@@ -177,6 +216,98 @@ describe("failure propagation from dispatch to diagnosis", () => {
 describe("a runtime-dispatched output's saved command attempt", () => {
   // Obviously synthetic: every assertion about it is where it must not appear.
   const SUPPLIED = "synthetic-policy-value-that-must-never-be-persisted";
+
+  it("honors trusted whole-parameter and result withholding while keeping execution and projection ephemeral", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-private-output-"));
+    try {
+      const source = `${SUPPLIED}-source`;
+      const input = `${SUPPLIED}-input`;
+      const returned = `${SUPPLIED}-result`;
+      const executed: JsonObject[] = [];
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      runtime.registerAdapter({
+        adapterId: "example.runtime",
+        label: "Example Runtime",
+        transport: "direct",
+        domainId: "example",
+        capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+        execute: (command) => {
+          executed.push(command.parameters ?? {});
+          return { commandId: command.commandId ?? "command.runtime", status: "succeeded", payload: { result: { extracted: { marker: returned } } } };
+        }
+      });
+      const privateEffect = { type: "policy.output.dispatch", payload: { outputId: "activate-element", parameters: { source, inputs: { marker: input } } } };
+      const result = await createRuntimePolicyEffectDispatcher(ioWith(undefined, {
+        resultPath: "result.extracted",
+        withholdParametersFromPersistence: true,
+        withholdResultPayloadFromPersistence: true
+      }), "example", runtime)(privateEffect);
+      await runtime.ready();
+
+      expect(executed).toEqual([{ source, inputs: { marker: input } }]);
+      expect(result).toMatchObject({ status: "success", outputs: { result: { marker: returned } } });
+      const [attempt] = runtime.commandAttemptsList();
+      const saved = await readFile(path.join(root, "command-attempts", attempt!.attemptId, "attempt.json"), "utf8");
+      expect(saved).not.toContain(source);
+      expect(saved).not.toContain(input);
+      expect(saved).not.toContain(returned);
+      const savedAttempt = (JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt;
+      expect(savedAttempt.command).not.toHaveProperty("parameters");
+      expect(savedAttempt.result?.payload).toBe(FLUXIQ_RUNTIME_WITHHELD_VALUE);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds private parameters and projected results from the complete saved graph while live data edges stay real", async () => {
+    const source = `${SUPPLIED}-graph-source`;
+    const input = `${SUPPLIED}-graph-input`;
+    const returned = `${SUPPLIED}-graph-result`;
+    const executedParameters: JsonObject[] = [];
+    const executedTraces: AutomationStudioRuntimeSession["trace"][] = [];
+    const runtime = new RuntimeService();
+    runtime.registerAdapter({
+      adapterId: "example.runtime",
+      label: "Example Runtime",
+      transport: "direct",
+      domainId: "example",
+      capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+      execute: (command) => {
+        executedParameters.push(command.parameters ?? {});
+        return { commandId: command.commandId ?? "command.runtime", status: "succeeded", payload: { result: { extracted: { marker: returned } } } };
+      }
+    });
+    const flow: AutomationStudioFlowDocument = {
+      ...actionFlow({ source, inputs: { marker: input } }),
+      flowId: "flow.private-data-edge",
+      nodes: [
+        { id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { source, inputs: { marker: input } } } },
+        { id: "store", definitionId: "builtin.data.set-variable", parameterValues: { name: "observed", writeMode: "replace" } }
+      ],
+      edges: [
+        { id: "output.store.control", sourceNodeId: "output", sourcePortId: "success", targetNodeId: "store", targetPortId: "in" },
+        { id: "output.store.result", sourceNodeId: "output", sourcePortId: "result", targetNodeId: "store", targetPortId: "value" }
+      ]
+    };
+
+    const saved = await runAutomationStudioGraph(flow, {
+      effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(undefined, {
+        resultPath: "result.extracted",
+        withholdParametersFromPersistence: true,
+        withholdResultPayloadFromPersistence: true
+      }), "example", runtime)
+    }, (executed) => { executedTraces.push(executed); });
+
+    expect(executedParameters).toEqual([{ source, inputs: { marker: input } }]);
+    expect(executedTraces[0]?.attempts[0]?.outputs.result).toEqual({ marker: returned });
+    expect(executedTraces[0]?.attempts[1]?.inputs.value).toEqual({ marker: returned });
+    const serialized = JSON.stringify(saved);
+    expect(serialized).not.toContain(source);
+    expect(serialized).not.toContain(input);
+    expect(serialized).not.toContain(returned);
+    expect(saved.attempts[0]?.outputs.result).toBe(FLUXIQ_RUNTIME_WITHHELD_VALUE);
+    expect(saved.attempts[1]?.inputs.value).toEqual({ marker: FLUXIQ_RUNTIME_WITHHELD_VALUE });
+  });
 
   it("withholds a value the run resolved out of state, while the adapter executes the real one", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-withheld-"));

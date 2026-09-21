@@ -8,6 +8,7 @@ import type {
   ClientGatewaySession
 } from "../client-gateway/index.ts";
 import type { JsonObject } from "../core/index.ts";
+import { FLUXIQ_RUNTIME_WITHHELD_VALUE } from "./contracts.ts";
 import type {
   FluxIQRuntimeCapability,
   FluxIQRuntimeClient,
@@ -25,12 +26,16 @@ export type ClientGatewayRuntimeTransportOptions = {
   label?: string;
 };
 
+const PRIVATE_RESULT_EVENT_TTL_MS = 60_000;
+const MAX_PRIVATE_RESULT_EVENT_IDS = 1_024;
+
 export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
   readonly transportId: string;
   readonly label: string;
   readonly kind = "websocket" as const;
   private readonly gateway: ClientGatewayService;
   private readonly handlers = new Set<FluxIQRuntimeEventHandler>();
+  private readonly privateResultEvents = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: ClientGatewayRuntimeTransportOptions) {
     this.gateway = options.gateway;
@@ -52,6 +57,9 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     }
     if (command.kind === "execute_action") {
       const response = this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command));
+      if (context.withheldResultPayload === true) {
+        this.retainPrivateResultEvent(response.commandId);
+      }
       // The client is untrusted: its failure record survives only when it parses.
       const { failure: reported, ...result }: ClientGatewayActionResult = await response.result;
       const failure = parseAutomationStudioFailureRecord(reported);
@@ -96,14 +104,15 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     else if (event.type === "client.recording_event") await this.emit({ type: "recording.event", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.action_result") {
       const failure = parseAutomationStudioFailureRecord(event.message.payload.failure);
+      const privateResult = this.privateResultEvents.has(event.message.payload.commandId);
       await this.emit({
         type: "command.result",
         result: {
           commandId: event.message.payload.commandId,
           status: event.message.payload.status,
-          ...(event.message.payload.message ? { message: event.message.payload.message } : {}),
-          ...(event.message.payload.payload ? { payload: event.message.payload.payload } : {}),
-          ...(event.message.payload.error ? { error: event.message.payload.error } : {}),
+          ...(event.message.payload.message ? { message: privateResult ? FLUXIQ_RUNTIME_WITHHELD_VALUE : event.message.payload.message } : {}),
+          ...(event.message.payload.payload ? { payload: privateResult ? FLUXIQ_RUNTIME_WITHHELD_VALUE : event.message.payload.payload } : {}),
+          ...(event.message.payload.error ? { error: privateResult ? FLUXIQ_RUNTIME_WITHHELD_VALUE : event.message.payload.error } : {}),
           ...(failure ? { failure } : {})
         }
       });
@@ -122,6 +131,23 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
 
   private async emit(event: FluxIQRuntimeEvent): Promise<void> {
     await Promise.all([...this.handlers].map((handler) => handler(event)));
+  }
+
+  /** Keeps duplicate/delayed events private for a bounded post-dispatch lifetime. */
+  private retainPrivateResultEvent(commandId: string): void {
+    const previous = this.privateResultEvents.get(commandId);
+    if (previous) clearTimeout(previous);
+    while (this.privateResultEvents.size >= MAX_PRIVATE_RESULT_EVENT_IDS) {
+      const oldest = this.privateResultEvents.entries().next().value as [string, ReturnType<typeof setTimeout>] | undefined;
+      if (!oldest) break;
+      clearTimeout(oldest[1]);
+      this.privateResultEvents.delete(oldest[0]);
+    }
+    const expiry = setTimeout(() => {
+      if (this.privateResultEvents.get(commandId) === expiry) this.privateResultEvents.delete(commandId);
+    }, PRIVATE_RESULT_EVENT_TTL_MS);
+    expiry.unref?.();
+    this.privateResultEvents.set(commandId, expiry);
   }
 }
 

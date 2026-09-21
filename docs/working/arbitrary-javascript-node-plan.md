@@ -1,7 +1,7 @@
 # Arbitrary JavaScript Flow Node Plan
 
 Status: Active
-Status detail: Core authoring/catalog/review work is queued with the paired downstream browser executor and live proof.
+Status detail: Attempt withholding works, but second adversarial review found graph-session and public-event leaks; paired remediation/live rerun are active.
 Created: 2026-09-20
 Last updated: 2026-09-20
 Owner: Senior supervisor agent
@@ -13,11 +13,11 @@ Related: [Automation Studio LLM bootstrap](../architecture/automation-studio/llm
 
 ## Current State
 
-**Discovery complete; no Core implementation exists.** Core exposes built-in
-declarative nodes and trusted-local importer/code implementations, but not a
-user-authored JavaScript node. The generic native-node runtime explicitly is not
-a security sandbox. The LLM boundary currently rejects conventional executable
-code fields recursively.
+**Implementation implemented; second remediation active.** Core now supports one exact
+registered executable-source parameter on an executable, privileged,
+operator-approved node, preserves global rejection elsewhere, projects a
+trusted bounded result path, and tells providers to prefer purpose-built nodes.
+The downstream hand-authored Chromium journey passed.
 
 Core will not execute browser JavaScript. It will own the registered definition
 contract supplied by the downstream web domain, keep exact parameter validation,
@@ -32,14 +32,20 @@ unknown code/script fields elsewhere remain refused. Generated source must stay
 visible in proposal review, and applying the proposal must continue through the
 existing human review and revision/digest gates.
 
-The live-first order and full implementation brief are owned by the paired
-downstream document. Core unit/build checks run only after the downstream live
-journeys work.
+The first remediation now keeps source/input/result sentinels out of saved
+command attempts while preserving real adapter execution and result projection.
+Second adversarial review found two remaining Core leaks: durable graph/session
+traces copy literal effects and outputs, and public/runtime-transport events
+publish raw commands or results outside the attempt policy. The paired
+downstream document owns the exact second remediation brief and live-first order.
 
-**Next:** a worker implements the paired t029 task when an active MVP worker
-slot returns.
+**Next:** extend the trusted definition-owned policy to persisted graph/session
+projections and public runtime events, preserving ordinary output compatibility
+and ephemeral JavaScript execution/data edges; then rerun the downstream live
+oracle before focused persistence/event checks.
 
-**Blockers:** worker capacity only; no architectural blocker identified.
+**Blockers:** graph-session and public-event privacy defects block integration. Model-authored
+selection and Firefox remain validation gaps, not inferred passes.
 
 ---
 

@@ -10,6 +10,7 @@ import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeSe
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../nodes/contracts.ts";
+import { withAutomationStudioTracePersistence } from "./executor/index.ts";
 
 const elementMatcher = createAutomationStudioElementMatcher();
 
@@ -39,6 +40,7 @@ export async function dispatchPolicyOutput(
     metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
   });
   const confirmationResult = result.ok && confirmation ? await confirmation : null;
+  const projectedResult = outputResult(output, result.payload);
   const outputs: Record<string, JsonValue> = {
     outputId,
     ok: result.ok,
@@ -46,14 +48,16 @@ export async function dispatchPolicyOutput(
     ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
-    ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
+    ...(projectedResult !== undefined ? { result: projectedResult } : {})
   };
-  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) };
-  return failedDispatchResult(outputs, {
+  if (result.ok && (!confirmationResult || confirmationResult.ok)) {
+    return outputTracePersistence(output, { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) });
+  }
+  return outputTracePersistence(output, failedDispatchResult(outputs, {
     message: confirmationFailureMessage(confirmationResult) ?? result.error,
     failure: dispatchFailure(result.ok, result.status, result.failure, confirmationResult),
     resolution: prepared.resolution
-  });
+  }));
 }
 
 export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
@@ -79,7 +83,8 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
     let action = policyActionFromPayload(payload);
     const outputId = action.outputId?.trim();
     if (!outputId) return missingOutputIdResult("runtime");
-    if (!io.hasOutput(domainId, outputId)) return unregisteredOutputResult(outputId);
+    const output = io.getOutput(domainId, outputId);
+    if (!output) return unregisteredOutputResult(outputId);
     const prepared = prepareElementTargetAction(io, domainId, action);
     if (!prepared.ok) return elementTargetRejectionResult(outputId, prepared);
     action = prepared.action;
@@ -97,14 +102,19 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(context?.signal ? { signal: context.signal } : {}),
       // The runtime withholds these from the command attempt it saves; the command still carries them.
       ...(context?.withheldValues ? { withheldValues: context.withheldValues } : {}),
+      ...(output.definition.metadata?.withholdParametersFromPersistence === true ? { withheldCommandParameters: true } : {}),
       // A dispatch that carries `recordOutput` returns records, which are stored only
       // as their dataset allows, so the saved attempt holds the withheld marker in
       // place of the payload. The result returned here still carries them.
-      ...(payload.recordOutput !== undefined && payload.recordOutput !== null ? { withheldResultPayload: true } : {}),
+      ...(payload.recordOutput !== undefined && payload.recordOutput !== null
+        || output.definition.metadata?.withholdResultPayloadFromPersistence === true
+        ? { withheldResultPayload: true }
+        : {}),
       ...(typeof action.metadata?.clientId === "string" ? { preferredClientId: action.metadata.clientId } : {}),
       ...(typeof action.metadata?.sessionId === "string" ? { preferredSessionId: action.metadata.sessionId } : {})
     });
     const confirmationResult = result.status === "succeeded" && confirmation ? await confirmation : null;
+    const projectedResult = outputResult(output, result.payload);
     const outputs: Record<string, JsonValue> = {
       outputId,
       ok: result.status === "succeeded",
@@ -114,15 +124,30 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}),
       ...(result.error ? { error: result.error } : {}),
       ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
-      ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
+      ...(projectedResult !== undefined ? { result: projectedResult } : {})
     };
-    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) };
-    return failedDispatchResult(outputs, {
+    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) {
+      return outputTracePersistence(output, { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) });
+    }
+    return outputTracePersistence(output, failedDispatchResult(outputs, {
       message: confirmationFailureMessage(confirmationResult) ?? result.message ?? result.error,
       failure: dispatchFailure(result.status === "succeeded", result.status, result.failure, confirmationResult),
       resolution: prepared.resolution
-    });
+    }));
   };
+}
+
+function outputTracePersistence(
+  output: ReturnType<IoRegistry["getOutput"]>,
+  result: AutomationNodeExecutionResult
+): AutomationNodeExecutionResult {
+  const effectPayloadKeys = output?.definition.metadata?.withholdParametersFromPersistence === true ? ["parameters"] : undefined;
+  const outputIds = output?.definition.metadata?.withholdResultPayloadFromPersistence === true ? ["result"] : undefined;
+  if (!effectPayloadKeys && !outputIds) return result;
+  return withAutomationStudioTracePersistence(result, {
+    ...(effectPayloadKeys ? { effectPayloadKeys } : {}),
+    ...(outputIds ? { outputIds } : {})
+  });
 }
 
 function awaitConfirmation(io: IoRegistry, domainId: string | null | undefined, action: PolicyOutputAction, signal: AbortSignal | undefined): Promise<ConfirmationOutcome> | null {
@@ -130,6 +155,28 @@ function awaitConfirmation(io: IoRegistry, domainId: string | null | undefined, 
   return io.waitForInput({ domainId: domainId ?? null, inputId: action.confirmationInputId, ...(action.confirmationTimeoutMs !== undefined ? { timeoutMs: action.confirmationTimeoutMs } : {}), ...(signal ? { signal } : {}) })
     .then((): ConfirmationOutcome => ({ ok: true }))
     .catch((error: unknown): ConfirmationOutcome => ({ ok: false, error: error instanceof Error ? error.message : "Output confirmation failed.", cancelled: signal?.aborted === true }));
+}
+
+/**
+ * Importer outputs normally expose their complete adapter payload on the
+ * canonical `result` port. A definition may instead name a bounded dot path in
+ * `metadata.resultPath` when its transport envelope contains the data value the
+ * node contract promises. Invalid or missing paths fail closed by withholding
+ * the port value; they never broaden into dynamic property access.
+ */
+function outputResult(output: ReturnType<IoRegistry["getOutput"]>, payload: unknown): JsonValue | undefined {
+  if (payload === undefined) return undefined;
+  const path = output?.definition.metadata?.resultPath;
+  if (typeof path !== "string") return payload as JsonValue;
+  const segments = path.split(".");
+  if (!segments.length || segments.length > 8 || path.length > 256
+    || segments.some(segment => !/^[A-Za-z0-9_-]+$/u.test(segment) || ["__proto__", "constructor", "prototype"].includes(segment))) return undefined;
+  let value: unknown = payload;
+  for (const segment of segments) {
+    if (typeof value !== "object" || value === null || Array.isArray(value) || !Object.hasOwn(value, segment)) return undefined;
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return value as JsonValue;
 }
 
 // A valid host-reported record wins. Otherwise Core names only what its own

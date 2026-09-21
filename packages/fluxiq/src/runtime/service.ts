@@ -186,10 +186,10 @@ export class RuntimeService {
 
   async dispatch(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext = {}): Promise<FluxIQRuntimeCommandResult> {
     await this.readyPromise;
-    // Withheld values and a withheld result payload shape only the attempt the
-    // runtime keeps. They are not handed on, the command the target executes
-    // keeps every real value, and the caller receives the result as returned.
-    const { withheldValues, withheldResultPayload, ...dispatchContext } = context;
+    // Withheld values, command parameters, and result payload shape only the
+    // attempt the runtime keeps. They are not handed on, the command the target
+    // executes keeps every real value, and the caller receives the result as returned.
+    const { withheldValues, withheldCommandParameters, withheldResultPayload, ...dispatchContext } = context;
     const withheld = withheldLookup(withheldValues);
     const commandId = command.commandId ?? `command.${randomUUID()}`;
     const normalizedCommand = { ...command, commandId };
@@ -205,7 +205,7 @@ export class RuntimeService {
     const attempt: FluxIQRuntimeCommandAttempt = {
       attemptId: `attempt.${randomUUID()}`,
       commandId,
-      command: withheldCommand(normalizedCommand, withheld),
+      command: withheldCommand(normalizedCommand, withheld, withheldCommandParameters === true),
       status: "dispatched",
       dispatchedAt: this.now()
     };
@@ -222,13 +222,17 @@ export class RuntimeService {
     }
     this.commandAttempts.set(attempt.attemptId, attempt);
     this.persistCommandAttempt(attempt);
-    await this.emit({ type: "command.dispatched", ...(context.runId ? { runId: context.runId } : {}), command: normalizedCommand });
+    await this.emit({ type: "command.dispatched", ...(context.runId ? { runId: context.runId } : {}), command: attempt.command });
 
     const result = target
-      ? await this.dispatchToTarget(target, normalizedCommand, dispatchContext)
+      ? await this.dispatchToTarget(target, normalizedCommand, dispatchContext, withheldResultPayload === true)
       : rejectedResult(commandId, "No runtime adapter or transport client matches the requested command.", this.now());
     const settled = this.settleAttempt(attempt.attemptId, result, withheld, withheldResultPayload === true);
-    await this.emit({ type: "command.result", ...(context.runId ? { runId: context.runId } : {}), result });
+    await this.emit({
+      type: "command.result",
+      ...(context.runId ? { runId: context.runId } : {}),
+      result: withheldResult(result, withheld, withheldResultPayload === true)
+    });
     if (run) {
       if (settled?.clientId !== undefined) run.selectedClientId = settled.clientId;
       if (settled?.sessionId !== undefined) run.selectedSessionId = settled.sessionId;
@@ -261,11 +265,17 @@ export class RuntimeService {
     return null;
   }
 
-  private async dispatchToTarget(target: RuntimeDispatchTarget, command: FluxIQRuntimeCommand & { commandId: string }, context: FluxIQRuntimeDispatchContext): Promise<FluxIQRuntimeCommandResult> {
+  private async dispatchToTarget(
+    target: RuntimeDispatchTarget,
+    command: FluxIQRuntimeCommand & { commandId: string },
+    context: FluxIQRuntimeDispatchContext,
+    withholdPublicResult: boolean
+  ): Promise<FluxIQRuntimeCommandResult> {
     const run = async () => {
       if (target.kind === "transport") {
         return await target.transport.dispatch(command, {
           ...context,
+          ...(withholdPublicResult ? { withheldResultPayload: true } : {}),
           ...(target.client.sessionId !== undefined ? { preferredSessionId: target.client.sessionId } : {}),
           preferredClientId: target.client.clientId
         });
@@ -423,7 +433,11 @@ function withheldLookup(values: FluxIQRuntimeWithheldValues | undefined): Withhe
  * replaced in place, keeping every key and every other value; the command's own
  * structure -- kind, ids, timeout -- is not a value a caller supplied.
  */
-function withheldCommand(command: FluxIQRuntimeCommand & { commandId: string }, withheld: WithheldLookup | null): FluxIQRuntimeCommand & { commandId: string } {
+function withheldCommand(command: FluxIQRuntimeCommand & { commandId: string }, withheld: WithheldLookup | null, withholdParameters: boolean): FluxIQRuntimeCommand & { commandId: string } {
+  if (withholdParameters && command.parameters !== undefined) {
+    const { parameters: _parameters, ...kept } = command;
+    return kept;
+  }
   if (!withheld || !command.parameters) return command;
   return { ...command, parameters: withheldJson(command.parameters, withheld, 0) as JsonObject };
 }
@@ -435,11 +449,14 @@ function withheldCommand(command: FluxIQRuntimeCommand & { commandId: string }, 
  */
 function withheldResult(result: FluxIQRuntimeCommandResult, withheld: WithheldLookup | null, withholdPayload: boolean): FluxIQRuntimeCommandAttemptResult {
   const payloadWithheld = withholdPayload && result.payload !== undefined;
-  if (!withheld && !payloadWithheld) return result;
+  const detailsWithheld = withholdPayload && (result.message !== undefined || result.error !== undefined);
+  if (!withheld && !payloadWithheld && !detailsWithheld) return result;
   const kept: FluxIQRuntimeCommandAttemptResult = { ...result };
   if (payloadWithheld) kept.payload = FLUXIQ_RUNTIME_WITHHELD_VALUE;
-  if (withheld && result.message !== undefined) kept.message = withheld.text(result.message);
-  if (withheld && result.error !== undefined) kept.error = withheld.text(result.error);
+  if (withholdPayload && result.message !== undefined) kept.message = FLUXIQ_RUNTIME_WITHHELD_VALUE;
+  else if (withheld && result.message !== undefined) kept.message = withheld.text(result.message);
+  if (withholdPayload && result.error !== undefined) kept.error = FLUXIQ_RUNTIME_WITHHELD_VALUE;
+  else if (withheld && result.error !== undefined) kept.error = withheld.text(result.error);
   return kept;
 }
 

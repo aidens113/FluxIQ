@@ -188,6 +188,7 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     } else {
       if (!options.effectDispatcher) continue;
       const answer = await options.effectDispatcher(effect, effectDispatchContext(options, withholding)); if (!answer) continue;
+      withholding.recordDispatch(target, index, effect, answer);
       dispatched = await withCapturedRecords(effect, answer, options, target);
     }
     const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };

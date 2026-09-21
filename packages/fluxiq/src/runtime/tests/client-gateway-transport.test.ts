@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../client-gateway/index.ts";
-import { ClientGatewayRuntimeTransport } from "../index.ts";
+import { ClientGatewayRuntimeTransport, FLUXIQ_RUNTIME_WITHHELD_VALUE } from "../index.ts";
 
 describe("ClientGatewayRuntimeTransport", () => {
   it("projects paired gateway sessions as runtime clients", async () => {
@@ -38,6 +38,43 @@ describe("ClientGatewayRuntimeTransport", () => {
     }));
 
     await expect(resultPromise).resolves.toMatchObject({ status: "succeeded", message: "clicked" });
+  });
+
+  it("withholds a transport-forwarded private result event while returning the real result", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.private-result", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const events: unknown[] = [];
+    transport.onEvent((event) => {
+      if (event.type === "command.result") events.push(event.result);
+    });
+
+    const resultPromise = transport.dispatch({
+      commandId: "command.private-result",
+      kind: "execute_action",
+      domainId: "web-automation",
+      actionType: "web.dom.click"
+    }, { withheldResultPayload: true });
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", {
+      commandId: lastExecuteCommandId(gateway, paired.sessionId),
+      status: "failed",
+      message: "private message",
+      error: "private error",
+      payload: { result: "private payload" }
+    }));
+
+    await expect(resultPromise).resolves.toMatchObject({
+      message: "private message",
+      error: "private error",
+      payload: { result: "private payload" }
+    });
+    expect(events).toEqual([{
+      commandId: lastExecuteCommandId(gateway, paired.sessionId),
+      status: "failed",
+      message: FLUXIQ_RUNTIME_WITHHELD_VALUE,
+      error: FLUXIQ_RUNTIME_WITHHELD_VALUE,
+      payload: FLUXIQ_RUNTIME_WITHHELD_VALUE
+    }]);
   });
 
   it("rejects dispatch when no ready gateway client matches", async () => {

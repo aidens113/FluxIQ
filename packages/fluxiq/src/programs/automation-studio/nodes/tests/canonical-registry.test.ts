@@ -69,6 +69,24 @@ describe("canonical Automation Studio node registry", () => {
     expect(validateAutomationStudioImporterNodeManifest(invalidManifest).issues.map((issue) => issue.code)).toContain("node.importer_scope_mismatch");
     expect(() => new AutomationStudioNodeRegistry().registerImporterManifest(invalidManifest)).toThrow("node.importer_scope_mismatch");
   });
+
+  it("allows executable source only on executable privileged nodes that require operator approval", () => {
+    const executable: AutomationStudioNodeDefinition = {
+      ...importerNode(),
+      capabilities: { executable: true },
+      safety: { privileged: true, requiresOperatorApproval: true },
+      parameters: [{ id: "source", label: "Source", valueType: "string" as const, allowStateBinding: false, executableSource: { language: "javascript" as const } }]
+    };
+    expect(validateAutomationStudioNodeDefinition(executable).ok).toBe(true);
+    const unsafeDefinitions: AutomationStudioNodeDefinition[] = [
+      { ...executable, capabilities: {} },
+      { ...executable, safety: { privileged: false, requiresOperatorApproval: true } },
+      { ...executable, safety: { privileged: true, requiresOperatorApproval: false } }
+    ];
+    for (const unsafe of unsafeDefinitions) {
+      expect(validateAutomationStudioNodeDefinition(unsafe).issues.map((issue) => issue.code)).toContain("node.executable_source_requires_privileged_review");
+    }
+  });
 });
 
 describe("a parameter contract bound on the registry", () => {

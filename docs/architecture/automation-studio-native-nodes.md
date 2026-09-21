@@ -287,6 +287,46 @@ number of milliseconds above zero, or the candidate is rejected; without it a
 recorded action keeps the policy action's 5,000 ms default, which is sent as the
 runtime command's timeout.
 
+An importer output may also declare a bounded `metadata.resultPath` when its
+canonical data port represents one value inside the transport envelope. Core
+projects that dot-separated own-property path for both direct IO and runtime
+dispatch. A missing or malformed path withholds the port value; an output with
+no `resultPath` continues to expose its complete payload unchanged. This is
+separate from `recordsPath`, whose extraction/dataset behavior is unchanged.
+
+Trusted importer output metadata can also keep values out of durable runtime
+evidence without changing execution. `withholdParametersFromPersistence`
+causes the runtime attempt to omit the complete `command.parameters` object,
+while `withholdResultPayloadFromPersistence` replaces the saved result payload
+with `FLUXIQ_RUNTIME_WITHHELD_VALUE`. The IO dispatcher translates those
+definition-owned declarations into the runtime-only
+`withheldCommandParameters` and `withheldResultPayload` context flags. Neither
+flag is sent to an adapter or client: the target receives the real command,
+and the caller receives the real result for downstream projection. A transport
+may consume only the result flag to project its independently forwarded public
+event. The runtime's own public command/result events use the same safe
+projection while retaining command id and status. This is a trusted registry
+contract, not a field that a Flow or model-authored payload can opt into.
+
+The executor also reads an out-of-band directive attached by the trusted IO
+dispatcher, never JSON supplied by the Flow, and replaces the corresponding
+effect parameter and output values only in the saved graph trace/session. The
+executed trace and data edges keep their real values. When a runtime session
+embeds a copy of the graph, the service uses the same trusted IO/native-node
+metadata to withhold private node parameters from that copy. Executable source
+remains durable in the separately owned, reviewed Flow definition so an
+operator can inspect exactly what will run; it is not duplicated into the
+runtime session's embedded graph. The browser JavaScript escape hatch uses both
+metadata flags so its source, inputs, and raw result are absent from command
+attempts, runtime events, and saved graph traces/sessions.
+
+A parameter marked `executableSource` is valid only on a node that is itself
+executable, privileged, and requires operator approval, and the parameter must
+be a literal string with state binding disabled. LLM output validation permits
+code only at that exact registered node/parameter object; copying identical
+text under another `code` or `script` key is still refused. The marker narrows
+the exception and does not imply that the executable medium is harmless.
+
 Approving the proposal into a Flow writes both into the recorded action node's
 `parameterValues.recordOutput` and `parameterValues.timeoutMs`. Approving it
 into a node definition carries both as well, in the definition's metadata, and a

@@ -567,6 +567,15 @@ The authoring action uses the current authenticated session to issue its bounded
 
 Website exploration distinguishes its two safety boundaries in the interface: bounded browser actions happen immediately against the connected tab, while the generated Router, Subflows, and actions remain an unapplied proposal. Preparing and exploring states expose an accessible indeterminate progress indicator, elapsed time, and a reminder to keep the target tab connected. Shared LLM progress vocabulary uses `Checking prior evidence`, `Inspecting live target`, `Generating proposal`, and `Ready for review`; the current authoring surface renders only phases supported by observable state. In particular, prior-evidence wording and controls remain hidden until reusable-context candidate data exists. Successful generation states explicitly confirm that no generated change has been applied. Failures map only allowlisted diagnostic codes to fixed, actionable recovery guidance; raw service errors, provider output, prompts, and page evidence are never rendered.
 
+Catalog guidance prefers registered purpose-built nodes. A domain may expose a
+literal `executableSource` parameter only on an executable, privileged node
+that requires operator approval; a Bootstrap plan may carry code only at that
+exact registered parameter. Such a node makes the canonical Bootstrap risk
+`high`, so normal manual proposal review remains mandatory and source stays
+visible before explicit approval/application. Isolation from extension APIs
+does not make arbitrary page code safe: reviewed source can still read or
+modify page data and initiate page-context network activity.
+
 Successful generation opens the returned proposed Bootstrap Adaptation in the existing Adaptations view. A typed compatibility bridge projects the dedicated Bootstrap document through the standard `get-flow-adaptation` DTO without copying it into standard Adaptation persistence. The projection exposes only the source instruction IDs, Core-derived risk, summarized Router/Subflow changes, bounded request/token/cost accounting, and the base/current Core execution digests and settings revisions. It never exposes a key identity, grant, session, prompt, instruction body, or raw provider response.
 
 The authoring surface cannot approve or apply the proposal. The standard review endpoint, `review-flow-adaptation`, detects the Bootstrap identity and delegates only approve, reject, apply, and revert to the dedicated lifecycle; the Adaptations UI hides unsupported standard actions. Review responses re-project the new lifecycle state immediately. An applied response includes the canonical post-apply execution digest, which must match the dedicated application record. Only explicit application materializes the deterministic Core-owned Router, Subflows, and graph Flows; existing Router/Subflow mutation subscriptions then refresh Runtime Debug readiness and allow a deterministic Run.

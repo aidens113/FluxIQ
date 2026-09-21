@@ -156,7 +156,7 @@ export function validateAutomationStudioNodeDefinition(definition: AutomationStu
   validateAvailability(definition, issues);
   validatePorts(definition.inputs, issues, "inputs");
   validatePorts(definition.outputs, issues, "outputs");
-  validateParameters(definition.parameters, issues);
+  validateParameters(definition, issues);
   if (definition.safety?.requiredPermissions?.some((permission) => !permission.trim())) {
     issue(issues, "node.invalid_required_permission", "Node requiredPermissions cannot contain empty values.", "safety.requiredPermissions");
   }
@@ -239,12 +239,18 @@ function validatePorts(ports: AutomationNodePort[], issues: AutomationStudioVali
   }
 }
 
-function validateParameters(parameters: AutomationNodeParameter[], issues: AutomationStudioValidationIssue[]): void {
+function validateParameters(definition: AutomationStudioNodeDefinition, issues: AutomationStudioValidationIssue[]): void {
+  const { parameters } = definition;
   const ids = new Set<string>();
   for (const [index, parameter] of parameters.entries()) {
     if (!parameter.id.trim()) issue(issues, "node.parameter_missing_id", "Node parameter must have an id.", `parameters.${index}.id`);
     if (!parameter.label.trim()) issue(issues, "node.parameter_missing_label", "Node parameter must have a label.", `parameters.${index}.label`);
     if (ids.has(parameter.id)) issue(issues, "node.duplicate_parameter_id", `Duplicate node parameter id "${parameter.id}".`, `parameters.${index}.id`);
+    if (parameter.executableSource && parameter.valueType !== "string") issue(issues, "node.executable_source_must_be_string", "Executable source parameters must be strings.", `parameters.${index}.valueType`);
+    if (parameter.executableSource && parameter.allowStateBinding !== false) issue(issues, "node.executable_source_must_be_literal", "Executable source parameters must explicitly disable state binding.", `parameters.${index}.allowStateBinding`);
+    if (parameter.executableSource && (definition.capabilities.executable !== true || definition.safety?.privileged !== true || definition.safety.requiresOperatorApproval !== true)) {
+      issue(issues, "node.executable_source_requires_privileged_review", "Executable source parameters require an executable, privileged node with operator approval.", `parameters.${index}.executableSource`);
+    }
     ids.add(parameter.id);
   }
 }

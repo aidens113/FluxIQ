@@ -46,6 +46,8 @@
 // credential is not a node id.
 import type { JsonValue } from "../../../../core/index.ts";
 import { FLUXIQ_RUNTIME_WITHHELD_VALUE, fluxiqRuntimeTextWithholding, type FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "./contracts.ts";
 import { isAutomationStudioRecordTraceMarker } from "./record-summary.ts";
 
 /**
@@ -79,6 +81,34 @@ const MAXIMUM_WITHHOLDING_DEPTH = 64;
 
 type WithheldValues = { texts: Set<string>; numbers: Set<number> };
 
+export type AutomationStudioTracePersistence = {
+  /** Keys in the dispatched effect payload whose complete values must not be kept. */
+  effectPayloadKeys?: readonly string[];
+  /** Output ids whose complete values must remain on live edges only. */
+  outputIds?: readonly string[];
+};
+
+type TrustedDispatch = {
+  nodeId: string;
+  attemptId: string;
+  effectIndex: number;
+  effect: { type: string; payload?: JsonValue };
+  outputs: Record<string, JsonValue>;
+  persistence: AutomationStudioTracePersistence;
+};
+
+// A dispatcher is trusted host code. Keeping its persistence directive outside
+// the JSON result means a Flow, importer payload, or model cannot forge it.
+const tracePersistenceByResult = new WeakMap<AutomationNodeExecutionResult, AutomationStudioTracePersistence>();
+
+export function withAutomationStudioTracePersistence(
+  result: AutomationNodeExecutionResult,
+  persistence: AutomationStudioTracePersistence
+): AutomationNodeExecutionResult {
+  tracePersistenceByResult.set(result, persistence);
+  return result;
+}
+
 /** The values one run resolved out of state, and the trace rewrite that withholds them. */
 export type AutomationStudioTraceWithholding = {
   /**
@@ -92,6 +122,13 @@ export type AutomationStudioTraceWithholding = {
    * The parent executes with its child's real outputs, so they can.
    */
   include(values: FluxIQRuntimeWithheldValues): void;
+  /** Records a trusted dispatcher's exact effect/output persistence boundary. */
+  recordDispatch(
+    target: { nodeId: string; attemptId: string },
+    effectIndex: number,
+    effect: { type: string; payload?: JsonValue },
+    result: AutomationNodeExecutionResult
+  ): void;
   /**
    * The trace with every recorded value withheld. A run that resolved nothing
    * gets its own trace back by identity, so a Flow without bindings pays nothing.
@@ -107,6 +144,12 @@ export type AutomationStudioTraceWithholding = {
 
 export function automationStudioTraceWithholding(): AutomationStudioTraceWithholding {
   const withheld: WithheldValues = { texts: new Set<string>(), numbers: new Set<number>() };
+  // Exact roots keep the complete private JSON shape out of later trace copies.
+  // Objects and arrays are followed by identity; top-level booleans/null are
+  // necessarily value-matched because JavaScript has no distinct primitive
+  // identity. This set never leaves the run and cannot be supplied by Flow JSON.
+  const privateRoots = new Set<JsonValue>();
+  const dispatches: TrustedDispatch[] = [];
   return {
     record(authored, resolved) {
       recordSuppliedValue(authored, resolved, withheld, 0);
@@ -115,17 +158,132 @@ export function automationStudioTraceWithholding(): AutomationStudioTraceWithhol
       for (const text of values.texts) if (text) withheld.texts.add(text);
       for (const value of values.numbers) if (Number.isFinite(value)) withheld.numbers.add(value);
     },
+    recordDispatch(target, effectIndex, effect, result) {
+      const persistence = tracePersistenceByResult.get(result);
+      if (!persistence) return;
+      for (const outputId of persistence.outputIds ?? []) {
+        if (Object.hasOwn(result.outputs ?? {}, outputId)) {
+          const value = result.outputs![outputId]!;
+          privateRoots.add(value);
+          recordWithheldScalars(value, withheld, 0);
+        }
+      }
+      dispatches.push({ ...target, effectIndex, effect, outputs: result.outputs ?? {}, persistence });
+    },
     apply<TTrace>(trace: TTrace): TTrace {
-      if (!withheld.texts.size && !withheld.numbers.size) return trace;
+      const rooted = privateRoots.size
+        ? withheldPrivateRootValue(trace, privateRoots, false, 0) as TTrace
+        : trace;
+      const privatelyProjected = dispatches.length
+        ? withholdTrustedDispatches(rooted as AutomationStudioGraphExecutionTrace, dispatches) as TTrace
+        : rooted;
+      if (!withheld.texts.size && !withheld.numbers.size) return privatelyProjected;
       // The walk preserves every key and every value it does not withhold, and a
       // withheld leaf becomes a string, so the result has the shape of what it
       // was given. That is what the cast asserts and what the tests hold it to.
-      return withheldTraceValue(trace, { text: fluxiqRuntimeTextWithholding(withheld.texts), numbers: withheld.numbers }, false, 0) as TTrace;
+      return withheldTraceValue(privatelyProjected, { text: fluxiqRuntimeTextWithholding(withheld.texts), numbers: withheld.numbers }, false, 0) as TTrace;
     },
     values() {
       return { texts: [...withheld.texts], numbers: [...withheld.numbers] };
     }
   };
+}
+
+/**
+ * Replaces an exact private result root wherever the live executor reused it in
+ * trace data. Matching the root before descending hides object keys and every
+ * nested JSON kind, including booleans and null, without guessing from leaves.
+ */
+function withheldPrivateRootValue(value: unknown, roots: ReadonlySet<JsonValue>, data: boolean, depth: number): unknown {
+  if (data && roots.has(value as JsonValue)) return AUTOMATION_STUDIO_WITHHELD_VALUE;
+  if (!value || typeof value !== "object") return value;
+  if (depth >= MAXIMUM_WITHHOLDING_DEPTH) return value;
+  if (Array.isArray(value)) {
+    let changed = false;
+    const items = value.map((item) => {
+      const projected = withheldPrivateRootValue(item, roots, data, depth + 1);
+      if (projected !== item) changed = true;
+      return projected;
+    });
+    return changed ? items : value;
+  }
+  let changed = false;
+  const record: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const projected = withheldPrivateRootValue(item, roots, data || TRACE_DATA_KEYS.has(key) || TRACE_PROSE_KEYS.has(key), depth + 1);
+    if (projected !== item) changed = true;
+    record[key] = projected;
+  }
+  return changed ? record : value;
+}
+
+function withholdTrustedDispatches(
+  trace: AutomationStudioGraphExecutionTrace,
+  dispatches: readonly TrustedDispatch[]
+): AutomationStudioGraphExecutionTrace {
+  let values = trace.values;
+  let effects = trace.effects;
+  const attempts = trace.attempts.map((attempt) => {
+    const matching = dispatches.filter((dispatch) => dispatch.attemptId === attempt.attemptId);
+    if (!matching.length) return attempt;
+    let attemptOutputs = attempt.outputs;
+    let attemptEffects = attempt.effects;
+    let comparison = attempt.transitionComparison;
+    for (const dispatch of matching) {
+      for (const outputId of dispatch.persistence.outputIds ?? []) {
+        if (!Object.hasOwn(dispatch.outputs, outputId)) continue;
+        const value = dispatch.outputs[outputId]!;
+        attemptOutputs = withheldEntry(attemptOutputs, outputId);
+        if (comparison) {
+          comparison = {
+            ...comparison,
+            actual: { ...comparison.actual, outputs: withheldEntry(comparison.actual.outputs, outputId) }
+          };
+        }
+        values = withheldEntry(values, `${dispatch.nodeId}.${outputId}`);
+        if (Object.is(values[outputId], value)) values = withheldEntry(values, outputId);
+      }
+      if ((dispatch.persistence.effectPayloadKeys?.length ?? 0) > 0) {
+        attemptEffects = attemptEffects.map((effect, index) => index === dispatch.effectIndex
+          ? withholdEffectPayloadKeys(effect, dispatch.persistence.effectPayloadKeys!)
+          : effect);
+        if (comparison) {
+          comparison = {
+            ...comparison,
+            actual: {
+              ...comparison.actual,
+              effects: comparison.actual.effects.map((effect, index) => index === dispatch.effectIndex
+                ? withholdEffectPayloadKeys(effect, dispatch.persistence.effectPayloadKeys!)
+                : effect)
+            }
+          };
+        }
+        effects = effects.map((effect) => effect.nodeId === dispatch.nodeId && effect.type === dispatch.effect.type
+          && effect.payload === dispatch.effect.payload
+          ? { ...withholdEffectPayloadKeys(effect, dispatch.persistence.effectPayloadKeys!), nodeId: effect.nodeId }
+          : effect);
+      }
+    }
+    return {
+      ...attempt,
+      outputs: attemptOutputs,
+      effects: attemptEffects,
+      ...(comparison ? { transitionComparison: comparison } : {})
+    };
+  });
+  return { ...trace, attempts, values, effects };
+}
+
+function withheldEntry(entries: Record<string, JsonValue>, key: string): Record<string, JsonValue> {
+  if (!Object.hasOwn(entries, key)) return entries;
+  return { ...entries, [key]: AUTOMATION_STUDIO_WITHHELD_VALUE };
+}
+
+function withholdEffectPayloadKeys<T extends { type: string; payload?: JsonValue }>(effect: T, keys: readonly string[]): T {
+  if (!effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return effect;
+  let payload = effect.payload as Record<string, JsonValue>;
+  for (const key of keys) payload = withheldEntry(payload, key);
+  return { ...effect, payload };
 }
 
 function recordSuppliedValue(authored: JsonValue | undefined, resolved: JsonValue, withheld: WithheldValues, depth: number): void {

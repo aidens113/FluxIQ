@@ -10,7 +10,7 @@ export function validateAutomationStudioLlmOutput(
   flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"]
 ): AutomationStudioLlmDiagnostic[] {
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
-  if (containsExecutableCode(response)) diagnostics.push({ severity: "error", code: "llm_output.executable_code", message: "LLM output cannot include executable code, scripts, or function bodies." });
+  if (containsExecutableCode(response, flowBootstrap)) diagnostics.push({ severity: "error", code: "llm_output.executable_code", message: "LLM output cannot include executable code except in a registered executable-source parameter." });
   // A patch call may come back as a diagnosis, and it may come back declined:
   // "there is no repair" is an answer to "repair this", and for some failures
   // it is the only true one.
@@ -62,14 +62,55 @@ function validateChangeProposalPatches(patches: AutomationStudioChangeProposalPa
   }
 }
 
-function containsExecutableCode(value: unknown, seen = new Set<unknown>()): boolean {
+function containsExecutableCode(
+  value: unknown,
+  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"],
+  seen = new Set<unknown>(),
+  allowed = allowedExecutableSourceParameters(value, flowBootstrap),
+  isParameterObject = false
+): boolean {
   if (!value || typeof value !== "object") return false;
   if (seen.has(value)) return false;
   seen.add(value);
-  if (Array.isArray(value)) return value.some((item) => containsExecutableCode(item, seen));
+  if (Array.isArray(value)) return value.some((item) => containsExecutableCode(item, flowBootstrap, seen, allowed, false));
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (["code", "script", "functionBody", "javascript", "typescript"].includes(key)) return true;
-    if (containsExecutableCode(item, seen)) return true;
+    const registered = allowed.get(value as object)?.has(key) === true && typeof item === "string";
+    if ((["code", "script", "functionBody", "javascript", "typescript"].includes(key) || (isParameterObject && key === "source" && typeof item === "string")) && !registered) return true;
+    if (containsExecutableCode(item, flowBootstrap, seen, allowed, key === "parameters")) return true;
   }
   return false;
+}
+
+/**
+ * The exact parameter objects and keys a registry entry designates as
+ * executable source. A copied identical string under any other key or node is
+ * therefore still refused.
+ */
+function allowedExecutableSourceParameters(
+  value: unknown,
+  flowBootstrap: AutomationStudioLlmHarnessInput["flowBootstrap"] | undefined
+): WeakMap<object, ReadonlySet<string>> {
+  const allowed = new WeakMap<object, ReadonlySet<string>>();
+  if (!flowBootstrap || !value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "flow_bootstrap") return allowed;
+  const plan = (value as { plan?: { subflows?: unknown } }).plan;
+  if (!plan || !Array.isArray(plan.subflows)) return allowed;
+  for (const subflow of plan.subflows) {
+    if (!subflow || typeof subflow !== "object" || !Array.isArray((subflow as { nodes?: unknown }).nodes)) continue;
+    for (const node of (subflow as { nodes: unknown[] }).nodes) {
+      if (!node || typeof node !== "object") continue;
+      const definitionId = (node as { definitionId?: unknown }).definitionId;
+      const parameters = (node as { parameters?: unknown }).parameters;
+      if (typeof definitionId !== "string" || !parameters || typeof parameters !== "object" || Array.isArray(parameters)) continue;
+      const definition = flowBootstrap.registry?.get(definitionId, flowBootstrap.resolution);
+      for (const parameter of definition?.parameters ?? []) {
+        if (!parameter.executableSource) continue;
+        const source = (parameters as Record<string, unknown>)[parameter.id];
+        if (typeof source !== "string") continue;
+        const parameterKeys = new Set(allowed.get(parameters as object) ?? []);
+        parameterKeys.add(parameter.id);
+        allowed.set(parameters as object, parameterKeys);
+      }
+    }
+  }
+  return allowed;
 }
