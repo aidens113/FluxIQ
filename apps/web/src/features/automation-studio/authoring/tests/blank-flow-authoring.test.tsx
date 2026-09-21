@@ -42,7 +42,7 @@ const explorationFlow = { ...flow, metadata: { ...flow.metadata, llmExecutionSet
 const defaultExplorationPreflight = { purpose: "build_and_adapt", tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, maxCalls: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, timeoutMs: 45_000 };
 const explorationPayload = {
   purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat",
-  tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0
+  tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 560_000, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0
 };
 
 function button(renderer: ReactTestRenderer, text: string) {
@@ -85,7 +85,7 @@ describe("blank Flow instruction authoring", () => {
     expect(blankFlowAuthoringRequest("project.one", { ...flow, metadata: { ...flow.metadata, llmExecutionSettings: { ...flow.metadata.llmExecutionSettings, tokenLimits: { maxInputTokens: 3000, maxOutputTokens: 1000, maxTotalTokens: 4000 } } } }, readiness).ok).toBe(false);
     expect(BLANK_FLOW_AUTHORING_LIMITS).toMatchObject({ maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, providerRetryCount: 0 });
     // No call count; a claim window Core accepts (1 s to 300 s); Core's 600 s run lease.
-    expect(WEBSITE_EXPLORATION_LIMITS).toEqual({ tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0, grantClaimWindowMs: 60_000, runLeaseMs: 600_000 });
+    expect(WEBSITE_EXPLORATION_LIMITS).toEqual({ tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 560_000, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0, grantClaimWindowMs: 60_000, runLeaseMs: 600_000 });
     expect(WEBSITE_EXPLORATION_LIMITS).not.toHaveProperty("maxCalls");
     expect(blankFlowAuthoringRequestPolicy).toEqual({
       preflight: { endpoint: "preflight-llm-execution", intent: "mutation" },
@@ -286,9 +286,9 @@ describe("blank Flow instruction authoring", () => {
     expect(authoringCommands.issueLlmGrant).not.toHaveBeenCalled();
     const rows = Object.fromEntries(renderer.root.findByProps({ "aria-label": "Flow build request limits" }).findAllByType("div").map((row) => [renderedText(row.findByType("dt")), renderedText(row.findByType("dd"))]));
     expect(rows).toEqual({
-      "Input tokens per call": "8000",
-      "Output tokens per call": "4000",
-      "Total tokens per call": "12000",
+      "Input tokens per call": "48000",
+      "Output tokens per call": "8000",
+      "Total tokens per call": "56000",
       "Total tokens for the run": "640,000",
       Calls: "As many as needed, at most 64",
       "Timeout per call": "45 seconds",
