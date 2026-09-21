@@ -26,6 +26,15 @@ describe("resolveAutomationStudioExplorationBudget", () => {
     expect(budget.maxDurationMs).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
   });
 
+  // The total gathered was a 262,144-byte cap that twenty-four calls at the web
+  // domain's 12,000-byte packet could reach first. The loop's window bounds each
+  // request; the total is only the backstop, at its ceiling.
+  it("holds the evidence an exploration gathers only to the loop's backstop", () => {
+    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxEvidenceBytes).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxEvidenceBytes);
+    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxProviderCalls * 12_000).toBeLessThan(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxEvidenceBytes);
+    expect(resolveAutomationStudioExplorationBudget({ maxEvidenceBytes: 8_192 }).maxEvidenceBytes).toBe(8_192);
+  });
+
   // The three ceilings that bound the loop are Core's own, written out in the
   // budget because reading them back at module-evaluation time closes an import
   // cycle through `llm/harness/intervention.ts`. Pinned here so the copy cannot
