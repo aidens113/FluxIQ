@@ -13,6 +13,7 @@ import {
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, automationStudioLlmSignalTimedOut } from "./provider-contract.ts";
 import { automationStudioLlmProviderErrorSpendsCall } from "./failure-disposition.ts";
 import {
+  automationStudioLlmExecutionGrantFixedCalls,
   automationStudioLlmExecutionGrantIterates,
   automationStudioLlmRequestMatchesGrant,
   parseAutomationStudioLlmExecutionGrantPurpose,
@@ -206,12 +207,17 @@ export class AutomationStudioLlmExecutionGrantService {
     const flowId = required(input.flowId);
     const purpose = parseAutomationStudioLlmExecutionGrantPurpose(input.purpose);
     const binding = executionBinding(await this.options.resolveExecutionDigest(projectId, flowId), purpose);
-    // A purpose that cannot iterate makes one request because one request is
-    // all it asks for, not because a table says so. Everything that iterates
-    // takes its number from the caller, or from the single configured default.
+    // A purpose that cannot iterate makes the requests its question takes --
+    // one, or two for a `verify_result` whose first answer is not `yes` --
+    // and a caller may ask for that allowance or for one call. Everything that
+    // iterates takes its number from the caller, or from the single configured
+    // default.
     const iterates = automationStudioLlmExecutionGrantIterates(purpose);
-    const maxCalls = iterates ? input.maxCalls ?? AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS : 1;
-    if (!iterates && input.maxCalls !== undefined && input.maxCalls !== 1) throw new Error(`${purpose} permits exactly one LLM call.`);
+    const fixedCalls = automationStudioLlmExecutionGrantFixedCalls(purpose);
+    const maxCalls = iterates ? input.maxCalls ?? AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS : input.maxCalls ?? fixedCalls;
+    if (!iterates && input.maxCalls !== undefined && input.maxCalls !== 1 && input.maxCalls !== fixedCalls) {
+      throw new Error(fixedCalls === 1 ? `${purpose} permits exactly one LLM call.` : `${purpose} permits one LLM call or ${fixedCalls}.`);
+    }
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
     if ((input.providerRetryCount ?? 0) !== 0) throw new Error("LLM execution grants do not permit provider retries.");
     const tokenResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits ?? LIMITS);

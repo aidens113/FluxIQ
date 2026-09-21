@@ -29,8 +29,9 @@ export { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts
  * Three words, because two would force a model with no view to guess. `unsure`
  * exists so that "I cannot tell" is sayable, and it is emphatically not a pass:
  * `automationStudioResultVerificationAnswers` is the one reader of these
- * values and it treats anything but `answers` as a run that must report a
- * failure.
+ * values, and only `answers` passes. What any other verdict does to the run
+ * is `automationStudioResultVerificationFailsRun`'s to say: it fails the run
+ * unless two checks of the same result did not settle it.
  */
 export type AutomationStudioResultVerdict = "answers" | "does_not_answer" | "unsure";
 
@@ -43,7 +44,20 @@ export type AutomationStudioResultVerdictBasis =
   /** The model was asked and its answer carried no verdict. */
   | "model_silent"
   /** The call was made or attempted and did not come back usable. */
-  | "model_unavailable";
+  | "model_unavailable"
+  /**
+   * The model judged the result not to answer, or could not tell, was asked
+   * once more with the same evidence, and judged that it does. Two different
+   * answers to one question settle nothing, so neither is taken over the other.
+   */
+  | "model_disagreed"
+  /**
+   * The model was asked twice with the same evidence and never judged that the
+   * result answers, nor twice that it does not: `no` then `unknown`,
+   * `unknown` then `no` or `unknown`, or a second call that gave no answer.
+   * That is not proof the run failed.
+   */
+  | "model_unconfirmed";
 
 /** One record set the run stored, as the verification reads it. */
 export type AutomationStudioResultRecordSetSummary = {
@@ -111,7 +125,18 @@ export type AutomationStudioResultVerification = {
   reason: string;
   /** What was actually observed: counts, never a model's prose or a row's contents. */
   observation: string;
-  /** Present exactly when the verdict is not `answers`: what the run must report. */
+  /**
+   * The verdict each verification call returned, in the order asked: one, or
+   * two when the first answered anything but `answers`. Verdict words only,
+   * never the model's prose. Absent when no model was asked.
+   */
+  verdicts?: AutomationStudioResultVerdict[];
+  /** The verification calls made or attempted: 1 or 2. Absent when no model was asked. */
+  calls?: number;
+  /**
+   * Present exactly when the verification fails the run
+   * (`automationStudioResultVerificationFailsRun`): what the run must report.
+   */
   failure?: AutomationStudioFailureRecord;
 };
 
@@ -146,4 +171,21 @@ export type AutomationStudioResultVerificationOutcome =
  */
 export function automationStudioResultVerificationAnswers(verification: AutomationStudioResultVerification): boolean {
   return verification.verdict === "answers";
+}
+
+/**
+ * Whether a verification fails the run it judged.
+ *
+ * Every verdict but `answers` does, fail-closed, with one exception: a result
+ * the model was asked about twice, with the same evidence, without either
+ * saying `yes` twice or `no` twice (`model_disagreed`, `model_unconfirmed`).
+ * Both `no` and `unknown` were measured to flip on identical rows at
+ * temperature 0 (2026-09-18, 2026-09-21), and failing a run whose every step
+ * succeeded on an answer the model does not repeat is the false failure this
+ * exception exists to stop. Such a result is recorded `unverified`, never
+ * `confirmed`.
+ */
+export function automationStudioResultVerificationFailsRun(verification: AutomationStudioResultVerification): boolean {
+  if (automationStudioResultVerificationAnswers(verification)) return false;
+  return verification.basis !== "model_disagreed" && verification.basis !== "model_unconfirmed";
 }
