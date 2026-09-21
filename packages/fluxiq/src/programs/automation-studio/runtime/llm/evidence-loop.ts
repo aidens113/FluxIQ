@@ -107,6 +107,8 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
   evidence: JsonValue;
   effectApplied: boolean;
+  /** A domain-neutral refusal verdict attached by a caller that classified resultCode. */
+  refused?: boolean;
   /** True only when every target handle from before this mutation still names
    * the same target afterwards. Consumers may omit it and stay conservative. */
   targetsUnchanged?: boolean;
@@ -179,6 +181,10 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     signal?: AbortSignal;
   }): Promise<unknown>;
   executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /** Optional caller-owned authoritative budget admission for a complete list. */
+  batchAdmission?: {
+    preflight(calls: ReadonlyArray<{ toolId: string; input: JsonObject }>): AutomationStudioLlmEvidenceLoopFailureCode | undefined;
+  };
   maxIterations?: number;
   maxToolCalls?: number;
   maxEvidenceBytes?: number;
@@ -483,7 +489,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
         requestSignature: (epoch, toolId, value) => canonicalJson([epoch, toolId, value]),
         allocateCallId: (requested) => unusedCallId(callIds, requested),
         executeOne: (action, callId, maxEvidenceBytes, position) => executeOne(iteration, action, callId, maxEvidenceBytes, false, position),
-        reserveEvidence
+        reserveEvidence,
+        ...(input.batchAdmission ? {
+          preflightAdmission: input.batchAdmission.preflight
+        } : {})
       });
       if (!batch.ok) return failure(batch.code, trace, accounting);
       continue;
@@ -564,12 +573,13 @@ function requiresMutationBeforeRepeat(tool: AutomationStudioLlmEvidenceTool, mut
 function parseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; refused?: boolean; targetsUnchanged?: boolean; resultCode?: string } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "refused", "targetsUnchanged", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+      || (value.refused !== undefined && typeof value.refused !== "boolean")
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(value.resultCode)))) return undefined;
-    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
+    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.refused === undefined ? {} : { refused: value.refused }), ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };

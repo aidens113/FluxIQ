@@ -7,10 +7,11 @@ export function automationStudioLlmEvidenceInputMatchesSchema(input: JsonObject,
 
 function matches(value: JsonValue, schema: JsonObject, depth: number): boolean {
   if (depth > 20) return false;
+  if (Object.keys(schema).some((key) => !SUPPORTED_SCHEMA_KEYS.has(key))) return false;
   if (schema.const !== undefined && !sameJson(value, schema.const)) return false;
-  if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => sameJson(value, candidate))) return false;
-  if (Array.isArray(schema.oneOf) && schema.oneOf.filter((candidate) => isObject(candidate) && matches(value, candidate, depth + 1)).length !== 1) return false;
-  if (Array.isArray(schema.anyOf) && !schema.anyOf.some((candidate) => isObject(candidate) && matches(value, candidate, depth + 1))) return false;
+  if (schema.enum !== undefined && (!Array.isArray(schema.enum) || !schema.enum.some((candidate) => sameJson(value, candidate)))) return false;
+  if (schema.oneOf !== undefined && (!Array.isArray(schema.oneOf) || schema.oneOf.filter((candidate) => isObject(candidate) && matches(value, candidate, depth + 1)).length !== 1)) return false;
+  if (schema.anyOf !== undefined && (!Array.isArray(schema.anyOf) || !schema.anyOf.some((candidate) => isObject(candidate) && matches(value, candidate, depth + 1)))) return false;
   if (schema.type !== undefined && !matchesType(value, schema.type)) return false;
 
   if (typeof value === "string") {
@@ -31,6 +32,8 @@ function matches(value: JsonValue, schema: JsonObject, depth: number): boolean {
   if (Array.isArray(value)) {
     if (typeof schema.minItems === "number" && value.length < schema.minItems) return false;
     if (typeof schema.maxItems === "number" && value.length > schema.maxItems) return false;
+    if (schema.uniqueItems !== undefined && typeof schema.uniqueItems !== "boolean") return false;
+    if (schema.uniqueItems === true && value.some((item, index) => value.slice(0, index).some((earlier) => sameJson(item, earlier)))) return false;
     if (isObject(schema.items) && !value.every((item) => matches(item, schema.items as JsonObject, depth + 1))) return false;
   }
   if (isObject(value)) {
@@ -52,6 +55,13 @@ function matches(value: JsonValue, schema: JsonObject, depth: number): boolean {
   return true;
 }
 
+const SUPPORTED_SCHEMA_KEYS = new Set([
+  "const", "enum", "oneOf", "anyOf", "type",
+  "minLength", "maxLength", "pattern", "minimum", "maximum",
+  "minItems", "maxItems", "uniqueItems", "items",
+  "required", "properties", "additionalProperties", "minProperties", "maxProperties"
+]);
+
 function matchesType(value: JsonValue, type: unknown): boolean {
   if (Array.isArray(type)) return type.some((candidate) => matchesType(value, candidate));
   if (type === "null") return value === null;
@@ -66,9 +76,14 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
-  try {
-    return JSON.stringify(left) === JSON.stringify(right);
-  } catch {
-    return false;
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((item, index) => sameJson(item, right[index]));
   }
+  if (!isObject(left) || !isObject(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && sameJson(left[key], right[key]));
 }

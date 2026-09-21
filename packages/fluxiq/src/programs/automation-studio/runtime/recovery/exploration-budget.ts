@@ -294,6 +294,26 @@ export class AutomationStudioExplorationBudgetLedger {
   }
 
   /**
+   * Read-only admission for one provider-authored action list.
+   *
+   * It projects both counters across the complete list before action 1. The
+   * ordinary per-action admission remains the only place that charges actions,
+   * so a list stopped early records only actions actually attempted.
+   */
+  preflightActions(signatures: readonly string[]): { admitted: true } | { admitted: false; stopReason: AutomationStudioExplorationStopReason } {
+    const expired = this.checkClock();
+    if (expired) return expired;
+    if (this.actionCount + signatures.length > this.budget.maxActions) return this.stop("action_limit");
+    const projected = new Map<string, number>();
+    for (const signature of signatures) {
+      const attempts = (this.attempts.get(signature) ?? 0) + (projected.get(signature) ?? 0) + 1;
+      if (attempts > this.budget.maxRepeatsPerAction) return this.stop("repeat_window");
+      projected.set(signature, (projected.get(signature) ?? 0) + 1);
+    }
+    return { admitted: true };
+  }
+
+  /**
    * Record what an admitted action produced.
    *
    * `refused` is the domain's own refusal translated into Core's vocabulary.

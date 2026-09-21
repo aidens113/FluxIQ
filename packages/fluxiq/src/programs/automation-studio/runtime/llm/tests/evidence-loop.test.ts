@@ -135,8 +135,35 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
+  it("atomically rejects duplicate consequence declarations against uniqueItems", async () => {
+    const executeTool = vi.fn();
+    const press = {
+      toolId: "press",
+      description: "Press one control.",
+      inputSchema: {
+        type: "object", additionalProperties: false, required: ["consequences"],
+        properties: { consequences: { type: "array", uniqueItems: true, items: { type: "string" } } }
+      },
+      effect: "mutate" as const
+    };
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools: [...tools, press],
+      maxActionsPerDecision: 2,
+      decide: async () => ({
+        kind: "tool_calls",
+        calls: [
+          { toolId: "inspect", input: { page: 1 } },
+          { toolId: "press", input: { consequences: ["send", "send"] } }
+        ]
+      }),
+      executeTool
+    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision", accounting: { toolCalls: 0 } });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["refusal", { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "denied" }, effectApplied: true, targetsUnchanged: true }, "refusal"],
+    ["classified refusal", { kind: "llm_evidence_tool_execution", evidence: { status: "denied" }, effectApplied: true, refused: true, targetsUnchanged: true }, "refusal"],
     ["non-applied mutation", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }, "effect_not_applied"],
     ["missing target stability", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true }, "targets_may_have_changed"],
     ["false target stability", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: false }, "targets_may_have_changed"]

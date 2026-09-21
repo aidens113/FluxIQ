@@ -281,6 +281,64 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.refusedActions).toBe(2);
     expect(run.observedActions).toBe(0);
   });
+
+  it("rejects a whole list against the real action ledger before executing a prefix", async () => {
+    const execute = vi.fn(defaultExecution);
+    const run = await explore({
+      decisions: [batch([
+        { toolId: "test.reveal", input: { area: "one" } },
+        { toolId: "test.reveal", input: { area: "two" } }
+      ])],
+      budget: { maxActions: 1 },
+      maxActionsPerDecision: 2,
+      execute
+    });
+
+    expect(run).toMatchObject({ outcome: "budget_exhausted", stopReason: "action_limit", actions: 0, steps: [], accounting: { toolCalls: 0 } });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("rejects a whole list against projected signature repeats before its first item", async () => {
+    const execute = vi.fn(defaultExecution);
+    const run = await explore({
+      decisions: [
+        call("test.reveal", { area: "held" }),
+        batch([
+          { toolId: "test.reveal", input: { area: "new" } },
+          { toolId: "test.reveal", input: { area: "held" } }
+        ])
+      ],
+      budget: { maxActions: 8, maxRepeatsPerAction: 1 },
+      maxActionsPerDecision: 2,
+      execute
+    });
+
+    expect(run).toMatchObject({ outcome: "no_progress", stopReason: "repeat_window", actions: 1, accounting: { toolCalls: 1 } });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[0].value).toEqual({ area: "held" });
+  });
+
+  it("stops a list on a domain-classified refusal whose evidence is not ok:false", async () => {
+    const execute = vi.fn(async () => ({
+      kind: "llm_evidence_tool_execution" as const,
+      evidence: { status: "outside_scope" },
+      effectApplied: false,
+      resultCode: "test.refused.scope"
+    }));
+    const run = await explore({
+      decisions: [batch([
+        { toolId: "test.inspect", input: { area: "one" } },
+        { toolId: "test.inspect", input: { area: "two" } }
+      ]), complete({ finding: "bounded" })],
+      budget: { maxRefusedActions: 9 },
+      maxActionsPerDecision: 2,
+      execute
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(run).toMatchObject({ refusedActions: 1, actions: 1, accounting: { toolCalls: 1 } });
+    expect(run.trace[0]).toMatchObject({ batch: { position: 1, size: 2, stoppedBy: "refusal" } });
+  });
 });
 
 describe("automationStudioExplorationTraceEvent", () => {
@@ -337,6 +395,7 @@ type Scenario = {
   signal?: AbortSignal;
   onDecide?: () => void;
   advanceClockAfterAction?: number;
+  maxActionsPerDecision?: number;
   /** Which provider calls, counting from one, come back unusable. They consume no scripted decision. */
   unusableAt?: number[];
   /** Replaces the scripted decisions entirely. */
@@ -447,6 +506,7 @@ async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExplo
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, ...scenario.budget }),
     classifyRefusal: scenario.classifyRefusal ?? classifyTestRefusal,
     now: () => nowMs,
+    ...(scenario.maxActionsPerDecision === undefined ? {} : { maxActionsPerDecision: scenario.maxActionsPerDecision }),
     ...(scenario.recoveryDeadline ? { recoveryDeadline: scenario.recoveryDeadline } : {}),
     ...(scenario.signal ? { signal: scenario.signal } : {})
   });
@@ -480,6 +540,10 @@ function call(toolId: string, input: JsonObject): JsonObject {
 
 function complete(result: JsonObject): JsonObject {
   return { kind: "complete", result };
+}
+
+function batch(calls: Array<{ toolId: string; input: JsonObject }>): JsonObject {
+  return { kind: "tool_calls", calls };
 }
 
 function blankExploration(): AutomationStudioRuntimeExploration {

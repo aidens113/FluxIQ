@@ -7,9 +7,11 @@ export function automationStudioLlmEvidenceBatchStopReason(input: {
   evidence: JsonValue;
   effect: "observe" | "mutate" | undefined;
   effectApplied: boolean;
+  /** A caller translated its domain result into Core's refusal vocabulary. */
+  refused?: boolean;
   targetsUnchanged?: boolean;
 }): AutomationStudioLlmEvidenceBatchStopReason | undefined {
-  if (isRefusal(input.evidence)) return "refusal";
+  if (input.refused === true || isRefusal(input.evidence)) return "refusal";
   if (input.effect !== "mutate") return undefined;
   if (!input.effectApplied) return "effect_not_applied";
   return input.targetsUnchanged === true ? undefined : "targets_may_have_changed";

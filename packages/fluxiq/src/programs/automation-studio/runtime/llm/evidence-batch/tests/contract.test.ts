@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseAutomationStudioLlmEvidenceBatchDecision } from "../decision.ts";
+import { automationStudioLlmEvidenceInputMatchesSchema } from "../input-schema.ts";
 import { buildAutomationStudioLlmEvidenceBatchDecisionSchema } from "../schema.ts";
 
 const tools = [
@@ -92,5 +93,19 @@ describe("Automation Studio multi-action evidence decision contract", () => {
     expect(buildAutomationStudioLlmEvidenceBatchDecisionSchema(tools, 17)).toBeUndefined();
     expect(parseAutomationStudioLlmEvidenceBatchDecision({ kind: "tool_calls", calls: [] }, { maxActionsPerDecision: 17 }))
       .toEqual({ ok: false, issues: [{ reason: "invalid_limit" }] });
+  });
+
+  it("enforces unique arrays and refuses schema keywords the local validator does not implement", () => {
+    const unique = {
+      type: "object",
+      additionalProperties: false,
+      required: ["consequences"],
+      properties: {
+        consequences: { type: "array", uniqueItems: true, items: { type: "string" } }
+      }
+    };
+    expect(automationStudioLlmEvidenceInputMatchesSchema({ consequences: ["send", "delete"] }, unique)).toBe(true);
+    expect(automationStudioLlmEvidenceInputMatchesSchema({ consequences: ["send", "send"] }, unique)).toBe(false);
+    expect(automationStudioLlmEvidenceInputMatchesSchema({}, { type: "object", unsupportedConstraint: true })).toBe(false);
   });
 });

@@ -20,6 +20,7 @@ export type AutomationStudioLlmEvidenceAction = {
   toolId: string;
   value: JsonValue;
   effectApplied: boolean;
+  refused?: boolean;
   targetsUnchanged?: boolean;
   resultCode?: string;
   stopReason?: AutomationStudioLlmEvidenceBatchStopReason;
@@ -60,6 +61,7 @@ export async function runAutomationStudioLlmEvidenceAction(input: {
   parseExecution(value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): {
     evidence: JsonValue;
     effectApplied: boolean;
+    refused?: boolean;
     targetsUnchanged?: boolean;
     resultCode?: string;
   } | undefined;
@@ -83,7 +85,7 @@ export async function runAutomationStudioLlmEvidenceAction(input: {
   }
   const execution = input.parseExecution(rawExecution);
   if (!execution) return { ok: false, code: "llm_evidence_loop.tool_failed" };
-  const { evidence: value, effectApplied, targetsUnchanged, resultCode } = execution;
+  const { evidence: value, effectApplied, refused, targetsUnchanged, resultCode } = execution;
   const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
   if ((input.batch && evidenceBytes > input.maxEvidenceBytes)
     || input.accounting.evidenceBytes + evidenceBytes > input.maxTotalEvidenceBytes) {
@@ -99,7 +101,7 @@ export async function runAutomationStudioLlmEvidenceAction(input: {
   }
   if (input.publishEvidence) input.evidence.push({ callId: input.callId, toolId: input.decision.toolId, value });
   const stopReason = input.batch
-    ? automationStudioLlmEvidenceBatchStopReason({ evidence: value, effect: input.tool.effect, effectApplied, ...(targetsUnchanged === undefined ? {} : { targetsUnchanged }) })
+    ? automationStudioLlmEvidenceBatchStopReason({ evidence: value, effect: input.tool.effect, effectApplied, ...(refused === undefined ? {} : { refused }), ...(targetsUnchanged === undefined ? {} : { targetsUnchanged }) })
     : undefined;
   input.trace.push({
     iteration: input.iteration,
@@ -121,6 +123,7 @@ export async function runAutomationStudioLlmEvidenceAction(input: {
       toolId: input.decision.toolId,
       value,
       effectApplied,
+      ...(refused === undefined ? {} : { refused }),
       ...(targetsUnchanged === undefined ? {} : { targetsUnchanged }),
       ...(resultCode ? { resultCode } : {}),
       ...(stopReason ? { stopReason } : {})
@@ -145,6 +148,7 @@ export async function runAutomationStudioLlmEvidenceBatch(input: {
   allocateCallId(requested: string): string;
   executeOne(decision: ActionDecision, callId: string, maxEvidenceBytes: number, batch: { position: number; size: number }): Promise<ActionTransitionResult>;
   reserveEvidence(value: JsonValue): number | undefined;
+  preflightAdmission?(calls: readonly AutomationStudioLlmEvidenceBatchDecision["calls"][number][]): AutomationStudioLlmEvidenceLoopFailureCode | undefined;
 }): Promise<{ ok: true } | { ok: false; code: AutomationStudioLlmEvidenceLoopFailureCode }> {
   if (input.accounting.toolCalls + input.decision.calls.length > input.maxToolCalls) {
     return { ok: false, code: "llm_evidence_loop.iteration_limit" };
@@ -165,6 +169,8 @@ export async function runAutomationStudioLlmEvidenceBatch(input: {
   const availablePerAction = Math.floor((remainingEvidence - packetOverhead) / (input.decision.calls.length + 1));
   const maxActionEvidenceBytes = Math.min(availablePerAction, input.maxEvidenceContextBytes - packetOverhead);
   if (maxActionEvidenceBytes < 1) return { ok: false, code: "llm_evidence_loop.evidence_limit" };
+  const admissionFailure = input.preflightAdmission?.(input.decision.calls);
+  if (admissionFailure) return { ok: false, code: admissionFailure };
 
   const receipts: AutomationStudioLlmEvidenceBatchActionReceipt[] = [];
   let latestEvidence: JsonValue = null;

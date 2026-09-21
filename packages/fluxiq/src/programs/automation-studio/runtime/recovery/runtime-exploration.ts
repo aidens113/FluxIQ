@@ -238,17 +238,20 @@ export async function runAutomationStudioRuntimeExploration(
           // visible from the action alone.
           const evidence = evidenceValue(execution);
           const evidenceText = canonicalJson(evidence);
+          const classifiedRefusal = needsPermission
+            ? { refused: "operator_approval_required" as const }
+            : refusal(execution, input.classifyRefusal);
           ledger.recordAction({
             signature,
             evidenceDigest: automationStudioExplorationEvidenceDigest(evidenceText),
             evidenceBytes: emptyEvidence(evidence) ? 0 : Buffer.byteLength(evidenceText, "utf8"),
-            ...(needsPermission ? { refused: "operator_approval_required" as const } : refusal(execution, input.classifyRefusal))
+            ...classifiedRefusal
           });
           // Terminal, not parked: the step is recorded, and the exploration
           // ends here rather than asking the model for something else to try.
           // `classify` reads the gate before anything the loop reports.
           if (needsPermission) throw new Error("exploration stopped: operator_approval_required");
-          return execution;
+          return classifiedRefusal.refused ? executionWithClassifiedRefusal(execution) : execution;
         }, (evidence) => gate.observe(evidence)),
         // The ledger is the binding limit on actions and provider calls, so it
         // can name which one was hit; the loop keeps Core's ceilings underneath
@@ -257,6 +260,17 @@ export async function runAutomationStudioRuntimeExploration(
         maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
+        batchAdmission: {
+          preflight: (calls) => {
+            const admission = ledger.preflightActions(calls.map((call) => actionSignature(call.toolId, call.input)));
+            if (admission.admitted) return undefined;
+            return admission.stopReason === "repeat_window"
+              ? "llm_evidence_loop.repeat_without_progress"
+              : admission.stopReason === "action_limit"
+                ? "llm_evidence_loop.iteration_limit"
+                : "llm_evidence_loop.cancelled";
+          }
+        },
         ...(input.maxActionsPerDecision === undefined ? {} : { maxActionsPerDecision: input.maxActionsPerDecision }),
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
@@ -480,6 +494,15 @@ function executionResultCode(execution: JsonValue | AutomationStudioLlmEvidenceT
   const candidate = (execution as { kind?: unknown; resultCode?: unknown });
   if (candidate.kind !== "llm_evidence_tool_execution" || typeof candidate.resultCode !== "string") return undefined;
   return candidate.resultCode;
+}
+
+/** Carries a caller's domain classification into Core's generic batch stop rule. */
+function executionWithClassifiedRefusal(
+  execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult
+): JsonValue | AutomationStudioLlmEvidenceToolExecutionResult {
+  if (!execution || typeof execution !== "object" || Array.isArray(execution)
+    || (execution as { kind?: unknown }).kind !== "llm_evidence_tool_execution") return execution;
+  return { ...(execution as AutomationStudioLlmEvidenceToolExecutionResult), refused: true };
 }
 
 /** One action's identity: what it did and with what, independent of call id. */
