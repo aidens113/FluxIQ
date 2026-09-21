@@ -54,6 +54,7 @@ export async function migrateFluxIQStorage(input: { fluxiqRoot: string; activeDo
   const inspection = inspectFluxIQStorage(input);
   if (inspection.layout === "v2") throw new Error("FluxIQ storage already uses layout v2.");
   if (inspection.layout === "fresh") throw new Error("Fresh FluxIQ storage should be initialized with setup(), not migrated.");
+  if (inspection.layout === "uncommitted_v2") throw new Error("Uncommitted FluxIQ layout v2 must use adoptUncommittedFluxIQStorage(), not migrateStorage().");
   if (inspection.externalOverrides.length) throw new Error(`Automatic migration does not move external storage overrides: ${inspection.externalOverrides.join(", ")}`);
 
   const lockPath = path.join(inspection.fluxiqRoot, "migration.lock");

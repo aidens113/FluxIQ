@@ -18,6 +18,7 @@ import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorag
 
 export * from "./storage-layout.ts";
 export * from "./storage-migration.ts";
+export * from "./uncommitted-v2-adoption.ts";
 
 export type FluxIQHostPaths = {
   root: string;
@@ -141,7 +142,7 @@ export class FluxIQ {
     const activeDomainId = activeHostDomainId(options, env);
     const externalOverrides = configuredStorageOverrides(options, env);
     this.storage = inspectFluxIQStorage({ fluxiqRoot: fluxiq, activeDomainId, externalOverrides });
-    const useV2 = this.storage.layout === "fresh" || this.storage.layout === "v2";
+    const useV2 = this.storage.layout === "fresh" || this.storage.layout === "v2" || this.storage.layout === "uncommitted_v2";
     const domainRoot = activeDomainId
       ? resolveInside(root, useV2 ? path.join(fluxiqDir, "domains", activeDomainId) : path.join(fluxiqDir, activeDomainId))
       : null;
@@ -315,6 +316,9 @@ export class FluxIQ {
 
   async setup(options: FluxIQSetupOptions = {}): Promise<FluxIQSetupResult> {
     const currentStorage = this.inspectStorage();
+    if (currentStorage.layout === "uncommitted_v2") {
+      throw new Error("Uncommitted FluxIQ layout v2 requires explicit adoptUncommittedFluxIQStorage() before setup.");
+    }
     if (currentStorage.migrationRequired) {
       throw new Error("FluxIQ storage layout v1 requires migrateStorage() before v2 setup.");
     }

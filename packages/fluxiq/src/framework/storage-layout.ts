@@ -13,7 +13,7 @@ export type FluxIQStorageConfig = {
 };
 
 export type FluxIQStorageInspection = {
-  layout: "fresh" | "v1" | "v2" | "migration_incomplete";
+  layout: "fresh" | "v1" | "v2" | "uncommitted_v2" | "migration_incomplete";
   layoutVersion: 1 | 2 | null;
   fluxiqRoot: string;
   configPath: string;
@@ -58,7 +58,15 @@ export function inspectFluxIQStorage(input: { fluxiqRoot: string; activeDomainId
   const config = readStorageConfig(fluxiqRoot);
   const journalExists = existsSync(migrationJournalPath);
   const anyState = existsSync(fluxiqRoot) && (legacyRoots.length > 0 || directoryHasEntries(fluxiqRoot));
-  const layout = journalExists ? "migration_incomplete" : config ? "v2" : anyState ? "v1" : "fresh";
+  const layout = journalExists
+    ? "migration_incomplete"
+    : config
+      ? "v2"
+      : isUncommittedV2Root(fluxiqRoot, legacyRoots)
+        ? "uncommitted_v2"
+        : anyState
+          ? "v1"
+          : "fresh";
   return {
     layout,
     layoutVersion: config ? 2 : layout === "v1" || layout === "migration_incomplete" ? 1 : null,
@@ -131,6 +139,18 @@ export async function pathSize(target: string): Promise<{ files: number; bytes: 
 function directoryHasEntries(directory: string): boolean {
   try {
     return readdirSync(directory).some((name) => name !== ".migration");
+  } catch {
+    return false;
+  }
+}
+
+function isUncommittedV2Root(root: string, legacyRoots: string[]): boolean {
+  if (legacyRoots.length > 0) return false;
+  try {
+    const entries = readdirSync(root, { withFileTypes: true });
+    return entries.some((entry) => entry.name === "global.sqlite" && entry.isFile())
+      && entries.every((entry) => entry.name === "global.sqlite" && entry.isFile()
+        || ["artifacts", "cache", "logs", "security", "tmp"].includes(entry.name) && entry.isDirectory());
   } catch {
     return false;
   }
