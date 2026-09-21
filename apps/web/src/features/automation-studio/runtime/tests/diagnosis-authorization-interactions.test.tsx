@@ -81,6 +81,19 @@ async function runAdaptation(renderer: ReactTestRenderer) {
 }
 
 describe("Runtime Debug mounted diagnosis authorization", () => {
+  it("counts a run started by this view before the project summary refreshes", async () => {
+    const runtimeCommands = commands({
+      execute: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.local", status: "succeeded" } } }))
+    });
+    const renderer = await mount(runtimeCommands);
+    await act(async () => button(renderer, "No LLM intervention")!.props.onClick());
+    await act(async () => button(renderer, "Run")!.props.onClick());
+
+    const header = renderer.root.findByProps({ className: "automation-runtime-stage-header" });
+    expect(header.findAllByType("span").at(-1)?.children).toEqual(["1", " ", "run"]);
+    await act(async () => renderer.unmount());
+  });
+
   it("uses the authenticated session and scopes grant and intent to diagnosis_only", async () => {
     const runtimeCommands = commands();
     const renderer = await mount(runtimeCommands);

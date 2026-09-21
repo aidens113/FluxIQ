@@ -18,6 +18,7 @@ export function RunHistory(props: RunHistoryProps) {
 export function RunHistoryViewContent(props: RunHistoryProps & { historyCommands: RuntimeHistoryCommands; detailCommands: RuntimeDetailCommands }) {
   const [view, setView] = useState<"list" | "log">("list");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRunRevision, setSelectedRunRevision] = useState(0);
   const initialRuns = runtimeRunsForHistory(props.initialSessions, props.flowId);
   const [runs, setRuns] = useState<any[]>(() => initialRuns);
   const [page, setPage] = useState({ limit: RUNTIME_RUN_PAGE_SIZE, offset: 0, total: initialRuns.length });
@@ -67,14 +68,23 @@ export function RunHistoryViewContent(props: RunHistoryProps & { historyCommands
     });
   };
   useEffect(() => {
-    if (!props.projectId || view !== "list") return;
-    const refresh = () => {
-      if (document.visibilityState === "visible") void loadRuns(page.offset, query, true);
+    if (!props.projectId) return;
+    const refreshVisibleView = () => {
+      if (document.visibilityState !== "visible") return;
+      if (view === "list") void loadRuns(page.offset, query, true);
+      else if (selectedRunId) setSelectedRunRevision((current) => current + 1);
     };
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", refresh);
+    const refreshChangedRun = (transaction: Parameters<Parameters<typeof subscribeToAutomationStudioMutations>[0]>[0]) => {
+      if (document.visibilityState !== "visible") return;
+      if (view === "list") void loadRuns(page.offset, query, true);
+      else if (transaction.mutation.kind === "runtime-run.changed" && transaction.mutation.runId === selectedRunId) {
+        setSelectedRunRevision((current) => current + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", refreshVisibleView);
+    window.addEventListener("focus", refreshVisibleView);
     const unsubscribe = subscribeToAutomationStudioMutations(
-      refresh,
+      refreshChangedRun,
       {
         kinds: ["runtime-run.changed"],
         projectId: props.projectId,
@@ -82,11 +92,11 @@ export function RunHistoryViewContent(props: RunHistoryProps & { historyCommands
       }
     );
     return () => {
-      document.removeEventListener("visibilitychange", refresh);
-      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshVisibleView);
+      window.removeEventListener("focus", refreshVisibleView);
       unsubscribe();
     };
-  }, [props.flowId, props.projectId, view, page.offset, query.status, query.search, query.sort, query.direction, query.limit]);  const updateQuery = (patch: Partial<RunHistoryQuery>) => setQuery((current) => ({ ...current, ...patch }));
+  }, [props.flowId, props.projectId, selectedRunId, view, page.offset, query.status, query.search, query.sort, query.direction, query.limit]);  const updateQuery = (patch: Partial<RunHistoryQuery>) => setQuery((current) => ({ ...current, ...patch }));
   const openLog = (runId: string) => {
     setSelectedRunId(runId);
     setView("log");
@@ -116,7 +126,7 @@ export function RunHistoryViewContent(props: RunHistoryProps & { historyCommands
             onSearchDraft={setSearchDraft}
             onSubmitSearch={() => updateQuery({ search: searchDraft.trim() })}
           />
-        : <RunActionLogView commands={props.detailCommands} error={error} loading={false} projectId={props.projectId} runId={selectedRunId} runDetail={null} onBack={closeLog} />}
+        : <RunActionLogView key={`${selectedRunId}:${selectedRunRevision}`} commands={props.detailCommands} error={error} loading={false} projectId={props.projectId} runId={selectedRunId} runDetail={null} onBack={closeLog} />}
     </section>
   );
 }
