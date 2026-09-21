@@ -189,6 +189,8 @@ describe("global program services", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  // A full TypeDoc conversion and HTML render of the framework: 12.4-13.7 s alone,
+  // over 15 s under the parallel suite.
+  }, 60_000);
 
 });

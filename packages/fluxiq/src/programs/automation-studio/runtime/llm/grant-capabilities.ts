@@ -20,19 +20,21 @@ import type {
  * question and changes nothing.
  *
  * `verify_result` is the narrowest of all: one question about a finished run's
- * result -- does what came back answer what was asked? -- and nothing else. It
- * exists because every provider call needs a person's grant, a run carrying no
- * grant therefore could never have its result judged, and on 2026-09-18 seven
- * newly built Flows returned the wrong records and reported `passed` for
- * exactly that reason. A run under it executes as deterministically as one
- * with no grant at all: it may not diagnose, gather, patch or propose.
+ * result -- does what came back answer what was asked? -- asked at most twice,
+ * and nothing else. It exists because every provider call needs a person's
+ * grant, a run carrying no grant therefore could never have its result judged,
+ * and on 2026-09-18 seven newly built Flows returned the wrong records and
+ * reported `passed` for exactly that reason. A run under it executes as
+ * deterministically as one with no grant at all: it may not diagnose, gather,
+ * patch or propose.
  *
- * A purpose says what may be *asked for*. It no longer says how many times.
- * `diagnose_and_adapt` used to mean "exactly two calls and no exploration",
- * which read as a consent boundary and behaved as a defect: the model's first
- * move on a real failure is to ask for more evidence, the call that serves it
- * was forbidden by the name on the grant, and the diagnosis was left staged and
- * unvalidated. Gathering evidence is part of diagnosing, so every adapting
+ * A purpose says what may be *asked for*. It no longer says how many times,
+ * except for the two that cannot iterate, whose fixed allowance is part of
+ * what they are. `diagnose_and_adapt` used to mean "exactly two calls and no
+ * exploration", which read as a consent boundary and behaved as a defect: the
+ * model's first move on a real failure is to ask for more evidence, the call
+ * that serves it was forbidden by the name on the grant, and the diagnosis was
+ * left staged and unvalidated. Gathering evidence is part of diagnosing, so every adapting
  * purpose may do it, and what still separates the purposes is what they may
  * change afterwards.
  */
@@ -67,10 +69,10 @@ type GrantTaskAllowance = { taskKind: AutomationStudioLlmTaskKind; expectedOutpu
 
 /** What a purpose may ask for, and whether it may ask more than once.
  *
- * `iterates` is the whole of what a purpose says about call counts. It is a
- * yes-or-no, never a number: the number is configuration, and a purpose that
- * cannot iterate is a single request by arity rather than by budget. */
-type GrantCapability = { iterates: boolean; taskKinds: readonly GrantTaskAllowance[] };
+ * For a purpose that iterates, the number of calls is configuration and this
+ * says nothing about it. A purpose that does not iterate has a fixed
+ * allowance, `calls`, by arity rather than by budget: absent is one. */
+type GrantCapability = { iterates: boolean; calls?: number; taskKinds: readonly GrantTaskAllowance[] };
 
 const DIAGNOSIS_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
   { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" }
@@ -115,14 +117,23 @@ const GRANT_CAPABILITIES: Readonly<Record<AutomationStudioLlmExecutionGrantPurpo
   diagnose_and_adapt: { iterates: true, taskKinds: RECOVERY_TASK_KINDS },
   explore_and_adapt: { iterates: true, taskKinds: EXPLORE_TASK_KINDS },
   build_and_adapt: { iterates: true, taskKinds: Object.freeze([...EXPLORE_TASK_KINDS, { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" } as GrantTaskAllowance]) },
-  // One call, never a loop: a verification that cannot tell from what it was
-  // shown answers `unknown`, and asking again would buy the same answer twice.
-  verify_result: { iterates: false, taskKinds: VERIFICATION_TASK_KINDS }
+  // Two calls, never a loop. Any answer but `yes` -- a `no` or an `unknown`
+  // -- is asked once more with the same evidence, because either fails a run
+  // whose every step succeeded, and at temperature 0 both were measured to flip
+  // on identical rows (2026-09-18; 2026-09-21, when the same 14 rows came back
+  // `unknown` two times in ten). Asking again does not buy the same answer
+  // twice. The two answers are combined in `result-verification/agreement.ts`.
+  verify_result: { iterates: false, calls: 2, taskKinds: VERIFICATION_TASK_KINDS }
 });
 
 /** Whether a purpose may make more than one call. Never how many. */
 export function automationStudioLlmExecutionGrantIterates(purpose: AutomationStudioLlmExecutionGrantPurpose): boolean {
   return GRANT_CAPABILITIES[purpose].iterates;
+}
+
+/** The fixed call allowance of a purpose that does not iterate: one, or two for `verify_result`. */
+export function automationStudioLlmExecutionGrantFixedCalls(purpose: AutomationStudioLlmExecutionGrantPurpose): number {
+  return GRANT_CAPABILITIES[purpose].calls ?? 1;
 }
 
 /** The task kinds this purpose authorizes, for a caller that has to narrow them

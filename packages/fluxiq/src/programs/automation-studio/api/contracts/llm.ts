@@ -22,9 +22,11 @@ export type AutomationStudioPackReusableLlmContextsRequest = {
 
 /**
  * What an LLM execution grant authorizes. A purpose says what may be asked
- * for, never how many times: `diagnosis_only` and `verify_result` are one call
- * each, and every other purpose iterates under a call limit that is
- * configuration on the grant. `verify_result` asks only whether a finished
+ * for, and only the two that do not iterate say how many times:
+ * `diagnosis_only` is one call, and `verify_result` at most two, because a
+ * first answer other than that the result answers the request is asked once
+ * more with the same evidence. Every other purpose iterates under a call limit that
+ * is configuration on the grant. `verify_result` asks only whether a finished
  * run's result answers the request, and leaves the run itself deterministic.
  * Absent means `diagnosis_only`.
  */
@@ -40,7 +42,8 @@ export type AutomationStudioLlmExecutionLimitRequest = {
    * output and 10,000 total tokens. */
   tokenLimits?: { maxInputTokens?: number; maxOutputTokens?: number; maxTotalTokens?: number };
   /** Provider calls the grant authorizes, from 1 to 64. Absent means 26 for
-   * an iterating purpose; `diagnosis_only` accepts only 1. */
+   * an iterating purpose; `diagnosis_only` accepts only 1, and
+   * `verify_result` 1 or 2, taking 2 when absent. */
   maxCalls?: number;
   /** The whole run's token budget. Absent means the per-call total limit
    * times `maxCalls`, held to 100,000. A value must lie between one call's

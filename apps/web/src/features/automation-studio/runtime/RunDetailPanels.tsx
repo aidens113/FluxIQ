@@ -114,6 +114,7 @@ export function RuntimeRunStory(props: { runDetail: any }) {
   const interventions = Array.isArray(detail?.interventions) ? detail.interventions : [];
   const runtimePatchAttempts = Array.isArray(detail?.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts : [];
   const adaptiveRetry = isRuntimeJsonRecord(detail?.metadata?.adaptiveRetry) ? detail.metadata.adaptiveRetry : null;
+  const resultVerification = isRuntimeJsonRecord(detail?.metadata?.resultVerification) ? detail.metadata.resultVerification : null;
   const steps = [
     {
       label: "Deterministic Run",
@@ -144,7 +145,12 @@ export function RuntimeRunStory(props: { runDetail: any }) {
       label: "Retry",
       value: adaptiveRetry ? String(adaptiveRetry.status ?? "attempted") : "none",
       status: adaptiveRetry?.status ?? "skipped"
-    }
+    },
+    ...(resultVerification ? [{
+      label: "Result",
+      value: runtimeResultVerificationLabel(resultVerification),
+      status: resultVerification.status === "confirmed" ? "succeeded" : resultVerification.status === "refuted" ? "failed" : "skipped"
+    }] : [])
   ];
   return (
     <ol className="automation-runtime-story-steps" aria-label="Runtime adaptation story">
@@ -156,6 +162,21 @@ export function RuntimeRunStory(props: { runDetail: any }) {
       ))}
     </ol>
   );
+}
+
+/**
+ * Where Core left the run's result, in words a person reads. A result the model
+ * judged twice, with the same evidence, and answered both ways is neither
+ * confirmed nor refuted, and says so.
+ */
+function runtimeResultVerificationLabel(verification: Record<string, unknown>): string {
+  if (verification.basis === "model_disagreed") return "Unverified: the two checks disagreed";
+  if (verification.basis === "model_unconfirmed") return "Unverified: the two checks did not settle it";
+  if (verification.code === "core.result.no_records") return "Unverified: nothing was stored, so the result was not checked";
+  if (verification.status === "confirmed") return "Confirmed";
+  if (verification.status === "refuted") return "Refuted";
+  if (verification.status === "no_result") return "No result to check";
+  return "Unverified";
 }
 
 export function RuntimeMetricsPanel(props: { summary: any; metrics: Record<string, any>; recoveryCount: number; interventionCount: number; adaptationCount: number }) {

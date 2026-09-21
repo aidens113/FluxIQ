@@ -14,7 +14,12 @@
 //
 // A run whose result could not be put to a model at all keeps the status its
 // steps earned and is recorded `unverified`, never `confirmed`
-// (`verification-status.ts` says why it is not failed instead).
+// (`verification-status.ts` says why it is not failed instead). So does a run
+// whose record set holds no rows (`core.result.no_records`), which is never
+// put to a model; and so does a run the model did not judge to answer and then,
+// asked again with the same evidence, did not twice judge not to
+// (`agreement.ts`): only two agreeing refutations fail a run whose every step
+// succeeded.
 //
 // Everything it reaches outside itself is a port, for the reason
 // `recovery/annotation/ports.ts` states: the service is a six-thousand-line
@@ -33,7 +38,7 @@ import type {
 } from "../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
-import type { AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
@@ -114,12 +119,12 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   if (input.session.status !== "succeeded") return input.session;
   const report = await runVerification(input);
   const outcome = report.outcome;
-  const failing = outcome.performed === true && outcome.verdict !== "answers";
+  const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const next: AutomationStudioRuntimeSession = failing
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  await recordOnRunDetail(input, next, outcome, report.intervention);
+  await recordOnRunDetail(input, next, outcome, report.interventions);
   return next;
 }
 
@@ -132,7 +137,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     // A result that could not be read is a result nobody checked, which is the
     // one thing this module refuses to report as success. The read's own code
     // is carried into the verdict so the run says what went wrong.
-    return { outcome: unreadableResult(error) };
+    return { outcome: unreadableResult(error), interventions: [] };
   }
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
@@ -225,27 +230,39 @@ function errorName(error: unknown): string {
  * The verification as a run record holds it: verdicts, codes and Core's own
  * words, led by the one word a reader of the run acts on. `status` is what
  * keeps a result nobody judged from reading as a result that was right.
+ * `verdicts` and `calls` say what each model call answered and how many were
+ * made, so a result judged twice reads as such; they are absent when no model
+ * was asked.
  */
 function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
   const status = automationStudioResultVerificationStatus(outcome);
-  return outcome.performed === false
-    ? { status, performed: false, code: outcome.code, reason: outcome.reason }
-    : { status, performed: true, verdict: outcome.verdict, basis: outcome.basis, code: outcome.code, reason: outcome.reason, observation: outcome.observation };
+  if (outcome.performed === false) return { status, performed: false, code: outcome.code, reason: outcome.reason };
+  return {
+    status,
+    performed: true,
+    verdict: outcome.verdict,
+    basis: outcome.basis,
+    code: outcome.code,
+    reason: outcome.reason,
+    observation: outcome.observation,
+    ...(outcome.verdicts ? { verdicts: [...outcome.verdicts] } : {}),
+    ...(outcome.calls !== undefined ? { calls: outcome.calls } : {})
+  };
 }
 
 async function recordOnRunDetail(
   input: AutomationStudioRuntimeSessionVerificationInput,
   session: AutomationStudioRuntimeSession,
   outcome: AutomationStudioResultVerificationOutcome,
-  intervention: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["intervention"]
+  interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"]
 ): Promise<void> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   if (!detail) return;
-  const failed = outcome.performed === true && outcome.verdict !== "answers";
+  const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   await input.ports.saveFlowRunDetail({
     ...detail,
     summary: { ...detail.summary, status: session.status, updatedAt: session.finishedAt ?? detail.summary.updatedAt },
-    ...(intervention ? { interventions: [...detail.interventions, intervention] } : {}),
+    ...(interventions.length ? { interventions: [...detail.interventions, ...interventions] } : {}),
     metadata: {
       ...(detail.metadata ?? {}),
       resultVerification: recordedOutcome(outcome),

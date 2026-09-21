@@ -255,6 +255,29 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     });
   });
 
+  it("parses back every pre-provider failure Core produces, with accounting only where the harness keeps it", () => {
+    const fallback = flowBootstrapPhaseFailure("pre_provider_validation").diagnostic;
+    expect(fallback.code).toBe("flow_bootstrap.pre_provider_validation_failed");
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(fallback)).toEqual(fallback);
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
+      ...fallback,
+      accounting: { requestId: "request.private", estimatedInputTokens: 1 }
+    })).toBeNull();
+
+    const request = { requestId: "request.harness", estimatedInputTokens: 100 } as any;
+    for (const [code, expectedCode] of [
+      ["llm_budget.input_limit_exceeded", "flow_bootstrap.pre_provider_input_limit_exceeded"],
+      ["bootstrap.catalog_empty", "flow_bootstrap.pre_provider_context_invalid"],
+      ["llm.private_unrecognised", "flow_bootstrap.harness_preflight_failed"]
+    ] as const) {
+      const harness = flowBootstrapHarnessFailure({ diagnostics: [{ severity: "error", code, message: "private" }], request }).diagnostic;
+      expect(harness.code).toBe(expectedCode);
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(harness)).toEqual(harness);
+      const { accounting: _accounting, ...withoutAccounting } = harness;
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(withoutAccounting)).toBeNull();
+    }
+  });
+
   it("projects length-limited provider output to the exact sanitized output-validation diagnostic", () => {
     const partialContent = '{"kind":"flow_bootstrap","private":"must not escape"';
     const failure = flowBootstrapHarnessFailure({
