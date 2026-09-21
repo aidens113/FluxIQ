@@ -456,7 +456,7 @@ function ports(options: Options): AutomationStudioRuntimeRecoveryPorts {
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
     reusableLlmContextForFreshEvidence: async () => undefined,
-    flowScope: async () => scope,
+    flowForRecovery: async () => scope ? { scope } : undefined,
     saveFlowChangeProposal: async (proposal) => proposal,
     saveFlowAdaptation: async (adaptation) => adaptation,
     promoteRuntimeAdaptation: async (input) => input.adaptation

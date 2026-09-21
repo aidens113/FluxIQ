@@ -277,7 +277,7 @@ function ports(options: Options, taskKinds: string[], executed: string[]): Autom
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
     reusableLlmContextForFreshEvidence: async () => undefined,
-    flowScope: async () => ({ kind: "domain", domainId: "test.domain" }),
+    flowForRecovery: async () => ({ scope: { kind: "domain", domainId: "test.domain" } }),
     saveFlowChangeProposal: async (proposal) => proposal,
     saveFlowAdaptation: async (adaptation) => adaptation,
     promoteRuntimeAdaptation: async (input) => input.adaptation
