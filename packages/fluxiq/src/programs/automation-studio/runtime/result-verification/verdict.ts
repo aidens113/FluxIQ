@@ -32,13 +32,20 @@ import { automationStudioResultFailureRecord } from "./core-observation.ts";
  */
 const MAX_OBSERVED_STEPS = 12;
 
-/** Core's codes for a verdict a model call reached, or failed to. */
+/**
+ * Core's codes for a verdict a model call reached, or failed to. The last two
+ * are for a first answer other than `yes` that a second call with the same
+ * evidence did not settle (`agreement.ts`): one of the two said `yes`, or
+ * neither did and they did not both say `no`.
+ */
 export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   answers: "core.result.answers_request",
   doesNotAnswer: "core.result.does_not_answer_request",
   unsure: "core.result.verdict_unsure",
   silent: "core.result.verdict_absent",
-  unavailable: "core.result.verdict_unavailable"
+  unavailable: "core.result.verdict_unavailable",
+  disagree: "core.result.verdicts_disagree",
+  unconfirmed: "core.result.refutation_unconfirmed"
 } as const);
 
 /** The verdict a model's `answersRequest` field carries, with anything else read as `unsure`. */
@@ -53,7 +60,7 @@ export type AutomationStudioResultVerdictInput = {
   /** The diagnosis fields the verification call returned, when it returned any. */
   diagnosis?: AutomationStudioLlmDiagnosisFields | undefined;
   /** How the verdict was reached: `model` when a reply arrived, otherwise why not. */
-  basis: Exclude<AutomationStudioResultVerdictBasis, "core_observation">;
+  basis: Exclude<AutomationStudioResultVerdictBasis, "core_observation" | "model_disagreed" | "model_unconfirmed">;
   /** The diagnostic code of a call that did not come back usable. Codes only, never a message. */
   failureCode?: string | undefined;
 };

@@ -6,11 +6,11 @@ import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES } from "../verify.ts";
 // One word for where a run's result stands, and the rule that a result nobody
 // judged is never `confirmed`.
 
-const judged = (verdict: "answers" | "does_not_answer" | "unsure"): AutomationStudioResultVerificationOutcome => ({
+const judged = (verdict: "answers" | "does_not_answer" | "unsure", basis: "model" | "model_disagreed" | "model_unconfirmed" = "model"): AutomationStudioResultVerificationOutcome => ({
   schemaVersion: "automation-studio.result-verification.v1",
   performed: true,
   verdict,
-  basis: "model",
+  basis,
   code: "core.result.x",
   reason: "r",
   observation: "o"
@@ -28,6 +28,13 @@ describe("automationStudioResultVerificationStatus", () => {
     expect(automationStudioResultVerificationStatus(judged("answers"))).toBe("confirmed");
     expect(automationStudioResultVerificationStatus(judged("does_not_answer"))).toBe("refuted");
     expect(automationStudioResultVerificationStatus(judged("unsure"))).toBe("refuted");
+  });
+
+  it("calls a result two checks did not settle unverified, never confirmed or refuted", () => {
+    // Mutation: read an unsettled verification by its verdict alone. `unsure`
+    // then says `refuted` for a result the model judged both ways.
+    expect(automationStudioResultVerificationStatus(judged("unsure", "model_disagreed"))).toBe("unverified");
+    expect(automationStudioResultVerificationStatus(judged("unsure", "model_unconfirmed"))).toBe("unverified");
   });
 
   it("calls a result no model judged unverified", () => {

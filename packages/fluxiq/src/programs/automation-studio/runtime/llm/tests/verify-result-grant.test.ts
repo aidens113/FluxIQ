@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../service.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { automationStudioLlmExecutionGrantIterates, automationStudioLlmExecutionGrantTaskKinds, parseAutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
+import { automationStudioLlmExecutionGrantFixedCalls, automationStudioLlmExecutionGrantIterates, automationStudioLlmExecutionGrantTaskKinds, parseAutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES,
   automationStudioRuntimeAdaptationContextForGrant,
@@ -15,7 +15,9 @@ import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup 
 // have its result judged: on 2026-09-18 seven newly built Flows returned the
 // wrong records and reported `passed`, because their runs carried no grant
 // and the one verification call was never made. `verify_result` authorizes
-// that call, once, and nothing a recovery could spend a grant on.
+// that call, and its one repeat, and nothing a recovery could spend a grant on.
+// The repeat exists because a `does not answer` fails a run whose every step
+// succeeded, and at temperature 0 one was measured to flip on identical rows.
 
 function verificationRequest(): AutomationStudioLlmTaskRequest {
   const base = request();
@@ -30,13 +32,38 @@ describe("the verify_result grant", () => {
     expect(automationStudioRuntimeSessionGrantTaskKinds("verify_result")).toEqual(["loop_verification"]);
   });
 
-  it("makes one call, never a loop", async () => {
+  it("makes at most two calls, never a loop, and may be asked for one", async () => {
     expect(automationStudioLlmExecutionGrantIterates("verify_result")).toBe(false);
+    expect(automationStudioLlmExecutionGrantFixedCalls("verify_result")).toBe(2);
     const fixture = setup();
     fixture.exactBinding = true;
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 2 })).rejects.toThrow("verify_result permits exactly one LLM call.");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 3 })).rejects.toThrow("verify_result permits one LLM call or 2.");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 26 })).rejects.toThrow("verify_result permits one LLM call or 2.");
     const grant = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
-    expect(grant).toMatchObject({ purpose: "verify_result", maxCalls: 1, remainingUses: 1 });
+    expect(grant).toMatchObject({ purpose: "verify_result", maxCalls: 2, remainingUses: 2 });
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 1 })).resolves.toMatchObject({ maxCalls: 1 });
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 2 })).resolves.toMatchObject({ maxCalls: 2 });
+  });
+
+  it("leaves diagnosis_only at exactly one call", async () => {
+    expect(automationStudioLlmExecutionGrantFixedCalls("diagnosis_only")).toBe(1);
+    const fixture = setup();
+    fixture.exactBinding = true;
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only", maxCalls: 2 })).rejects.toThrow("diagnosis_only permits exactly one LLM call.");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only" })).resolves.toMatchObject({ maxCalls: 1 });
+  });
+
+  it("answers a refutation's repeat under the same grant, and nothing after it", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    fixture.script.push({ kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no" } });
+    fixture.script.push({ kind: "diagnosis", summary: "Judged again.", diagnosis: { answersRequest: "yes" } });
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "verify_result" }, { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("verify_result") });
+    expect(resolved.maxCallsPerRun).toBe(2);
+    await expect(resolved.provider.runTask(verificationRequest())).resolves.toMatchObject({ response: { diagnosis: { answersRequest: "no" } } });
+    await expect(resolved.provider.runTask({ ...verificationRequest(), requestId: "request.verify.2", idempotencyKey: "request.verify.2" })).resolves.toMatchObject({ response: { diagnosis: { answersRequest: "yes" } } });
+    await expect(resolved.provider.runTask({ ...verificationRequest(), requestId: "request.verify.3", idempotencyKey: "request.verify.3" })).rejects.toThrow();
   });
 
   it("answers the verification call, and refuses a diagnosis under the same grant", async () => {

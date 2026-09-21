@@ -1,15 +1,24 @@
-// One question, asked once, after a run has finished: does what came back
-// answer what was asked for?
+// One question, asked after a run has finished: does what came back answer
+// what was asked for?
 //
-// **One call, never a loop.** A verification is not an investigation. It is
-// shown the request, the shape of the Flow that ran, and a bounded account of
-// the result, and it answers in one field. If it cannot tell from that, the
-// answer is `unknown` and the run fails closed -- asking again with the same
-// evidence would only buy the same answer at twice the price.
+// **At most two calls, never a loop.** A verification is not an investigation.
+// It is shown the request, the shape of the Flow that ran, and a bounded account
+// of the result, and it answers in one field: `yes`, `no` or `unknown`.
 //
-// **Core's own counts are asked first and cost nothing.** A run that stored no
-// rows, or whose every row was refused, is settled before a provider is even
-// resolved, so the two failures that need no judgement never spend a call.
+// **Anything but `yes` is asked once more, with the same evidence.** A `no`
+// or an `unknown` fails a run whose every step succeeded, and at temperature 0
+// both were measured to flip on identical rows (2026-09-18, 2026-09-21). The
+// second call is the first one repeated, not a new question; `agreement.ts`
+// says what the two answers come to. Only two agreeing `no`s fail the run;
+// every other pair that is not a `yes` first leaves it `unverified`. A first
+// call that gave no answer at all is not repeated and fails closed.
+//
+// **Core's own counts are asked first and cost nothing.** A run whose every row
+// was refused, or whose rows lack a value their own schema requires, is settled
+// before a provider is even resolved. A run that stored a record set with no
+// rows in it is recorded as not checked (`core.result.no_records`), never as
+// a pass, and never reaches provider resolution: judging an empty result
+// against the instruction is not done here (see `nothingToJudge`).
 //
 // **`loop_verification` is the task kind, and it needed no new output shape.**
 // The kind has existed since the loop protocol was written -- described in its
@@ -33,12 +42,15 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts.ts";
-import { automationStudioResultCoreObservation } from "./core-observation.ts";
+import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
+import { AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES, automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 
 /** Core's codes for a run that was not verified, and why. Never a verdict. */
 export const AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES = Object.freeze({
   noResult: "core.result.nothing_to_judge",
+  /** A record set was stored and holds no rows: an empty result, recorded as not checked. */
+  noRecords: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.noRecords,
   noModel: "core.result.no_model_available"
 } as const);
 
@@ -65,19 +77,30 @@ export type AutomationStudioResultVerificationRequest = {
   now?: (() => number) | undefined;
 };
 
-/** The outcome, and the intervention record of the one call, when one was made. */
+/** The outcome, and the intervention record of each call made: none, one, or two. */
 export type AutomationStudioResultVerificationReport = {
   outcome: AutomationStudioResultVerificationOutcome;
-  intervention?: AutomationStudioFlowIntervention;
+  /**
+   * In the order the calls were made. Each carries
+   * `metadata.source: "verifyAutomationStudioRunResult"` and
+   * `metadata.verificationCheck` (1 or 2), so a reader of the run can tell a
+   * verification call from a recovery's.
+   */
+  interventions: AutomationStudioFlowIntervention[];
 };
+
+/** Where a verification call's intervention says it came from. */
+const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const skipped = nothingToJudge(request.summary);
-  if (skipped) return { outcome: skipped };
+  if (skipped) return { outcome: skipped, interventions: [] };
   const core = automationStudioResultCoreObservation(request.summary);
-  if (core) return { outcome: { ...core, performed: true } };
-  if (!request.provider) {
+  if (core) return { outcome: { ...core, performed: true }, interventions: [] };
+  const provider = request.provider;
+  if (!provider) {
     return {
+      interventions: [],
       outcome: {
         schemaVersion: "automation-studio.result-verification.v1",
         performed: false,
@@ -86,6 +109,31 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
       }
     };
   }
+  const first = await askOnce(request, provider, 1);
+  if (!automationStudioResultVerificationAskAgain(first.verification)) {
+    return { outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] };
+  }
+  const second = await askOnce(request, provider, 2);
+  // Two calls can finish within one millisecond of each other, and the
+  // harness names an intervention by the run and the time.
+  const secondIntervention = second.intervention.interventionId === first.intervention.interventionId
+    ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
+    : second.intervention;
+  return {
+    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification }), performed: true },
+    interventions: [first.intervention, secondIntervention]
+  };
+}
+
+/**
+ * One verification call and the verdict it reached. The second call of a
+ * verification is this one repeated: the same request, the same evidence.
+ */
+async function askOnce(
+  request: AutomationStudioResultVerificationRequest,
+  provider: AutomationStudioLlmProvider,
+  check: 1 | 2
+): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention }> {
   const result = await runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,
@@ -97,14 +145,14 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     resultSummary: request.summary,
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
-    provider: request.provider,
+    provider,
     ...(request.runBudget ? { runBudget: request.runBudget } : {}),
     ...(request.tokenLimits ? { tokenLimits: request.tokenLimits } : {}),
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     ...(request.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: request.maxEstimatedCostUsd } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
     ...(request.now ? { now: request.now } : {}),
-    metadata: { source: "verifyAutomationStudioRunResult", expectedOutput: "diagnosis" }
+    metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis" }
   });
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   const verification = automationStudioResultVerdict({
@@ -113,20 +161,41 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     basis: response ? "model" : "model_unavailable",
     ...(response ? {} : { failureCode: firstErrorCode(result.diagnostics) })
   });
-  return { outcome: { ...verification, performed: true }, intervention: result.intervention };
+  // The harness records a call's own metadata, not the caller's, so the
+  // intervention is told here which check it was and who asked.
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check } };
+  return { verification, intervention };
 }
 
 /**
  * Whether there is a result to judge at all.
  *
- * A Flow that stores no records has no result in this sense -- it signed in, or
- * pressed something, and its own steps are the only account of whether it
+ * A Flow that stores no record set has no result in this sense -- it signed in,
+ * or pressed something, and its own steps are the only account of whether it
  * worked. Saying so is not the same as passing it: the run records that nothing
  * was judged and why, and `performed: false` is a different fact from a verdict
  * of `answers`.
+ *
+ * A record set with no rows in it is an empty result, and it is not judged
+ * either -- but it is never allowed to read as nothing having happened. It is
+ * recorded as `core.result.no_records`, not checked, and the run keeps the
+ * status its steps earned. It is not failed outright, because an empty table
+ * is sometimes the right answer ("if every product has been delisted, an
+ * empty table is the right answer"), and it is not put to the model, because
+ * a verification call reached from an empty result revalidated an
+ * already-spent grant and never returned (2026-09-20, t024). Judging an empty
+ * result against the instruction waits on that hang being fixed.
  */
 function nothingToJudge(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerificationOutcome | undefined {
   if (summary.totalRecordCount > 0 || summary.totalRefusedCount > 0) return undefined;
+  if (summary.recordSetCount > 0) {
+    return {
+      schemaVersion: "automation-studio.result-verification.v1",
+      performed: false,
+      code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noRecords,
+      reason: "Nothing was stored, so the result was not checked: the run's record set holds no rows, and whether an empty result answers the request was never judged."
+    };
+  }
   return {
     schemaVersion: "automation-studio.result-verification.v1",
     performed: false,
