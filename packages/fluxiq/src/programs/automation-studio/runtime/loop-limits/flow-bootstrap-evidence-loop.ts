@@ -66,6 +66,7 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
     maxToolCalls: number;
     maxEvidenceBytes: number;
     maxEvidenceContextBytes: number;
+    maxActionsPerDecision: number;
   };
   /**
    * What one decision may reserve against the grant's cost total. A grant
@@ -89,22 +90,28 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   maxCallsPerRun?: number | undefined;
   maxEstimatedCostUsd?: number | undefined;
   maxTotalEstimatedCostUsd?: number | undefined;
+  maxActionsPerDecision?: number | undefined;
 }): AutomationStudioFlowBootstrapEvidenceLoopLimits {
   const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
   const declared = typeof resolution.maxCallsPerRun === "number" && Number.isFinite(resolution.maxCallsPerRun) && resolution.maxCallsPerRun >= 1
     ? Math.trunc(resolution.maxCallsPerRun)
     : undefined;
   const maxIterations = Math.min(declared ?? ceiling.maxIterations, ceiling.maxIterations);
+  const maxActionsPerDecision = typeof resolution.maxActionsPerDecision === "number"
+    && Number.isSafeInteger(resolution.maxActionsPerDecision)
+    && resolution.maxActionsPerDecision >= 1
+    ? Math.min(resolution.maxActionsPerDecision, ceiling.maxActionsPerDecision)
+    : 1;
   // One more tool call than decisions: the loop's first observation is a tool
-  // call made before any decision, and the last decision completes. So tool
-  // calls never bind before the call count does.
-  const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
+  // call made before any decision. An explicitly enabled decision may execute
+  // several actions, but the independent 64-action ceiling still binds.
+  const maxToolCalls = Math.min(maxIterations * maxActionsPerDecision + 1, ceiling.maxToolCalls);
   const perCall = resolution.maxEstimatedCostUsd;
   const total = resolution.maxTotalEstimatedCostUsd;
   const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;
   const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
   return {
-    loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES },
+    loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES, maxActionsPerDecision },
     ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {}),
     maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations)
   };

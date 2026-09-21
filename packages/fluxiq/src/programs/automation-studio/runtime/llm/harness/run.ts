@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { automationStudioLlmEvidenceInputMatchesSchema } from "../evidence-batch/index.ts";
 import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
   automationStudioLlmSignalTimedOut,
@@ -49,6 +51,8 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   const idempotencyKey = validRequestIdentity(input.idempotencyKey) ? input.idempotencyKey : requestId;
   const timeoutMs = input.timeoutMs ?? AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS;
   const maxEstimatedCostUsd = input.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD;
+  const maxActionsPerDecision = input.maxActionsPerDecision
+    ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION;
   const timeoutDiagnostics: AutomationStudioLlmDiagnostic[] = !Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
     ? [{ severity: "error", code: "llm.provider_invalid_timeout", message: `LLM timeout must be between 1 and ${AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS} milliseconds.`, path: "timeoutMs" }]
     : [];
@@ -63,6 +67,7 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
     expectedOutput,
     tokenLimits: tokenLimitResolution.limits,
     maxEstimatedCostUsd,
+    ...(input.maxActionsPerDecision !== undefined ? { maxActionsPerDecision } : {}),
     ...(input.dryRun ? { dryRun: true } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
@@ -76,6 +81,10 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
     ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: Object.freeze([...input.deniedEvidenceKeys]) } : {})
   };
   const budgetDiagnostics = [...tokenLimitResolution.diagnostics, ...timeoutDiagnostics];
+  if (!Number.isInteger(maxActionsPerDecision) || maxActionsPerDecision < 1
+    || maxActionsPerDecision > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxActionsPerDecision) {
+    budgetDiagnostics.push({ severity: "error", code: "evidence_loop.invalid_action_decision_limit", message: "Evidence actions per decision limit is invalid.", path: "maxActionsPerDecision" });
+  }
   // The stage protocol is enforced here, before a provider is resolved or a
   // budget reserved, so a call that breaks Core's order costs nothing and
   // returns the rule it broke. Enforcing it anywhere later would make the order
@@ -183,7 +192,15 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
   try {
-    providerResult = parseAutomationStudioLlmProviderResult(untrustedProviderResult, expectedOutput, input.flowBootstrap);
+    const tools = new Map((input.evidenceLoop?.tools ?? []).map((tool) => [tool.toolId, tool] as const));
+    providerResult = parseAutomationStudioLlmProviderResult(untrustedProviderResult, expectedOutput, input.flowBootstrap, {
+      maxActionsPerDecision,
+      eligibleToolIds: [...tools.keys()],
+      isInputValid: (toolId, value) => {
+        const tool = tools.get(toolId);
+        return tool !== undefined && automationStudioLlmEvidenceInputMatchesSchema(value, tool.inputSchema);
+      }
+    });
   } catch {
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }];
     if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));

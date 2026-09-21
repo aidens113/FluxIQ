@@ -182,6 +182,12 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
       toolId: string;
       effectApplied?: boolean;
       resultCode?: string;
+      targetsUnchanged?: boolean;
+      batch?: {
+        position: number;
+        size: number;
+        stoppedBy?: "refusal" | "effect_not_applied" | "targets_may_have_changed";
+      };
     }>;
   };
   /**
@@ -354,13 +360,49 @@ type EvidenceLoopProgress = {
 
 type EvidenceLoopStep = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]>[number];
 
+/** Sanitized persisted trace plus content-free audit counts for one Flow Bootstrap exploration. */
+export function flowBootstrapEvidenceTraceDiagnostics(trace: readonly AutomationStudioLlmEvidenceLoopTrace[]): {
+  trace: AutomationStudioLlmEvidenceLoopTrace[];
+  audit: { evidenceGuided: true; iterationCount: number; traceStepCount: number; providerCallCount: number; decisionCount: number; toolCallCount: number; evidenceBytes: number; toolIds: string[] };
+} {
+  const limits = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
+  if (!Array.isArray(trace) || trace.length > limits.maxIterations + limits.maxToolCalls) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  const providerIterations = new Set<number>(); const usageIterations = new Set<number>(); let actionRows = 0;
+  const clean = trace.map((item) => {
+    if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > limits.maxIterations || !["tool_call", "complete", "unusable"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
+    if (item.iteration > 0) providerIterations.add(item.iteration);
+    if (item.decision === "tool_call") actionRows += 1;
+    const sanitized: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
+    if (item.callId !== undefined) sanitized.callId = evidenceTraceIdentifier(item.callId, "call");
+    if (item.toolId !== undefined) sanitized.toolId = evidenceTraceIdentifier(item.toolId, "tool");
+    if (item.evidenceBytes !== undefined) { if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > limits.maxEvidenceBytes) throw new Error("Flow Bootstrap evidence byte count is invalid."); sanitized.evidenceBytes = item.evidenceBytes; }
+    if (item.effectApplied !== undefined) { if (typeof item.effectApplied !== "boolean") throw new Error("Flow Bootstrap evidence effect is invalid."); sanitized.effectApplied = item.effectApplied; }
+    if (item.resultCode !== undefined) sanitized.resultCode = evidenceTraceIdentifier(item.resultCode, "result code");
+    if (item.targetsUnchanged !== undefined) { if (typeof item.targetsUnchanged !== "boolean") throw new Error("Flow Bootstrap evidence target stability is invalid."); sanitized.targetsUnchanged = item.targetsUnchanged; }
+    if (item.batch !== undefined) {
+      const { position, size, stoppedBy } = item.batch;
+      if (!Number.isSafeInteger(position) || !Number.isSafeInteger(size) || position < 1 || size < 2 || size > limits.maxActionsPerDecision || position > size || (stoppedBy !== undefined && !["refusal", "effect_not_applied", "targets_may_have_changed"].includes(stoppedBy))) throw new Error("Flow Bootstrap evidence batch position is invalid.");
+      sanitized.batch = { position, size, ...(stoppedBy !== undefined ? { stoppedBy } : {}) };
+    }
+    if (item.usage) { if (item.iteration < 1 || usageIterations.has(item.iteration)) throw new Error("Flow Bootstrap evidence usage is invalid."); usageIterations.add(item.iteration); sanitized.usage = { ...item.usage }; }
+    return sanitized;
+  });
+  if (actionRows > limits.maxToolCalls || providerIterations.size > limits.maxIterations) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  return { trace: clean, audit: { evidenceGuided: true, iterationCount: clean.length, traceStepCount: clean.length, providerCallCount: providerIterations.size, decisionCount: providerIterations.size, toolCallCount: actionRows, evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0), toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort() } };
+}
+
+function evidenceTraceIdentifier(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim() || value.length > 500) throw new Error(`Flow Bootstrap evidence ${label} ID is invalid.`);
+  return value.trim();
+}
+
 function evidenceLoopDiagnostic(
   result: EvidenceLoopProgress
 ): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
   const steps = result.trace.flatMap(evidenceLoopStep);
   return {
     iterationCount: result.accounting.iterations,
-    decisionCount: result.trace.length,
+    decisionCount: new Set(result.trace.filter((entry) => entry.iteration > 0).map((entry) => entry.iteration)).size,
     toolCallCount: result.accounting.toolCalls,
     evidenceBytes: result.accounting.evidenceBytes,
     ...(steps.length ? { steps } : {})
@@ -371,7 +413,13 @@ function evidenceLoopDiagnostic(
 function evidenceLoopStep(entry: AutomationStudioLlmEvidenceLoopTrace): EvidenceLoopStep[] {
   const resultCode = entry.resultCode && DIAGNOSTIC_ISSUE_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {};
   if (entry.decision === "tool_call") {
-    return entry.toolId ? [{ toolId: entry.toolId, ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}), ...resultCode }] : [];
+    return entry.toolId ? [{
+      toolId: entry.toolId,
+      ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}),
+      ...resultCode,
+      ...(entry.targetsUnchanged !== undefined ? { targetsUnchanged: entry.targetsUnchanged } : {}),
+      ...(entry.batch ? { batch: { position: entry.batch.position, size: entry.batch.size, ...(entry.batch.stoppedBy ? { stoppedBy: entry.batch.stoppedBy } : {}) } } : {})
+    }] : [];
   }
   return [{ toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS[entry.decision], ...resultCode }];
 }
@@ -644,12 +692,12 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
  * transport failure.
  */
 const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
-const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls;
 
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps"])) return null;
-  if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
+  if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_ITERATIONS)
     || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
   let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
@@ -657,16 +705,35 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
     if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_STEPS) return null;
     steps = [];
     for (const step of value.steps) {
-      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])
+      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode", "targetsUnchanged", "batch"])
         || typeof step.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(step.toolId)
         || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
-        || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(step.resultCode)))) return null;
+        || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(step.resultCode)))
+        || (step.targetsUnchanged !== undefined && typeof step.targetsUnchanged !== "boolean")) return null;
+      let batch: EvidenceLoopStep["batch"];
+      if (step.batch !== undefined) {
+        if (!isRecord(step.batch) || !hasExactFields(step.batch, ["position", "size", "stoppedBy"])
+          || !boundedInteger(step.batch.position, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxActionsPerDecision)
+          || !boundedInteger(step.batch.size, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxActionsPerDecision)
+          || (step.batch.position as number) < 1 || (step.batch.size as number) < 2 || (step.batch.position as number) > (step.batch.size as number)
+          || (step.batch.stoppedBy !== undefined && !["refusal", "effect_not_applied", "targets_may_have_changed"].includes(step.batch.stoppedBy as string))) return null;
+        batch = {
+          position: step.batch.position as number,
+          size: step.batch.size as number,
+          ...(step.batch.stoppedBy !== undefined ? { stoppedBy: step.batch.stoppedBy as NonNullable<NonNullable<EvidenceLoopStep["batch"]>["stoppedBy"]> } : {})
+        };
+      }
       steps.push({
         toolId: step.toolId,
         ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
-        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {})
+        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {}),
+        ...(step.targetsUnchanged !== undefined ? { targetsUnchanged: step.targetsUnchanged } : {}),
+        ...(batch ? { batch } : {})
       });
     }
+    const decisionStepIds = new Set<string>(Object.values(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS));
+    if (steps.filter((step) => !decisionStepIds.has(step.toolId)).length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls
+      || steps.filter((step) => decisionStepIds.has(step.toolId)).length > EVIDENCE_LOOP_MAX_ITERATIONS) return null;
   }
   return {
     iterationCount: value.iterationCount as number,

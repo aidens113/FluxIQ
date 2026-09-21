@@ -112,23 +112,47 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ...valid,
       evidenceLoop: { ...valid.evidenceLoop, steps: [{ toolId: "web.click", resultCode: "private result text!" }] }
     })).toBeNull();
-    // Bounded by the loop's own ceiling -- its decisions plus one opening
-    // observation -- not by the sixteen it used to be. A diagnostic from a
-    // longer exploration failed to parse at sixteen, and its named reason was
-    // replaced by a generic transport failure.
-    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+    // Provider decisions and action rows have independent bounds: batching can
+    // record several categorical action steps for one provider iteration.
+    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls;
     const long = {
       ...valid,
-      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
+      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: [
+        ...Array.from({ length: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls }, () => ({ toolId: "web.click" })),
+        ...Array.from({ length: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations }, () => ({ toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable }))
+      ] }
     };
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(long)).toEqual(long);
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
       ...valid,
       evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: longest + 1 }, () => ({ toolId: "web.click" })) }
     })).toBeNull();
-    for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
-      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
-    }
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, decisionCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls + 1 } })).toBeNull();
+  });
+
+  it("keeps bounded batch position and stop facts while counting one provider iteration", () => {
+    const failure = flowBootstrapEvidenceLoopFailure({
+      ok: false,
+      code: "llm_evidence_loop.cancelled",
+      trace: [
+        { iteration: 1, decision: "tool_call", callId: "batch.1.1", toolId: "web.enter_field", effectApplied: true, targetsUnchanged: true, batch: { position: 1, size: 3 }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+        { iteration: 1, decision: "tool_call", callId: "batch.1.2", toolId: "web.press", effectApplied: false, targetsUnchanged: false, resultCode: "web.permission_required", batch: { position: 2, size: 3, stoppedBy: "refusal" } }
+      ],
+      accounting: { iterations: 1, toolCalls: 2, evidenceBytes: 123, inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
+    });
+    expect(failure.diagnostic.evidenceLoop).toEqual({
+      iterationCount: 1,
+      decisionCount: 1,
+      toolCallCount: 2,
+      evidenceBytes: 123,
+      steps: [
+        { toolId: "web.enter_field", effectApplied: true, targetsUnchanged: true, batch: { position: 1, size: 3 } },
+        { toolId: "web.press", effectApplied: false, resultCode: "web.permission_required", targetsUnchanged: false, batch: { position: 2, size: 3, stoppedBy: "refusal" } }
+      ]
+    });
+    expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
+    expect(JSON.stringify(failure)).not.toContain("batch.1.1");
   });
 
   it("names an exploration stopped on unusable decisions, with its progress and why", () => {
@@ -153,7 +177,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       // the code that refused each, so the record says what each call came to.
       evidenceLoop: {
         iterationCount: 3,
-        decisionCount: 4,
+        decisionCount: 3,
         toolCallCount: 1,
         evidenceBytes: 40,
         steps: [

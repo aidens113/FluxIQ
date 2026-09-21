@@ -296,7 +296,7 @@ describe("Automation Studio LLM execution API", () => {
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
       scope: {},
       actor,
-      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true, useReusableContext: true }
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true, useReusableContext: true, maxActionsPerDecision: 16 }
     });
 
     expect(grants.inspectAvailable).toHaveBeenCalledWith({
@@ -312,6 +312,7 @@ describe("Automation Studio LLM execution API", () => {
       flowId: "flow.blank",
       evidenceGuided: true,
       useReusableContext: true,
+      maxActionsPerDecision: 16,
       executionGrant: {
         grantId: "llm-grant:build",
         actorUserId: "user.one",
@@ -375,6 +376,27 @@ describe("Automation Studio LLM execution API", () => {
       });
       expect(response).toEqual({ ok: false, error: "Flow bootstrap generation request contains unsupported fields." });
 
+    }
+    expect(grants.inspectAvailable).not.toHaveBeenCalled();
+    expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid or non-evidence actions-per-decision controls before consuming a grant", async () => {
+    const grants = { inspectAvailable: vi.fn() };
+    const generateFlowBootstrapAdaptation = vi.fn();
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, grants as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+    for (const payload of [
+      { evidenceGuided: true, maxActionsPerDecision: 0 },
+      { evidenceGuided: true, maxActionsPerDecision: 17 },
+      { evidenceGuided: true, maxActionsPerDecision: 1.5 },
+      { maxActionsPerDecision: 16 }
+    ]) {
+      await expect(registry.call({
+        programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor,
+        payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", ...payload }
+      })).resolves.toMatchObject({ ok: false });
     }
     expect(grants.inspectAvailable).not.toHaveBeenCalled();
     expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();

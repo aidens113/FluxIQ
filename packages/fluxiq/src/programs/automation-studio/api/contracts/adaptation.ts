@@ -110,6 +110,8 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   llmExecutionGrantId: string;
   evidenceGuided?: true;
   useReusableContext?: true;
+  /** Internal run-scoped experiment control; ordinary production requests omit it. */
+  maxActionsPerDecision?: number;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

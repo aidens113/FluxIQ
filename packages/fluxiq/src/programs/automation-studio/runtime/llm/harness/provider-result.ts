@@ -1,4 +1,5 @@
 import { parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { parseAutomationStudioLlmEvidenceBatchDecision, type AutomationStudioLlmEvidenceBatchDecisionParseOptions } from "../evidence-batch/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
@@ -15,7 +16,8 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } 
 export function parseAutomationStudioLlmProviderResult(
   value: unknown,
   expectedOutput: AutomationStudioLlmTaskRequest["expectedOutput"],
-  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"]
+  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"],
+  evidenceDecision: AutomationStudioLlmEvidenceBatchDecisionParseOptions = {}
 ): {
   response?: AutomationStudioLlmStructuredResponse;
   usage?: AutomationStudioLlmUsageSummary;
@@ -28,9 +30,9 @@ export function parseAutomationStudioLlmProviderResult(
   }
   rejectUnexpectedFields(value, ["response", "usage", "diagnostics"], "providerResult", diagnostics);
   const responseDiagnostics: AutomationStudioLlmDiagnostic[] = [];
-  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics);
+  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, evidenceDecision);
   diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
-  if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
+  if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap, evidenceDecision));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
   const boundedDiagnostics = diagnostics.length > 200
     ? [...diagnostics.slice(0, 199), { severity: "error" as const, code: "llm_output.finding_limit", message: "Additional provider-output findings were suppressed." }]
@@ -42,7 +44,11 @@ export function parseAutomationStudioLlmProviderResult(
   };
 }
 
-function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmStructuredResponse | undefined {
+function parseAutomationStudioLlmStructuredResponse(
+  value: unknown,
+  diagnostics: AutomationStudioLlmDiagnostic[],
+  evidenceDecision: AutomationStudioLlmEvidenceBatchDecisionParseOptions
+): AutomationStudioLlmStructuredResponse | undefined {
   if (!isRecord(value)) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_response", message: "LLM response must be an object.", path: "response" });
     return undefined;
@@ -70,7 +76,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
-    validateUnknownEvidenceToolDecision(value.decision, diagnostics);
+    validateUnknownEvidenceToolDecision(value.decision, diagnostics, evidenceDecision);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
     validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
@@ -137,7 +143,11 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   }
 }
 
-function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+function validateUnknownEvidenceToolDecision(
+  value: unknown,
+  diagnostics: AutomationStudioLlmDiagnostic[],
+  options: AutomationStudioLlmEvidenceBatchDecisionParseOptions
+): void {
   const path = "response.decision";
   if (!isRecord(value)) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision must be an object.", path });
@@ -153,6 +163,32 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
   if (value.kind === "complete") {
     rejectUnexpectedFields(value, ["kind", "result"], path, diagnostics);
     if (!isJsonObject(value.result)) diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_completion", message: "Evidence completion requires a JSON object result.", path });
+    return;
+  }
+  if (value.kind === "tool_calls") {
+    const parsed = parseAutomationStudioLlmEvidenceBatchDecision(value, options);
+    if (parsed.ok) return;
+    for (const issue of parsed.issues) {
+      const item = issue.index === undefined ? path : `${path}.calls.${issue.index}`;
+      const issuePath = issue.field === undefined
+        ? item
+        : issue.index === undefined
+          ? `${path}.${issue.field}`
+          : `${item}.${issue.field}`;
+      if (issue.reason === "disabled") {
+        diagnostics.push({ severity: "error", code: "llm_output.evidence_batch_disabled", message: "Multi-action evidence decisions are disabled for this request.", path: issuePath });
+      } else if (issue.reason === "ineligible_tool") {
+        diagnostics.push({ severity: "error", code: "llm_output.ineligible_evidence_tool", message: "Evidence action names a tool that was not eligible for this decision.", path: issuePath });
+      } else if (issue.reason === "invalid_input") {
+        diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_input", message: "Evidence action input does not satisfy its tool contract.", path: issuePath });
+      } else if (issue.reason === "invalid_count") {
+        diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_action_count", message: "Multi-action evidence decision must contain between two and the enabled maximum number of actions.", path: issuePath });
+      } else if (issue.reason === "invalid_limit") {
+        diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_action_limit", message: "Multi-action evidence decision limit is invalid.", path: issuePath });
+      } else {
+        diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_calls", message: "Multi-action evidence decision is invalid.", path: issuePath });
+      }
+    }
     return;
   }
   diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision kind is unsupported.", path: `${path}.kind` });

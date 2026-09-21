@@ -1,5 +1,6 @@
 import type { AutomationStudioChangeProposalPatch } from "../../../model/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { parseAutomationStudioLlmEvidenceBatchDecision, type AutomationStudioLlmEvidenceBatchDecisionParseOptions } from "../evidence-batch/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioLlmStructuredResponse, AutomationStudioRuntimePatch } from "./structured-response.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
@@ -7,7 +8,8 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } 
 export function validateAutomationStudioLlmOutput(
   response: AutomationStudioLlmStructuredResponse,
   expectedOutput: AutomationStudioLlmTaskRequest["expectedOutput"],
-  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"]
+  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"],
+  evidenceDecision: AutomationStudioLlmEvidenceBatchDecisionParseOptions = {}
 ): AutomationStudioLlmDiagnostic[] {
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
   if (containsExecutableCode(response)) diagnostics.push({ severity: "error", code: "llm_output.executable_code", message: "LLM output cannot include executable code, scripts, or function bodies." });
@@ -28,6 +30,21 @@ export function validateAutomationStudioLlmOutput(
   }
   if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_call" && !response.decision.toolId.trim()) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool", message: "Evidence tool decision requires a tool identifier.", path: "decision.toolId" });
+  }
+  if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_calls") {
+    const parsed = parseAutomationStudioLlmEvidenceBatchDecision(response.decision, evidenceDecision);
+    if (!parsed.ok) {
+      for (const issue of parsed.issues) {
+        const item = issue.index === undefined ? "decision" : `decision.calls.${issue.index}`;
+        const path = issue.field === undefined ? item : issue.index === undefined ? `decision.${issue.field}` : `${item}.${issue.field}`;
+        diagnostics.push({
+          severity: "error",
+          code: issue.reason === "disabled" ? "llm_output.evidence_batch_disabled" : "llm_output.invalid_evidence_tool_calls",
+          message: issue.reason === "disabled" ? "Multi-action evidence decisions are disabled." : "Multi-action evidence decision is invalid.",
+          path
+        });
+      }
+    }
   }
   if (response.kind === "runtime_patch") validateRuntimePatches(response.patches, diagnostics);
   if (response.kind === "change_proposal") validateChangeProposalPatches(response.patches, diagnostics);

@@ -1,11 +1,12 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioChangeProposalPatch } from "../../../model/index.ts";
+import type { AutomationStudioLlmEvidenceBatchDecision } from "../evidence-batch/index.ts";
 import { isJsonValue, isRecord } from "./json-bounds.ts";
 
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
-  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
+  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | AutomationStudioLlmEvidenceBatchDecision | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
   | { kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "no_repair"; summary: string; reason: AutomationStudioNoRepairReason; metadata?: JsonObject }
@@ -185,7 +186,12 @@ function serializedLength(value: unknown): number {
 
 export function stripAutomationStudioLlmResponseMetadata(response: AutomationStudioLlmStructuredResponse): AutomationStudioLlmStructuredResponse {
   if (response.kind === "flow_bootstrap") return { kind: response.kind, summary: response.summary, plan: response.plan };
-  if (response.kind === "evidence_tool_decision") return { kind: response.kind, summary: response.summary, decision: response.decision };
+  if (response.kind === "evidence_tool_decision") {
+    const decision = response.decision.kind === "tool_calls"
+      ? { kind: response.decision.kind, calls: response.decision.calls.map((call) => ({ toolId: call.toolId, input: call.input })) }
+      : response.decision;
+    return { kind: response.kind, summary: response.summary, decision };
+  }
   // `diagnosis` is carried and `metadata` is not. The strip stays a named-field
   // allowlist rather than becoming "keep what the model sent": every key inside
   // `diagnosis` was checked by name at the boundary, and `metadata` was not.
@@ -227,7 +233,17 @@ export function stripAutomationStudioLlmResponseMetadata(response: AutomationStu
 
 export function summarizeAutomationStudioLlmResponse(response: AutomationStudioLlmStructuredResponse): JsonObject {
   if (response.kind === "flow_bootstrap") return { kind: response.kind, subflowCount: response.plan.subflows.length, nodeCount: response.plan.subflows.reduce((count, subflow) => count + subflow.nodes.length, 0), edgeCount: response.plan.subflows.reduce((count, subflow) => count + subflow.edges.length, 0) };
-  if (response.kind === "evidence_tool_decision") return { kind: response.kind, decisionKind: response.decision.kind, ...(response.decision.kind === "tool_call" ? { toolId: response.decision.toolId } : {}) };
+  if (response.kind === "evidence_tool_decision") {
+    return {
+      kind: response.kind,
+      decisionKind: response.decision.kind,
+      ...(response.decision.kind === "tool_call" ? { toolId: response.decision.toolId } : {}),
+      ...(response.decision.kind === "tool_calls" ? {
+        actionCount: response.decision.calls.length,
+        toolIds: response.decision.calls.map((call) => call.toolId)
+      } : {})
+    };
+  }
   if (response.kind === "diagnosis") return { kind: response.kind, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}) };
   if (response.kind === "runtime_patch") return { kind: response.kind, riskLevel: response.riskLevel, patchCount: response.patches.length, patchKinds: response.patches.map((patch) => patch.kind) };
   if (response.kind === "no_repair") return { kind: response.kind, reason: response.reason };

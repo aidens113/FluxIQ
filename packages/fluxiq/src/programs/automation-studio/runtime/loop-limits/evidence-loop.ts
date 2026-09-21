@@ -27,8 +27,14 @@
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
   maxIterations: 64,
   maxToolCalls: 64,
+  /** A caller may opt into an ordered decision this wide. The effective
+   * default below remains one until the executor slice is complete. */
+  maxActionsPerDecision: 16,
   maxEvidenceBytes: 1_048_576
 } as const;
+
+/** Multi-action decisions are unavailable unless a caller explicitly opts in. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION = 1;
 
 // How many decisions in a row may come back unusable -- a malformed reply, a
 // timeout -- before a loop that asks again stops asking. It is the same number

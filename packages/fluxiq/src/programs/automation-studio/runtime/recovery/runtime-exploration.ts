@@ -40,6 +40,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
+  AutomationStudioLlmEvidenceVisibility,
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioHarnessOptionLoopBinding,
   type AutomationStudioLlmEvidenceLoopAccounting,
@@ -94,6 +95,8 @@ export type AutomationStudioRuntimeExplorationInput = {
   /** The whole recovery's clock, when one is running. Binds ahead of the budget's. */
   recoveryDeadline?: AutomationStudioRecoveryDeadline;
   completionSchema?: JsonObject;
+  /** Explicit test/experimental opt-in; production callers omit this. */
+  maxActionsPerDecision?: number;
   classifyRefusal?: AutomationStudioExplorationRefusalClassifier;
   /**
    * What the state was, asked once before each action and once after it.
@@ -217,7 +220,7 @@ export async function runAutomationStudioRuntimeExploration(
             }
           }
         },
-        executeTool: async (call) => {
+        executeTool: AutomationStudioLlmEvidenceVisibility.bind(async (call) => {
           const signature = actionSignature(call.toolId, call.value);
           const admitted = ledger.admitAction(signature);
           if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
@@ -227,7 +230,6 @@ export async function runAutomationStudioRuntimeExploration(
           // what the world was.
           const permission = gate.checkFor({ kind: "exploration_step", id: call.toolId, ref: call.callId });
           const execution = await recorder.around(call, () => input.loop.executeTool({ ...call, permission }));
-          gate.observe(execution);
           const needsPermission = gate.raisedDuring(call.callId);
           // What the step asked for and what came back, recorded together. The
           // ledger needs both to answer whether the exploration is still
@@ -247,7 +249,7 @@ export async function runAutomationStudioRuntimeExploration(
           // `classify` reads the gate before anything the loop reports.
           if (needsPermission) throw new Error("exploration stopped: operator_approval_required");
           return execution;
-        },
+        }, (evidence) => gate.observe(evidence)),
         // The ledger is the binding limit on actions and provider calls, so it
         // can name which one was hit; the loop keeps Core's ceilings underneath
         // as the backstop. Evidence bytes stay the loop's, which already
@@ -255,6 +257,7 @@ export async function runAutomationStudioRuntimeExploration(
         maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
+        ...(input.maxActionsPerDecision === undefined ? {} : { maxActionsPerDecision: input.maxActionsPerDecision }),
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         signal: ledger.signal
       });

@@ -26,6 +26,7 @@
 // `endedOnRequest` first.
 
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioInstructedConsequence } from "../action-permissions/index.ts";
+import { AutomationStudioLlmEvidenceVisibility } from "../llm/evidence-batch/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure.ts";
 
@@ -68,16 +69,16 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     now: input.now,
     newRequestId: input.newRequestId
   });
+  const executeTool = AutomationStudioLlmEvidenceVisibility.bind(async (call: Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0]) => {
+    const permission = gate.checkFor({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+    const execution = await input.executeTool({ ...call, permission });
+    // Terminal: the build ends on the first action it was not permitted,
+    // rather than handing the refusal back to the model to route around.
+    if (gate.raisedDuring(call.callId)) throw new Error("Flow Bootstrap stopped: an action needs permission.");
+    return execution;
+  }, (evidence) => gate.observe(evidence));
   return {
-    executeTool: async (call) => {
-      const permission = gate.checkFor({ kind: "exploration_step", id: call.toolId, ref: call.callId });
-      const execution = await input.executeTool({ ...call, permission });
-      gate.observe(execution);
-      // Terminal: the build ends on the first action it was not permitted,
-      // rather than handing the refusal back to the model to route around.
-      if (gate.raisedDuring(call.callId)) throw new Error("Flow Bootstrap stopped: an action needs permission.");
-      return execution;
-    },
+    executeTool,
     planStep: (step) => gate.checkFor({ kind: "flow_step", id: step.definitionId, ref: step.ref }),
     signal: gate.signal,
     instructed: () => gate.instructed,

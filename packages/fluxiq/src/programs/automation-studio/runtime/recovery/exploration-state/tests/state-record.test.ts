@@ -35,6 +35,13 @@ const STATES: Record<string, string> = {
   "call.2:after": "state.second-panel-open"
 };
 
+const BATCH_STATES: Record<string, string> = {
+  "batch.1.1:before": "state.listing",
+  "batch.1.1:after": "state.first-panel-open",
+  "batch.1.2:before": "state.first-panel-open",
+  "batch.1.2:after": "state.second-panel-open"
+};
+
 describe("the exploration's own step record", () => {
   // Mutation: record the evidence digest instead of the state digest. Both
   // steps return identical evidence, so an evidence digest makes
@@ -79,6 +86,23 @@ describe("the exploration's own step record", () => {
     const traced = run.trace.filter((entry) => entry.decision === "tool_call" && entry.callId !== undefined);
     expect(run.steps.map((step) => ({ callId: step.callId, iteration: step.iteration })))
       .toEqual(traced.map((entry) => ({ callId: entry.callId, iteration: entry.iteration })));
+  });
+
+  it("retains two ordered records and an intact reduction for actions in one provider iteration", async () => {
+    const run = await explore({ batch: true });
+
+    expect(run.accounting).toMatchObject({ iterations: 2, toolCalls: 2 });
+    expect(run.steps.map((step) => [step.callId, step.iteration, step.stateBefore, step.stateAfter])).toEqual([
+      ["batch.1.1", 1, "state.listing", "state.first-panel-open"],
+      ["batch.1.2", 1, "state.first-panel-open", "state.second-panel-open"]
+    ]);
+    const review = reduce(run);
+    expect(review.replayable).toBe(true);
+    expect(review.reduction?.actions).toEqual([
+      { index: 0, actionId: "test.reveal", input: { target: "one" } },
+      { index: 1, actionId: "test.reveal", input: { target: "two" } }
+    ]);
+    expect(review.reduction?.stateChainIntact).toBe(true);
   });
 
   // An exploration nobody could observe the state of is not reduced to an empty
@@ -128,8 +152,11 @@ function reduce(run: AutomationStudioRuntimeExploration) {
   });
 }
 
-async function explore(options: { observeState?: boolean; throwAt?: string } = {}): Promise<AutomationStudioRuntimeExploration> {
-  const decisions: JsonObject[] = [
+async function explore(options: { observeState?: boolean; throwAt?: string; batch?: boolean } = {}): Promise<AutomationStudioRuntimeExploration> {
+  const decisions: JsonObject[] = options.batch ? [
+    { kind: "tool_calls", calls: [{ toolId: "test.reveal", input: { target: "one" } }, { toolId: "test.reveal", input: { target: "two" } }] },
+    { kind: "complete", result: { findings: "The control is behind the second panel." } }
+  ] : [
     { kind: "tool_call", callId: "call.1", toolId: "test.reveal", input: { target: "one" } },
     { kind: "tool_call", callId: "call.2", toolId: "test.reveal", input: { target: "two" } },
     { kind: "complete", result: { findings: "The control is behind the second panel." } }
@@ -140,17 +167,18 @@ async function explore(options: { observeState?: boolean; throwAt?: string } = {
       domainId: "test.domain",
       deniedEvidenceKeys: [],
       tools: TOOLS,
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: UNCHANGING_EVIDENCE, effectApplied: true })
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: UNCHANGING_EVIDENCE, effectApplied: true, targetsUnchanged: true })
     }
   });
   return await runAutomationStudioRuntimeExploration({
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
     decide: async () => decisions[index++] ?? { kind: "complete", result: {} },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
+    ...(options.batch ? { maxActionsPerDecision: 2 } : {}),
     ...(options.observeState === false ? {} : {
       captureStateDigest: async ({ callId, phase }) => {
         if (options.throwAt === `${callId}:${phase}`) throw new Error("the page went away");
-        return STATES[`${callId}:${phase}`];
+        return (options.batch ? BATCH_STATES : STATES)[`${callId}:${phase}`];
       }
     })
   });

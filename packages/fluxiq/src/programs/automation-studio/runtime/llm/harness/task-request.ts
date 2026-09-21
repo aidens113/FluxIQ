@@ -31,6 +31,9 @@ export type AutomationStudioLlmTaskRequest = {
   expectedOutput: "diagnosis" | "runtime_patch" | "change_proposal" | "instruction_suggestion" | "flow_bootstrap" | "evidence_tool_decision";
   tokenLimits: AutomationStudioLlmTokenLimits;
   maxEstimatedCostUsd: number;
+  /** Present only for an explicitly enabled evidence decision. Absent is the
+   * fail-closed singleton default. It authenticates the dynamic schema. */
+  maxActionsPerDecision?: number;
   /** The bound domain's declared keys, exactly as the harness input declared
    * them, carried beside the context so a provider can re-check every evidence
    * slot before sending (`automationStudioLlmRequestEvidenceRefusal`). Never
@@ -141,6 +144,8 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
     routing?: AutomationStudioFlowBootstrapRoutingContext;
   };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
+  /** One feature-control value for evidence schema, parsing, and execution. */
+  maxActionsPerDecision?: number;
   policy?: AutomationStudioAdaptationPolicy;
   provider?: AutomationStudioLlmProvider;
   dryRun?: boolean;

@@ -1,6 +1,18 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../loop-limits/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS
+} from "../loop-limits/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import {
+  automationStudioLlmEvidenceInputMatchesSchema, AutomationStudioLlmEvidenceVisibility,
+  buildAutomationStudioLlmEvidenceBatchDecisionSchema,
+  parseAutomationStudioLlmEvidenceBatchDecision,
+  runAutomationStudioLlmEvidenceAction, runAutomationStudioLlmEvidenceBatch,
+  type AutomationStudioLlmEvidenceBatchDecision,
+  type AutomationStudioLlmEvidenceBatchStopReason
+} from "./evidence-batch/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
   AutomationStudioLlmUnusableDecisionError,
@@ -69,6 +81,7 @@ export type AutomationStudioLlmEvidenceTool = {
 
 export type AutomationStudioLlmEvidenceLoopDecision =
   | { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; usage?: AutomationStudioLlmUsageSummary }
+  | (AutomationStudioLlmEvidenceBatchDecision & { usage?: AutomationStudioLlmUsageSummary })
   | { kind: "complete"; result: JsonObject; usage?: AutomationStudioLlmUsageSummary };
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
@@ -81,6 +94,12 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
   evidenceBytes?: number;
   effectApplied?: boolean;
   resultCode?: string;
+  targetsUnchanged?: boolean;
+  batch?: {
+    position: number;
+    size: number;
+    stoppedBy?: AutomationStudioLlmEvidenceBatchStopReason;
+  };
   usage?: AutomationStudioLlmUsageSummary;
 };
 
@@ -156,6 +175,7 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     evidence: ReadonlyArray<{ callId: string; toolId: string; value: JsonValue }>;
     decisionSchema: JsonObject;
     canComplete: boolean;
+    maxActionsPerDecision: number;
     signal?: AbortSignal;
   }): Promise<unknown>;
   executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
@@ -163,6 +183,9 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   maxToolCalls?: number;
   maxEvidenceBytes?: number;
   maxEvidenceContextBytes?: number;
+  /** One enables only singleton decisions. Values above one opt into the
+   * schema, parser, and ordered executor together. */
+  maxActionsPerDecision?: number;
   completionSchema?: JsonObject;
   minToolCalls?: number;
   propagateDecisionErrors?: boolean;
@@ -361,6 +384,27 @@ export async function runAutomationStudioLlmEvidenceLoop(
     trace.push({ ...step, evidenceBytes: noteBytes });
     return undefined;
   };
+  type ToolCallDecision = Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_call" }>;
+  // The state transition shared by singleton and list actions.
+  const executeOne = async (iteration: number, decision: ToolCallDecision, callId: string, maxEvidenceBytes: number,
+    publishEvidence: boolean, batch?: { position: number; size: number }) => {
+    const tool = toolsById.get(decision.toolId)!;
+    const result = await runAutomationStudioLlmEvidenceAction({
+      iteration, decision, callId, maxEvidenceBytes,
+      maxTotalEvidenceBytes: limits.maxEvidenceBytes, publishEvidence,
+      ...(batch ? { batch } : {}),
+      tool, mutationEpoch,
+      requiresMutationBeforeRepeat: requiresMutationBeforeRepeat(tool, mutableTools),
+      callIds, answeredRequests, observationEpochs, latestObservations,
+      evidence, trace, accounting,
+      requestSignature: (epoch, toolId, value) => canonicalJson([epoch, toolId, value]),
+      parseExecution: (value) => parseToolExecutionResult(value, tool.effect),
+      executeTool: input.executeTool, progressed,
+      ...(input.signal ? { signal: input.signal } : {})
+    });
+    if (result.ok) mutationEpoch = result.mutationEpoch;
+    return result;
+  };
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
@@ -372,8 +416,17 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const canComplete = accounting.toolCalls >= limits.minToolCalls;
     if (!eligibleTools.length && !canComplete) return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
     try {
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(eligibleTools, input.completionSchema, canComplete);
-      decision = parseDecision(await input.decide({ iteration, tools: eligibleTools, evidence: evidenceContextWindow(evidence, limits.maxEvidenceContextBytes), decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(eligibleTools, input.completionSchema, canComplete, limits.maxActionsPerDecision);
+      const visibleEvidence = evidenceContextWindow(evidence, limits.maxEvidenceContextBytes); AutomationStudioLlmEvidenceVisibility.observeWindow(input.executeTool, visibleEvidence);
+      decision = parseDecision(await input.decide({
+        iteration,
+        tools: eligibleTools,
+        evidence: visibleEvidence,
+        decisionSchema,
+        canComplete,
+        maxActionsPerDecision: limits.maxActionsPerDecision,
+        ...(input.signal ? { signal: input.signal } : {})
+      }), eligibleTools, limits.maxActionsPerDecision);
     } catch (thrown) {
       if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
@@ -420,6 +473,21 @@ export async function runAutomationStudioLlmEvidenceLoop(
       return failure("llm_evidence_loop.invalid_decision", trace, accounting);
     }
     unusableInARow = 0;
+    if (decision.kind === "tool_calls") {
+      const batch = await runAutomationStudioLlmEvidenceBatch({
+        decision, iteration, mutationEpoch,
+        maxToolCalls: limits.maxToolCalls, maxEvidenceBytes: limits.maxEvidenceBytes,
+        maxEvidenceContextBytes: limits.maxEvidenceContextBytes,
+        accounting, answeredRequests, callIds, evidence,
+        toolEffect: (toolId) => toolsById.get(toolId)!.effect,
+        requestSignature: (epoch, toolId, value) => canonicalJson([epoch, toolId, value]),
+        allocateCallId: (requested) => unusedCallId(callIds, requested),
+        executeOne: (action, callId, maxEvidenceBytes, position) => executeOne(iteration, action, callId, maxEvidenceBytes, false, position),
+        reserveEvidence
+      });
+      if (!batch.ok) return failure(batch.code, trace, accounting);
+      continue;
+    }
     if (!toolIds.has(decision.toolId)) return failure("llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
@@ -439,32 +507,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // loop gives it one of its own rather than ending: the ids are the model's
     // bookkeeping, and the evidence only needs them to be distinct.
     const callId = unusedCallId(callIds, decision.callId);
-    const tool = toolsById.get(decision.toolId)!;
     if (accounting.toolCalls >= limits.maxToolCalls) return failure("llm_evidence_loop.iteration_limit", trace, accounting);
-    callIds.add(callId);
-    answeredRequests.set(toolRequestSignature, callId);
-    let rawExecution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult;
-    try {
-      rawExecution = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, maxEvidenceBytes: Math.max(1, Math.min(limits.maxEvidenceContextBytes - 512, limits.maxEvidenceBytes - accounting.evidenceBytes)), ...(input.signal ? { signal: input.signal } : {}) });
-    } catch {
-      return failure(input.signal?.aborted ? "llm_evidence_loop.cancelled" : "llm_evidence_loop.tool_failed", trace, accounting);
-    }
-    const execution = parseToolExecutionResult(rawExecution, tool.effect);
-    if (!execution) return failure("llm_evidence_loop.tool_failed", trace, accounting);
-    const { evidence: value, effectApplied, resultCode } = execution;
-    if (!isJsonValue(value)) return failure("llm_evidence_loop.tool_failed", trace, accounting);
-    const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
-    if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
-    accounting.toolCalls += 1;
-    accounting.evidenceBytes += evidenceBytes;
-    progressed();
-    if (tool.effect === "mutate" && effectApplied) mutationEpoch += 1;
-    if (requiresMutationBeforeRepeat(tool, mutableTools)) {
-      observationEpochs.set(tool.toolId, mutationEpoch);
-      latestObservations.set(tool.toolId, callId);
-    }
-    evidence.push({ callId, toolId: decision.toolId, value });
-    trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(tool.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
+    const executed = await executeOne(iteration, decision, callId,
+      Math.max(1, Math.min(limits.maxEvidenceContextBytes - 512, limits.maxEvidenceBytes - accounting.evidenceBytes)), true);
+    if (!executed.ok) return failure(executed.code, trace, accounting);
   }
   return failure("llm_evidence_loop.iteration_limit", trace, accounting);
 }
@@ -529,7 +575,13 @@ function parseToolExecutionResult(
   return { evidence: value, effectApplied: effect !== "mutate" };
 }
 
-export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true): JsonObject {
+export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(
+  tools: AutomationStudioLlmEvidenceTool[],
+  completionSchema: JsonObject = { type: "object" },
+  allowComplete = true,
+  maxActionsPerDecision = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION
+): JsonObject {
+  const batch = buildAutomationStudioLlmEvidenceBatchDecisionSchema(tools, maxActionsPerDecision);
   return {
     oneOf: [
       ...(allowComplete ? [{
@@ -542,12 +594,17 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
           kind: { const: "tool_call" }, callId: { type: "string", pattern: "^[a-zA-Z0-9_.:-]{1,200}$" },
           toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema)
         }
-      }))
+      })),
+      ...(batch ? [batch] : [])
     ]
   };
 }
 
-function parseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision | undefined {
+function parseDecision(
+  value: unknown,
+  eligibleTools: readonly AutomationStudioLlmEvidenceTool[],
+  maxActionsPerDecision: number
+): AutomationStudioLlmEvidenceLoopDecision | undefined {
   if (!isRecord(value)) return undefined;
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
     return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
@@ -555,6 +612,21 @@ function parseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision 
   if (value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage"])
     && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)) {
     return { kind: "tool_call", callId: value.callId, toolId: value.toolId, input: value.input, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
+  }
+  if (value.kind === "tool_calls" && exactKeys(value, ["kind", "calls", "usage"]) && validUsage(value.usage)) {
+    const tools = new Map(eligibleTools.map((tool) => [tool.toolId, tool] as const));
+    const parsed = parseAutomationStudioLlmEvidenceBatchDecision(
+      { kind: value.kind, calls: value.calls },
+      {
+        maxActionsPerDecision,
+        eligibleToolIds: [...tools.keys()],
+        isInputValid: (toolId, input) => {
+          const tool = tools.get(toolId);
+          return tool !== undefined && automationStudioLlmEvidenceInputMatchesSchema(input, tool.inputSchema);
+        }
+      }
+    );
+    if (parsed.ok) return { ...parsed.decision, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
   return undefined;
 }
@@ -564,6 +636,7 @@ type EvidenceLoopLimits = {
   maxToolCalls: number;
   maxEvidenceBytes: number;
   maxEvidenceContextBytes: number;
+  maxActionsPerDecision: number;
   minToolCalls: number;
   maxStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
@@ -582,6 +655,7 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
     maxToolCalls: input.maxToolCalls ?? 8,
     maxEvidenceBytes,
     maxEvidenceContextBytes: input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes),
+    maxActionsPerDecision: input.maxActionsPerDecision ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_ACTIONS_PER_DECISION,
     minToolCalls: input.minToolCalls ?? 0,
     maxStepsWithoutProgress,
     maxUnusableDecisionsInARow: unusable?.maxInARow
@@ -595,6 +669,8 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
   if (!Number.isInteger(limits.maxEvidenceBytes) || limits.maxEvidenceBytes <= 0 || limits.maxEvidenceBytes > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes) return undefined;
   if (!Number.isInteger(limits.maxEvidenceContextBytes) || limits.maxEvidenceContextBytes < 1_024 || limits.maxEvidenceContextBytes > limits.maxEvidenceBytes) return undefined;
+  if (!Number.isInteger(limits.maxActionsPerDecision) || limits.maxActionsPerDecision < 1
+    || limits.maxActionsPerDecision > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxActionsPerDecision) return undefined;
   if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
   return limits;
 }

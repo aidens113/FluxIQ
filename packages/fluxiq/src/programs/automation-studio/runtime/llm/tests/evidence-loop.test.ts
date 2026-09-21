@@ -19,6 +19,168 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(JSON.stringify(result)).not.toContain("scope");
   });
 
+  it("keeps list decisions disabled by default", async () => {
+    const decide = vi.fn(async ({ decisionSchema, maxActionsPerDecision }: { decisionSchema: JsonObject; maxActionsPerDecision: number }) => {
+      expect(maxActionsPerDecision).toBe(1);
+      expect(JSON.stringify(decisionSchema)).not.toContain('"tool_calls"');
+      return { kind: "tool_calls", calls: [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }] };
+    });
+    const executeTool = vi.fn();
+
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool }))
+      .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision", accounting: { toolCalls: 0 } });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("executes an enabled list in order with Core call ids, one usage charge, and one bounded packet", async () => {
+    const decide = vi.fn()
+      .mockImplementationOnce(async ({ decisionSchema, maxActionsPerDecision }) => {
+        expect(maxActionsPerDecision).toBe(3);
+        expect(JSON.stringify(decisionSchema)).toContain('"tool_calls"');
+        return {
+          kind: "tool_calls",
+          calls: [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }],
+          usage: { inputTokens: 10, outputTokens: 4, totalTokens: 14, estimatedCostUsd: 0.001 }
+        };
+      })
+      .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
+    const executeTool = vi.fn(async ({ callId, value }: { callId: string; value: JsonObject }) => ({ callId, page: value.page ?? null }));
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, maxActionsPerDecision: 3, decide, executeTool });
+
+    expect(result).toMatchObject({
+      ok: true,
+      result: { ready: true },
+      accounting: { iterations: 2, toolCalls: 2, inputTokens: 10, outputTokens: 4, totalTokens: 14, estimatedCostUsd: 0.001 }
+    });
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["batch.1.1", "batch.1.2"]);
+    expect(result.trace.slice(0, 2)).toEqual([
+      expect.objectContaining({ iteration: 1, callId: "batch.1.1", toolId: "inspect", batch: { position: 1, size: 2 }, usage: expect.any(Object) }),
+      expect.objectContaining({ iteration: 1, callId: "batch.1.2", toolId: "inspect", batch: { position: 2, size: 2 } })
+    ]);
+    expect(result.trace[1]).not.toHaveProperty("usage");
+    expect(decide.mock.calls[1]?.[0].evidence).toEqual([
+      {
+        callId: "batch.1",
+        toolId: "core.batch_result",
+        value: {
+          schemaVersion: "automation-studio.evidence-batch-result.v1",
+          actions: [
+            { position: 1, callId: "batch.1.1", toolId: "inspect", effectApplied: true },
+            { position: 2, callId: "batch.1.2", toolId: "inspect", effectApplied: true }
+          ],
+          latestEvidence: { callId: "batch.1.2", page: 2 }
+        }
+      }
+    ]);
+  });
+
+  it("keeps Core-assigned action and packet ids unique across singleton collisions", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "batch.3", toolId: "inspect", input: { page: 1 } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "batch.3.1", toolId: "inspect", input: { page: 2 } })
+      .mockResolvedValueOnce({ kind: "tool_calls", calls: [{ toolId: "inspect", input: { page: 3 } }, { toolId: "inspect", input: { page: 4 } }] })
+      .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
+    const executeTool = vi.fn(async ({ callId }: { callId: string }) => ({ callId }));
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, maxActionsPerDecision: 2, decide, executeTool });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 4 } });
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["batch.3", "batch.3.1", "batch.3.1.2", "batch.3.2"]);
+    expect(decide.mock.calls[3]?.[0].evidence.at(-1)).toMatchObject({ callId: "batch.3.3", toolId: "core.batch_result" });
+    const allIds = [
+      ...executeTool.mock.calls.map(([call]) => call.callId),
+      decide.mock.calls[3]?.[0].evidence.at(-1).callId
+    ];
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  it.each([
+    ["ineligible later tool", [{ toolId: "inspect", input: { page: 1 } }, { toolId: "hidden", input: {} }], {}, "llm_evidence_loop.invalid_decision"],
+    ["invalid later input", [{ toolId: "inspect", input: { page: 1 } }, { toolId: "strict", input: {} }], {}, "llm_evidence_loop.invalid_decision"],
+    ["repeat in one epoch", [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 1 } }], {}, "llm_evidence_loop.repeat_without_progress"],
+    ["action budget", [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }], { maxToolCalls: 1 }, "llm_evidence_loop.iteration_limit"]
+  ] as const)("atomically rejects the whole list for %s", async (_name, calls, overrides, code) => {
+    const strictTools = [
+      ...tools,
+      {
+        toolId: "strict",
+        description: "Requires one key.",
+        inputSchema: { type: "object", additionalProperties: false, required: ["value"], properties: { value: { type: "string" } } }
+      }
+    ];
+    const executeTool = vi.fn();
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools: strictTools,
+      maxActionsPerDecision: 16,
+      decide: async () => ({ kind: "tool_calls", calls }),
+      executeTool,
+      ...overrides
+    })).resolves.toMatchObject({ ok: false, code, accounting: { toolCalls: 0, evidenceBytes: 0 } });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("atomically rejects a list whose bounded result packet cannot fit", async () => {
+    const executeTool = vi.fn();
+    const calls = Array.from({ length: 16 }, (_, page) => ({ toolId: "inspect", input: { page } }));
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools,
+      maxActionsPerDecision: 16,
+      maxToolCalls: 16,
+      maxEvidenceBytes: 1_024,
+      maxEvidenceContextBytes: 1_024,
+      decide: async () => ({ kind: "tool_calls", calls }),
+      executeTool
+    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.evidence_limit", accounting: { toolCalls: 0, evidenceBytes: 0 } });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["refusal", { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "denied" }, effectApplied: true, targetsUnchanged: true }, "refusal"],
+    ["non-applied mutation", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }, "effect_not_applied"],
+    ["missing target stability", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true }, "targets_may_have_changed"],
+    ["false target stability", { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: false }, "targets_may_have_changed"]
+  ] as const)("stops later listed actions after %s", async (_name, firstResult, stoppedBy) => {
+    const batchTools = [
+      { toolId: "act", description: "Change state.", inputSchema: { type: "object" }, effect: "mutate" as const },
+      { toolId: "inspect", description: "Observe state.", inputSchema: { type: "object" }, effect: "observe" as const }
+    ];
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_calls", calls: [{ toolId: "act", input: {} }, { toolId: "inspect", input: {} }] })
+      .mockResolvedValueOnce({ kind: "complete", result: { stopped: true } });
+    const executeTool = vi.fn().mockResolvedValueOnce(firstResult);
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: batchTools, maxActionsPerDecision: 2, decide, executeTool });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 1 } });
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(result.trace[0]).toMatchObject({ batch: { position: 1, size: 2, stoppedBy } });
+    expect(decide.mock.calls[1]?.[0].evidence[0].value).toMatchObject({ stoppedBy, actions: [{ position: 1, toolId: "act" }] });
+  });
+
+  it("continues observations and explicitly stable applied mutations", async () => {
+    const batchTools = [
+      { toolId: "inspect", description: "Observe state.", inputSchema: { type: "object" }, effect: "observe" as const },
+      { toolId: "act", description: "Change state.", inputSchema: { type: "object" }, effect: "mutate" as const }
+    ];
+    const decisions = [
+      { kind: "tool_calls", calls: [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }] },
+      { kind: "tool_calls", calls: [{ toolId: "act", input: { step: 1 } }, { toolId: "inspect", input: { page: 3 } }] },
+      { kind: "complete", result: { ready: true } }
+    ];
+    const executeTool = vi.fn(async ({ toolId, value }: { toolId: string; value: JsonObject }) => toolId === "act"
+      ? { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, targetsUnchanged: true }
+      : { kind: "llm_evidence_tool_execution" as const, evidence: { page: value.page ?? null }, effectApplied: true });
+
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools: batchTools,
+      maxActionsPerDecision: 2,
+      decide: async () => decisions.shift(),
+      executeTool
+    })).resolves.toMatchObject({ ok: true, accounting: { iterations: 3, toolCalls: 4 } });
+    expect(executeTool).toHaveBeenCalledTimes(4);
+  });
+
   it("fails closed for unknown tools and evidence overflow", async () => {
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: async () => ({ kind: "tool_call", callId: "call.1", toolId: "navigate", input: {} }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.unknown_tool" });

@@ -37,7 +37,7 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
   it("lets a default 26-call grant iterate 26 times, past the old cap of eight", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 24_000 });
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: 64_000, maxEvidenceContextBytes: 24_000, maxActionsPerDecision: 1 });
     // Each decision reserves a twenty-sixth of $2, never the $0.25 per-call
     // cap: at $0.25 the grant would refuse the ninth decision on cost.
     expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(2 / 26, 8);
@@ -64,6 +64,17 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
     expect(limits.loop.maxIterations).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
     expect(limits.loop.maxToolCalls).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls);
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3 }).loop).toMatchObject({ maxIterations: 3, maxToolCalls: 4 });
+  });
+
+  it("derives a separately bounded action allowance only when explicitly enabled", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3, maxActionsPerDecision: 16 }).loop)
+      .toMatchObject({ maxIterations: 3, maxActionsPerDecision: 16, maxToolCalls: 49 });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxActionsPerDecision: 16 }).loop)
+      .toMatchObject({ maxIterations: 26, maxActionsPerDecision: 16, maxToolCalls: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls });
+    for (const maxActionsPerDecision of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3, maxActionsPerDecision }).loop)
+        .toMatchObject({ maxActionsPerDecision: 1, maxToolCalls: 4 });
+    }
   });
 
   it("keeps a per-call cost that is already the smaller of the two, and passes one through when no total is given", () => {

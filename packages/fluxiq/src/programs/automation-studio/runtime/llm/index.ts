@@ -21,6 +21,7 @@ export {
 } from "./grant-capabilities.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
+export * from "./evidence-batch/index.ts";
 export * from "./harness-options/index.ts";
 export * from "./stages/index.ts";
 export * from "./run-budget.ts";

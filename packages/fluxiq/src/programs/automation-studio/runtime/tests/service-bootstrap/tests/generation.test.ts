@@ -176,6 +176,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 8_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
     expect(requests[0]?.context).not.toHaveProperty("reusableContext");
+    expect(JSON.stringify(requests[0]?.context.evidenceLoop?.decisionSchema)).not.toContain("tool_calls");
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" },
       // The first observation is sized to the evidence context window less the
       // loop's own framing. Derived rather than pinned: it was 7_488 beside an
@@ -194,6 +195,50 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       toolCallCount: 1,
       toolIds: ["inspect"]
     });
+    expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
+  });
+
+  it("uses one explicit run-scoped limit for list schema, execution, sanitized trace, and provider-call counts", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider = mockProvider(async (request) => {
+      requests.push(request);
+      const iteration = request.context.evidenceLoop?.iteration ?? 0;
+      return iteration === 1
+        ? { response: { kind: "evidence_tool_decision", summary: "Inspect both.", decision: { kind: "tool_calls", calls: [
+          { toolId: "inspect.one", input: { area: "one" } },
+          { toolId: "inspect.two", input: { area: "two" } }
+        ] } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } }
+        : { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision: { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 } };
+    });
+    const executeTool = vi.fn().mockImplementation(async (call: { toolId: string }) => ({ observed: call.toolId, privatePageContent: "not persisted" }));
+    const instance = createService({
+      provider,
+      resolver: () => ({ provider, maxCallsPerRun: 2 }),
+      evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [
+        { toolId: "inspect.one", description: "Inspect one bounded area.", inputSchema: { type: "object", properties: { area: { const: "one" } }, required: ["area"], additionalProperties: false }, effect: "observe" },
+        { toolId: "inspect.two", description: "Inspect another bounded area.", inputSchema: { type: "object", properties: { area: { const: "two" } }, required: ["area"], additionalProperties: false }, effect: "observe" }
+      ], executeTool }
+    });
+    const { project, flow } = await blankFixture(instance);
+    const result = await instance.generateFlowBootstrapAdaptation({
+      projectId: project.id,
+      flowId: flow.flowId,
+      executionGrant: await grant(instance, project.id, flow.flowId),
+      evidenceGuided: true,
+      maxActionsPerDecision: 16
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[0]?.context.evidenceLoop?.decisionSchema)).toContain("tool_calls");
+    expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["inspect.one", "inspect.two"]);
+    const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
+    expect(stored?.evidenceTrace).toMatchObject([
+      { iteration: 1, decision: "tool_call", toolId: "inspect.one", batch: { position: 1, size: 2 }, usage: { totalTokens: 15 } },
+      { iteration: 1, decision: "tool_call", toolId: "inspect.two", batch: { position: 2, size: 2 } },
+      { iteration: 2, decision: "complete", usage: { totalTokens: 12 } }
+    ]);
+    expect(stored?.evidenceTrace?.[1]).not.toHaveProperty("usage");
+    expect(stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 2, decisionCount: 2, traceStepCount: 3, toolCallCount: 2 });
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
   });
 

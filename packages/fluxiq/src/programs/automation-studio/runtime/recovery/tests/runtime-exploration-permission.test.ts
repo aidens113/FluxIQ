@@ -20,10 +20,12 @@ const TOOLS: AutomationStudioLlmEvidenceTool[] = [
 type Options = {
   permittedConsequences?: readonly string[];
   decisions?: JsonObject[];
+  maxActionsPerDecision?: number;
 };
 
 async function explore(options: Options = {}) {
   const pressed: string[] = [];
+  const executed: string[] = [];
   let providerCalls = 0;
   const decisions = options.decisions ?? [
     { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
@@ -36,6 +38,7 @@ async function explore(options: Options = {}) {
       deniedEvidenceKeys: [],
       tools: TOOLS,
       executeTool: async (input) => {
+        executed.push(input.toolId);
         if (input.toolId === "shop.look") {
           return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", controls: [{ handle: "c4", name: "Refund line 1" }] }, effectApplied: false };
         }
@@ -51,10 +54,11 @@ async function explore(options: Options = {}) {
     decide: async () => decisions[providerCalls++] ?? { kind: "complete", result: {} },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
     ...(options.permittedConsequences ? { permittedConsequences: options.permittedConsequences } : {}),
+    ...(options.maxActionsPerDecision === undefined ? {} : { maxActionsPerDecision: options.maxActionsPerDecision }),
     instructionIds: ["instruction.refund"],
     now: () => 1_000
   });
-  return { exploration, pressed, providerCalls: () => providerCalls };
+  return { exploration, pressed, executed, providerCalls: () => providerCalls };
 }
 
 describe("a recovery exploration that needs permission", () => {
@@ -102,6 +106,38 @@ describe("a recovery exploration that needs permission", () => {
 
     expect(run.pressed).toEqual([]);
     expect(run.exploration.permissionRequest?.missing).toEqual(["move_money"]);
+  });
+
+  it("records and terminates a batch permission request after an earlier success without running later actions", async () => {
+    const run = await explore({
+      maxActionsPerDecision: 3,
+      decisions: [{
+        kind: "tool_calls",
+        calls: [
+          { toolId: "shop.look", input: { view: "refund" } },
+          { toolId: "shop.press", input: { handle: "c4" } },
+          { toolId: "shop.look", input: { view: "after" } }
+        ]
+      }]
+    });
+
+    expect(run.executed).toEqual(["shop.look", "shop.press"]);
+    expect(run.pressed).toEqual([]);
+    expect(run.providerCalls()).toBe(1);
+    expect(run.exploration).toMatchObject({
+      outcome: "user_intervention_required",
+      stopReason: "operator_approval_required",
+      actions: 2,
+      refusedActions: 1,
+      permissionRequest: {
+        action: { kind: "exploration_step", id: "shop.press", ref: "batch.1.2" },
+        control: { name: null, kind: "button" }
+      },
+      steps: [
+        { callId: "batch.1.1", toolId: "shop.look", input: { view: "refund" } },
+        { callId: "batch.1.2", toolId: "shop.press", input: { handle: "c4" } }
+      ]
+    });
   });
 
   it("does not read an unrecognised class as a grant", async () => {

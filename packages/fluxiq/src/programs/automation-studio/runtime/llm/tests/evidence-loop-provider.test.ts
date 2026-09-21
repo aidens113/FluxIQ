@@ -33,6 +33,39 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(result.intervention.structuredResult).toEqual({ kind: "evidence_tool_decision", decisionKind: "tool_call", toolId: "inspect" });
   });
 
+  it("uses one explicit test-level value for the request schema and list parser", async () => {
+    const enabledLoop = {
+      ...evidenceLoop,
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true, 3)
+    };
+    let sent: AutomationStudioLlmTaskRequest | undefined;
+    const result = await runAutomationStudioLlmHarness({
+      taskKind: "evidence_tool_decision",
+      projectId: "project.one",
+      flowId: "flow.one",
+      instructions: [],
+      evidenceLoop: enabledLoop,
+      maxActionsPerDecision: 3,
+      provider: {
+        metadata: { provider: "mock", model: "schema" },
+        runTask: async (request) => {
+          sent = request;
+          return {
+            response: {
+              kind: "evidence_tool_decision",
+              summary: "Inspect two views.",
+              decision: { kind: "tool_calls", calls: [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }] }
+            }
+          };
+        }
+      }
+    });
+
+    expect(sent?.maxActionsPerDecision).toBe(3);
+    expect(result).toMatchObject({ ok: true, response: { decision: { kind: "tool_calls", calls: [{ toolId: "inspect" }, { toolId: "inspect" }] } } });
+    expect(result.intervention.structuredResult).toEqual({ kind: "evidence_tool_decision", decisionKind: "tool_calls", actionCount: 2, toolIds: ["inspect", "inspect"] });
+  });
+
   it("sends the strict dynamic decision schema through DeepSeek and parses completion", async () => {
     let outbound = "";
     const provider = createAutomationStudioDeepSeekProvider({
@@ -64,11 +97,43 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(systemPrompt).toContain("Repeating an observation with different parameters is not progress");
     expect(systemPrompt).toContain("Do not call a mutating tool merely to unlock another observation");
     expect(systemPrompt).toContain("recoverable tool result shaped like {ok:false,code:string}");
+    expect(systemPrompt).not.toContain("later actions stop after a refusal");
     expect(payload.outputSchema).toMatchObject({ properties: { kind: { const: "evidence_tool_decision" }, decision: evidenceLoop.decisionSchema } });
     expect(payload.outputSchema.properties.decision.oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete", "tool_call"]);
     expect(userPayload.indexOf('\"kind\":{\"const\":\"complete\"}')).toBeLessThan(userPayload.indexOf('\"tools\"'));
     expect(payload.context.evidenceLoop.tools).toEqual([{ toolId: "inspect", description: "Collect bounded evidence." }]);
     expect(response.response).toEqual({ kind: "evidence_tool_decision", summary: "Enough evidence.", decision: { kind: "complete", result: { candidateId: "candidate.1" } } });
+  });
+
+  it("authenticates and explains the enabled list schema without exposing the control to the model payload", async () => {
+    const enabledLoop = {
+      ...evidenceLoop,
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true, 3)
+    };
+    let outbound = "";
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
+      fetchImpl: (async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
+          kind: "evidence_tool_decision",
+          summary: "Inspect two views.",
+          decision: { kind: "tool_calls", calls: [{ toolId: "inspect", input: { page: 1 } }, { toolId: "inspect", input: { page: 2 } }] }
+        }) } }],
+        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
+      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+    });
+
+    await expect(provider.runTask(request({
+      maxActionsPerDecision: 3,
+      context: { ...request().context, evidenceLoop: enabledLoop }
+    }))).resolves.toMatchObject({ response: { decision: { kind: "tool_calls" } } });
+    const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
+    const systemPrompt = body.messages.find((message) => message.role === "system")!.content;
+    const userPayload = body.messages.find((message) => message.role === "user")!.content;
+    expect(systemPrompt).toContain("later actions stop after a refusal");
+    expect(userPayload).toContain('"tool_calls"');
+    expect(userPayload).not.toContain("maxActionsPerDecision");
   });
 
   it("rejects altered decision schemas before secret resolution", async () => {
@@ -80,6 +145,13 @@ describe("Automation Studio evidence-loop provider task", () => {
     });
     const altered = request({ context: { ...request().context, evidenceLoop: { ...evidenceLoop, decisionSchema: { type: "object" } } } });
     await expect(provider.runTask(altered)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
+    const enabledSchemaWithoutControl = request({
+      context: {
+        ...request().context,
+        evidenceLoop: { ...evidenceLoop, decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true, 3) }
+      }
+    });
+    await expect(provider.runTask(enabledSchemaWithoutControl)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
     expect(secrets).toBe(0);
   });
 
