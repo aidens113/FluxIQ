@@ -447,7 +447,7 @@ const NO_PROGRESS_SENTENCE: Readonly<Record<AutomationStudioExplorationNoProgres
 const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReason, string>> = Object.freeze({
   wall_clock_expired: "The exploration ran out of its own time before it reached an answer.",
   recovery_deadline_expired: "The recovery as a whole ran out of time, so the exploration was stopped.",
-  action_limit: "The exploration used every action it was allowed before it reached an answer.",
+  action_limit: "The exploration reached the number of actions it was allowed, or asked for more than it had left, before it reached an answer.",
   provider_call_limit: "The exploration used every provider call it was allowed before it reached an answer.",
   repeat_window: "The exploration kept attempting the same action, so it was stopped.",
   no_progress: "The exploration had stopped learning anything new, so it was stopped.",
