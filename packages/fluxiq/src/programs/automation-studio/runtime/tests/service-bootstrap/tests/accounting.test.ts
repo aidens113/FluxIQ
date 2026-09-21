@@ -267,7 +267,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     }
   });
 
-  it("keeps generation-lock infrastructure failures on the generic pre-provider fallback", async () => {
+  it("reports a generation-lock failure by its closed code, without the raw error and before any provider", async () => {
     const resolver = vi.fn();
     const revoke = vi.fn();
     const instance = createService({ resolver, revoke });
@@ -282,7 +282,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     }));
 
     expect(diagnostic).toEqual({
-      code: "flow_bootstrap.pre_provider_validation_failed",
+      code: "flow_bootstrap.generation_lock_failed",
       stage: "pre_provider_validation",
       retryable: false,
       providerInvocation: "not_attempted",
