@@ -50,6 +50,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [runningMode, setRunningMode] = useState<string | null>(null);
   const [runError, setRunError] = useState("");
   const [lastRun, setLastRun] = useState<any | null>(null);
+  const [localRunIds, setLocalRunIds] = useState<string[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [activeRunStartedAt, setActiveRunStartedAt] = useState<number | null>(null);
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
@@ -61,6 +62,11 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const readinessRequestGateRef = useRef<ReturnType<typeof createRuntimeReadinessRequestGate> | null>(null);
   const studioRuntimeActionId = React.useId();
   if (!readinessRequestGateRef.current) readinessRequestGateRef.current = createRuntimeReadinessRequestGate();
+  const runtimeRunCount = useMemo(() => {
+    const persistedIds = new Set(props.runtimeSessions.map((session) => session?.runId).filter((runId): runId is string => typeof runId === "string"));
+    return props.runtimeSessions.length + localRunIds.filter((runId) => !persistedIds.has(runId)).length;
+  }, [localRunIds, props.runtimeSessions]);
+  const rememberLocalRun = (runId: string) => setLocalRunIds((current) => current.includes(runId) ? current : [...current, runId]);
   const loadReadiness = useCallback(async () => {
     if (!props.projectId || !props.flow?.flowId) {
       readinessRequestGateRef.current!.invalidate();
@@ -76,7 +82,8 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   useEffect(() => {
     const defaults = Object.fromEntries(runtimeFlowInputPorts(props.flow).filter((port) => port.defaultValue !== undefined).map((port) => [port.id, port.defaultValue]));
     setInputText(JSON.stringify(defaults));
-  }, [props.flow?.flowId]);
+    setLocalRunIds([]);
+  }, [props.flow?.flowId, props.projectId]);
   useEffect(() => {
     void loadReadiness();
     if (!props.projectId || !props.flow?.flowId) return;
@@ -109,6 +116,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
       setRunningMode(null);
       const runId = result.payload?.runtimeSession?.runId;
       if (!result.ok || !result.payload?.runtimeSession || !runId) { setRunError("The authorized LLM run could not be completed."); return; }
+      rememberLocalRun(runId);
       commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
       setLiveRunId(runId);
       setLastRun(result.payload);
@@ -117,6 +125,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     const queued = await props.commands.start({ projectId: payload.payload.projectId, flowId: payload.payload.flowId, inputs: payload.payload.inputs });
     if (!queued.ok || !queued.payload?.runtimeSession?.runId) { setRunningMode(null); setRunError(queued.error ?? "Runtime session could not be queued."); return; }
     const runId = queued.payload.runtimeSession.runId;
+    rememberLocalRun(runId);
     commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
     setActiveRunId(runId);
     setActiveRunStartedAt(Date.now());
@@ -194,7 +203,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
           <strong>{props.flow?.name ?? props.flow?.flowId ?? "Select a Flow"}</strong>
           <p>Start a controlled run, then inspect its actions, decisions, and state changes.</p>
         </div>
-        <span>{props.runtimeSessions.length} {props.runtimeSessions.length === 1 ? "run" : "runs"}</span>
+        <span>{runtimeRunCount} {runtimeRunCount === 1 ? "run" : "runs"}</span>
       </header>
       <BlankFlowAuthoringPanel commands={props.commands} flow={props.flow} projectId={props.projectId} readiness={readiness} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} />
       <RuntimeRunControlPanel

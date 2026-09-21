@@ -477,3 +477,27 @@ only a genuinely fresh root, serializing concurrent startup through one
 runtime-owned promise. A v1 or incomplete-migration root fails startup without
 mutation and must use the protected migration or rollback path explicitly;
 authentication must never create state before the v2 commit marker exists.
+
+A marker-less root containing a root-level `global.sqlite` and only
+unambiguous v2-owned top-level state is reported as `uncommitted_v2`, not v1.
+This can result from a host that wrote authentication state before the v2
+marker was committed. Setup and v1 migration both refuse it. Recovery is an
+explicit, offline operator action:
+
+```ts
+import { adoptUncommittedFluxIQStorage } from "fluxiq";
+
+await adoptUncommittedFluxIQStorage({ fluxiqRoot: "/absolute/host/.fluxiq" });
+```
+
+Stop every host process first and take a verified private backup. Adoption
+accepts only a regular, integrity-checked `global.sqlite` containing a
+recognized FluxIQ global table, plus the unambiguous v2-owned `artifacts`,
+`cache`, `logs`, `security`, and `tmp` directories. It
+rejects a migration journal, external path overrides, legacy or ambiguous
+roots (including `domains`), unknown entries, symbolic links, SQLite sidecars,
+and malformed databases without writing. On success it atomically writes only
+the missing `config.json` marker and returns the database size and SHA-256 so
+the operator can verify byte preservation. It never runs from normal setup or
+web-panel startup. Recreate the `FluxIQ` instance or restart the host after it
+returns.
