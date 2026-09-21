@@ -770,6 +770,13 @@ export class AutomationStudioService {
     return this;
   }
 
+  llmEvidenceRuntimeStatus(): { bound: boolean; toolCount: number } {
+    return {
+      bound: this.llmEvidenceRuntime !== undefined,
+      toolCount: this.llmEvidenceRuntime?.tools.length ?? 0
+    };
+  }
+
   bindReusableLlmContext(configuration: AutomationStudioReusableLlmContextHostConfiguration): this {
     if (configuration.enabled !== true
       || !configuration.contentProtection
@@ -1838,7 +1845,7 @@ export class AutomationStudioService {
         settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision),
         permittedConsequences: parseAutomationStudioPermittedConsequences(unsafeGrant.permittedConsequences)
       };
-      failureCode = "flow_bootstrap.pre_provider_validation_failed";
+      failureCode = "flow_bootstrap.generation_lock_failed";
       return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
         failureCode = "flow_bootstrap.blank_target_required";
         const parent = await this.assertBlankBootstrapTarget(projectId, flowId);
@@ -1848,17 +1855,18 @@ export class AutomationStudioService {
           || executionGrant.settingsRevision !== binding.settingsRevision) {
           throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.stale_grant_binding");
         }
-        failureCode = "flow_bootstrap.pre_provider_validation_failed";
+        failureCode = "flow_bootstrap.pending_adaptation_check_failed";
         const pending = (await this.bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId))
           .find((adaptation) => adaptation.status === "proposed" || adaptation.status === "validated");
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
-        failureCode = "flow_bootstrap.pre_provider_validation_failed";
+        failureCode = "flow_bootstrap.instruction_resolution_failed";
         const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
         const resolvedInstructions = resolveAutomationStudioLlmInstructions({ instructions, projectId, flowId });
         if (!resolvedInstructions.instructions.length
           || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
           throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.active_instructions_required");
         }
+        failureCode = "flow_bootstrap.bootstrap_context_failed";
         const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
         const resolution = this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? { scope: parent.scope, runtimeCapabilities: [], permissions: [] };
 const bootstrapInstructionText = resolvedInstructions.instructions
@@ -1900,7 +1908,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let accounting: AutomationStudioBootstrapAccounting;
         const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs });
         if (input.evidenceGuided) {
-          if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pre_provider_validation_failed");
+          if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           let estimatedInputTokens = 0;
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
           const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });

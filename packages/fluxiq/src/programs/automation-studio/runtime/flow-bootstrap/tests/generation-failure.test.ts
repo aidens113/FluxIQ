@@ -259,9 +259,11 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       diagnostics: [{ severity: "error", code: "llm_budget.input_limit_exceeded", message: "private budget detail" }],
       request
     }).diagnostic).toMatchObject({
+      code: "flow_bootstrap.pre_provider_input_limit_exceeded",
       stage: "pre_provider_validation",
       providerInvocation: "not_attempted",
-      providerResponse: "not_received"
+      providerResponse: "not_received",
+      accounting: { requestId: "request.truth", estimatedInputTokens: 100 }
     });
     expect(flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code: "llm_output.invalid_provider_result", message: "private output detail" }],
