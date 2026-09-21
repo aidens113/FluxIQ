@@ -179,7 +179,7 @@ describe("Automation Studio LLM execution API", () => {
     const unknown = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { purpose: "unbounded_build", keyId: "secret:key", projectId: "project.one", flowId: "flow.one" } });
     expect(unknown).toEqual({ ok: false, error: "LLM execution grant purpose is unsupported." });
     const stale = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { purpose: "build_and_adapt", authSessionId: "session.one", authorizationPassword: "private-password", authorizationPin: "654321", keyId: "secret:key", projectId: "project.one", flowId: "flow.one" } });
-    expect(stale).toEqual({ ok: false, error: "Flow or settings changed during grant authorization." });
+    expect(stale).toEqual({ ok: false, error: "llm_grant.binding_changed" });
     expect(JSON.stringify({ unknown, stale })).not.toContain("private-password");
     expect(JSON.stringify({ unknown, stale })).not.toContain("654321");
   });
