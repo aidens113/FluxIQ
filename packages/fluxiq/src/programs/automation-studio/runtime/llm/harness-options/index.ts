@@ -37,6 +37,13 @@ export {
   automationStudioPlanNodeParametersNameHandle,
   type AutomationStudioPlanNodeHandleSite
 } from "./plan-node-handles.ts";
+// What a step says its own action would lastingly do, which is the only thing
+// the permission gate cannot work out for itself.
+export {
+  AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY,
+  automationStudioPlanStepConsequences,
+  type AutomationStudioPlanStepConsequences
+} from "./plan-step-consequences.ts";
 export {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,
