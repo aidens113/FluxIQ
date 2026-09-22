@@ -235,9 +235,17 @@ function observedHostRuntime(
   const evaluate = hostRuntime?.expectationEvaluator;
   if (!hostRuntime || !evaluate) return hostRuntime;
   const host: AutomationStudioHostRuntimeBoundary = hostRuntime;
+  const askedBy = new Map<string, string>();
   const record = (context: AutomationNodeExpectationEvaluationContext, outcome: HostEvaluation) => {
     if (!context.attemptId) return;
-    evaluations.set(context.attemptId, evaluations.has(context.attemptId) ? "unknown" : outcome);
+    const previous = askedBy.get(context.attemptId);
+    askedBy.set(context.attemptId, context.source);
+    // The transition comparison re-checks a rejection before it builds the
+    // failure record, so a second answer from the same source is that re-check,
+    // is the one the run acted on, and replaces the first. Two answers from
+    // *different* sources are two different questions about one attempt, and
+    // nothing here can reconcile them, so that stays unknown.
+    evaluations.set(context.attemptId, previous !== undefined && previous !== context.source ? "unknown" : outcome);
   };
   const observed: AutomationNodeExpectationEvaluator = async (conditions, mode, timeoutMs, context) => {
     let evaluation: Awaited<ReturnType<AutomationNodeExpectationEvaluator>>;
