@@ -9,6 +9,7 @@ import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import type { AutomationStudioRecordedState } from "./recorded-state.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -88,8 +89,42 @@ export type AutomationStudioRecoveryLookupInput = {
   failedRoute?: string;
 };
 
+/**
+ * The rungs of the recovery ladder, cheapest first, with the model last.
+ *
+ * The four in `AUTOMATION_STUDIO_LADDER_RUNG_KINDS` are the deterministic ones
+ * the executor runs itself. Each is **consumed** once it has run and is not
+ * offered again for the same arrival at the node, because any
+ * non-`llm_diagnosis` candidate still on offer tells
+ * `classifyAutomationStudioAdaptiveFailure` that a deterministic answer exists
+ * and permanently suppresses escalation to the model.
+ */
+export type AutomationStudioRecoveryCandidateKind =
+  /** The state the node was to produce already holds, so the action already happened: skip it rather than repeat it. */
+  | "skip_satisfied_node"
+  /** Wait for the state the node expected, up to its recorded wait ceiling, then attempt it again. */
+  | "await_recorded_state"
+  /** Run a Flow node that clears known interference -- an overlay, a consent wall -- then attempt the node again. */
+  | "clear_interference"
+  /** Attempt the same node again under its retry policy. */
+  | "retry_node"
+  | "deterministic_path"
+  | "approved_runtime_patch"
+  | "reroute"
+  | "llm_diagnosis";
+
+/** The rungs the executor runs itself, in ladder order. */
+export const AUTOMATION_STUDIO_LADDER_RUNG_KINDS = Object.freeze([
+  "skip_satisfied_node",
+  "await_recorded_state",
+  "clear_interference",
+  "retry_node"
+] as const);
+
+export type AutomationStudioLadderRungKind = (typeof AUTOMATION_STUDIO_LADDER_RUNG_KINDS)[number];
+
 export type AutomationStudioRecoveryCandidate = {
-  kind: "deterministic_path" | "approved_runtime_patch" | "reroute" | "llm_diagnosis";
+  kind: AutomationStudioRecoveryCandidateKind;
   priority: number;
   label: string;
   targetNodeId?: string;
@@ -132,6 +167,37 @@ export type AutomationStudioNodeAttemptTrace = {
   policyDecision?: { outcome: "selected" | "rejected" | "waiting"; reason: string; outputId?: string; confirmationInputId?: string };
   transitionComparison?: AutomationStudioTransitionComparison;
   recoveryDecision?: AutomationStudioRecoveryDecision;
+  /**
+   * Which attempt of this node this is, and why it was attempted again. Present
+   * from the second attempt onwards, so a trace says plainly that the ladder,
+   * not the Flow, put the node back on the page.
+   */
+  retry?: {
+    attemptNumber: number;
+    maxAttempts: number;
+    backoffMs: number;
+    /** The ladder rung that asked for this attempt. */
+    rung: AutomationStudioLadderRungKind;
+    previousAttemptId: string;
+  };
+  /**
+   * What the run did about the state this node expected to find before it ran.
+   * `satisfied: false` is a mark, not a failure: the recording is evidence the
+   * action was possible at that point, so the node is attempted anyway.
+   */
+  readiness?: {
+    ceilingMs: number;
+    waitedMs: number;
+    satisfied: boolean;
+    checkedConditionCount: number;
+    message?: string;
+  };
+  /**
+   * The recorded state this node was taken in, read from its metadata at
+   * execution time. Carried on the attempt so a diagnosis -- deterministic or
+   * the model's -- names the snapshot the run was supposed to be standing in.
+   */
+  recordedState?: AutomationStudioRecordedState;
   logs?: AutomationStudioNativeLogEntry[];
   stateRefs?: {
     beforeAction?: AutomationStudioHostStateSnapshotRef;
@@ -201,6 +267,17 @@ export type AutomationStudioGraphExecutionOptions = {
   random?: () => number;
   now?: () => number;
   signal?: AbortSignal;
+  /**
+   * How the run waits between retry attempts. A real timer by default; a test
+   * or a simulator supplies its own so a backoff costs no wall clock.
+   */
+  delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /**
+   * The retry policy every node of this run starts from, overriding Core's
+   * default of three attempts at 250 ms, 1 s and 2 s. A Flow's own metadata and
+   * a node's own declaration both outrank it, and `maxRetriesPerAction` caps it.
+   */
+  retryPolicy?: { maxAttempts: number; backoffMs: readonly number[] };
   /** Absolute parent deadline inherited by nested Call Flow executions. */
   deadlineAt?: number;
   /**

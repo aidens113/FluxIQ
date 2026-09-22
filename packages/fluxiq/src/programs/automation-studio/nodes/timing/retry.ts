@@ -1,10 +1,24 @@
 import { durationMs } from "./shared.ts";
 import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
+/**
+ * Retry declares the retry policy for the branch its `success` port feeds. The
+ * executor reads it there, in `automationStudioNodeRetryPolicy`
+ * (`runtime/executor/retry-policy.ts`).
+ *
+ * It used to retry nothing. It returned its own four parameters as outputs and
+ * passed its input straight through, so a Flow that put a Retry node in front
+ * of a fragile step got a label and no behaviour. The parameters were the right
+ * ones; nothing read them. `attempts` is now the branch's attempt allowance,
+ * and `delayMs` with `backoff` are the waits between those attempts, applied to
+ * the target of the `success` edge and to each node after it that only this
+ * branch reaches. The outputs are unchanged, so a Flow that reads `attempts` or
+ * `delayMs` off this node keeps working.
+ */
 export const retryNode = defineBuiltinNode({
   id: "builtin.timing.retry",
   label: "Retry",
-  description: "Retry a branch with bounded attempts and delay.",
+  description: "Retry the branch that follows, with bounded attempts and a delay between them.",
   class: "timing",
   scope: "both",
   inputs: [{ id: "in", label: "In", valueType: "any" }],
