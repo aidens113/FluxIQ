@@ -342,7 +342,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     const run = await create({ maxCalls: 20, reply: (_call, iteration) => look(iteration) });
 
     expect(run.sentIterations).toHaveLength(20);
-    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 20 } });
+    // Twenty decisions, nineteen tool calls: the twentieth is the last the
+    // budget allows, so it is offered only completion, and a look asked for on
+    // it anyway is not run (t057, `llm/loop-budget.ts`).
+    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 19 } });
     expect(run.activeGrantsAfter).toBe(0);
   }, 120_000);
 });

@@ -45,6 +45,16 @@
 // shape and the surrounding line must say it is a shape. That is what these
 // two now do together.
 //
+// The fifth is the replay premise, added on 2026-09-21 (P17). The only Flow the
+// first end-to-end panel campaign created (E1 lane B, E9) kept none of the
+// cookie and notification dismissals its exploration had needed: exploration
+// closed both, every page after that showed neither, and the Flow was written
+// from those pages. Nothing the model was shown said the Flow would run again
+// from the page as it first was, and the evidence policy tells it that what it
+// changes while looking is for looking -- so a dismissal read as scaffolding.
+// Replayed with no model, the Flow met both overlays. The statement says what
+// the replay starts from, and that a change the answer depended on is a step.
+//
 // The routing lines were rewritten on 2026-09-18. The format used to say that
 // `step: run subflow <label>` reaches a block, and Core read that as a route
 // rule with no condition -- which always holds, so every Flow built with a
@@ -64,6 +74,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Every other line in a step sets one of that node's parameters by its id, `url: https://example.test/a`. Reach inside a structured parameter with a dotted key, `extractList.fields.name: product-name`. A list is comma separated. Leave a parameter out and its default is used.",
   "A key a parameter takes is written inside it: `extractList.minItems: 0`, `target.location: https://shop.test/members`.",
   "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
+  "The Flow runs later on its own, with no model, from the page the run starts on, and nothing you did while gathering evidence is still in effect then: a notice you closed, a consent you answered, a search you ran and a filter you chose are all as they were before you touched them. So every change the answer depended on is a step, in the order you made it, including closing a notice, prompt or banner that stood in front of a control. Arriving at an address changes nothing else: whatever that page puts in front of its content on arrival is still there.",
   "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
   "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists, and never the step written next.",

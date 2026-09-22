@@ -7,6 +7,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../contracts.ts";
 import { AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../runtime/loop-limits/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
 function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true; llmEvidenceRuntime: { bound: true; toolCount: number } } } {
@@ -21,6 +22,8 @@ describe("Automation Studio LLM execution API", () => {
     const grants = {
       preflight: vi.fn().mockResolvedValue({ provider: "deepseek", model: "deepseek-chat", keyId: "secret:key" }),
       issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:one", provider: "deepseek", model: "deepseek-chat", remainingUses: 1 }),
+      // A granted run holds its grant as it starts, so a late failure keeps its recovery.
+      holdForRun: vi.fn().mockResolvedValue(undefined),
       revoke: vi.fn()
     };
     const registry = new GlobalProgramApiRegistry();
@@ -54,7 +57,7 @@ describe("Automation Studio LLM execution API", () => {
       metadata: { runtimePatchAttempts: [{ adaptationId: "adaptation.manual", approvalDecision: { autoApply: false } }] }
     });
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any, undefined, undefined, undefined, { revoke: vi.fn() } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any, undefined, undefined, undefined, { holdForRun: vi.fn().mockResolvedValue(undefined), revoke: vi.fn() } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 
     const response = await registry.call({
@@ -420,8 +423,9 @@ describe("Automation Studio LLM execution API", () => {
       sourceInstructionIds: [],
       baseDependencyDigest: "digest.one",
       baseSettingsRevision: 7,
-      // Past what one request may carry, which is the model's 64k context.
-      accounting: { requestId: "request.one", estimatedInputTokens: 64_001 }
+      // Past what a whole build may account for: every call it may make, each
+      // at the most one request may carry.
+      accounting: { requestId: "request.one", estimatedInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 }
     });
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, { inspectAvailable } as any);
@@ -444,6 +448,47 @@ describe("Automation Studio LLM execution API", () => {
       payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build" }
     });
     expect(unbounded).toEqual({ ok: false, error: "Flow bootstrap generation estimated input tokens are invalid." });
+  });
+  it("returns a proposal whose build totals exceed what one request may carry", async () => {
+    // An evidence-guided build accounts for every call it made, so its totals
+    // pass one request's 64k context after a handful of calls. Refusing them
+    // answered a proposal Core had already stored with a bare failure and no
+    // diagnostic, which the Lab could only report as `lab.generation_http_400`.
+    const accounting = {
+      requestId: "evidence.build",
+      estimatedInputTokens: 91_191,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      inputTokens: 91_191,
+      outputTokens: 1_803,
+      totalTokens: 92_994,
+      estimatedCostUsd: 0.04
+    };
+    const generateFlowBootstrapAdaptation = vi.fn().mockResolvedValue({
+      projectId: "project.one",
+      flowId: "flow.blank",
+      adaptationId: "adaptation.bootstrap.long",
+      status: "proposed",
+      riskLevel: "low",
+      sourceInstructionIds: ["instruction.one"],
+      baseDependencyDigest: "digest.one",
+      baseSettingsRevision: 7,
+      accounting
+    });
+    const inspectAvailable = vi.fn().mockResolvedValue({ purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 7 });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, { inspectAvailable } as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+      scope: {},
+      actor,
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true }
+    });
+
+    expect(response).toMatchObject({ ok: true, payload: { adaptation: { adaptationId: "adaptation.bootstrap.long", status: "proposed", accounting } } });
   });
   it("rejects mismatched auth sessions and incomplete diagnosis intent", async () => {
     const registry = new GlobalProgramApiRegistry();

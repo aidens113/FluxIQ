@@ -1,3 +1,4 @@
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
@@ -166,9 +167,9 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
   }
   const kind = value.kind;
   const common = ["kind", "reason", "metadata"];
-  const fields = kind === "temporary_action_sequence" ? [...common, "targetNodeId", "actionDefinitionIds"]
+  const fields = kind === "temporary_action_sequence" ? [...common, "targetNodeId", "actionDefinitionIds", "consequences"]
     : kind === "temporary_wait_retry" ? [...common, "targetNodeId", "timeoutMs", "retryCount"]
-      : kind === "temporary_target_override" ? [...common, "targetNodeId", "target"]
+      : kind === "temporary_target_override" ? [...common, "targetNodeId", "target", "consequences"]
         : kind === "temporary_recovery_subflow_call" ? [...common, "subflowId"]
           : kind === "temporary_reroute" ? [...common, "fromNodeId", "toNodeId"]
             : common;
@@ -176,6 +177,13 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
   if (!["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute"].includes(String(kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_runtime_patch", message: "Runtime patch kind is unsupported.", path: `${path}.kind` });
   if (!isBoundedString(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_reason", message: "Runtime patch reason must be a bounded string.", path: `${path}.reason` });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Runtime patch metadata must be a JSON object.", path: `${path}.metadata` });
+  // What an acting patch says it would lastingly do: Core's classes only, since
+  // a class Core does not know is one it cannot ask a person about. Absent is
+  // read, not refused -- the patch stage records it as undeclared and does not
+  // run it -- and a repeated class is harmless, so only the list is bounded.
+  if (value.consequences !== undefined && (!Array.isArray(value.consequences) || value.consequences.length > AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length * 2 || !value.consequences.every(isAutomationStudioActionConsequence))) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_consequences", message: "Runtime patch consequences must be a list of Core's consequence classes.", path: `${path}.consequences` });
+  }
   if (kind === "temporary_action_sequence") {
     if (!isBoundedString(value.targetNodeId) || !Array.isArray(value.actionDefinitionIds) || value.actionDefinitionIds.length > 100 || !value.actionDefinitionIds.every(isBoundedString)) diagnostics.push({ severity: "error", code: "llm_output.invalid_action_sequence", message: "Temporary action sequence requires a target and bounded action definition IDs.", path });
   } else if (kind === "temporary_wait_retry") {

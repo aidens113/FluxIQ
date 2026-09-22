@@ -7,7 +7,7 @@ import {
   automationStudioRuntimeAdaptationContextForGrant,
   automationStudioRuntimeSessionGrantTaskKinds
 } from "../runtime-session-grant.ts";
-import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
+import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant/tests/execution-grant-fixture.ts";
 
 // The grant that lets a finished run's result be judged, and nothing else.
 //

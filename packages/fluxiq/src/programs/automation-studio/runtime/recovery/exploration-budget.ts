@@ -85,7 +85,11 @@ export type AutomationStudioExplorationBudget = {
   maxActions: number;
   /** Provider decisions. The loop's iteration ceiling is the backstop above it. */
   maxProviderCalls: number;
-  /** Handed to the loop, which owns enforcing it. */
+  /**
+   * The far backstop on everything the exploration gathers, handed to the
+   * loop, which owns enforcing it. What each decision is shown is the loop's
+   * per-request window, whatever this total is.
+   */
   maxEvidenceBytes: number;
   /** How many refusals before the exploration is treated as blocked rather than adjusting. */
   maxRefusedActions: number;
@@ -109,7 +113,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS: AutomationStudioExpl
   maxDurationMs: AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
   maxActions: 24,
   maxProviderCalls: 24,
-  maxEvidenceBytes: 262_144,
+  // The ceiling, not 262,144: 24 calls at the web domain's 12,000-byte packet
+  // passed that, ending `budget_exhausted` with time and tokens left. Each
+  // request is bounded by the loop's window (`llm/context-window.ts`).
+  maxEvidenceBytes: 1_048_576,
   maxRefusedActions: 2,
   maxRepeatsPerAction: 2,
   maxStepsWithoutProgress: AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,

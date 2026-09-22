@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
@@ -20,6 +20,8 @@ const TOOLS: AutomationStudioLlmEvidenceTool[] = [
 type Options = {
   permittedConsequences?: readonly string[];
   decisions?: JsonObject[];
+  /** The caller's own gate, handed in whole instead of the fields that build one. */
+  gate?: AutomationStudioActionPermissionGate;
 };
 
 async function explore(options: Options = {}) {
@@ -50,8 +52,10 @@ async function explore(options: Options = {}) {
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
     decide: async () => decisions[providerCalls++] ?? { kind: "complete", result: {} },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
-    ...(options.permittedConsequences ? { permittedConsequences: options.permittedConsequences } : {}),
-    instructionIds: ["instruction.refund"],
+    ...(options.gate ? { gate: options.gate } : {
+      ...(options.permittedConsequences ? { permittedConsequences: options.permittedConsequences } : {}),
+      instructionIds: ["instruction.refund"]
+    }),
     now: () => 1_000
   });
   return { exploration, pressed, providerCalls: () => providerCalls };
@@ -109,6 +113,43 @@ describe("a recovery exploration that needs permission", () => {
 
     expect(run.pressed).toEqual([]);
     expect(run.exploration.outcome).toBe("user_intervention_required");
+  });
+
+  // A recovery builds one gate and hands it to the exploration, so the patch
+  // stage after it reads the same request. The exploration uses that gate as
+  // it is: its grant, its instructed set and what it has already been shown.
+  it("checks every action against a gate the caller handed it, and leaves the request on that gate", async () => {
+    const refusing = new AutomationStudioActionPermissionGate({ stage: "recovery", instructionIds: ["instruction.dispatch"] });
+    refusing.observe({ controls: ["Refund line 1"] });
+    const refused = await explore({ gate: refusing });
+
+    expect(refused.pressed).toEqual([]);
+    expect(refused.exploration.permissionRequest).toBe(refusing.request);
+    expect(refusing.request).toMatchObject({ reason: { stage: "recovery", instructionIds: ["instruction.dispatch"] }, control: { name: "Refund line 1" } });
+
+    const permitting = new AutomationStudioActionPermissionGate({ stage: "recovery", instructed: [
+      { consequence: "move_money", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" },
+      { consequence: "modify_existing", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" }
+    ] });
+    const permitted = await explore({ gate: permitting });
+
+    expect(permitted.pressed).toEqual(["c4"]);
+    expect(permitting.request).toBeUndefined();
+  });
+
+  it("refuses a gate handed in together with the fields that would build a second one, before anything runs", async () => {
+    const gate = new AutomationStudioActionPermissionGate({ stage: "recovery" });
+    let decided = 0;
+    for (const loose of [{ permittedConsequences: ["move_money"] }, { instructionIds: ["instruction.refund"] }, { shownEvidence: [{ order: "ORD-40100" }] }]) {
+      await expect(runAutomationStudioRuntimeExploration({
+        loop: { tools: TOOLS, executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false }) },
+        decide: async () => { decided += 1; return { kind: "complete", result: {} }; },
+        budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
+        gate,
+        ...loose
+      })).rejects.toThrow(/permission gate or the fields that build one/);
+    }
+    expect(decided).toBe(0);
   });
 
   // Only the gate raises the reason, because only the gate holds a request to

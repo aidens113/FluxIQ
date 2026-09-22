@@ -35,8 +35,10 @@ export type AutomationStudioActionPermissionStage = "authoring" | "recovery";
  *
  * - `exploration_step` -- the run wanted to take it now, while finding out how
  *   to do the job. `id` is the option it called, `ref` the call.
- * - `flow_step` -- the Flow being built would take it every time it runs. `id`
- *   is the step's node definition, `ref` the step's key in the plan.
+ * - `flow_step` -- the Flow would take it every time it runs: the Flow being
+ *   built, or, at `recovery`, the Flow a repair would change. `id` is the
+ *   step's node definition, `ref` the step's key in the plan or, for a repair,
+ *   the node that failed.
  */
 export type AutomationStudioActionPermissionActionKind = "exploration_step" | "flow_step";
 
@@ -97,6 +99,9 @@ export function automationStudioActionPermissionSentence(input: {
   const kind = input.controlKind === null ? "" : ` (${input.controlKind})`;
   const phrases = automationStudioConsequencesInOrder(input.missing).map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]);
   const would = phrases.length > 1 ? `${phrases.slice(0, -1).join(", ")} and ${phrases.at(-1)}` : phrases[0] ?? "";
+  if (input.kind === "flow_step" && input.stage === "recovery") {
+    return `To repair the step that failed, the Flow would ${input.verb} ${target}${kind} each time it runs, which would ${would}. Neither its instruction nor a grant allows that, so the repair stopped to ask.`;
+  }
   if (input.kind === "flow_step") {
     return `The Flow its instruction describes would ${input.verb} ${target}${kind} each time it runs, which would ${would}. Neither its instruction nor a grant allows that, so the build stopped to ask.`;
   }
