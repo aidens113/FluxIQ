@@ -1,7 +1,7 @@
 // Live LLM work: bootstrap-generation readiness, execution preflight and
 // grants, generation instructions, and the generated adaptation itself.
 
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../../runtime/llm/harness/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type AutomationStudioLlmExecutionGrantRequest, type AutomationStudioLlmExecutionPreflightRequest, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
@@ -217,8 +217,12 @@ function boundedLabel(value: unknown, label: string): string {
 }
 
 function boundedAccountingInteger(value: unknown, label: string): number {
-  // Bounded by what a single request may carry, which is the model's context.
-  if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST) throw new Error(`Flow bootstrap generation ${label} are invalid.`);
+  // A build's totals, not one request's: an evidence-guided build adds up
+  // every call it made, so it is bounded as the service and the failure
+  // diagnostic bound it. One request's ceiling refused any build longer than
+  // a few calls after its proposal was stored, and answered it with a bare
+  // failure that carried no diagnostic.
+  if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS) throw new Error(`Flow bootstrap generation ${label} are invalid.`);
   return value as number;
 }
 
