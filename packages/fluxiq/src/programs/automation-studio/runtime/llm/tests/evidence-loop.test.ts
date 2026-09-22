@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../harness/index.ts";
+import { automationStudioLlmTokenBudgetBytes } from "../token-estimation.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 
@@ -223,9 +225,81 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(Math.max(...visible)).toBeLessThanOrEqual(1_024);
   });
 
+  it("refuses a context window larger than the one per-request token ceiling carries", async () => {
+    const run = (maxEvidenceContextBytes: number) => runAutomationStudioLlmEvidenceLoop({ tools, maxEvidenceContextBytes, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}) });
+    const ceilingBytes = automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
+
+    await expect(run(ceilingBytes + 1)).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
+    await expect(run(ceilingBytes)).resolves.toMatchObject({ ok: true });
+  });
+
   it("optionally preserves a trusted caller's sanitized decision failure", async () => {
     const diagnostic = new Error("sanitized provider failure");
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, propagateDecisionErrors: true, decide: async () => { throw diagnostic; }, executeTool: async () => ({}) })).rejects.toBe(diagnostic);
+  });
+});
+
+// The total a loop gathers used to be a limit, and Flow creation set it at
+// 64,000 bytes. Realistic pages cost 5 to 20 KB, so builds ended
+// `evidence_limit` after ten to fifteen calls with money left
+// (`run-mubpn1ga-8ae8fdc5`), and a tool offered what was left of the total got a
+// few dozen bytes and threw, which read as a tool failure. The total is now
+// accounted and held only to a far backstop; the window bounds each request.
+describe("the total the loop gathers", () => {
+  const pageCall = (number: number) => ({ kind: "tool_call", callId: `call.${number}`, toolId: "inspect", input: { page: number } });
+  const pageOf = (value: JsonObject) => ({ page: value.page ?? null, text: "x".repeat(9_000) });
+
+  it("goes past the old 64,000-byte limit while every decision stays inside its window", async () => {
+    const offered: number[] = [];
+    const shown: Array<ReadonlyArray<{ callId: string; toolId: string; value: unknown }>> = [];
+    let call = 0;
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, maxIterations: 26, maxToolCalls: 27, maxEvidenceContextBytes: 24_000,
+      decide: async ({ evidence }) => {
+        shown.push(evidence);
+        call += 1;
+        return call <= 20 ? pageCall(call) : { kind: "complete", result: {} };
+      },
+      executeTool: async ({ value, maxEvidenceBytes }) => { offered.push(maxEvidenceBytes); return pageOf(value); }
+    });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 20, iterations: 21 } });
+    expect(result.accounting.evidenceBytes).toBeGreaterThan(64_000);
+    expect(new Set(offered)).toEqual(new Set([24_000 - 512]));
+    for (const evidence of shown) expect(Buffer.byteLength(JSON.stringify(evidence), "utf8")).toBeLessThanOrEqual(24_000);
+    const last = shown.at(-1)!;
+    expect(last.at(-1)).toMatchObject({ callId: "call.20", value: { page: 20 } });
+    const history = last.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as { calls: Array<{ callId: string; changed: string }> };
+    expect(history.calls.map((line) => line.callId)).toEqual(Array.from({ length: 18 }, (_, index) => `call.${index + 1}`));
+    expect(history.calls.every((line) => line.changed === "no")).toBe(true);
+  });
+
+  it("offers each tool the window's bound however much has been gathered, and ends evidence_limit at the backstop, never tool_failed", async () => {
+    const offered: number[] = [];
+    let call = 0;
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 40_000, maxEvidenceContextBytes: 24_000, unusableDecisions: { stalled: () => new Error("stalled") },
+      decide: async () => pageCall((call += 1)),
+      executeTool: async ({ value, maxEvidenceBytes }) => {
+        offered.push(maxEvidenceBytes);
+        // A domain whose packet has a floor refuses a bound below it, as the web domain's page capture does.
+        if (maxEvidenceBytes < 5_000) throw new Error("no room for a page");
+        return pageOf(value);
+      }
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.evidence_limit", accounting: { toolCalls: 4 } });
+    expect(result.accounting.evidenceBytes).toBeLessThanOrEqual(40_000);
+    expect(offered).toEqual([23_488, 23_488, 23_488, 23_488, 23_488]);
+    expect(result.trace.some((step) => step.resultCode === "llm_evidence_loop.tool_failed")).toBe(false);
+  });
+
+  it("is still a configurable backstop, defaulting to the loop's ceiling", async () => {
+    const offered: number[] = [];
+    await runAutomationStudioLlmEvidenceLoop({ tools, maxIterations: 2, decide: vi.fn().mockResolvedValueOnce(pageCall(1)).mockResolvedValueOnce({ kind: "complete", result: {} }), executeTool: async ({ maxEvidenceBytes }) => { offered.push(maxEvidenceBytes); return {}; } });
+    expect(offered).toEqual([64_000 - 512]);
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes + 1, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}) }))
+      .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
   });
 });
 
@@ -285,12 +359,35 @@ describe("a tool request the loop has already answered", () => {
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
-    const beforeRepeat = decide.mock.calls[3]?.[0].evidence.map((item: { callId: string }) => item.callId);
-    expect(beforeRepeat).not.toContain("call.1");
+    // Out of the window, call.1 is a line in the history, not a result.
+    const beforeRepeat = decide.mock.calls[3]?.[0].evidence;
+    expect(beforeRepeat.map((item: { callId: string }) => item.callId)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, "call.3"]);
+    expect(beforeRepeat[0].value.calls.map((call: { callId: string }) => call.callId)).toEqual(["call.1", "call.2"]);
     const afterRepeat = decide.mock.calls[4]?.[0].evidence;
-    expect(afterRepeat.map((item: { callId: string }) => item.callId)).toEqual(["call.1", "core.request_check.4"]);
-    expect(afterRepeat[0].value).toMatchObject({ page: 1 });
+    expect(afterRepeat.map((item: { callId: string }) => item.callId)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, "call.1", "core.request_check.4"]);
+    expect(afterRepeat[1].value).toMatchObject({ page: 1 });
+    expect(afterRepeat[0].value.calls.map((call: { callId: string }) => call.callId)).toEqual(["call.2", "call.3"]);
     expect(Buffer.byteLength(JSON.stringify(afterRepeat), "utf8")).toBeLessThanOrEqual(2_048);
+  });
+
+  // The window lists results it no longer carries and says to ask again for
+  // one still needed. A live auction build did, three times, and the guard
+  // ended the build as repeating itself (`run-mubrqhvc-91d1f227`).
+  it("does not count bringing a result back into view against the guard, once per result until a tool runs", async () => {
+    const page = (number: number, callId = `call.${number}`) => ({ kind: "tool_call", callId, toolId: "inspect", input: { page: number } });
+    const decide = vi.fn()
+      .mockResolvedValueOnce(page(1)).mockResolvedValueOnce(page(2)).mockResolvedValueOnce(page(3))
+      .mockResolvedValueOnce(page(1, "again.1")).mockResolvedValueOnce(page(2, "again.2"))
+      .mockResolvedValueOnce(page(1, "again.3")).mockResolvedValueOnce(page(1, "again.4")).mockResolvedValueOnce(page(1, "again.5"));
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 20_000, maxEvidenceContextBytes: 2_048,
+      executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
+    });
+
+    // Each of call.1 and call.2 had left the window, so the first ask for each is free; asking again is not.
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { iterations: 8, toolCalls: 3 } });
+    const notes = decide.mock.calls.slice(4).map((call) => call[0].evidence.at(-1).value);
+    expect(notes.map((note: { stepsWithoutProgress: number }) => note.stepsWithoutProgress)).toEqual([0, 0, 1, 2]);
   });
 
   it("ends the loop with no progress once repeats run to the guard", async () => {
