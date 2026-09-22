@@ -3,12 +3,15 @@
 import { DataTable, Modal, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CircleCheck } from "lucide-react";
+import type { AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
 import { RunHistory } from "./RunHistory";
+import { RunPermissionRequest } from "./RunPermissionRequest";
 import { commitRuntimeRunChanged } from "./run-commands";
 import { sortRuntimeRunsForDebugView } from "./run-detail-model";
 import {
   buildAutomationRuntimeRunPayload,
   createRuntimeReadinessRequestGate,
+  isAutomationRuntimeExplicitLlmRunMode,
   parseRuntimeRunInputDocument,
   runtimeFlowInputPorts,
   runtimeFlowReadinessIssues,
@@ -22,7 +25,7 @@ import {
   type AutomationRuntimeUiRunMode,
   type RuntimeReadinessIssue
 } from "./run-input-model";
-import { useRuntimeExecutionCommands, type RuntimeExecutionCommands } from "./runtime-host";
+import { useRuntimeDetailCommands, useRuntimeExecutionCommands, type RuntimeDetailCommands, type RuntimeExecutionCommands } from "./runtime-host";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { registerAutomationStudioRuntimeActions, updateAutomationStudioRuntimeActions } from "../workspace/studio-action-registry";
 import { BlankFlowAuthoringPanel } from "../authoring";
@@ -38,12 +41,62 @@ export type FlowRunViewProps = {
   onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void;
   onOpenReadinessTarget?(target: RuntimeReadinessIssue["target"]): void;
 };
-export function FlowRunView(props: FlowRunViewProps) {
-  const commands = useRuntimeExecutionCommands();
-  return <FlowRunViewContent {...props} commands={commands} />;
+/**
+ * The run a permission request came back from, and what it ran with. Allowing
+ * is honoured only while all of it still holds: a grant answers the question
+ * this run asked, not one a changed Flow or changed inputs might ask.
+ */
+type RunPermissionContext = {
+  projectId: string;
+  flowId: string;
+  runId: string;
+  mode: AutomationRuntimeUiRunMode;
+  inputText: string;
+  maxSteps: string;
+  runDetail: unknown;
+};
+
+/** How long a run whose request was cut short is read back for, and how often. */
+const RUN_READ_BACK_LIMIT_MS = 15 * 60_000;
+const RUN_READ_BACK_INTERVAL_MS = 2_000;
+const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+/**
+ * How long a run's grant may wait to be claimed. A runtime run claims it when
+ * its recovery first calls the provider, after the Flow has run up to the step
+ * that failed, so Core's default minute left any Flow failing later than that
+ * with a recovery that could not use its grant (`llm.provider_resolution_failed`).
+ * Five minutes is the longest claim window Core issues.
+ */
+const RUNTIME_GRANT_CLAIM_WINDOW_MS = 300_000;
+
+/** The request timed out on its way back; the run it started is not known to have stopped. */
+function requestWasCutShort(result: { status?: number; code?: string }): boolean {
+  return result.status === 408 || result.status === 504 || result.code === "request_timeout";
 }
 
-export function FlowRunViewContent(props: FlowRunViewProps & { commands: RuntimeExecutionCommands }) {
+/** The execute answer rebuilt from the run's own detail, as `run-runtime-session` builds it. */
+function runResultFromDetail(runDetail: any) {
+  const summary = runDetail?.summary ?? {};
+  const adaptationIds: string[] = Array.isArray(runDetail?.adaptationIds) ? runDetail.adaptationIds : [];
+  const attempts: any[] = Array.isArray(runDetail?.metadata?.runtimePatchAttempts) ? runDetail.metadata.runtimePatchAttempts : [];
+  return {
+    runtimeSession: { runId: summary.runId, flowId: summary.flowId, status: summary.status },
+    runSummary: summary,
+    runDetailLink: { runId: summary.runId },
+    createdAdaptationIds: adaptationIds,
+    interventionCount: summary.interventionCount ?? 0,
+    terminalReason: summary.status,
+    durableBehaviorChanged: adaptationIds.some((adaptationId) => attempts.some((attempt) => attempt?.adaptationId === adaptationId && attempt?.approvalDecision?.autoApply === true))
+  };
+}
+
+export function FlowRunView(props: FlowRunViewProps) {
+  const commands = useRuntimeExecutionCommands();
+  const detailCommands = useRuntimeDetailCommands();
+  return <FlowRunViewContent {...props} commands={commands} loadRunDetail={detailCommands.loadDetail} />;
+}
+
+export function FlowRunViewContent(props: FlowRunViewProps & { commands: RuntimeExecutionCommands; loadRunDetail?: RuntimeDetailCommands["loadDetail"] }) {
   const orderedSessions = useMemo(() => sortRuntimeRunsForDebugView(props.runtimeSessions), [props.runtimeSessions]);
   const [inputText, setInputText] = useState("{}");
   const [maxSteps, setMaxSteps] = useState("50");
@@ -58,6 +111,11 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [llmAuthorizationMode, setLlmAuthorizationMode] = useState<AutomationRuntimeExplicitLlmRunMode | null>(null);
   const [llmAuthorizationError, setLlmAuthorizationError] = useState("");
   const [llmAuthorizing, setLlmAuthorizing] = useState(false);
+  // The consequences a high-token confirmation is holding for: set only while
+  // an Allow waits on that confirmation, so the confirmed grant carries them.
+  const [llmAuthorizationPermitted, setLlmAuthorizationPermitted] = useState<AutomationStudioActionPermissionRequest["missing"] | undefined>(undefined);
+  const [runPermission, setRunPermission] = useState<RunPermissionContext | null>(null);
+  const runGenerationRef = useRef(0);
   const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
   const readinessRequestGateRef = useRef<ReturnType<typeof createRuntimeReadinessRequestGate> | null>(null);
   const studioRuntimeActionId = React.useId();
@@ -83,6 +141,8 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     const defaults = Object.fromEntries(runtimeFlowInputPorts(props.flow).filter((port) => port.defaultValue !== undefined).map((port) => [port.id, port.defaultValue]));
     setInputText(JSON.stringify(defaults));
     setLocalRunIds([]);
+    runGenerationRef.current += 1;
+    setRunPermission(null);
   }, [props.flow?.flowId, props.projectId]);
   useEffect(() => {
     void loadReadiness();
@@ -97,10 +157,52 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     if (llmAuthorizing) return;
     setLlmAuthorizationError("");
     setLlmAuthorizationMode(null);
+    setLlmAuthorizationPermitted(undefined);
+  };
+  // A run that stopped to ask carries the question in its run detail, not in
+  // the execute answer. The compact detail keeps the run's metadata, which is
+  // where Core writes it. A later run, or another Flow, supersedes the read.
+  const readRunPermission = async (generation: number, context: Omit<RunPermissionContext, "runDetail">, loaded?: any) => {
+    let runDetail: any = loaded;
+    if (runDetail === undefined) {
+      if (!props.loadRunDetail) return;
+      try {
+        const detail = await props.loadRunDetail({ projectId: context.projectId, runId: context.runId, compact: true });
+        runDetail = detail.ok ? detail.payload?.runDetail : undefined;
+      } catch {
+        /* best-effort: the run is already shown, and its detail stays readable in Previous Runs */
+        return;
+      }
+    }
+    if (runGenerationRef.current !== generation || runDetail?.metadata?.permissionRequest === undefined) return;
+    setRunPermission({ ...context, runDetail });
+  };
+  // A command gets 30 seconds, and an exploring recovery takes longer. When
+  // the request that started a run is cut short, the run goes on in Core, so
+  // it is read back by its id until it ends -- otherwise its result, and any
+  // question it came back with, would never reach the person. `null` is a run
+  // still unfinished at the limit, or one this view no longer shows.
+  const readRunBack = async (generation: number, runId: string): Promise<any | null> => {
+    if (!props.loadRunDetail || !props.projectId) return null;
+    const deadline = Date.now() + RUN_READ_BACK_LIMIT_MS;
+    while (Date.now() < deadline && runGenerationRef.current === generation) {
+      await new Promise((resolve) => setTimeout(resolve, RUN_READ_BACK_INTERVAL_MS));
+      try {
+        const detail = await props.loadRunDetail({ projectId: props.projectId, runId, compact: true });
+        const runDetail = detail.ok ? detail.payload?.runDetail : undefined;
+        if (TERMINAL_RUN_STATUSES.has(runDetail?.summary?.status)) return runDetail;
+      } catch {
+        /* best-effort: a run not written yet, or one failed read, is read again until the limit */
+      }
+    }
+    return null;
   };
   const runFlow = async (mode: AutomationRuntimeUiRunMode, llmExecutionGrantId?: string) => {
-    const explicitLlmMode = mode === "diagnosis_only" || mode === "diagnose_and_adapt";
+    const explicitLlmMode = isAutomationRuntimeExplicitLlmRunMode(mode);
     const runtimeMode: AutomationRuntimeRunMode = explicitLlmMode ? "manual_approval" : mode;
+    const generation = ++runGenerationRef.current;
+    const ranWith = { projectId: props.projectId ?? "", flowId: props.flow?.flowId ?? "", mode, inputText, maxSteps };
+    setRunPermission(null);
     setRunningMode(mode);
     setRunError("");
     const inputErrors = runtimeTypedInputErrors(props.flow, runtimeRunInputValues(inputText));
@@ -109,17 +211,33 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     if (!payload.ok) { setRunError(payload.error); setRunningMode(null); return; }
     setLastMode(mode);
     if (explicitLlmMode) {
+      // Named here rather than by Core, so the run can be read back if this
+      // request is cut short (Core's `newRunId`; a granted run takes no `runId`).
+      const newRunId = globalThis.crypto.randomUUID();
       const result = await props.commands.execute({
         ...payload.payload,
-        ...(llmExecutionGrantId ? { runIntent: mode, llmExecutionGrantId } : {})
+        ...(llmExecutionGrantId ? { runIntent: mode, llmExecutionGrantId } : {}),
+        newRunId
       });
-      setRunningMode(null);
       const runId = result.payload?.runtimeSession?.runId;
-      if (!result.ok || !result.payload?.runtimeSession || !runId) { setRunError("The authorized LLM run could not be completed."); return; }
-      rememberLocalRun(runId);
-      commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
-      setLiveRunId(runId);
-      setLastRun(result.payload);
+      if (result.ok && result.payload?.runtimeSession && runId) {
+        setRunningMode(null);
+        rememberLocalRun(runId);
+        commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
+        setLiveRunId(runId);
+        setLastRun(result.payload);
+        await readRunPermission(generation, { ...ranWith, runId });
+        return;
+      }
+      if (!requestWasCutShort(result)) { setRunningMode(null); setRunError("The authorized LLM run could not be completed."); return; }
+      rememberLocalRun(newRunId);
+      setLiveRunId(newRunId);
+      const runDetail = await readRunBack(generation, newRunId);
+      setRunningMode(null);
+      commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId: newRunId });
+      if (!runDetail) { if (runGenerationRef.current === generation) setRunError("The run is still going on the server. Open it in Previous Runs when it ends."); return; }
+      setLastRun(runResultFromDetail(runDetail));
+      await readRunPermission(generation, { ...ranWith, runId: newRunId }, runDetail);
       return;
     }
     const queued = await props.commands.start({ projectId: payload.payload.projectId, flowId: payload.payload.flowId, inputs: payload.payload.inputs });
@@ -131,37 +249,51 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     setActiveRunStartedAt(Date.now());
     setLiveRunId(runId);
     const result = await props.commands.execute({ ...payload.payload, runId });
+    const readBack = !result.ok && requestWasCutShort(result) ? await readRunBack(generation, runId) : undefined;
     setRunningMode(null);
     setActiveRunId(null);
     setActiveRunStartedAt(null);
     commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
+    if (readBack) {
+      setLastRun(runResultFromDetail(readBack));
+      await readRunPermission(generation, { ...ranWith, runId }, readBack);
+      return;
+    }
     if (!result.ok || !result.payload?.runtimeSession) { setRunError(result.error ?? "Runtime session could not be completed."); return; }
     setLastRun(result.payload);
+    await readRunPermission(generation, { ...ranWith, runId });
   };
   const requestRun = (mode: AutomationRuntimeUiRunMode) => {
-    if (mode !== "diagnosis_only" && mode !== "diagnose_and_adapt") { void runFlow(mode); return; }
+    if (!isAutomationRuntimeExplicitLlmRunMode(mode)) { void runFlow(mode); return; }
     const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
     if (!request.ok) { setRunError(request.error); return; }
     setLlmAuthorizationError("");
     void authorizeLlm(mode, false);
   };
-  const authorizeLlm = async (mode: AutomationRuntimeExplicitLlmRunMode, highTokenConfirmation = false) => {
+  /**
+   * `permittedConsequences` is present only when a person allowed a run's
+   * request, and is then exactly that request's `missing` classes: the grant
+   * permits what was asked and nothing more. A run started any other way
+   * carries none.
+   */
+  const authorizeLlm = async (mode: AutomationRuntimeExplicitLlmRunMode, highTokenConfirmation = false, permittedConsequences?: AutomationStudioActionPermissionRequest["missing"]) => {
     const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
     if (!request.ok) { setLlmAuthorizationError(request.error); return; }
+    const grantRequest = permittedConsequences ? { ...request.payload, permittedConsequences: [...permittedConsequences] } : request.payload;
     setLlmAuthorizing(true);
     setLlmAuthorizationError("");
     try {
-      const preflight = await props.commands.preflightLlm(request.payload);
+      const preflight = await props.commands.preflightLlm(grantRequest);
       if (!preflight.ok) {
         const message = "LLM execution preflight was rejected. Review the saved Flow limits and key selection.";
         setLlmAuthorizationError(message);
         setRunError(message);
         return;
       }
-      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setLlmAuthorizationMode(mode); return; }
+      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setLlmAuthorizationPermitted(permittedConsequences); setLlmAuthorizationMode(mode); return; }
       // Uses are not restated here: Core issues one use per authorized call, so
       // an adapting run gets as many as the call limit it resolved.
-      const issued = await props.commands.issueLlmGrant({ ...request.payload, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}) });
+      const issued = await props.commands.issueLlmGrant({ ...grantRequest, ttlMs: RUNTIME_GRANT_CLAIM_WINDOW_MS, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}) });
       const grantId = issued.payload?.grant?.grantId;
       if (!issued.ok || !grantId) {
         const message = "LLM execution authorization failed. Verify your session and enabled key.";
@@ -170,6 +302,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         return;
       }
       setLlmAuthorizationMode(null);
+      setLlmAuthorizationPermitted(undefined);
       setLlmAuthorizationError("");
       await runFlow(mode, grantId);
     } catch {
@@ -179,7 +312,22 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     } finally {
       setLlmAuthorizing(false);
     }
-  };  const stopRun = async () => {
+  };
+  // Allow and run again: the same run intent, a new grant for exactly the
+  // missing classes, and only while the Flow and inputs are the ones the run
+  // asked with. Don't allow sends nothing and only forgets the question.
+  const allowRunPermission = (request: AutomationStudioActionPermissionRequest) => {
+    const pending = runPermission;
+    if (!pending || !isAutomationRuntimeExplicitLlmRunMode(pending.mode)) return;
+    if (pending.projectId !== (props.projectId ?? "") || pending.flowId !== (props.flow?.flowId ?? "") || pending.inputText !== inputText || pending.maxSteps !== maxSteps) {
+      setRunPermission(null);
+      setRunError("The Flow or its run inputs changed since this run asked. Run it again before allowing anything.");
+      return;
+    }
+    setRunError("");
+    void authorizeLlm(pending.mode, false, request.missing);
+  };
+  const stopRun = async () => {
     if (!props.projectId || !activeRunId) return;
     const result = await props.commands.cancel({ projectId: props.projectId, runId: activeRunId });
     if (!result.ok) setRunError(result.error ?? "Run could not be stopped.");
@@ -226,8 +374,13 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         {...(props.onOpenReadinessTarget ? { onOpenTarget: props.onOpenReadinessTarget } : {})}
       />
       {runError ? <p className="automation-runtime-message" role="alert">{runError}</p> : null}
-      {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} /> : null}
-      {llmAuthorizationMode ? <Modal busy={llmAuthorizing} closeOnEscape={!llmAuthorizing} title="Confirm high-token LLM Execution" onClose={closeLlmAuthorization}><div className="automation-modal-form"><p className="automation-router-modal-intro">This request can use more than 100,000 tokens. Review the configured limits before continuing.</p>{llmAuthorizationError ? <p className="automation-runtime-message" role="alert">{llmAuthorizationError}</p> : null}<div className="modal-actions"><button className="button" disabled={llmAuthorizing} onClick={closeLlmAuthorization} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={llmAuthorizing} onClick={() => void authorizeLlm(llmAuthorizationMode, true)} type="button">{llmAuthorizing ? "Starting..." : "Continue high-token execution"}</button></div></div></Modal> : null}
+      {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} {...(runPermission && runPermission.runId === lastRun.runtimeSession?.runId ? { permission: {
+        runDetail: runPermission.runDetail,
+        busy: llmAuthorizing || Boolean(runningMode),
+        onDismiss: () => setRunPermission(null),
+        ...(isAutomationRuntimeExplicitLlmRunMode(runPermission.mode) ? { onAllow: allowRunPermission } : {})
+      } } : {})} /> : null}
+      {llmAuthorizationMode ? <Modal busy={llmAuthorizing} closeOnEscape={!llmAuthorizing} title="Confirm high-token LLM Execution" onClose={closeLlmAuthorization}><div className="automation-modal-form"><p className="automation-router-modal-intro">This request can use more than 100,000 tokens. Review the configured limits before continuing.</p>{llmAuthorizationError ? <p className="automation-runtime-message" role="alert">{llmAuthorizationError}</p> : null}<div className="modal-actions"><button className="button" disabled={llmAuthorizing} onClick={closeLlmAuthorization} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={llmAuthorizing} onClick={() => void authorizeLlm(llmAuthorizationMode, true, llmAuthorizationPermitted)} type="button">{llmAuthorizing ? "Starting..." : "Continue high-token execution"}</button></div></div></Modal> : null}
       <RuntimeHistoryAndReplays
         flowId={props.flow?.flowId}
         focusRunId={liveRunId ?? lastRun?.runtimeSession?.runId}
@@ -242,6 +395,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
 function runtimeModeDescription(mode: AutomationRuntimeUiRunMode): string {
   if (mode === "diagnosis_only") return "Run one bounded DeepSeek diagnosis call; no patching, retry, promotion, or external side effects.";
   if (mode === "diagnose_and_adapt") return "Diagnose once, generate one bounded runtime patch, and queue any resulting adaptation for manual review; nothing is auto-applied.";
+  if (mode === "explore_and_adapt") return "If a step fails, explore the live page to find a repair and queue it for manual review. Anything with a lasting effect stops and asks for your permission first.";
   if (mode === "manual_approval") return "Use LLM assistance, but keep generated adaptations queued for review.";
   if (mode === "no_llm_intervention") return "Run without LLM intervention or adaptation creation.";
   return "Use this Flow's adaptive policy and auto-apply safe validated adaptations.";
@@ -272,7 +426,8 @@ export function RuntimeRunControlPanel(props: {
     { mode: "manual_approval", label: "Manual approval" },
     { mode: "no_llm_intervention", label: "No LLM intervention" },
     { mode: "diagnosis_only", label: "LLM diagnosis" },
-    { mode: "diagnose_and_adapt", label: "Diagnose and propose adaptation" }
+    { mode: "diagnose_and_adapt", label: "Diagnose and propose adaptation" },
+    { mode: "explore_and_adapt", label: "Explore and adapt" }
   ];
   const warnings = [
     props.flow?.metadata?.trainingMode === "continuous_adaptive" ? "Continuous adaptive mode can create runtime adaptations." : "",
@@ -304,7 +459,7 @@ export function RuntimeRunControlPanel(props: {
         <div className="automation-runtime-run-actions">
           <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
           <button className="button button-primary" disabled={props.disabled || props.readiness.loading || Boolean(props.readiness.error) || readinessIssues.length > 0 || inputErrors.length > 0 || !inputDocument.ok} onClick={() => props.onRun(selectedMode)} type="button">
-            {props.runningMode === "diagnose_and_adapt" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : props.runningMode ? "Running..." : "Run"}
+            {props.runningMode === "diagnose_and_adapt" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : props.runningMode === "explore_and_adapt" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : props.runningMode ? "Running..." : "Run"}
           </button>
         </div>
       </div>
@@ -343,12 +498,18 @@ function RuntimeHistoryAndReplays(props: { projectId: string | null; flowId?: st
   </section>;
 }
 
-export function RuntimePostRunSummary(props: { result: any; onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void }) {
+export function RuntimePostRunSummary(props: {
+  result: any;
+  onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void;
+  /** The run's own detail and the answers to a permission request it may carry. */
+  permission?: { runDetail: unknown; busy: boolean; onAllow?(request: AutomationStudioActionPermissionRequest): void; onDismiss(): void };
+}) {
   const session = props.result.runtimeSession ?? {};
   const adaptationIds = Array.isArray(props.result.createdAdaptationIds) ? props.result.createdAdaptationIds : [];
   return (
     <section className="automation-runtime-log-section">
       <header><strong>Last Run</strong><span>{session.runId ?? "-"}</span></header>
+      {props.permission ? <RunPermissionRequest busy={props.permission.busy} onDismiss={props.permission.onDismiss} runDetail={props.permission.runDetail} {...(props.permission.onAllow ? { onAllow: props.permission.onAllow } : {})} /> : null}
       {adaptationIds.length ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> {adaptationIds.length === 1 ? "One adaptation" : `${adaptationIds.length} adaptations`} must be reviewed and approved before applying.</p> : null}
       <SummaryStrip items={[
         ["Status", session.status ?? "-"],

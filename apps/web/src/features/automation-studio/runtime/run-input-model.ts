@@ -1,6 +1,16 @@
 export type AutomationRuntimeRunMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
-export type AutomationRuntimeExplicitLlmRunMode = "diagnosis_only" | "diagnose_and_adapt";
+/**
+ * The run modes a person authorizes one grant for. Each is also the run's
+ * intent: Core accepts the grant only for a run of the same purpose.
+ * `explore_and_adapt` is the recovery that explores the page to find a repair,
+ * and the one that can stop to ask for a permission it was not given.
+ */
+export type AutomationRuntimeExplicitLlmRunMode = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt";
 export type AutomationRuntimeUiRunMode = AutomationRuntimeRunMode | AutomationRuntimeExplicitLlmRunMode;
+
+export function isAutomationRuntimeExplicitLlmRunMode(mode: AutomationRuntimeUiRunMode): mode is AutomationRuntimeExplicitLlmRunMode {
+  return mode === "diagnosis_only" || mode === "diagnose_and_adapt" || mode === "explore_and_adapt";
+}
 
 export type RuntimeRunInputDocument =
   | { ok: true; value: Record<string, any> }

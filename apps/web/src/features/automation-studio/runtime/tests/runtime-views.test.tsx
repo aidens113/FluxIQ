@@ -416,13 +416,21 @@ describe("Automation Runtime workspace", () => {
     // Core applies its own iterating default.
     expect(adapting).toMatchObject({ ok: true, payload: { purpose: "diagnose_and_adapt" } });
     expect(adapting.ok && adapting.payload).not.toHaveProperty("maxCalls");
+    // Exploring iterates too, and is its own purpose rather than an adapt run.
+    const exploring = runtimeLlmExecutionRequestFromFlow("project.one", {
+      flowId: "flow.one",
+      metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }
+    }, "explore_and_adapt");
+    expect(exploring).toMatchObject({ ok: true, payload: { purpose: "explore_and_adapt" } });
+    expect(exploring.ok && exploring.payload).not.toHaveProperty("maxCalls");
+    expect(exploring.ok && exploring.payload).not.toHaveProperty("permittedConsequences");
     const source = FlowRunViewContent.toString();
     expect(source).toContain("commands.preflightLlm");
     expect(source).toContain("commands.issueLlmGrant");
     expect(source).not.toContain("authorizationPassword");
     expect(source).not.toContain("authorizationPin");
     expect(source).toContain("runIntent: mode");
-    expect(source).toContain("diagnose_and_adapt");
+    expect(source).toContain("isAutomationRuntimeExplicitLlmRunMode");
     expect(source).toContain("llmRequestRequiresHighTokenWarning");
     expect(source).not.toContain("authorizedExternalSideEffects");
   });
