@@ -113,7 +113,15 @@ describe("Automation Studio Flow bootstrap contract", () => {
     const serializedSchema = JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA);
     expect(serializedSchema).not.toContain("$ref");
     expect(serializedSchema).not.toContain("$defs");
-    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(5_000);
+    // Raised from 5,000 on 2026-09-22: the schema's description carries the
+    // whole Flow script format, and the replay premise t065 (P17) added to it
+    // -- that the Flow runs again from the page as it first was, so every
+    // change the answer depended on is a step -- costs about 470 bytes. The
+    // guard is on the schema growing unwatched, not on the output budget the
+    // title names: at the conservative three bytes a token it is still under
+    // 1,900 tokens, and the result this test builds below stays under 1,500
+    // bytes. Shortening the premise instead would change what t065 proved live.
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(5_600);
 
     const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
       schemaVersion: "0.1",
