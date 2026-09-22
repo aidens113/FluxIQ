@@ -6,8 +6,8 @@
 // the grant when the run ends.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS } from "../execution-grants.ts";
-import { automationStudioRuntimeSessionGrantTaskKinds } from "../runtime-session-grant.ts";
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS } from "../../../execution-grants.ts";
+import { automationStudioRuntimeSessionGrantTaskKinds } from "../../../runtime-session-grant.ts";
 import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
 afterEach(() => vi.useRealTimers());

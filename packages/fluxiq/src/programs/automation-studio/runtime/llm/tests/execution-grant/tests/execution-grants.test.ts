@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../harness.ts";
 import {
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS,
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS,
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS,
   AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD
-} from "../execution-grants.ts";
-import { automationStudioRuntimeSessionGrantTaskKinds } from "../runtime-session-grant.ts";
+} from "../../../execution-grants.ts";
+import { automationStudioRuntimeSessionGrantTaskKinds } from "../../../runtime-session-grant.ts";
 import { evidenceRequest, gatherRequest, issueInput, patchRequest, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
 /**

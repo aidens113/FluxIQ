@@ -4,9 +4,9 @@
 // relies on it: an authorization is one-use, and refused once revoked or
 // expired. Shared by the grant tests, which no longer fit in one file.
 
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../execution-grants.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../harness.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../../evidence-loop.ts";
+import { AutomationStudioLlmExecutionGrantService } from "../../../execution-grants.ts";
 
 export function setupExecutionGrantFixture() {
   const key: any = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
