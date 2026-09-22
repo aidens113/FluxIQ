@@ -1,6 +1,10 @@
 export * from "./contracts.ts";
 export { runAutomationStudioGraph } from "./graph-run.ts";
+export { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder, type AutomationStudioLadderOutcome, type AutomationStudioReadinessOutcome } from "./ladder-run.ts";
+export { AUTOMATION_STUDIO_READINESS_CAP_MS, AUTOMATION_STUDIO_READINESS_FLOOR_MS, AUTOMATION_STUDIO_RECORDED_GAP_METADATA_KEY, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState, type AutomationStudioRecordedState } from "./recorded-state.ts";
+export { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./recovery-ladder.ts";
+export { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy, automationStudioRetryBackoffMs, type AutomationStudioNodeRetryPolicy } from "./retry-policy.ts";
 export { chooseAutomationStudioStartNode, type AutomationStudioStartNodeChoice } from "./start-node.ts";
 export { automationStudioTraceSummary } from "./trace-summary.ts";
 export { AUTOMATION_STUDIO_WITHHELD_VALUE } from "./trace-withholding.ts";
-export { compareAutomationStudioTransition } from "./transition-comparison.ts";
+export { automationStudioExpectationSatisfiedAfterFailure, compareAutomationStudioTransition } from "./transition-comparison.ts";

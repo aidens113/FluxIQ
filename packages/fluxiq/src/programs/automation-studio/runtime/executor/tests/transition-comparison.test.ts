@@ -82,8 +82,10 @@ describe("the host check after a succeeded action", () => {
   it("does not ask the host about an expected state with no keys, and the run goes on", async () => {
     // The host rejects whatever it is asked. A one-key state shows it is bound
     // and asked, so the empty state going unasked is not a vacuous pass.
+    // Twice, not once: a rejection is re-checked before the failure record is
+    // built, so a state arriving a moment late is not minted as a mismatch.
     const keyed = await runWithRejectingHost({ conditions: [{ path: "cart.items" }] });
-    expect(keyed.asked).toHaveLength(1);
+    expect(keyed.asked).toHaveLength(2);
     expect(keyed.trace.attempts[0]?.status).toBe("failed");
 
     const empty = await runWithRejectingHost({});

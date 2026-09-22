@@ -5,6 +5,7 @@ import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../nodes/policy/index.ts";
 import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import { actualTransitionForAttempt } from "./actual-transition.ts";
+import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "./contracts.ts";
 import { expectedTransitionForNode } from "./expected-transition.ts";
 
@@ -88,13 +89,25 @@ export function compareAutomationStudioTransition(node: AutomationStudioFlowNode
 
 /**
  * Asks the bound host to evaluate the attempt's `expectedState` against its
- * current snapshot, then recompares with that verdict. A rejection fails the
- * attempt: `failed` status and route, a message, and the host's failure record
- * or the expectation node's `expected_state_missing` one, so the run routes it
- * as it routes any failed attempt. Returns the attempt untouched when no
- * evaluator is bound, the attempt has no expected state or one with no keys, or
- * the evaluator throws, and with only its comparison replaced when the host
- * accepts.
+ * current snapshot, then recompares with that verdict.
+ *
+ * **A failed attempt is evaluated too.** It was not: the whole check was
+ * guarded by `attempt.status !== "succeeded"`, so the recorded expectation was
+ * consulted only to demote a success and never to understand a failure -- the
+ * state checker switched off at exactly the moment it would help. A failure
+ * whose expected state turns out to hold anyway is marked
+ * `expectationSatisfiedAfterFailure` on its comparison, which is what lets the
+ * ladder skip the node instead of repeating an action that already happened.
+ *
+ * **A rejection is re-checked before the failure record is built.** One
+ * evaluation reads the page at a single instant, and a page that is a moment
+ * late would otherwise mint a non-retryable state mismatch for a node that
+ * would have passed on a second look. The re-check spends the node's wait
+ * ceiling, and only then is the record built.
+ *
+ * Returns the attempt untouched when no evaluator is bound, the attempt has no
+ * expected state or one with no keys, or the evaluator throws, and with only
+ * its comparison replaced when the host accepts.
  */
 export async function attemptWithHostExpectationEvaluation(
   node: AutomationStudioFlowNode,
@@ -103,22 +116,35 @@ export async function attemptWithHostExpectationEvaluation(
 ): Promise<AutomationStudioNodeAttemptTrace> {
   const evaluate = hostExpectationEvaluator(options.hostRuntime);
   const expectedState = attempt.transitionComparison?.expected.expectedState;
-  // A failed or waiting attempt is classified from its own outcome, and the
-  // expectation node already asked the host itself, so neither is asked twice.
-  // An expected state with no keys names nothing to check, so it counts as none.
-  if (!evaluate || !expectedState || Object.keys(expectedState).length === 0 || attempt.status !== "succeeded" || node.definitionId === "builtin.policy.expectation") return attempt;
-  const request = expectationRequest(expectedState);
+  // A waiting attempt has not finished, and the expectation node already asked
+  // the host itself, so neither is asked twice. An expected state with no keys
+  // names nothing to check, so it counts as none.
+  const evaluable = attempt.status === "succeeded" || attempt.status === "failed";
+  if (!evaluate || !expectedState || Object.keys(expectedState).length === 0 || !evaluable || node.definitionId === "builtin.policy.expectation") return attempt;
   const stateRef = currentStateRef(attempt);
-  let evaluation: AutomationNodeExpectationEvaluation;
-  try {
-    evaluation = await evaluate(request.conditions, request.mode, request.timeoutMs, {
+  const ask = (timeoutMs?: number): Promise<AutomationNodeExpectationEvaluation> => {
+    const request = automationStudioExpectationRequest(expectedState, timeoutMs);
+    return Promise.resolve(evaluate(request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: attempt.nodeId,
       attemptId: attempt.attemptId,
       ...(stateRef ? { stateRef } : {}),
       ...(options.signal ? { signal: options.signal } : {})
-    });
+    }));
+  };
+  const ceilingMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
+  let evaluation: AutomationNodeExpectationEvaluation;
+  try {
+    const first = await ask();
+    // A failed attempt is never demoted further and never promoted here: the
+    // ladder owns what to do about a state that holds despite the failure. All
+    // this records is what the host saw.
+    if (attempt.status === "failed") return { ...attempt, transitionComparison: failedAttemptComparison(node, attempt, first) };
+    const second = first.passed ? undefined : await ask(ceilingMs);
+    evaluation = second?.passed ? second : first;
   } catch {
+    // An evaluator that broke says nothing about the page, so the attempt keeps
+    // the outcome its own execution gave it, unjudged.
     return attempt;
   }
   if (evaluation.passed) return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt, evaluation) };
@@ -136,13 +162,29 @@ export async function attemptWithHostExpectationEvaluation(
   };
 }
 
-// An expected state is either a list of conditions the host understands or one
-// condition object. Only the expected state names the wait; a node's own
-// timeout bounds its action, not the check that follows it.
-function expectationRequest(expectedState: JsonObject): { conditions: JsonValue[]; mode: string; timeoutMs: number } {
-  const conditions = Array.isArray(expectedState.conditions) ? expectedState.conditions : [expectedState as JsonValue];
-  const mode = typeof expectedState.mode === "string" ? expectedState.mode : "all";
-  return { conditions, mode, timeoutMs: typeof expectedState.timeoutMs === "number" ? expectedState.timeoutMs : 0 };
+/** Whether the ladder may skip this node: its own comparison says the state it was to produce holds. */
+export function automationStudioExpectationSatisfiedAfterFailure(comparison: AutomationStudioTransitionComparison | undefined): boolean {
+  return comparison?.metadata?.expectationSatisfiedAfterFailure === true;
+}
+
+// A failed attempt keeps the status its own outcome gave it; the host's verdict
+// is recorded beside it so the ladder can read it. The comparison is rebuilt
+// without the evaluation so the failure's own category still classifies it.
+function failedAttemptComparison(
+  node: AutomationStudioFlowNode,
+  attempt: AutomationStudioNodeAttemptTrace,
+  evaluation: AutomationNodeExpectationEvaluation
+): AutomationStudioTransitionComparison {
+  const comparison = compareAutomationStudioTransition(node, attempt);
+  return {
+    ...comparison,
+    metadata: {
+      ...(comparison.metadata ?? {}),
+      expectationSatisfiedAfterFailure: evaluation.passed,
+      expectationCheckedConditionCount: evaluation.checkedConditionCount ?? 0,
+      ...(evaluation.message ? { expectationMessage: evaluation.message } : {})
+    }
+  };
 }
 
 function currentStateRef(attempt: AutomationStudioNodeAttemptTrace): string | undefined {

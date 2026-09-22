@@ -8,6 +8,18 @@ export type TimeoutPolicy = {
   settleMs?: number;
 };
 
+/**
+ * How many times one step may be attempted, and how long the run waits between
+ * those attempts.
+ *
+ * `backoffMs` had no consumer anywhere in the runtime: a policy could declare a
+ * wait and nothing ever waited it. Both fields are now read by
+ * `automationStudioNodeRetryPolicy` (`runtime/executor/retry-policy.ts`), which
+ * accepts this exact shape from a node's `parameterValues.retry`, a node's
+ * `metadata.retry`, or a Flow's `metadata.retry`. `maxAttempts` counts the
+ * first attempt, so 3 means one attempt and two retries, and `backoffMs` is the
+ * wait before each retry.
+ */
 export type RetryPolicy = {
   maxAttempts: number;
   backoffMs?: number;

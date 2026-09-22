@@ -1,12 +1,15 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
+import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
+import { automationStudioRecordedState } from "./recorded-state.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
-import { chooseAutomationStudioRecovery, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
+import { failureMessageForRecoveryStop } from "./recovery-ladder.ts";
+import { automationStudioNodeRetryPolicy } from "./retry-policy.ts";
 import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
 import { automationStudioRunState, type AutomationStudioRunState } from "./run-state.ts";
@@ -125,6 +128,25 @@ function stepsPerIteration(node: AutomationStudioFlowNode): number {
   return 1;
 }
 
+/**
+ * The wait between two attempts of the same node.
+ *
+ * A caller may supply its own `delay`, so a test or a simulator spends no wall
+ * clock on a backoff. The default timer is unreferenced: a backoff must never
+ * be the reason a process stays alive.
+ */
+async function automationStudioRetryDelay(options: AutomationStudioGraphExecutionOptions, backoffMs: number): Promise<void> {
+  if (backoffMs <= 0) return;
+  if (options.delay) {
+    await options.delay(backoffMs, options.signal);
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const timer: ReturnType<typeof setTimeout> = setTimeout(resolve, backoffMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+}
+
 /** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
 const MAXIMUM_INPUT_DEPTH = 64;
 
@@ -208,6 +230,12 @@ async function executeAutomationStudioGraph(
   }
 
   let maxSteps = Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250));
+  // One arrival at one node: how many times it has been attempted here, and
+  // which ladder rungs that arrival has already spent. It is reset the moment
+  // the run moves to a different node, so a node reached twice -- inside a For
+  // Each body, say -- gets the whole ladder again on its second arrival.
+  let arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
+  let pendingRetry: AutomationStudioNodeAttemptTrace["retry"];
   for (let step = 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
@@ -220,7 +248,18 @@ async function executeAutomationStudioGraph(
     const elapsed = region?.timeoutMs === undefined ? 0 : now() - (regionStartedAt.get(regionId!) ?? now());
     if (region?.timeoutMs !== undefined && elapsed >= region.timeoutMs) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} exceeded its ${region.timeoutMs}ms timeout.` };
     const remainingMs = region?.timeoutMs === undefined ? undefined : region.timeoutMs - elapsed;
-    const attempt = remainingMs === undefined
+    if (arrival.nodeId !== currentNode.id) arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
+    arrival.attempts += 1;
+    const retryPolicy = automationStudioNodeRetryPolicy(flow, currentNode, options);
+    const recordedState = automationStudioRecordedState(currentNode);
+    // The wait ceiling, gated by the state the node expects to find. It never
+    // fails the node: an unsatisfied gate is a mark on the attempt, because the
+    // recording is evidence the action was possible at that point.
+    const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${attempts.length + 1}`);
+    if (options.signal?.aborted) {
+      return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+    }
+    const executed = remainingMs === undefined
       ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
       : await executeWithRegionTimeout(
         (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding, runState),
@@ -229,6 +268,15 @@ async function executeAutomationStudioGraph(
         // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
         () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })
       );
+    // What the ladder and the recorded state contributed is stamped once, here,
+    // so every attempt carries it however the node was executed.
+    const attempt: AutomationStudioNodeAttemptTrace = {
+      ...executed,
+      ...(readiness ? { readiness } : {}),
+      ...(Object.keys(recordedState).length ? { recordedState } : {}),
+      ...(pendingRetry ? { retry: pendingRetry } : {})
+    };
+    pendingRetry = undefined;
     const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(currentNode, attempt) } : attempt;
     const attemptIndex = attempts.length;
     attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
@@ -250,34 +298,71 @@ async function executeAutomationStudioGraph(
         ...(attempt.message ? { message: attempt.message } : {})
       };
     }
+    let routeOverride: string | undefined;
     if (attempt.status === "failed") {
       const failedEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "failed");
-      const recoveryDecision = chooseAutomationStudioRecovery(flow, currentNode, attempt, attempts[attemptIndex]!.transitionComparison, failedEdge, options, recoveryBudgetState(attempts, attemptIndex, currentNode.id, options.currentSubflowId));
+      const failedNode = currentNode;
+      const ladder = await runAutomationStudioRecoveryLadder({
+        flow,
+        node: failedNode,
+        attempt: attempts[attemptIndex]!,
+        failedEdge,
+        options,
+        budgetState: recoveryBudgetState(attempts, attemptIndex, failedNode.id, options.currentSubflowId),
+        policy: retryPolicy,
+        attemptsForNode: arrival.attempts,
+        consumed: arrival.consumed,
+        executeNode: async (interference) => {
+          const cleared = await executeAutomationStudioNode(flow, interference, values, options, attempts.length + 1, withholding, runState);
+          attempts.push(regionId ? { ...cleared, regionId } : cleared);
+          for (const [key, value] of Object.entries(cleared.outputs)) {
+            values[`${interference.id}.${key}`] = value;
+            values[key] = value;
+          }
+          for (const effect of cleared.effects) effects.push({ ...effect, nodeId: interference.id });
+          return cleared;
+        }
+      });
+      const recoveryDecision = ladder.decision;
       attempts[attemptIndex] = {
         ...attempts[attemptIndex]!,
         recoveryDecision
       };
-      const executableFailedEdge = recoveryDecision.selected?.kind === "deterministic_path" && recoveryDecision.selected.edgeId === failedEdge?.id ? failedEdge : null;
-      if (!executableFailedEdge) {
-        const recoveryStopMessage = failureMessageForRecoveryStop(recoveryDecision, attempt);
-        return {
-          status: "failed",
-          startedAt,
-          finishedAt: now(),
-          currentNodeId: currentNode.id,
-          attempts,
-          values,
-          effects, regionTransitions,
-          ...(recoveryStopMessage ? { message: recoveryStopMessage } : {})
-        };
+      if (ladder.kind === "retry") {
+        pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: ladder.backoffMs, rung: ladder.rung, previousAttemptId: attempt.attemptId };
+        await automationStudioRetryDelay(options, ladder.backoffMs);
+        if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: failedNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+        continue;
       }
-      currentNode = nodesById.get(executableFailedEdge.targetNodeId);
-      if (!currentNode) return missingTargetTrace(startedAt, now(), executableFailedEdge, attempts, values, effects);
-      recordRegionTransition(executableFailedEdge, regionId, options, regionTransitions, now());
-      continue;
+      if (ladder.kind === "satisfied") {
+        // The state the node was recorded to produce already holds, so the run
+        // carries on down the success route rather than repeating an action
+        // that has already happened. The attempt keeps its own failed status:
+        // what happened and what the ladder made of it are two facts, not one.
+        routeOverride = "success";
+      } else {
+        const executableFailedEdge = recoveryDecision.selected?.kind === "deterministic_path" && recoveryDecision.selected.edgeId === failedEdge?.id ? failedEdge : null;
+        if (!executableFailedEdge) {
+          const recoveryStopMessage = failureMessageForRecoveryStop(recoveryDecision, attempt);
+          return {
+            status: "failed",
+            startedAt,
+            finishedAt: now(),
+            currentNodeId: failedNode.id,
+            attempts,
+            values,
+            effects, regionTransitions,
+            ...(recoveryStopMessage ? { message: recoveryStopMessage } : {})
+          };
+        }
+        currentNode = nodesById.get(executableFailedEdge.targetNodeId);
+        if (!currentNode) return missingTargetTrace(startedAt, now(), executableFailedEdge, attempts, values, effects);
+        recordRegionTransition(executableFailedEdge, regionId, options, regionTransitions, now());
+        continue;
+      }
     }
 
-    const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "success", currentNode.definitionId);
+    const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, routeOverride ?? attempt.route ?? "success", currentNode.definitionId);
     if (!nextEdge) {
       const outgoingRoutes = flow.edges
         .filter((edge) => edge.sourceNodeId === currentNode!.id)
