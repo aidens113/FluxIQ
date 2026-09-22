@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioChangeProposalPatch } from "../../../model/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { isJsonValue, isRecord } from "./json-bounds.ts";
 
 export type AutomationStudioLlmStructuredResponse =
@@ -138,10 +139,21 @@ export type AutomationStudioRuntimeTargetOverrideTarget = JsonObject & {
   handles: Record<string, string>;
 };
 
+/**
+ * A runtime patch as a model writes it.
+ *
+ * `consequences` is what an acting patch says it would lastingly do each time
+ * the Flow runs, in Core's classes, `[]` when it only opens, shows or chooses.
+ * The schema a model is shown requires it wherever the patch may run, and the
+ * recovery's permission gate is asked about it before the patch does. It is
+ * optional here because it is read forgivingly: a patch that left it out is
+ * recorded as undeclared and does not run, rather than the whole answer being
+ * refused, and a proposal-only patch never carries it.
+ */
 export type AutomationStudioRuntimePatch =
-  | { kind: "temporary_action_sequence"; targetNodeId: string; actionDefinitionIds: string[]; reason: string; metadata?: JsonObject }
+  | { kind: "temporary_action_sequence"; targetNodeId: string; actionDefinitionIds: string[]; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_wait_retry"; targetNodeId: string; timeoutMs?: number; retryCount?: number; reason: string; metadata?: JsonObject }
-  | { kind: "temporary_target_override"; targetNodeId: string; target: AutomationStudioRuntimeTargetOverrideTarget; reason: string; metadata?: JsonObject }
+  | { kind: "temporary_target_override"; targetNodeId: string; target: AutomationStudioRuntimeTargetOverrideTarget; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_recovery_subflow_call"; subflowId: string; reason: string; metadata?: JsonObject }
   | { kind: "temporary_reroute"; fromNodeId: string; toNodeId: string; reason: string; metadata?: JsonObject };
 

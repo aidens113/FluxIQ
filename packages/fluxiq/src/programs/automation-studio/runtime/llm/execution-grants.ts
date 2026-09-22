@@ -12,6 +12,7 @@ import {
 } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, automationStudioLlmSignalTimedOut } from "./provider-contract.ts";
 import { automationStudioLlmProviderErrorSpendsCall } from "./failure-disposition.ts";
+import { automationStudioLlmExecutionGrantMetadata, type AutomationStudioLlmExecutionGrantMetadata } from "./execution-grant-metadata.ts";
 import {
   automationStudioLlmExecutionGrantFixedCalls,
   automationStudioLlmExecutionGrantIterates,
@@ -112,40 +113,17 @@ export type AutomationStudioLlmExecutionBinding = {
   settingsRevision: number;
 };
 
-export type AutomationStudioLlmExecutionGrantMetadata = {
-  grantId: string;
-  keyId: string;
-  provider: "deepseek";
-  model: "deepseek-chat";
-  projectId: string;
-  flowId: string;
-  executionDigest: string;
-  purpose: AutomationStudioLlmExecutionGrantPurpose;
-  keyUpdatedAtMs: number;
-  settingsRevision?: number;
-  tokenLimits: AutomationStudioLlmTokenLimits;
-  maxCalls: number;
-  /** The whole run's token budget: what issuing the grant confirmed. Every
-   * call is charged what it reported using, and a call whose worst case would
-   * cross this is refused. */
-  maxTotalTokensPerRun: number;
-  maxEstimatedCostUsd: number;
-  maxTotalEstimatedCostUsd: number;
-  timeoutMs: number;
-  providerRetryCount: 0;
-  /** The end of the window in which the grant may be claimed. A claimed grant
-   * runs on its own lease, `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`. */
-  expiresAtMs: number;
-  remainingUses: number;
-  /** The lasting consequences a person allowed the run's actions to have. Empty permits none. */
-  permittedConsequences: AutomationStudioActionConsequence[];
-};
+export type { AutomationStudioLlmExecutionGrantMetadata } from "./execution-grant-metadata.ts";
 
 type StoredGrant = AutomationStudioLlmExecutionGrantMetadata & {
   actorUserId: string;
   actorSessionId: string;
-  /** Minted at issue, one per call, and all live until at least `expiresAtMs`. */
+  /** Minted at issue, one per call, and all live until at least `authorizationsExpireAtMs`. */
   revealAuthorizationIds: string[];
+  /** When the authorizations minted at issue lapse: the issue TTL, which a hold does not extend. */
+  authorizationsExpireAtMs: number;
+  /** Whether a run has started under this grant and holds it (`holdForRun`). */
+  heldForRun: boolean;
   state: "available" | "claimed";
   /** When a claimed grant's run lease ends. Absent until it is claimed. */
   runExpiresAtMs: number | undefined;
@@ -330,6 +308,8 @@ export class AutomationStudioLlmExecutionGrantService {
       ...safe,
       grantId,
       expiresAtMs,
+      authorizationsExpireAtMs: expiresAtMs,
+      heldForRun: false,
       remainingUses: safe.maxCalls,
       actorUserId: input.actorUserId,
       actorSessionId: input.actorSessionId,
@@ -344,7 +324,32 @@ export class AutomationStudioLlmExecutionGrantService {
       expiryTimer
     };
     this.grants.set(grantId, grant);
-    return publicGrant(grant);
+    return automationStudioLlmExecutionGrantMetadata(grant);
+  }
+
+  /**
+   * Hold a runtime grant for the run that has just started under it.
+   *
+   * The claim window protects an authorization nobody picked up, and a started
+   * run has picked it up: its recovery claims the grant only once a step fails,
+   * which can be minutes in. Measured live on 2026-09-21, a recorded Flow failed
+   * 87 s after it started, the sixty-second window had closed, and its recovery
+   * ended `llm.provider_resolution_failed` with no call. Held, the window runs
+   * to the run's own lease instead, and the host still revokes the grant when
+   * the run ends. A grant is held once, by one run, while it is available.
+   */
+  async holdForRun(input: GrantScope): Promise<void> {
+    await this.inspectAvailable(input);
+    const grant = this.grants.get(input.grantId);
+    if (!grant || grant.state !== "available" || grant.heldForRun) {
+      this.revoke(input.grantId);
+      throw new Error("LLM execution grant is unavailable.");
+    }
+    grant.heldForRun = true;
+    grant.expiresAtMs = Math.max(grant.expiresAtMs, this.now() + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS);
+    clearTimeout(grant.expiryTimer);
+    grant.expiryTimer = setTimeout(() => this.revoke(grant.grantId, new DOMException("LLM execution grant deadline exceeded.", "TimeoutError")), grant.expiresAtMs - this.now());
+    grant.expiryTimer.unref?.();
   }
 
   async inspectAvailable(input: GrantScope): Promise<AutomationStudioLlmExecutionGrantMetadata> {
@@ -375,7 +380,7 @@ export class AutomationStudioLlmExecutionGrantService {
       throw new Error("LLM execution grant is no longer valid.");
     }
     validateKeyCompatibility(key, grant);
-    return publicGrant(grant);
+    return automationStudioLlmExecutionGrantMetadata(grant);
   }
 
   async resolve(input: GrantScope, policy: AutomationStudioLlmExecutionGrantResolvePolicy = {}): Promise<{
@@ -387,6 +392,8 @@ export class AutomationStudioLlmExecutionGrantService {
     maxTotalEstimatedCostUsd: number;
     timeoutMs: number;
     providerRetryCount: 0;
+    /** What the person allowed this run's actions to do: a copy, so the grant's own set is never handed out. */
+    permittedConsequences: AutomationStudioActionConsequence[];
   }> {
     try {
       parseAutomationStudioLlmExecutionGrantPurpose(input.purpose);
@@ -466,7 +473,8 @@ export class AutomationStudioLlmExecutionGrantService {
       maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
       timeoutMs: grant.timeoutMs,
-      providerRetryCount: 0
+      providerRetryCount: 0,
+      permittedConsequences: [...grant.permittedConsequences]
     };
   }
   revoke(grantId: string, reason?: unknown): void {
@@ -590,7 +598,7 @@ export class AutomationStudioLlmExecutionGrantService {
    */
   private async ensureLiveAuthorization(grant: StoredGrant, call: ClaimedCall): Promise<void> {
     const callWindowMs = Math.max(MIN_REVEAL_AUTHORIZATION_TTL_MS, grant.timeoutMs);
-    if (grant.expiresAtMs - this.now() >= callWindowMs) return;
+    if (grant.authorizationsExpireAtMs - this.now() >= callWindowMs) return;
     const renewed = await this.options.secretKeys.createSessionRevealAuthorization({
       id: grant.keyId,
       sessionId: grant.actorSessionId,
@@ -722,31 +730,6 @@ function validateRevealedKey(key: { id: string; enabled: boolean; kind: string; 
 function sameScope(grant: StoredGrant, input: GrantScope): boolean {
   return grant.actorUserId === input.actorUserId && grant.actorSessionId === input.actorSessionId && grant.projectId === input.projectId
     && grant.flowId === input.flowId && grant.purpose === input.purpose;
-}
-
-function publicGrant(grant: StoredGrant): AutomationStudioLlmExecutionGrantMetadata {
-  return {
-    grantId: grant.grantId,
-    keyId: grant.keyId,
-    provider: grant.provider,
-    model: grant.model,
-    projectId: grant.projectId,
-    flowId: grant.flowId,
-    executionDigest: grant.executionDigest,
-    purpose: grant.purpose,
-    keyUpdatedAtMs: grant.keyUpdatedAtMs,
-    ...(grant.settingsRevision !== undefined ? { settingsRevision: grant.settingsRevision } : {}),
-    tokenLimits: grant.tokenLimits,
-    maxCalls: grant.maxCalls,
-    maxTotalTokensPerRun: grant.maxTotalTokensPerRun,
-    maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
-    maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
-    timeoutMs: grant.timeoutMs,
-    providerRetryCount: 0,
-    expiresAtMs: grant.expiresAtMs,
-    remainingUses: grant.remainingUses,
-    permittedConsequences: [...grant.permittedConsequences]
-  };
 }
 
 function executionBinding(value: string | AutomationStudioLlmExecutionBinding, purpose: AutomationStudioLlmExecutionGrantPurpose): { executionDigest: string; settingsRevision?: number } {

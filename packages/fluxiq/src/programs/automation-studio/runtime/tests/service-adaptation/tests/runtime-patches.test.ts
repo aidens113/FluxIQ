@@ -115,7 +115,9 @@ describe("AutomationStudioService recording persistence", () => {
           metadata: { provider: "mock", model: "target-proposal-model" },
           runTask: async (request) => {
             taskKinds.push(request.taskKind);
-            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false });
+            // The diagnosis is told what the permission gate permits; the patch is still
+            // told the flag, because the patch preflight still reads it.
+            expect(request.context.policyGates).toMatchObject(request.taskKind === "runtime_patch" ? { allowExternalSideEffects: false } : { actionPermissions: { permitted: [] } });
             return request.taskKind === "runtime_patch"
               ? {
                 response: {

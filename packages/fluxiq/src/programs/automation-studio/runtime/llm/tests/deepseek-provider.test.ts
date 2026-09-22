@@ -156,6 +156,49 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(user.outputInstruction).toBeUndefined();
   });
 
+  // A repair that may run is asked what it would lastingly do; a proposal is
+  // not, since nothing it names runs. The words stay Core's: no web noun.
+  it("asks a patch that may run what it would lastingly do, and a proposal nothing", async () => {
+    const sent = async (executionPurpose: "explore_and_adapt" | "diagnose_and_adapt") => {
+      let outboundBody = "";
+      const provider = createAutomationStudioDeepSeekProvider({
+        secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+        resolveSecret: async (input) => { outboundBody = input.outboundBody; return "test-secret"; },
+        fetchImpl: (async () => responseEnvelope({
+          kind: "runtime_patch",
+          summary: "Update the changed target.",
+          riskLevel: "high",
+          patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { handles: { element: "target.1" } }, reason: "The target changed.", ...(executionPurpose === "explore_and_adapt" ? { consequences: ["create_new"] } : {}) }]
+        }, { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 })) as typeof fetch
+      });
+      const response = await provider.runTask(request({
+        taskKind: "runtime_patch",
+        expectedOutput: "runtime_patch",
+        metadata: { executionPurpose },
+        deniedEvidenceKeys: [],
+        context: { ...request().context, taskKind: "runtime_patch", promptVersion: "automation-studio.runtime-patch.v1", nodeId: "submit", failureEvidence: { schemaVersion: "example.failure-evidence.v1" } }
+      }));
+      const outbound = JSON.parse(outboundBody) as { messages: Array<{ role: string; content: string }> };
+      return {
+        response,
+        system: outbound.messages.find((message) => message.role === "system")!.content,
+        user: JSON.parse(outbound.messages.find((message) => message.role === "user")!.content) as any
+      };
+    };
+
+    const running = await sent("explore_and_adapt");
+    expect(running.system).toContain("say in consequences what performing the new target would lastingly do");
+    expect(running.system).toContain("write [] when it only opens, shows or chooses");
+    for (const webNoun of [/selector/i, /\bdom\b/i, /element/i, /\bpage\b/i, /\bclick/i, /browser/i, /button/i]) expect(running.system).not.toMatch(webNoun);
+    const override = (running.user.outputSchema.oneOf[0].properties.patches.items.oneOf as any[]).find((variant) => variant.properties.kind.const === "temporary_target_override");
+    expect(override.required).toContain("consequences");
+    expect(running.response).toMatchObject({ response: { patches: [{ consequences: ["create_new"] }] } });
+
+    const proposing = await sent("diagnose_and_adapt");
+    expect(proposing.system).not.toContain("consequences");
+    expect(proposing.user.outputSchema.oneOf[0].properties.patches.items.properties).not.toHaveProperty("consequences");
+  });
+
   it("binds diagnose_and_adapt to one target override and rejects a wrong response kind", async () => {
     let outboundBody = "";
     const valid = createAutomationStudioDeepSeekProvider({

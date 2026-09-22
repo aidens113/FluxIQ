@@ -80,6 +80,7 @@ export type AutomationStudioRuntimePatchExecutionResult = {
 // exactly as they were when they were declared here.
 export {
   AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS,
+  type AutomationStudioRuntimeTargetOverrideControl,
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction,
   type AutomationStudioRuntimeTargetOverrideRefusal,
@@ -103,6 +104,15 @@ export type AutomationStudioRuntimePatchExecutionInput = {
   policy?: AutomationStudioAdaptationPolicy;
   proposalMode?: "auto" | "manual" | "mixed";
   authorizedExternalSideEffects?: boolean;
+  /**
+   * The run's permission gate answered for this patch's lasting consequences:
+   * it declared none, or the person's grant or instruction allows every one it
+   * declared. That is the explicit authorization the policy's two side-effect
+   * lines ask for, so neither applies. Only a caller that asked a gate sets it
+   * (`recovery/annotation/patches.ts`); every other caller is judged by the
+   * policy exactly as before.
+   */
+  sideEffectPermission?: "permitted";
   hostCapabilities?: Iterable<string>;
   /** Domain-owned validation against sanitized evidence, bound to the failed action kind without exposing trace values. */
   validateTargetOverrideEvidence?: (
@@ -136,9 +146,11 @@ function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput
   const issues: string[] = [];
   const policy = input.policy;
   const sideEffecting = patchMayCauseExternalSideEffects(input.patch);
+  // The gate, not the policy flag, decided a permitted patch's side effects.
+  const policyJudgesSideEffects = sideEffecting && input.sideEffectPermission !== "permitted";
   if (policy && !policy.allowRuntimeRecovery) issues.push("Runtime recovery is disabled by adaptation policy.");
-  if (sideEffecting && policy && !policy.allowExternalSideEffects) issues.push("External side effects are disabled by adaptation policy.");
-  if (sideEffecting && policy?.requireApprovalForExternalSideEffects && input.authorizedExternalSideEffects !== true) issues.push("External side-effecting patch requires explicit authorization.");
+  if (policyJudgesSideEffects && policy && !policy.allowExternalSideEffects) issues.push("External side effects are disabled by adaptation policy.");
+  if (policyJudgesSideEffects && policy?.requireApprovalForExternalSideEffects && input.authorizedExternalSideEffects !== true) issues.push("External side-effecting patch requires explicit authorization.");
   if (input.patch.kind === "temporary_recovery_subflow_call" && policy && !policy.allowCreateRecoveryPaths) issues.push("Recovery subflow calls are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_target_override" && policy && !policy.allowModifyActionTargets) issues.push("Action target overrides are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_reroute" && policy && !policy.allowModifyRouter) issues.push("Temporary reroutes are disabled by adaptation policy.");
@@ -156,7 +168,7 @@ function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput
   return {
     ok: issues.length === 0,
     issues,
-    requiresExternalSideEffectApproval: sideEffecting && policy?.requireApprovalForExternalSideEffects === true
+    requiresExternalSideEffectApproval: policyJudgesSideEffects && policy?.requireApprovalForExternalSideEffects === true
   };
 }
 

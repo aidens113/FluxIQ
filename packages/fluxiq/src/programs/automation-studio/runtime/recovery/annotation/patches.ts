@@ -16,9 +16,24 @@
 // the model: the failure packet, and the packets the exploration returned. A
 // domain numbers its handles per packet, so a handle is only meaningful with
 // its packet, and the target check asks the domain about exactly one.
+//
+// **A repair that would lastingly act asks first.** A target override that
+// would run says what pressing its new target would lastingly do
+// (`consequences`), and the recovery's one permission gate is asked before it
+// runs -- the same gate the exploration answered to. Allowed, by the person's
+// grant or their instruction, it runs as explicitly authorized. Not allowed, it
+// becomes the request the recovery ends on, which is what the person answers;
+// it is never a preflight refusal nobody is shown. A patch that could not run
+// whatever the person said is not asked about, so nobody is asked a question
+// whose answer changes nothing.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
+import {
+  automationStudioConsequencesInOrder,
+  type AutomationStudioActionConsequence,
+  type AutomationStudioActionPermissionGate
+} from "../../action-permissions/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
@@ -29,10 +44,13 @@ import {
 } from "../../llm/index.ts";
 import {
   executeAutomationStudioRuntimePatch,
+  preflightAutomationStudioRuntimePatch,
   proposeAutomationStudioRuntimeTargetOverride,
+  type AutomationStudioRuntimePatchExecutionInput,
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction
 } from "../../live-patch.ts";
+import { checkAutomationStudioRuntimeTargetOverride } from "../../live-patch/index.ts";
 import { automationStudioRuntimePatchKindPolicyRefusal, type AutomationStudioRuntimePatchKind } from "../plan.ts";
 import { compactJsonObject, isJsonRecord } from "../../service/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../service.ts";
@@ -75,6 +93,12 @@ export type AutomationStudioRuntimeRecoveryPatchInput = {
   /** Present exactly when reusable context was consulted, and carries its receipt. */
   reusableContextMetadata?: JsonObject;
   authorizedExternalSideEffects?: boolean;
+  /**
+   * The recovery's one permission gate (`permissions.ts`). Present, a target
+   * override that would run is checked against it before it runs; absent, the
+   * policy's side-effect flags judge it exactly as before.
+   */
+  permissionGate?: AutomationStudioActionPermissionGate;
   graphOptions?: AutomationStudioGraphExecutionOptions;
 };
 
@@ -140,11 +164,25 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       ...(input.graphOptions ? { options: input.graphOptions } : {})
     };
     const proposalOnlyTargetOverride = input.explicitProposalGrant && patch.kind === "temporary_target_override";
+    const permission = input.permissionGate && !proposalOnlyTargetOverride && patch.kind === "temporary_target_override"
+      ? await patchPermission(input.permissionGate, patchInput, input.failedAttempt)
+      : undefined;
+    if (permission?.outcome === "required" || permission?.outcome === "undeclared") {
+      attempts.push(heldPatchAttempt(patch.kind, permission));
+      // As on the authoring path, the first request ends the recovery: a later
+      // patch built beside one the person has not yet allowed would be a guess.
+      if (permission.outcome === "required") break;
+      continue;
+    }
     const tested = proposalOnlyTargetOverride
       ? proposeAutomationStudioRuntimeTargetOverride(patchInput)
-      : await executeAutomationStudioRuntimePatch(patchInput);
+      : await executeAutomationStudioRuntimePatch(permission?.outcome === "permitted" ? { ...patchInput, sideEffectPermission: "permitted" } : patchInput);
     attempts.push(compactJsonObject({
       kind: patch.kind,
+      // What the gate said, where it was asked: `permitted` (nothing declared,
+      // or all of it allowed) or `not_asked` (the patch could not have run).
+      permissionOutcome: permission?.outcome,
+      consequences: permission?.outcome === "permitted" ? permission.declared : undefined,
       proposalOnly: tested.metadata?.proposalOnly,
       executed: tested.metadata?.executed,
       targetResolution: tested.metadata?.targetResolution,
@@ -188,6 +226,93 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
     }
   }
   return { attempts, adaptationIds, changeProposalIds };
+}
+
+/**
+ * What the gate said about one target override that would run.
+ *
+ * - `not_asked`: it could not have run whatever the person said -- the
+ *   domain refused its target, or a policy or host check would refuse it -- so
+ *   it runs into that refusal as before and nobody is asked.
+ * - `undeclared`: it did not say what it would lastingly do. Nothing can be
+ *   asked for, or granted, on a claim nobody made, so it does not run.
+ * - `permitted`: it declared nothing lasting, or the person's grant or
+ *   instruction allows every class it declared. It runs as authorized.
+ * - `required`: it declared a class nobody allowed. The gate raised the
+ *   request the recovery ends on.
+ */
+type PatchPermission =
+  | { outcome: "not_asked" }
+  | { outcome: "undeclared" }
+  | { outcome: "permitted"; declared: AutomationStudioActionConsequence[] }
+  | {
+    outcome: "required";
+    declared: AutomationStudioActionConsequence[];
+    missing: AutomationStudioActionConsequence[];
+    requestId: string | null;
+    sentence: string;
+    targetResolution?: "matched" | "resolved" | undefined;
+    targetNodeResolution?: "matched" | "resolved" | undefined;
+  };
+
+/** Names the step's target when the domain described nothing a request could carry; the gate then says "a control it cannot name here". */
+const UNNAMED_TARGET = "the step's new target";
+
+async function patchPermission(
+  gate: AutomationStudioActionPermissionGate,
+  patchInput: AutomationStudioRuntimePatchExecutionInput,
+  failedAttempt: AutomationStudioRuntimeRecoveryPatchInput["failedAttempt"]
+): Promise<PatchPermission> {
+  // Every check but the side-effect one, as though the gate had said yes. A
+  // patch that fails one of them is refused whatever the person says.
+  if (!preflightAutomationStudioRuntimePatch({ ...patchInput, sideEffectPermission: "permitted" }).ok) return { outcome: "not_asked" };
+  const patch = patchInput.patch;
+  const declaredValue = patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence" ? patch.consequences : undefined;
+  if (declaredValue === undefined) return { outcome: "undeclared" };
+  const declared = automationStudioConsequencesInOrder(declaredValue);
+  if (!declared.length) return { outcome: "permitted", declared };
+  // Asked again only to learn what the accepted target names: the same pure
+  // check the preflight just passed.
+  const check = checkAutomationStudioRuntimeTargetOverride(patchInput);
+  const verdict = await gate.checkFor({ kind: "flow_step", id: failedAttempt.definitionId, ref: failedAttempt.nodeId })({
+    consequences: declared,
+    control: check.control ?? { name: UNNAMED_TARGET },
+    verb: "press"
+  });
+  if (verdict.permitted) return { outcome: "permitted", declared };
+  return {
+    outcome: "required",
+    declared,
+    missing: [...verdict.missing],
+    requestId: verdict.requestId,
+    sentence: gate.request?.sentence ?? "The repair needs a permission the run does not hold.",
+    targetResolution: check.targetResolution,
+    targetNodeResolution: check.targetNodeResolution
+  };
+}
+
+/** The receipt of a target override the gate held back: the question the person is asked, or the declaration it lacked. */
+function heldPatchAttempt(kind: AutomationStudioRuntimePatch["kind"], permission: Extract<PatchPermission, { outcome: "required" | "undeclared" }>): JsonObject {
+  const required = permission.outcome === "required" ? permission : undefined;
+  return compactJsonObject({
+    kind,
+    executed: false,
+    preflightOk: false,
+    permissionOutcome: permission.outcome,
+    permissionRequired: required ? true : undefined,
+    requestId: required?.requestId ?? undefined,
+    consequences: required?.declared,
+    missing: required?.missing,
+    targetResolution: required?.targetResolution,
+    targetNodeResolution: required?.targetNodeResolution,
+    verification: { status: "not_executed", reason: required ? "permission_required" : "consequences_undeclared" },
+    restoredExpectedState: false,
+    retryOriginalAction: false,
+    issues: [required
+      ? `Permission required: ${required.sentence}`
+      : "The repair did not say what it would lastingly do, so it was not run: nobody can be asked to allow a consequence nobody declared."],
+    traceStatus: "not-run"
+  });
 }
 
 type TargetEvidenceSource = "failure_evidence" | "exploration_evidence";
@@ -239,8 +364,9 @@ function targetOverrideEvidenceCheck(input: AutomationStudioRuntimeRecoveryPatch
     if (!packet) return { validation: { status: "absent", reason: "handle_not_issued" } };
     const validation = askDomain(packet, route.target, failedAction);
     // `matched` means the target stands as the domain was shown it, which is
-    // without Core's qualifier: that is the target to carry.
-    return { validation: validation.status === "matched" ? { status: "resolved", target: route.target } : validation, source: "exploration_evidence" };
+    // without Core's qualifier: that is the target to carry, with whatever the
+    // domain said it names.
+    return { validation: validation.status === "matched" ? { status: "resolved", target: route.target, ...(validation.control ? { control: validation.control } : {}) } : validation, source: "exploration_evidence" };
   };
 }
 

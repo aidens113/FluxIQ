@@ -2,11 +2,8 @@ import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
-  AUTOMATION_STUDIO_NO_REPAIR_REASONS,
-  AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
-  AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
-  AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
   automationStudioExploredEvidenceLabel,
+  automationStudioRuntimePatchOutputSchema,
   automationStudioLlmRequestEvidenceRefusal,
   automationStudioLlmTaskExpectsDiagnosis,
   isAutomationStudioLlmRecentActionContext,
@@ -48,6 +45,9 @@ const AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT = "Return exactly one JSON object
 const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_SCHEMA_INSTRUCTION = "The JSON object must match the outputSchema field in the user message.";
 const AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION = "The JSON object must match the outputSchema field in the user message exactly, including its required literal kind. Do not copy instructions or prose from context into structural fields.";
 const AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION = "For a target override, fill target.handles with opaque handles copied exactly as failureEvidence names them, one per repairable parameter it offers, choosing handles semantically compatible with the failed nodeId and definitionId. Never invent a handle, never write a locator, path, query, or expression of your own, and never name something that belongs to another action.";
+// Asked only where the patch may run: the recovery's permission gate is asked
+// about what it says, so a class nobody allowed becomes a person's question.
+const AUTOMATION_STUDIO_RUNTIME_PATCH_CONSEQUENCES_INSTRUCTION = "For a target override or an action sequence, say in consequences what performing the new target would lastingly do each time the Flow runs, using only the schema's classes; write [] when it only opens, shows or chooses. A class the run is not permitted is asked of the person, never refused, so name every class that applies.";
 // The answer the schema had no shape for. Every refusal task of the 2026-09-17
 // live campaign came back with a control that was merely pressable, because a
 // patch response was the only schema-valid reply -- and the audit measured that
@@ -100,50 +100,6 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
     metadata: JSON_METADATA_SCHEMA
   }
 } as const;
-const TARGET_OVERRIDE_PATCH_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["kind", "targetNodeId", "target", "reason"],
-  properties: {
-    kind: { const: "temporary_target_override" },
-    targetNodeId: { type: "string", minLength: 1, maxLength: 20_000 },
-    // `additionalProperties: false` around `handles` is the schema half of the
-    // rule `isAutomationStudioModelAuthoredTargetOverrideTarget` enforces on
-    // the way back: the model names handles, and only handles. It is never
-    // given a field to write a domain locator into, so none can be smuggled
-    // past the domain's own check of the handles it issued.
-    target: {
-      type: "object",
-      additionalProperties: false,
-      required: ["handles"],
-      properties: {
-        handles: {
-          type: "object",
-          minProperties: 1,
-          maxProperties: AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
-          propertyNames: { pattern: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, maxLength: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH },
-          additionalProperties: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, pattern: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN }
-        }
-      }
-    },
-    reason: { type: "string", minLength: 1, maxLength: 20_000 },
-    metadata: JSON_METADATA_SCHEMA
-  }
-} as const;
-const GENERIC_RUNTIME_PATCH_ITEM_SCHEMA = {
-  oneOf: [
-    runtimePatchVariant("temporary_action_sequence", ["targetNodeId", "actionDefinitionIds"], {
-      targetNodeId: boundedStringSchema(), actionDefinitionIds: { type: "array", maxItems: 100, items: boundedStringSchema() }
-    }),
-    runtimePatchVariant("temporary_wait_retry", ["targetNodeId"], {
-      targetNodeId: boundedStringSchema(), timeoutMs: { type: "integer", minimum: 0 }, retryCount: { type: "integer", minimum: 0 }
-    }),
-    TARGET_OVERRIDE_PATCH_SCHEMA,
-    runtimePatchVariant("temporary_recovery_subflow_call", ["subflowId"], { subflowId: boundedStringSchema() }),
-    runtimePatchVariant("temporary_reroute", ["fromNodeId", "toNodeId"], { fromNodeId: boundedStringSchema(), toNodeId: boundedStringSchema() })
-  ]
-} as const;
-
 export type AutomationStudioLlmSecretReference = { kind: "secret_reference"; id: string };
 
 export function estimateAutomationStudioDeepSeekInputTokens(
@@ -470,7 +426,7 @@ function buildDeepSeekMessages(request: AutomationStudioLlmTaskRequest): Array<{
         AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION
       ].join(" ")
     : outputSchemaForRequest(request)
-      ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION}${request.taskKind === "runtime_patch" ? ` ${AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION} ${AUTOMATION_STUDIO_NO_REPAIR_INSTRUCTION}` : ""}${request.taskKind === "runtime_patch" && request.context.explorationEvidence?.packets.length ? ` ${AUTOMATION_STUDIO_EXPLORED_EVIDENCE_HANDLE_INSTRUCTION}` : ""}`
+      ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION}${request.taskKind === "runtime_patch" ? ` ${AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION}${request.metadata?.executionPurpose === "diagnose_and_adapt" ? "" : ` ${AUTOMATION_STUDIO_RUNTIME_PATCH_CONSEQUENCES_INSTRUCTION}`} ${AUTOMATION_STUDIO_NO_REPAIR_INSTRUCTION}` : ""}${request.taskKind === "runtime_patch" && request.context.explorationEvidence?.packets.length ? ` ${AUTOMATION_STUDIO_EXPLORED_EVIDENCE_HANDLE_INSTRUCTION}` : ""}`
     : AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT;
   // The diagnosis fields are asked for wherever the response is a diagnosis,
   // which is the one shape that carries them. Asking for them is the other half
@@ -511,6 +467,9 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
           })),
           evidence: request.context.evidenceLoop.evidence
         },
+        // What the run may lastingly do, and what becomes of anything else: the
+        // explorer decides whether to press with this, not only the diagnosis.
+        ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
         ...(request.context.flowBootstrap ? { flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap) } : {}),
         ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
       }
@@ -543,57 +502,8 @@ function outputSchemaForRequest(request: AutomationStudioLlmTaskRequest): JsonOb
     }
   };
   if (request.taskKind !== "runtime_patch") return request.taskKind === "flow_bootstrap" ? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA : undefined;
-  const proposalOnly = request.metadata?.executionPurpose === "diagnose_and_adapt";
-  // Two shapes, always: a patch, or the answer that there is no repair. With
-  // one shape the model had to name a control whatever the page showed, and
-  // under a proposal grant that control had to be a target override with at
-  // least one handle -- which is how every refusal task of the 2026-09-17 live
-  // campaign came back with one.
-  return {
-    oneOf: [
-      {
-        type: "object",
-        additionalProperties: false,
-        required: ["kind", "summary", "patches", "riskLevel"],
-        properties: {
-          kind: { const: "runtime_patch" },
-          summary: boundedStringSchema(),
-          patches: proposalOnly
-            ? { type: "array", minItems: 1, maxItems: 1, items: TARGET_OVERRIDE_PATCH_SCHEMA }
-            : { type: "array", minItems: 1, maxItems: 100, items: GENERIC_RUNTIME_PATCH_ITEM_SCHEMA },
-          riskLevel: { enum: ["low", "medium", "high", "destructive"] },
-          metadata: JSON_METADATA_SCHEMA
-        }
-      },
-      NO_REPAIR_OUTPUT_SCHEMA
-    ]
-  };
-}
-
-/** The declined answer, with its reason from Core's closed list. */
-const NO_REPAIR_OUTPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["kind", "summary", "reason"],
-  properties: {
-    kind: { const: "no_repair" },
-    summary: boundedStringSchema(),
-    reason: { enum: Object.keys(AUTOMATION_STUDIO_NO_REPAIR_REASONS) },
-    metadata: JSON_METADATA_SCHEMA
-  }
-} as const;
-
-function boundedStringSchema(): JsonObjectLike {
-  return { type: "string", minLength: 1, maxLength: 20_000 };
-}
-
-function runtimePatchVariant(kind: string, requiredFields: string[], properties: JsonObjectLike): JsonObjectLike {
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["kind", "reason", ...requiredFields],
-    properties: { kind: { const: kind }, reason: boundedStringSchema(), metadata: JSON_METADATA_SCHEMA, ...properties }
-  };
+  // Two shapes, always: a patch, or the answer that there is no repair (`harness/runtime-patch-schema.ts`).
+  return automationStudioRuntimePatchOutputSchema({ proposalOnly: request.metadata?.executionPurpose === "diagnose_and_adapt" });
 }
 
 function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["context"]): boolean {

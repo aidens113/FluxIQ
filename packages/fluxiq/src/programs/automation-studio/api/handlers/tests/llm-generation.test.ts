@@ -21,6 +21,8 @@ describe("Automation Studio LLM execution API", () => {
     const grants = {
       preflight: vi.fn().mockResolvedValue({ provider: "deepseek", model: "deepseek-chat", keyId: "secret:key" }),
       issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:one", provider: "deepseek", model: "deepseek-chat", remainingUses: 1 }),
+      // A granted run holds its grant as it starts, so a late failure keeps its recovery.
+      holdForRun: vi.fn().mockResolvedValue(undefined),
       revoke: vi.fn()
     };
     const registry = new GlobalProgramApiRegistry();
@@ -54,7 +56,7 @@ describe("Automation Studio LLM execution API", () => {
       metadata: { runtimePatchAttempts: [{ adaptationId: "adaptation.manual", approvalDecision: { autoApply: false } }] }
     });
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any, undefined, undefined, undefined, { revoke: vi.fn() } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any, undefined, undefined, undefined, { holdForRun: vi.fn().mockResolvedValue(undefined), revoke: vi.fn() } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 
     const response = await registry.call({

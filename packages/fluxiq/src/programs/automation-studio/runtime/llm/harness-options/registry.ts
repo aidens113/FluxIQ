@@ -47,8 +47,18 @@ export type AutomationStudioHarnessOptionResolution = {
   permissions?: Iterable<string>;
   stage?: AutomationStudioHarnessOptionStage;
   /** The adaptation policy governing this call, when one does. Where it is
-   * present it is authoritative over side effects. */
+   * present, and mutations are not governed by permission, it is
+   * authoritative over side effects. */
   policy?: AutomationStudioAdaptationPolicy;
+  /**
+   * Whether every action this call takes is answered by a run's permission
+   * gate -- each one handed the gate's check, which the domain asks before
+   * anything with a lasting consequence. Then a mutating option is offered,
+   * and the gate, not a policy flag or the caller's opt-in, decides each
+   * action it would take: permitted, or a request a person answers. A
+   * destructive option is still never offered.
+   */
+  mutationsGovernedByPermission?: boolean;
   /** Whether a call no adaptation policy governs -- authoring a new Flow, for
    * one -- may still take a mutating option. Absent means no: the caller has
    * to say so, rather than a missing policy quietly meaning permission. It
@@ -149,8 +159,9 @@ export class AutomationStudioHarnessOptionRegistry {
    * a repair under a policy that denies side effects looked once, before it was
    * asked anything, and never again. The loop now applies that rule only where
    * a mutation is reachable, so the free look survives the refusal and the
-   * model may still ask for another. `sideEffectAllows` is unchanged: what a
-   * mutating option needs is still the policy's permission, never the caller's.
+   * model may still ask for another. `sideEffectAllows` is unchanged by it:
+   * what a mutating option needs is still permission -- the run's gate, or
+   * the policy's -- never whatever a tool list happens to hold.
    */
   tools(resolution: AutomationStudioHarnessOptionResolution): AutomationStudioLlmEvidenceTool[] {
     const offered = this.list(resolution);
@@ -262,15 +273,21 @@ function stageAllows(option: AutomationStudioHarnessOption, stage: AutomationStu
  * Destructive is never offered: gathering information never requires
  * destroying anything.
  *
- * Mutating needs permission, and where a policy governs the call that policy
- * decides, full stop. Only where none governs it does the caller's own opt-in
- * apply, so a call that forgets to say anything withholds the option rather
- * than inheriting it from silence.
+ * Mutating needs permission. Where a run's permission gate answers every
+ * action, that gate is the permission: the option is offered, and each action
+ * it would take with a lasting consequence is permitted or becomes a request a
+ * person answers. Capable by default, asked rather than refused -- a policy
+ * flag that withheld the option outright left the run nothing to ask about.
+ * Otherwise, where a policy governs the call that policy decides, and only
+ * where none governs it does the caller's own opt-in apply, so a call that
+ * forgets to say anything withholds the option rather than inheriting it from
+ * silence.
  */
 function sideEffectAllows(option: AutomationStudioHarnessOption, resolution: AutomationStudioHarnessOptionResolution): boolean {
   const sideEffect = option.safety?.sideEffect ?? (option.effect === "mutate" ? "mutate" : "observe");
   if (sideEffect === "destructive") return false;
   if (sideEffect !== "mutate") return true;
+  if (resolution.mutationsGovernedByPermission === true) return true;
   if (resolution.policy) return resolution.policy.allowExternalSideEffects === true;
   return resolution.allowSideEffectsWithoutPolicy === true;
 }
