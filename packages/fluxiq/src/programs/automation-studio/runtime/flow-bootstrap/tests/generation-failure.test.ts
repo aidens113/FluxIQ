@@ -28,6 +28,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ok: false,
       code,
       trace: [{ iteration: 1, decision: "tool_call", callId: "private.call", toolId: "web.click_safe", evidenceBytes: 123, effectApplied: false, resultCode: "action.recoverable" }],
+      steps: [],
       accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 123, inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
     });
     expect(failure.diagnostic).toEqual({
@@ -178,6 +179,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ok: false,
       code: "llm_evidence_loop.iteration_limit",
       trace: [{ iteration: 1, decision: "complete" }],
+      steps: [],
       accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
     });
     expect(ended.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_complete" }]);

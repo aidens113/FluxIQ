@@ -18,7 +18,12 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(result).toMatchObject({ ok: true, result: { candidateId: "candidate.1" }, accounting: { iterations: 2, toolCalls: 1, inputTokens: 22, outputTokens: 7, totalTokens: 29, estimatedCostUsd: 0.002 } });
     expect(executeTool).toHaveBeenCalledWith({ callId: "call.1", toolId: "inspect", value: { scope: "current" }, maxEvidenceBytes: 63_488 });
     expect(decide.mock.calls[1]?.[0].evidence).toEqual([{ callId: "call.1", toolId: "inspect", value: { facts: ["ready"] } }]);
-    expect(JSON.stringify(result)).not.toContain("scope");
+    // The trace is still ids and counts. `steps` is the one place what the
+    // model asked for survives the loop, and it survives on purpose: a result
+    // written from the record of what was done cannot lose a step the window
+    // evicted. No mutating tool is offered here, so nothing is shown a draft.
+    expect(result.ok && result.steps).toEqual([{ position: 1, iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "kept" }]);
+    expect(JSON.stringify({ ...result, steps: undefined })).not.toContain("scope");
   });
 
   it("fails closed for unknown tools and evidence overflow", async () => {
@@ -93,10 +98,15 @@ describe("Automation Studio LLM evidence loop", () => {
         ? { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "action.recoverable" }, effectApplied: false, resultCode: "action.recoverable" }
         : { observed: true }
     });
-    // The action changed nothing, so the second look was answered, not run.
-    expect(recoverable).toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 2 } });
-    expect(recoverable.trace[2]).toMatchObject({ iteration: 3, toolId: "inspect", resultCode: "llm_evidence_loop.already_observed" });
-    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
+    // The action was refused, and a refusal is something having happened: it
+    // may itself be the domain saying the thing it was asked to act on is gone,
+    // and it is new information the model can only act on by looking. So the
+    // look after it is offered and runs, where it used to be withheld as
+    // "already observed" -- three of which ended a live build with nothing.
+    expect(recoverable).toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 3 } });
+    expect(recoverable.trace[2]).toMatchObject({ iteration: 3, toolId: "inspect", callId: "call.observe.2" });
+    expect(recoverable.trace[2]?.resultCode).toBeUndefined();
+    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act"]);
     expect(recoverableDecide.mock.calls[2]?.[0].evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ toolId: "act", value: { ok: false, code: "action.recoverable" } })
     ]));

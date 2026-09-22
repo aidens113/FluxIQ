@@ -8,6 +8,7 @@ export * from "./compiled-plan.ts";
 export * from "./executor.ts";
 export * from "./flow-bootstrap/index.ts";
 export * from "./flow-change/index.ts";
+export * from "./flow-draft/index.ts";
 export * from "./host-runtime.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";

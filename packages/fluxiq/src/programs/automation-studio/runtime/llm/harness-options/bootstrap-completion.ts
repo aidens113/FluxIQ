@@ -67,7 +67,15 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   // the wrong answer in their place. A refusal is about how a step was
   // written, never about whether the instruction needed it.
   + "Correct each refused step; never delete one the instruction needs, and never replace it with a step that answers something else. "
-  + "A handle is refused when it is not one the evidence printed: reread the evidence and copy that token exactly, rather than writing one that looks like it.";
+  + "A handle is refused when it is not one the evidence printed: reread the evidence and copy that token exactly, rather than writing one that looks like it. "
+  // Every decision is a fresh request with no conversation history, so a model
+  // asked to complete again could not see what it had just written and wrote a
+  // new answer from memory instead of correcting the old one. `previous` is
+  // its own script handed back; this sentence is what tells it to amend that.
+  + "Where previous is given, it is the script you just sent. Send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory.";
+
+/** What the refused script may cost in the feedback before it is left out. */
+const MAX_PREVIOUS_SCRIPT_LENGTH = 6_000;
 
 /** Every check a completed evidence-guided result must pass before it is built. */
 export async function checkAutomationStudioFlowBootstrapCompletion(input: {
@@ -96,13 +104,19 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // before, and `bootstrap.unknown_parameter` came back naming a path into a
   // plan the model never wrote with nothing beside it -- so it wrote the same
   // key again. The nested JSON plan is the model's own writing and stays.
-  if (!accepted.ok) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written));
+  if (!accepted.ok) {
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written), accepted.script);
+  }
+  // Every refusal from here on is about a plan that was read, so each one hands
+  // the script back: the parameter check is where a handle the model invented
+  // is caught, and that is the refusal the whole re-emission failure came from.
+  const script = accepted.script;
   const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
   if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan));
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan), script);
   }
   if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: accepted.summary, plan: parsed.plan })) {
-    return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")]);
+    return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")], undefined, script);
   }
   const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
     plan: parsed.plan,
@@ -112,16 +126,16 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     handlesIssued: true,
     permissionFor: input.permissionFor
   });
-  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan));
+  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan), script);
   let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;
   try {
     validated = validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry: input.registry, resolution: input.resolution });
   } catch {
     // A check that throws refuses the plan under a code of its own, rather than
     // ending creation with a record that cannot say what happened.
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")]);
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")], undefined, script);
   }
-  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan));
+  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
   return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
 
@@ -135,9 +149,11 @@ type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; r
 function refused(
   code: AutomationStudioFlowBootstrapCompletionFailureCode,
   issues: AutomationStudioFlowBootstrapIssue[],
-  about?: RefusalSubject
+  about?: RefusalSubject,
+  previousScript?: string
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
+  const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
   return {
     ok: false,
     code,
@@ -150,6 +166,7 @@ function refused(
         code: "flow_bootstrap.completion_refused",
         refusal: code,
         issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
+        ...previous,
         instruction: FEEDBACK_INSTRUCTION
       }
     }
