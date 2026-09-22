@@ -27,8 +27,17 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     expect(result).toMatchObject({ ok: true, result: { plan: "close the prompt first" }, accounting: { iterations: 2, toolCalls: 2 } });
     expect(result.trace[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call.press.1", toolId: "press", resultCode: "llm_evidence_loop.tool_failed", evidenceBytes: expect.any(Number) });
     const shown = decide.mock.calls[1]?.[0].evidence;
-    expect(shown.at(-1)).toEqual({ callId: "call.press.1", toolId: "press", value: {
+    // The draft sits after the window, so the failed call's own result is the
+    // entry before it. The failure is in the draft too: an action that was
+    // attempted and did not happen is part of the record of what was done.
+    expect(shown.at(-2)).toEqual({ callId: "call.press.1", toolId: "press", value: {
       ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
+    } });
+    expect(shown.at(-1)).toMatchObject({ callId: "core.flow_draft", toolId: "core.flow_draft", value: {
+      code: "llm_evidence_loop.draft",
+      // Position 2: the initial observation is step 1 of the draft, and a
+      // position never shifts, so an amendment always names the same step.
+      steps: [{ step: 2, actionId: "press", input: { target: "target.2" }, resultCode: "llm_evidence_loop.tool_failed", changed: "no", disposition: "kept", inResult: false }]
     } });
     expect(JSON.stringify({ result, shown })).not.toContain("ember789");
   });

@@ -108,6 +108,78 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(secrets).toBe(1);
   });
 
+  // The draft, and the decision that edits it, on the wire.
+  //
+  // Both matter here rather than only in the loop's own tests, because this is
+  // the boundary that refuses a request: the provider re-derives the decision
+  // schema from the tools it was given and sends nothing if it does not match,
+  // and a live build failed `provider_evidence_loop_context_invalid` on exactly
+  // that until it learned the second shape. And the draft is only worth
+  // accruing if it reaches the model, which is what the payload assertion says.
+  it("carries the accrued draft to the model and accepts the schema that offers an edit to it", async () => {
+    const drafting = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }];
+    const draftEntry = {
+      callId: "core.flow_draft",
+      toolId: "core.flow_draft",
+      value: {
+        code: "llm_evidence_loop.draft",
+        steps: [
+          { step: 1, actionId: "press", input: { target: "target.3" }, changed: "yes", disposition: "kept", inResult: true },
+          { step: 2, actionId: "press", input: { target: "target.8" }, changed: "yes", disposition: "kept", inResult: true }
+        ],
+        instruction: "Every action you have taken, in order."
+      }
+    };
+    const draftingLoop = {
+      iteration: 3,
+      tools: drafting,
+      evidence: [draftEntry],
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(drafting, completionSchema, true, true),
+      completionSchema,
+      canComplete: true
+    };
+    let outbound = "";
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
+      fetchImpl: (async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "That one was only to look around.", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] } }) } }],
+        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
+      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+    });
+
+    await expect(provider.runTask(request({ context: { ...request().context, evidenceLoop: draftingLoop } }))).resolves.toMatchObject({
+      response: { kind: "evidence_tool_decision", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] } }
+    });
+    const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
+    const userPayload = body.messages.find((message) => message.role === "user")!.content;
+    const payload = JSON.parse(userPayload) as {
+      outputSchema: { properties: { decision: { oneOf: Array<{ properties: { kind: { const: string } } }> } } };
+      context: { evidenceLoop: { evidence: unknown[] } };
+    };
+    // Both presses reach the model, although the window keeps one result per
+    // tool and both arrived under the same tool id.
+    expect(payload.context.evidenceLoop.evidence).toEqual([draftEntry]);
+    expect(payload.outputSchema.properties.decision.oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete", "amend_draft", "tool_call"]);
+  });
+
+  it("still refuses a decision schema that is neither shape Core builds", async () => {
+    const drafting = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }];
+    let secrets = 0;
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async () => { secrets += 1; return "test-secret"; },
+      fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
+    });
+    // Core's own two shapes, over a tool list the request does not offer.
+    const altered = request({ context: { ...request().context, evidenceLoop: {
+      iteration: 3, tools: [], evidence: [], completionSchema, canComplete: true,
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(drafting, completionSchema, true, true)
+    } } });
+    await expect(provider.runTask(altered)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
+    expect(secrets).toBe(0);
+  });
+
   it("accepts a completion-only decision after the initial observation removes the last eligible tool", async () => {
     const completionOnlyLoop = {
       iteration: 1,

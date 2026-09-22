@@ -560,8 +560,17 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
       || typeof item.callId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.callId)
       || typeof item.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.toolId) || !boundedJson(item.value)) return false;
   }
-  return isRecord(loop.completionSchema) && typeof loop.canComplete === "boolean"
-    && JSON.stringify(loop.decisionSchema) === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete));
+  if (!isRecord(loop.completionSchema) || typeof loop.canComplete !== "boolean") return false;
+  // The decision schema must be one Core built from the tools it offered, and
+  // there are two of them: with and without the variant that edits the draft.
+  // Which one the loop sent is its own decision -- offered only once there is a
+  // step to edit, and withdrawn once the run's allowance is spent -- and is not
+  // carried on the wire, so both are derived and either is accepted. What this
+  // still refuses is the thing it was written to refuse: a schema that is not
+  // Core's, over tools that were not offered.
+  const written = JSON.stringify(loop.decisionSchema);
+  return [false, true].some((allowAmend) =>
+    written === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, allowAmend)));
 }
 
 function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest): AutomationStudioLlmStructuredResponse {

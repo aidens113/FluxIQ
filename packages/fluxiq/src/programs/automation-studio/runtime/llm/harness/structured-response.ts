@@ -4,9 +4,11 @@ import type { AutomationStudioChangeProposalPatch } from "../../../model/index.t
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { isJsonValue, isRecord } from "./json-bounds.ts";
 
+import type { AutomationStudioFlowDraftAmendment } from "../../flow-draft/index.ts";
+
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
-  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
+  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject } | { kind: "amend_draft"; amendments: AutomationStudioFlowDraftAmendment[] }; metadata?: JsonObject }
   | { kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "no_repair"; summary: string; reason: AutomationStudioNoRepairReason; metadata?: JsonObject }

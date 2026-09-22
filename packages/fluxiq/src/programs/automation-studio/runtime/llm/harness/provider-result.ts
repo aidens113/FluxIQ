@@ -156,6 +156,16 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
     if (!isJsonObject(value.result)) diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_completion", message: "Evidence completion requires a JSON object result.", path });
     return;
   }
+  // An edit to the draft the loop is accruing. Only the outer shape is checked
+  // here; which steps exist and what may be said about them is the loop's, and
+  // `runtime/flow-draft/` is where an edit that names no step is refused.
+  if (value.kind === "amend_draft") {
+    rejectUnexpectedFields(value, ["kind", "amendments"], path, diagnostics);
+    if (!Array.isArray(value.amendments) || !value.amendments.length || value.amendments.length > 16 || !value.amendments.every(isRecord)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_amendment", message: "A draft amendment decision must carry between one and sixteen amendments.", path });
+    }
+    return;
+  }
   diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision kind is unsupported.", path: `${path}.kind` });
 }
 

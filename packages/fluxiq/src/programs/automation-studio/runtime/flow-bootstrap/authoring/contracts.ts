@@ -70,6 +70,17 @@ export type AutomationStudioFlowScript = {
 /**
  * A result the acceptor could read, or the issues that refused it.
  *
+ * `script` is what the reply was read from, when it arrived as a Flow script,
+ * exactly as the model wrote it. It is carried on both answers because the
+ * checks that refuse a plan run after it was accepted, and each of them has to
+ * be able to hand the model back its own draft to correct. Every decision is a
+ * fresh request with no conversation history, so without this the model is
+ * asked to try again with its previous answer absent from the question, and the
+ * only thing it can do is write a new one from memory -- which is how a live
+ * build "completed again with those steps deleted and the wrong answer in their
+ * place". It is the model's own writing and never page content, so handing it
+ * back tells the model nothing its own tools had not already told it.
+ *
  * A refusal may carry `refusedPlan`: the plan the script got as far as, so a
  * refusal's feedback can read each node's definition out of it and answer with
  * the parameters that node does declare. Nothing builds, validates or persists
@@ -77,5 +88,5 @@ export type AutomationStudioFlowScript = {
  * deliberately not called `plan`, so no caller reaches it by widening a check.
  */
 export type AutomationStudioFlowBootstrapAcceptance =
-  | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] }
-  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[]; refusedPlan?: AutomationStudioFlowBootstrapPlan };
+  | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[]; script?: string }
+  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[]; refusedPlan?: AutomationStudioFlowBootstrapPlan; script?: string };

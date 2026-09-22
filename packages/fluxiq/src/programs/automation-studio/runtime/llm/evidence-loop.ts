@@ -1,6 +1,21 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../loop-limits/index.ts";
+import {
+  applyAutomationStudioFlowDraftAmendments,
+  automationStudioFlowDraftEntry,
+  type AutomationStudioFlowDraftAmendment,
+  type AutomationStudioFlowDraftStep
+} from "../flow-draft/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceRecord } from "./context-window.ts";
+import {
+  automationStudioLlmEvidenceCanonicalJson,
+  automationStudioLlmEvidenceParseCompletionCheck,
+  automationStudioLlmEvidenceParseDecision,
+  automationStudioLlmEvidenceParseToolExecutionResult,
+  automationStudioLlmEvidenceValidTools,
+  buildAutomationStudioLlmEvidenceLoopDecisionSchema
+} from "./evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
 import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
@@ -19,6 +34,12 @@ import {
 // surface is unchanged: every existing consumer still reads it from
 // runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
+// The decision grammar lives in `evidence-loop-decision.ts`: one module says
+// what a decision may be, this one says what to do about each. Re-exported so
+// every existing consumer still reads the schema builder from here.
+export { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "./evidence-loop-decision.ts";
+/** The draft a loop accrues while it explores, and how the model edits it. */
+export { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, type AutomationStudioFlowDraftAmendment, type AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 // The error a decision callback throws to have the loop ask again, and how a
 // caller tells whether a failed call is that kind of failure. Part of the
 // loop's input contract, so published with it.
@@ -35,17 +56,9 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "./context-window
 /** The bounds a loop may be given (`budget`), and the entry it shows the model what is left under. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 
-/** Provider-neutral decision policy for bounded evidence loops. Provider adapters
- * should include this policy in their structured-decision instruction.
- *
- * The last two sentences were added after a live creation campaign in which
- * every built Flow only read and none acted. The policy already said, rightly,
- * never to mutate merely to perform a step that belongs in the generated
- * result; nothing said the converse, that a refusal here is not a refusal
- * there. Offered only tools that decline to act, and refused when it asked one
- * to, the model read the whole exercise as "acting is unavailable" and wrote
- * the only shape it had seen accepted. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, and never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's answer to your previous decision, not a tool result: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+/** Provider-neutral decision policy for bounded evidence loops, in
+ * `evidence-loop-decision.ts` with the rest of the grammar. */
+export { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "./evidence-loop-decision.ts";
 
 /**
  * Unusable decisions in a row, however much their issues differ, after which a
@@ -80,13 +93,15 @@ export type AutomationStudioLlmEvidenceTool = {
 
 export type AutomationStudioLlmEvidenceLoopDecision =
   | { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; usage?: AutomationStudioLlmUsageSummary }
+  /** An edit to the draft the loop is accruing. Offered only once there is a step to edit. */
+  | { kind: "amend_draft"; amendments: readonly AutomationStudioFlowDraftAmendment[]; usage?: AutomationStudioLlmUsageSummary }
   | { kind: "complete"; result: JsonObject; usage?: AutomationStudioLlmUsageSummary };
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
   iteration: number;
   /** `unusable` is a decision call that was made and came back as nothing the
    * loop could act on, and was asked again. It names no tool. */
-  decision: "tool_call" | "complete" | "unusable";
+  decision: "tool_call" | "complete" | "unusable" | "amend_draft";
   callId?: string;
   toolId?: string;
   evidenceBytes?: number;
@@ -141,12 +156,16 @@ export type AutomationStudioLlmEvidenceLoopResult =
     ok: true;
     result: JsonObject;
     trace: AutomationStudioLlmEvidenceLoopTrace[];
+    /** Every action the loop took, in order, with the argument it was given. */
+    steps: AutomationStudioFlowDraftStep[];
     accounting: AutomationStudioLlmEvidenceLoopAccounting;
   }
   | {
     ok: false;
     code: AutomationStudioLlmEvidenceLoopFailureCode;
     trace: AutomationStudioLlmEvidenceLoopTrace[];
+    /** The same, for a loop that ended without a result: a failed build still did things. */
+    steps: AutomationStudioFlowDraftStep[];
     accounting: AutomationStudioLlmEvidenceLoopAccounting;
   };
 
@@ -288,6 +307,26 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * failed -- otherwise `end`. Cancellation ends the loop either way.
    */
   toolFailures?: "observe" | "end";
+  /**
+   * A digest of the whole state, taken either side of each action.
+   *
+   * What it buys is the reduction (`runtime/exploration-reduction/`), which
+   * needs a digest chain to say which steps the end state depended on. It
+   * costs a round trip per call, so it is the caller's decision. Answering
+   * with nothing leaves that step without digests and is not a failure; a hook
+   * that throws is taken as the call having failed, and the step is recorded
+   * as one, because a step with a digest the caller could not take is a step
+   * nothing knows the shape of.
+   */
+  captureStateDigest?(input: { callId: string; toolId: string; signal?: AbortSignal }): Promise<string | undefined> | string | undefined;
+  /**
+   * The draft the loop accrues and shows the model beside its evidence
+   * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.
+   * `false` turns both off; `steps` is returned either way. `maxBytes` is what
+   * the entry may cost, absent a quarter of the evidence context up to 4,000;
+   * `maxAmendments` is how many edits the run may spend, absent four.
+   */
+  draft?: false | { maxBytes?: number; maxAmendments?: number };
   signal?: AbortSignal;
 };
 
@@ -301,23 +340,41 @@ export async function runAutomationStudioLlmEvidenceLoop(
 ): Promise<AutomationStudioLlmEvidenceLoopResult> {
   const limits = resolveLimits(input);
   const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
+  // The draft (`runtime/flow-draft/`): every action appended as it happens, so
+  // a result is written from what the loop did rather than from what is still
+  // in front of the model. Kept whether or not it is shown.
+  const draftSteps: AutomationStudioFlowDraftStep[] = [];
+  const drafting = input.draft !== false;
+  let draftAmendments = 0;
+  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition">): void => {
+    draftSteps.push({ ...step, position: draftSteps.length + 1, disposition: "kept" });
+  };
+  // A digest of the whole state, when the caller offered to take one. It is
+  // taken inside the same attempt as the call it brackets, so a hook that
+  // throws makes the step a recorded failure the model and the reader can both
+  // see, rather than a step that quietly has no digests.
+  const digest = async (callId: string, toolId: string): Promise<string | undefined> =>
+    input.captureStateDigest ? input.captureStateDigest({ callId, toolId, ...(input.signal ? { signal: input.signal } : {}) }) : undefined;
   const accounting = emptyAccounting();
-  if (!limits || !validTools(input.tools)) return failure("llm_evidence_loop.invalid_configuration", trace, accounting);
+  if (!limits || !automationStudioLlmEvidenceValidTools(input.tools)) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
   const toolsById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const));
   // Whether any mutation is reachable at all. Read once, because the offered
   // list does not change during a loop, and because it is what decides whether
   // a mutation-gated observation is gated or simply shut (see
-  // `requiresMutationBeforeRepeat`).
+  // `repeat-policy.ts`).
   const mutableTools = input.tools.some((tool) => tool.effect === "mutate");
   const callIds = new Set<string>();
-  // Each request that ran, by what it asked in which mutation epoch, and the
-  // call that answered it.
+  // Each request that ran, by what it asked in which epoch, and the call that
+  // answered it (`repeat-policy.ts` says which epoch).
   const answeredRequests = new Map<string, string>();
   const observationEpochs = new Map<string, number>();
   // The call that made each protected tool's latest observation.
   const latestObservations = new Map<string, string>();
+  // What has changed, and what has happened: two counters, and `repeat-policy.ts`
+  // says which question each of them answers.
   let mutationEpoch = 0;
+  let attemptEpoch = 0;
   // Everything gathered, whatever its size: each decision is shown a window of
   // it (`context-window.ts`), and only the total is held to the
   // backstop.
@@ -374,22 +431,25 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // A call that threw or returned what is not a result: recorded and shown to
   // the model under its own call id when failures are observed. Returns the
   // result that ends the loop, or nothing when it should ask again.
-  const toolFailed = (iteration: number, callId: string, tool: AutomationStudioLlmEvidenceTool, code: AutomationStudioLlmEvidenceToolFailureCode, usage?: AutomationStudioLlmUsageSummary): AutomationStudioLlmEvidenceLoopResult | undefined => {
-    if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
-    if (!observeToolFailures) return failure("llm_evidence_loop.tool_failed", trace, accounting);
+  const toolFailed = (iteration: number, callId: string, tool: AutomationStudioLlmEvidenceTool, code: AutomationStudioLlmEvidenceToolFailureCode, value: JsonObject, usage?: AutomationStudioLlmUsageSummary, stateBefore?: string): AutomationStudioLlmEvidenceLoopResult | undefined => {
+    // A failed action is part of the record: a live campaign's largest single
+    // defect was a failed call that ended a build and left no trace of itself.
+    draftRecord({ iteration, callId, actionId: tool.toolId, input: value, effect: tool.effect ?? "observe", effectApplied: false, resultCode: code, ...(stateBefore ? { stateBefore, stateAfter: stateBefore } : {}) });
+    if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+    if (!observeToolFailures) return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     accounting.toolCalls += 1;
     failedToolCalls += 1;
     stepsWithoutProgress += 1;
-    if (tool.effect === "mutate") mutationEpoch += 1;
+    if (tool.effect === "mutate") { mutationEpoch += 1; attemptEpoch += 1; }
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", callId, toolId: tool.toolId, resultCode: code, ...(usage ? { usage } : {}) };
     if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
       trace.push(step);
-      return failure("llm_evidence_loop.tool_failed", trace, accounting);
+      return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     }
     const record = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
     const recordBytes = reserveEvidence(record);
     trace.push(recordBytes === undefined ? step : { ...step, evidenceBytes: recordBytes });
-    if (recordBytes === undefined) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+    if (recordBytes === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     evidence.push({ callId, toolId: tool.toolId, value: record, call: { resultCode: code, changed: tool.effect === "mutate" ? "unknown" : "no" } });
     return undefined;
   };
@@ -408,7 +468,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
     if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
       trace.push({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
-      return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
+      return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     }
     const note: JsonObject = {
       ok: false,
@@ -419,10 +479,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
       maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
       instruction: ANSWERED_REQUEST[code]
     };
+    const answeredTool = toolsById.get(decision.toolId);
+    draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, resultCode: code });
     const noteBytes = reserveEvidence(note);
     if (noteBytes === undefined) {
       trace.push(step);
-      return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+      return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     }
     const earlier = evidence.findIndex((entry) => entry.callId === answeredByCallId);
     if (earlier >= 0) evidence.push(...evidence.splice(earlier, 1));
@@ -433,41 +495,43 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const initialTool = input.tools.find((tool) => tool.initialObservation);
   if (initialTool) {
     const initialInput = initialTool.initialObservation!.input;
-    if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+    if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     const callId = `initial.${initialTool.toolId}`;
     callIds.add(callId);
-    let execution: ReturnType<typeof parseToolExecutionResult> | "threw";
+    let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
     try {
-      execution = parseToolExecutionResult(await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), maxEvidenceBytes: limits.toolEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
+      execution = automationStudioLlmEvidenceParseToolExecutionResult(await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), maxEvidenceBytes: limits.toolEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
     } catch {
       execution = "threw";
     }
     if (execution === "threw" || !execution) {
       // Recorded like any failed call; the observation, never made, stays offered.
-      const ended = toolFailed(0, callId, initialTool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid");
+      const ended = toolFailed(0, callId, initialTool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", initialInput);
       if (ended) return ended;
     } else {
       const evidenceBytes = Buffer.byteLength(JSON.stringify(execution.evidence), "utf8");
-      if (evidenceBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+      if (evidenceBytes > limits.maxEvidenceBytes) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
       accounting.toolCalls = 1;
       accounting.evidenceBytes = evidenceBytes;
-      answeredRequests.set(canonicalJson([mutationEpoch, initialTool.toolId, initialInput]), callId);
-      observationEpochs.set(initialTool.toolId, mutationEpoch);
+      answeredRequests.set(automationStudioLlmEvidenceCanonicalJson([mutationEpoch, initialTool.toolId, initialInput]), callId);
+      observationEpochs.set(initialTool.toolId, attemptEpoch);
       latestObservations.set(initialTool.toolId, callId);
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence, call: { resultCode: execution.resultCode ?? "ok", changed: "no" } });
       trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
+      draftRecord({ iteration: 0, callId, actionId: initialTool.toolId, input: initialInput, effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
     }
   }
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
-    if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+    if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
+    let canAmend = false;
     const eligibleTools = input.tools.filter((tool) =>
-      !requiresMutationBeforeRepeat(tool, mutableTools) || observationEpochs.get(tool.toolId) !== mutationEpoch
+      !automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== attemptEpoch
     );
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
     const canComplete = accounting.toolCalls - failedToolCalls >= limits.minToolCalls;
-    if (!eligibleTools.length && !canComplete) return failure("llm_evidence_loop.repeat_without_progress", trace, accounting);
+    if (!eligibleTools.length && !canComplete) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     // What the budget leaves (`loop-budget.ts`): told to the model as
     // the newest entry, and a last decision that is offered only completion.
     const remaining = input.budget && automationStudioLlmEvidenceLoopRemaining(input.budget, {
@@ -476,23 +540,30 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (remaining && remaining.decisionsLeft === 0) {
       // Spent straight after an answer that could not be used: that refusal is
       // why there is no result, so the loop ends as it, with its issue codes.
-      if (!unusableInARow || !input.unusableDecisions) return failure("llm_evidence_loop.iteration_limit", trace, accounting);
+      if (!unusableInARow || !input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
       const spent = input.unusableDecisions.stalled({ issueCodes: lastIssueCodes, trace: [...trace], accounting: { ...accounting } });
       if (input.propagateDecisionErrors) throw spent;
-      return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+      return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
     }
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     const offered = finalDecision ? [] : eligibleTools;
     try {
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete);
+      canAmend = drafting && !finalDecision && draftAmendments < limits.maxDraftAmendments && draftSteps.some((step) => step.effect === "mutate");
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || finalDecision) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining) : undefined;
-      const window = automationStudioLlmEvidenceContextWindow(evidence, limits.maxEvidenceContextBytes - (budgetEntry ? Buffer.byteLength(JSON.stringify(budgetEntry), "utf8") + 1 : 0), AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls - (budgetEntry ? 1 : 0));
-      const shown = budgetEntry ? [...window, budgetEntry] : window;
+      // The draft sits beside the window, never inside it: the window keeps
+      // the newest result per tool, and every action of one kind arrives under
+      // one tool id, which is how a live build lost four of five presses.
+      const draftEntry = drafting ? automationStudioFlowDraftEntry({ steps: draftSteps, maxBytes: limits.draftBytes }) : undefined;
+      const beside = [draftEntry, budgetEntry].filter((entry) => entry !== undefined);
+      const besideBytes = beside.reduce((total, entry) => total + Buffer.byteLength(JSON.stringify(entry), "utf8") + 1, 0);
+      const window = automationStudioLlmEvidenceContextWindow(evidence, limits.maxEvidenceContextBytes - besideBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls - beside.length);
+      const shown = [...window, ...beside];
       lastShown = new Set(shown.map((entry) => entry.callId));
-      decision = parseDecision(await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
+      decision = automationStudioLlmEvidenceParseDecision(await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (thrown) {
-      if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+      if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
         const resultCode = thrown.issueCodes[0];
@@ -500,7 +571,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         if (!stalled) {
           // The model is told what was wrong, as evidence, before it is asked again.
           const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
-          if (reserveEvidence(feedback) === undefined) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+          if (reserveEvidence(feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
           evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
           continue;
         }
@@ -508,44 +579,66 @@ export async function runAutomationStudioLlmEvidenceLoop(
       }
       if (input.propagateDecisionErrors) throw error;
     }
-    if (!decision) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+    if (!decision) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
     addUsage(accounting, decision.usage);
     if (decision.usage) reportedDecisions += 1;
     if (decision.kind === "complete") {
-      if (accounting.toolCalls - failedToolCalls < limits.minToolCalls) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
-      let check: ReturnType<typeof parseCompletionCheck> = { ok: true };
+      if (accounting.toolCalls - failedToolCalls < limits.minToolCalls) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+      let check: ReturnType<typeof automationStudioLlmEvidenceParseCompletionCheck> = { ok: true };
       if (input.checkCompletion) {
         try {
-          check = parseCompletionCheck(await input.checkCompletion(structuredClone(decision.result)));
+          check = automationStudioLlmEvidenceParseCompletionCheck(await input.checkCompletion(structuredClone(decision.result)));
         } catch (error) {
-          if (input.signal?.aborted) return failure("llm_evidence_loop.cancelled", trace, accounting);
+          if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
           if (input.propagateDecisionErrors) throw error;
-          return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+          return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
         }
       }
       if (check?.ok) {
         trace.push({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
-        return { ok: true, result: decision.result, trace, accounting };
+        return { ok: true, result: decision.result, trace, steps: draftSteps, accounting };
       }
-      if (!check || !input.unusableDecisions) return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+      if (!check || !input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
       // The model is told why, as evidence, before it is asked again.
-      if (reserveEvidence(check.feedback) === undefined) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+      if (reserveEvidence(check.feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
       evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: check.feedback });
       const resultCode = check.issueCodes[0];
       const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) }, check.issueCodes);
       if (!stalled) continue;
       if (input.propagateDecisionErrors) throw stalled.error;
-      return failure("llm_evidence_loop.invalid_decision", trace, accounting);
+      return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+    }
+    if (decision.kind === "amend_draft") {
+      // Acting on an edit the model was not offered would let a draft be
+      // edited after the allowance for editing it had run out.
+      if (!canAmend) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+      draftAmendments += 1;
+      unusableInARow = 0;
+      const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments);
+      trace.push({ iteration, decision: "amend_draft", resultCode: amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
+      // An edit is progress on the draft and never on the evidence, so an edit
+      // that landed neither clears the no-progress guard nor is spent by it.
+      // Clearing it was the first thing tried, and a live build alternated a
+      // repeated request with an edit until the reset had laundered every
+      // repeat: the guard never tripped and the build ran to its iteration
+      // limit having gathered nothing new since its eleventh call. An edit that
+      // changed nothing does count, because that guard is the only thing that
+      // stops a model editing one step forever.
+      if (!amended.applied && (stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
+        return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      }
+      continue;
     }
     unusableInARow = 0;
     // The last decision the budget allowed was offered only completion.
-    if (finalDecision) return failure("llm_evidence_loop.iteration_limit", trace, accounting);
-    if (!toolIds.has(decision.toolId)) return failure("llm_evidence_loop.unknown_tool", trace, accounting);
+    if (finalDecision) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
+    if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
-    const toolRequestSignature = canonicalJson([mutationEpoch, decision.toolId, decision.input]);
+    const tool = toolsById.get(decision.toolId)!;
+    const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch, attemptEpoch, input: decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
-    // Not offered this iteration: an observation no applied action has changed.
+    // Not offered this iteration: an observation nothing has happened since.
     // Its latest call is always recorded with its epoch.
     const reobservation = !eligibleToolIds.has(decision.toolId);
     if (answeredBy !== undefined || reobservation) {
@@ -559,38 +652,43 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // loop gives it one of its own rather than ending: the ids are the model's
     // bookkeeping, and the evidence only needs them to be distinct.
     const callId = unusedCallId(callIds, decision.callId);
-    const tool = toolsById.get(decision.toolId)!;
-    if (accounting.toolCalls >= limits.maxToolCalls) return failure("llm_evidence_loop.iteration_limit", trace, accounting);
+    if (accounting.toolCalls >= limits.maxToolCalls) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
     callIds.add(callId);
     answeredRequests.set(toolRequestSignature, callId);
-    let execution: ReturnType<typeof parseToolExecutionResult> | "threw";
+    let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
+    let stateBefore: string | undefined;
+    let stateAfter: string | undefined;
     try {
-      execution = parseToolExecutionResult(await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, maxEvidenceBytes: limits.toolEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) }), tool.effect);
+      stateBefore = await digest(callId, decision.toolId);
+      const ran = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, maxEvidenceBytes: limits.toolEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) });
+      stateAfter = await digest(callId, decision.toolId);
+      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
       execution = "threw";
     }
     if (execution === "threw" || !execution) {
       // Nothing answered the request, so asking it again is not a repeat.
       answeredRequests.delete(toolRequestSignature);
-      const ended = toolFailed(iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", decision.usage);
+      const ended = toolFailed(iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore);
       if (ended) return ended;
       continue;
     }
     const { evidence: value, effectApplied, resultCode } = execution;
     const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
-    if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure("llm_evidence_loop.evidence_limit", trace, accounting);
+    if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
     progressed();
-    if (tool.effect === "mutate" && effectApplied) mutationEpoch += 1;
-    if (requiresMutationBeforeRepeat(tool, mutableTools)) {
-      observationEpochs.set(tool.toolId, mutationEpoch);
+    if (tool.effect === "mutate") { attemptEpoch += 1; if (effectApplied) mutationEpoch += 1; }
+    if (automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
+      observationEpochs.set(tool.toolId, attemptEpoch);
       latestObservations.set(tool.toolId, callId);
     }
     evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: tool.effect === "mutate" && effectApplied ? "yes" : "no" } });
     trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(tool.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
+    draftRecord({ iteration, callId, actionId: decision.toolId, input: decision.input, effect: tool.effect ?? "observe", effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
   }
-  return failure("llm_evidence_loop.iteration_limit", trace, accounting);
+  return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
 }
 
 /**
@@ -607,82 +705,6 @@ function unusedCallId(used: ReadonlySet<string>, requested: string): string {
   }
 }
 
-function canonicalJson(value: JsonValue): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-/**
- * Whether an observation must wait for a mutation before it may be made again.
- *
- * An initial observation is already the tool's observation for epoch zero, so
- * it is protected even when the domain omitted the redundant explicit repeat
- * policy, and allowed again only after an applied mutation.
- *
- * `mutable` is why this reads the whole offered list rather than one tool. The
- * rule only ever meant "not again until something changes", and where nothing
- * offered can change anything it means "never again" -- so a repair whose
- * policy withheld every mutating option looked once, for free, before it was
- * asked anything, and could not look a second time. That is not a gate the
- * domain asked for; it is a gate that appeared because a different gate closed.
- * The harness-option registry already drops an explicit `repeatPolicy` for
- * exactly this reason, and dropping it there was never enough, because an
- * initial observation carries the same rule implicitly. With no mutation
- * reachable the loop's own duplicate-request check is what bounds repeating:
- * the same tool with the same input is still refused, so looking again has to
- * ask something new.
- */
-function requiresMutationBeforeRepeat(tool: AutomationStudioLlmEvidenceTool, mutable: boolean): boolean {
-  return mutable && (tool.repeatPolicy === "after_mutation" || tool.initialObservation !== undefined);
-}
-
-function parseToolExecutionResult(
-  value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
-  effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string } | undefined {
-  if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
-      || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
-      || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(value.resultCode)))) return undefined;
-    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
-  }
-  if (!isJsonValue(value)) return undefined;
-  return { evidence: value, effectApplied: effect !== "mutate" };
-}
-
-export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true): JsonObject {
-  return {
-    oneOf: [
-      ...(allowComplete ? [{
-        type: "object", additionalProperties: false, required: ["kind", "result"],
-        properties: { kind: { const: "complete" }, result: structuredClone(completionSchema) }
-      }] : []),
-      ...tools.map((tool) => ({
-        type: "object", additionalProperties: false, required: ["kind", "callId", "toolId", "input"],
-        properties: {
-          kind: { const: "tool_call" }, callId: { type: "string", pattern: "^[a-zA-Z0-9_.:-]{1,200}$" },
-          toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema)
-        }
-      }))
-    ]
-  };
-}
-
-function parseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
-    return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
-  }
-  if (value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage"])
-    && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)) {
-    return { kind: "tool_call", callId: value.callId, toolId: value.toolId, input: value.input, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
-  }
-  return undefined;
-}
-
 type EvidenceLoopLimits = {
   maxIterations: number;
   maxToolCalls: number;
@@ -693,6 +715,10 @@ type EvidenceLoopLimits = {
   minToolCalls: number;
   maxStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
+  /** What the draft entry beside the window may cost. */
+  draftBytes: number;
+  /** Amendment decisions the run may spend before the kind is withdrawn. */
+  maxDraftAmendments: number;
 };
 
 function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
@@ -700,6 +726,7 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
   const maxEvidenceContextBytes = input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes);
   const maxIterations = input.maxIterations ?? 8;
   const unusable = input.unusableDecisions;
+  const draft = input.draft === false ? undefined : input.draft;
   if (input.maxStepsWithoutProgress !== undefined && unusable?.maxConsecutive !== undefined
     && input.maxStepsWithoutProgress !== unusable.maxConsecutive) return undefined;
   const maxStepsWithoutProgress = input.maxStepsWithoutProgress ?? unusable?.maxConsecutive
@@ -713,7 +740,11 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
     minToolCalls: input.minToolCalls ?? 0,
     maxStepsWithoutProgress,
     maxUnusableDecisionsInARow: unusable?.maxInARow
-      ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations))
+      ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
+    // A quarter of what a decision carries, capped: enough for a few dozen
+    // steps without their arguments, and never enough to displace a result.
+    draftBytes: draft?.maxBytes ?? Math.min(4_000, Math.floor(maxEvidenceContextBytes / 4)),
+    maxDraftAmendments: Math.min(draft?.maxAmendments ?? 4, maxIterations)
   };
   if (!Number.isInteger(limits.maxStepsWithoutProgress) || limits.maxStepsWithoutProgress < 1 || limits.maxStepsWithoutProgress > maxIterations) return undefined;
   if (unusable && (typeof unusable.stalled !== "function"
@@ -726,6 +757,8 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
     || limits.maxEvidenceContextBytes > automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST)) return undefined;
   if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
   if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
+  if (!Number.isInteger(limits.draftBytes) || limits.draftBytes < 0 || limits.draftBytes >= limits.maxEvidenceContextBytes) return undefined;
+  if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
   return limits;
 }
 
@@ -733,29 +766,8 @@ function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoo
  * A check's answer, or `undefined` when it is not one. Issue codes are kept
  * only when they are codes; feedback only when it is bounded JSON.
  */
-function parseCompletionCheck(value: unknown): { ok: true } | { ok: false; issueCodes: string[]; feedback: JsonObject } | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.ok === true && exactKeys(value, ["ok"])) return { ok: true };
-  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
-  const issueCodes = value.issueCodes.filter((code): code is string => typeof code === "string" && /^[a-z0-9_.:-]{1,100}$/i.test(code));
-  return { ok: false, issueCodes, feedback: structuredClone(value.feedback) };
-}
-
-function validTools(tools: AutomationStudioLlmEvidenceTool[]): boolean {
-  if (!Array.isArray(tools) || !tools.length || tools.length > 32) return false;
-  const ids = new Set<string>();
-  const structurallyValid = tools.every((tool) => validId(tool.toolId) && !ids.has(tool.toolId) && Boolean(ids.add(tool.toolId))
-    && typeof tool.description === "string" && tool.description.length > 0 && tool.description.length <= 2_000 && isJsonObject(tool.inputSchema)
-    && (tool.effect === undefined || tool.effect === "observe" || tool.effect === "mutate")
-    && (tool.repeatPolicy === undefined || (tool.repeatPolicy === "after_mutation" && tool.effect === "observe"))
-    && (tool.initialObservation === undefined || (tool.effect === "observe" && isJsonObject(tool.initialObservation) && exactKeys(tool.initialObservation, ["input"]) && isJsonObject(tool.initialObservation.input))));
-  return structurallyValid
-    && tools.filter((tool) => tool.initialObservation !== undefined).length <= 1
-    && (!tools.some((tool) => tool.repeatPolicy === "after_mutation") || tools.some((tool) => tool.effect === "mutate"));
-}
-
-function failure(code: AutomationStudioLlmEvidenceLoopFailureCode, trace: AutomationStudioLlmEvidenceLoopTrace[], accounting: AutomationStudioLlmEvidenceLoopAccounting): AutomationStudioLlmEvidenceLoopResult {
-  return { ok: false, code, trace, accounting };
+function failure(steps: AutomationStudioFlowDraftStep[], code: AutomationStudioLlmEvidenceLoopFailureCode, trace: AutomationStudioLlmEvidenceLoopTrace[], accounting: AutomationStudioLlmEvidenceLoopAccounting): AutomationStudioLlmEvidenceLoopResult {
+  return { ok: false, code, trace, steps, accounting };
 }
 
 function emptyAccounting(): AutomationStudioLlmEvidenceLoopAccounting {
@@ -768,29 +780,4 @@ function addUsage(accounting: AutomationStudioLlmEvidenceLoopAccounting, usage?:
   accounting.outputTokens += usage.outputTokens ?? 0;
   accounting.totalTokens += usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
   accounting.estimatedCostUsd += usage.estimatedCostUsd ?? 0;
-}
-
-function validUsage(value: unknown): boolean {
-  if (value === undefined) return true;
-  if (!isRecord(value) || !exactKeys(value, ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"])) return false;
-  return [value.inputTokens, value.outputTokens, value.totalTokens].every((item) => item === undefined || (Number.isSafeInteger(item) && (item as number) >= 0))
-    && (value.estimatedCostUsd === undefined || (typeof value.estimatedCostUsd === "number" && Number.isFinite(value.estimatedCostUsd) && value.estimatedCostUsd >= 0));
-}
-
-function exactKeys(value: Record<string, unknown>, allowed: string[]): boolean {
-  const set = new Set(allowed);
-  return Object.keys(value).every((key) => set.has(key));
-}
-
-function validId(value: unknown): value is string { return typeof value === "string" && /^[a-z0-9_.:-]{1,200}$/i.test(value); }
-function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
-function isJsonObject(value: unknown): value is JsonObject { return isRecord(value) && isJsonValue(value); }
-function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0): value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (!value || typeof value !== "object" || depth > 20 || seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value)) return value.length <= 1_000 && value.every((item) => isJsonValue(item, seen, depth + 1));
-  const entries = Object.entries(value as Record<string, unknown>);
-  return entries.length <= 1_000 && entries.every(([key, item]) => key.length <= 500 && isJsonValue(item, seen, depth + 1));
 }
