@@ -6,13 +6,14 @@ import type { AutomationWorkspaceBreadcrumb } from "../../workspace/shell/contra
 import { automationWorkspaceViewStateForBase } from "../../workspace/view-state";
 import { automationStudioViewBaseId, automationStudioViewDefinition, automationStudioViewId, automationStudioViewObjectId } from "../../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
+import { ConversationDock } from "../../conversation/components";
 import { automationEntityCollectionSelector, useAutomationStoreSelector, type AutomationProjectEntityKind } from "../../stores";
 import { useAutomationProjectCatalogLoader } from "../../project";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { useAutomationNarrowWorkspace } from "../../workspace/studio-ui-store";
 import type { AutomationStudioRuntime } from "../../bootstrap/studio-runtime";
 import { useAutomationProjectPreload } from "../../sync";
-import { useAutomationGatewayRecordingBridge, useAutomationStudioFoundation, useAutomationBrowserEntry, useAutomationWorkspaceRuntime, useAutomationHierarchyUiRuntime, useAutomationHierarchyCommandBridge, useAutomationProjectRuntime, useAutomationGraphRuntime, useAutomationSelectionNavigation, useAutomationRecordingCommands, useAdaptationWorkspaceNavigation, useAutomationExternalLifecycle, useAutomationDeepLinkRuntime, useAutomationSessionDirtyGuards, useStableAutomationEvent, useAutomationConnectedRegionSurfaces } from "../hooks";
+import { useAutomationGatewayRecordingBridge, useAutomationStudioFoundation, useAutomationBrowserEntry, useAutomationWorkspaceRuntime, useAutomationHierarchyUiRuntime, useAutomationHierarchyCommandBridge, useAutomationProjectRuntime, useAutomationGraphRuntime, useAutomationSelectionNavigation, useAutomationRecordingCommands, useAdaptationWorkspaceNavigation, useConversationWorkspaceNavigation, useAutomationExternalLifecycle, useAutomationDeepLinkRuntime, useAutomationSessionDirtyGuards, useStableAutomationEvent, useAutomationConnectedRegionSurfaces } from "../hooks";
 import type { CurrentUser } from "../../../programs/types";
 import { notifyGlobalAlert } from "../../../programs/shared-ui";
 import { createAutomationStudioViewInstances } from "../../views/view-instances";
@@ -484,6 +485,10 @@ export function AutomationStudioSession(props: {
     openProblems: openAutomationProblems,
     setSelection
   });
+  const conversationNavigation = useConversationWorkspaceNavigation({
+    ...(selectedTaskGraph?.flowId ? { selectedFlowId: selectedTaskGraph.flowId } : {}),
+    openAdaptation: adaptationNavigation.openAdaptation
+  });
   const connectorScope = useMemo<AutomationCanonicalConnectorScope>(() => ({
     projectId: activeProjectId,
     projectView: projectViewCache,
@@ -655,6 +660,13 @@ export function AutomationStudioSession(props: {
       hierarchy={hierarchySurface}
       timeline={timelineSurface}
       inspector={inspectorBinding}
+    />
+    {/* Over the whole workspace, not inside a region: the conversation is the
+        product's channel to the person, so it has to be in front of whatever
+        they are looking at rather than one tab they have to go and find. */}
+    <ConversationDock
+      projectId={activeProject.id}
+      onOpenAttachment={conversationNavigation.openConversationAttachment}
     />
   </>;
 }

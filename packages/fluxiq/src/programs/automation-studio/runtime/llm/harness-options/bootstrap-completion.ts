@@ -22,8 +22,13 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
   acceptAutomationStudioFlowBootstrapResult,
+  assembleAutomationStudioFlowDraftPlan,
+  type AutomationStudioFlowBootstrapAcceptance,
   automationStudioFlowBootstrapIssueFeedback,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
@@ -67,7 +72,15 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   // the wrong answer in their place. A refusal is about how a step was
   // written, never about whether the instruction needed it.
   + "Correct each refused step; never delete one the instruction needs, and never replace it with a step that answers something else. "
-  + "A handle is refused when it is not one the evidence printed: reread the evidence and copy that token exactly, rather than writing one that looks like it.";
+  + "A handle is refused when it is not one the evidence printed: reread the evidence and copy that token exactly, rather than writing one that looks like it. "
+  // Every decision is a fresh request with no conversation history, so a model
+  // asked to complete again could not see what it had just written and wrote a
+  // new answer from memory instead of correcting the old one. `previous` is
+  // its own script handed back; this sentence is what tells it to amend that.
+  + "Where previous is given, it is the script you just sent. Send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory.";
+
+/** What the refused script may cost in the feedback before it is left out. */
+const MAX_PREVIOUS_SCRIPT_LENGTH = 6_000;
 
 /** Every check a completed evidence-guided result must pass before it is built. */
 export async function checkAutomationStudioFlowBootstrapCompletion(input: {
@@ -77,6 +90,16 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters"> | undefined;
+  /**
+   * The draft the build accrued, when the Flow is to be built from what the
+   * build did rather than from what the model wrote at the end.
+   *
+   * Given, it is authoritative: the plan is assembled from the steps that ran
+   * and worked and that the model kept, and any plan the reply happens to
+   * carry is ignored. That is the point of the whole design -- a Flow whose
+   * steps are nodes that provably ran cannot contain one that never did.
+   */
+  draftSteps?: readonly AutomationStudioFlowDraftStep[] | undefined;
   /** The build's permission check for each step, handed to the domain as it resolves the step. */
   permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
@@ -85,9 +108,15 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   if (!Object.keys(result).length) {
     return refused("flow_bootstrap.evidence_completion_wrapper_invalid", [issue("bootstrap.completion_wrapper_invalid", "result")]);
   }
-  // One door for every shape a build may arrive in -- a Flow script, or the
-  // nested plan that was once the only one -- and one place that normalises it.
-  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry: input.registry, resolution: input.resolution });
+  // The draft wins wherever there is one. Where there is none -- a domain
+  // whose actions are not nodes of the registry, or a build that completed
+  // without running anything -- the reply's own plan is still read, because a
+  // host that cannot run a node must still be able to build a Flow.
+  const proposed = input.draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
+  const drafted = proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
+    ? fromDraft(input.draftSteps!, result, input.registry, input.resolution)
+    : undefined;
+  const accepted = drafted ?? fromReply(result, input.registry, input.resolution);
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
   const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
@@ -96,13 +125,19 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // before, and `bootstrap.unknown_parameter` came back naming a path into a
   // plan the model never wrote with nothing beside it -- so it wrote the same
   // key again. The nested JSON plan is the model's own writing and stays.
-  if (!accepted.ok) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written));
+  if (!accepted.ok) {
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written), accepted.script);
+  }
+  // Every refusal from here on is about a plan that was read, so each one hands
+  // the script back: the parameter check is where a handle the model invented
+  // is caught, and that is the refusal the whole re-emission failure came from.
+  const script = accepted.script;
   const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
   if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan));
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan), script);
   }
   if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: accepted.summary, plan: parsed.plan })) {
-    return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")]);
+    return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")], undefined, script);
   }
   const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
     plan: parsed.plan,
@@ -112,18 +147,67 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     handlesIssued: true,
     permissionFor: input.permissionFor
   });
-  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan));
+  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan), script);
   let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;
   try {
     validated = validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry: input.registry, resolution: input.resolution });
   } catch {
     // A check that throws refuses the plan under a code of its own, rather than
     // ending creation with a record that cannot say what happened.
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")]);
+    return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")], undefined, script);
   }
-  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan));
+  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
   return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
+
+/**
+ * The plan the reply itself carried: one door for every shape a build may
+ * arrive in -- a Flow script, or the nested plan that was once the only one --
+ * and one place that normalises it.
+ */
+function fromReply(
+  result: JsonObject,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioFlowBootstrapAcceptance {
+  return acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution });
+}
+
+/**
+ * The plan the build's own draft makes: the steps it ran, that worked, and that
+ * the model kept, in the order it ran them.
+ *
+ * It goes through the same assembler a written script goes through, so keys,
+ * ports, edges, the router and every parameter are derived by one piece of
+ * code. A step the writer cannot write down refuses the plan rather than being
+ * left out quietly -- a step that was performed and is missing from the result
+ * is exactly the failure this design exists to remove.
+ */
+function fromDraft(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  result: JsonObject,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioFlowBootstrapAcceptance {
+  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+  const assembled = assembleAutomationStudioFlowDraftPlan({
+    steps: steps.filter(automationStudioFlowDraftStepIsProposed),
+    write: automationStudioFlowBootstrapDraftNodeStep,
+    registry,
+    resolution,
+    summary
+  });
+  if (!assembled.plan) {
+    return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };
+  }
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE };
+}
+
+/**
+ * What a refusal hands back in place of the script the model wrote, since it
+ * wrote none: the Flow is the draft, and the draft is already in front of it.
+ */
+const DRAFT_SCRIPT_NOTE = "The Flow is the list of steps in your draft. Correct it with amend_draft decisions -- drop, exploratory, reorder, rerun -- or run the step it is missing, then finish again.";
 
 /** The plan a refusal is about, and where its nodes are defined. */
 type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };
@@ -135,9 +219,11 @@ type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; r
 function refused(
   code: AutomationStudioFlowBootstrapCompletionFailureCode,
   issues: AutomationStudioFlowBootstrapIssue[],
-  about?: RefusalSubject
+  about?: RefusalSubject,
+  previousScript?: string
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
+  const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
   return {
     ok: false,
     code,
@@ -150,6 +236,7 @@ function refused(
         code: "flow_bootstrap.completion_refused",
         refusal: code,
         issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
+        ...previous,
         instruction: FEEDBACK_INSTRUCTION
       }
     }

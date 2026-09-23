@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { GlobalClientGatewayPairing } from "./GlobalClientGatewayPairing";
+import { GlobalConversationPrompt } from "./GlobalConversationPrompt";
 import { GlobalAlertViewport } from "../features/programs/shared-ui";
 import { currentFluxIQUser } from "../lib/auth";
 
@@ -18,6 +19,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {children}
         <GlobalAlertViewport />
         {pairingEligible ? <GlobalClientGatewayPairing /> : null}
+        {auth ? <GlobalConversationPrompt /> : null}
       </body>
     </html>
   );

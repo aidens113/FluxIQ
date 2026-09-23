@@ -22,7 +22,14 @@ export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEv
   const behaviorRef = useRef({ busy: false, closeOnEscape: true, onClose: props.onClose });
   const titleId = `dialog-title-${useId().replace(/:/g, "")}`;
   const descriptionId = props.description ? `${titleId}-description` : undefined;
-  const busy = Boolean(props.busy || useInheritedOperationBusy());
+  // Read unconditionally. `props.busy || useInheritedOperationBusy()` skipped
+  // the hook whenever the caller was already busy, so React saw a different
+  // hook order on the render where a dialog became busy and logged a
+  // Rules-of-Hooks violation. It shows on any dialog whose owner passes a
+  // changing `busy` -- which the conversation's re-authorization does, on the
+  // one path where getting state wrong matters most.
+  const inheritedBusy = useInheritedOperationBusy();
+  const busy = Boolean(props.busy || inheritedBusy);
   behaviorRef.current = { busy, closeOnEscape: props.closeOnEscape !== false, onClose: props.onClose };
 
   useEffect(() => {

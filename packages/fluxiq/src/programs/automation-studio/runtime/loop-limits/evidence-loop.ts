@@ -38,3 +38,19 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
 // provider that has stopped answering usefully. It lives here rather than in
 // `runtime/recovery/` because `runtime/llm/` may not read a value from there.
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS = 3;
+
+// Steps in a row that give a loop nothing new, after which it stops: the far
+// backstop the no-progress guard is, now that the three-strike rule is gone.
+//
+// Three was the number, and a build that met a setback, looked at the page
+// again and tried another way had taken two steps that gathered nothing new
+// while doing exactly the right thing; the third ended it. What bounds a build
+// is what it spends -- the run's cost, its tokens and its deadline, which the
+// loop is handed as its `budget` -- and this is only the stop for a loop that
+// has started repeating itself and will not stop on its own. Twenty-four is far
+// past any correction a model makes one mistake at a time.
+//
+// It lives beside the ceilings rather than in `runtime/llm/` because
+// `runtime/loop-limits/` may not read a value from there, and the Flow
+// Bootstrap limits in this directory are what hand it to the loop.
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS = 24;

@@ -1,0 +1,242 @@
+/* The conversation overlay: the launcher that is always on screen, the panel
+   it opens, and the opening message an empty thread shows.
+   Role tokens only -- no literal surface colours -- and no letter-spacing. */
+
+.automation-conversation-dock {
+  position: fixed;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  z-index: var(--layer-overlay);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  /* The wrapper spans nothing the person can click through by accident: only
+     the launcher and the panel take pointer events, so the workspace behind
+     the empty corner stays usable. */
+  pointer-events: none;
+}
+
+.automation-conversation-dock > * {
+  pointer-events: auto;
+}
+
+.automation-conversation-dock-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-compact);
+  height: var(--control-height-comfortable);
+  padding: 0 var(--space-md);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  box-shadow: var(--shadow-popover);
+  cursor: pointer;
+}
+
+.automation-conversation-dock-launcher:hover {
+  background: var(--surface-tool);
+}
+
+.automation-conversation-dock-launcher[data-waiting="true"] {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
+.automation-conversation-dock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-warning);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+}
+
+.automation-conversation-dock-panel {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - (2 * var(--space-lg)));
+  height: min(560px, calc(100vh - 140px));
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+.automation-conversation-dock-panel.wide {
+  width: 620px;
+  height: min(760px, calc(100vh - 110px));
+}
+
+.automation-conversation-dock-panel[hidden] {
+  display: none;
+}
+
+.automation-conversation-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-compact);
+  padding: var(--space-compact) var(--space-sm);
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--surface-tool);
+}
+
+.automation-conversation-dock-bar strong {
+  margin-right: auto;
+}
+
+.automation-conversation-dock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-compact);
+  height: var(--control-height-compact);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.automation-conversation-dock-icon:hover {
+  border-color: var(--color-border);
+  background: var(--surface-pane);
+  color: var(--color-text);
+}
+
+.automation-conversation-dock-panel .automation-conversation-view {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.automation-conversation-thread-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-compact);
+  padding: var(--space-xs) var(--space-sm);
+  border: var(--border-width) solid var(--color-warning-border);
+  border-radius: var(--radius-control);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+  font-size: var(--font-size-compact);
+}
+
+.automation-conversation-thread-waiting > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The opening message: what this channel is, shown where an empty transcript
+   would otherwise sit. It scrolls, because it is longer than a short dock. */
+.automation-conversation-opening {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-tool);
+}
+
+.automation-conversation-opening > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-compact);
+}
+
+.automation-conversation-opening h3 {
+  margin: 0;
+  font-size: var(--font-size-title-small);
+  line-height: var(--line-height-heading);
+}
+
+.automation-conversation-opening > p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-body);
+}
+
+.automation-conversation-opening ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-conversation-opening li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-compact);
+  min-width: 0;
+}
+
+.automation-conversation-opening li > svg {
+  margin-top: 3px;
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.automation-conversation-opening li > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.automation-conversation-opening li span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-body);
+}
+
+.automation-conversation-opening-reply {
+  padding-top: var(--space-sm);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.automation-conversation-opening-empty {
+  font-size: var(--font-size-caption);
+}
+
+@media (max-width: 768px) {
+  .automation-conversation-dock {
+    right: var(--space-sm);
+    bottom: var(--space-sm);
+    left: var(--space-sm);
+  }
+
+  .automation-conversation-dock-panel,
+  .automation-conversation-dock-panel.wide {
+    width: 100%;
+    max-width: none;
+    height: min(560px, calc(100vh - 110px));
+  }
+}
+
+@media (max-width: 390px) {
+  .automation-conversation-dock-panel,
+  .automation-conversation-dock-panel.wide {
+    height: calc(100vh - 96px);
+  }
+
+  .automation-conversation-dock-launcher {
+    height: var(--control-height-default);
+    padding: 0 var(--space-sm);
+  }
+}

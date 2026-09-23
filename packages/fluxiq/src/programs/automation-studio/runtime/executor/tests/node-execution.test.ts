@@ -232,7 +232,14 @@ describe("a rejected expected state fails the attempt", () => {
     expect(trace.attempts[0]?.failure).toEqual(authRequired);
     expect(trace.attempts[0]?.transitionComparison).toMatchObject({ status: "blocked", diffSummary: { stateCheckCount: 3 } });
     expect(dispatched).toEqual(["activate-element"]);
-    expect(asked).toEqual([[conditions, "any", 400, { source: "transition_comparison", nodeId: "output", attemptId: "output.attempt.1", stateRef: "state://cart/1" }]]);
+    // Asked twice, and the failure record built only after the second answer. A
+    // page a moment late would otherwise mint a state mismatch for a node that
+    // would have passed on a second look. The re-check spends the node's wait
+    // ceiling, which with no recorded gap is the 2,000 ms floor.
+    expect(asked).toEqual([
+      [conditions, "any", 400, { source: "transition_comparison", nodeId: "output", attemptId: "output.attempt.1", stateRef: "state://cart/1" }],
+      [conditions, "any", 2_000, { source: "transition_comparison", nodeId: "output", attemptId: "output.attempt.1", stateRef: "state://cart/1" }]
+    ]);
   });
 
   it("gives Core's expected_state_missing record when the host rejects without one", async () => {

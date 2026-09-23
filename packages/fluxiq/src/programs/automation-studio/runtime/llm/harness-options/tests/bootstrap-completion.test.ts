@@ -33,7 +33,7 @@ function planWith(parameters: JsonObject): JsonObject {
   };
 }
 
-type Feedback = { refusal: string; issues: JsonObject[]; instruction: string };
+type Feedback = { refusal: string; issues: JsonObject[]; instruction: string; previous?: string };
 
 async function refusal(result: JsonObject, binding?: Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0]["binding"]) {
   const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId: "project.1", flowId: "flow.1", registry, resolution, binding });
@@ -82,6 +82,32 @@ describe("the feedback on a completed plan that was refused", () => {
     ]);
     expect(feedback.instruction).toContain("A code written <code>:<path> names where inside that node's parameters the issue is");
     expect(feedback.instruction).toContain("a parameter's own description names any further keys it takes beside the handle.");
+  });
+
+  // Every decision is a fresh request with no conversation history, so a model
+  // asked to complete again could not see the script it had just sent. It wrote
+  // a new one from memory, and a live build "completed again with those steps
+  // deleted and the wrong answer in their place". The refusal now hands the
+  // script back on every path that can refuse a script -- including the
+  // parameter check, which is where an invented handle is caught and so the
+  // exact refusal that failure came from.
+  it("hands the model back the script it just sent, on every refusal a script can reach", async () => {
+    const script = ["flow: Scrape the products", "step: read the product list", "  node: web.dom.extract_list", "  extractList.item: li.product", "  extractList.fields.name: .name"].join(NEWLINE);
+    const binding = { resolvePlanNodeParameters: () => ({ status: "refused" as const, issueCodes: ["web.handle.invented"] }) };
+
+    const unresolved = await refusal({ flow: script }, binding);
+    expect(unresolved.verdict.code).toBe("flow_bootstrap.evidence_completion_parameters_unresolved");
+    expect(unresolved.feedback.previous).toBe(script);
+    expect(unresolved.feedback.instruction).toContain("Where previous is given, it is the script you just sent.");
+
+    const unreadable = await refusal({ flow: "step: do the thing nobody named" });
+    expect(unreadable.verdict.code).toBe("flow_bootstrap.evidence_completion_plan_invalid");
+    expect(unreadable.feedback.previous).toBe("step: do the thing nobody named");
+  });
+
+  it("has nothing to hand back when the model sent no script", async () => {
+    const { feedback } = await refusal({ summary: "Scrape the products", plan: planWith({}) });
+    expect(feedback.previous).toBeUndefined();
   });
 
   it("still answers a plan that does not parse, or a result that is not wrapped, by code alone", async () => {

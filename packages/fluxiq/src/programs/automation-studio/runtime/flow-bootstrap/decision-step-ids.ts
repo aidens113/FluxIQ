@@ -12,5 +12,7 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS = Object.freeze(
   /** A reply the loop could not act on -- malformed, or a completed plan Core's checks refused -- and asked again after. */
   unusable: "core.decision_unusable",
   /** A completed result the loop accepted. */
-  complete: "core.decision_complete"
+  complete: "core.decision_complete",
+  /** An edit the model made to the draft it was accruing, rather than a call. */
+  amend_draft: "core.decision_amend_draft"
 } as const);

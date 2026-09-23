@@ -86,12 +86,20 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
   if (value.parameters !== undefined && !isJsonObject(value.parameters)) issues.push(error("bootstrap.invalid_parameters", "Node parameters must be a JSON object.", `${path}.parameters`));
   if (value.outputActionId !== undefined) identifier(value.outputActionId, `${path}.outputActionId`, issues);
+  // Bounded only. What a class means is `runtime/action-permissions/`'s, and it
+  // reads this fail-closed; a plan reader that learned the vocabulary would be
+  // a second place for it to drift.
+  if (value.consequences !== undefined
+    && (!Array.isArray(value.consequences) || value.consequences.length > 10
+      || !value.consequences.every((item) => typeof item === "string" && item.length > 0 && item.length <= 40))) {
+    issues.push(error("bootstrap.invalid_consequences", "Node consequences must be a bounded string array.", `${path}.consequences`));
+  }
 }
 
 function parseEdge(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {

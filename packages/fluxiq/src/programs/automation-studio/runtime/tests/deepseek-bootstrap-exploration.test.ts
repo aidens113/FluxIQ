@@ -263,20 +263,24 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.activeGrantsAfter).toBe(0);
   }, 30_000);
 
-  it("stops after three unusable decisions in a row with a named outcome, and releases the grant", async () => {
+  // It used to stop after three. Three was the no-progress guard as well as the
+  // malformed-reply guard, and it ended builds that were working, so the guard
+  // is now a far backstop and what bounds a run of bad replies is what the run
+  // may spend -- here the grant's own call count.
+  it("stops once a run of unusable decisions has spent what the grant allows, with a named outcome, and releases the grant", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
-    expect(run.sentIterations).toEqual([1, 2, 3]);
-    expect(run.revealed).toHaveLength(3);
+    expect(run.sentIterations).toEqual(Array.from({ length: 11 }, (_, index) => index + 1));
+    expect(run.revealed).toHaveLength(11);
     expect(run.failure).toEqual({
       code: "flow_bootstrap.evidence_unusable_decision",
       stage: "provider_output_validation",
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // Three malformed replies were paid for nothing, so the record says so.
+      // Every malformed reply was paid for nothing, so the record says so.
       accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-chat", inputTokens: 0, totalTokens: 0 }),
-      evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" })) },
+      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, () => ({ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" })) },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(run.adaptationCount).toBe(0);

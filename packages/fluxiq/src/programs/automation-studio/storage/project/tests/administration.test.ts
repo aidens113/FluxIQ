@@ -111,7 +111,12 @@ describe("AutomationStudioProjectAdministration", () => {
     const upgraded = await pool.acquire(projectId);
     const ledger = await upgraded.database.all<{ migration_id: string }>("select migration_id from automation_schema_migrations order by migration_id");
     expect(ledger.map((row) => row.migration_id)).toEqual(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id));
-    expect(ledger.at(-1)?.migration_id).toBe(matching);
+    expect(ledger.map((row) => row.migration_id)).toContain(matching);
+    // The head is whatever the list ends with, not a number written here. The
+    // property under test is that a database opened below 0020 is brought all
+    // the way to the head; pinning 0020 as the head made every later migration
+    // fail this case for no reason.
+    expect(ledger.at(-1)?.migration_id).toBe(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.at(-1)?.id);
     await expect(upgraded.database.get("select trigger, failure_signature, confidence_tier, origin_entry_point from adaptations where adaptation_id = 'adaptation.old'"))
       .resolves.toEqual({ trigger: "Old trigger.", failure_signature: null, confidence_tier: null, origin_entry_point: null });
     await upgraded.release();

@@ -115,8 +115,13 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
   if (!isRecord(option.inputSchema)) issues.push("harness_option.input_schema_invalid");
   if (option.effect !== undefined && option.effect !== "observe" && option.effect !== "mutate") issues.push("harness_option.effect_invalid");
   if (option.repeatPolicy !== undefined && (option.repeatPolicy !== "after_mutation" || option.effect !== "observe")) issues.push("harness_option.repeat_policy_invalid");
+  if (option.perCallEffect !== undefined && typeof option.perCallEffect !== "boolean") issues.push("harness_option.per_call_effect_invalid");
+  // A free first look is a look. That is an option that only observes -- or one
+  // whose calls declare their own effect, whose initial argument the host
+  // writes rather than the model, and which is therefore the host's own
+  // statement that this one call observes.
   if (option.initialObservation !== undefined
-    && (option.effect !== "observe" || !isRecord(option.initialObservation) || !isRecord(option.initialObservation.input)
+    && ((option.effect !== "observe" && option.perCallEffect !== true) || !isRecord(option.initialObservation) || !isRecord(option.initialObservation.input)
       || Object.keys(option.initialObservation).some((key) => key !== "input"))) {
     issues.push("harness_option.initial_observation_invalid");
   }
@@ -140,6 +145,7 @@ export function automationStudioHarnessOptionTool(option: AutomationStudioHarnes
     description: option.description,
     inputSchema: option.inputSchema,
     ...(option.effect !== undefined ? { effect: option.effect } : {}),
+    ...(option.perCallEffect === true ? { perCallEffect: true } : {}),
     ...(option.repeatPolicy !== undefined ? { repeatPolicy: option.repeatPolicy } : {}),
     ...(option.initialObservation !== undefined ? { initialObservation: option.initialObservation } : {})
   };

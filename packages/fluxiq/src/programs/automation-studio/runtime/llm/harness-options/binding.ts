@@ -19,6 +19,7 @@ import type {
 import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExplorationStateDigestPhase } from "../../recovery/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioLlmRunNodeTool } from "../node-tools/index.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
 import type { AutomationStudioHarnessOption, AutomationStudioHarnessOptionBundle, AutomationStudioHarnessOptionImplementation } from "./option.ts";
 import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
@@ -52,6 +53,23 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    */
   deniedEvidenceKeys: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
+  /**
+   * Whether this domain can run a node of the library against its live target,
+   * and what one first look at that target costs nothing to take.
+   *
+   * A domain that declares it is offered one more option: the library itself
+   * (`../node-tools/run-node.ts`). The names it may run are read from the node
+   * registry at the moment the option is built, so a node registered later
+   * appears with nobody editing anything, and the call arrives at
+   * `executeTool` under `AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID` with the node
+   * and its parameters inside the value.
+   *
+   * `initial` is one call the *domain* writes rather than the model: the loop
+   * makes it before the first paid decision, so the model's first question is
+   * asked with the target already in front of it. A domain that offers one is
+   * stating that this particular call only looks.
+   */
+  runsNodes?: { initial?: JsonObject };
   /**
    * Options the domain declares in full, rather than as bare tools. Unlike
    * `tools`, these carry their own availability, safety and stages, so a
@@ -201,10 +219,19 @@ export function automationStudioHarnessOptionRegistry(input: {
   // straight through under exactOptionalPropertyTypes.
   host?: AutomationStudioHarnessOptionHost | undefined;
   binding?: AutomationStudioLlmEvidenceRuntimeBinding | undefined;
+  /**
+   * Every node this call may run, by id, from the same registry the Flow is
+   * written against. Given, and with a binding that says it runs nodes, the
+   * library itself is offered as one option.
+   */
+  nodeIds?: readonly string[] | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
-  if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length)) {
-    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding));
+  const runNode = input.binding?.runsNodes && input.nodeIds?.length
+    ? automationStudioLlmRunNodeTool({ nodeIds: input.nodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
+    : undefined;
+  if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
+    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode));
   }
   return registry;
 }
@@ -227,10 +254,20 @@ export function automationStudioHarnessInputWithDeniedEvidenceKeys<Input extends
   return { ...input, deniedEvidenceKeys: binding.deniedEvidenceKeys };
 }
 
-/** One domain's bound tools as a bundle the registry can hold. */
-export function automationStudioHarnessOptionBundleFromBinding(binding: AutomationStudioLlmEvidenceRuntimeBinding): AutomationStudioHarnessOptionBundle {
+/**
+ * One domain's bound tools as a bundle the registry can hold, with the library
+ * itself beside them when the domain can run it.
+ *
+ * The library option is scoped to the domain like any other, because the thing
+ * that carries it out is this domain's executor: Core builds the declaration
+ * from the registry and the domain runs what the call names.
+ */
+export function automationStudioHarnessOptionBundleFromBinding(
+  binding: AutomationStudioLlmEvidenceRuntimeBinding,
+  runNode?: AutomationStudioLlmEvidenceTool
+): AutomationStudioHarnessOptionBundle {
   const implementations: Record<string, AutomationStudioHarnessOptionImplementation> = {};
-  const options = binding.tools.map((tool) => {
+  const options = [...binding.tools, ...(runNode ? [runNode] : [])].map((tool) => {
     implementations[tool.toolId] = executionFor(binding, tool.toolId);
     return scopedOption(tool, binding.domainId);
   });
@@ -255,6 +292,7 @@ function scopedOption(tool: AutomationStudioLlmEvidenceTool, domainId: string): 
     description: tool.description,
     inputSchema: tool.inputSchema,
     ...(tool.effect !== undefined ? { effect: tool.effect } : {}),
+    ...(tool.perCallEffect === true ? { perCallEffect: true as const } : {}),
     ...(tool.repeatPolicy !== undefined ? { repeatPolicy: tool.repeatPolicy } : {}),
     ...(tool.initialObservation !== undefined ? { initialObservation: tool.initialObservation } : {}),
     availability: { kind: "domain", domainId },

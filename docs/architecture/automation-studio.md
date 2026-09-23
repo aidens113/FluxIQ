@@ -480,16 +480,50 @@ Runtime action attempts now carry deterministic transition comparisons before
 any LLM diagnosis is considered. Each attempt records expected transition
 hints, actual status/route/output/effect data, a normalized comparison status,
 and a compact diff summary. Failed attempts pass through the recovery ladder in
-priority order: configured failed-route path, approved runtime patch, graph
-local recovery reroute, then LLM diagnosis fallback. The LLM diagnosis rung is
+priority order, cheapest first and the model last: skip the node whose recorded
+state already holds, wait for the recorded state and attempt again, clear known
+interference and attempt again, attempt the node again, the configured
+failed-route path, an approved runtime patch, a graph-local recovery reroute,
+then the LLM diagnosis fallback. The LLM diagnosis rung is
 offered only when the run's training behaviour allows the LLM
 (`allowLlmDiagnosis` on the graph options, set from `invokeLlm`); with the LLM
 off, a failed node with no deterministic recovery ends `exhausted`. Recovery budgets can cap
-retries per action, recovery attempts per subflow, reroutes per run, and
+recovery attempts per subflow, reroutes per run, and
 adaptation/LLM attempts per run; exhausted budgets produce terminal failure
 metadata instead of looping. An LLM attempt is one recovery, not one provider
 call: the calls inside it are bounded as described in
 [Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
+
+**Retries are on by default, and each rung is consumed as it runs.** A node that
+fails is attempted again without anyone opting in: three attempts at 250 ms,
+1 s and 2 s (`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`), overridable by a
+node's `parameterValues.retry` or `metadata.retry`, by a `builtin.timing.retry`
+node guarding the branch, by a Flow's `metadata.retry`, or by the run's own
+`retryPolicy`, and capped by `maxRetriesPerAction` — which is now the attempt
+allowance its name claims, rather than a gate that withdrew the Flow's own
+authored failed route. A node is dispatched again only when its structured
+failure says `retryable` and its `stage` is neither `verification` nor
+`confirmation`: an action demoted by the check that followed it already took
+effect, and dispatching it again is how a double submit happens. Each of the
+four deterministic rungs leaves the candidate list once it has run, because any
+non-`llm_diagnosis` candidate still on offer tells
+`classifyAutomationStudioAdaptiveFailure` that a deterministic answer exists and
+suppresses escalation to the model entirely.
+
+**The recorded state is read while the Flow runs.** Every node a recording
+proposal produces carries `stateLink`, `stateSnapshotId` and `stateRef` in its
+metadata; the executor reads them (`automationStudioRecordedState`) onto each
+attempt, so a diagnosis names the snapshot the run was supposed to be standing
+in. A node that declares a `readyState` is gated on it before **every** attempt,
+for at most `clamp(recordedGapMs x 2, 2 s, 30 s)`: the state arriving sooner
+runs the node sooner, so a replay on a fast page is faster than the recording
+that produced it, and the deadline passing attempts the node anyway and marks
+`readiness.satisfied: false`, because the recording is evidence the action was
+possible at that point. A missing state is never itself a failure. The recorded
+expectation is now evaluated on a **failed** attempt as well as a succeeded one,
+and a rejection is re-checked once, within the same wait ceiling, before any
+failure record is built, so a page a moment late is not minted as a
+non-retryable state mismatch.
 
 Failed attempts carry a structured failure when one is known. Core owns the one
 category list, `AutomationStudioAdaptiveFailureClass`, exported from

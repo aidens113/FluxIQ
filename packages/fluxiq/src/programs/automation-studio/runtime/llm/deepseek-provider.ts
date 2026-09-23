@@ -546,13 +546,18 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
     || !Array.isArray(loop.evidence) || loop.evidence.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return false;
   const ids = new Set<string>();
   for (const tool of loop.tools) {
-    if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "repeatPolicy", "initialObservation"].includes(key))
+    if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "perCallEffect", "repeatPolicy", "initialObservation"].includes(key))
       || typeof tool.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(tool.toolId) || ids.has(tool.toolId)
       || typeof tool.description !== "string" || tool.description.length < 1 || tool.description.length > 2_000
       || !isRecord(tool.inputSchema)
       || (tool.effect !== undefined && tool.effect !== "observe" && tool.effect !== "mutate")
       || (tool.repeatPolicy !== undefined && (tool.repeatPolicy !== "after_mutation" || tool.effect !== "observe"))
-      || (tool.initialObservation !== undefined && (tool.effect !== "observe" || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input") || !isRecord(tool.initialObservation.input)))) return false;
+      || (tool.perCallEffect !== undefined && typeof tool.perCallEffect !== "boolean")
+      // A free first look is a look. That is a tool that only observes -- or one
+      // whose calls declare their own effect, whose initial argument the host
+      // writes rather than the model, and which is therefore the host's
+      // statement that this one call observes.
+      || (tool.initialObservation !== undefined && ((tool.effect !== "observe" && tool.perCallEffect !== true) || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input") || !isRecord(tool.initialObservation.input)))) return false;
     ids.add(tool.toolId);
   }
   for (const item of loop.evidence) {
@@ -560,8 +565,17 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
       || typeof item.callId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.callId)
       || typeof item.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.toolId) || !boundedJson(item.value)) return false;
   }
-  return isRecord(loop.completionSchema) && typeof loop.canComplete === "boolean"
-    && JSON.stringify(loop.decisionSchema) === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete));
+  if (!isRecord(loop.completionSchema) || typeof loop.canComplete !== "boolean") return false;
+  // The decision schema must be one Core built from the tools it offered, and
+  // there are two of them: with and without the variant that edits the draft.
+  // Which one the loop sent is its own decision -- offered only once there is a
+  // step to edit, and withdrawn once the run's allowance is spent -- and is not
+  // carried on the wire, so both are derived and either is accepted. What this
+  // still refuses is the thing it was written to refuse: a schema that is not
+  // Core's, over tools that were not offered.
+  const written = JSON.stringify(loop.decisionSchema);
+  return [false, true].some((allowAmend) =>
+    written === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, allowAmend)));
 }
 
 function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest): AutomationStudioLlmStructuredResponse {

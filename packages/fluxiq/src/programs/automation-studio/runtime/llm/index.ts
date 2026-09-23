@@ -22,6 +22,9 @@ export {
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
 export * from "./harness-options/index.ts";
+// The library as one thing a build may do: the verb that runs a node of the
+// registry against the live target, and how such a step is written down.
+export * from "./node-tools/index.ts";
 export * from "./stages/index.ts";
 export * from "./run-budget.ts";
 export type {

@@ -1,7 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { createReadStream } from "node:fs";
-import { createInterface } from "node:readline";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
 import type { AutomationStudioHierarchyChildrenPage, AutomationStudioHierarchyNode, AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
@@ -9,20 +7,15 @@ import {
   appendRecordingEntry,
   appendRecordingNote,
   automationStudioFlowRepresentationKind,
-  automationStudioInterventionMode,
   createAutomationStudioFixture,
   createBlankAutomationStudioFlow,
   createBlankAutomationStudioFlowArtifact,
-  defaultAutomationStudioFlowSettingsMetadata,
-  isAutomationStudioSubflowGraphMetadata,
   withAutomationStudioFlowRepresentation,
-  withAutomationStudioInterventionMode,
   createPublishedFlowSnapshot,
   getCallFlowConfiguration,
   createRecordingSession,
   diffStateSnapshots,
   finalizeRecordingSession,
-  type AutomationStudioConfigArtifact,
   type AutomationStudioFlowArtifact,
   type AutomationStudioAdaptationPolicy,
   type AutomationStudioFlowCatalogEntry,
@@ -30,22 +23,17 @@ import {
   type AutomationStudioFlowChangeProposal,
   type AutomationStudioFlowDocument,
   type AutomationStudioFlowInstruction,
-  type AutomationStudioFlowIntervention,
   type AutomationStudioFlowMigrationLedger,
   type AutomationStudioFlowMigrationOutcome,
   type AutomationStudioFlowPublicationRecord,
-  type AutomationStudioPublishedFlowSnapshot,
-  type AutomationStudioFlowRepresentationKind,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowRouteGroup,
   type AutomationStudioFlowRouteRule,
   type AutomationStudioFlowRunDetail,
   type AutomationStudioFlowRunActionAttemptRecord,
-  type AutomationStudioFlowRunRecoveryRecord,
   type AutomationStudioFlowRunSummary,
   AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION,
   type AutomationStudioFlowSubflow,
-  AutomationStudioLegacyWriteDisabledError,
   type AutomationStudioFlowMigrationRollbackPlan,
   type AutomationStudioLegacyBackup,
   type AutomationStudioLegacyDeferredArtifact,
@@ -54,11 +42,8 @@ import {
   type AutomationStudioLegacyRetirementDiagnostic,
   type AutomationStudioLegacyRetirementReport,
   type AutomationStudioLegacyRetirementState,
-  type AutomationStudioFlowOrigin,
-  type AutomationStudioFlowScope,
   type AutomationStudioProjectArtifacts,
   type AutomationStudioProjectArtifactKind,
-  type AutomationStudioRoutineArtifact,
   type AutomationStudioRuntimeSession,
   type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
@@ -75,8 +60,6 @@ import {
   processRecordingDomainEvent,
   resolveAutomationStudioFlowCatalog,
   validateAutomationStudioFlowAdaptation,
-  validateAutomationStudioFlowRouter,
-  validateAutomationStudioFlowSubflow,
   projectPublishedFlowSnapshotToNodeDefinition,
   validateFlowComposition,
   validateAutomationStudioFlow
@@ -88,28 +71,20 @@ import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type Norm
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state.ts";
-import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
 import {
-  annotateRunDetailWithTrainingMode,
   behaviorForAutomationStudioTrainingMode,
   computeAutomationStudioStabilityMetrics,
   decideAutomationStudioAdaptationPromotionGate,
   decideAutomationStudioTrainingBudget,
-  type AutomationStudioStabilityMetrics,
-  type AutomationStudioTrainingBudgetState,
-  type AutomationStudioTrainingModeBehavior,
-  type AutomationStudioTrainingModeSettings
 } from "./training-modes.ts";
 import {
   resolveAutomationStudioLlmInstructions,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
-  type AutomationStudioLlmFailureEvidenceCaptureInput,
   type AutomationStudioBuildAndAdaptExecutionGrant,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmProviderResolution,
   type AutomationStudioLlmProviderResolverInput,
-  type AutomationStudioLlmTokenLimits
 } from "./llm/index.ts";
 export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
@@ -118,7 +93,7 @@ import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRunti
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioInstructedConsequence } from "./action-permissions/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   bootstrapAdaptationAsFlowAdaptation,
@@ -126,7 +101,6 @@ import {
   sanitizedBootstrapAccounting,
   type AutomationStudioBootstrapAccounting,
   type AutomationStudioBootstrapAdaptation,
-  type AutomationStudioBootstrapAuditEvent
 } from "./flow-bootstrap/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, automationStudioFlowBootstrapEvidenceLoopLimits } from "./loop-limits/index.ts";
@@ -139,15 +113,11 @@ import {
   type RecordingFlowProposalArtifact,
   type RecordingFlowProposalDestination
 } from "./recording-flow-proposal.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
 import {
   addRecordingPipelineArtifactId,
   createRecordingPipelineDocument,
   emptyPipelineIndex,
-  emptyRecordingPipelineArtifacts,
-  pipelineIndexKey,
-  recordingPipelineId,
-  upsertPipelineIndex,
   type PipelineArtifactKind,
   type PipelineIndex,
   type RecordingPipelineDocument
@@ -156,8 +126,6 @@ import {
   average,
   asStringArray,
   createTaskProposalModelFromMiningRun,
-  humanTaskName,
-  mergeProposalPatchIntoPolicy,
   policyGraphToAutomationStudioFlow,
   uniqueEvidenceReferences,
   withPolicyOutgoingEdges,
@@ -178,19 +146,14 @@ import {
   automationStudioFacadePorts,
   AutomationStudioCatalogue,
   AutomationStudioSummaryStore,
-  SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY,
-  adaptiveRuntimeMetricsFromRunDetail,
   instructionSummaryFromInstruction,
   runtimeSessionToFlowRunDetail,
-  runtimeSummaryFromSession,
   type AutomationStudioAdaptationSummaryPage,
   type AutomationStudioFlowRunSummaryPage,
   flowPublicationId,
   AutomationStudioFlowMutations,
-  adaptationRequiresChangeProposal,
   AutomationStudioFlowWriter,
   subflowFeedRevision,
-  subflowSummaryFromSubflow,
   type CreateFlowSubflowInput,
   flowScopeForProject,
   sameFlowScope,
@@ -198,20 +161,14 @@ import {
   AutomationStudioProjectStore,
   AutomationStudioRecordingStore,
   PIPELINE_ARTIFACT_IO_CONCURRENCY,
-  emptyPipelineArtifactIdSets,
   mapWithConcurrency,
   pipelineArtifactKinds,
   flowMapRouteGroups,
   flowMapSortedRules,
-  flowSubflowCategoriesFromFlow,
   flowSummaryFromFlow,
   isJsonRecord,
   jsonObjectFromUnknown,
   removeUndefinedSubflowFields,
-  sqlInstructionRequirement,
-  sqlInstructionStatus,
-  stringOrNull,
-  subflowParentCategoryId,
   uniqueStrings,
   upsertBy,
   compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioRunDetailWithDeclinedAdaptiveRetry,
@@ -228,6 +185,8 @@ import {
   recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingMapperCalls, recordingFlowActionCandidate, appendRecordingProposalToFlow, recordingCandidateDefinition, materializeRecordingNode,
   AutomationStudioProposalApproval,
   clampInteger,
+  embedAutomationStudioTaskGraphs, inspectAutomationStudioFlowMigration, type AutomationStudioFlowMigrationInspection, listAutomationStudioProposalSummaries, repairAutomationStudioFlowSummaryMetadataIndex, updateAutomationStudioProject, withAutomationStudioCanonicalFlowHierarchySubflows,
+  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, nodeDefinitionScopeAllows, subflowMetadataWithParentCategory,
   subflowSummaryFromSql,
   type AutomationStudioInstructionSummaryPage,
   canonicalFlowDocument,
@@ -237,9 +196,7 @@ import {
   type GenerateRecordingProposalResult,
   type NormalizationReviewArtifact,
   type ProcessFinalizedRecordingResult,
-  readableTokenValue,
   AutomationStudioEvidenceMining,
-  isStateSnapshotObject,
   type AutomationStudioWriteProjectObjectAssetInput,
   type AutomationStudioWriteProjectObjectAssetResult,
   AutomationStudioServiceLocks,
@@ -247,41 +204,21 @@ import {
   legacyArtifactsDigest,
   legacyDiagnostic,
   stableJson,
-  normalizeProjectCategories,
   AutomationStudioRecordingPaths,
   AutomationStudioRunDatasets,
   AutomationStudioServiceIndexes,
-  emptyFlowAdaptationIndex,
-  emptyFlowRunIndex,
-  projectArtifactDocumentFileName,
-  type AutomationStudioAdaptationPolicySummary,
-  type AutomationStudioAdaptationSummary,
-  type AutomationStudioChangeProposalSummary,
-  type AutomationStudioInstructionSummary,
-  type AutomationStudioRouterSummary,
   type AutomationStudioProjectIndex,
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
-  type FlowAdaptationIndex,
-  type FlowAdaptationPolicyIndex,
-  type FlowChangeProposalIndex,
-  type FlowInstructionIndex,
-  type FlowRouterIndex,
-  type FlowRunIndex,
-  type FlowSubflowIndex,
   type RecordingIndex,
   type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority
 } from "./service/index.ts";
+import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
-export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
-export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
-export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
-export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput } from "./service/index.ts";
+import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
+export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
-import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
@@ -289,10 +226,6 @@ import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories,
   AutomationStudioObjectStore,
-  AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES,
-  automationStudioObjectApiPath,
-  isAutomationStudioObjectReference,
-  parseAutomationStudioObjectContentRef,
   type AutomationStudioObjectAsset,
   projectSummaryFromProject,
   type AutomationStudioFlowSummary,
@@ -308,13 +241,10 @@ import {
   type AutomationStudioUiCacheStats,
   type AutomationStudioUiCacheStore,
   RecordingStateIndexStore,
-  AutomationStudioProjectAdministration,
   AutomationStudioProjectAdaptationStore,
   AutomationStudioProjectDatabasePool,
   AutomationStudioProjectGraphRepository,
   AutomationStudioProjectFlowResourceRepository,
-  AutomationStudioProjectHierarchyRepository,
-  AutomationStudioProjectRuntimeStreamStore,
   AutomationStudioProjectReusableLlmContextStore,
   type AutomationStudioProjectContentProtection,
   type AutomationStudioReusableLlmContextList,
@@ -323,11 +253,6 @@ import {
   type AutomationStudioFlowResourcePage,
   type AutomationStudioSqlFlowDetail,
   type AutomationStudioSqlFlowRecord,
-  type AutomationStudioSqlInstructionScope,
-  type AutomationStudioSqlInstructionSummary,
-  type AutomationStudioSqlRouter,
-  type AutomationStudioSqlRouterRoute,
-  type AutomationStudioSqlSubflow,
   type AutomationStudioRuntimeEventPage,
   type AutomationStudioGraphPatchOperation,
   type AutomationStudioGraphPatchResult,
@@ -338,15 +263,29 @@ import {
   decodeAutomationStudioPageCursor,
   encodeAutomationStudioPageCursor
 } from "../storage/index.ts";
-import {
-  emptyRecordingIndex,
-  recordingIndexStateObjectRefs,
-  recordingActionVisualTargetIndexItem,
-  sortRecordingIndex,
-  type RecordingEntryIndexItem,
-  type RecordingIndex as RecordingStateIndex,
-  type RecordingStateIndexItem
-} from "../storage/state-index.ts";
+import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, approvalDecisionHistory, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
+import { assertExactObjectFields, bootstrapAdaptationAuditEvent, evidenceTraceAuditDetail, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
+import { flowMapExpansionStatus, nextRouteGroupOrder, nextRouteOrder, removeUndefinedRouteRuleFields, routeConditionFromInput, routeRuleMetadataWithGroup, routeRuleMetadataWithoutGroup, sqlRouterGroupToFlowGroup, sqlRouterRouteToFlowRule, withFlowMapRouteGroups, type AutomationStudioRouterRoutePage, type AutomationStudioRouterTargetReferenceBatch, type AutomationStudioSubflowTargetPage, type UpsertFlowMapRouteGroupInput, type UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
+import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, booleanSetting, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
+import { normalizeCustomHierarchyNode, requiredHierarchyId } from "./service/hierarchy-nodes/index.ts";
+import { readJsonLinePage } from "./service/json-lines/index.ts";
+import { listAutomationStudioProjectProblems, type AutomationStudioProblemPage } from "./service/problems/index.ts";
+import { executionPublicationDependencyState } from "./service/publication-dependencies/index.ts";
+import { countRecordingEntryTypes, recordingActionEntryCandidate, recordingProposalReplacementBase, recordingSummaryFromSession, recordingUpdatedAt, summaryRecordingSession, type RecordingSummaryItem, type RecordingSummaryList } from "./service/recording-projections/index.ts";
+import { buildRecordingStateIndex, missingRecordingStateLookup, proposalNodeStateLinkFromIndex, recordingEntryIsActionLike, resolveCandidateActionEntryId, resolveRecordingStateIndexItem, type RecordingEntryStateLookupInput, type RecordingEntryStateLookupResult, type RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
+import { reusableLlmContextSummary, type AutomationStudioReusableLlmContextFeatureStatus, type AutomationStudioReusableLlmContextFreshEvidenceInput, type AutomationStudioReusableLlmContextHostConfiguration, type AutomationStudioReusableLlmContextOption, type AutomationStudioReusableLlmContextSelection, type AutomationStudioReusableLlmContextSummary } from "./service/reusable-context/index.ts";
+import { normalizeAutomationStudioRuntimeInterventionMode, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, runtimeRunDetailWithAdaptationContext, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
+import { clampNumber, normalizePositiveInteger } from "./service/scalar-readings/index.ts";
+export type { AutomationStudioChangeProposalSummaryPage, ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
+export type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
+export type { AutomationStudioRouterRoutePage, AutomationStudioRouterTargetReferenceBatch, AutomationStudioSubflowTargetPage, UpsertFlowMapRouteGroupInput, UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
+export type { AutomationStudioFlowMigrationInspection } from "./service/legacy/index.ts";
+export type { AutomationStudioProblemPage } from "./service/problems/index.ts";
+export type { RecordingSummaryItem, RecordingSummaryList } from "./service/recording-projections/index.ts";
+export type { RecordingEntryStateLookupInput, RecordingEntryStateLookupResult, RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
+export type { AutomationStudioReusableLlmContextFeatureStatus, AutomationStudioReusableLlmContextFreshEvidenceInput, AutomationStudioReusableLlmContextHostConfiguration, AutomationStudioReusableLlmContextOption, AutomationStudioReusableLlmContextSelection, AutomationStudioReusableLlmContextSummary } from "./service/reusable-context/index.ts";
+export { normalizeAutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
+export type { AutomationStudioRuntimeAdaptationContext } from "./service/runtime-adaptation/index.ts";
 
 export type AutomationStudioServiceOptions = {
   dataDir?: string;
@@ -360,148 +299,7 @@ export type AutomationStudioServiceOptions = {
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
   uiCacheStore?: AutomationStudioUiCacheStore;
   seedFixture?: boolean;
-  reusableLlmContext?: {
-    enabled?: boolean;
-    contentProtection?: AutomationStudioProjectContentProtection;
-    selectForFreshEvidence?: (input: AutomationStudioReusableLlmContextFreshEvidenceInput) => AutomationStudioReusableLlmContextSelection | undefined | Promise<AutomationStudioReusableLlmContextSelection | undefined>;
-  };
-};
-
-export type AutomationStudioReusableLlmContextFreshEvidenceInput = {
-  taskKind: "flow_bootstrap" | "runtime_diagnosis" | "runtime_patch";
-  projectId: string;
-  flowId: string;
-  subflowId?: string;
-  freshEvidence: JsonValue;
-  freshEvidenceCount: number;
-};
-
-export type AutomationStudioReusableLlmContextSelection = Pick<AutomationStudioReusableLlmContextList,
-  "domainId" | "evidenceKind" | "evidenceSchemaVersion" | "sanitizerVersion" | "compatibilityTags"
->;
-
-export type AutomationStudioReusableLlmContextHostConfiguration = {
-  enabled: true;
-  contentProtection: AutomationStudioProjectContentProtection;
-  selectForFreshEvidence: NonNullable<NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"]>;
-};
-
-export type AutomationStudioReusableLlmContextSummary = Omit<AutomationStudioReusableLlmContextRecord, "promptProjection">;
-export type AutomationStudioReusableLlmContextFeatureStatus = {
-  enabled: boolean;
-  writeEnabled: boolean;
-  contentProtection: string;
-  blockerCode?: "reusable_context.content_protection_unavailable";
-};
-
-export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
-  projectId: string;
-  flowId: string;
-  executionGrant: AutomationStudioBuildAndAdaptExecutionGrant;
-  evidenceGuided?: true;
-  useReusableContext?: true;
-};
-
-export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
-  projectId: string;
-  flowId: string;
-  adaptationId: string;
-  status: "proposed";
-  riskLevel: AutomationStudioBootstrapAdaptation["riskLevel"];
-  sourceInstructionIds: string[];
-  baseDependencyDigest: string;
-  baseSettingsRevision: number;
-  accounting: {
-    requestId: string;
-    estimatedInputTokens: number;
-    provider?: string;
-    model?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
-    estimatedCostUsd?: number;
-  };
-};
-export type RecordingEntryStateLookupInput = {
-  projectId: string;
-  recordingId: string;
-  entryId?: string;
-  actionId?: string;
-  stateSnapshotId?: string;
-  includeState?: boolean;
-};
-
-export type RecordingEntryStateLookupResult = {
-  recordingId: string;
-  requested: {
-    entryId?: string;
-    actionId?: string;
-    stateSnapshotId?: string;
-  };
-  resolved: {
-    stateSnapshotId: string;
-    entryId: string;
-    stateRef: string;
-    screenshotRef?: string;
-  } | null;
-  state?: StateSnapshot;
-  reason?: string;
-};
-
-export type RepairRecordingStateIndexResult = {
-  recordingId: string;
-  mode: "dry_run" | "write";
-  index: RecordingStateIndex;
-  warnings: string[];
-};
-
-export type AutomationStudioFlowMigrationInspection = {
-  projectId: string;
-  backupId: string;
-  outcomes: AutomationStudioFlowMigrationOutcome[];
-  migrationNeeded: boolean;
-};
-
-export type AutomationStudioSubflowTargetPage = {
-  subflows: AutomationStudioSubflowSummary[];
-  total: number;
-  limit: number;
-  nextCursor: string | null;
-  hasMore: boolean;
-};
-
-export type AutomationStudioRouterRoutePage = {
-  routes: AutomationStudioFlowRouteRule[];
-  groups: AutomationStudioFlowRouteGroup[];
-  counts: { total: number; active: number; disabled: number; byGroup: Record<string, number> };
-  limit: number;
-  nextCursor: string | null;
-  hasMore: boolean;
-};
-
-export type AutomationStudioRouterTargetReferenceBatch = {
-  targets: Array<{
-    subflowId: string;
-    total: number;
-    hasMore: boolean;
-    references: Array<{
-      id: string;
-      kind: "route" | "fallback";
-      name: string;
-      status: string;
-      order: number | "fallback";
-      condition?: JsonValue;
-      conditionLabel?: string;
-    }>;
-  }>;
-  perTargetLimit: number;
-};
-
-export type AutomationStudioChangeProposalSummaryPage = {
-  changeProposals: AutomationStudioChangeProposalSummary[];
-  total: number;
-  limit: number;
-  offset: number;
+  reusableLlmContext?: AutomationStudioReusableLlmContextOption;
 };
 
 export type AutomationStudioFlowRunActionPage = {
@@ -511,32 +309,6 @@ export type AutomationStudioFlowRunActionPage = {
   offset: number;
   nextCursor?: string | null;
   hasMore?: boolean;
-};
-
-export type AutomationStudioRuntimeAdaptationContext = {
-  projectId: string;
-  flowId: string;
-  settings: AutomationStudioTrainingModeSettings;
-  policy: AutomationStudioAdaptationPolicy;
-  behavior: AutomationStudioTrainingModeBehavior;
-  metrics: AutomationStudioStabilityMetrics;
-  budgetState: AutomationStudioTrainingBudgetState;
-  budgetDecision: ReturnType<typeof decideAutomationStudioTrainingBudget>;
-  runsCompleted: number;
-  recentRunCount: number;
-  recentAdaptationCount: number;
-  /** The Flow's known adaptations, which a failure is matched against. */
-  recentAdaptations: AutomationStudioFlowAdaptation[];
-  diagnostics: string[];
-};
-
-export type AutomationStudioProblemPage = {
-  problems: import("../api/contracts.ts").AutomationStudioProblem[];
-  total: number;
-  counts: { error: number; warning: number; info: number };
-  limit: number;
-  nextCursor: string | null;
-  hasMore: boolean;
 };
 
 export type UpdateFlowSubflowInput = {
@@ -555,65 +327,6 @@ export type UpdateFlowSubflowInput = {
   proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"] | null;
   interventionModeOverride?: AutomationStudioFlowSubflow["interventionModeOverride"] | null;
   graphFlowId?: string;
-};
-
-export type UpsertFlowMapRouteGroupInput = {
-  projectId: string;
-  flowId: string;
-  groupId?: string;
-  name: string;
-  description?: string;
-  order?: unknown;
-  status?: AutomationStudioFlowRouteGroup["status"];
-  collapsed?: boolean;
-};
-
-export type UpsertFlowMapRouteInput = {
-  projectId: string;
-  flowId: string;
-  ruleId?: string;
-  name: string;
-  description?: string;
-  targetSubflowId: string;
-  order?: unknown;
-  status?: AutomationStudioFlowRouteRule["status"];
-  groupId?: string | null;
-  setAsFallback?: boolean;
-  confidence?: unknown;
-  conditionSummary?: string;
-  conditionSignalPath?: string;
-  conditionOperator?: string;
-  conditionExpected?: unknown;
-  clearCondition?: boolean;
-};
-
-export type ReviewFlowAdaptationInput = {
-  projectId: string;
-  flowId: string;
-  adaptationId: string;
-  action: "approve" | "reject" | "apply" | "disable" | "revert" | "supersede" | "request_validation" | "switch_manual";
-  actorId?: string;
-  reason?: string;
-  supersededByAdaptationId?: string;
-};
-
-export type RecordingSummaryItem = {
-  id: string;
-  title: string;
-  status: "recording" | "completed";
-  projectId: string;
-  taskId: string | null;
-  eventCount: number;
-  startedAt: string;
-  endedAt: string | null;
-  updatedAt: string;
-};
-
-export type RecordingSummaryList = {
-  items: RecordingSummaryItem[];
-  page: number;
-  pageSize: number;
-  total: number;
 };
 
 export class AutomationStudioService {
@@ -651,8 +364,9 @@ export class AutomationStudioService {
   private readonly normalizationReview: AutomationStudioNormalizationReview;
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
-  /** Run datasets (CD16, CD17), reached as a field so the frozen facade gains no methods (C8). */
+  /** Run datasets (CD16, CD17), and the conversation a person and FluxIQ talk in: reached as fields so the frozen facade gains no methods (C8). */
   readonly runDatasets: AutomationStudioRunDatasets;
+  readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
@@ -719,6 +433,7 @@ export class AutomationStudioService {
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
     this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool);
+    this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool);
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
     this.proposalGeneration = new AutomationStudioProposalGeneration(this.recordings, automationStudioFacadePorts(this));
@@ -1517,28 +1232,7 @@ export class AutomationStudioService {
   }
 
   private async listAutomationProposalSummaries(projectId: string): Promise<AutomationStudioProposalSummary[]> {
-    const index = await this.indexes.readPipelineIndex(projectId);
-    const policyProposals = (index.policyProposals ?? []).map((item): AutomationStudioProposalSummary => ({
-      proposalId: item.proposalId,
-      recordingId: item.recordingId ?? "unknown",
-      kind: "policy",
-      status: item.status === "approved" ? "approved" : "generated",
-      generatedAt: item.generatedAt,
-      updatedAt: item.generatedAt,
-      nodeCount: 0,
-      issueCount: 0
-    }));
-    const recordingFlowProposals = (index.recordingFlowProposals ?? []).map((item): AutomationStudioProposalSummary => ({
-      proposalId: item.proposalId,
-      recordingId: item.recordingId ?? "unknown",
-      kind: "recording_flow",
-      status: item.status === "proposed" ? "generated" : item.status,
-      generatedAt: item.generatedAt,
-      updatedAt: item.generatedAt,
-      nodeCount: 0,
-      issueCount: 0
-    }));
-    return [...policyProposals, ...recordingFlowProposals].sort((left, right) => right.generatedAt - left.generatedAt);
+    return await listAutomationStudioProposalSummaries({ indexes: this.indexes }, projectId);
   }
 
   async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
@@ -1843,7 +1537,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           registry,
           resolution,
           instructionText: bootstrapInstructionText,
-          ...(input.evidenceGuided ? { maxCatalogEntries: 12 } : {}),
+          ...(input.evidenceGuided ? { maxCatalogEntries: 64 } : {}),
           maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
             maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
             instructionBytes: Buffer.byteLength(JSON.stringify(resolvedInstructions), "utf8")
@@ -1877,8 +1571,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         if (input.evidenceGuided) {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           let estimatedInputTokens = 0;
-          const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
-          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+          const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA;
+          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id) }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
           const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
           const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
           const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive });
@@ -1890,8 +1584,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             tools: harnessOptions.tools,
             propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
-            checkCompletion: async (result) => {
-              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep });
+            checkCompletion: async (result, context) => {
+              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.ok ? { ok: true } : verdict.check;
             },
@@ -1912,7 +1606,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 // Reserve evidence-decision input capacity for the dynamic tool
                 // schema and accumulated evidence instead of allowing the node
                 // catalog to consume the ordinary Bootstrap input allocation.
-                flowBootstrap: { registry, resolution, maxInputTokens: 5_000, routing: routing.context() },
+                flowBootstrap: { registry, resolution, maxInputTokens: 16_000, routing: routing.context() },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
                 ...(bootstrapLoopLimits.maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall } : {}),
@@ -2513,42 +2207,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async inspectFlowMigration(projectId: string): Promise<AutomationStudioFlowMigrationInspection> {
-    const project = await this.projects.findProject(projectId);
-    const [canonicalFlows, legacyArtifacts] = await Promise.all([
-      this.catalogue.listCanonicalFlowArtifacts(projectId),
-      this.legacy.readLegacyProjectArtifacts(projectId)
-    ]);
-    const catalog = resolveAutomationStudioFlowCatalog({
-      projectId,
-      scope: flowScopeForProject(project),
-      canonicalFlows,
-      legacyArtifacts
-    });
-    const alreadyMigrated = new Set(canonicalFlows.flatMap((flow) => flow.legacyProvenance
-      ? [`${flow.legacyProvenance.kind}:${flow.legacyProvenance.artifactId}`]
-      : []));
-    const outcomes = catalog
-      .filter((entry) => entry.source !== "canonical" && entry.flow.legacyProvenance)
-      .map((entry) => {
-        const provenance = entry.flow.legacyProvenance!;
-        const key = `${provenance.kind}:${provenance.artifactId}`;
-        const status: AutomationStudioFlowMigrationOutcome["status"] = alreadyMigrated.has(key) ? "already_migrated" : "created";
-        return {
-          legacyKind: provenance.kind,
-          legacyArtifactId: provenance.artifactId,
-          flowId: entry.flow.flowId,
-          status,
-          message: status === "already_migrated"
-            ? "A canonical Flow already retains this legacy provenance."
-            : "Legacy source will be retained unchanged as the recovery source."
-        };
-      });
-    return {
-      projectId,
-      backupId: `legacy-source.${safeSegment(projectId)}`,
-      outcomes,
-      migrationNeeded: outcomes.some((outcome) => outcome.status === "created")
-    };
+    return await inspectAutomationStudioFlowMigration({ projects: this.projects, catalogue: this.catalogue, legacy: this.legacy }, projectId);
   }
 
   async inspectLegacyRetirement(projectId: string): Promise<AutomationStudioLegacyRetirementReport> {
@@ -3100,8 +2759,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (this.nativeNodeRuntime) { graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])]; graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext); }
     if (this.hostRuntime) graphOptions.hostRuntime = this.hostRuntime;
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
-    // The run's captured rows reach the project's store under this run id. A retry or live patch reuses these options and this session, so its batches land under the same run (K4c).
+    // The run's captured rows reach the project's store under this run id, and a question it raises reaches the run's own thread, where its answer comes back from. A retry or live patch reuses these options and this session, so both land under the same run (K4c). Without project storage there is nowhere for a thread to live, and a run that asks still parks with nobody told.
     if (input.projectId && this.runDatasets.available) graphOptions.onRecordBatch = this.runDatasets.recordBatchHandler(input.projectId, session.runId);
+    if (input.projectId && this.conversations.available) graphOptions.parking = this.conversations.parkingPort({ projectId: input.projectId, subject: { kind: "run", id: session.runId } });
     // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
@@ -3342,50 +3002,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listProjectProblems(input: { projectId: string; domainId?: string | null; severity?: string; source?: string; status?: string; scopeId?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioProblemPage> {
-    await this.projects.findProject(input.projectId);
-    const severity = input.severity?.trim().toLowerCase() || "";
-    const source = input.source?.trim().toLowerCase() || "";
-    const requestedStatus = input.status?.trim().toLowerCase() || "open";
-    if (severity && !["error", "warning", "info"].includes(severity)) throw new Error("Invalid problem severity filter.");
-    if (!["open", "resolved", "all"].includes(requestedStatus)) throw new Error("Invalid problem status filter.");
-    const status = requestedStatus === "all" ? "" : requestedStatus;
-    const scopeId = input.scopeId?.trim() || "";
-    const search = input.search?.trim().toLowerCase() || "";
-    const limit = automationStudioPageLimit(input.limit, 100);
-    const owner = `project-problems:${input.projectId}`;
-    const filterHash = automationStudioFilterHash({ severity, source, status, scopeId, search });
-    const cursor = decodeAutomationStudioPageCursor<{ rank: number; source: string; id: string }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.rank) && typeof values.source === "string" && typeof values.id === "string" });
-    const base = baselineAutomationStudioProblems().filter((problem) => {
-      const problemSource = String(problem.artifactKind ?? "framework").toLowerCase();
-      const problemStatus = String((problem as any).status ?? "open").toLowerCase();
-      const problemScope = String(problem.artifactId ?? "");
-      const text = [problem.id, problem.message, problem.artifactKind, problem.artifactId].join(" ").toLowerCase();
-      return (!source || problemSource === source) && (!status || problemStatus === status)
-        && (!scopeId || problemScope === scopeId) && (!search || text.includes(search));
-    });
-    const all = base.filter((problem) => !severity || problem.severity === severity).sort((left, right) => problemSeverityRank(left.severity) - problemSeverityRank(right.severity)
-      || String(left.artifactKind ?? "framework").localeCompare(String(right.artifactKind ?? "framework"))
-      || left.id.localeCompare(right.id));
-    const after = cursor ? all.filter((problem) => {
-      const rank = problemSeverityRank(problem.severity);
-      const problemSource = String(problem.artifactKind ?? "framework");
-      return rank > cursor.rank || rank === cursor.rank && (problemSource > cursor.source || problemSource === cursor.source && problem.id > cursor.id);
-    }) : all;
-    const problems = after.slice(0, limit);
-    const last = problems.at(-1);
-    const counts = {
-      error: base.filter((problem) => problem.severity === "error").length,
-      warning: base.filter((problem) => problem.severity === "warning").length,
-      info: base.filter((problem) => problem.severity === "info").length
-    };
-    return {
-      problems,
-      total: all.length,
-      counts,
-      limit,
-      hasMore: after.length > limit,
-      nextCursor: after.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { rank: problemSeverityRank(last.severity), source: String(last.artifactKind ?? "framework"), id: last.id } }) : null
-    };
+    return await listAutomationStudioProjectProblems({ projects: this.projects }, input);
   }
 
   async getFlowRouterSummary(projectId: string, flowId: string): Promise<Omit<AutomationStudioFlowRouter, "rules"> & { rules?: never; ruleCount: number } | null> {
@@ -4453,45 +4070,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async updateProject(input: { projectId?: unknown; name?: unknown; description?: unknown; categoryId?: unknown }): Promise<AutomationStudioProject> {
-    const projectId = String(input.projectId ?? "");
-    const name = typeof input.name === "string" ? input.name.trim() : undefined;
-    if (name !== undefined && !name) throw new Error("Project name is required.");
-    if (this.objectStore && this.projects.indexStore) {
-      return await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
-        const current = state.projects.find((project) => project.id === projectId);
-        if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-        const updated = {
-          ...current,
-          ...(name !== undefined ? { name } : {}),
-          ...(typeof input.description === "string" ? { description: input.description.trim() } : {}),
-          ...(input.categoryId !== undefined ? { categoryId: typeof input.categoryId === "string" && input.categoryId.trim() ? input.categoryId.trim() : null } : {}),
-          updatedAt: Date.now()
-        };
-        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
-        await transaction.write(this.projectPaths.projectFile(projectId, "manifest.json"), updated);
-        return updated;
-      });
-    }
-    let updated: AutomationStudioProject | undefined;
-    await this.projects.writeProjectIndex((state) => ({
-      ...state,
-      projects: state.projects.map((project) => {
-        if (project.id !== projectId) return project;
-        updated = {
-          ...project,
-          ...(name !== undefined ? { name } : {}),
-          ...(typeof input.description === "string" ? { description: input.description.trim() } : {}),
-          ...(input.categoryId !== undefined ? { categoryId: typeof input.categoryId === "string" && input.categoryId.trim() ? input.categoryId.trim() : null } : {}),
-          updatedAt: Date.now()
-        };
-        return updated;
-      })
-    }));
-    if (!updated) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    const existing = await this.projects.findProject(projectId);
-    await this.projects.writeProjectRecord({ ...existing, ...updated });
-    return updated;
+    return await updateAutomationStudioProject({ objectStore: this.objectStore, projects: this.projects, projectPaths: this.projectPaths }, input);
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
@@ -4699,68 +4278,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     projectId: string,
     staleIndex: AutomationStudioFlowSummaryIndex
   ): Promise<AutomationStudioFlowSummaryIndex> {
-    const repairedByFlowId = new Map<string, AutomationStudioFlowSummary>();
-    await Promise.all((staleIndex.flows ?? []).map(async (summary) => {
-      await this.flows.loadProjectFlow(projectId, summary.flowId);
-      const flow = await this.repositories.flows.get(summary.flowId);
-      if (flow?.projectId === projectId) repairedByFlowId.set(summary.flowId, flowSummaryFromFlow(flow));
-    }));
-    const repairedSubflowPlacement = new Map<string, { graphFlowId?: string; parentCategoryId?: string }>();
-    for (const flowSummary of repairedByFlowId.values()) {
-      for (const subflow of flowSummary.hierarchySubflows ?? []) {
-        repairedSubflowPlacement.set(subflow.subflowId, {
-          ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
-          ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {})
-        });
-      }
-    }
-    if (repairedSubflowPlacement.size) {
-      await this.indexes.writeFlowSubflowIndex(projectId, (index) => ({
-        schemaVersion: "0.1",
-        summaryVersion: 2,
-        subflows: (index.subflows ?? []).map((subflow) => {
-          const placement = repairedSubflowPlacement.get(subflow.subflowId);
-          return placement ? { ...subflow, ...placement } : subflow;
-        })
-      }));
-    }
-    return await this.indexes.writeFlowIndex(projectId, (current) => {
-      if (current.ownershipMetadataVersion === 1 && current.hierarchyMetadataVersion === 1) return current;
-      return {
-        schemaVersion: "0.1",
-        ownershipMetadataVersion: 1,
-        hierarchyMetadataVersion: 1,
-        flows: (current.flows ?? []).map((summary) => repairedByFlowId.get(summary.flowId) ?? summary)
-      };
-    });
+    return await repairAutomationStudioFlowSummaryMetadataIndex({ flows: this.flows, repositories: this.repositories, indexes: this.indexes }, projectId, staleIndex);
   }
 
   private async withCanonicalFlowHierarchySubflows(projectId: string, flows: AutomationStudioFlowSummary[]): Promise<AutomationStudioFlowSummary[]> {
-    // Only a missing index reads as empty; an unreadable one fails the listing.
-    const index = await this.indexes.readFlowSubflowIndex(projectId);
-    const byFlowId = new Map<string, AutomationStudioSubflowSummary[]>();
-    for (const subflow of index.subflows ?? []) {
-      if (!subflow.flowId) continue;
-      const items = byFlowId.get(subflow.flowId) ?? [];
-      items.push(subflow);
-      byFlowId.set(subflow.flowId, items);
-    }
-    if (!byFlowId.size) return flows;
-    return flows.map((flow) => {
-      const subflows = byFlowId.get(flow.flowId);
-      if (!subflows) return flow;
-      return {
-        ...flow,
-        hierarchySubflows: subflows
-          .sort((left, right) => left.name.localeCompare(right.name) || left.subflowId.localeCompare(right.subflowId))
-          .map((subflow) => ({
-            subflowId: subflow.subflowId,
-            name: subflow.name,
-            ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
-            ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {})
-          }))
-      };
-    });
+    return await withAutomationStudioCanonicalFlowHierarchySubflows({ indexes: this.indexes }, projectId, flows);
   }
 
   private async reviewTypedFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation | null> {
@@ -5008,33 +4530,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   /** Reads legacy project documents without the historical task-graph embedding side effect. */
   private async embedTaskGraphs(projectId: string, tasks: AutomationStudioTaskArtifact[], flows: AutomationStudioFlowDocument[]): Promise<AutomationStudioTaskArtifact[]> {
-    const flowsById = new Map(flows.map((flow) => [flow.flowId, flow]));
-    const nextTasks: AutomationStudioTaskArtifact[] = [];
-    for (const task of tasks) {
-      if (task.graph?.nodes && task.graph?.edges) {
-        nextTasks.push(task);
-        continue;
-      }
-      const graph = (typeof task.graphId === "string" ? flowsById.get(task.graphId) : undefined)
-        ?? (typeof task.policyFlowId === "string" ? flowsById.get(task.policyFlowId) : undefined)
-        ?? flows.find((flow) => flow.ownerKind === "task" && flow.ownerId === task.taskId);
-      if (!graph) {
-        nextTasks.push(task);
-        continue;
-      }
-      const nextTask: AutomationStudioTaskArtifact = {
-        ...task,
-        graphId: graph.flowId,
-        policyFlowId: graph.flowId,
-        graph,
-        metadata: {
-          ...(task.metadata ?? {}),
-          graphEmbeddedAt: Date.now()
-        }
-      };
-      nextTasks.push(nextTask);
-    }
-    return nextTasks;
+    return await embedAutomationStudioTaskGraphs(projectId, tasks, flows);
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
@@ -5139,1137 +4635,4 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.repositories.learnedTaskModels.put(fixture.learnedTaskModel);
     await this.repositories.policyGraphs.put(fixture.policy);
   }
-}
-
-function nextCategoryOrder(categories: AutomationStudioProjectCategory[]): number {
-  if (!categories.length) return 0;
-  return Math.max(...normalizeProjectCategories(categories).map((category) => category.order)) + 1;
-}
-
-function sqlResourceStatus(status: string): "draft" | "active" | "archived" | "deleted" {
-  if (status === "archived") return "archived";
-  if (status === "deleted") return "deleted";
-  if (status === "draft") return "draft";
-  return "active";
-}
-
-function sqlRouterGroupToFlowGroup(group: AutomationStudioSqlRouter["groups"][number], _index = 0): AutomationStudioFlowRouteGroup {
-  return {
-    schemaVersion: "0.1",
-    groupId: group.groupId,
-    routerId: group.routerId,
-    name: group.name,
-    ...(group.description ? { description: group.description } : {}),
-    order: group.order,
-    status: group.status,
-    collapsed: group.collapsed,
-    createdAt: group.createdAt,
-    updatedAt: group.updatedAt,
-    metadata: { ...group.metadata, revision: group.revision }
-  };
-}
-
-function sqlRouterRouteToFlowRule(route: AutomationStudioSqlRouterRoute): AutomationStudioFlowRouteRule {
-  return {
-    schemaVersion: "0.1",
-    ruleId: route.routeId,
-    routerId: route.routerId,
-    name: route.name,
-    target: { kind: "subflow", subflowId: route.targetSubflowId ?? "" },
-    order: route.priority,
-    status: route.enabled ? "active" : "disabled",
-    ...(route.conditionKind !== "always" && route.condition && typeof route.condition === "object" ? { condition: route.condition } : {}),
-    createdAt: route.createdAt,
-    updatedAt: route.updatedAt,
-    metadata: { ...(route.groupId ? { groupId: route.groupId } : {}), revision: route.revision }
-  } as unknown as AutomationStudioFlowRouteRule;
-}
-
-function withFlowMapRouteGroups(router: AutomationStudioFlowRouter, groups: AutomationStudioFlowRouteGroup[]): AutomationStudioFlowRouter {
-  return {
-    ...router,
-    metadata: compactJsonObject({
-      ...(router.metadata ?? {}),
-      routeGroups: groups.slice().sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
-    })
-  };
-}
-
-function nextRouteGroupOrder(groups: AutomationStudioFlowRouteGroup[]): number {
-  return groups.reduce((max, group) => Math.max(max, group.order), -10) + 10;
-}
-
-function nextRouteOrder(rules: AutomationStudioFlowRouteRule[]): number {
-  return rules.reduce((max, rule) => Math.max(max, rule.order), -10) + 10;
-}
-
-function routeRuleMetadataWithGroup(metadata: JsonObject | undefined, groupId: string | null | undefined): JsonObject | undefined {
-  const next: Record<string, unknown> = { ...(metadata ?? {}) };
-  if (typeof groupId === "string" && groupId.trim()) next.groupId = groupId.trim();
-  if (groupId === null || groupId === "") delete next.groupId;
-  return Object.keys(next).length ? next as JsonObject : undefined;
-}
-
-function routeRuleMetadataWithoutGroup(metadata: JsonObject | undefined, groupId: string): JsonObject | undefined {
-  const next: Record<string, unknown> = { ...(metadata ?? {}) };
-  if (next.groupId === groupId) delete next.groupId;
-  return Object.keys(next).length ? next as JsonObject : undefined;
-}
-
-function flowMapExpansionStatus(value: unknown, fallback: AutomationStudioFlowRouteRule["status"]): AutomationStudioFlowRouteRule["status"] {
-  return value === "active" || value === "disabled" || value === "archived" ? value : fallback;
-}
-function routeConditionFromInput(input: UpsertFlowMapRouteInput): AutomationStudioFlowRouteRule["condition"] | undefined {
-  const signalPath = input.conditionSignalPath?.trim();
-  if (!signalPath) return undefined;
-  const allowed = new Set(["equals", "not_equals", "exists", "greater_than", "less_than", "contains", "matches", "similar_to", "changed", "increased", "decreased", "became_true", "became_false", "stable_for"]);
-  const operator = allowed.has(input.conditionOperator ?? "") ? input.conditionOperator! : "exists";
-  return compactJsonObject({
-    signalPath,
-    operator,
-    ...(operator !== "exists" && input.conditionExpected !== undefined ? { expected: input.conditionExpected } : {})
-  }) as AutomationStudioFlowRouteRule["condition"];
-}
-
-function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(max, Math.max(min, numeric));
-}
-
-function removeUndefinedRouteRuleFields(rule: Record<string, unknown>): AutomationStudioFlowRouteRule {
-  return Object.fromEntries(Object.entries(rule).filter(([, value]) => value !== undefined)) as unknown as AutomationStudioFlowRouteRule;
-}
-function changeProposalSummaryFromProposal(proposal: AutomationStudioFlowChangeProposal): AutomationStudioChangeProposalSummary {
-  return {
-    proposalId: proposal.proposalId,
-    flowId: proposal.flowId,
-    projectId: proposal.projectId,
-    ...(proposal.subflowId ? { subflowId: proposal.subflowId } : {}),
-    mode: proposal.mode,
-    status: proposal.status,
-    riskLevel: proposal.riskLevel,
-    patchCount: proposal.patches.length,
-    updatedAt: proposal.updatedAt
-  };
-}
-function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioAdaptationSummary {
-  return {
-    adaptationId: adaptation.adaptationId,
-    flowId: adaptation.flowId,
-    projectId: adaptation.projectId,
-    ...(adaptation.subflowId ? { subflowId: adaptation.subflowId } : {}),
-    status: adaptation.status,
-    riskLevel: adaptation.riskLevel,
-    trigger: adaptation.trigger,
-    updatedAt: adaptation.updatedAt
-  };
-}
-
-function adaptationFromTypedStoreDetail(detail: { adaptation: AutomationStudioFlowAdaptation; revisions?: unknown; artifacts?: unknown[]; auditEvents?: unknown[]; auditTotal?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null; statusReason?: string; supersededByAdaptationId?: string | null }): AutomationStudioFlowAdaptation {
-  return {
-    ...detail.adaptation,
-    metadata: compactJsonObject({
-      ...(detail.adaptation.metadata ?? {}),
-      ...(detail.approvalMode === "manual_approval" ? { proposalModeOverride: "manual" } : {}),
-      phase9: compactJsonObject({
-        revisions: isJsonRecord(detail.revisions) ? detail.revisions : {},
-        artifacts: Array.isArray(detail.artifacts) ? detail.artifacts : [],
-        auditEvents: Array.isArray(detail.auditEvents) ? detail.auditEvents : [],
-        auditTotal: detail.auditTotal,
-        approvalMode: detail.approvalMode,
-        baseRevision: detail.baseRevision,
-        appliedRevision: detail.appliedRevision ?? undefined,
-        statusReason: detail.statusReason,
-        supersededByAdaptationId: detail.supersededByAdaptationId ?? undefined
-      })
-    })
-  };
-}
-
-function adaptationApprovalModeForStore(adaptation: AutomationStudioFlowAdaptation): "adaptive" | "manual_approval" | "disabled" {
-  if (adaptation.status === "disabled") return "disabled";
-  const value = adaptation.metadata?.proposalModeOverride ?? adaptation.metadata?.approvalMode;
-  if (value === "manual" || value === "manual_approval") return "manual_approval";
-  if (value === "disabled" || value === "deterministic") return "disabled";
-  return "adaptive";
-}
-
-function adaptationEvidenceForStore(adaptation: AutomationStudioFlowAdaptation): JsonObject | undefined {
-  const evidence = compactJsonObject({ observedState: adaptation.observedState, expectedState: adaptation.expectedState, failedAction: adaptation.failedAction, diagnosis: adaptation.diagnosis });
-  return Object.keys(evidence).length ? evidence : undefined;
-}
-
-function approvalDecisionHistory(metadata: JsonObject | undefined): JsonObject[] {
-  const history = metadata?.approvalDecisions;
-  return Array.isArray(history) ? history.filter(isJsonRecord).slice(-20) : [];
-}
-
-function adaptationPolicySummaryFromPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): AutomationStudioAdaptationPolicySummary {
-  return {
-    policyId: policy.policyId,
-    projectId,
-    flowId: policy.scope.flowId,
-    ...(policy.scope.kind === "subflow" ? { subflowId: policy.scope.subflowId } : {}),
-    preset: policy.preset,
-    proposalMode: policy.proposalMode,
-    updatedAt: policy.updatedAt
-  };
-}
-
-function recordingSummaryFromSession(recording: RecordingSession, projectId: string): RecordingSummaryItem {
-  const title = stringMetadataValue(recording.metadata, "name")
-    ?? stringMetadataValue(recording.metadata, "title")
-    ?? recording.recordingId;
-  const updatedAt = Math.max(recording.endedAt ?? 0, latestTimelineTimestamp(recording), recording.startedAt);
-  return {
-    id: recording.recordingId,
-    title,
-    status: recording.endedAt === undefined ? "recording" : "completed",
-    projectId,
-    taskId: recording.taskId ?? null,
-    eventCount: recording.timeline.length,
-    startedAt: new Date(recording.startedAt).toISOString(),
-    endedAt: recording.endedAt === undefined ? null : new Date(recording.endedAt).toISOString(),
-    updatedAt: new Date(updatedAt).toISOString()
-  };
-}
-
-function summaryRecordingSession(recording: RecordingSession): RecordingSession {
-  const { timeline: _timeline, notes: _notes, initialState: _initialState, ...summary } = recording;
-  return {
-    ...summary,
-    initialState: { timestamp: recording.initialState?.timestamp ?? recording.startedAt, namespaces: {} },
-    timeline: [],
-    notes: [],
-    metadata: {
-      ...(recording.metadata ?? {}),
-      summaryOnly: true,
-      eventCount: typeof recording.metadata?.eventCount === "number" ? recording.metadata.eventCount : recording.timeline.length,
-      noteCount: typeof recording.metadata?.noteCount === "number" ? recording.metadata.noteCount : recording.notes.length
-    }
-  };
-}
-
-function latestTimelineTimestamp(recording: RecordingSession): number {
-  return recording.timeline.reduce((latest, entry) => Math.max(latest, typeof entry.timestamp === "number" ? entry.timestamp : 0), 0);
-}
-
-function recordingUpdatedAt(recording: RecordingSession): number {
-  return Math.max(recording.endedAt ?? 0, latestTimelineTimestamp(recording), recording.startedAt);
-}
-
-function recordingEntryIsActionLike(entry: RecordingSession["timeline"][number]): boolean {
-  const record = entry as unknown as Record<string, unknown>;
-  const type = typeof record.type === "string" ? record.type : "";
-  if (type === "action" || type === "client_action" || type === "recorded_action" || type === "interaction") return true;
-  if (typeof record.actionType === "string" && record.actionType.trim()) return true;
-  if (record.action && typeof record.action === "object" && !Array.isArray(record.action)) return true;
-  return false;
-}
-
-function recordingActionEntryCandidate(entry: RecordingSession["timeline"][number]): AutomationStudioRecordingMapperCandidate | null {
-  if (entry.type !== "action") return null;
-  const outputId = typeof entry.outputId === "string" && entry.outputId.trim()
-    ? entry.outputId.trim()
-    : typeof entry.actionType === "string" && entry.actionType.trim()
-      ? entry.actionType.trim()
-      : "";
-  if (!outputId) return null;
-  const metadata = entry.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata) ? entry.metadata as JsonObject : {};
-  if (metadata.policyEligible === false) return null;
-  const inputId = typeof metadata.inputId === "string" && metadata.inputId.trim()
-    ? metadata.inputId.trim()
-    : typeof entry.confirmationInputId === "string" && entry.confirmationInputId.trim()
-      ? entry.confirmationInputId.trim()
-      : undefined;
-  return {
-    outputId,
-    parameters: entry.parameters && typeof entry.parameters === "object" && !Array.isArray(entry.parameters) ? entry.parameters as JsonObject : {},
-    ...(inputId ? { sourceInputIds: [inputId] } : {}),
-    ...(entry.confirmationInputId ? { expectedConfirmation: { inputId: entry.confirmationInputId, timeoutMs: entry.confirmationTimeoutMs ?? 5_000 } } : {}),
-    confidence: 0.95,
-    label: readableTokenValue(outputId)
-  };
-}
-
-function stringMetadataValue(metadata: JsonObject, key: string): string | null {
-  const value = metadata[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function normalizePositiveInteger(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function countBy(values: string[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
-  return counts;
-}
-
-function compareSemanticVersions(left: string, right: string): number {
-  const leftParts = left.split(".").map(Number);
-  const rightParts = right.split(".").map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (difference) return difference;
-  }
-  return 0;
-}
-
-function countRecordingEntryTypes(entries: RecordingSession["timeline"]): string {
-  const counts = new Map<string, number>();
-  for (const entry of entries) counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
-  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([type, count]) => `${type}: ${count}`).join(", ") || "no entries";
-}
-
-function recordingProposalReplacementBase(flow: AutomationStudioFlowArtifact): AutomationStudioFlowArtifact {
-  const generatedNodes = flow.nodes.every((node) => typeof node.metadata?.recordingProposalId === "string"
-    && (!Array.isArray(node.metadata.manualProvenance) || node.metadata.manualProvenance.length === 0));
-  const generatedEdges = flow.edges.every((edge) => typeof edge.metadata?.recordingProposalId === "string");
-  if ((flow.nodes.length || flow.edges.length) && (!generatedNodes || !generatedEdges)) {
-    throw new Error("Replacing a primary Subflow is allowed only when its graph is empty or entirely unedited recording-derived behavior.");
-  }
-  return {
-    ...flow,
-    nodes: [],
-    edges: [],
-    metadata: { ...(flow.metadata ?? {}), recordingProposalIds: [] }
-  };
-}
-
-function problemSeverityRank(value: string): number { return value === "error" ? 0 : value === "warning" ? 1 : 2; }
-function baselineAutomationStudioProblems(): import("../api/contracts.ts").AutomationStudioProblem[] {
-  return [{
-    id: "automation-studio.host-artifacts",
-    severity: "info",
-    message: "Automation Studio is ready for host-owned artifacts. Create or load a project to begin recording and authoring."
-  }];
-}
-
-function nodeDefinitionScopeAllows(definition: AutomationStudioNodeDefinition, scope: AutomationStudioFlowScope): boolean {
-  return definition.availability.kind === "both"
-    || (definition.availability.kind === "global" && scope.kind === "global")
-    || (definition.availability.kind === "domain" && scope.kind === "domain" && definition.availability.domainId === scope.domainId);
-}
-
-function canonicalFlowDigest(flow: AutomationStudioFlowArtifact): string {
-  const { updatedAt: _updatedAt, ...stable } = flow;
-  return createHash("sha256").update(stableJson(stable)).digest("hex");
-}
-
-function subflowMetadataWithParentCategory(metadata: AutomationStudioFlowSubflow["metadata"], parentCategoryId: string | null): AutomationStudioFlowSubflow["metadata"] | undefined {
-  const next = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? { ...metadata } : {};
-  delete next.parentCategoryId;
-  delete next.subflowCategoryId;
-  delete next.categoryId;
-  if (parentCategoryId?.trim()) {
-    next.parentCategoryId = parentCategoryId.trim();
-    next.subflowCategoryId = parentCategoryId.trim();
-  }
-  return Object.keys(next).length ? next : undefined;
-}
-
-function assertExactObjectFields(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
-  const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
-  if (unexpected.length) throw new Error(`${label} contains unsupported fields: ${unexpected.sort().join(", ")}`);
-}
-
-function requiredBootstrapCommandId(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value.trim() || value.length > 500) throw new Error(`Flow Bootstrap ${label} ID is invalid.`);
-  return value.trim();
-}
-
-function requiredBootstrapDigest(value: unknown): string {
-  if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) throw new Error("Flow Bootstrap execution digest is invalid.");
-  return value.toLowerCase();
-}
-
-function requiredBootstrapSettingsRevision(value: unknown): number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new Error("Flow Bootstrap settings revision is invalid.");
-  return value as number;
-}
-function automationStudioFlowSettingsFingerprint(flow: AutomationStudioFlowArtifact): number {
-  const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
-  const digest = createHash("sha256").update(stableJson({
-    executionDefaults: flow.executionDefaults ?? {},
-    trainingModeSettings: metadata.trainingModeSettings ?? {},
-    adaptationPolicyId: metadata.adaptationPolicyId ?? null,
-    adaptationPolicySettings: metadata.adaptationPolicySettings ?? {},
-    llmProvider: metadata.llmProvider ?? "host",
-    llmModel: metadata.llmModel ?? null,
-    llmSecretKeyId: metadata.llmSecretKeyId ?? null,
-    llmExecutionSettings: metadata.llmExecutionSettings ?? {}
-  })).digest("hex");
-  return Math.max(1, Number.parseInt(digest.slice(0, 8), 16));
-}
-
-function buildRecordingStateIndex(projectId: string, recording: RecordingSession): RecordingStateIndex {
-  const now = Date.now();
-  const index = emptyRecordingIndex({
-    projectId,
-    recordingId: recording.recordingId,
-    startedAt: recording.startedAt,
-    ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}),
-    updatedAt: now
-  });
-  index.summary = {
-    ...index.summary,
-    eventCount: recording.timeline.length,
-    actionCount: recording.timeline.filter(recordingEntryIsActionLike).length,
-    stateSnapshotCount: recording.timeline.filter(recordingEntryIsStateSnapshot).length,
-    proposalCount: 0,
-    updatedAt: now
-  };
-  index.timeline = {
-    timelineRef: "timeline.jsonl",
-    ...(recording.timeline[0]?.id ? { firstEntryId: recording.timeline[0].id } : {}),
-    ...(recording.timeline.at(-1)?.id ? { lastEntryId: recording.timeline.at(-1)!.id } : {})
-  };
-
-  for (const [sequence, entry] of recording.timeline.entries()) {
-    const actionId = recordingEntryActionId(entry);
-    const indexedTimestamp = recordingEntryIndexedTimestamp(entry);
-    index.entries[entry.id] = {
-      entryId: entry.id,
-      type: entry.type,
-      ...(indexedTimestamp !== undefined ? { timestamp: indexedTimestamp } : {}),
-      ...(typeof (entry as { startedAt?: unknown }).startedAt === "number" ? { startedAt: (entry as { startedAt: number }).startedAt } : {}),
-      ...(typeof (entry as { completedAt?: unknown }).completedAt === "number" ? { completedAt: (entry as { completedAt: number }).completedAt } : {}),
-      ...(typeof (entry as { monotonicOffsetMs?: unknown }).monotonicOffsetMs === "number" ? { monotonicOffsetMs: (entry as { monotonicOffsetMs: number }).monotonicOffsetMs } : {}),
-      sequence,
-      ...(actionId ? { actionId } : {}),
-      objectRefs: recordingEntryObjectRefs(projectId, entry)
-    };
-
-    let stateSnapshotId = recordingEntryStateSnapshotId(entry);
-    if (recordingEntryIsStateSnapshot(entry) && stateSnapshotId) {
-      const stateItem = recordingEntryStateIndexItem(projectId, entry, stateSnapshotId);
-      if (stateItem) {
-        index.states[stateSnapshotId] = stateItem;
-        index.entries[entry.id] = { ...index.entries[entry.id]!, stateSnapshotId };
-      } else {
-        stateSnapshotId = undefined;
-      }
-    }
-
-    if (actionId) {
-      const actionStateId = recordingEntryExplicitStateSnapshotId(entry);
-      const visualTargetIndexItem = recordingActionVisualTargetIndexItem((entry as { visualTarget?: any }).visualTarget);
-      index.actions[actionId] = {
-        actionId,
-        entryId: entry.id,
-        actionType: recordingEntryActionType(entry),
-        ...(typeof (entry as { outputId?: unknown }).outputId === "string" ? { outputId: (entry as { outputId: string }).outputId } : {}),
-        ...(typeof (entry as { startedAt?: unknown }).startedAt === "number" ? { startedAt: (entry as { startedAt: number }).startedAt } : {}),
-        ...(typeof (entry as { completedAt?: unknown }).completedAt === "number" ? { completedAt: (entry as { completedAt: number }).completedAt } : {}),
-        ...(actionStateId ? { stateAtActionId: actionStateId } : {}),
-        ...(visualTargetIndexItem ? { visualTarget: visualTargetIndexItem } : {}),
-        sourceObjectRefs: recordingEntryObjectRefs(projectId, entry)
-      };
-      if (actionStateId) {
-        index.entries[entry.id] = { ...index.entries[entry.id]!, stateSnapshotId: actionStateId };
-        if (index.states[actionStateId] && !index.states[actionStateId]!.linkedActionIds.includes(actionId)) {
-          index.states[actionStateId] = {
-            ...index.states[actionStateId]!,
-            linkedActionIds: [...index.states[actionStateId]!.linkedActionIds, actionId].sort()
-          };
-        }
-      }
-    }
-  }
-
-  return finalizeRecordingStateLinks(sortRecordingIndex(index)).index;
-}
-
-function resolveRecordingStateIndexItem(index: RecordingStateIndex, input: RecordingEntryStateLookupInput): { state?: RecordingStateIndexItem; reason: string } {
-  if (input.stateSnapshotId) {
-    const state = index.states[input.stateSnapshotId];
-    return state ? { state, reason: "" } : { reason: `State snapshot ${input.stateSnapshotId} is not indexed for recording ${input.recordingId}.` };
-  }
-  if (input.actionId) {
-    const action = index.actions[input.actionId];
-    if (!action) return { reason: `Action ${input.actionId} is not indexed for recording ${input.recordingId}.` };
-    if (!action.stateAtActionId) return { reason: `Action ${input.actionId} has no linked state snapshot.` };
-    const state = index.states[action.stateAtActionId];
-    return state ? { state, reason: "" } : { reason: `Action ${input.actionId} points to missing state snapshot ${action.stateAtActionId}.` };
-  }
-  if (input.entryId) {
-    const entry = index.entries[input.entryId];
-    if (!entry) return { reason: `Entry ${input.entryId} is not indexed for recording ${input.recordingId}.` };
-    if (entry.stateSnapshotId) {
-      const state = index.states[entry.stateSnapshotId];
-      return state ? { state, reason: "" } : { reason: `Entry ${input.entryId} points to missing state snapshot ${entry.stateSnapshotId}.` };
-    }
-    if (entry.actionId) {
-      const action = index.actions[entry.actionId];
-      const state = action?.stateAtActionId ? index.states[action.stateAtActionId] : undefined;
-      if (state) return { state, reason: "" };
-    }
-    const priorState = latestStateAtOrBeforeEntry(index, entry);
-    if (priorState) return { state: priorState, reason: "" };
-    return { reason: `Entry ${input.entryId} has no linked state snapshot.` };
-  }
-  return { reason: "State lookup requires stateSnapshotId, actionId, or entryId." };
-}
-
-function latestStateAtOrBeforeEntry(index: RecordingStateIndex, entry: RecordingEntryIndexItem): RecordingStateIndexItem | undefined {
-  const targetTime = firstFiniteNumber(entry.startedAt, entry.timestamp, entry.completedAt, entry.monotonicOffsetMs);
-  const targetSequence = entry.sequence;
-  const states = Object.values(index.states).filter((state) => {
-    const stateEntry = index.entries[state.entryId];
-    if (targetTime !== undefined) {
-      const stateTime = firstFiniteNumber(state.timestamp, stateEntry?.timestamp, stateEntry?.startedAt, state.monotonicOffsetMs, stateEntry?.monotonicOffsetMs);
-      if (stateTime !== undefined) return stateTime <= targetTime;
-    }
-    return targetSequence !== undefined && stateEntry?.sequence !== undefined && stateEntry.sequence <= targetSequence;
-  });
-  return states.sort((left, right) => {
-    const leftEntry = index.entries[left.entryId];
-    const rightEntry = index.entries[right.entryId];
-    const leftTime = firstFiniteNumber(left.timestamp, leftEntry?.timestamp, leftEntry?.startedAt, left.monotonicOffsetMs, leftEntry?.monotonicOffsetMs) ?? Number.NEGATIVE_INFINITY;
-    const rightTime = firstFiniteNumber(right.timestamp, rightEntry?.timestamp, rightEntry?.startedAt, right.monotonicOffsetMs, rightEntry?.monotonicOffsetMs) ?? Number.NEGATIVE_INFINITY;
-    if (leftTime !== rightTime) return rightTime - leftTime;
-    const leftSequence = leftEntry?.sequence ?? Number.NEGATIVE_INFINITY;
-    const rightSequence = rightEntry?.sequence ?? Number.NEGATIVE_INFINITY;
-    if (leftSequence !== rightSequence) return rightSequence - leftSequence;
-    return right.stateSnapshotId.localeCompare(left.stateSnapshotId);
-  })[0];
-}
-
-function proposalNodeStateLinkFromIndex(index: RecordingStateIndex, actionEntryId: string): RecordingFlowActionCandidate["stateLink"] | undefined {
-  const entry = index.entries[actionEntryId];
-  const action = entry?.actionId ? index.actions[entry.actionId] : undefined;
-  const stateSnapshotId = action?.stateAtActionId ?? entry?.stateSnapshotId;
-  const state = stateSnapshotId ? index.states[stateSnapshotId] : undefined;
-  const stateLink = entry && state ? {
-    recordingId: index.recordingId,
-    actionEntryId,
-    ...(entry.actionId ? { actionId: entry.actionId } : {}),
-    stateSnapshotId: state.stateSnapshotId,
-    stateRef: state.stateRef,
-    ...(state.screenshotRef ? { screenshotRef: state.screenshotRef } : {})
-  } : undefined;
-  return stateLink;
-}
-
-function resolveCandidateActionEntryId(index: RecordingStateIndex | null, sourceEntryId: string, candidate: AutomationStudioRecordingMapperCandidate): string {
-  if (!index) return sourceEntryId;
-  for (const entryId of uniqueStrings([sourceEntryId, ...(candidate.sourceObservationIds ?? [])])) {
-    const entry = index.entries[entryId];
-    if (entry?.actionId || entry?.type === "action") return entryId;
-  }
-  return sourceEntryId;
-}
-
-function missingRecordingStateLookup(input: RecordingEntryStateLookupInput, reason: string): RecordingEntryStateLookupResult {
-  return {
-    recordingId: input.recordingId,
-    requested: compactJsonObject({ entryId: input.entryId, actionId: input.actionId, stateSnapshotId: input.stateSnapshotId }) as RecordingEntryStateLookupResult["requested"],
-    resolved: null,
-    reason
-  };
-}
-
-function recordingEntryStateIndexItem(projectId: string, entry: RecordingSession["timeline"][number], stateSnapshotId: string): RecordingStateIndexItem | null {
-  const payload = recordingEntryObservationPayload(entry);
-  const stateRef = typeof payload.stateRef === "string" ? payload.stateRef : undefined;
-  if (!stateRef) return null;
-  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
-  const screenshotRef = firstString(metadata.screenshotRef, payload.screenshotRef);
-  const visualFrameId = firstString(metadata.visualFrameId, payload.visualFrameId);
-  const coordinateSpace = coordinateSpaceFromValue(metadata.coordinateSpace);
-  const refs = new Set<string>([stateRef, ...recordingEntryObjectRefs(projectId, entry)]);
-  if (screenshotRef) refs.add(screenshotRef);
-  return {
-    stateSnapshotId,
-    entryId: entry.id,
-    timestamp: recordingEntryIndexedTimestamp(entry) ?? Date.now(),
-    ...(typeof (entry as { monotonicOffsetMs?: unknown }).monotonicOffsetMs === "number" ? { monotonicOffsetMs: (entry as { monotonicOffsetMs: number }).monotonicOffsetMs } : {}),
-    stateRef,
-    ...(screenshotRef ? { screenshotRef } : {}),
-    ...(visualFrameId ? { visualFrameId } : {}),
-    ...(coordinateSpace ? { coordinateSpace } : {}),
-    objectRefs: [...refs].sort(),
-    linkedActionIds: []
-  };
-}
-
-function recordingEntryIsStateSnapshot(entry: RecordingSession["timeline"][number]): boolean {
-  return entry.type === "observation" && entry.observationType === "client.state_snapshot";
-}
-
-function recordingEntryStateSnapshotId(entry: RecordingSession["timeline"][number]): string | undefined {
-  if (!recordingEntryIsStateSnapshot(entry)) {
-    return recordingEntryExplicitStateSnapshotId(entry);
-  }
-  const payload = recordingEntryObservationPayload(entry);
-  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
-  return firstString(payload.snapshotId, metadata.stateSnapshotId, metadata.snapshotId, entry.correlationId, `state.${entry.id}`);
-}
-
-function recordingEntryExplicitStateSnapshotId(entry: RecordingSession["timeline"][number]): string | undefined {
-  const metadata = isJsonRecord((entry as { metadata?: unknown }).metadata) ? (entry as { metadata: JsonObject }).metadata : {};
-  return firstString(metadata.stateSnapshotId, metadata.stateAtActionId);
-}
-
-function recordingEntryIndexedTimestamp(entry: RecordingSession["timeline"][number]): number | undefined {
-  const payload = recordingEntryObservationPayload(entry);
-  const payloadMetadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
-  const entryMetadata = isJsonRecord((entry as { metadata?: unknown }).metadata) ? (entry as { metadata: JsonObject }).metadata : {};
-  const payloadState = isStateSnapshotObject(payload.state) ? payload.state : undefined;
-  return firstFiniteNumber(
-    entryMetadata.eventTimestampMs,
-    entryMetadata.actionTimestampMs,
-    entryMetadata.stateTimestampMs,
-    payloadMetadata.eventTimestampMs,
-    payloadMetadata.actionTimestampMs,
-    payloadMetadata.stateTimestampMs,
-    payloadMetadata.stateSnapshotTimestamp,
-    payload.eventTimestampMs,
-    payload.actionTimestampMs,
-    payload.stateTimestampMs,
-    payload.stateSnapshotTimestamp,
-    payloadState?.timestamp,
-    entry.timestamp
-  );
-}
-
-function recordingEntryActionId(entry: RecordingSession["timeline"][number]): string | undefined {
-  return recordingEntryIsActionLike(entry) ? `action.${entry.id}` : undefined;
-}
-
-function recordingEntryActionType(entry: RecordingSession["timeline"][number]): string {
-  if (typeof (entry as { actionType?: unknown }).actionType === "string" && (entry as { actionType: string }).actionType.trim()) return (entry as { actionType: string }).actionType.trim();
-  if (typeof (entry as { eventType?: unknown }).eventType === "string" && (entry as { eventType: string }).eventType.trim()) return (entry as { eventType: string }).eventType.trim();
-  if (typeof (entry as { outputId?: unknown }).outputId === "string" && (entry as { outputId: string }).outputId.trim()) return (entry as { outputId: string }).outputId.trim();
-  return entry.type;
-}
-
-function recordingEntryObjectRefs(projectId: string, entry: RecordingSession["timeline"][number]): string[] {
-  const refs = new Set<string>();
-  const addRef = (value: unknown) => {
-    if (typeof value !== "string") return;
-    const parsed = parseAutomationStudioObjectContentRef(value);
-    if (parsed?.projectId === projectId) refs.add(value);
-  };
-  const payload = recordingEntryObservationPayload(entry);
-  addRef(payload.stateRef);
-  addRef(payload.screenshotRef);
-  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
-  addRef(metadata.screenshotRef);
-  addRefsFromValue(refs, payload, projectId);
-  addRefsFromValue(refs, (entry as { metadata?: unknown }).metadata, projectId);
-  return [...refs].sort();
-}
-
-function recordingEntryObservationPayload(entry: RecordingSession["timeline"][number]): JsonObject {
-  return entry.type === "observation" && isJsonRecord(entry.payload) ? entry.payload : {};
-}
-
-function addRefsFromValue(refs: Set<string>, value: unknown, projectId: string, seen = new Set<unknown>()): void {
-  if (value === null || value === undefined) return;
-  if (typeof value === "string") {
-    const parsed = parseAutomationStudioObjectContentRef(value);
-    if (parsed?.projectId === projectId) refs.add(value);
-    return;
-  }
-  if (typeof value !== "object" || seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) addRefsFromValue(refs, item, projectId, seen);
-    return;
-  }
-  for (const item of Object.values(value)) addRefsFromValue(refs, item, projectId, seen);
-}
-
-function coordinateSpaceFromValue(value: unknown): RecordingStateIndexItem["coordinateSpace"] | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  return typeof record.width === "number"
-    && typeof record.height === "number"
-    && record.unit === "px"
-    && record.origin === "top-left"
-    ? { width: record.width, height: record.height, unit: "px", origin: "top-left" }
-    : undefined;
-}
-
-function firstString(...values: unknown[]): string | undefined {
-  for (const value of values) if (typeof value === "string" && value.trim()) return value.trim();
-  return undefined;
-}
-
-function firstFiniteNumber(...values: unknown[]): number | undefined {
-  for (const value of values) if (typeof value === "number" && Number.isFinite(value)) return value;
-  return undefined;
-}
-
-function finiteNumber(value: unknown): number | undefined {
-  const numeric = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
-  return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-function booleanSetting(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function stringSetting(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function trainingModeValue(value: unknown): AutomationStudioTrainingModeSettings["mode"] {
-  return value === "train_for_runs" || value === "train_until_stable" || value === "continuous_adaptive" ? value : "normal";
-}
-
-function approvalModeValue(value: unknown): AutomationStudioTrainingModeSettings["proposalApprovalMode"] {
-  return value === "manual" || value === "mixed" ? value : "auto";
-}
-
-function adaptationPolicyPresetValue(value: unknown): AutomationStudioAdaptationPolicy["preset"] {
-  return value === "locked" || value === "observe" || value === "repair" || value === "autonomous" ? value : "adaptive";
-}
-
-function executionPublicationDependencyState(
-  roots: AutomationStudioFlowArtifact[],
-  records: AutomationStudioFlowPublicationRecord[]
-): JsonObject {
-  const byTarget = new Map(records.map((record) => [`${record.flowId}@${record.version}`, record]));
-  const pending = roots.flatMap((root) => root.nodes.flatMap((node) => {
-    const call = getCallFlowConfiguration(node);
-    return call ? [`${call.target.flowId}@${call.target.version}`] : [];
-  }));
-  const visited = new Set<string>();
-  const missingTargets = new Set<string>();
-  const reachable: AutomationStudioFlowPublicationRecord[] = [];
-  while (pending.length) {
-    const target = pending.pop()!;
-    if (visited.has(target)) continue;
-    visited.add(target);
-    const record = byTarget.get(target);
-    if (!record) {
-      missingTargets.add(target);
-      continue;
-    }
-    reachable.push(record);
-    for (const node of record.snapshot.nodes) {
-      const call = getCallFlowConfiguration(node);
-      if (call) pending.push(`${call.target.flowId}@${call.target.version}`);
-    }
-  }
-  reachable.sort((left, right) => left.publicationId.localeCompare(right.publicationId));
-  const allSnapshots = records.map((record) => record.snapshot);
-  const deprecatedPublicationIds = records
-    .filter((record) => record.status === "deprecated")
-    .map((record) => `${record.flowId}@${record.version}`)
-    .sort();
-  const validationDocuments: Array<AutomationStudioFlowArtifact | AutomationStudioPublishedFlowSnapshot> = [
-    ...roots,
-    ...reachable.map((record) => record.snapshot)
-  ];
-  const compositionValidity = validationDocuments
-    .map((document) => {
-      const result = validateFlowComposition({
-        flow: document as AutomationStudioFlowArtifact,
-        publishedSnapshots: allSnapshots,
-        deprecatedPublicationIds,
-        authorizedDomainIds: []
-      });
-      return {
-        documentId: "version" in document ? `${document.flowId}@${document.version}` : `${document.flowId}@draft`,
-        ok: result.ok,
-        issues: result.issues.map((issue) => ({ severity: issue.severity, code: issue.code, path: issue.path }))
-      };
-    })
-    .sort((left, right) => left.documentId.localeCompare(right.documentId));
-  return {
-    reachablePublications: reachable.map((record) => ({
-      publicationId: record.publicationId,
-      projectId: record.projectId,
-      flowId: record.flowId,
-      version: record.version,
-      status: record.status,
-      snapshot: record.snapshot as unknown as JsonObject
-    })),
-    missingTargets: [...missingTargets].sort(),
-    compositionValidity
-  } as unknown as JsonObject;
-}
-function bootstrapAdaptationAuditEvent(input: {
-  adaptationId: string;
-  eventType: AutomationStudioBootstrapAuditEvent["eventType"];
-  actorId: string | null;
-  fromStatus: AutomationStudioBootstrapAuditEvent["fromStatus"];
-  toStatus: AutomationStudioBootstrapAuditEvent["toStatus"];
-  createdAt: number;
-  detail?: JsonObject;
-}): AutomationStudioBootstrapAuditEvent {
-  const reason = input.eventType === "created"
-    ? "Flow Bootstrap adaptation recorded."
-    : input.eventType === "approved"
-      ? "Flow Bootstrap adaptation approved for application."
-      : input.eventType === "rejected"
-        ? "Flow Bootstrap adaptation rejected by reviewer."
-        : input.eventType === "applied"
-          ? "Flow Bootstrap topology applied."
-          : "Flow Bootstrap topology reverted.";
-  return {
-    eventId: `adaptation.audit.${input.adaptationId}.${input.eventType}`,
-    adaptationId: input.adaptationId,
-    eventType: input.eventType,
-    actorId: input.actorId,
-    fromStatus: input.fromStatus,
-    toStatus: input.toStatus,
-    reason,
-    detail: { adaptationKind: "flow_bootstrap", ...(input.detail ?? {}) },
-    detailObjectId: null,
-    createdAt: input.createdAt
-  };
-}
-function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
-  if (!Array.isArray(trace) || trace.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) throw new Error("Flow Bootstrap evidence trace is invalid.");
-  return trace.map((item) => {
-    if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations || !["tool_call", "complete", "unusable"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
-    const clean: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
-    if (item.callId !== undefined) clean.callId = requiredBootstrapCommandId(item.callId, "evidence call");
-    if (item.toolId !== undefined) clean.toolId = requiredBootstrapCommandId(item.toolId, "evidence tool");
-    if (item.evidenceBytes !== undefined) {
-      if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
-      clean.evidenceBytes = item.evidenceBytes;
-    }
-    if (item.usage) clean.usage = { ...item.usage };
-    return clean;
-  });
-}
-function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[]): JsonObject {
-  const clean = sanitizeEvidenceLoopTrace(trace);
-  const providerDecisions = clean.filter((item) => item.iteration > 0);
-  return {
-    evidenceGuided: true,
-    // Retained for compatibility with existing audit readers. This is the
-    // total trace length and can include the deterministic iteration-0
-    // observation, so it must not be interpreted as provider-call accounting.
-    iterationCount: clean.length,
-    traceStepCount: clean.length,
-    providerCallCount: providerDecisions.length,
-    decisionCount: providerDecisions.length,
-    toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
-    evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
-    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort()
-  };
-}
-type AutomationStudioRuntimeInterventionMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic";
-
-export function normalizeAutomationStudioRuntimeInterventionMode(mode: AutomationStudioRuntimeInterventionMode | undefined): "fully_adaptive" | "manual_approval" | "no_llm_intervention" {
-  if (mode === "manual_approval") return mode;
-  if (mode === "no_llm_intervention" || mode === "deterministic") return "no_llm_intervention";
-  return "fully_adaptive";
-}
-
-function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObject {
-  const defaults = defaultAutomationStudioFlowSettingsMetadata();
-  const canonical = withAutomationStudioInterventionMode(metadata, automationStudioInterventionMode(metadata));
-  const configuredTrainingMode = jsonObjectFromUnknown(metadata?.trainingModeSettings)?.mode ?? metadata?.trainingMode;
-  const legacy = metadata?.adaptationModeVersion !== 1 || configuredTrainingMode === "train_for_runs" || configuredTrainingMode === "train_until_stable";
-  const source = legacy ? {
-    ...canonical,
-    ...(metadata ?? {}),
-    adaptationModeVersion: 1,
-    adaptationMode: automationStudioInterventionMode(metadata),
-    trainingModeSettings: {
-      ...(jsonObjectFromUnknown(canonical.trainingModeSettings) ?? {}),
-      ...(jsonObjectFromUnknown(metadata?.trainingModeSettings) ?? {})
-    },
-    adaptationPolicySettings: {
-      ...(jsonObjectFromUnknown(canonical.adaptationPolicySettings) ?? {}),
-      ...(jsonObjectFromUnknown(metadata?.adaptationPolicySettings) ?? {})
-    }
-  } : canonical;
-  return {
-    ...defaults,
-    ...source,
-    trainingModeSettings: {
-      ...(jsonObjectFromUnknown(defaults.trainingModeSettings) ?? {}),
-      ...(jsonObjectFromUnknown(source.trainingModeSettings) ?? {}),
-      recoveryBudget: {
-        ...(jsonObjectFromUnknown(jsonObjectFromUnknown(defaults.trainingModeSettings)?.recoveryBudget) ?? {}),
-        ...(jsonObjectFromUnknown(jsonObjectFromUnknown(source.trainingModeSettings)?.recoveryBudget) ?? {})
-      }
-    },
-    adaptationPolicySettings: {
-      ...(jsonObjectFromUnknown(defaults.adaptationPolicySettings) ?? {}),
-      ...(jsonObjectFromUnknown(source.adaptationPolicySettings) ?? {})
-    }
-  };
-}
-
-function trainingModeSettingsFromMetadata(metadata: JsonObject): AutomationStudioTrainingModeSettings {
-  const settings = jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {};
-  const budgets = jsonObjectFromUnknown(settings.budgets) ?? {};
-  const recoveryBudget = jsonObjectFromUnknown(settings.recoveryBudget) ?? {};
-  const trainForRunCount = finiteNumber(settings.trainForRunCount);
-  const stableRunThreshold = finiteNumber(settings.stableRunThreshold);
-  const minimumStabilityScore = finiteNumber(settings.minimumStabilityScore);
-  const maxInterventionsPerRun = finiteNumber(budgets.maxInterventionsPerRun);
-  const maxTokensPerRun = finiteNumber(budgets.maxTokensPerRun);
-  const maxCostUsdPerTrainingWindow = finiteNumber(budgets.maxCostUsdPerTrainingWindow);
-  const maxRetriesPerAction = finiteNumber(recoveryBudget.maxRetriesPerAction);
-  const maxRecoveryAttemptsPerSubflow = finiteNumber(recoveryBudget.maxRecoveryAttemptsPerSubflow);
-  const maxReroutesPerRun = finiteNumber(recoveryBudget.maxReroutesPerRun);
-  return {
-    mode: trainingModeValue(settings.mode ?? metadata.trainingMode),
-    ...(trainForRunCount !== undefined ? { trainForRunCount } : {}),
-    ...(stableRunThreshold !== undefined ? { stableRunThreshold } : {}),
-    ...(minimumStabilityScore !== undefined ? { minimumStabilityScore } : {}),
-    allowLlmIntervention: booleanSetting(settings.allowLlmIntervention, false),
-    allowRuntimeRecovery: booleanSetting(settings.allowRuntimeRecovery, true),
-    allowAdaptationCreation: booleanSetting(settings.allowAdaptationCreation, false),
-    proposalApprovalMode: approvalModeValue(settings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
-    allowPromotion: booleanSetting(settings.allowPromotion, false),
-    requireFirstManualReviewBeforeAutoPromotion: booleanSetting(settings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
-    recoveryBudget: {
-      ...(maxRetriesPerAction !== undefined ? { maxRetriesPerAction } : {}),
-      ...(maxRecoveryAttemptsPerSubflow !== undefined ? { maxRecoveryAttemptsPerSubflow } : {}),
-      ...(maxReroutesPerRun !== undefined ? { maxReroutesPerRun } : {})
-    },
-    budgets: {
-      ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
-      ...(maxTokensPerRun !== undefined ? { maxTokensPerRun } : {}),
-      ...(maxCostUsdPerTrainingWindow !== undefined ? { maxCostUsdPerTrainingWindow } : {}),
-      exhaustedBehavior: budgets.exhaustedBehavior === "stop" ? "stop" : "ask"
-    }
-  };
-}
-
-function adaptationPolicyFromFlowMetadata(flow: AutomationStudioFlowArtifact, metadata: JsonObject): AutomationStudioAdaptationPolicy {
-  const settings = jsonObjectFromUnknown(metadata.adaptationPolicySettings) ?? {};
-  const now = flow.updatedAt ?? Date.now();
-  const maxInterventionsPerRun = finiteNumber(settings.maxInterventionsPerRun);
-  const maxEstimatedCostUsdPerRun = finiteNumber(settings.maxEstimatedCostUsdPerRun);
-  return {
-    schemaVersion: "0.1",
-    policyId: stringSetting(metadata.adaptationPolicyId, "policy.default"),
-    scope: { kind: "flow", flowId: flow.flowId },
-    preset: adaptationPolicyPresetValue(settings.preset),
-    proposalMode: approvalModeValue(settings.proposalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
-    allowRuntimeRecovery: booleanSetting(settings.allowRuntimeRecovery, true),
-    allowCreateRecoveryPaths: booleanSetting(settings.allowCreateRecoveryPaths, true),
-    allowModifySubflows: booleanSetting(settings.allowModifySubflows, true),
-    allowCreateSubflows: booleanSetting(settings.allowCreateSubflows, true),
-    allowModifyRouter: booleanSetting(settings.allowModifyRouter, true),
-    allowModifyExpectations: booleanSetting(settings.allowModifyExpectations, true),
-    allowModifyActionTargets: booleanSetting(settings.allowModifyActionTargets, true),
-    allowDeleteOrDisableBehavior: booleanSetting(settings.allowDeleteOrDisableBehavior, false),
-    allowExternalSideEffects: booleanSetting(settings.allowExternalSideEffects, false),
-    requireApprovalForDestructiveChanges: booleanSetting(settings.requireApprovalForDestructiveChanges, true),
-    requireApprovalForExternalSideEffects: booleanSetting(settings.requireApprovalForExternalSideEffects, true),
-    ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
-    ...(maxEstimatedCostUsdPerRun !== undefined ? { maxEstimatedCostUsdPerRun } : {}),
-    createdAt: flow.createdAt,
-    updatedAt: now,
-    metadata: {
-      source: "flow.metadata",
-      ...(stringSetting(metadata.llmProvider, "") ? { llmProvider: stringSetting(metadata.llmProvider, "") } : {})
-    }
-  };
-}
-
-function runtimeTrainingBudgetStateFromSummaries(runs: AutomationStudioFlowRunSummary[]): AutomationStudioTrainingBudgetState {
-  return {
-    interventionsThisRun: 0,
-    tokensThisRun: 0,
-    costUsdThisTrainingWindow: runs.reduce((sum, run) => sum + (run.tokenUsage?.estimatedCostUsd ?? 0), 0)
-  };
-}
-
-function runtimeAdaptationContextDiagnostics(
-  settings: AutomationStudioTrainingModeSettings,
-  policy: AutomationStudioAdaptationPolicy,
-  behavior: AutomationStudioTrainingModeBehavior,
-  budgetDecision: ReturnType<typeof decideAutomationStudioTrainingBudget>
-): string[] {
-  const diagnostics: string[] = [];
-  if (!behavior.invokeLlm) diagnostics.push("LLM intervention is disabled by training mode or settings.");
-  if (!behavior.createAdaptations) diagnostics.push("Adaptation creation is disabled by training mode or settings.");
-  if (!policy.allowRuntimeRecovery) diagnostics.push("Runtime recovery is disabled by adaptation policy.");
-  if (!budgetDecision.ok) diagnostics.push(`Training budget exhausted: ${budgetDecision.exhausted.join(", ")}.`);
-  if (settings.mode === "normal") diagnostics.push("Normal mode records adaptive context without invoking LLM.");
-  return diagnostics;
-}
-
-function runtimeAdaptationContextWithRunOverride(
-  context: AutomationStudioRuntimeAdaptationContext,
-  input: { adaptiveMode?: AutomationStudioRuntimeInterventionMode; dryRunLlm?: boolean }
-): AutomationStudioRuntimeAdaptationContext {
-  const mode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
-  if (mode === "fully_adaptive" && input.dryRunLlm !== true) return context;
-  const behavior = { ...context.behavior };
-  const metadata: JsonObject = { ...(context.settings.metadata ?? {}), runtimeOverrideMode: mode };
-  if (mode === "no_llm_intervention") {
-    behavior.invokeLlm = false;
-    behavior.createAdaptations = false;
-    behavior.promoteAdaptations = false;
-  }
-  if (mode === "manual_approval") {
-    behavior.invokeLlm = true;
-    behavior.runRecovery = false;
-    behavior.createAdaptations = false;
-    behavior.promoteAdaptations = false;
-    context = { ...context, policy: { ...context.policy, proposalMode: "manual" } };
-  }
-  if (input.dryRunLlm === true) {
-    behavior.invokeLlm = true;
-    behavior.runRecovery = true;
-    behavior.createAdaptations = true;
-    behavior.promoteAdaptations = false;
-    metadata.dryRunAdaptation = true;
-  }
-  return {
-    ...context,
-    behavior,
-    settings: {
-      ...context.settings,
-      metadata
-    },
-    diagnostics: [
-      ...context.diagnostics,
-      ...(mode !== "fully_adaptive" ? [`Runtime override mode: ${mode}.`] : []),
-      ...(input.dryRunLlm === true ? ["Runtime override enabled dry-run LLM adaptation suggestions."] : [])
-    ]
-  };
-}
-
-function recoveryBudgetFromRuntimeAdaptationContext(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRecoveryBudget {
-  const maxAdaptationOrLlmAttemptsPerRun = firstFiniteNumber(context.policy.maxInterventionsPerRun, context.settings.budgets?.maxInterventionsPerRun);
-  return {
-    ...(context.settings.recoveryBudget ?? {}),
-    ...(maxAdaptationOrLlmAttemptsPerRun !== undefined ? { maxAdaptationOrLlmAttemptsPerRun } : {})
-  };
-}
-
-function runtimeRunDetailWithAdaptationContext(detail: AutomationStudioFlowRunDetail, context: AutomationStudioRuntimeAdaptationContext | null): AutomationStudioFlowRunDetail {
-  if (!context) return detail;
-  const annotated = annotateRunDetailWithTrainingMode(detail, context.settings, context.behavior);
-  return {
-    ...annotated,
-    metadata: {
-      ...(annotated.metadata ?? {}),
-      runtimeAdaptationContext: runtimeAdaptationContextSummary(context)
-    }
-  };
-}
-
-function runtimeAdaptationContextSummary(context: AutomationStudioRuntimeAdaptationContext): JsonObject {
-  return {
-    flowId: context.flowId,
-    mode: context.settings.mode,
-    policyId: context.policy.policyId,
-    policyPreset: context.policy.preset,
-    approvalMode: context.policy.proposalMode,
-    behavior: {
-      invokeLlm: context.behavior.invokeLlm,
-      runRecovery: context.behavior.runRecovery,
-      createAdaptations: context.behavior.createAdaptations,
-      promoteAdaptations: context.behavior.promoteAdaptations
-    },
-    budget: {
-      ok: context.budgetDecision.ok,
-      behavior: context.budgetDecision.behavior,
-      exhausted: context.budgetDecision.exhausted,
-      interventionsThisRun: context.budgetState.interventionsThisRun,
-      tokensThisRun: context.budgetState.tokensThisRun,
-      costUsdThisTrainingWindow: context.budgetState.costUsdThisTrainingWindow
-    },
-    metrics: {
-      stabilityScore: context.metrics.stabilityScore,
-      deterministicSuccessRuns: context.metrics.deterministicSuccessRuns,
-      unresolvedFailures: context.metrics.unresolvedFailures,
-      llmInterventionsPerRun: context.metrics.llmInterventionsPerRun,
-      acceptedAdaptations: context.metrics.acceptedAdaptations,
-      rejectedAdaptations: context.metrics.rejectedAdaptations
-    },
-    runsCompleted: context.runsCompleted,
-    recentRunCount: context.recentRunCount,
-    recentAdaptationCount: context.recentAdaptationCount,
-    diagnostics: context.diagnostics
-  };
-}
-
-function isTerminalRuntimeSessionStatus(status: AutomationStudioRuntimeSession["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "cancelled";
-}
-
-async function readJsonLinePage<T>(filePath: string, offset: number, limit: number): Promise<T[]> {
-  const stream = createReadStream(filePath, { encoding: "utf8" });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
-  const items: T[] = [];
-  let index = 0;
-  try {
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      if (index >= offset && items.length < limit) items.push(JSON.parse(line) as T);
-      index += 1;
-      if (items.length >= limit) break;
-    }
-  } finally {
-    lines.close();
-    stream.destroy();
-  }
-  return items;
-}
-
-const AUTOMATION_STUDIO_HIERARCHY_NODE_KINDS = new Set<AutomationStudioHierarchyNode["kind"]>([
-  "folder", "client", "proposal", "flow", "config", "recording", "run", "task", "routine"
-]);
-const AUTOMATION_STUDIO_HIERARCHY_NODE_CATEGORIES = new Set<AutomationStudioHierarchyNode["category"]>([
-  "client", "proposal", "flow", "config", "recording", "run", "task", "routine"
-]);
-
-function requiredHierarchyId(value: unknown, fieldName: string): string {
-  const normalized = typeof value === "string" ? value.trim() : "";
-  if (!normalized) throw new Error(`Automation Studio hierarchy ${fieldName} is required.`);
-  return normalized;
-}
-
-function normalizeCustomHierarchyNode(value: unknown): AutomationStudioHierarchyNode {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Automation Studio hierarchy node must be an object.");
-  }
-  const node = value as Record<string, unknown>;
-  const id = requiredHierarchyId(node.id, "node.id");
-  const label = requiredHierarchyId(node.label, "node.label");
-  if (!AUTOMATION_STUDIO_HIERARCHY_NODE_KINDS.has(node.kind as AutomationStudioHierarchyNode["kind"])) {
-    throw new Error("Automation Studio hierarchy node.kind is invalid.");
-  }
-  if (!AUTOMATION_STUDIO_HIERARCHY_NODE_CATEGORIES.has(node.category as AutomationStudioHierarchyNode["category"])) {
-    throw new Error("Automation Studio hierarchy node.category is invalid.");
-  }
-  const parentId = node.parentId === null ? null : requiredHierarchyId(node.parentId, "node.parentId");
-  const optionalId = (fieldName: "viewId" | "sourceId" | "recordingId"): string | undefined => (
-    node[fieldName] === undefined ? undefined : requiredHierarchyId(node[fieldName], `node.${fieldName}`)
-  );
-  const viewId = optionalId("viewId");
-  const sourceId = optionalId("sourceId");
-  const recordingId = optionalId("recordingId");
-  return {
-    id,
-    label,
-    kind: node.kind as AutomationStudioHierarchyNode["kind"],
-    category: node.category as AutomationStudioHierarchyNode["category"],
-    parentId,
-    ...(viewId ? { viewId } : {}),
-    ...(sourceId ? { sourceId } : {}),
-    ...(recordingId ? { recordingId } : {})
-  };
-}
-
-function latestByGeneratedAt<T extends { generatedAt?: number }>(items: T[]): T | undefined {
-  return [...items].sort((left, right) => (right.generatedAt ?? 0) - (left.generatedAt ?? 0))[0];
-}
-
-function reusableLlmContextSummary(record: AutomationStudioReusableLlmContextRecord): AutomationStudioReusableLlmContextSummary {
-  const { promptProjection: _promptProjection, ...summary } = record;
-  return summary;
 }

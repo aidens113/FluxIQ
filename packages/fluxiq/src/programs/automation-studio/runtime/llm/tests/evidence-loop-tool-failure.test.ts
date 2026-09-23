@@ -22,13 +22,24 @@ describe("a tool call that fails, in a loop that observes failures", () => {
       return { page: "home" };
     });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, unusableDecisions: { stalled } });
+    // The guard is named rather than inherited: its default is now a far
+    // backstop, because three in a row ended builds that were working.
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
 
     expect(result).toMatchObject({ ok: true, result: { plan: "close the prompt first" }, accounting: { iterations: 2, toolCalls: 2 } });
     expect(result.trace[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call.press.1", toolId: "press", resultCode: "llm_evidence_loop.tool_failed", evidenceBytes: expect.any(Number) });
     const shown = decide.mock.calls[1]?.[0].evidence;
-    expect(shown.at(-1)).toEqual({ callId: "call.press.1", toolId: "press", value: {
+    // The draft sits after the window, so the failed call's own result is the
+    // entry before it. The failure is in the draft too: an action that was
+    // attempted and did not happen is part of the record of what was done.
+    expect(shown.at(-2)).toEqual({ callId: "call.press.1", toolId: "press", value: {
       ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
+    } });
+    expect(shown.at(-1)).toMatchObject({ callId: "core.flow_draft", toolId: "core.flow_draft", value: {
+      code: "llm_evidence_loop.draft",
+      // Position 2: the initial observation is step 1 of the draft, and a
+      // position never shifts, so an amendment always names the same step.
+      steps: [{ step: 2, actionId: "press", input: { target: "target.2" }, resultCode: "llm_evidence_loop.tool_failed", changed: "no", disposition: "kept", inResult: false }]
     } });
     expect(JSON.stringify({ result, shown })).not.toContain("ember789");
   });
@@ -94,7 +105,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
       if (toolId === "press") throw new Error(PRIVATE);
       return { page: "home" };
     });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.tool_failed", accounting: { iterations: 3, toolCalls: 4 } });
     expect(result.trace.slice(1).map((step) => [step.callId, step.resultCode])).toEqual([
       ["call.press.1", "llm_evidence_loop.tool_failed"],
