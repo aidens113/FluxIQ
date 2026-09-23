@@ -11,7 +11,7 @@
 // own options appear beside them as soon as a host port is bound.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   AutomationStudioRuntimeTargetOverrideFailedAction
@@ -162,6 +162,9 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * - `refused`: the node cannot run as written -- a handle this domain never
    *   issued, one that no longer points at anything, or anything else the
    *   domain will not accept. Issue codes only (`^[a-z0-9_.:-]{1,100}$`).
+   * - `needs_permission`: the step would lastingly do something the run is not
+   *   permitted. Not a refusal of how the step was written and not the model's
+   *   to correct -- a person answers it -- so it is reported apart from one.
    *
    * Core trusts none of the answer. A throw, a malformed answer, parameters
    * that are not plain bounded JSON, or parameters that still name a handle
@@ -176,19 +179,35 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     parameters: JsonObject;
     /**
      * The build's permission check for this step of the Flow. A step whose
-     * action would have a lasting consequence every time the Flow runs -- the
-     * domain knows, having just resolved what the step acts on -- is declared
-     * here, and a step the build is not permitted is refused. Core then ends
-     * the build with the request rather than handing the refusal back to the
-     * model, so a Flow that would refund, delete or send is never built
-     * without the person having said it may.
+     * action would have a lasting consequence every time the Flow runs is
+     * declared here -- the classes from `declaredConsequences`, and which
+     * control and which verb from the domain, which alone knows them -- and a
+     * step the build is not permitted answers `needs_permission`. Core then
+     * ends the build with the request rather than handing it back to the model,
+     * so a Flow that would refund, delete or send is never built without the
+     * person having said it may.
      */
     permission: AutomationStudioActionPermissionCheck;
+    /**
+     * What the step itself said it would lastingly do, in Core's classes and
+     * Core's order, read off the step by
+     * `automationStudioPlanStepConsequences`. Absent when the step declared
+     * nothing; empty when it declared, in so many words, that it causes nothing
+     * lasting. Only the model can know which it is -- it explored the page --
+     * so nothing here is Core's or the domain's reading of what a control looks
+     * like. Whether a step of a given kind may leave it unsaid is the domain's
+     * call, because only the domain knows whether the step acts.
+     */
+    declaredConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
 
 /** A domain answer about one plan node. May be awaited: asking permission is. */
-export type AutomationStudioPlanNodeResolution = { status: "unchanged" } | { status: "resolved"; parameters: JsonObject } | { status: "refused"; issueCodes: readonly string[] };
+export type AutomationStudioPlanNodeResolution =
+  | { status: "unchanged" }
+  | { status: "resolved"; parameters: JsonObject }
+  | { status: "refused"; issueCodes: readonly string[] }
+  | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 
 /**
  * The registry for one host: Core's own options for whatever host port is

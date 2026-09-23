@@ -10,11 +10,13 @@ import { requiredBootstrapCommandId } from "./field-readings.ts";
 // What the trace keeps is also what a *proposed* build can ever say about
 // itself. The adaptation stores the sanitized trace and the created audit
 // event carries the detail built from it, and both used to drop the two
-// members that make a decision legible -- the code it came to and whether its
-// effect was applied -- so a successful build published counts and a sorted
-// list of tool ids and nothing a reader could compare against a refused
-// build's decisions. Both are kept now, and the detail carries the same steps
-// the refusal path publishes.
+// members that make a decision legible -- the code it came to, and whether its
+// effect was applied. So the build anybody actually wants to study was stored
+// as a list of iterations naming a tool each, with no way to tell a call that
+// changed the page from one that only looked, or a refusal from a success,
+// while only a refused build kept them through a different path. Both are kept
+// now, and the detail carries the same ordered steps the refusal path
+// publishes.
 
 /** The shape a result code must have to be kept: no whitespace, so no sentence. */
 const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
@@ -38,7 +40,9 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
     // loop, from a domain's refusal and from validation, and a closed list
     // here would silently drop a new one. A value that is not code-shaped is
     // left behind rather than failing the build, because it is a reader's
-    // detail and not the build's result.
+    // detail and not the build's result -- two tasks wrote this field at the
+    // same time, and the other one threw on a bad code, which would discard
+    // the whole record of a build that had completed.
     if (item.resultCode !== undefined && typeof item.resultCode === "string" && EVIDENCE_RESULT_CODE.test(item.resultCode)) clean.resultCode = item.resultCode;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;

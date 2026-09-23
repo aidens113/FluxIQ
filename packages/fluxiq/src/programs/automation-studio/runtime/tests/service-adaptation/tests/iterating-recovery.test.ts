@@ -113,13 +113,20 @@ describe("AutomationStudioService iterating recovery", () => {
       projectId: project.id,
       flowId: flow.flowId,
       llmExecution: { grantId: "grant.build", actorUserId: "user.one", actorSessionId: "session.one", purpose: "build_and_adapt" as never }
-    })).rejects.toThrow("incompatible");
+    })).rejects.toThrow("not one a runtime session runs under");
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
       dryRunLlm: true,
       llmExecution: { grantId: "grant.explore", actorUserId: "user.one", actorSessionId: "session.one", purpose: "explore_and_adapt" }
-    })).rejects.toThrow("incompatible");
+    })).rejects.toThrow("cannot be an LLM dry run");
+    // A purpose that only asks a question may not be handed the authority to act.
+    await expect(service.runRuntimeSession({
+      projectId: project.id,
+      flowId: flow.flowId,
+      authorizedExternalSideEffects: true,
+      llmExecution: { grantId: "grant.diagnose", actorUserId: "user.one", actorSessionId: "session.one", purpose: "diagnosis_only" }
+    })).rejects.toThrow("cannot carry side-effect authorization");
   });
 });
 

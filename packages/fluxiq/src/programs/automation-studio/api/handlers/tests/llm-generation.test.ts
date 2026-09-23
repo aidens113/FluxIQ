@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../contracts.ts";
-import { AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD, AutomationStudioLlmExecutionGrantService } from "../../../runtime/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../runtime/loop-limits/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
@@ -315,6 +315,9 @@ describe("Automation Studio LLM execution API", () => {
       flowId: "flow.blank",
       evidenceGuided: true,
       useReusableContext: true,
+      // A person has just pressed build, so a permission question this build
+      // raises is worth holding it open for.
+      permissionAskTimeoutMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS,
       executionGrant: {
         grantId: "llm-grant:build",
         actorUserId: "user.one",

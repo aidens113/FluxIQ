@@ -121,7 +121,17 @@ describe("Automation Studio Flow bootstrap contract", () => {
     // title names: at the conservative three bytes a token it is still under
     // 1,900 tokens, and the result this test builds below stays under 1,500
     // bytes. Shortening the premise instead would change what t065 proved live.
-    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(5_600);
+    //
+    // Raised again to 6,000 on 2026-09-22 (t081): the format now has to tell
+    // the model to declare what a press would lastingly do, which is the one
+    // fact in the permission seam neither Core nor the domain holds and which
+    // the gate cannot ask a person about unless the step said it. Two live
+    // builds wrote the line and were answered `bootstrap.unknown_parameter`
+    // because nothing carried it. It costs 530 bytes, already cut from 634 by
+    // folding two sentences into one -- `run-node.ts` tells a build that
+    // explores the same thing on the call that makes the declaration, so this
+    // is the wording for a script or a nested plan, where nothing else says it.
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_000);
 
     const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
       schemaVersion: "0.1",

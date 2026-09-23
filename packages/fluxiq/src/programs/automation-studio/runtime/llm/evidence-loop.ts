@@ -2,11 +2,14 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   applyAutomationStudioFlowDraftAmendments,
+  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
   automationStudioFlowDraftEntry,
   automationStudioFlowDraftStepIsProposable,
   type AutomationStudioFlowDraftAmendment,
-  type AutomationStudioFlowDraftStep
+  type AutomationStudioFlowDraftStep,
+  type AutomationStudioFlowDraftStepReplay
 } from "../flow-draft/index.ts";
+import { automationStudioFlowDraftDryRunGate } from "./node-tools/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceRecord } from "./context-window.ts";
 import {
   automationStudioLlmEvidenceCanonicalJson,
@@ -169,6 +172,17 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
     ranWith?: JsonObject;
     effect?: "observe" | "mutate";
     proposes?: boolean;
+    /**
+     * What running this call again would need, when the caller can run it
+     * again: how to put the target back the way it found it, and what it
+     * produced, so the caller can say later whether a replay produced it again.
+     *
+     * Saying it is what puts the call's step under the dry run: a draft whose
+     * proposed steps all carry it must replay clean before it may be proposed
+     * (`../flow-draft/dry-run.ts`), and one that does not is simply not
+     * replayed. Both fields are carried opaquely; Core reads neither.
+     */
+    replay?: AutomationStudioFlowDraftStepReplay;
   };
 };
 
@@ -262,7 +276,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     tool: AutomationStudioLlmEvidenceTool,
     input: JsonObject,
     execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-  ): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean } => {
+  ): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay } => {
     const declared = execution?.draft;
     const actionId = declared?.actionId ?? tool.toolId;
     return {
@@ -271,7 +285,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       input: declared?.input ?? input,
       ...(declared?.ranWith === undefined ? {} : { ranWith: declared.ranWith }),
       effect: declared?.effect ?? tool.effect ?? "observe",
-      ...(declared?.proposes === undefined ? {} : { proposes: declared.proposes })
+      ...(declared?.proposes === undefined ? {} : { proposes: declared.proposes }),
+      ...(declared?.replay === undefined ? {} : { replay: declared.replay })
     };
   };
   // A digest of the whole state, when the caller offered to take one. It is
@@ -420,6 +435,22 @@ export async function runAutomationStudioLlmEvidenceLoop(
     trace.push({ ...step, evidenceBytes: noteBytes });
     return undefined;
   };
+  // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
+  // accepted, the draft is run again from where its first step started, with no
+  // model attached, and a result whose draft did not replay clean is refused
+  // back to the model rather than proposed. It applies only to a draft whose
+  // steps say they can be run again, so a caller that cannot replay is not
+  // gated on something it can never satisfy.
+  const dryRun = automationStudioFlowDraftDryRunGate({
+    enabled: drafting && input.dryRun !== false,
+    steps: draftSteps,
+    maxEvidenceBytes: limits.toolEvidenceBytes,
+    executeTool: input.executeTool,
+    reserveEvidence,
+    showEvidence: (entry) => { evidence.push(entry); },
+    targetMoved: () => { mutationEpoch += 1; attemptEpoch += 1; },
+    ...(input.signal ? { signal: input.signal } : {})
+  });
   const initialTool = input.tools.find((tool) => tool.initialObservation);
   if (initialTool) {
     const initialInput = initialTool.initialObservation!.input;
@@ -526,6 +557,19 @@ export async function runAutomationStudioLlmEvidenceLoop(
         }
       }
       if (check?.ok) {
+        // Last, because it is the only check that costs seconds and touches the
+        // world: a plan that does not even assemble is refused before anything
+        // is replayed.
+        const refusedDryRun = await dryRun();
+        if (refusedDryRun === "cancelled") return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+        if (refusedDryRun === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
+        if (refusedDryRun) {
+          if (!input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+          const stalledReplay = unusable({ iteration, decision: "unusable", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, ...(decision.usage ? { usage: decision.usage } : {}) }, refusedDryRun.issueCodes);
+          if (!stalledReplay) continue;
+          if (input.propagateDecisionErrors) throw stalledReplay.error;
+          return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+        }
         trace.push({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
         return { ok: true, result: decision.result, trace, steps: draftSteps, accounting };
       }
