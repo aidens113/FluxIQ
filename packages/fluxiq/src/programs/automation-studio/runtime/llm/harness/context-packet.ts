@@ -16,11 +16,13 @@ import {
   buildAutomationStudioFlowBootstrapContext,
   type AutomationStudioFlowBootstrapRoutingContext
 } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
+import { packAutomationStudioLlmConversation, type AutomationStudioLlmConversationContext } from "./conversation.ts";
 import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
@@ -60,9 +62,15 @@ export type AutomationStudioLlmContextPacket = {
    * patch only. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
   /** The bounded account of what a finished run produced, and of the shape of
-   * the Flow that produced it. Result verification only: it is the whole
-   * subject of that call, and no other task has a finished result to read. */
+   * the Flow that produced it. Carried to the verification, whose whole subject
+   * it is, and to a runtime diagnosis or patch, because a repair entered from a
+   * refuted result is repairing exactly this: the rows the run stored, the
+   * columns they carry, and the steps the Flow had to produce them with. */
   resultSummary?: AutomationStudioRunResultSummary;
+  /** The thread the person and the automation have been talking in, newest
+   * turns, oldest first. Runtime tasks only: it is the channel the person says
+   * what they meant in, and a repair that cannot read it repairs blind. */
+  conversation?: AutomationStudioLlmConversationContext;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
   reusableContext?: AutomationStudioReusableLlmContextPacket;
@@ -105,6 +113,27 @@ export type AutomationStudioLlmActionPermissions = {
 const ACTION_PERMISSIONS_OTHERWISE = "An action with any other lasting consequence is still within reach: when the recovery needs one, the run asks the person for permission at that step instead of taking it. Needing permission never makes a step's result unachievable.";
 
 export const AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS = 12;
+
+/**
+ * The calls that are looking at a finished run, and so may be shown what it
+ * produced.
+ *
+ * `loop_verification` judges the result; `runtime_diagnosis` and
+ * `runtime_patch` repair a run whose result was judged wrong, and repairing
+ * that without being told what it produced is the shape of the defect this set
+ * widened to close: the repair was shown the failure and never the answer.
+ */
+const AUTOMATION_STUDIO_RESULT_SUMMARY_TASK_KINDS: ReadonlySet<AutomationStudioLlmTaskKind> = new Set<AutomationStudioLlmTaskKind>([
+  "loop_verification",
+  "runtime_diagnosis",
+  "runtime_patch"
+]);
+
+/** The thread as the packet carries it, or no slot at all when nothing was said. */
+function conversationSlot(turns: readonly AutomationStudioConversationTurn[]): { conversation?: AutomationStudioLlmConversationContext } {
+  const conversation = packAutomationStudioLlmConversation(turns);
+  return conversation ? { conversation } : {};
+}
 
 export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRunActionAttemptRecord,
   "attemptId" | "nodeId" | "definitionId" | "order" | "status"
@@ -213,10 +242,16 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // how a run failed has no place in it.
     ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
     ...(input.diagnosis ? packDiagnosisFields(input.taskKind, input.diagnosis) : {}),
-    // Held to its own task kind for the same reason failure evidence is: a
-    // result summary describes a run that finished, and no other call is
-    // looking at one.
-    ...(input.resultSummary && input.taskKind === "loop_verification" ? { resultSummary: input.resultSummary } : {}),
+    // Held to the tasks that are looking at a finished run: the verification
+    // that judges its result, and the runtime diagnosis and patch that repair
+    // it. A build has produced nothing yet, and an evidence-loop decision is
+    // mid-run, so neither carries one.
+    ...(input.resultSummary && AUTOMATION_STUDIO_RESULT_SUMMARY_TASK_KINDS.has(input.taskKind) ? { resultSummary: input.resultSummary } : {}),
+    // Same rule, same reason: a Flow that has never run has no thread about a
+    // run, and the request that repairs one does.
+    ...(input.conversation?.length && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch")
+      ? conversationSlot(input.conversation)
+      : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),

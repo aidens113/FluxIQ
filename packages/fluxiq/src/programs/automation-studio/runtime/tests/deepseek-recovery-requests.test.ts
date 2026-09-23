@@ -37,6 +37,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm, type AutomationStudioRuntimeRecoveryPorts } from "../recovery/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../service.ts";
 
 /** The shape Secret Keys mints its ids in: `secret:` and a UUID. */
@@ -458,6 +459,9 @@ function adaptationContext(): AutomationStudioRuntimeAdaptationContext {
     recentRunCount: 3,
     recentAdaptationCount: 0,
     recentAdaptations: [],
+    resultCheckSchedule: resolveAutomationStudioResultCheckSchedule("initial_then_exponential"),
+    resultCheckState: { ordinal: 1, lastCheckedOrdinal: null, checksPassed: 0, lastStatus: null },
+    resultCheckEpoch: 1,
     diagnostics: []
   };
 }

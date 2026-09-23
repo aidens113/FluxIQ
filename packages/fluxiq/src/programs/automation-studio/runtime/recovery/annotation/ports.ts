@@ -20,6 +20,7 @@ import type {
   AutomationStudioFlowInstruction,
   AutomationStudioFlowScope
 } from "../../../model/index.ts";
+import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type {
@@ -61,6 +62,20 @@ export type AutomationStudioRuntimeRecoveryPorts = {
    * trace records that the plan asked for one and none happened.
    */
   flowForRecovery(projectId: string, flowId: string): Promise<{ scope: AutomationStudioFlowScope; metadata?: JsonObject | undefined } | undefined>;
+  /**
+   * The thread this run and this Flow are talked about in, in reading order.
+   *
+   * The conversation is FluxIQ's general channel to the person, so it is where
+   * they will already have said the thing that explains a failure -- what they
+   * actually meant by the instruction, an answer to a question the run asked,
+   * a correction after seeing the last result. A repair that cannot read it is
+   * repairing with the most informative evidence in the system withheld.
+   *
+   * Absent, or answering an empty list, means this deployment keeps no thread
+   * for the run. That is a configuration, not a refusal, and the request simply
+   * carries no conversation.
+   */
+  conversationForRecovery?: ((input: { projectId: string; flowId: string; runId: string }) => Promise<readonly AutomationStudioConversationTurn[]>) | undefined;
   saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal>;
   saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation>;
   promoteRuntimeAdaptation(input: {

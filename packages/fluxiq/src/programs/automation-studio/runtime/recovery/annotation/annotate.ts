@@ -51,6 +51,7 @@ import type {
   AutomationStudioLlmProviderResolverInput,
   AutomationStudioRuntimeAdaptationContext
 } from "../../service.ts";
+import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
@@ -80,6 +81,14 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
   graphOptions?: AutomationStudioGraphExecutionOptions | undefined;
   executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"] | undefined;
   useReusableContext?: true | undefined;
+  /**
+   * What the run produced, and the shape of the Flow that produced it. Present
+   * when the recovery was entered from a result the verification refuted: that
+   * repair is about the answer, so the answer is the one thing it may not be
+   * asked to work without. Absent for a failed step, whose run produced no
+   * result to summarize.
+   */
+  resultSummary?: AutomationStudioRunResultSummary | undefined;
 };
 
 /** One failed run, taken through the loop's four stages at the failure entry point. */
@@ -163,6 +172,22 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     projectId: input.context.projectId,
     flowId: input.context.flowId
   }).catch(() => []);
+  // What the run produced, carried only where the request can also declare the
+  // domain's denied keys. The pre-send check holds a result summary to that
+  // declaration like every other evidence slot, so a summary on a request that
+  // cannot declare would not arrive with less context -- it would be refused,
+  // and the repair call would never be made at all.
+  const resultSummary = ports.llmEvidenceRuntime?.deniedEvidenceKeys && input.resultSummary ? input.resultSummary : undefined;
+  // Read once, for both calls, and deliberately not caught. A deployment that
+  // keeps no thread supplies no port and this is empty; a deployment that keeps
+  // one and cannot read it has a real fault, and repairing a Flow while
+  // silently pretending the person said nothing is how a repair contradicts an
+  // instruction they already gave.
+  const conversation = (await ports.conversationForRecovery?.({
+    projectId: input.context.projectId,
+    flowId: input.context.flowId,
+    runId: input.detail.summary.runId
+  })) ?? [];
   // What the run may spend: its cost ceiling and token budget, with the call
   // count only a runaway backstop. `run-budget.ts` says why each number is what
   // it is; the clock and the progress guard live in the exploration ledger.
@@ -269,6 +294,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     instructions,
     runDetail: input.detail,
     ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
+    ...(resultSummary ? { resultSummary } : {}), ...(conversation.length ? { conversation } : {}),
     ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
     policy: input.context.policy,
     // The diagnosis plans what the recovery may do, so it is told what the
@@ -368,6 +394,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       instructions,
       runDetail: input.detail,
       ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
+      ...(resultSummary ? { resultSummary } : {}), ...(conversation.length ? { conversation } : {}),
       // The plan the stage instruction tells it to carry out. The model's own
       // answer one call earlier, not Core's reading of it.
       ...(result.response?.kind === "diagnosis" && result.response.diagnosis ? { diagnosis: result.response.diagnosis } : {}),

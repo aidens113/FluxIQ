@@ -20,6 +20,7 @@ import type {
   AutomationStudioLlmProvider,
   AutomationStudioLlmTaskRequest
 } from "../../../llm/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 
@@ -265,6 +266,9 @@ function context(): AutomationStudioRuntimeAdaptationContext {
     recentRunCount: 3,
     recentAdaptationCount: 0,
     recentAdaptations: [],
+    resultCheckSchedule: resolveAutomationStudioResultCheckSchedule("initial_then_exponential"),
+    resultCheckState: { ordinal: 1, lastCheckedOrdinal: null, checksPassed: 0, lastStatus: null },
+    resultCheckEpoch: 1,
     diagnostics: []
   };
 }

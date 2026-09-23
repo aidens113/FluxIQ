@@ -27,6 +27,11 @@ const refusing = async ({ toolId }: { toolId: string }) => toolId === "press"
   ? { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_unobserved" }
   : { page: "as it is" };
 
+/** A tool table whose *look* refuses, the way a domain answers a page it could not capture. */
+const refusingLook = async ({ toolId }: { toolId: string }) => toolId === "inspect"
+  ? { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "page_unreadable" }, effectApplied: false, resultCode: "web.action.rejected.page_unreadable" }
+  : { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true };
+
 describe("looking again after being refused", () => {
   it("is offered, runs, and is not counted against the no-progress guard", async () => {
     const decide = vi.fn()
@@ -67,5 +72,43 @@ describe("looking again after being refused", () => {
       tools, decide, maxIterations: 8, maxToolCalls: 8, maxStepsWithoutProgress: 3, executeTool: refusing
     });
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+  });
+
+  it("lets a look that was itself refused be asked again, and runs it", async () => {
+    // The pair this fixes. A look that came back `{ok:false}` looked at
+    // nothing, so the loop must not file it as having answered the request and
+    // then refuse the retry out of its own records. A live build spent two of
+    // its fourteen calls on exactly that (`run-mudwci8d-de88aa32`).
+    const decide = vi.fn()
+      .mockResolvedValueOnce(look(1))
+      .mockResolvedValueOnce(look(1))
+      .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: refusingLook
+    });
+
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 2 } });
+    expect(result.trace.map((entry) => entry.resultCode)).toEqual([
+      "web.action.rejected.page_unreadable",
+      "web.action.rejected.page_unreadable",
+      undefined
+    ]);
+    // Both doors: neither the request's signature nor the tool's latest
+    // observation may answer the retry from a refusal carrying nothing.
+    expect(result.trace.some((entry) => entry.resultCode?.startsWith("llm_evidence_loop.already_"))).toBe(false);
+    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
+  });
+
+  it("counts a refused look against the no-progress guard, so asking for it forever still stops", async () => {
+    // The deliberate other half. Deleting the request's signature takes away
+    // the bound that used to stop a refused look being asked again and again,
+    // so the guard has to be that bound instead.
+    const decide = vi.fn().mockResolvedValue(look(1));
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 16, maxToolCalls: 16, maxStepsWithoutProgress: 3, executeTool: refusingLook
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result.accounting.toolCalls).toBe(3);
   });
 });

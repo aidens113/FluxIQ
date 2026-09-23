@@ -190,7 +190,7 @@ function exploration(overrides: Partial<AutomationStudioRuntimeExploration>): Au
     observedActions: 0,
     refusedActions: 0,
     unusableDecisions: 0,
-    accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+    accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
     trace: [],
     steps: [],
     stateDigestFailures: [],

@@ -20,6 +20,8 @@ export * from "./native-node-runtime.ts";
 export * from "./recording-controller.ts";
 export * from "./exploration-reduction/index.ts";
 export * from "./recovery/index.ts";
+export * from "./result-check-authorization/index.ts";
+export * from "./result-check-schedule/index.ts";
 export * from "./result-verification/index.ts";
 export * from "./recording-flow-proposal.ts";
 export * from "./reusable-llm-context.ts";

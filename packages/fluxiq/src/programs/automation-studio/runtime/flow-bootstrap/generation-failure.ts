@@ -375,7 +375,13 @@ function evidenceLoopDiagnostic(
   const steps = automationStudioFlowBootstrapEvidenceSteps(result.trace);
   return {
     iterationCount: result.accounting.iterations,
-    decisionCount: result.trace.length,
+    // Decisions, not trace rows. One decision is one paid call, and the loop
+    // writes two rows for the one kind of decision that edits the draft and
+    // re-runs a step, so counting rows here reported a refused build as having
+    // made more calls than it did -- the same defect the created build's audit
+    // had (`runtime/service/flow-bootstrap-commands/evidence-trace.ts`), fixed
+    // in the same work so the two paths cannot disagree about what a call is.
+    decisionCount: new Set(result.trace.flatMap((item) => item.iteration > 0 ? [item.iteration] : [])).size,
     toolCallCount: result.accounting.toolCalls,
     evidenceBytes: result.accounting.evidenceBytes,
     ...(steps.length ? { steps } : {})
@@ -710,6 +716,8 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
  */
 const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
 const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+/** The published steps are one per trace row, and one decision may write two of them. */
+const EVIDENCE_LOOP_MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
 
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
@@ -719,7 +727,7 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
   let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
   if (value.steps !== undefined) {
-    if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_STEPS) return null;
+    if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_ROWS) return null;
     steps = [];
     for (const step of value.steps) {
       if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])

@@ -45,6 +45,13 @@ export function automationStudioLlmRequestEvidenceRefusal(request: AutomationStu
   return undefined;
 }
 
+/** The tasks whose request may carry a finished run's result summary. Mirrors the packet builder's set; a test pins the two together. */
+const RESULT_SUMMARY_TASK_KINDS: ReadonlySet<AutomationStudioLlmTaskRequest["taskKind"]> = new Set<AutomationStudioLlmTaskRequest["taskKind"]>([
+  "loop_verification",
+  "runtime_diagnosis",
+  "runtime_patch"
+]);
+
 function declaredKeys(value: unknown): readonly string[] | undefined {
   return Array.isArray(value) && value.every((key) => typeof key === "string") ? value : undefined;
 }
@@ -80,10 +87,16 @@ function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, de
  * medium, and every other key in the summary is Core's own envelope. That is
  * the same rule the other slots follow -- a domain's list is matched against
  * what the domain supplied, never against the names Core wraps it in.
+ *
+ * The task kinds are the packet builder's own set. A repair entered from a
+ * refuted result is shown what the run produced, so a runtime diagnosis and a
+ * runtime patch carry a summary as legitimately as the verification does --
+ * and while this named only the verification, the packet builder put the slot
+ * on the request and this refused the call outright.
  */
 function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKeys: readonly string[] | undefined): boolean {
   const summary = request.context.resultSummary;
-  if (!deniedKeys || summary === undefined || request.taskKind !== "loop_verification") return false;
+  if (!deniedKeys || summary === undefined || !RESULT_SUMMARY_TASK_KINDS.has(request.taskKind)) return false;
   if (!credentialFree(summary)) return false;
   const sampled = summary.recordSets.flatMap((set) => set.sampleRows ?? []);
   if (screenAutomationStudioLlmEvidence(sampled, deniedKeys).deniedKey) return false;

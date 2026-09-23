@@ -7,6 +7,7 @@ import type {
   AutomationStudioFlowRunDetail,
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
+import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
@@ -123,9 +124,14 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * unrecognized one is dropped rather than carried. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
   /** What a finished run produced, already bounded and screened by
-   * `summarizeAutomationStudioRunResult`. Result verification only: any other
-   * task carrying one leaves it out of the packet. */
+   * `summarizeAutomationStudioRunResult`. Read by the verification that judges
+   * a result and by the runtime diagnosis and patch that repair one judged
+   * wrong; any other task carrying one leaves it out of the packet. */
   resultSummary?: AutomationStudioRunResultSummary;
+  /** The thread the person and the automation have been talking in, in reading
+   * order. The packet keeps the turns nearest the failure, bounded, and counts
+   * the rest. Runtime diagnosis and patch only. */
+  conversation?: readonly AutomationStudioConversationTurn[];
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
   relevantRuns?: JsonObject[];

@@ -15,6 +15,7 @@ import {
   type AutomationStudioRuntimeTargetOverrideTarget
 } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeTargetOverrideEvidenceValidation, AutomationStudioRuntimeTargetOverrideFailedAction } from "../../../live-patch.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches } from "../patches.ts";
 
@@ -488,6 +489,9 @@ function context(): AutomationStudioRuntimeAdaptationContext {
     recentRunCount: 0,
     recentAdaptationCount: 0,
     recentAdaptations: [],
+    resultCheckSchedule: resolveAutomationStudioResultCheckSchedule("initial_then_exponential"),
+    resultCheckState: { ordinal: 1, lastCheckedOrdinal: null, checksPassed: 0, lastStatus: null },
+    resultCheckEpoch: 1,
     diagnostics: []
   };
 }
