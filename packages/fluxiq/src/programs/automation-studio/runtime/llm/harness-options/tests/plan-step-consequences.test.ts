@@ -9,10 +9,23 @@
 //
 // The gate itself is `action-permissions/tests/gate.test.ts`; the web domain's
 // half is `plan-resolution/tests/plan-step-permission.test.ts` downstream.
+//
+// The last group is the one that matters most, because it is the only place
+// the whole carrier is checked in one piece. A build no longer writes its Flow
+// out as prose: it runs the library's nodes and the Flow is assembled from the
+// steps that ran (`llm/node-tools/`). So the declaration has to travel from
+// the `run_node` call that made the step, through the draft, through the
+// assembler, onto the node -- and arrive here as the classes a person is asked
+// about. Every joint of that was built by a different task, and until these
+// rows nothing put them together.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { automationStudioFlowBootstrapDraftNodeStep, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
 import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan-parameter-resolution.ts";
 import { AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY, automationStudioPlanStepConsequences } from "../plan-step-consequences.ts";
@@ -132,5 +145,80 @@ describe("a step's declaration through plan resolution", () => {
     const resolved = await resolveWith({ target: "t.1", consequences: "none" });
 
     expect(resolved.ok && resolved.plan.subflows[0]?.nodes[0]?.parameters).toEqual({ target: "t.1" });
+  });
+});
+
+describe("the declaration's journey from the call that ran the node to the step Core reads", () => {
+  const registry = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());
+  const resolution = {
+    scope: { kind: "domain" as const, domainId: "web-automation" },
+    runtimeCapabilities: ["web.actions"],
+    permissions: ["web-automation.action"]
+  };
+
+  /** A step exactly as a `run_node` call leaves it on the draft. */
+  function ran(consequences: string[] | undefined): AutomationStudioFlowDraftStep {
+    return {
+      position: 1,
+      iteration: 1,
+      callId: "call.1",
+      actionId: "web.output.dom-click",
+      toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+      input: { node: "web.output.dom-click", parameters: { selector: "#schedule" }, ...(consequences ? { consequences } : {}) },
+      effect: "mutate",
+      effectApplied: true,
+      proposes: true,
+      disposition: "kept"
+    };
+  }
+
+  function nodeFrom(consequences: string[] | undefined) {
+    const assembled = assembleAutomationStudioFlowDraftPlan({
+      steps: [ran(consequences)],
+      write: automationStudioFlowBootstrapDraftNodeStep,
+      registry,
+      resolution,
+      summary: "Schedule the post"
+    });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    return assembled.plan?.subflows[0]?.nodes[0];
+  }
+
+  it("carries what the call declared onto the assembled node, and Core reads it back as its own classes", () => {
+    const node = nodeFrom(["send_or_publish"]);
+
+    // The node the Flow would run, with the declaration beside its parameters
+    // rather than among them.
+    expect(node?.definitionId).toBe("web.output.dom-click");
+    expect(node?.parameters?.selector).toBe("#schedule");
+    expect(node?.consequences).toEqual(["send_or_publish"]);
+
+    const step = automationStudioPlanStepConsequences(node);
+    expect(step.declared).toEqual(["send_or_publish"]);
+    expect(step.parameters[AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY]).toBeUndefined();
+  });
+
+  it("keeps a call that declared nothing lasting distinct from one that said nothing", () => {
+    // `[]` on the call becomes the word `none` in the written step, which the
+    // authoring reader turns back into `[]` on the node. It has to survive as
+    // a statement: a step that declared nothing would be refused by the domain,
+    // and refusing a press the model already said was harmless would stop every
+    // build that dismisses a banner.
+    const declaredHarmless = nodeFrom([]);
+    expect(declaredHarmless?.consequences).toEqual([]);
+    expect(automationStudioPlanStepConsequences(declaredHarmless).declared).toEqual([]);
+
+    // A call with no declaration at all leaves the node with none, and Core
+    // reports the silence rather than reading it as harmless.
+    const saidNothing = nodeFrom(undefined);
+    expect(saidNothing?.consequences).toBeUndefined();
+    expect(automationStudioPlanStepConsequences(saidNothing).declared).toBeUndefined();
+  });
+
+  it("carries several classes from one call", () => {
+    const node = nodeFrom(["create_new", "send_or_publish"]);
+
+    // In Core's own order, whatever order the call wrote them in.
+    expect(automationStudioPlanStepConsequences(node).declared).toEqual(["send_or_publish", "create_new"]);
   });
 });
