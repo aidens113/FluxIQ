@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { automationStudioRuntimeSessionGrantTaskKinds, AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { automationStudioRuntimeSessionGrantTaskKinds, AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -37,12 +37,34 @@ export type GlobalProgramRuntime = {
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
+  const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
+  // Built before Automation Studio, which takes the standing result-check
+  // provider at construction: an unattended check is not a grant, so there is
+  // nothing to bind afterwards the way an execution grant is.
+  const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
+  // What a Flow's standing result-check authorization buys, for a run nobody is
+  // watching. Deliberately not routed through the execution grant service: that
+  // refuses without a live actor session, and widening it would let unattended
+  // work reach `diagnose_and_adapt` and `explore_and_adapt` too. Core has
+  // already decided that this run is checked and that the authorization covers
+  // it; what reaches here is the key, the person's own key unlock, and the
+  // ceiling for this one call.
+  const resultCheckProviderResolver = (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => createAutomationStudioResultCheckProvider({
+    ports: {
+      getKeySummary: (id) => secretKeys.getKeySummary(id),
+      createSessionRevealAuthorization: (input) => secretKeys.createSessionRevealAuthorization(input),
+      revealKeyWithAuthorization: (input) => secretKeys.revealKeyWithAuthorization(input),
+      revokeRevealAuthorization: (authorizationId) => secretKeys.revokeRevealAuthorization(authorizationId)
+    },
+    scope: request
+  });
   const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
       ? {
         storageRootDir: paths.recordings,
-        customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes")
+        customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes"),
+        resultCheckProviderResolver
       }
-    : storageOptions);
+    : { ...storageOptions, resultCheckProviderResolver });
   const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
@@ -53,7 +75,6 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
-  const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
   const computeControl = new ComputeControlService(storageOptions);
   const databaseManager = new DatabaseManagerService(storageOptions);
@@ -66,7 +87,6 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     generatedRootDir: runtimeDocsRootDir!,
     allowedSourceRootDirs: [docsRootDir!, runtimeDocsRootDir!]
   } : storageOptions);
-  const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
   // Identity Access takes its credential-change subscribers only at construction, so Secret Keys is built first.
   const identityAccess = new IdentityAccessService({
     repository: identityUsersRepository,

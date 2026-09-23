@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioTrainingModeSettings } from "../../training-modes.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { finiteNumber } from "../scalar-readings/index.ts";
+import { resultCheckConfigurationFromMetadata } from "./result-check-settings.ts";
 import { approvalModeValue, booleanSetting, trainingModeValue } from "./settings-readings.ts";
 
 // The training-mode settings a Flow's metadata describes: the mode, the
@@ -31,6 +32,7 @@ export function trainingModeSettingsFromMetadata(metadata: JsonObject): Automati
     proposalApprovalMode: approvalModeValue(settings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
     allowPromotion: booleanSetting(settings.allowPromotion, false),
     requireFirstManualReviewBeforeAutoPromotion: booleanSetting(settings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
+    resultCheck: resultCheckConfigurationFromMetadata(settings),
     recoveryBudget: {
       ...(maxRetriesPerAction !== undefined ? { maxRetriesPerAction } : {}),
       ...(maxRecoveryAttemptsPerSubflow !== undefined ? { maxRecoveryAttemptsPerSubflow } : {}),
