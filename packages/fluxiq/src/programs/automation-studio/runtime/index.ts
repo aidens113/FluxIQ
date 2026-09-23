@@ -14,6 +14,7 @@ export * from "./host-runtime.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";
 export * from "./llm/index.ts";
+export * from "./parking/index.ts";
 export * from "./live-patch.ts";
 export * from "./native-node-runtime.ts";
 export * from "./recording-controller.ts";
