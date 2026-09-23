@@ -179,23 +179,30 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
   if (!Array.isArray(value) || !value.length || value.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
   const read: AutomationStudioFlowDraftAmendment[] = [];
   for (const item of value) {
-    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input"])) continue;
+    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over"])) continue;
     if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) continue;
     if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) continue;
     if (item.settings !== undefined && !isJsonObject(item.settings)) continue;
-    if (item.to !== undefined && (!Number.isSafeInteger(item.to) || (item.to as number) < 1)) continue;
     if (item.input !== undefined && !isJsonObject(item.input)) continue;
-    // The two changes that need a value are dropped when it is missing, rather
-    // than applied as something else: a `rerun` with no argument would rerun
-    // the step with the argument that was already wrong.
+    // Every key that names another step is one position, read the same way, so
+    // a mistyped one leaves the amendment out rather than becoming step zero.
+    if (!["to", "check", "through", "over"].every((key) => isPosition(item[key]))) continue;
+    // The three changes that need a value are dropped when it is missing,
+    // rather than applied as something else: a `rerun` with no argument would
+    // rerun the step with the argument that was already wrong, and an
+    // `on_failed` naming no step would say a failure recovers into nowhere.
     if (item.change === "reorder" && item.to === undefined) continue;
     if (item.change === "rerun" && item.input === undefined) continue;
+    if (item.change === "on_failed" && item.to === undefined) continue;
     read.push({
       step: item.step as number,
       change: item.change as AutomationStudioFlowDraftAmendmentChange,
       ...(item.settings ? { settings: item.settings } : {}),
       ...(item.to === undefined ? {} : { to: item.to as number }),
-      ...(item.input ? { input: item.input } : {})
+      ...(item.input ? { input: item.input } : {}),
+      ...(item.check === undefined ? {} : { check: item.check as number }),
+      ...(item.through === undefined ? {} : { through: item.through as number }),
+      ...(item.over === undefined ? {} : { over: item.over as number })
     });
   }
   return read.length ? read : undefined;
@@ -243,6 +250,8 @@ function exactKeys(value: Record<string, unknown>, allowed: string[]): boolean {
   return Object.keys(value).every((key) => set.has(key));
 }
 
+/** Whether a key naming another step is absent or a position counting from 1. */
+function isPosition(value: unknown): boolean { return value === undefined || (Number.isSafeInteger(value) && (value as number) >= 1); }
 function validId(value: unknown): value is string { return typeof value === "string" && /^[a-z0-9_.:-]{1,200}$/i.test(value); }
 function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 function isJsonObject(value: unknown): value is JsonObject { return isRecord(value) && isJsonValue(value); }

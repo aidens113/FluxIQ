@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../harness/index.ts";
+import { automationStudioLlmEvidenceParseDecision } from "../evidence-loop-decision.ts";
 import { automationStudioLlmTokenBudgetBytes } from "../token-estimation.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
@@ -24,7 +25,9 @@ describe("Automation Studio LLM evidence loop", () => {
     // model asked for survives the loop, and it survives on purpose: a result
     // written from the record of what was done cannot lose a step the window
     // evicted. No mutating tool is offered here, so nothing is shown a draft.
-    expect(result.ok && result.steps).toEqual([{ position: 1, iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "kept" }]);
+    // `id` is the step's own name, which a position stops being the moment the
+    // draft is reordered; what a step says about when it runs is kept under it.
+    expect(result.ok && result.steps).toEqual([{ position: 1, id: "d1", iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "kept" }]);
     expect(JSON.stringify({ ...result, steps: undefined })).not.toContain("scope");
   });
 
@@ -515,5 +518,52 @@ describe("a tool request the loop has already answered", () => {
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), maxIterations: 20, maxStepsWithoutProgress }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
     expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+// A statement about when a step runs travels the same road an ordinary
+// amendment does: it is read strictly, a field the model mistyped leaves the
+// amendment out rather than becoming something else, and the grammar itself is
+// in the schema every decision that may amend already carries.
+describe("the routing words of an amendment", () => {
+  it("reads each one, with the fields it carries", () => {
+    const read = automationStudioLlmEvidenceParseDecision({
+      kind: "amend_draft",
+      amendments: [
+        { step: 2, change: "optional" },
+        { step: 3, change: "only_if", check: 2 },
+        { step: 4, change: "on_failed", to: 5 },
+        { step: 6, change: "repeat", through: 7, over: 5 }
+      ]
+    });
+
+    expect(read).toEqual({
+      kind: "amend_draft",
+      amendments: [
+        { step: 2, change: "optional" },
+        { step: 3, change: "only_if", check: 2 },
+        { step: 4, change: "on_failed", to: 5 },
+        { step: 6, change: "repeat", through: 7, over: 5 }
+      ]
+    });
+  });
+
+  // A recovery naming no step would say a failure recovers into nowhere, which
+  // is what the word is for; and a position that is not one is not read as zero.
+  it("leaves out a recovery that names no step, and a position that is not one", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "on_failed" }] })).toBeUndefined();
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "only_if", check: 0 }] })).toBeUndefined();
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", through: "two" }] })).toBeUndefined();
+  });
+
+  it("offers every one of them in the schema the model answers in", () => {
+    const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, true, true) as {
+      oneOf: Array<{ properties: { kind: { const: string }; amendments?: { items: { properties: { change: { enum: string[] } } } } } }>;
+    };
+    const amend = schema.oneOf.find((variant) => variant.properties.kind.const === "amend_draft");
+
+    expect(amend?.properties.amendments?.items.properties.change.enum).toEqual(
+      expect.arrayContaining(["optional", "only_if", "on_failed", "repeat"])
+    );
   });
 });

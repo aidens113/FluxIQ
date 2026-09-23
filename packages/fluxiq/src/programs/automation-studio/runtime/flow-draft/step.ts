@@ -27,6 +27,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome, AutomationStudioFlowDraftStepReplay } from "./dry-run.ts";
+import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 
 /**
  * Whether a step only read the state or changed it.
@@ -53,6 +54,16 @@ export type AutomationStudioFlowDraftStepDisposition = "kept" | "dropped" | "exp
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
+  /**
+   * The step's own name, given when it was appended and never changed after.
+   *
+   * A position is what the model reads and writes, and it is renumbered the
+   * moment a step is moved or withdrawn -- so anything the draft has to
+   * remember *about* a step across such an edit is remembered under this
+   * instead (`./routing.ts`). Absent on a step nothing appended, which is a
+   * step nothing will renumber either.
+   */
+  id?: string;
   /** The loop iteration that decided it. */
   iteration: number;
   /** The call that ran it; absent when the loop answered the request itself. */
@@ -137,6 +148,16 @@ export type AutomationStudioFlowDraftStep = {
    * the steps afterwards.
    */
   replayed?: AutomationStudioFlowDraftReplayOutcome;
+  /**
+   * What this step says about when it runs, when it is not simply the next
+   * thing that happens (`./routing.ts`).
+   *
+   * Absent, the step is unconditional, which is every step until the model says
+   * otherwise. Present, it names other steps of this draft by their ids and the
+   * assembler derives the nodes, ports and edges that make it true -- the model
+   * states the relation and never the graph.
+   */
+  routing?: AutomationStudioFlowDraftStepRouting;
 };
 
 /**

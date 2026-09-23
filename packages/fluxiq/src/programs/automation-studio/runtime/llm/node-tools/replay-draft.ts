@@ -18,8 +18,10 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
+  automationStudioFlowDraftConditionalStepIds,
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayFrom,
+  automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftReplayOutcome,
@@ -85,7 +87,7 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     // A step with nothing to run it with is a failed step, not a skipped one.
     const ran: ReplayAnswer = value ? await call(input, callId, toolId, value) : { readable: false };
     const status = ran.readable ? automationStudioNodeReplayStatus(ran.result.resultCode) : "failed";
-    outcomes.push({ step: step.position, actionId: step.actionId, status, ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}) });
+    outcomes.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), actionId: step.actionId, status, ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}) });
     if (status === "replayed") continue;
     // The first thing that did not replay is the one worth showing, and the
     // rest of the steps are still run: a verdict that stops at the first
@@ -101,7 +103,16 @@ function verdictOf(
   reset: "ok" | "failed",
   outcomes: readonly AutomationStudioFlowDraftReplayOutcome[]
 ): AutomationStudioFlowDraftDryRun {
-  return automationStudioFlowDraftDryRunVerdict({ attempt: input.attempt, reset, outcomes, asked: input.asked });
+  // A step the Flow would not always run answers for itself: the replay is one
+  // situation, and a step that exists for another one is not a broken step
+  // (`../../flow-draft/routing.ts`).
+  return automationStudioFlowDraftDryRunVerdict({
+    attempt: input.attempt,
+    reset,
+    outcomes,
+    asked: input.asked,
+    conditional: automationStudioFlowDraftConditionalStepIds(input.steps)
+  });
 }
 
 /**

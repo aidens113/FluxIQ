@@ -117,6 +117,8 @@ function validateSubflow(
   const connections = new Set<string>();
   const sourceConnections = new Map<string, number>();
   const targetConnections = new Map<string, number>();
+  /** Edges arriving where several paths may arrive: where a loop closes, if one does. */
+  const joined: Array<[string, string]> = [];
   for (const [edgeIndex, edge] of subflow.edges.entries()) {
     const edgePath = `${path}.edges.${edgeIndex}`;
     if (edgeKeys.has(edge.key)) issues.push(error("bootstrap.duplicate_edge_key", "Edge keys must be unique within a Subflow.", `${edgePath}.key`));
@@ -151,10 +153,14 @@ function validateSubflow(
       indegree.set(edge.target.nodeKey, (indegree.get(edge.target.nodeKey) ?? 0) + 1);
       undirected.get(edge.source.nodeKey)?.push(edge.target.nodeKey);
       undirected.get(edge.target.nodeKey)?.push(edge.source.nodeKey);
+      // An edge arriving where several paths may arrive is where a loop closes,
+      // if anything does. Noted apart so the acyclicity check can ask what the
+      // graph looks like without the joins (`validateConnectivityAndDepth`).
+      if (targetPort?.multiple === true) joined.push([edge.source.nodeKey, edge.target.nodeKey]);
     }
   }
   validateRequiredInputConnections(subflow, nodes, issues, path);
-  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, issues, path);
+  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, issues, path);
 }
 
 function validateParameters(values: JsonObject, definition: AutomationStudioNodeDefinition, path: string, scope: ValidationScope, issues: AutomationStudioFlowBootstrapIssue[]): void {
@@ -295,11 +301,26 @@ function validateRequiredInputConnections(
   }
 }
 
+/**
+ * Every node in one graph, no cycle a run could not leave, and a bounded depth.
+ *
+ * **Why a cycle is asked about twice.** A Flow that repeats a span is a cycle,
+ * and refusing every cycle refused every loop -- so a draft could say "do this
+ * for each row" and the plan it made was rejected for the shape that sentence
+ * means. What a loop closes *through* is a join: `builtin.control.merge`
+ * declares an input several edges may arrive at, and no ordinary node does. So
+ * the graph is asked once as it stands, and, if that finds a cycle, again with
+ * the joins removed. A cycle that survives the second ask does not pass through
+ * a join, which means nothing in it was written to be arrived at twice, and it
+ * is still refused. Depth is measured on the acyclic reading, since a loop has
+ * no depth to measure.
+ */
 function validateConnectivityAndDepth(
   nodes: Map<string, unknown>,
   adjacency: Map<string, string[]>,
   indegree: Map<string, number>,
   undirected: Map<string, string[]>,
+  joined: ReadonlyArray<readonly [string, string]>,
   issues: AutomationStudioFlowBootstrapIssue[],
   path: string
 ): void {
@@ -315,6 +336,18 @@ function validateConnectivityAndDepth(
     }
   }
   if (seen.size !== nodes.size) issues.push(error("bootstrap.disconnected_graph", "Every node in a Subflow must belong to one connected graph.", `${path}.nodes`));
+  let ordered = topologicalOrder(nodes, adjacency, indegree);
+  if (ordered.visited !== nodes.size && joined.length) ordered = topologicalOrder(nodes, withoutJoins(adjacency, joined), withoutJoinDegrees(indegree, joined));
+  if (ordered.visited !== nodes.size) issues.push(error("bootstrap.cyclic_graph", "Bootstrap Subflow graphs must be acyclic except where a loop closes through a join.", `${path}.edges`));
+  if (Math.max(0, ...ordered.depths.values()) + 1 > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxGraphDepth) issues.push(error("bootstrap.graph_too_deep", "Bootstrap Subflow exceeds the graph-depth limit.", `${path}.edges`));
+}
+
+/** How many nodes a topological walk reaches, and how deep each one sits. */
+function topologicalOrder(
+  nodes: Map<string, unknown>,
+  adjacency: Map<string, string[]>,
+  indegree: Map<string, number>
+): { visited: number; depths: Map<string, number> } {
   const degrees = new Map(indegree);
   const roots = [...degrees].filter(([, degree]) => degree === 0).map(([key]) => key).sort();
   const depths = new Map(roots.map((key) => [key, 0]));
@@ -330,8 +363,25 @@ function validateConnectivityAndDepth(
     }
     topo.sort();
   }
-  if (visited !== nodes.size) issues.push(error("bootstrap.cyclic_graph", "Bootstrap Subflow graphs must be acyclic.", `${path}.edges`));
-  if (Math.max(0, ...depths.values()) + 1 > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxGraphDepth) issues.push(error("bootstrap.graph_too_deep", "Bootstrap Subflow exceeds the graph-depth limit.", `${path}.edges`));
+  return { visited, depths };
+}
+
+/** The same adjacency with one arrival removed for each join edge. */
+function withoutJoins(adjacency: Map<string, string[]>, joined: ReadonlyArray<readonly [string, string]>): Map<string, string[]> {
+  const reduced = new Map([...adjacency].map(([key, targets]) => [key, [...targets]] as [string, string[]]));
+  for (const [source, target] of joined) {
+    const targets = reduced.get(source);
+    const at = targets?.indexOf(target) ?? -1;
+    if (targets && at >= 0) targets.splice(at, 1);
+  }
+  return reduced;
+}
+
+/** The same indegrees with each join edge no longer counted. */
+function withoutJoinDegrees(indegree: Map<string, number>, joined: ReadonlyArray<readonly [string, string]>): Map<string, number> {
+  const reduced = new Map(indegree);
+  for (const [, target] of joined) reduced.set(target, Math.max(0, (reduced.get(target) ?? 0) - 1));
+  return reduced;
 }
 
 function compatiblePorts(source: AutomationNodePort, target: AutomationNodePort): boolean {

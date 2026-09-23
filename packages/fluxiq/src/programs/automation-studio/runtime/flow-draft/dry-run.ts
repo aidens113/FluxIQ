@@ -75,6 +75,12 @@ export type AutomationStudioFlowDraftStepReplay = { from?: JsonObject; produced?
 export type AutomationStudioFlowDraftReplayOutcome = {
   /** The step's position in the draft when the replay ran. */
   step: number;
+  /**
+   * The step's own name, which a position stops being the moment the draft is
+   * reordered (`./routing.ts`). Carried so a verdict can be read against what
+   * the step says about when it runs.
+   */
+  stepId?: string;
   /** What was run, under the caller's own name for it. */
   actionId: string;
   status: AutomationStudioFlowDraftReplayStatus;
@@ -136,15 +142,27 @@ export function automationStudioFlowDraftReplaySignature(steps: readonly Automat
  * `asked` is the steps the model has already been told were unreproducible, by
  * `<position>:<actionId>`. A step in it no longer blocks: it was put to the
  * model, and finishing again with it kept is the answer.
+ *
+ * `conditional` is the ids of the steps a Flow built from this draft would not
+ * always run (`./routing.ts`). A replay runs every proposed step once, in
+ * order, so a step the Flow takes only in some situations may legitimately not
+ * run in the situation the replay is in -- and refusing the proposal for that
+ * would refuse exactly the Flow the model was asked to write. This is the
+ * honest closure of the question `unreproducible` could only ask: a dismissal
+ * the site remembers stops being a question the model answers by insisting, and
+ * becomes a step the Flow itself handles.
  */
 export function automationStudioFlowDraftDryRunVerdict(input: {
   attempt: number;
   reset: "ok" | "failed";
   outcomes: readonly AutomationStudioFlowDraftReplayOutcome[];
   asked: ReadonlySet<string>;
+  conditional?: ReadonlySet<string>;
 }): AutomationStudioFlowDraftDryRun {
   const outcomes = input.outcomes.map((outcome) => ({ ...outcome }));
-  const blocking = outcomes.filter((outcome) => automationStudioFlowDraftReplayOutcomeBlocks(outcome, input.asked));
+  const conditional = input.conditional ?? new Set<string>();
+  const blocking = outcomes.filter((outcome) => !(outcome.stepId !== undefined && conditional.has(outcome.stepId))
+    && automationStudioFlowDraftReplayOutcomeBlocks(outcome, input.asked));
   return {
     attempt: input.attempt,
     reset: input.reset,
@@ -185,7 +203,14 @@ const DRY_RUN_INSTRUCTION = "Your draft was run again from the beginning with no
   + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. "
   + "failed: the step did not run this time. Rerun it with a corrected argument (amend_draft rerun), or run the step it needed first and keep that one too. "
   + "changed: it ran, and produced nothing where it produced something before -- almost always the step before it left the target somewhere else, so correct the order or the earlier step rather than this one. "
-  + "unreproducible: putting the target back could not undo this step's own effect, which is what happens when a site remembers it. If the Flow needs the step on a fresh start, finish again with it kept and it will be accepted; drop it only if the Flow truly does not need it. "
+  + "unreproducible: putting the target back could not undo this step's own effect, which is what happens when a site remembers it -- a consent banner answered once stays answered. "
+  // The honest answer to a step that is not always there. Before routing
+  // existed the only answers were "insist" or "delete", and a live build's
+  // dismissals were waved through unchecked under the first. Named here rather
+  // than only in the draft entry because this refusal is where the model is
+  // actually looking at the step that needs it.
+  + "A step that is not always needed is not a step to insist on: say so instead, with amend_draft optional, and the Flow carries on when it is not there. Where you ran a check first, amend_draft only_if on this step runs it only when that check succeeded. "
+  + "If the Flow truly does need it on every fresh start, finish again with it kept and it will be accepted; drop it only if the Flow does not need it at all. "
   + "The target now stands where the replay ended.";
 
 /** What the model is shown of a refused dry run: the verdict, and what to do. */

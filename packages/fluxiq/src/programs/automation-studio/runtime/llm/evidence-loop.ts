@@ -262,8 +262,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const draftSteps: AutomationStudioFlowDraftStep[] = [];
   const drafting = input.draft !== false;
   let draftAmendments = 0;
-  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition">): void => {
-    draftSteps.push({ ...step, position: draftSteps.length + 1, disposition: "kept" });
+  // Steps appended so far, ever, including any since withdrawn: the source of
+  // the id below, so no two steps of one build ever share one.
+  let draftAppended = 0;
+  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">): void => {
+    draftAppended += 1;
+    // The step's own name, which a position stops being the moment the draft is
+    // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
+    draftSteps.push({ ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: "kept" });
   };
   /**
    * What one call did, as the caller reported it, over what its tool declared.
