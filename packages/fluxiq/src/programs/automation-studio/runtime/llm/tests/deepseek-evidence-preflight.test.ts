@@ -120,7 +120,13 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
       ["a denied key in a sampled row", verificationRequest(resultSummary([{ name: "Hollis", selector: DENIED_VALUE }])), DENIED_VALUE],
       ["a provider API key in a sampled value", verificationRequest(resultSummary([{ name: `key ${API_KEY}` }])), API_KEY],
       ["no declared keys", undeclared(verificationRequest(resultSummary([{ name: "Hollis" }]))), undefined],
-      ["a task that has no finished result to judge", { ...verificationRequest(resultSummary([{ name: "Hollis" }])), taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" }, undefined],
+      // A build has produced nothing yet, so it has no result to be shown.
+      // `runtime_diagnosis` and `runtime_patch` are no longer in this list: a
+      // repair entered from a refuted result is repairing exactly what the run
+      // produced, and while this check named only the verification, the packet
+      // builder put the summary on the patch request and this refused the call
+      // outright (t099).
+      ["a task that has no finished result to judge", { ...verificationRequest(resultSummary([{ name: "Hollis" }])), taskKind: "flow_bootstrap" as const, promptVersion: "automation-studio.flow-bootstrap.v1", expectedOutput: "flow_bootstrap" as const }, undefined],
       ["a summary past its byte ceiling", verificationRequest(resultSummary([{ name: "y".repeat(5_000) }])), undefined]
     ];
     for (const [label, request, value] of cases) {
@@ -131,6 +137,16 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
     }
     const sent = recordingProvider({ kind: "diagnosis", summary: "Judged." });
     await expect(sent.provider.runTask(verificationRequest(resultSummary([{ name: "Hollis Abbott", role: "member" }])))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
+    // And the repair that is shown what the run produced is sent, not refused.
+    const repairing = recordingProvider({ kind: "diagnosis", summary: "Diagnosed." });
+    const diagnosing = verificationRequest(resultSummary([{ name: "Hollis Abbott" }]));
+    await expect(repairing.provider.runTask({
+      ...diagnosing,
+      taskKind: "runtime_diagnosis",
+      promptVersion: "automation-studio.runtime-diagnosis.v1",
+      expectedOutput: "diagnosis",
+      context: { ...diagnosing.context, taskKind: "runtime_diagnosis", promptVersion: "automation-studio.runtime-diagnosis.v1" }
+    })).resolves.toMatchObject({ response: { kind: "diagnosis" } });
   });
 
   it("is a pre-flight refusal of its own", () => {

@@ -151,7 +151,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4611,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4606,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {

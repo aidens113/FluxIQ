@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunRecoveryRecord, AutomationStudioRouteDecisionRecord } from "../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioRecoveryCandidate, AutomationStudioTransitionComparisonStatus } from "./executor.ts";
@@ -153,6 +153,31 @@ function adaptiveFailureClassForAttempt(attempt: AutomationStudioNodeAttemptTrac
 }
 
 function adaptiveCandidateKindForFailure(failureClass: AutomationStudioAdaptiveFailureClass, input: AutomationStudioAdaptiveFailureInput): AutomationStudioAdaptiveCandidateKind {
+  // A verdict on the run's *result* is not a step that went wrong. Every step
+  // did what it said, and what the run produced does not answer the request --
+  // the most common way a Flow built from an instruction fails, and the one the
+  // repair ladder could not see (`fa-r5-postmortem.md`, cause 2). No wait and
+  // no different target repairs it: the Flow is missing a step, or taking the
+  // wrong path to the one it has, so the shape of repair available is a change
+  // to the path -- an inserted action sequence, a reroute, a recovery subflow.
+  // Without this the verdict arrives as `output_not_observed` and is planned as
+  // a wait-and-retry, which is the one repair that cannot change what a clean
+  // run produces.
+  //
+  // `ambiguous_or_unknown` from the same place is verification's other verdict
+  // -- a result nobody could judge -- and it stays `diagnosis_only`, because
+  // changing a Flow on the strength of "we could not tell" is a guess.
+  //
+  // The stage alone would be wrong, and reading it alone was the first draft of
+  // this. `verification` is also where a domain reports a step whose effect it
+  // could not confirm -- the web domain's `web.validation.output_not_observed`
+  // and `web.assert.text` are recorded at that stage -- and those are exactly
+  // the failures a wait does repair. The code is what tells them apart: only
+  // Core writes the `core.result.` namespace, and only for a judgement on a
+  // finished run's result.
+  if (isAutomationStudioRunResultFailure(parseAutomationStudioFailureRecord(input.attempt.failure))) {
+    return failureClass === "ambiguous_or_unknown" ? "diagnosis_only" : "recovery_path_or_reroute";
+  }
   switch (failureClass) {
     case "expected_state_missing":
     case "timeout":
@@ -180,6 +205,18 @@ function adaptiveCandidateKindForFailure(failureClass: AutomationStudioAdaptiveF
     default:
       return candidateKindForUnhandledClass(failureClass);
   }
+}
+
+/**
+ * Core's namespace for a verdict on a finished run's result
+ * (`result-verification/`). A domain owns its own codes and never writes one in
+ * this namespace, which is what makes the prefix a safe discriminator.
+ */
+const AUTOMATION_STUDIO_RUN_RESULT_FAILURE_CODE_PREFIX = "core.result.";
+
+/** Whether this failure is a judgement on what the run produced, rather than on a step it ran. */
+function isAutomationStudioRunResultFailure(failure: AutomationStudioFailureRecord | null): boolean {
+  return failure?.stage === "verification" && failure.code.startsWith(AUTOMATION_STUDIO_RUN_RESULT_FAILURE_CODE_PREFIX);
 }
 
 // Compile-time exhaustiveness: a new failure class fails the type check here

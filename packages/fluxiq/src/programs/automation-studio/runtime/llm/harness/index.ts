@@ -49,6 +49,12 @@ export {
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
+export {
+  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES,
+  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS,
+  type AutomationStudioLlmConversationContext,
+  type AutomationStudioLlmConversationTurn
+} from "./conversation.ts";
 export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-check.ts";
 // The screen itself, for the one caller outside this directory that has to run
 // it before a slot exists: the result verification bounds a run's stored rows
