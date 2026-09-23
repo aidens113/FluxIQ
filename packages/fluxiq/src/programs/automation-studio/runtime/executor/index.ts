@@ -1,5 +1,6 @@
 export * from "./contracts.ts";
-export { runAutomationStudioGraph } from "./graph-run.ts";
+export { runAutomationStudioGraph, resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
+export { resumeAutomationStudioGraph, type AutomationStudioResumeOutcome, type AutomationStudioRunResumption } from "./resume.ts";
 export { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder, type AutomationStudioLadderOutcome, type AutomationStudioReadinessOutcome } from "./ladder-run.ts";
 export { AUTOMATION_STUDIO_READINESS_CAP_MS, AUTOMATION_STUDIO_READINESS_FLOOR_MS, AUTOMATION_STUDIO_RECORDED_GAP_METADATA_KEY, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState, type AutomationStudioRecordedState } from "./recorded-state.ts";
 export { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./recovery-ladder.ts";

@@ -4,6 +4,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import { AUTOMATION_STUDIO_ASK_EFFECT } from "../parking/index.ts";
 import { nodeAttemptFromResult, nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
@@ -180,6 +181,9 @@ const RECORDS_WRITE_EFFECT = "records.write";
 async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget): Promise<AutomationNodeExecutionResult> {
   let result = initial;
   for (const [index, effect] of (initial.effects ?? []).entries()) {
+    // A question for a person is the executor's to raise, not a domain's to
+    // answer: no host dispatcher is asked to know what an ask is.
+    if (effect.type === AUTOMATION_STUDIO_ASK_EFFECT) continue;
     let dispatched: AutomationNodeExecutionResult;
     if (effect.type === RECORDS_WRITE_EFFECT) {
       const written = await withWrittenRecords(effect, options, target);
