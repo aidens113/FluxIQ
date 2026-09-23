@@ -53,3 +53,4 @@ export {
   type AutomationStudioViewResolution,
   type RetiredAutomationStudioViewId
 } from "./view-registry";
+export { createAutomationStudioViewInstances, type AutomationStudioViewInstanceLabels } from "./view-instances";

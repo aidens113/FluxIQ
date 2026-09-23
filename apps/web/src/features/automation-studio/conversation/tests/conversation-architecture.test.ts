@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { automationStudioViewIds } from "../../views";
-import { createAutomationStudioViewInstances } from "../../views/view-instances";
+import { automationStudioViewIds, createAutomationStudioViewInstances } from "../../views";
 import { conversationAttachmentKinds, conversationAttachmentLabel, conversationAttachmentRenderer, conversationLauncherLabel } from "../components";
 
 function source(path: string): string {
