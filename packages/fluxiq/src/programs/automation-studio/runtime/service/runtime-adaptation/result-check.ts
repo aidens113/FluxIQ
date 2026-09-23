@@ -66,13 +66,16 @@ export type AutomationStudioRunResultCheck = {
 export function automationStudioRunResultCheck(input: {
   context: AutomationStudioRuntimeAdaptationContext;
   nowMs: number;
+  /** True when a repair landed during this run and the retry produced the result now being judged. */
+  repairedThisRun?: boolean;
 }): AutomationStudioRunResultCheck {
   const context = input.context;
   const configuration = context.settings.resultCheck;
   const schedule = context.resultCheckSchedule;
   const decision = schedule.decide({
     state: context.resultCheckState,
-    settings: configuration?.schedule ?? scheduleFallback(schedule.shape)
+    settings: configuration?.schedule ?? scheduleFallback(schedule.shape),
+    ...(input.repairedThisRun === true ? { repairedThisRun: true } : {})
   });
   if (!decision.check) {
     return { checked: false, epoch: context.resultCheckEpoch, code: decision.code, reason: decision.reason, decision };
@@ -97,6 +100,34 @@ export function automationStudioRunResultCheck(input: {
     authorizedByUserId: redemption.authorizedByUserId,
     decision
   };
+}
+
+/**
+ * The decision a run that repaired itself and re-ran is judged under.
+ *
+ * It replaces the decision taken when the run started, and it has to: that one
+ * was taken before anyone knew a repair would happen, and it answers the
+ * question "is run 4 one the sequence checks?" when the question that matters
+ * has become "did the repair produce the right answer?". The run is the same
+ * run -- `retryRuntimeSessionAfterAutoAppliedPatch` keeps its id -- so there is
+ * one decision and one record either way, and at most one call is ever made.
+ *
+ * It is not a widening of what may be spent. The same authorization is redeemed
+ * on the same terms: a Flow whose ceiling is spent, whose authorization has
+ * expired, or whose owner turned checking off records the refusal's own code
+ * and asks nobody. Only the schedule's *sequence* is overruled, and only for a
+ * run that repaired itself.
+ *
+ * `null` context is a run with no adaptation context at all, which cannot have
+ * repaired itself; its check is returned exactly as it was.
+ */
+export function automationStudioRepairedRunResultCheck(input: {
+  context: AutomationStudioRuntimeAdaptationContext | null;
+  check: AutomationStudioRunResultCheck | null;
+  nowMs: number;
+}): AutomationStudioRunResultCheck | null {
+  if (!input.context) return input.check;
+  return automationStudioRunResultCheck({ context: input.context, nowMs: input.nowMs, repairedThisRun: true });
 }
 
 /**

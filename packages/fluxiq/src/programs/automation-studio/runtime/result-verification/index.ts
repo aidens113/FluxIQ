@@ -16,6 +16,17 @@
 //
 // The retry itself carries its own session and a declined code, so a run that
 // may not resume says why rather than stopping silently.
+//
+// **And that check is now recorded and said.** A retried session was verified
+// without being handed the run's `resultCheck` decision, so the call was made
+// and paid for and then left no trace: the run store wrote a null
+// `result_verification_status`, the schedule counted nothing, and
+// `sayResultCheck` -- which only speaks when that decision is present -- stayed
+// silent even where the repair's own product was refuted. The decision is
+// re-taken for a run that repaired itself (`runtime-adaptation/result-check.ts`)
+// and handed in with the rest, so a repair that made things no better reaches
+// the next run's schedule, and the person's own thread wherever the deployment
+// keeps one.
 
 export * from "./contracts.ts";
 export * from "./core-observation.ts";

@@ -52,6 +52,8 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_CODES = Object.freeze({
   intervalNotReached: "core.check.interval_not_reached",
   /** The previous check refuted the result, so the next run's result is judged too. */
   afterRefutation: "core.check.after_refutation",
+  /** This run repaired itself and re-ran, so the repair's own product is judged. */
+  afterRepair: "core.check.after_repair",
   /** The previous check settled nothing, so the same question is asked once more. */
   reaskUnsettled: "core.check.reask_unsettled"
 });
