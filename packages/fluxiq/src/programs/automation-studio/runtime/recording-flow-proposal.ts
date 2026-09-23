@@ -28,6 +28,16 @@ export type RecordingFlowActionCandidate = {
   recordOutput?: AutomationStudioRecordOutput;
   /** The recorded action's timeout in milliseconds, written to `parameterValues.timeoutMs`. Carried into node definitions. */
   timeoutMs?: number;
+  /**
+   * How long the recording waited between the entry the previous candidate was
+   * mapped from and this one, on the monotonic clock. Written onto the node as
+   * its wait ceiling, which the executor reads
+   * (`runtime/executor/recorded-state.ts`): a recorded delay is the longest the
+   * run will wait for the node's expected state before attempting it anyway,
+   * never a sleep. Absent on the first candidate, which has nothing to wait
+   * after.
+   */
+  recordedGapMs?: number;
   confidence: number;
   evidence: RecordingProposalEvidenceReference[];
   stateLink?: ProposalNodeStateLink;

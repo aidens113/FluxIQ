@@ -106,6 +106,13 @@ async function proposeTwoClicks(service: AutomationStudioService, projectId: str
   return proposal;
 }
 
+// The wait ceiling the recording measured, where it measured one. The first
+// candidate has nothing before it; the second was recorded in the same
+// millisecond here, so it carries a zero rather than nothing, which is a
+// different fact and is kept as one.
+const recordedGap = (candidate: RecordingFlowActionCandidate) =>
+  candidate.recordedGapMs === undefined ? {} : { recordedGapMs: candidate.recordedGapMs };
+
 // The definitions the current code writes for the two candidates, spelled out.
 function expectedDefinitions(proposal: RecordingFlowProposalArtifact, visibility: "private" | "public"): AutomationStudioNodeDefinition[] {
   const [confirmed, plain] = proposal.candidates;
@@ -142,7 +149,7 @@ function expectedDefinitions(proposal: RecordingFlowProposalArtifact, visibility
         { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for confirmation.", valueType: "number", defaultValue: 250 },
         ...settings(confirmed!)
       ],
-      metadata: { visibility, candidateId: confirmed!.candidateId, outputId: "click", parameters: confirmed!.parameters, expectedConfirmation: { inputId: "clicked", timeoutMs: 250 }, evidence: confirmed!.evidence as unknown as JsonObject[], sourceObservationIds: confirmed!.sourceObservationIds, policyStateEligible: false }
+      metadata: { visibility, candidateId: confirmed!.candidateId, outputId: "click", parameters: confirmed!.parameters, expectedConfirmation: { inputId: "clicked", timeoutMs: 250 }, ...recordedGap(confirmed!), evidence: confirmed!.evidence as unknown as JsonObject[], sourceObservationIds: confirmed!.sourceObservationIds, policyStateEligible: false }
     },
     {
       ...common,
@@ -153,7 +160,7 @@ function expectedDefinitions(proposal: RecordingFlowProposalArtifact, visibility
         { id: "parameters", label: "Output payload", description: "Values passed to this recorded output action.", valueType: "object", defaultValue: plain!.parameters },
         ...settings(plain!)
       ],
-      metadata: { visibility, candidateId: plain!.candidateId, outputId: "click", parameters: plain!.parameters, evidence: plain!.evidence as unknown as JsonObject[], sourceObservationIds: plain!.sourceObservationIds, policyStateEligible: false }
+      metadata: { visibility, candidateId: plain!.candidateId, outputId: "click", parameters: plain!.parameters, ...recordedGap(plain!), evidence: plain!.evidence as unknown as JsonObject[], sourceObservationIds: plain!.sourceObservationIds, policyStateEligible: false }
     }
   ];
 }

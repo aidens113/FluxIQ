@@ -58,19 +58,57 @@ export type AutomationStudioRuntimeSessionGrantFlags = {
   runId?: string | undefined;
 };
 
-/** Why this session may not run under this grant, or `undefined` when it may. */
+/**
+ * Whether this grant's purpose may change anything, rather than only describe
+ * what happened. The two that act are the two a person pressed a button to get
+ * a repair from; the other two are a question and a verdict.
+ */
+export function automationStudioRuntimeSessionGrantMayAct(purpose: AutomationStudioRuntimeSessionGrantPurpose): boolean {
+  return purpose === "diagnose_and_adapt" || purpose === "explore_and_adapt";
+}
+
+/**
+ * Why this session may not run under this grant, or `undefined` when it may.
+ *
+ * This list used to refuse a granted run that carried *any* of the run flags,
+ * and that is what made escalation unreachable: a repair that may not take a
+ * side effect cannot repair anything a page does, and a run that may not name
+ * its own run id cannot resume the run that failed. Both were refused with the
+ * grant revoked, so the caller could not even retry without asking a person for
+ * a new one. What remains are the two that are genuinely contradictory, plus
+ * the one narrowing that still holds:
+ *
+ *   - An unsupported purpose. Creating a Flow from nothing is a different entry
+ *     point and does not run a session.
+ *   - An LLM dry run. A dry run makes no provider call, so a grant spent on it
+ *     is a grant spent on nothing.
+ *   - Side-effect authorization, or an existing session, under a purpose that
+ *     changes nothing. `diagnosis_only` and `verify_result` ask a question;
+ *     handing either the authority to act would widen what the person granted,
+ *     and a session staged by somebody else carries authorizations the grant
+ *     never saw. A purpose that *does* act may name its run id, because the run
+ *     it is repairing is the run that failed.
+ *
+ * `adaptiveMode` is no longer refused, because the caller's answer is
+ * normalized to `manual_approval` anyway: refusing it only threw away a grant
+ * over a field that was about to be overwritten.
+ */
 export function automationStudioRuntimeSessionGrantRefusal(
   grant: { purpose: string },
   flags: AutomationStudioRuntimeSessionGrantFlags
 ): string | undefined {
-  const supported = (AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES as readonly string[]).includes(grant.purpose);
-  const incompatible = !supported
-    || (flags.adaptiveMode !== undefined && flags.adaptiveMode !== "manual_approval")
-    || flags.dryRunLlm === true
-    || flags.authorizedExternalSideEffects === true
-    || (flags.authorizedDomainIds?.length ?? 0) > 0
-    || flags.runId !== undefined;
-  return incompatible ? "Explicit LLM execution flags are incompatible." : undefined;
+  if (!(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES as readonly string[]).includes(grant.purpose)) {
+    return "Explicit LLM execution purpose is not one a runtime session runs under.";
+  }
+  if (flags.dryRunLlm === true) return "Explicit LLM execution cannot be an LLM dry run.";
+  if (automationStudioRuntimeSessionGrantMayAct(grant.purpose as AutomationStudioRuntimeSessionGrantPurpose)) return undefined;
+  if (flags.authorizedExternalSideEffects === true || (flags.authorizedDomainIds?.length ?? 0) > 0) {
+    return "Explicit LLM execution under a purpose that changes nothing cannot carry side-effect authorization.";
+  }
+  if (flags.runId !== undefined) {
+    return "Explicit LLM execution under a purpose that changes nothing cannot attach to a session it did not create.";
+  }
+  return undefined;
 }
 
 /** What the recovery entry point may ask a provider for under this grant.

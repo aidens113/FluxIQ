@@ -38,32 +38,32 @@ afterEach(async () => {
 });
 
 describe("building a Flow that needs an action a person has not allowed", () => {
-  it("ends the build when an exploration step needs it, carrying the request, and never takes the action", async () => {
+  it("carries on when an exploration step needs it, proposes what it could build, and brings the request with it", async () => {
     const run = await build([pressDecision(REFUND.handle), complete(pressPlan(OPEN.handle))]);
-    const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    const result = await run.generation;
 
+    // The action itself is still never taken.
     expect(run.pressed).toEqual([]);
-    expect(diagnostic).toMatchObject({
-      code: "flow_bootstrap.permission_required",
-      stage: "provider_output_validation",
-      providerInvocation: "attempted",
-      permissionRequest: {
-        schemaVersion: "automation-studio.action-permission-request.v1",
-        action: { kind: "exploration_step", id: "example.press", verb: "press" },
-        control: { name: REFUND.name, kind: "button" },
-        consequences: ["move_money", "modify_existing"],
-        missing: ["move_money", "modify_existing"],
-        reason: { stage: "authoring", instructionIds: ["instruction.build"] },
-        authority: { granted: [], instructed: [] }
-      },
-      // The one call that read the instruction is counted with the build.
-      accounting: { inputTokens: 200, outputTokens: 100 }
+    // Recoverable: the model was asked again and built the Flow it could.
+    expect(run.requests).toHaveLength(2);
+    expect(result.status).toBe("proposed");
+    expect(result.permissionRequest).toMatchObject({
+      schemaVersion: "automation-studio.action-permission-request.v1",
+      action: { kind: "exploration_step", id: "example.press", verb: "press" },
+      control: { name: REFUND.name, kind: "button" },
+      consequences: ["move_money", "modify_existing"],
+      missing: ["move_money", "modify_existing"],
+      reason: { stage: "authoring", instructionIds: ["instruction.build"] },
+      authority: { granted: [], instructed: [] }
     });
-    expect(diagnostic.permissionRequest!.sentence).toContain("\"Refund line 1\"");
-    // Terminal: the model is not asked what to do instead.
-    expect(run.requests).toHaveLength(1);
+    expect(result.permissionRequest!.sentence).toContain("\"Refund line 1\"");
+
+    // The person is asked before anything is applied, not instead of a Flow.
+    const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
+    expect(stored!.permissionRequest?.requestId).toBe(result.permissionRequest!.requestId);
+    await expect(run.instance.reviewFlowBootstrapAdaptation({ projectId: run.project.id, flowId: run.flow.flowId, adaptationId: result.adaptationId, action: "approve" }))
+      .rejects.toThrow(/FLOW_BOOTSTRAP_PERMISSION_REQUIRED/);
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
-    await expect(run.instance.listFlowAdaptationSummaries({ projectId: run.project.id, limit: 10, offset: 0 })).resolves.toMatchObject({ total: 0 });
     expect(run.revoke).toHaveBeenCalledTimes(1);
   });
 

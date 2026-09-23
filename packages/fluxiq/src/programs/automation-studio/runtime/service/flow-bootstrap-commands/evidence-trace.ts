@@ -5,6 +5,14 @@ import { requiredBootstrapCommandId } from "./field-readings.ts";
 
 // The evidence loop trace an audit event records: validated first, then
 // counted, so a malformed trace never reaches a reader as accounting.
+//
+// What a step *did* is part of the record, not decoration. `effectApplied` and
+// `resultCode` were dropped here, so a proposed build -- the one anybody wants
+// to study -- was stored as a list of iterations naming a tool each, with no
+// way to tell a call that changed the page from one that only looked, or a
+// refusal from a success. Only a refused build kept them, through a different
+// path. They are validated like every other field rather than copied: the
+// result code comes from a domain, so it is held to the same bound as an id.
 
 export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
   if (!Array.isArray(trace) || trace.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) throw new Error("Flow Bootstrap evidence trace is invalid.");
@@ -17,6 +25,11 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
       if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
       clean.evidenceBytes = item.evidenceBytes;
     }
+    if (item.effectApplied !== undefined) {
+      if (typeof item.effectApplied !== "boolean") throw new Error("Flow Bootstrap evidence effect flag is invalid.");
+      clean.effectApplied = item.effectApplied;
+    }
+    if (item.resultCode !== undefined) clean.resultCode = requiredBootstrapCommandId(item.resultCode, "evidence result code");
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });

@@ -104,15 +104,37 @@ function carriedControl(validation: AutomationStudioRuntimeTargetOverrideEvidenc
   return typeof kind === "string" && CONTROL_KIND.test(kind) ? { name, kind } : { name };
 }
 
-/** Whether Core's own classification of the failure is one it offers a target override for. */
+/**
+ * Whether Core's own classification of the failure is one it offers a target
+ * override for.
+ *
+ * The candidate kind alone was too narrow, and the narrowing was accidental.
+ * `unexpected_state` and `action_failed` are classified
+ * `action_target_override` **only inside a Subflow** and
+ * `recovery_path_or_reroute` at the top level
+ * (`adaptive-orchestrator.ts`), which is a statement about where the node sits
+ * rather than about what went wrong: the same action, failing the same way, was
+ * repairable by a re-aim in one Flow and refused outright in another. So every
+ * override for a top-level `action_failed` -- the commonest live failure there
+ * is -- was refused before the domain was asked, with
+ * `failure_not_target_repairable`.
+ *
+ * The two classes are therefore accepted wherever they occur. This widens only
+ * who gets *asked*: the domain's own check runs immediately after and refuses
+ * an override its evidence does not support, and the policy's
+ * `allowModifyActionTargets` still governs whether one may be applied.
+ */
+const TARGET_REPAIRABLE_ANYWHERE: ReadonlySet<string> = new Set(["unexpected_state", "action_failed"]);
+
 function targetOverrideServesFailure(input: AutomationStudioRuntimeTargetOverrideCheckInput): boolean {
-  return classifyAutomationStudioAdaptiveFailure({
+  const failure = classifyAutomationStudioAdaptiveFailure({
     projectId: input.projectId,
     flowId: input.flowId,
     runId: input.runId,
     ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     attempt: input.failedAttempt
-  }).candidateKind === "action_target_override";
+  });
+  return failure.candidateKind === "action_target_override" || TARGET_REPAIRABLE_ANYWHERE.has(failure.failureClass);
 }
 
 /**

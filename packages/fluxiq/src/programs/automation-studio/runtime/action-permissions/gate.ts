@@ -4,8 +4,16 @@
 // One gate per run. It holds the consequences the run's grant permits, sees
 // every piece of evidence the domain hands back, and hands the domain a check
 // with every action. The first action whose consequences the run does not hold
-// raises a request, and the caller ends the run on it: the gate records the
-// request, the caller reads it back and stops. Nothing is parked.
+// raises a request, and the gate records it.
+//
+// **What the caller then does with that request is the caller's, and there are
+// two answers.** A caller that has nowhere to put the question ends the run on
+// it -- `endsOnRequest`, which is the default and aborts `signal` so the run
+// stops wherever the check was called from. A caller that can put it to a
+// person parks instead: it opens the request as an ask, waits, and calls
+// `settle` with what came back. A granted request widens what this run holds
+// and lets the work go on; a refused one stays recorded, so every later check
+// reports the same refusal rather than asking the same person again.
 //
 // **Fail closed.** No grant, an empty grant and a grant naming something Core
 // does not recognise all permit nothing. There is no consequence the gate
@@ -59,12 +67,20 @@ export type AutomationStudioActionPermissionGateInput = {
    * answer with nothing grounded in it, adds nothing, so the run asks.
    */
   deriveInstructed?: (() => Promise<readonly AutomationStudioInstructedConsequence[]>) | undefined;
+  /**
+   * Whether raising a request ends the run: `signal` fires and the caller
+   * stops. Absent means yes, which is the behaviour every caller had before a
+   * question could reach anybody. A caller that passes `false` is saying it
+   * will put the request to a person and `settle` it, and is responsible for
+   * what happens if nobody answers.
+   */
+  endsOnRequest?: boolean | undefined;
   now?: (() => number) | undefined;
   newRequestId?: (() => string) | undefined;
 };
 
 export class AutomationStudioActionPermissionGate {
-  private readonly permitted: ReadonlySet<AutomationStudioActionConsequence>;
+  private readonly permitted: Set<AutomationStudioActionConsequence>;
   private readonly shown: string[] = [];
   private shownCharacters = 0;
   private raised: AutomationStudioActionPermissionRequest | undefined;
@@ -89,6 +105,29 @@ export class AutomationStudioActionPermissionGate {
   /** The first request raised, which is the one the run ends on. */
   get request(): AutomationStudioActionPermissionRequest | undefined {
     return this.raised;
+  }
+
+  /**
+   * Take the person's answer to the request this gate raised.
+   *
+   * `granted` adds exactly the classes the request said were missing, and
+   * forgets the request, so the same check asked again permits the action and a
+   * later action wanting something else can raise a request of its own. Nothing
+   * beyond `missing` is granted: an answer widens the run by what was asked
+   * about and by nothing else.
+   *
+   * `refused` keeps the request. It is then what every later refusal reports,
+   * which is what stops a run asking one person the same question repeatedly,
+   * and it is what the caller stores with whatever the run produced.
+   *
+   * Only for a caller that set `endsOnRequest: false`; a caller that ended on
+   * the request has nothing to settle.
+   */
+  settle(answer: "granted" | "refused"): void {
+    if (!this.raised || answer === "refused") return;
+    for (const consequence of this.raised.missing) this.permitted.add(consequence);
+    this.raised = undefined;
+    this.raisedRef = undefined;
   }
 
   /** Whether the request was raised for this action: a call, or a plan step. */
@@ -156,7 +195,7 @@ export class AutomationStudioActionPermissionGate {
         sentence: automationStudioActionPermissionSentence({ stage, kind: action.kind, verb: read.verb, controlName, controlKind: read.controlKind, missing })
       };
       this.raisedRef = action.ref;
-      this.stopped.abort();
+      if (this.input.endsOnRequest !== false) this.stopped.abort();
       return { permitted: false, missing, requestId: this.raised.requestId };
     };
   }

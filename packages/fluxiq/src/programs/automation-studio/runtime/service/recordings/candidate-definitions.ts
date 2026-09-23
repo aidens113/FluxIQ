@@ -3,7 +3,7 @@ import type { AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { recordingProposalDefinitionId, type RecordingFlowActionCandidate, type RecordingFlowProposalArtifact } from "../../recording-flow-proposal.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
-import { recordingCandidateStateLinkMetadata } from "./proposal-candidates.ts";
+import { recordingCandidateRecordedGapMetadata, recordingCandidateStateLinkMetadata } from "./proposal-candidates.ts";
 
 // A reviewed recording candidate as a reusable node definition, and a Flow node
 // naming such a definition turned back into the recorded output action it
@@ -46,6 +46,7 @@ export function recordingCandidateDefinition(proposal: RecordingFlowProposalArti
       evidence: candidate.evidence,
       sourceObservationIds: candidate.sourceObservationIds,
       ...recordingCandidateStateLinkMetadata(candidate),
+      ...recordingCandidateRecordedGapMetadata(candidate),
       policyStateEligible: false
     }
   };

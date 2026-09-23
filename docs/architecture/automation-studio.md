@@ -511,11 +511,20 @@ non-`llm_diagnosis` candidate still on offer tells
 suppresses escalation to the model entirely.
 
 **The recorded state is read while the Flow runs.** Every node a recording
-proposal produces carries `stateLink`, `stateSnapshotId` and `stateRef` in its
-metadata; the executor reads them (`automationStudioRecordedState`) onto each
-attempt, so a diagnosis names the snapshot the run was supposed to be standing
-in. A node that declares a `readyState` is gated on it before **every** attempt,
-for at most `clamp(recordedGapMs x 2, 2 s, 30 s)`: the state arriving sooner
+proposal produces carries `stateLink`, `stateSnapshotId`, `stateRef` and
+`recordedGapMs` in its metadata; the executor reads them
+(`automationStudioRecordedState`) onto each attempt, so a diagnosis names the
+snapshot the run was supposed to be standing in. `recordedGapMs` is how long the
+recording waited between the entry the **previous candidate** was mapped from
+and this one, on the monotonic clock: the gap between steps rather than between
+timeline entries, because a node follows the node before it and the observations
+in between are part of that wait. It is derived where the recording's clock and
+the candidates meet (`recordingCandidateGapTracker`), travels on the proposal
+candidate, and is written onto both the Flow node and a reviewed candidate's node
+definition. The first candidate of a proposal has none; two candidates mapped
+from one entry give the second a zero, which is a different fact from none and is
+kept as one. A node that declares a `readyState` is gated on it before **every**
+attempt, for at most `clamp(recordedGapMs x 2, 2 s, 30 s)`: the state arriving sooner
 runs the node sooner, so a replay on a fast page is faster than the recording
 that produced it, and the deadline passing attempts the node anyway and marks
 `readiness.satisfied: false`, because the recording is evidence the action was
