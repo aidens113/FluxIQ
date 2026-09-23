@@ -91,6 +91,42 @@ export function automationStudioLlmEvidenceLookNeedsAttempt(tool: AutomationStud
   return mutable && (tool.repeatPolicy === "after_mutation" || tool.initialObservation !== undefined);
 }
 
+/**
+ * Whether a call that came back looked at nothing: an observation the domain
+ * refused.
+ *
+ * **This is the case the two counters above did not cover.** The header says a
+ * look repeated after *another* action failed is a new question. A look that
+ * failed by itself is the same kind of new question and was treated as the
+ * opposite: the loop registers a request as answered before running it and
+ * un-registers it only when the call *throws*, so an observation that returned
+ * tidily and said `{ok:false,code:...}` was filed as having answered the
+ * request it never answered. The identical retry then came back
+ * `llm_evidence_loop.already_answered` and was never run. A live build spent
+ * two of its fourteen calls on that pair and came within two steps of its
+ * no-progress guard (`run-mudwci8d-de88aa32`). Nothing had been looked at, and
+ * the model was pointed at an evidence entry that was a refusal carrying
+ * nothing.
+ *
+ * **A refused action is deliberately not this.** An action repeated with
+ * nothing whatever having happened is the repeat the no-progress guard exists
+ * for -- it would do the same thing again -- and that is what `mutationEpoch`
+ * keys it on. An attempt that ran also moves `attemptEpoch` whether or not it
+ * applied, so a refused action already frees every look. Both stay exactly as
+ * strict as they were; only the look that refused itself changes.
+ *
+ * Read from the result's own two general statements and nothing else. Core does
+ * not read the code -- codes are the domain's, and
+ * `runtime/recovery/runtime-exploration.ts` says why Core must never learn one
+ * -- while `ok` is already Core's own vocabulary here: the decision instruction
+ * names `{ok:false,code:string}` and tells the model to read it as feedback.
+ */
+export function automationStudioLlmEvidenceLookWasRefused(result: { evidence: unknown; effect: "observe" | "mutate"; effectApplied: boolean }): boolean {
+  if (result.effect === "mutate" || result.effectApplied) return false;
+  const evidence = result.evidence;
+  return Boolean(evidence) && typeof evidence === "object" && !Array.isArray(evidence) && (evidence as { ok?: unknown }).ok === false;
+}
+
 /** A stable rendering of a value, so two equal requests render identically. */
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
