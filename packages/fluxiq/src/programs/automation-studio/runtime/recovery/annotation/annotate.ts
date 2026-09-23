@@ -61,6 +61,7 @@ import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structur
 import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRepairAttempt } from "./patches.ts";
+import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, type AutomationStudioPermissionAsk } from "../../parking/index.ts";
 import { automationStudioRecoveryPermissionGate } from "./permissions.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "./run-budget.ts";
@@ -226,11 +227,24 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
   // One gate for the whole recovery, built once the provider has resolved,
   // because the resolution is where the grant's permitted set arrives.
+  // Where a request this recovery raises reaches a person: the run's own
+  // thread, already bound by the executor for every other question a run asks.
+  // Absent, nobody is asked and a request ends the recovery, as it always did.
+  const permissionAsk: AutomationStudioPermissionAsk | undefined = input.graphOptions?.parking
+    ? {
+      port: input.graphOptions.parking,
+      timeoutMs: AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS,
+      ...(input.graphOptions.signal ? { signal: input.graphOptions.signal } : {})
+    }
+    : undefined;
   const permissions = provider ? automationStudioRecoveryPermissionGate({
     granted: providerResolution?.permittedConsequences,
     storedInstructed: recoveryFlow?.metadata?.bootstrapInstructedConsequences,
     instructions,
-    failureEvidence
+    failureEvidence,
+    // The gate keeps its own ending only when there is nowhere to put the
+    // question. With a thread, the exploration waits and settles it.
+    answerable: Boolean(permissionAsk)
   }) : undefined;
   const runBudget = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
   const reusableContextResult = input.useReusableContext === true && failureEvidence
@@ -304,6 +318,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         // side-effect flag is not read: a mutating option is offered, and the
         // gate permits its action or raises the request that ends the recovery.
         ...(permissions ? { permissionGate: permissions.gate, actionPermissions: permissions.summary() } : {}),
+        ...(permissionAsk ? { permissionAsk } : {}),
         provider,
         context: {
           projectId: input.context.projectId,

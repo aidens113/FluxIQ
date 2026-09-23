@@ -28,13 +28,24 @@
 // empty. `evidence_gathered` itself is constructible only from an action that
 // returned evidence -- Phase D's rule, applied one layer further out.
 //
-// **An action the run was not allowed is a question for a person, and ends
-// the exploration.** Every action is handed the run's permission check. When
-// the domain declares a lasting consequence the run does not hold, the gate
-// raises a request and the exploration stops there with
-// `operator_approval_required`, carrying it. Nothing else raises that reason:
-// a domain's own refusal code cannot, because a stop with no request in hand
-// would ask a person a question nobody can answer.
+// **An action the run was not allowed is a question for a person.** Every
+// action is handed the run's permission check. When the domain declares a
+// lasting consequence the run does not hold, the gate raises a request.
+//
+// What happens next depends on whether there is anywhere to put it. With an
+// `ask` bound, the request goes to the run's own thread and the exploration
+// waits: a grant widens what the run holds, the same check is asked again --
+// so nothing decides permission twice -- and the action goes ahead. Without
+// one, or when nobody granted it, the exploration stops there with
+// `operator_approval_required`, carrying the request. Nothing else raises that
+// reason: a domain's own refusal code cannot, because a stop with no request in
+// hand would ask a person a question nobody can answer.
+//
+// Until 2026-09-22 there was no `ask` here at all, and this threw the terminal
+// refusal on the first request -- the exact ending the authoring path had just
+// stopped producing. Flow creation, a runtime failure and improving an existing
+// Flow are three entry points into one loop, so a question that parks a build
+// and kills a repair is the loop half-built.
 //
 // **A tool that fails is shown to the model, not the end of the exploration.**
 // The loop runs with `toolFailures: "observe"`, as a build does: a call that
@@ -48,8 +59,9 @@
 // ends the loop as `cancelled`, which `classify` then names precisely.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioHarnessOptionLoopBinding,
@@ -136,6 +148,16 @@ export type AutomationStudioRuntimeExplorationInput = {
   /** The instructions the run is carrying out, cited by a request as its reason. */
   instructionIds?: readonly string[];
   /**
+   * Where a request this exploration raises is put to a person, and where the
+   * answer comes back from. Absent, a request ends the exploration as it always
+   * did; nobody is asked, because there is nowhere to ask.
+   *
+   * The gate it is used with must have been built with `endsOnRequest: false`,
+   * or its own signal aborts the loop before an answer can arrive. A gate
+   * built here is; a caller's own gate is the caller's to build that way.
+   */
+  ask?: AutomationStudioPermissionAsk;
+  /**
    * Evidence the model was shown before the first action -- the failure
    * packet, for a recovery. A request may name a control from it; without it,
    * a name only the failure packet held is withheld from the request.
@@ -203,6 +225,14 @@ export async function runAutomationStudioRuntimeExploration(
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
   let unusableDecisions = 0;
+  // One wait per exploration. Set the moment a request is put to a person,
+  // whatever they answer, so a refusal nobody granted is never re-asked.
+  let asked = false;
+  // A gate that may be answered does not abort its own signal, so the ending a
+  // refusal makes has to be fired from here. Without an ask the gate fires its
+  // own and this stays unused; with one, it fires only after a person -- or
+  // nobody -- has declined to grant.
+  const permissionRefused = new AbortController();
   // The exploration's own step record, taken where the action is called because
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
@@ -210,7 +240,7 @@ export async function runAutomationStudioRuntimeExploration(
   // The loop stops on whichever comes first: a limit the ledger refused, or the
   // request the gate raised. With failures observed rather than ending the
   // loop, the request has to stop it by signal as the ledger already does.
-  const stopSignal = AbortSignal.any([ledger.signal, gate.signal]);
+  const stopSignal = AbortSignal.any([ledger.signal, gate.signal, permissionRefused.signal]);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -246,7 +276,14 @@ export async function runAutomationStudioRuntimeExploration(
           // recorded around the call itself. Deliberately not the evidence
           // digest below: that is what the step said, and a reduction needs
           // what the world was.
-          const permission = gate.checkFor({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+          const permission = asking({
+            gate,
+            ...(input.ask ? { ask: input.ask } : {}),
+            action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
+            markAsked: () => { asked = true; },
+            alreadyAsked: () => asked,
+            refused: permissionRefused
+          });
           const execution = await recorder.around(call, () => input.loop.executeTool({ ...call, permission }));
           gate.observe(execution);
           const needsPermission = gate.raisedDuring(call.callId);
@@ -293,6 +330,43 @@ export async function runAutomationStudioRuntimeExploration(
 }
 
 /**
+ * The gate's check, with the refusal it would return put to a person first.
+ *
+ * A grant is not answered from here: the same check is asked again, and the
+ * gate recomputes what is missing against what it now holds. Without an ask,
+ * or once one question has been asked, this is the gate's own check unchanged.
+ */
+function asking(input: {
+  gate: AutomationStudioActionPermissionGate;
+  ask?: AutomationStudioPermissionAsk;
+  action: { kind: "exploration_step"; id: string; ref: string };
+  markAsked: () => void;
+  alreadyAsked: () => boolean;
+  refused: AbortController;
+}): AutomationStudioActionPermissionCheck {
+  const check = input.gate.checkFor(input.action);
+  const ask = input.ask;
+  if (!ask) return check;
+  return async (declaration) => {
+    const decision = await check(declaration);
+    const request = input.gate.request;
+    if (decision.permitted || !request || request.requestId !== decision.requestId) return decision;
+    if (input.alreadyAsked()) {
+      input.refused.abort();
+      return decision;
+    }
+    input.markAsked();
+    if (!(await automationStudioAskedAndGranted(ask, request))) {
+      input.gate.settle("refused");
+      input.refused.abort();
+      return decision;
+    }
+    input.gate.settle("granted");
+    return await check(declaration);
+  };
+}
+
+/**
  * The gate every action of this exploration is checked against: the caller's
  * own, or one built here from the loose fields. Never both.
  */
@@ -307,6 +381,10 @@ function explorationPermissionGate(input: AutomationStudioRuntimeExplorationInpu
     permittedConsequences: input.permittedConsequences,
     stage: "recovery",
     instructionIds: input.instructionIds,
+    // With somewhere to put the question, the gate must not abort on raising
+    // it: the exploration is about to wait for an answer, and its own stop
+    // signal is joined to the gate's.
+    ...(input.ask ? { endsOnRequest: false } : {}),
     now
   });
   for (const shown of input.shownEvidence ?? []) gate.observe(shown);

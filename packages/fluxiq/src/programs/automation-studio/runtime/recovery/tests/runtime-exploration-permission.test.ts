@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
@@ -22,7 +23,23 @@ type Options = {
   decisions?: JsonObject[];
   /** The caller's own gate, handed in whole instead of the fields that build one. */
   gate?: AutomationStudioActionPermissionGate;
+  /** How the person answers the question, when there is a thread to ask in. */
+  answer?: "grant" | "deny" | "nobody";
 };
+
+/** A thread that records what it was asked and answers the way the row says. */
+function thread(answer: "grant" | "deny" | "nobody"): { port: AutomationStudioParkingPort; opened: AutomationStudioAsk[] } {
+  const opened: AutomationStudioAsk[] = [];
+  return {
+    opened,
+    port: {
+      open: (ask) => { opened.push(ask); },
+      awaitAnswer: async (ask): Promise<AutomationStudioAskAnswer | undefined> => answer === "nobody"
+        ? undefined
+        : { askId: ask.askId, kind: answer, value: null, answeredAt: 1_000, actorId: "person.one" }
+    }
+  };
+}
 
 async function explore(options: Options = {}) {
   const pressed: string[] = [];
@@ -48,6 +65,7 @@ async function explore(options: Options = {}) {
       }
     }
   });
+  const asked = options.answer ? thread(options.answer) : undefined;
   const exploration = await runAutomationStudioRuntimeExploration({
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
     decide: async () => decisions[providerCalls++] ?? { kind: "complete", result: {} },
@@ -56,9 +74,10 @@ async function explore(options: Options = {}) {
       ...(options.permittedConsequences ? { permittedConsequences: options.permittedConsequences } : {}),
       instructionIds: ["instruction.refund"]
     }),
+    ...(asked ? { ask: { port: asked.port, timeoutMs: 30_000, now: () => 1_000 } } : {}),
     now: () => 1_000
   });
-  return { exploration, pressed, providerCalls: () => providerCalls };
+  return { exploration, pressed, providerCalls: () => providerCalls, opened: asked?.opened ?? [] };
 }
 
 describe("a recovery exploration that needs permission", () => {
@@ -169,5 +188,44 @@ describe("a recovery exploration that needs permission", () => {
 
     expect(refused).toMatchObject({ outcome: "unsafe_action_blocked", stopReason: "destructive_action_refused" });
     expect(refused.permissionRequest).toBeUndefined();
+  });
+});
+
+describe("a repair that can put its question to a person", () => {
+  it("asks in the run's thread, and carries on with the action once it is granted", async () => {
+    const run = await explore({ answer: "grant" });
+
+    expect(run.opened).toHaveLength(1);
+    expect(run.opened[0]).toMatchObject({
+      kind: "permission",
+      parks: true,
+      missing: ["move_money", "modify_existing"],
+      control: { name: "Refund line 1", kind: "button" },
+      raisedBy: { stage: "recovery", definitionId: "shop.press" }
+    });
+    // The ask is keyed by the gate's own request id: one question, one key.
+    expect(run.opened[0]?.askId).toBe(run.opened[0]?.permissionRequest?.requestId);
+    // The whole point: the press happened, the exploration finished, and the
+    // repair was not killed by a question the build path parks on.
+    expect(run.pressed).toEqual(["c4"]);
+    expect(run.exploration.outcome).toBe("evidence_gathered");
+    expect(run.exploration.permissionRequest).toBeUndefined();
+  });
+
+  it("ends on the request when the person refuses, and never takes the action", async () => {
+    const run = await explore({ answer: "deny" });
+
+    expect(run.opened).toHaveLength(1);
+    expect(run.pressed).toEqual([]);
+    expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", endedBy: "operator_approval_required" });
+    expect(run.exploration.permissionRequest).toBeDefined();
+  });
+
+  it("ends on the request when nobody answers, having asked once", async () => {
+    const run = await explore({ answer: "nobody" });
+
+    expect(run.opened).toHaveLength(1);
+    expect(run.pressed).toEqual([]);
+    expect(run.exploration.outcome).toBe("user_intervention_required");
   });
 });

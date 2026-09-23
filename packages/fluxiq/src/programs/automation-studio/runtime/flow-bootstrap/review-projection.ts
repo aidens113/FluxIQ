@@ -113,7 +113,15 @@ export function bootstrapAdaptationAsFlowAdaptation(
             appliedExecutionDigest: adaptation.application.appliedDependencyDigest
           }
         } : {}),
-        ...(adaptation.revert ? { revert: { ...adaptation.revert } } : {})
+        ...(adaptation.revert ? { revert: { ...adaptation.revert } } : {}),
+        // What the build's own steps said they would do, and Core's reading of
+        // that against the person's instruction. A review surface that shows a
+        // Flow without them shows a Flow whose acts are unstated: the whole
+        // point of the declaration is that the person sees it before approving.
+        ...(adaptation.instructedConsequences?.length ? { instructedConsequences: structuredClone(adaptation.instructedConsequences) } : {}),
+        ...(adaptation.declaredConsequences?.length ? { declaredConsequences: structuredClone(adaptation.declaredConsequences) } : {}),
+        ...(adaptation.consequenceCrossCheck ? { consequenceCrossCheck: structuredClone(adaptation.consequenceCrossCheck) } : {}),
+        ...(adaptation.permissionRequest ? { permissionRequest: structuredClone(adaptation.permissionRequest) } : {})
       },
       phase9: {
         auditEvents: (adaptation.auditEvents ?? []).map((event) => structuredClone(event)),

@@ -48,9 +48,27 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
     return clean;
   });
 }
-export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[]): JsonObject {
+/**
+ * `additionalProviderCalls` are the build's provider calls that are not the
+ * loop's own -- today, reading the person's instruction for what it asks for.
+ * They were invisible here by construction, so every per-build call count a
+ * reader published was short by them while their tokens and their money were
+ * counted.
+ *
+ * They are published beside `providerCallCount` rather than inside it, and
+ * that is a constraint rather than a preference. A reader holds this record to
+ * `decisionCount === providerCallCount` and `iterationCount` within one of it
+ * (`packages/test-runner/src/existing-fluxiq-control.ts` in the downstream
+ * testing facility), so folding the extra call into `providerCallCount` makes
+ * every evidence-guided build fail that contract before its Flow is read --
+ * measured, on `run-mudna2ng-ceadeb69`. `totalProviderCallCount` is the true
+ * number a reader should move to; until it does, the two loop counts keep
+ * meaning exactly what they meant.
+ */
+export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[], additionalProviderCalls = 0): JsonObject {
   const clean = sanitizeEvidenceLoopTrace(trace);
   const providerDecisions = clean.filter((item) => item.iteration > 0);
+  const extra = Number.isSafeInteger(additionalProviderCalls) && additionalProviderCalls > 0 ? additionalProviderCalls : 0;
   return {
     evidenceGuided: true,
     // Retained for compatibility with existing audit readers. This is the
@@ -60,6 +78,10 @@ export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopT
     traceStepCount: clean.length,
     providerCallCount: providerDecisions.length,
     decisionCount: providerDecisions.length,
+    /** The build's provider calls that were not the loop's own. */
+    additionalProviderCallCount: extra,
+    /** Every provider call the build made. The one figure that is the whole of what it spent. */
+    totalProviderCallCount: providerDecisions.length + extra,
     toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
     evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
     toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort(),

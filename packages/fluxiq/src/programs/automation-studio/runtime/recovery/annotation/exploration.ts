@@ -16,6 +16,13 @@
 // naming the stage here is what makes them reachable during a recovery and
 // unreachable while a Flow is being authored.
 //
+// **It carries the run's thread to the gate.** A request the exploration raises
+// goes to the run's own conversation and the exploration waits for the answer,
+// which is the same mechanism the authoring path uses and the same one the
+// standing "one loop, three entry points" rule asks for. Without a thread bound
+// to the run there is nowhere to ask and the request ends the exploration, as
+// it did for every recovery before 2026-09-22.
+//
 // **It hands every action to the recovery's permission gate, and says so.** The
 // registry is told `mutationsGovernedByPermission`, so a mutating option is
 // offered whatever `policy.allowExternalSideEffects` says, and each action it
@@ -65,6 +72,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
 import type { AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
+import type { AutomationStudioPermissionAsk } from "../../parking/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
@@ -119,6 +127,13 @@ export type AutomationStudioRecoveryExplorationInput = {
   permissionGate?: AutomationStudioActionPermissionGate;
   /** What that gate permits, by class: what each decision call describes in place of the policy's side-effect flags. */
   actionPermissions?: AutomationStudioLlmActionPermissions;
+  /**
+   * Where a request the exploration raises is put to a person, and where the
+   * answer comes back from: the run's own thread. Absent, a request ends the
+   * exploration and nobody is asked, which is how every recovery behaved until
+   * 2026-09-22.
+   */
+  permissionAsk?: AutomationStudioPermissionAsk;
   provider: AutomationStudioLlmProvider;
   context: { projectId: string; flowId: string; runId: string; subflowId?: string; nodeId?: string };
   instructions: AutomationStudioFlowInstruction[];
@@ -220,6 +235,7 @@ export async function runAutomationStudioRecoveryExploration(
     recoveryDeadline: input.recoveryDeadline,
     completionSchema: AUTOMATION_STUDIO_RECOVERY_EXPLORATION_COMPLETION_SCHEMA,
     ...(input.permissionGate ? { gate: input.permissionGate } : {}),
+    ...(input.permissionAsk ? { ask: input.permissionAsk } : {}),
     ...(input.binding.classifyRefusal ? { classifyRefusal: input.binding.classifyRefusal } : {}),
     // The digests come from here because here is the only place that holds both
     // the domain that can observe its own state and the project and Flow the
