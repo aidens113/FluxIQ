@@ -43,6 +43,17 @@ export const AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID = "core.run_node";
 /** How many node names the tool will enumerate before it stops naming them. */
 const MAX_ENUMERATED_NODES = 400;
 
+/**
+ * The class the worked example names.
+ *
+ * Read off the declared classes rather than written into the prose, so a class
+ * renamed or removed in `action-permissions/` is a compile error here instead
+ * of an example that teaches a word the gate no longer knows. The list itself
+ * is interpolated for the same reason: a class added there appears in the
+ * guidance with nobody editing this file.
+ */
+const PUBLISHING: (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number] = "send_or_publish";
+
 const DESCRIPTION = [
   "Run one node from the library against the live target, now, and get back what that node really did.",
   "This is the same node, with the same parameters, that the finished Flow runs: there is no separate exploration vocabulary.",
@@ -52,8 +63,8 @@ const DESCRIPTION = [
   "A node that runs and succeeds becomes a step of the Flow you are building, with the parameters it ran with, and you never write it down again.",
   "A node that fails comes back with what went wrong and the state as it now is: read it, change something, and run again. A failure ends nothing.",
   "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are; run one that acts to make the page do what the instruction needs.",
-  "Say in `consequences` what running this node would lastingly do, from the classes listed, and `[]` when it only reveals, opens, expands, filters, sorts, ticks, dismisses, reads or moves about.",
-  "Say what this one node would cause, not what the Flow is for: the press that applies a filter is [] even in a Flow that ends by publishing.",
+  `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] only when it leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
+  `Judge this node, not the Flow: in one Flow the press that applies a filter is [] and the press that submits the post is ${PUBLISHING}.`,
   "Correct a step you have already run with an amend_draft decision rather than by running it again: rerun replaces it, drop removes it, reorder moves it."
 ].join(" ");
 
@@ -96,7 +107,7 @@ export function automationStudioLlmRunNodeTool(input: {
           maxItems: 5,
           uniqueItems: true,
           items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] },
-          description: "What running this node would lastingly do. [] when it only reveals, reads or moves about."
+          description: `What running this node would lastingly do. [] leaves nothing behind; a press that submits, orders, deletes or changes something saved names its class, such as ${PUBLISHING}.`
         }
       }
     },

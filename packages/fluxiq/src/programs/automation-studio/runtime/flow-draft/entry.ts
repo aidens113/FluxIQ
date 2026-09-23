@@ -94,6 +94,15 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean): Json
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: step.disposition,
     inResult: automationStudioFlowDraftStepIsProposed(step),
+    // How it answered the last time the draft was run as a Flow. It sits on
+    // the step rather than only in the refusal that reported it, because a
+    // refusal is one entry the window may evict and the draft is the one thing
+    // always in front of the model (`./dry-run.ts`). It is deliberately not
+    // explained in the instruction above: the word only appears once a replay
+    // has happened, and the refusal that put it there explains itself in full.
+    // Spending two hundred bytes of every draft entry on a sentence about a
+    // check that usually passes would cost the entry steps it has to list.
+    ...(step.replayed ? { replayed: step.replayed.status } : {}),
     ...(step.settings ? { settings: step.settings } : {})
   };
 }
