@@ -91,6 +91,18 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     maxEvidenceBytes: number;
     signal?: AbortSignal;
     /**
+     * Where the Flow being built starts, when the build was told
+     * (`../../flow-bootstrap/start-location.ts`). Core carries the domain's own
+     * spelling of it and never reads it.
+     *
+     * It is on every call rather than on the binding because it belongs to one
+     * build, and a binding outlives every build made through it. What the domain
+     * does with it is the domain's: the web domain refuses any call made before
+     * the Flow has reached it, which is what makes the step that reaches it the
+     * first step of the draft.
+     */
+    startLocation?: string;
+    /**
      * The run's permission check for this action. A tool whose action has a
      * lasting consequence calls it before acting and acts only on
      * `permitted: true`; see `AutomationStudioHarnessOptionExecution.permission`.
@@ -121,6 +133,15 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     callId: string;
     toolId: string;
     phase: AutomationStudioExplorationStateDigestPhase;
+    /**
+     * Where the Flow being built starts, when the build was told
+     * (`../../flow-bootstrap/start-location.ts`). Present, nothing was opened
+     * for this build, so the state before its first step is *no state*: a
+     * domain that says nothing then leaves the step undigested, which the
+     * reduction reports, rather than throwing and making the first step of
+     * every such build a recorded failure.
+     */
+    startLocation?: string;
     signal?: AbortSignal;
   }): Promise<string | undefined>;
   captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
@@ -225,13 +246,20 @@ export function automationStudioHarnessOptionRegistry(input: {
    * library itself is offered as one option.
    */
   nodeIds?: readonly string[] | undefined;
+  /**
+   * Where the Flow this build writes starts, when the build was told
+   * (`../../flow-bootstrap/start-location.ts`). Passed to the domain on every
+   * call this registry makes, and to nothing else: the registry is built per
+   * build, which is the scope the value has.
+   */
+  startLocation?: string | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
   const runNode = input.binding?.runsNodes && input.nodeIds?.length
     ? automationStudioLlmRunNodeTool({ nodeIds: input.nodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
     : undefined;
   if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
-    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode));
+    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation));
   }
   return registry;
 }
@@ -264,11 +292,12 @@ export function automationStudioHarnessInputWithDeniedEvidenceKeys<Input extends
  */
 export function automationStudioHarnessOptionBundleFromBinding(
   binding: AutomationStudioLlmEvidenceRuntimeBinding,
-  runNode?: AutomationStudioLlmEvidenceTool
+  runNode?: AutomationStudioLlmEvidenceTool,
+  startLocation?: string
 ): AutomationStudioHarnessOptionBundle {
   const implementations: Record<string, AutomationStudioHarnessOptionImplementation> = {};
   const options = [...binding.tools, ...(runNode ? [runNode] : [])].map((tool) => {
-    implementations[tool.toolId] = executionFor(binding, tool.toolId);
+    implementations[tool.toolId] = executionFor(binding, tool.toolId, startLocation);
     return scopedOption(tool, binding.domainId);
   });
   const declared = binding.harnessOptions;
@@ -303,7 +332,7 @@ function scopedOption(tool: AutomationStudioLlmEvidenceTool, domainId: string): 
   };
 }
 
-function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId: string): AutomationStudioHarnessOptionImplementation {
+function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId: string, startLocation?: string): AutomationStudioHarnessOptionImplementation {
   return (input) => binding.executeTool({
     projectId: input.projectId,
     flowId: input.flowId,
@@ -312,6 +341,10 @@ function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId
     value: input.value,
     maxEvidenceBytes: input.maxEvidenceBytes,
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    // Every call of this build, including the free first look the loop takes
+    // before the first paid decision: that look is where a domain says "you are
+    // not there yet, and here is where you are meant to be".
+    ...(startLocation === undefined ? {} : { startLocation }),
     permission: input.permission
   });
 }

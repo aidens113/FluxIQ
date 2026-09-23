@@ -27,6 +27,8 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   instructionText?: string;
   maxCatalogBytes?: number;
   maxCatalogEntries?: number;
+  /** Where the Flow starts, when the build was told (`../start-location.ts`). Carried into the context unread. */
+  startLocation?: string;
 }): AutomationStudioFlowBootstrapContext {
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
   const definitions = registry.list(input.resolution).sort((left, right) => left.id.localeCompare(right.id));
@@ -82,6 +84,10 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   return {
     outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
     nodeCatalog,
+    // Placed before the catalog's own fields for a reader, and carried whatever
+    // the catalog budget did: where the Flow starts is not a node, so the
+    // byte budget that decides which nodes fit has nothing to say about it.
+    ...(input.startLocation === undefined ? {} : { startLocation: input.startLocation }),
     catalogTruncated: nodeCatalog.length < definitions.length,
     catalogSelection: {
       byteBudget,

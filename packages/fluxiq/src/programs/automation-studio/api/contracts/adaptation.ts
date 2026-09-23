@@ -110,6 +110,19 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   llmExecutionGrantId: string;
   evidenceGuided?: true;
   useReusableContext?: true;
+  /**
+   * Where the Flow this build writes starts, in the bound domain's own
+   * spelling -- a URL for the web, something else for a domain with no pages.
+   *
+   * Given, the build is told it is not there yet: the model is shown the
+   * location, the domain refuses every call until the Flow has reached it, and
+   * the step that reaches it is therefore in the draft the plan is assembled
+   * from. Omitted, the build behaves exactly as it always has and explores
+   * whatever the caller put in front of it -- which is right when a person is
+   * already looking at the page they are asking about, and wrong when the Flow
+   * is meant to get there by itself (`runtime/flow-bootstrap/start-location.ts`).
+   */
+  startLocation?: string;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {
