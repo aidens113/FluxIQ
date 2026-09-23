@@ -157,6 +157,13 @@ export type GenerateFlowBootstrapAdaptationResponse = {
     totalTokens?: number;
     estimatedCostUsd?: number;
   };
+  /**
+   * Present when the build met an action its grant did not permit and finished
+   * anyway. The proposal is real and is stored, and nothing may be approved or
+   * applied until the person has answered this: issue the next build's grant
+   * with the classes it lists as `missing`.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
 };
 
 export type FlowAdaptationRequest = FlowIdProjectRequest & {

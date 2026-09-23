@@ -46,7 +46,7 @@ export function recordingMapperCalls(timeline: RecordingSession["timeline"], rec
  * action is still proposed. Its `recordOutput` and `timeoutMs` are kept when
  * valid and reject the candidate, by throwing, when present and invalid.
  */
-export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
+export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; recordedGapMs?: number; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
   const outputId = input.candidate.outputId?.trim();
   if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
   if (input.mapperOutputIds?.length && !input.mapperOutputIds.includes(outputId)) throw new Error(`Recording mapper emitted undeclared output ${outputId}.`);
@@ -68,6 +68,7 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
   const expectedState = liftedExpectedState(input.candidate.expectedState);
   const recordOutput = liftedRecordOutput(io, input.domainId, outputId, input.candidate.recordOutput);
   const timeoutMs = liftedTimeoutMs(outputId, input.candidate.timeoutMs);
+  const recordedGapMs = liftedRecordedGapMs(input.recordedGapMs);
   return {
     candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
     actionEntryId: input.actionEntryId,
@@ -82,6 +83,7 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
     confidence: clampConfidence(input.candidate.confidence),
     evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
     ...(input.stateLink ? { stateLink: input.stateLink } : {}),
+    ...(recordedGapMs !== undefined ? { recordedGapMs } : {}),
     policyStateEligible: false,
     ...(input.candidate.label ? { label: input.candidate.label } : {}),
     ...(input.candidate.description ? { description: input.candidate.description } : {})
@@ -124,6 +126,7 @@ export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact
         actionEntryId: candidate.actionEntryId,
         timelineEntryId: candidate.actionEntryId,
         ...recordingCandidateStateLinkMetadata(candidate),
+        ...recordingCandidateRecordedGapMetadata(candidate),
         sourceObservationIds: candidate.sourceObservationIds,
         evidence: candidate.evidence,
         rawEvidenceImmutable: true,
@@ -142,6 +145,42 @@ export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact
   return { ...flow, nodes: [...flow.nodes, ...nodes], edges: [...flow.edges, ...edges], metadata: { ...(flow.metadata ?? {}), recordingProposalIds: uniqueStrings([...(Array.isArray(flow.metadata?.recordingProposalIds) ? flow.metadata.recordingProposalIds.map(String) : []), proposal.proposalId]) } };
 }
 
+/**
+ * The recorded inter-step gap, as the metadata field a recorded node or
+ * definition stores. Kept apart from the state link because it is the wait
+ * ceiling rather than a pointer to a snapshot, and because the first candidate
+ * of a proposal has no gap at all.
+ */
+export function recordingCandidateRecordedGapMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
+  return candidate.recordedGapMs === undefined ? {} : { recordedGapMs: candidate.recordedGapMs };
+}
+
+/**
+ * How long the recording waited before each candidate, from the monotonic
+ * offsets of the entries the candidates were mapped from.
+ *
+ * It is the gap between *candidates*, not between timeline entries. A Flow node
+ * follows the previous node, so what the run may wait for is everything that
+ * happened since the previous action -- the observations in between are part of
+ * that wait, and measuring to the entry immediately before would report a few
+ * milliseconds for a pause of seconds and leave every ceiling on its floor.
+ *
+ * The first candidate has nothing before it and gets no gap; two candidates
+ * mapped from one entry are the same recorded moment, so the second gets zero.
+ * A clock that went backwards is not a wait, so it is dropped rather than
+ * clamped.
+ */
+export function recordingCandidateGapTracker(): (entry: { monotonicOffsetMs: number }) => number | undefined {
+  let previous: number | undefined;
+  return (entry) => {
+    const offset = entry.monotonicOffsetMs;
+    if (!Number.isFinite(offset)) return undefined;
+    const gap = previous === undefined ? undefined : offset - previous;
+    previous = offset;
+    return gap !== undefined && gap >= 0 ? gap : undefined;
+  };
+}
+
 /** The state link a candidate carries, as the metadata fields a recorded node or definition stores. */
 export function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
   return candidate.stateLink ? compactJsonObject({
@@ -150,6 +189,13 @@ export function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActi
     stateRef: candidate.stateLink.stateRef,
     screenshotRef: candidate.stateLink.screenshotRef
   }) : {};
+}
+
+// The gap is Core's own measurement rather than a mapper's claim, but it still
+// arrives as a number from a caller, so it is held to the same rule as any
+// other stored duration: a finite, non-negative millisecond count or nothing.
+function liftedRecordedGapMs(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
 }
 
 // A mapper runs in-process and can hand Core anything. Only a plain object is an

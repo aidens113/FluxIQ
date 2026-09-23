@@ -11,6 +11,16 @@
 //
 // The domain asks only when the action has a consequence. Looking, opening and
 // choosing are not asked about at all; see `consequences.ts`.
+//
+// **An empty list is a declaration, not the absence of one.** A domain whose
+// action commits -- a press, where the same control applies a filter on one
+// page and places an order on the next -- says `[]` when it would cause
+// nothing lasting, and Core reads it, records it and permits it. That is the
+// difference between "it said it causes nothing" and "it said nothing", and
+// only the first can be published with the step. Until 2026-09-22 the domain
+// short-circuited the empty case and never called the check, so every press in
+// every measured build was invisible here and the Lab had to deduce what a
+// step had declared from the absence of a refusal.
 
 import { isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
 
@@ -83,7 +93,7 @@ const MAX_NAME_INPUT = 2_000;
 export function readAutomationStudioActionDeclaration(value: unknown): AutomationStudioReadActionDeclaration {
   if (!isRecord(value) || !hasOnlyFields(value, ["consequences", "control", "verb"])) throw new AutomationStudioActionDeclarationError("declaration_shape");
   const consequences = value.consequences;
-  if (!Array.isArray(consequences) || !consequences.length || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
+  if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
   const control = value.control;
   if (!isRecord(control) || !hasOnlyFields(control, ["name", "kind"])) throw new AutomationStudioActionDeclarationError("control_shape");

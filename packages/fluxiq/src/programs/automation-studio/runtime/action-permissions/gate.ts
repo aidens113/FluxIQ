@@ -4,13 +4,29 @@
 // One gate per run. It holds the consequences the run's grant permits, sees
 // every piece of evidence the domain hands back, and hands the domain a check
 // with every action. The first action whose consequences the run does not hold
-// raises a request, and the caller ends the run on it: the gate records the
-// request, the caller reads it back and stops. Nothing is parked.
+// raises a request, and the gate records it.
+//
+// **What the caller then does with that request is the caller's, and there are
+// two answers.** A caller that has nowhere to put the question ends the run on
+// it -- `endsOnRequest`, which is the default and aborts `signal` so the run
+// stops wherever the check was called from. A caller that can put it to a
+// person parks instead: it opens the request as an ask, waits, and calls
+// `settle` with what came back. A granted request widens what this run holds
+// and lets the work go on; a refused one stays recorded, so every later check
+// reports the same refusal rather than asking the same person again.
 //
 // **Fail closed.** No grant, an empty grant and a grant naming something Core
 // does not recognise all permit nothing. There is no consequence the gate
 // assumes is fine, and no path through it that permits an action whose
 // declaration it could not read -- that throws, and the action fails.
+//
+// **Every declaration is kept, not only the refused ones.** A permitted action
+// used to leave nothing behind but the absence of a refusal, so the only way to
+// learn what a step had said about itself was to deduce it from what was not
+// refused -- which is exactly how four live builds came to publish Flows
+// containing presses with nobody able to say what any press declared. The gate
+// now records each declaration as it read it, with its own answer beside it
+// (`declared.ts`), and a caller publishes them with whatever the run produced.
 //
 // **Nothing past the evidence boundary.** The request carries the control's
 // name only when that name already appears in evidence this run returned to the
@@ -24,7 +40,8 @@ import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
 import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
-import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermissionCheck } from "./declaration.ts";
+import { AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
+import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionVerdict } from "./declaration.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 import {
   AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX,
@@ -59,14 +76,23 @@ export type AutomationStudioActionPermissionGateInput = {
    * answer with nothing grounded in it, adds nothing, so the run asks.
    */
   deriveInstructed?: (() => Promise<readonly AutomationStudioInstructedConsequence[]>) | undefined;
+  /**
+   * Whether raising a request ends the run: `signal` fires and the caller
+   * stops. Absent means yes, which is the behaviour every caller had before a
+   * question could reach anybody. A caller that passes `false` is saying it
+   * will put the request to a person and `settle` it, and is responsible for
+   * what happens if nobody answers.
+   */
+  endsOnRequest?: boolean | undefined;
   now?: (() => number) | undefined;
   newRequestId?: (() => string) | undefined;
 };
 
 export class AutomationStudioActionPermissionGate {
-  private readonly permitted: ReadonlySet<AutomationStudioActionConsequence>;
+  private readonly permitted: Set<AutomationStudioActionConsequence>;
   private readonly shown: string[] = [];
   private shownCharacters = 0;
+  private readonly records: AutomationStudioActionDeclarationRecord[] = [];
   private raised: AutomationStudioActionPermissionRequest | undefined;
   private raisedRef: string | undefined;
   private readonly stopped = new AbortController();
@@ -86,9 +112,51 @@ export class AutomationStudioActionPermissionGate {
     return this.instructedEntries;
   }
 
+  /**
+   * What every action put to this gate declared, in the order it was asked,
+   * with Core's own answer beside it. A caller publishes these so a step's
+   * self-report can be read rather than deduced.
+   */
+  get declarations(): readonly AutomationStudioActionDeclarationRecord[] {
+    return this.records;
+  }
+
+  /**
+   * The instruction's authority, forced now rather than when an action first
+   * needs it. For a caller that has to compare what was declared against what
+   * the instruction asks for, and would otherwise never derive it at all --
+   * because a run whose every action declared nothing lasting never asks.
+   */
+  resolveInstructed(): Promise<readonly AutomationStudioInstructedConsequence[]> {
+    return this.instructedFor();
+  }
+
   /** The first request raised, which is the one the run ends on. */
   get request(): AutomationStudioActionPermissionRequest | undefined {
     return this.raised;
+  }
+
+  /**
+   * Take the person's answer to the request this gate raised.
+   *
+   * `granted` adds exactly the classes the request said were missing, and
+   * forgets the request, so the same check asked again permits the action and a
+   * later action wanting something else can raise a request of its own. Nothing
+   * beyond `missing` is granted: an answer widens the run by what was asked
+   * about and by nothing else.
+   *
+   * `refused` keeps the request. It is then what every later refusal reports,
+   * which is what stops a run asking one person the same question repeatedly,
+   * and it is what the caller stores with whatever the run produced.
+   *
+   * Only for a caller that set `endsOnRequest: false`; a caller that ended on
+   * the request has nothing to settle.
+   */
+  settle(answer: "granted" | "refused"): void {
+    if (!this.raised || answer === "refused") return;
+    for (const consequence of this.raised.missing) this.permitted.add(consequence);
+    this.raised = undefined;
+    this.raisedRef = undefined;
   }
 
   /** Whether the request was raised for this action: a call, or a plan step. */
@@ -133,12 +201,36 @@ export class AutomationStudioActionPermissionGate {
   checkFor(action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck {
     return async (declaration) => {
       const read = readAutomationStudioActionDeclaration(declaration);
-      const instructed = await this.instructedFor();
-      const missing = automationStudioConsequencesInOrder(read.consequences.filter((consequence) =>
-        !this.permitted.has(consequence) && !instructed.some((entry) => entry.consequence === consequence)));
-      if (!missing.length) return { permitted: true };
-      if (this.raised) return { permitted: false, missing, requestId: this.raised.requestId };
+      const consequences = automationStudioConsequencesInOrder(read.consequences);
       const controlName = this.carriedName(read.controlName);
+      const record = (verdict: AutomationStudioActionPermissionVerdict): AutomationStudioActionPermissionVerdict => {
+        if (this.records.length < AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX) {
+          // Every field by name, and an absent one omitted rather than spread
+          // in: this record travels to a person and to a stored proposal, so a
+          // renamed field must be a compile error here.
+          const entry: AutomationStudioActionDeclarationRecord = {
+            action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb },
+            control: { name: controlName, kind: read.controlKind },
+            consequences: [...consequences],
+            permitted: verdict.permitted
+          };
+          if (!verdict.permitted) entry.missing = [...verdict.missing];
+          if (!verdict.permitted && verdict.requestId !== null) entry.requestId = verdict.requestId;
+          this.records.push(entry);
+        }
+        return verdict;
+      };
+      // An action that says it causes nothing lasting is permitted without
+      // reading the instruction: there is nothing to permit, and a run whose
+      // every action answers this way must not be charged for a derivation it
+      // has no use for. It is still recorded, which is the whole point -- the
+      // empty answer is the one nobody could see.
+      if (!consequences.length) return record({ permitted: true });
+      const instructed = await this.instructedFor();
+      const missing = automationStudioConsequencesInOrder(consequences.filter((consequence) =>
+        !this.permitted.has(consequence) && !instructed.some((entry) => entry.consequence === consequence)));
+      if (!missing.length) return record({ permitted: true });
+      if (this.raised) return record({ permitted: false, missing, requestId: this.raised.requestId });
       const stage = this.input.stage;
       this.raised = {
         schemaVersion: AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
@@ -146,7 +238,7 @@ export class AutomationStudioActionPermissionGate {
         requestedAtMs: Math.trunc(this.input.now?.() ?? Date.now()),
         action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb },
         control: { name: controlName, kind: read.controlKind },
-        consequences: automationStudioConsequencesInOrder(read.consequences),
+        consequences: [...consequences],
         missing,
         reason: { stage, instructionIds: [...(this.input.instructionIds ?? [])] },
         authority: {
@@ -156,8 +248,8 @@ export class AutomationStudioActionPermissionGate {
         sentence: automationStudioActionPermissionSentence({ stage, kind: action.kind, verb: read.verb, controlName, controlKind: read.controlKind, missing })
       };
       this.raisedRef = action.ref;
-      this.stopped.abort();
-      return { permitted: false, missing, requestId: this.raised.requestId };
+      if (this.input.endsOnRequest !== false) this.stopped.abort();
+      return record({ permitted: false, missing, requestId: this.raised.requestId });
     };
   }
 
@@ -199,6 +291,10 @@ export class AutomationStudioActionPermissionGate {
  */
 export const automationStudioActionPermissionDenied: AutomationStudioActionPermissionCheck = async (declaration) => {
   const read = readAutomationStudioActionDeclaration(declaration);
+  // Nothing declared is nothing to refuse. Refusing it here would make an
+  // action that honestly says it causes nothing the one answer that cannot be
+  // given, which is the incentive this whole seam exists to remove.
+  if (!read.consequences.length) return { permitted: true };
   return { permitted: false, missing: automationStudioConsequencesInOrder(read.consequences), requestId: null };
 };
 

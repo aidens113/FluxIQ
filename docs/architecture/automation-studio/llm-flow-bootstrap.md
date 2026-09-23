@@ -59,6 +59,91 @@ not part of the schema or context. A `flow_bootstrap` request fails before
 provider invocation when it has no effective active instruction or no
 scope-aware registry context.
 
+## Permission on the authoring path
+
+A build carries a grant, and the grant says which lasting consequences its
+actions may have. The domain declares, action by action, what one would do --
+for a step the build takes now while exploring, and for a step the finished Flow
+would take each time it runs -- and
+`AutomationStudioActionPermissionGate` answers from the grant and from what the
+person's own instruction already asks for. An action whose consequences the
+build does not hold raises an
+`automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
+
+**The request is put to the person, in the Flow's own thread.** The request's
+`requestId` is the id of a `permission` ask
+(`runtime/conversations/ask.ts`), so the gate and the conversation name the same
+question without either inventing an id, and the ask carries the request
+verbatim. Answering `grant` adds exactly the classes the request listed as
+`missing` and the build carries straight on -- the same check is asked again
+rather than answered a second time. A refusal, or nobody answering, leaves the
+domain's own recoverable `permission_required` for the model to route around.
+One question is asked per build: a refusal nobody granted is remembered, so a
+build nobody is watching costs one question rather than one per action.
+
+**Whether the build waits is the caller's decision.**
+`permissionAskTimeoutMs` on the generation input is how long it holds open for
+an answer; absent, the question is still opened in the thread and the build
+carries on without waiting. The API handler passes
+`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS`, because somebody
+has just pressed build; an unattended caller passes nothing. The caller decides
+whether to wait; how long is capped at that same constant, since a build holds a
+provider grant and its caller's request open while it waits.
+
+**A build may propose while carrying an unanswered request.** It ends on the
+request only when it produced nothing; a plan the completion check accepted is
+still a Flow worth having, and the request is stored on the adaptation as
+`permissionRequest` and returned with the proposal. Approving or applying such
+an adaptation is refused until the ask it names is answered `grant`
+(`assertAutomationStudioBootstrapPermissionAnswered`), because a saved Flow
+replays with no gate in front of it, by design.
+
+**Both generation paths go through the same gate.** The evidence-guided build
+hands the check to every exploration call and to every step of the plan it
+completes; the one-call build, which explores nothing, hands it to every step of
+the plan as its parameters are resolved. Before this, the one-call path resolved
+with no check at all, so every step that declared a lasting consequence was
+refused with no request raised and nobody asked.
+
+**Every declaration is kept, including the empty one.** An action that says it
+causes nothing lasting is put to the gate like any other: it is read, recorded
+and permitted. The gate keeps one `AutomationStudioActionDeclarationRecord` per
+action asked about -- the action, the control as a person would name it under
+the same evidence rule the request uses, the classes, and Core's answer -- and
+the build stores them on the proposal as `declaredConsequences`. Until
+2026-09-22 a permitted verdict discarded the declaration where it was read and
+the domain never even called the check for an empty one, so what a step had said
+about itself could only be deduced from the absence of a refusal. Four live
+builds authored Flows containing presses that nobody could account for.
+
+**Core holds the declarations against the instruction.** After the loop stops,
+`automationStudioActionDeclarationCrossCheck` compares what the build declared
+with what the person's instruction was read as asking for, and stores the
+finding on the proposal as `consequenceCrossCheck`. `verdict: "undeclared"` is
+the contradiction nothing else catches: the instruction plainly asks for
+something lasting, actions that commit ran, and not one of them said it would
+cause it. Measured live on `social-scheduler-schedule-post`, twice: the press on
+"Schedule post" declared `send_or_publish`, the instruction asked for
+`send_or_publish` **and** `create_new`, and `create_new` was declared by
+nothing.
+
+It refuses nothing and grants nothing. The instruction is the authority for
+permitting, so a class the instruction asks for was already allowed and an
+under-declaration bypasses no permission; refusing the build would be Core
+overruling the person's own instruction on Core's reading of their words.
+Instead the finding is recorded on what the person approves and said out loud as
+a `confirm` ask in the Flow's thread, which does not park -- the build has a
+Flow, and the question is about applying it. Nothing here reads a control, a
+label or a node id: both sides of the comparison are the model's own statements.
+
+The comparison may cost one provider call the build would not otherwise make,
+and only in the case worth paying for -- at least one action was put to the gate
+and none of them declared anything lasting, so the derivation that reads the
+instruction was never triggered. That call is counted:
+`totalProviderCallCount` on the created-audit detail is every call the build
+made. `providerCallCount` and `decisionCount` remain the evidence loop's own and
+stay equal to each other, because a downstream reader holds them to that.
+
 ## Untrusted output boundary
 
 The model returns symbolic keys rather than durable IDs. Symbolic keys are

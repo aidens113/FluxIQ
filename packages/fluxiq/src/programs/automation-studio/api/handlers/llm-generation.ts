@@ -3,7 +3,7 @@
 
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type AutomationStudioLlmExecutionGrantRequest, type AutomationStudioLlmExecutionPreflightRequest, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -125,7 +125,11 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
             permittedConsequences: grant.permittedConsequences
           },
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
-          ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {})
+          ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
+          // Somebody has just pressed build, so a question this build raises is
+          // worth holding it open for: answered, the build carries on with
+          // permission instead of coming back needing another one.
+          permissionAskTimeoutMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS
         });
       } catch (error) {
         const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
@@ -198,7 +202,13 @@ function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptation
     sourceInstructionIds,
     baseDependencyDigest: boundedIdentifier(value.baseDependencyDigest, "Dependency digest"),
     baseSettingsRevision: boundedWholeNumber(value.baseSettingsRevision, 0, Number.MAX_SAFE_INTEGER),
-    accounting: sanitizedAccounting
+    accounting: sanitizedAccounting,
+    // Carried whole, like the same request on the failure diagnostic beside it:
+    // it is Core's own object, built by Core's gate from Core's own words, and
+    // a field-by-field copy here would be a second place to keep in step with
+    // the request type. A build that finished carrying one cannot be applied
+    // until it is answered, so the caller has to be able to show it.
+    ...(value.permissionRequest ? { permissionRequest: value.permissionRequest } : {})
   };
 }
 

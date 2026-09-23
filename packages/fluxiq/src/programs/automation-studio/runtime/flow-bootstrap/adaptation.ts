@@ -13,7 +13,12 @@ import type {
   AutomationStudioFlowBuildPlan,
   AutomationStudioFlowBootstrapRisk
 } from "./plan.ts";
-import type { AutomationStudioInstructedConsequence } from "../action-permissions/index.ts";
+import type {
+  AutomationStudioActionDeclarationCrossCheck,
+  AutomationStudioActionDeclarationRecord,
+  AutomationStudioActionPermissionRequest,
+  AutomationStudioInstructedConsequence
+} from "../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 
@@ -105,6 +110,33 @@ export type AutomationStudioBootstrapAdaptation = {
    * run reads it without a model while each instruction's text is unchanged.
    */
   instructedConsequences?: AutomationStudioInstructedConsequence[];
+  /**
+   * What every action of the build declared about itself, in the order the gate
+   * was asked, with Core's answer beside each. A permitted declaration used to
+   * be discarded where it was read, so what a step said it would do could only
+   * be deduced from the absence of a refusal.
+   */
+  declaredConsequences?: AutomationStudioActionDeclarationRecord[];
+  /**
+   * Those declarations held against what the person's instruction was read as
+   * asking for. `verdict: "undeclared"` is the contradiction nothing else
+   * catches: the instruction plainly asks for something lasting and not one
+   * action said it would cause it. It refuses nothing -- the instruction is the
+   * authority for permitting, so nothing was bypassed -- and it is here so the
+   * person approving this Flow approves it in sight of the contradiction.
+   */
+  consequenceCrossCheck?: AutomationStudioActionDeclarationCrossCheck;
+  /**
+   * The permission request a build raised and finished anyway.
+   *
+   * An exploration step the build was not permitted is recoverable: the model
+   * routes around it and may still propose a Flow. The request it raised comes
+   * with the proposal, because the person has still not answered it, and a
+   * replay runs with no gate at all -- so nothing here may be approved or
+   * applied while it is present. Answering it means issuing the next build's
+   * grant with the classes it lists as `missing`.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
   buildPlan: AutomationStudioFlowBuildPlan;
   topology: AutomationStudioBootstrapTopology;
   status: AutomationStudioBootstrapAdaptationStatus;
@@ -285,6 +317,31 @@ export function upgradeAutomationStudioBootstrapAdaptation(adaptation: Automatio
       : node);
   }
   return upgraded;
+}
+
+/**
+ * Refuses a Bootstrap adaptation whose permission request the person has not
+ * granted.
+ *
+ * The build proposed a Flow while one of its steps needed a person's word, so
+ * the Flow may contain a step nobody permitted -- and a saved Flow replays with
+ * no gate in front of it, by design, because a replay has no model.
+ *
+ * `answer` is how the ask the build opened was settled, which is where the
+ * person's word actually lives: the request's own `requestId` is the ask's id,
+ * so the question the build asked is the question that releases it. Nothing,
+ * or a refusal, holds the adaptation; the way past it is then a new build under
+ * a grant carrying the missing classes, not an approval that skips the
+ * question.
+ */
+export function assertAutomationStudioBootstrapPermissionRequestAnswered(
+  adaptation: AutomationStudioBootstrapAdaptation,
+  answer?: string | null
+): void {
+  const request = adaptation.permissionRequest;
+  if (!request || answer === "grant") return;
+  const state = answer === "deny" ? "was refused" : "has not been answered";
+  throw new Error(`FLOW_BOOTSTRAP_PERMISSION_REQUIRED: this build needs permission that ${state} (${request.requestId}): ${request.sentence}`);
 }
 
 export function assertAutomationStudioBootstrapHasNoRecordingProvenance(value: unknown): void {

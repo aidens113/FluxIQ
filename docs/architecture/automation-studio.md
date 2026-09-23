@@ -511,11 +511,20 @@ non-`llm_diagnosis` candidate still on offer tells
 suppresses escalation to the model entirely.
 
 **The recorded state is read while the Flow runs.** Every node a recording
-proposal produces carries `stateLink`, `stateSnapshotId` and `stateRef` in its
-metadata; the executor reads them (`automationStudioRecordedState`) onto each
-attempt, so a diagnosis names the snapshot the run was supposed to be standing
-in. A node that declares a `readyState` is gated on it before **every** attempt,
-for at most `clamp(recordedGapMs x 2, 2 s, 30 s)`: the state arriving sooner
+proposal produces carries `stateLink`, `stateSnapshotId`, `stateRef` and
+`recordedGapMs` in its metadata; the executor reads them
+(`automationStudioRecordedState`) onto each attempt, so a diagnosis names the
+snapshot the run was supposed to be standing in. `recordedGapMs` is how long the
+recording waited between the entry the **previous candidate** was mapped from
+and this one, on the monotonic clock: the gap between steps rather than between
+timeline entries, because a node follows the node before it and the observations
+in between are part of that wait. It is derived where the recording's clock and
+the candidates meet (`recordingCandidateGapTracker`), travels on the proposal
+candidate, and is written onto both the Flow node and a reviewed candidate's node
+definition. The first candidate of a proposal has none; two candidates mapped
+from one entry give the second a zero, which is a different fact from none and is
+kept as one. A node that declares a `readyState` is gated on it before **every**
+attempt, for at most `clamp(recordedGapMs x 2, 2 s, 30 s)`: the state arriving sooner
 runs the node sooner, so a replay on a fast page is faster than the recording
 that produced it, and the deadline passing attempts the node anyway and marks
 `readiness.satisfied: false`, because the recording is evidence the action was
@@ -991,6 +1000,20 @@ run detail carries the request at `metadata.permissionRequest`
 beside `metadata.llmGate.permissions`, which lists the classes `granted`,
 `instructed` and `lapsed`. A person's answer reaches the next run as that
 run's grant.
+
+**A request raised while exploring is put to the person, in the run's own
+thread.** Where the run has a parking port bound -- every run that has a
+conversation does -- the exploration opens the gate's request as the same
+`permission` ask the authoring path uses, keyed by the request's own
+`requestId`, and waits. A grant widens what the run holds, the same check is
+asked again rather than answered a second time, and the action goes ahead. A
+refusal, or nobody answering, ends the exploration on the request as before, and
+one question is asked per exploration. Without a port there is nowhere to ask
+and a request is terminal, which is how every recovery behaved until
+2026-09-22 -- the exact ending the build path had just stopped producing.
+Creation, a runtime failure and improving an existing Flow are three entry
+points into one loop, so a question that parks a build and kills a repair is the
+loop half-built.
 
 **A repair that would lastingly act asks the same gate.** The patch schema a
 model is shown requires `consequences` on each acting patch that may run
