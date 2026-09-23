@@ -13,7 +13,7 @@ import type {
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
 import { parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
+import { automationStudioFlowBootstrapEvidenceSteps } from "./evidence-loop-steps.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 
@@ -369,12 +369,10 @@ type EvidenceLoopProgress = {
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
 };
 
-type EvidenceLoopStep = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]>[number];
-
 function evidenceLoopDiagnostic(
   result: EvidenceLoopProgress
 ): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
-  const steps = result.trace.flatMap(evidenceLoopStep);
+  const steps = automationStudioFlowBootstrapEvidenceSteps(result.trace);
   return {
     iterationCount: result.accounting.iterations,
     decisionCount: result.trace.length,
@@ -382,15 +380,6 @@ function evidenceLoopDiagnostic(
     evidenceBytes: result.accounting.evidenceBytes,
     ...(steps.length ? { steps } : {})
   };
-}
-
-/** One recorded decision as a step: codes and names only, never what the tool returned or the model wrote. */
-function evidenceLoopStep(entry: AutomationStudioLlmEvidenceLoopTrace): EvidenceLoopStep[] {
-  const resultCode = entry.resultCode && DIAGNOSTIC_ISSUE_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {};
-  if (entry.decision === "tool_call") {
-    return entry.toolId ? [{ toolId: entry.toolId, ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}), ...resultCode }] : [];
-  }
-  return [{ toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS[entry.decision], ...resultCode }];
 }
 
 const FLOW_BOOTSTRAP_FAILURE_STAGES = new Set<AutomationStudioFlowBootstrapFailureStage>([
