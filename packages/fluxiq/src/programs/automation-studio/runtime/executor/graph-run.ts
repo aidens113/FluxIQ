@@ -405,7 +405,7 @@ async function executeAutomationStudioGraph(
           // What the person said is data the rest of the Flow can read, put
           // where every other node output goes so a binding reaches it the
           // ordinary way.
-          if (settlement.outcome === "answered" && settlement.answer.value !== undefined) {
+          if (settlement.outcome === "answered" && settlement.answer.value !== null) {
             values[`${currentNode.id}.answer`] = settlement.answer.value;
             values.answer = settlement.answer.value;
           }

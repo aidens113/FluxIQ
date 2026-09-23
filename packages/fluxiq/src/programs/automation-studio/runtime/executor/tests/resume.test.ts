@@ -71,7 +71,7 @@ async function parkedRunTrace(options: AutomationStudioGraphExecutionOptions): P
 }
 
 function grant(askId: string, atMs = PARKED_AT + 5): AutomationStudioAskAnswer {
-  return { askId, answeredAtMs: atMs, kind: "grant" };
+  return { askId, answeredAt: atMs, kind: "grant", value: null, actorId: null };
 }
 
 describe("a run that reaches an approval", () => {
@@ -87,7 +87,7 @@ describe("a run that reaches an approval", () => {
     expect(trace.parked?.ask.parks).toBe(true);
     expect(trace.parked?.ask.status).toBe("pending");
     expect(trace.parked?.nodeId).toBe("approve");
-    expect(trace.parked?.routes).toEqual({ answered: "approved", denied: "rejected", expired: "rejected" });
+    expect(trace.parked?.routes).toEqual({ granted: "approved", denied: "rejected", timedOut: "rejected" });
     expect(trace.parked?.expiresAtMs).toBe(PARKED_AT + TIMEOUT_MS);
     expect(trace.parked?.carried.variables).toEqual({ draftId: "draft-42" });
     // The work before the question happened once, and neither branch after it ran.
@@ -148,7 +148,7 @@ describe("answering a parked run", () => {
     const resumed = await resumeAutomationStudioGraph({
       flow: approvalFlow,
       trace: parked,
-      resumption: { kind: "answer", answer: { askId: parked.parked!.ask.askId, answeredAtMs: PARKED_AT + 5, kind: "deny" } },
+      resumption: { kind: "answer", answer: { askId: parked.parked!.ask.askId, answeredAt: PARKED_AT + 5, kind: "deny", value: null, actorId: null } },
       options: recorder.options
     });
 
@@ -250,7 +250,7 @@ describe("nobody answering", () => {
         : node)
     };
     const parked = await runAutomationStudioGraph(flow, recorder.options);
-    expect(parked.parked?.routes.expired).toBe("approved");
+    expect(parked.parked?.routes.timedOut).toBe("approved");
 
     const resumed = await resumeAutomationStudioGraph({
       flow,
@@ -325,8 +325,8 @@ describe("parking is the run's capability, not the Approval node's", () => {
             kind: "permission",
             parks,
             text: "Publish to the account? This posts publicly.",
-            missing: ["external_side_effect"],
-            routes: { answered: "success", denied: "failed", expired: "failed" }
+            missing: ["send_or_publish"],
+            routes: { granted: "success", denied: "failed", timedOut: "failed" }
           })]
         }
       }),
@@ -339,7 +339,7 @@ describe("parking is the run's capability, not the Approval node's", () => {
 
     expect(trace.status).toBe("waiting");
     expect(trace.parked?.ask.kind).toBe("permission");
-    expect(trace.parked?.ask.missing).toEqual(["external_side_effect"]);
+    expect(trace.parked?.ask.missing).toEqual(["send_or_publish"]);
     expect(trace.parked?.nodeId).toBe("publish");
     expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "publish"]);
 

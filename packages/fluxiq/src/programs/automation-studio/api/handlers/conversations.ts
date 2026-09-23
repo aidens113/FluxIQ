@@ -21,9 +21,11 @@
 // ceremony on the wrong side of the question.
 //
 // This module registers against its own dependency record rather than
-// `AutomationStudioApiDependencies`, because the service facade does not carry
-// a `conversations` field yet. Wiring is one line in `register.ts` once it
-// does; nothing else here changes.
+// `AutomationStudioApiDependencies`: it needs the domain-scope check, the
+// caller's project entitlement and the collaborator that holds the store, and
+// naming those three is what lets a test register these endpoints without a
+// service. `register.ts` builds the record from the service's `conversations`
+// field in one line.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
@@ -39,19 +41,30 @@ import {
   type AutomationStudioConversationSubject
 } from "../../runtime/index.ts";
 
-/** What the conversation endpoints need: the registry, the domain-scope check, and the collaborator that holds the store. */
+/**
+ * What the conversation endpoints need: the registry, the domain-scope check,
+ * the caller's project entitlement, and the collaborator that holds the store.
+ *
+ * `conversations` is read off the service inside each handler rather than
+ * pulled out at registration, the way `runDatasets` is. Registering the API
+ * must touch nothing on the service -- `tests/llm-generation.test.ts` pins that
+ * by registering against a service that throws on every property it does not
+ * expect -- and a field read at registration time would also freeze whatever
+ * the service held then.
+ */
 export type AutomationStudioConversationApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
   readonly service: {
     assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void>;
     /** Exactly what the `projects` endpoint returns for a domain scope: the caller's entitlement, already decided. */
     listProjects(domainId?: string | null): Promise<{ projects: Array<{ id: string }> }>;
+    readonly conversations: AutomationStudioConversations;
   };
-  readonly conversations: AutomationStudioConversations;
 };
 
 export function registerAutomationStudioConversationEndpoints(dependencies: AutomationStudioConversationApiDependencies): void {
-  const { registry, service, conversations } = dependencies;
+  const { registry, service } = dependencies;
+  const conversations = (): AutomationStudioConversations => service.conversations;
 
   registry.register({
     programId: "automation-studio",
@@ -64,7 +77,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       if (payload.projectId !== null && payload.projectId !== undefined) {
         const projectId = String(payload.projectId);
         await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-        return { ok: true, payload: { conversations: await conversations.listConversations({ projectId, ...narrow }) } };
+        return { ok: true, payload: { conversations: await conversations().listConversations({ projectId, ...narrow }) } };
       }
       // Across every project the caller can see. `listProjects` is the same
       // entitlement the `projects` endpoint grants for this domain scope, so
@@ -76,7 +89,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const found: AutomationStudioConversation[] = [];
       for (const project of projects) {
         if (found.length >= limit) break;
-        found.push(...await conversations.listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
+        found.push(...await conversations().listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
       }
       return { ok: true, payload: { conversations: found.slice(0, limit) } };
     }
@@ -91,7 +104,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationReadRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const conversation = await conversations.getConversation({
+      const conversation = await conversations().getConversation({
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         sinceTurnId: typeof payload.sinceTurnId === "string" ? payload.sinceTurnId : undefined,
@@ -110,7 +123,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationTurnAppendRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const turn = await conversations.appendTurn({
+      const turn = await conversations().appendTurn({
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         text: String(payload.text ?? ""),
@@ -130,7 +143,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const ask = await conversations.answerAsk({
+      const ask = await conversations().answerAsk({
         projectId,
         askId: String(payload.askId ?? ""),
         kind: requiredAnswerKind(payload.kind),
@@ -150,7 +163,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAttachmentRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const attachment = await conversations.getAttachment({
+      const attachment = await conversations().getAttachment({
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         turnId: String(payload.turnId ?? "")

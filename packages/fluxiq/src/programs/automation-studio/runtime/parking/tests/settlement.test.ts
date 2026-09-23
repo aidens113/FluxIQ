@@ -21,8 +21,8 @@ function parkedOn(ask: Partial<AutomationStudioAsk> = {}): AutomationStudioParke
     status: "pending",
     text: "Which address should the order ship to?",
     options: [
-      { value: "home", label: "Home" },
-      { value: "work", label: "Work", route: "alternate" }
+      { id: "home", label: "Home", route: null },
+      { id: "work", label: "Work", route: "alternate" }
     ],
     raisedBy: { stage: "execution", nodeId: "node" },
     ...ask
@@ -39,30 +39,30 @@ function parkedOn(ask: Partial<AutomationStudioAsk> = {}): AutomationStudioParke
 
 describe("what an ask leads to", () => {
   it("routes a grant, a refusal and a free-text answer by the ask's own routes", () => {
-    const parked = parkedOn({ routes: { answered: "approved", denied: "rejected", expired: "rejected" } });
+    const parked = parkedOn({ routes: { granted: "approved", denied: "rejected", timedOut: "rejected" } });
 
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "grant" }, 9)).toMatchObject({ outcome: "answered", route: "approved" });
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "deny" }, 9)).toMatchObject({ outcome: "answered", route: "rejected" });
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "text", value: "go ahead" }, 9)).toMatchObject({ outcome: "answered", route: "approved" });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "grant", value: null, actorId: null }, 9)).toMatchObject({ outcome: "answered", route: "approved" });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "deny", value: null, actorId: null }, 9)).toMatchObject({ outcome: "answered", route: "rejected" });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "text", value: "go ahead", actorId: null }, 9)).toMatchObject({ outcome: "answered", route: "approved" });
   });
 
   it("routes a chosen option by its own route, or the answered route when it names none", () => {
     const parked = parkedOn();
 
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "choice", value: "work" }, 9)).toMatchObject({ outcome: "answered", route: "alternate" });
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "choice", value: "home" }, 9)).toMatchObject({ outcome: "answered", route: AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES.answered });
-    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAtMs: 2, kind: "choice", value: "neighbour" }, 9)).toMatchObject({ outcome: "refused", reason: "unknown_choice" });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "choice", value: "work", actorId: null }, 9)).toMatchObject({ outcome: "answered", route: "alternate" });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "choice", value: "home", actorId: null }, 9)).toMatchObject({ outcome: "answered", route: AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES.granted });
+    expect(automationStudioAskSettlement(parked, { askId: parked.ask.askId, answeredAt: 2, kind: "choice", value: "neighbour", actorId: null }, 9)).toMatchObject({ outcome: "refused", reason: "unknown_choice" });
   });
 
   it("refuses an answer to an ask that is already settled, and one that names another ask", () => {
-    expect(automationStudioAskSettlement(parkedOn({ status: "answered" }), { askId: "node.attempt.1", answeredAtMs: 2, kind: "grant" }, 9)).toMatchObject({ outcome: "refused", reason: "already_settled" });
-    expect(automationStudioAskSettlement(parkedOn(), { askId: "another", answeredAtMs: 2, kind: "grant" }, 9)).toMatchObject({ outcome: "refused", reason: "ask_mismatch" });
+    expect(automationStudioAskSettlement(parkedOn({ status: "answered" }), { askId: "node.attempt.1", answeredAt: 2, kind: "grant", value: null, actorId: null }, 9)).toMatchObject({ outcome: "refused", reason: "already_settled" });
+    expect(automationStudioAskSettlement(parkedOn(), { askId: "another", answeredAt: 2, kind: "grant", value: null, actorId: null }, 9)).toMatchObject({ outcome: "refused", reason: "ask_mismatch" });
   });
 
-  it("makes nobody answering take the expired route, which `onTimeout: deny` resolves to the refusal route", () => {
-    expect(automationStudioAskSettlement(parkedOn({ routes: { answered: "approved", denied: "rejected", expired: "approved" } }), undefined, 9))
+  it("makes nobody answering take the timed-out route, which `onTimeout: deny` resolves to the refusal route", () => {
+    expect(automationStudioAskSettlement(parkedOn({ routes: { granted: "approved", denied: "rejected", timedOut: "approved" } }), undefined, 9))
       .toMatchObject({ outcome: "expired", route: "approved" });
-    expect(parkedOn({ routes: { answered: "approved", denied: "rejected", expired: "approved" }, onTimeout: "deny" }).routes.expired).toBe("rejected");
+    expect(parkedOn({ routes: { granted: "approved", denied: "rejected", timedOut: "approved" }, onTimeout: "deny" }).routes.timedOut).toBe("rejected");
   });
 
   it("gives an ask that waits indefinitely no deadline, and one with a timeout the deadline its wait implies", () => {
@@ -107,16 +107,18 @@ describe("reading an ask out of an attempt's effects", () => {
         text: "Which one?",
         timeoutMs: -5,
         onTimeout: "whenever",
-        options: [{ value: "a" }, { label: "no value" }, "not an option"],
-        routes: { answered: "yes" },
-        missing: ["external_side_effect", 7]
+        options: [{ id: "a" }, { label: "no id" }, "not an option"],
+        routes: { granted: "yes" },
+        missing: ["send_or_publish", 7]
       }
     }], RAISED_BY);
 
-    expect(ask).toMatchObject({ kind: "choice", text: "Which one?", missing: ["external_side_effect"] });
-    expect(ask?.options).toEqual([{ value: "a", label: "a" }]);
+    expect(ask).toMatchObject({ kind: "choice", text: "Which one?", missing: ["send_or_publish"] });
+    // An option is labelled by its id when it names no label, and names no route rather than leaving the field out.
+    expect(ask?.options).toEqual([{ id: "a", label: "a", route: null }]);
     expect(ask?.timeoutMs).toBeUndefined();
     expect(ask?.onTimeout).toBeUndefined();
-    expect(ask?.routes).toBeUndefined();
+    // The one route named is kept and the two that were not are null, which is what the durable ask means by "none named".
+    expect(ask?.routes).toEqual({ granted: "yes", denied: null, timedOut: null });
   });
 });
