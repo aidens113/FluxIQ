@@ -16,6 +16,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
+import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey } from "./keys.ts";
 import { matchAuthoringParameter, matchAuthoringParameterContaining } from "./matching.ts";
@@ -31,11 +32,21 @@ export function normaliseAuthoringNodeParameters(input: {
   path: string;
   /** What a derived name falls back to: the step's own words. */
   fallbackName: string;
-}): { parameters: JsonObject; issues: AutomationStudioFlowBootstrapIssue[] } {
+}): { parameters: JsonObject; issues: AutomationStudioFlowBootstrapIssue[]; consequences?: string[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const parameters: JsonObject = {};
+  // The step's declaration of what it would lastingly do, when it rode in with
+  // the keys: it is not a parameter of any node, so the reader that would
+  // otherwise refuse it as unknown takes it out here (`./consequences.ts`).
+  let consequences: string[] | undefined;
   for (const [key, value] of Object.entries(input.written)) {
     const parameter = matchAuthoringParameter(key, input.definition);
+    if (!parameter && isAuthoringConsequenceKey(key)) {
+      const declared = readAuthoringConsequences(value);
+      if (declared) consequences = declared;
+      else issues.push(authoringError("bootstrap.invalid_consequences", "Step consequences must name the permission classes, or none.", `${input.path}.consequences`));
+      continue;
+    }
     if (!parameter) {
       // A key exactly one structured parameter declares as its own is read as
       // having been written inside it, as `./matching.ts` explains.
@@ -65,7 +76,7 @@ export function normaliseAuthoringNodeParameters(input: {
     issues.push(...read.issues);
   }
   materialiseDefaults(input.definition, parameters);
-  return { parameters, issues };
+  return { parameters, issues, ...(consequences ? { consequences } : {}) };
 }
 
 /**

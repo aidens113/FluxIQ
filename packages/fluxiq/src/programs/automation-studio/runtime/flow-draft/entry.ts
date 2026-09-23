@@ -26,13 +26,13 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
-import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "Every action you have taken, in order, with the argument you gave it. This is the record of what you did, not a tool result, and it is not affected by which results are still shown. Write the result from this list: every step marked kept is something you did that the result must contain, whether or not its own result is still in front of you. A step you took only to look around, or that should not be in the result, is corrected with an amend_draft decision rather than by leaving it out.";
+const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran and that worked, with the argument it ran with. This is the record of what you did, not a tool result, and it is not affected by which results are still shown. Every step whose inResult is true is a step of the finished Flow, whether or not its own result is still in front of you -- so there is nothing to write down at the end. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. A step you want and have not run yet is run, not written.";
 
 /** What one step's argument may cost before it is left out of the entry. */
 const MAX_STEP_INPUT_BYTES = 512;
@@ -45,7 +45,12 @@ export function automationStudioFlowDraftEntry(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   maxBytes: number;
 }): { callId: string; toolId: string; value: JsonValue } | undefined {
-  const listed = input.steps.filter((step) => step.effect === "mutate");
+  // Every step that could be in the result, whether or not it is: an
+  // extraction changes nothing on the page and is the whole point of a
+  // scraping Flow, so "did it mutate" is not the question. A step the model
+  // withdrew stays listed, because the receipt is what makes the draft
+  // checkable -- `inResult` on each line says which way it went.
+  const listed = input.steps.filter(automationStudioFlowDraftStepIsAction);
   if (!listed.length) return undefined;
   for (const attempt of trimmings(listed)) {
     const value = entryValue(attempt.steps, attempt.withInput, listed.length - attempt.steps.length);

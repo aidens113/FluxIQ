@@ -35,7 +35,13 @@ export type AutomationStudioFlowDraftWrittenStep = {
   description: string;
   /** The node that runs it, by catalog id. */
   node?: string;
-  /** Each parameter line: the key as the script spells it, and its value. */
+  /**
+   * Each line of the step: the key as the script spells it, and its value.
+   *
+   * A node's parameters, and the one reserved word beside them -- what the step
+   * would lastingly do (`./consequences.ts`), which is not a parameter of any
+   * node and which the permission gate cannot work without.
+   */
   entries?: readonly { key: string; value: string }[];
 };
 

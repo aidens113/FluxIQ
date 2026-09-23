@@ -1,8 +1,9 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   applyAutomationStudioFlowDraftAmendments,
   automationStudioFlowDraftEntry,
+  automationStudioFlowDraftStepIsProposable,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
@@ -16,6 +17,10 @@ import {
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
+// What a loop may be configured with, and how those numbers resolve
+// (`loop-configuration.ts`). Re-exported below, so the loop's public
+// surface is unchanged.
+import { resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
@@ -34,6 +39,8 @@ import {
 // surface is unchanged: every existing consumer still reads it from
 // runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
+/** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
+export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 // The decision grammar lives in `evidence-loop-decision.ts`: one module says
 // what a decision may be, this one says what to do about each. Re-exported so
 // every existing consumer still reads the schema builder from here.
@@ -69,6 +76,11 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "./evidence-
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW = 12;
 
+/** The far backstop on steps in a row that give the loop nothing new, held in
+ * `runtime/loop-limits/` with the other numbers two directories read, and
+ * re-exported here so the loop's public surface names it. */
+export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS };
+
 /** The evidence entry the loop's answer to a repeated request arrives under. */
 const REQUEST_CHECK_TOOL_ID = "core.request_check";
 
@@ -86,6 +98,24 @@ export type AutomationStudioLlmEvidenceTool = {
   inputSchema: JsonObject;
   effect?: "observe" | "mutate";
   repeatPolicy?: "after_mutation";
+  /**
+   * Whether each call of this tool says for itself what it did, rather than the
+   * tool saying once for all of them.
+   *
+   * One tool that runs whichever of a library's things the call names cannot
+   * declare an effect up front: the same tool reads a page on one call and
+   * changes it on the next, and which it was is known only once it has run. So
+   * its result carries `draft` (below) and the loop reads the effect, the name
+   * and whether the result should contain it from there. `effect` still says
+   * what the *worst* such a call may do, which is what the offering gate reads.
+   *
+   * Two consequences. Repeats are keyed on the looser of the two epochs, since
+   * the loop cannot know before the call which one applies. And the tool may
+   * carry an `initialObservation` although it is declared `mutate`, because the
+   * caller -- not the model -- writes that one call's argument and is
+   * responsible for it being a look.
+   */
+  perCallEffect?: boolean;
   /** Optional domain-declared observation that is safe to run before the first
    * provider decision. The coordinator executes at most one such declaration. */
   initialObservation?: { input: JsonObject };
@@ -118,6 +148,28 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    * the same target afterwards. Consumers may omit it and stay conservative. */
   targetsUnchanged?: boolean;
   resultCode?: string;
+  /**
+   * What this one call did, for the draft the loop is accruing.
+   *
+   * A tool that runs whichever of a library's things the call named answers
+   * here: which thing (`actionId`), what it ran with (`input`), whether it read
+   * or changed (`effect`), and whether a result should contain it
+   * (`proposes`) -- `false` for a call that failed or that belongs in no
+   * result. Core reads none of it: the name is opaque, the argument is carried
+   * so the step can be written down or run again, and the two flags are the
+   * caller's statement about its own call.
+   *
+   * Absent, the tool's own declaration stands, which is what every tool that
+   * does one thing has always relied on.
+   */
+  draft?: {
+    actionId?: string;
+    input?: JsonObject;
+    /** What the call really ran with, where that differs from what was written. */
+    ranWith?: JsonObject;
+    effect?: "observe" | "mutate";
+    proposes?: boolean;
+  };
 };
 
 /**
@@ -179,156 +231,6 @@ export type AutomationStudioLlmEvidenceLoopAccounting = {
   estimatedCostUsd: number;
 };
 
-export type AutomationStudioLlmEvidenceLoopInput = {
-  tools: AutomationStudioLlmEvidenceTool[];
-  decide(input: {
-    iteration: number;
-    tools: AutomationStudioLlmEvidenceTool[];
-    evidence: ReadonlyArray<{ callId: string; toolId: string; value: JsonValue }>;
-    decisionSchema: JsonObject;
-    canComplete: boolean;
-    signal?: AbortSignal;
-  }): Promise<unknown>;
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
-  maxIterations?: number;
-  maxToolCalls?: number;
-  /**
-   * The far backstop on everything the loop gathers, counted in `accounting`.
-   * Reaching it ends the loop `llm_evidence_loop.evidence_limit`. What a
-   * decision is shown is bounded by `maxEvidenceContextBytes` instead, so this
-   * is set where cost, tokens, the deadline and the no-progress guard end a
-   * loop first. Absent, the ceiling.
-   */
-  maxEvidenceBytes?: number;
-  /**
-   * What one decision is shown of the evidence, in bytes, and within what the
-   * one per-request token ceiling carries. Each tool is offered this less 512
-   * bytes, whatever has been gathered before, so a call is never handed the
-   * scraps of a total and refused for want of room.
-   */
-  maxEvidenceContextBytes?: number;
-  /**
-   * The run's own bounds -- tokens, cost, time -- from which the loop works out
-   * before each decision how many it has left, the iteration count being only
-   * the backstop among them. With one given, the model is shown what is left
-   * as the newest entry (`AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID`); the
-   * last decision is offered only completion; and with none left the loop ends
-   * `llm_evidence_loop.iteration_limit`. Absent, none of that happens.
-   */
-  budget?: AutomationStudioLlmEvidenceLoopBudget;
-  completionSchema?: JsonObject;
-  minToolCalls?: number;
-  propagateDecisionErrors?: boolean;
-  /**
-   * The no-progress guard: how many steps in a row may give the loop nothing
-   * new before it ends.
-   *
-   * A step gives nothing new when it asks for a tool request already answered
-   * with nothing changed since, when it asks to repeat an observation no action
-   * has changed, or when it is an unusable decision refused for a set of issues
-   * already seen since the last tool result. The loop answers the first two
-   * itself -- the earlier result is placed at the end of the evidence with a
-   * note naming it, and the tool is not run -- and tells the model about the
-   * third. A tool that runs resets the count. An unusable decision refused for
-   * issues not seen since then is new: the count starts again at one.
-   *
-   * The step that reaches the guard ends the loop: a repeated request as
-   * `llm_evidence_loop.repeat_without_progress`, an unusable decision through
-   * `unusableDecisions.stalled`.
-   *
-   * Absent, `unusableDecisions.maxConsecutive` when that is set, otherwise
-   * three, held to `maxIterations`. Given both, they must agree.
-   */
-  maxStepsWithoutProgress?: number;
-  /**
-   * Ask again after an unusable decision instead of ending.
-   *
-   * When set, a `decide` that throws `AutomationStudioLlmUnusableDecisionError`
-   * spends that iteration -- one provider call, so `maxIterations` still bounds
-   * every call the loop makes -- is recorded as an `unusable` step, the model
-   * is told the issue codes and the decision shape as evidence under
-   * `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID`, and the loop
-   * asks again. Two things end it, and `stalled` builds the error that does,
-   * which is then handled exactly as if `decide` had thrown it (thrown under
-   * `propagateDecisionErrors`, otherwise `llm_evidence_loop.invalid_decision`):
-   * an unusable decision that reaches the no-progress guard, and the
-   * `maxInARow`-th unusable decision in a row however different their issues.
-   * A usable decision resets the second count.
-   *
-   * Absent, the error is an ordinary decision error, as it always was. Any
-   * other error `decide` throws is unaffected either way.
-   *
-   * A completed result that `checkCompletion` refuses is an unusable decision
-   * too, and joins the same counts.
-   */
-  unusableDecisions?: {
-    /** The no-progress guard's length, when `maxStepsWithoutProgress` is not given. */
-    maxConsecutive?: number;
-    /**
-     * The far backstop: unusable decisions in a row that end the loop however
-     * much their issues differ. At least the no-progress guard and at most
-     * `maxIterations`; absent,
-     * `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW`
-     * held to those two.
-     */
-    maxInARow?: number;
-    stalled(input: {
-      issueCodes: readonly string[];
-      trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
-      accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
-    }): unknown;
-  };
-  /**
-   * Check a completed result before the loop accepts it.
-   *
-   * A result the check refuses was a paid call that produced nothing usable.
-   * With `unusableDecisions` set it is recorded as an `unusable` step, the
-   * check's feedback is added to the evidence the model sees under
-   * `AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID`, and the loop
-   * asks again; without it, the loop ends `llm_evidence_loop.invalid_decision`.
-   * A check that throws is a decision error. Its issue codes are what decide
-   * whether the refusal is new: the feedback should name each issue and the
-   * shape that is accepted, since it is all the model has to correct from.
-   */
-  checkCompletion?(result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>;
-  /**
-   * What a tool call that throws, or returns what is not a result, does.
-   *
-   * `observe`: it is a step without progress, recorded in the trace under its
-   * call id with a closed code, and shown to the model as that call's result
-   * (`tool-failure.ts`); the loop asks again, and a run of them reaching the
-   * no-progress guard ends it `llm_evidence_loop.tool_failed`. It is not
-   * evidence toward `minToolCalls`, and an action that failed counts as a
-   * change, since it may have changed what a look would see. `end`: the loop
-   * ends `llm_evidence_loop.tool_failed` at once and records nothing.
-   *
-   * Absent, `observe` when `unusableDecisions` is set -- a loop that asks
-   * again after a decision it could not use asks again after a call that
-   * failed -- otherwise `end`. Cancellation ends the loop either way.
-   */
-  toolFailures?: "observe" | "end";
-  /**
-   * A digest of the whole state, taken either side of each action.
-   *
-   * What it buys is the reduction (`runtime/exploration-reduction/`), which
-   * needs a digest chain to say which steps the end state depended on. It
-   * costs a round trip per call, so it is the caller's decision. Answering
-   * with nothing leaves that step without digests and is not a failure; a hook
-   * that throws is taken as the call having failed, and the step is recorded
-   * as one, because a step with a digest the caller could not take is a step
-   * nothing knows the shape of.
-   */
-  captureStateDigest?(input: { callId: string; toolId: string; signal?: AbortSignal }): Promise<string | undefined> | string | undefined;
-  /**
-   * The draft the loop accrues and shows the model beside its evidence
-   * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.
-   * `false` turns both off; `steps` is returned either way. `maxBytes` is what
-   * the entry may cost, absent a quarter of the evidence context up to 4,000;
-   * `maxAmendments` is how many edits the run may spend, absent four.
-   */
-  draft?: false | { maxBytes?: number; maxAmendments?: number };
-  signal?: AbortSignal;
-};
 
 /**
  * Coordinates an allowlisted, bounded evidence-gathering loop. Provider grants,
@@ -349,6 +251,29 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition">): void => {
     draftSteps.push({ ...step, position: draftSteps.length + 1, disposition: "kept" });
   };
+  /**
+   * What one call did, as the caller reported it, over what its tool declared.
+   *
+   * A tool that runs whichever of a library's things the call names is the
+   * reason this exists: the effect, the name and whether the result should
+   * contain it are properties of the call, not of the tool.
+   */
+  const callRecord = (
+    tool: AutomationStudioLlmEvidenceTool,
+    input: JsonObject,
+    execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
+  ): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean } => {
+    const declared = execution?.draft;
+    const actionId = declared?.actionId ?? tool.toolId;
+    return {
+      actionId,
+      ...(actionId === tool.toolId ? {} : { toolId: tool.toolId }),
+      input: declared?.input ?? input,
+      ...(declared?.ranWith === undefined ? {} : { ranWith: declared.ranWith }),
+      effect: declared?.effect ?? tool.effect ?? "observe",
+      ...(declared?.proposes === undefined ? {} : { proposes: declared.proposes })
+    };
+  };
   // A digest of the whole state, when the caller offered to take one. It is
   // taken inside the same attempt as the call it brackets, so a hook that
   // throws makes the step a recorded failure the model and the reader can both
@@ -363,7 +288,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // list does not change during a loop, and because it is what decides whether
   // a mutation-gated observation is gated or simply shut (see
   // `repeat-policy.ts`).
-  const mutableTools = input.tools.some((tool) => tool.effect === "mutate");
+  const mutableTools = input.tools.some((tool) => tool.effect === "mutate" || tool.perCallEffect === true);
   const callIds = new Set<string>();
   // Each request that ran, by what it asked in which epoch, and the call that
   // answered it (`repeat-policy.ts` says which epoch).
@@ -434,7 +359,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const toolFailed = (iteration: number, callId: string, tool: AutomationStudioLlmEvidenceTool, code: AutomationStudioLlmEvidenceToolFailureCode, value: JsonObject, usage?: AutomationStudioLlmUsageSummary, stateBefore?: string): AutomationStudioLlmEvidenceLoopResult | undefined => {
     // A failed action is part of the record: a live campaign's largest single
     // defect was a failed call that ended a build and left no trace of itself.
-    draftRecord({ iteration, callId, actionId: tool.toolId, input: value, effect: tool.effect ?? "observe", effectApplied: false, resultCode: code, ...(stateBefore ? { stateBefore, stateAfter: stateBefore } : {}) });
+    // `effectApplied: false` is what says it did not happen. Saying it is not
+    // an action at all would take it off the draft the model is shown, and an
+    // action that was attempted and failed is part of the record of what was done.
+    draftRecord({ iteration, callId, ...callRecord(tool, value), effectApplied: false, resultCode: code, ...(stateBefore ? { stateBefore, stateAfter: stateBefore } : {}) });
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     if (!observeToolFailures) return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     accounting.toolCalls += 1;
@@ -480,7 +408,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       instruction: ANSWERED_REQUEST[code]
     };
     const answeredTool = toolsById.get(decision.toolId);
-    draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, resultCode: code });
+    draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, proposes: false, resultCode: code });
     const noteBytes = reserveEvidence(note);
     if (noteBytes === undefined) {
       trace.push(step);
@@ -518,7 +446,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       latestObservations.set(initialTool.toolId, callId);
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence, call: { resultCode: execution.resultCode ?? "ok", changed: "no" } });
       trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
-      draftRecord({ iteration: 0, callId, actionId: initialTool.toolId, input: initialInput, effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
+      draftRecord({ iteration: 0, callId, ...callRecord(initialTool, initialInput, execution), effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
     }
   }
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
@@ -526,6 +454,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.iterations = iteration;
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
     let canAmend = false;
+    // Whether this iteration's call is a step the model asked to run again,
+    // which is never a repeat however identical it looks.
+    let rerunning = false;
     const eligibleTools = input.tools.filter((tool) =>
       !automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== attemptEpoch
     );
@@ -548,7 +479,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     const offered = finalDecision ? [] : eligibleTools;
     try {
-      canAmend = drafting && !finalDecision && draftAmendments < limits.maxDraftAmendments && draftSteps.some((step) => step.effect === "mutate");
+      canAmend = drafting && !finalDecision && draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || finalDecision) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining) : undefined;
@@ -587,7 +518,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       let check: ReturnType<typeof automationStudioLlmEvidenceParseCompletionCheck> = { ok: true };
       if (input.checkCompletion) {
         try {
-          check = automationStudioLlmEvidenceParseCompletionCheck(await input.checkCompletion(structuredClone(decision.result)));
+          check = automationStudioLlmEvidenceParseCompletionCheck(await input.checkCompletion(structuredClone(decision.result), { steps: draftSteps.map((step) => ({ ...step })) }));
         } catch (error) {
           if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
           if (input.propagateDecisionErrors) throw error;
@@ -614,8 +545,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (!canAmend) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
       draftAmendments += 1;
       unusableInARow = 0;
-      const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments);
-      trace.push({ iteration, decision: "amend_draft", resultCode: amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
+      // One amendment cannot be carried out here, because it has to run
+      // something: `rerun` replaces a step by doing it again with a corrected
+      // argument. The step it replaces is withdrawn, and the call that follows
+      // goes through exactly the path an ordinary tool call goes through, so a
+      // corrected step is recorded, digested and checked like any other.
+      const rerun = rerunRequest(decision.amendments, draftSteps, toolIds);
+      const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
+      if (rerun) applyAutomationStudioFlowDraftAmendments(draftSteps, [{ step: rerun.step, change: "drop" }]);
+      trace.push({ iteration, decision: "amend_draft", resultCode: rerun ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
       // An edit is progress on the draft and never on the evidence, so an edit
       // that landed neither clears the no-progress guard nor is spent by it.
       // Clearing it was the first thing tried, and a live build alternated a
@@ -624,10 +562,18 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // limit having gathered nothing new since its eleventh call. An edit that
       // changed nothing does count, because that guard is the only thing that
       // stops a model editing one step forever.
-      if (!amended.applied && (stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
+      if (!rerun && !amended.applied && (stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
         return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
       }
-      continue;
+      if (!rerun) continue;
+      // From here the rerun is an ordinary call -- the same budget, the same
+      // digests, the same draft entry -- with one exception, below: it is not a
+      // repeat. The model has just said to do this again, and answering it from
+      // the result already held is how a live build spent seven decisions
+      // asking for the same rerun and getting `already_answered` each time
+      // (`run-mud9rpmz-16de647b`).
+      rerunning = true;
+      decision = { kind: "tool_call", callId: rerun.callId, toolId: rerun.toolId, input: rerun.input };
     }
     unusableInARow = 0;
     // The last decision the budget allowed was offered only completion.
@@ -641,7 +587,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // Not offered this iteration: an observation nothing has happened since.
     // Its latest call is always recorded with its epoch.
     const reobservation = !eligibleToolIds.has(decision.toolId);
-    if (answeredBy !== undefined || reobservation) {
+    if (!rerunning && (answeredBy !== undefined || reobservation)) {
       const ended = answeredBy !== undefined
         ? answerRequest(iteration, decision, "llm_evidence_loop.already_answered", answeredBy)
         : answerRequest(iteration, decision, "llm_evidence_loop.already_observed", latestObservations.get(decision.toolId)!);
@@ -679,16 +625,41 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
     progressed();
-    if (tool.effect === "mutate") { attemptEpoch += 1; if (effectApplied) mutationEpoch += 1; }
+    const record = callRecord(tool, decision.input, execution);
+    if (record.effect === "mutate") { attemptEpoch += 1; if (effectApplied) mutationEpoch += 1; }
     if (automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, attemptEpoch);
       latestObservations.set(tool.toolId, callId);
     }
-    evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: tool.effect === "mutate" && effectApplied ? "yes" : "no" } });
-    trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(tool.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
-    draftRecord({ iteration, callId, actionId: decision.toolId, input: decision.input, effect: tool.effect ?? "observe", effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
+    evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no" } });
+    trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
+    draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
   }
   return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
+}
+
+/**
+ * The first `rerun` amendment a decision carried that names a step the loop can
+ * run again, or nothing.
+ *
+ * One per decision. Two reruns in one reply would be two calls, and a decision
+ * is one call; the rest of the reply's amendments are applied as usual, so
+ * nothing is lost by taking the first.
+ */
+function rerunRequest(
+  amendments: readonly AutomationStudioFlowDraftAmendment[],
+  steps: readonly AutomationStudioFlowDraftStep[],
+  toolIds: ReadonlySet<string>
+): { step: number; toolId: string; input: JsonObject; callId: string } | undefined {
+  for (const amendment of amendments) {
+    if (amendment.change !== "rerun" || !amendment.input) continue;
+    const step = steps.find((candidate) => candidate.position === amendment.step);
+    if (!step) continue;
+    const toolId = step.toolId ?? step.actionId;
+    if (!toolIds.has(toolId)) continue;
+    return { step: step.position, toolId, input: amendment.input, callId: `rerun.${step.position}` };
+  }
+  return undefined;
 }
 
 /**
@@ -703,63 +674,6 @@ function unusedCallId(used: ReadonlySet<string>, requested: string): string {
     const candidate = `${requested.slice(0, 200 - tail.length)}${tail}`;
     if (!used.has(candidate)) return candidate;
   }
-}
-
-type EvidenceLoopLimits = {
-  maxIterations: number;
-  maxToolCalls: number;
-  maxEvidenceBytes: number;
-  maxEvidenceContextBytes: number;
-  /** What each tool call is offered: the context window less room for what sits beside it. */
-  toolEvidenceBytes: number;
-  minToolCalls: number;
-  maxStepsWithoutProgress: number;
-  maxUnusableDecisionsInARow: number;
-  /** What the draft entry beside the window may cost. */
-  draftBytes: number;
-  /** Amendment decisions the run may spend before the kind is withdrawn. */
-  maxDraftAmendments: number;
-};
-
-function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
-  const maxEvidenceBytes = input.maxEvidenceBytes ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes;
-  const maxEvidenceContextBytes = input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes);
-  const maxIterations = input.maxIterations ?? 8;
-  const unusable = input.unusableDecisions;
-  const draft = input.draft === false ? undefined : input.draft;
-  if (input.maxStepsWithoutProgress !== undefined && unusable?.maxConsecutive !== undefined
-    && input.maxStepsWithoutProgress !== unusable.maxConsecutive) return undefined;
-  const maxStepsWithoutProgress = input.maxStepsWithoutProgress ?? unusable?.maxConsecutive
-    ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations);
-  const limits: EvidenceLoopLimits = {
-    maxIterations,
-    maxToolCalls: input.maxToolCalls ?? 8,
-    maxEvidenceBytes,
-    maxEvidenceContextBytes,
-    toolEvidenceBytes: Math.max(1, maxEvidenceContextBytes - 512),
-    minToolCalls: input.minToolCalls ?? 0,
-    maxStepsWithoutProgress,
-    maxUnusableDecisionsInARow: unusable?.maxInARow
-      ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
-    // A quarter of what a decision carries, capped: enough for a few dozen
-    // steps without their arguments, and never enough to displace a result.
-    draftBytes: draft?.maxBytes ?? Math.min(4_000, Math.floor(maxEvidenceContextBytes / 4)),
-    maxDraftAmendments: Math.min(draft?.maxAmendments ?? 4, maxIterations)
-  };
-  if (!Number.isInteger(limits.maxStepsWithoutProgress) || limits.maxStepsWithoutProgress < 1 || limits.maxStepsWithoutProgress > maxIterations) return undefined;
-  if (unusable && (typeof unusable.stalled !== "function"
-    || !Number.isInteger(limits.maxUnusableDecisionsInARow) || limits.maxUnusableDecisionsInARow < limits.maxStepsWithoutProgress
-    || limits.maxUnusableDecisionsInARow > maxIterations)) return undefined;
-  if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
-  if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
-  if (!Number.isInteger(limits.maxEvidenceBytes) || limits.maxEvidenceBytes <= 0 || limits.maxEvidenceBytes > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes) return undefined;
-  if (!Number.isInteger(limits.maxEvidenceContextBytes) || limits.maxEvidenceContextBytes < 1_024 || limits.maxEvidenceContextBytes > limits.maxEvidenceBytes
-    || limits.maxEvidenceContextBytes > automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST)) return undefined;
-  if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
-  if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
-  if (!Number.isInteger(limits.draftBytes) || limits.draftBytes < 0 || limits.draftBytes >= limits.maxEvidenceContextBytes) return undefined;
-  if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
-  return limits;
 }
 
 /**

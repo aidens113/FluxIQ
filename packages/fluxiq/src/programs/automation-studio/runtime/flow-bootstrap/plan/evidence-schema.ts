@@ -44,6 +44,28 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonOb
   }
 };
 
+/**
+ * The completion a build returns when its Flow is the draft it accrued.
+ *
+ * There is nothing to write. Every step of the Flow is a node the build already
+ * ran against the live target and that already worked, with the parameters it
+ * ran with, and the model corrected the list as it went with `amend_draft`
+ * decisions. So the last call asks for one sentence about what was built and
+ * nothing else -- which also removes, at a stroke, every way a build used to
+ * fail at the last step: an unknown key, a handle it invented, a parameter
+ * written one level from where it belonged, a script whose steps did not match
+ * what it had done.
+ */
+export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA: JsonObject = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary"],
+  description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs.",
+  properties: {
+    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." }
+  }
+};
+
 export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(value: { summary: string; plan: AutomationStudioFlowBootstrapPlan }): boolean {
   const limits = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS;
   return value.summary.length <= limits.maxSummaryLength
