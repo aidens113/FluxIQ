@@ -28,3 +28,13 @@ export async function mapWithConcurrency<TItem, TResult>(
   }));
   return results;
 }
+
+export function countBy(values: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+export function latestByGeneratedAt<T extends { generatedAt?: number }>(items: T[]): T | undefined {
+  return [...items].sort((left, right) => (right.generatedAt ?? 0) - (left.generatedAt ?? 0))[0];
+}
