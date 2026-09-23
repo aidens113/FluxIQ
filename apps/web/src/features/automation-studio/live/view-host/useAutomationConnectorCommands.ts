@@ -15,6 +15,7 @@ export type AutomationConnectorCommandHandlers = {
   finalizeRecording: Command;
   listProblems: Command;
   openAdaptation: Command;
+  openConversationAttachment: Command;
   openInspector: Command;
   openNodeState(nodeId: string): unknown;
   openProblem: Command;
@@ -28,6 +29,7 @@ export type AutomationConnectorCommandHandlers = {
   restoreGraphDraft: Command;
   saveGraph: Command;
   selectAdaptation: Command;
+  selectConversation: Command;
   setGraphDirty: Command;
   setSelection: Command;
   updateGraphDraft: Command;
@@ -44,6 +46,7 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
     finalizeRecording: useStableAutomationEvent(handlers.finalizeRecording),
     listProblems: useStableAutomationEvent(handlers.listProblems),
     openAdaptation: useStableAutomationEvent(handlers.openAdaptation),
+    openConversationAttachment: useStableAutomationEvent(handlers.openConversationAttachment),
     openInspector: useStableAutomationEvent(handlers.openInspector),
     openNodeState: useStableAutomationEvent(handlers.openNodeState),
     openProblem: useStableAutomationEvent(handlers.openProblem),
@@ -57,6 +60,7 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
     restoreGraphDraft: useStableAutomationEvent(handlers.restoreGraphDraft),
     saveGraph: useStableAutomationEvent(handlers.saveGraph),
     selectAdaptation: useStableAutomationEvent(handlers.selectAdaptation),
+    selectConversation: useStableAutomationEvent(handlers.selectConversation),
     setGraphDirty: useStableAutomationEvent(handlers.setGraphDirty),
     setSelection: useStableAutomationEvent(handlers.setSelection),
     updateGraphDraft: useStableAutomationEvent(handlers.updateGraphDraft),
@@ -64,6 +68,10 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
   };
   return useMemo(() => ({
     [automationStudioViewId.clients]: {},
+    [automationStudioViewId.conversation]: {
+      onSelectedConversationChange: stable.selectConversation,
+      onOpenAttachment: stable.openConversationAttachment
+    },
     [automationStudioViewId.flowEditor]: {
       onSaveGraph: stable.saveGraph,
       onGraphDraftChange: stable.updateGraphDraft,

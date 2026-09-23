@@ -6,6 +6,15 @@ type DiagnosticsPolicy = { kind: "disclosed" | "user-facing-only"; files: string
 
 const policies: Record<string, DiagnosticsPolicy> = {
   "client-gateway": { kind: "disclosed", files: ["../../clients/ClientGatewayView.tsx"], evidence: ["<details", "Connection details"] },
+  "conversation-thread": {
+    kind: "user-facing-only",
+    files: [
+      "../../conversation/components/ConversationViewContent.tsx",
+      "../../conversation/components/ConversationThread.tsx",
+      "../../conversation/components/ConversationTurn.tsx",
+      "../../conversation/components/ConversationAskForm.tsx"
+    ]
+  },
   "timeline-recording": { kind: "user-facing-only", files: ["../../recordings/RecordingTimelineView.tsx"] },
   "flow-nodes": { kind: "user-facing-only", files: ["../../flow-editor/components/FlowEditorView.tsx"] },
   "flow-router": { kind: "disclosed", files: ["../../router/RouterContentView.tsx"], evidence: ["<details", "Route details"] },

@@ -31,3 +31,4 @@ export {
 } from "./useAutomationWorkspaceRuntime";
 export { useAutomationGatewayRecordingBridge } from "./useGatewayRecordingBridge";
 export { useStableAutomationEvent } from "./useStableAutomationEvent";
+export { useConversationWorkspaceNavigation } from "./useConversationWorkspaceNavigation";
