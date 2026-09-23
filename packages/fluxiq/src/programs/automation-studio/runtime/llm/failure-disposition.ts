@@ -59,6 +59,7 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS = Object.freeze
   "llm.provider_failure_evidence_invalid": END_GRANT,
   "llm.provider_exploration_evidence_invalid": END_GRANT,
   "llm.provider_result_summary_invalid": END_GRANT,
+  "llm.provider_recovery_context_invalid": END_GRANT,
   "llm.provider_flow_bootstrap_context_invalid": END_GRANT,
   "llm.provider_evidence_loop_context_invalid": END_GRANT,
   "llm.provider_request_limits_invalid": END_GRANT,

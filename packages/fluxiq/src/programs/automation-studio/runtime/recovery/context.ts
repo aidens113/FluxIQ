@@ -58,7 +58,9 @@ import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
-import { automationStudioWithoutLocators } from "./locator-text.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
+import { automationStudioWithoutLocators } from "../llm/harness/index.ts";
+import { automationStudioFlowGraphSection, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**
  * Every section, most important first. The order is the contract: it is the
@@ -71,11 +73,24 @@ import { automationStudioWithoutLocators } from "./locator-text.ts";
  * the failure, and it is here so that `recoveryContext` is readable on its own
  * by the recovery plan and by the adaptation that records it. It is next to
  * last in priority precisely because the packet already says most of it.
+ *
+ * `flow_graph` and `step_parameters` sit *after* the two transition sections
+ * and before everything else, and where they sit is the whole of how one fixed
+ * list serves two entry points. A failed step is repaired from what the step
+ * expected and what it got, so the transitions come first and nothing about
+ * that reading changed. A refuted *result* has no transition comparison at all
+ * -- every step did what it said -- so both transition sections are absent, and
+ * these two arrive immediately behind the failure record, which is where a
+ * repair that must rewrite the Flow needs them. No ranking is computed and no
+ * section moves: the same list reads differently only because a different run
+ * produced different sections.
  */
 export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS = [
   "failure",
   "expected_transition",
   "actual_transition",
+  "flow_graph",
+  "step_parameters",
   "state_diff",
   "failed_target",
   "recovery_candidates",
@@ -130,6 +145,24 @@ export type AutomationStudioRuntimeRecoveryContextInput = {
   detail: AutomationStudioFlowRunDetail;
   /** The live trace attempt, read only for the comparison and the recovery ladder, which the run record does not keep whole. */
   failedAttempt?: AutomationStudioNodeAttemptTrace;
+  /**
+   * The Flow that ran: its nodes, its edges, and the authored parameters each
+   * step ran with. Absent where the caller could not read it, which is a fact
+   * the context states rather than hides -- a repair told nothing about the
+   * graph and a repair shown an empty graph are different situations.
+   */
+  flow?: AutomationStudioFlowDocument | undefined;
+  /** The Flow's routers, whose rules are the only place its branching is written down. */
+  routers?: readonly AutomationStudioFlowRouter[] | undefined;
+  /**
+   * The bound domain's declared denied keys, exactly as declared.
+   *
+   * Required before any parameter is projected, and absent means nobody
+   * declared rather than "deny nothing": `step_parameters` is then recorded
+   * `withheld`, which is the same fail-closed reading the packet builder
+   * applies to every evidence slot.
+   */
+  deniedEvidenceKeys?: readonly string[] | undefined;
   subflowId?: string;
   adaptations?: AutomationStudioFlowAdaptation[];
   byteBudget?: number;
@@ -141,19 +174,31 @@ export type AutomationStudioRuntimeRecoveryContextInput = {
  * It sits beside the failure-evidence packet -- 6,000 bytes at its ceiling --
  * under the same per-call input allowance, and a runtime diagnosis defaults to
  * 10,000 total tokens for the whole run, of which 8,000 may be input. 4,000
- * bytes is roughly 1,300 tokens: enough for every section a typical failure
- * produces, and small enough that the page evidence and the instructions still
- * fit beside it. It was not reduced when the page allowance went up, because
- * the measured diagnosis request is about 13,000 bytes against an allowance of
- * roughly 32,000; the request that is actually near its limit is the patch,
- * and what gives there is the explored packets' share, not this.
+ * bytes was roughly 1,300 tokens: enough for every section a typical *step*
+ * failure produces, and small enough that the page evidence and the
+ * instructions still fit beside it. It was not reduced when the page allowance
+ * went up, because the measured diagnosis request is about 13,000 bytes against
+ * an allowance of roughly 32,000; the request that is actually near its limit
+ * is the patch, and what gives there is the explored packets' share, not this.
+ *
+ * **It is 8,000 now, and the arithmetic is the same arithmetic.** A Flow's
+ * graph and its step chain are two sections a step failure did not have, and
+ * they are not small: 24 nodes and 32 edges is roughly 2,000 bytes, twelve
+ * steps with their screened parameters another 1,200. Left at 4,000 they would
+ * have been carried by pushing out the state diff, the failed target and the
+ * route context -- the drop order would have done it silently and correctly,
+ * and the repair would have been worse off than before. Against the measured
+ * 13,000-byte diagnosis and its ~32,000-byte allowance, +4,000 is headroom that
+ * exists. On the patch, which is the tight one, the explored packets yield by
+ * exactly this much, and that is the trade: the model is shown one fewer
+ * explored page and is shown the graph it is being asked to rewire.
  */
-export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES = 4_000;
+export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES = 8_000;
 
 /**
- * The floor. The `omitted` record for eleven sections costs roughly 700 bytes
- * on its own, and that record is the one thing the budget may never squeeze
- * out, so a caller cannot ask for a budget that could not hold it.
+ * The floor. The `omitted` record for the contract's sections costs roughly
+ * 850 bytes on its own, and that record is the one thing the budget may never
+ * squeeze out, so a caller cannot ask for a budget that could not hold it.
  */
 const MINIMUM_RECOVERY_CONTEXT_BYTES = 1_500;
 const MAXIMUM_RECOVERY_CONTEXT_BYTES = 16_000;
@@ -264,6 +309,12 @@ function recoveryContextSections(
       actualEffectTypes: comparison.actual.effects.map((effect) => effect.type).slice(0, SECTION_ITEM_LIMIT),
       diffSummary: comparison.diffSummary as unknown as JsonValue
     }) : undefined,
+    flow_graph: automationStudioFlowGraphSection({
+      ...(input.flow ? { flow: input.flow } : {}),
+      ...(input.routers?.length ? { routers: input.routers } : {}),
+      ...(record?.nodeId ? { failedNodeId: record.nodeId } : {})
+    }),
+    step_parameters: stepParametersSection(input),
     state_diff: boundedDomainSection(metadata?.stateRefs),
     failed_target: targetResolutionSection(metadata?.targetResolution),
     recovery_candidates: recoveryCandidatesSection(input.failedAttempt),
@@ -272,6 +323,26 @@ function recoveryContextSections(
     known_adaptations: adaptations.length ? boundedSection({ adaptations: adaptations.map(compactAdaptation) }) : undefined,
     recent_nodes: recentNodesSection(input.detail, record),
     recording_context: recordingContextSection(adaptations)
+  });
+}
+
+/**
+ * The step chain with its screened parameters, or a refusal.
+ *
+ * `WITHHELD_SECTION` rather than `undefined` when the bound domain declared no
+ * keys: the run did produce steps, and Core refused to project their
+ * parameters, which is a different fact from a run that took no step. The
+ * omission list is what keeps the two apart, and this is exactly the case it
+ * was built for.
+ */
+function stepParametersSection(input: AutomationStudioRuntimeRecoveryContextInput): AutomationStudioRecoveryContextSectionValue | undefined {
+  const attempts = input.detail.actionAttempts ?? [];
+  if (!attempts.length) return undefined;
+  if (input.deniedEvidenceKeys === undefined) return WITHHELD_SECTION;
+  return automationStudioStepParametersSection({
+    attempts,
+    ...(input.flow ? { flow: input.flow } : {}),
+    deniedKeys: input.deniedEvidenceKeys
   });
 }
 

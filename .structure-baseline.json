@@ -18,7 +18,7 @@
   },
   "rules": {
     "class-methods": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts::AutomationStudioService": 223
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts::AutomationStudioService": 222
     },
     "directory-files": {
       "apps/web/src/features/automation-studio/hierarchy": 30,
@@ -84,7 +84,7 @@
       "packages/fluxiq/src/programs/identity-access/runtime/service.ts::classes": 2
     },
     "failure-as-empty": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 20,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 18,
       "packages/fluxiq/src/programs/deployment-sync/runtime/service.ts": 6,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/recordings/store.ts": 5,
       "apps/web/src/features/automation-studio/project/request-coordinator.ts": 4,
@@ -151,7 +151,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4606,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4600,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {

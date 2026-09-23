@@ -7,13 +7,21 @@
 // and this asserts each of them in the request `annotation/annotate.ts` builds
 // for the patch call, assembled here exactly as that module assembles it.
 //
-// Two of the five are only partly there and the assertions say so rather than
-// passing on a half-truth: the steps arrive as identity, order, status and row
-// count, never the parameters they ran with (the persisted run record has never
-// carried `inputs`), and the Flow arrives as its authored step list and its
-// route decisions, not as its edges or its router's rules.
+// Two of the five were only partly there when this file was written, and are
+// closed now: each step arrives with the parameters it ran with and what it
+// produced, screened, and the Flow arrives as a graph -- nodes, edges, the
+// router's rules, and the failing node located among them -- rather than as a
+// flat step list. What is still not carried is stated as an assertion rather
+// than left to be discovered: a step's *resolved* values are recorded nowhere
+// in the system, so what is shown is the Flow's authored parameters.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type {
+  AutomationStudioFlowDocument,
+  AutomationStudioFlowRouter,
+  AutomationStudioFlowRunActionAttemptRecord,
+  AutomationStudioFlowRunDetail
+} from "../../../../model/index.ts";
 import { automationStudioLlmRequestEvidenceRefusal, packAutomationStudioLlmContext, type AutomationStudioLlmHarnessInput } from "../../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../../recovery/index.ts";
 import { automationStudioRefutedResultAttempt, repairAutomationStudioRefutedRunResult } from "../../../recovery/refuted-result/index.ts";
@@ -104,10 +112,45 @@ describe("the request a wrong answer is repaired from", () => {
     // carry. Before this the repair saw the failure and never the answer.
     expect(packet.resultSummary).toMatchObject({ totalRecordCount: 24, recordSetCount: 1 });
     expect(packet.resultSummary?.recordSets[0]?.columns).toEqual(["name", "price", "rating", "url"]);
-    // Stated rather than assumed: the parameters each step ran with are not
-    // here, because the persisted run record does not carry an attempt's
-    // `inputs` at all. See the report for what that costs.
-    expect(packet.recentActions?.every((action) => !("inputs" in action))).toBe(true);
+    // The packet's own action list is still nine identity fields and stays
+    // that way: it is shared by every diagnosis call, and widening it would put
+    // a projection of a page into paths designed not to carry one. The
+    // parameters travel in the recovery context instead, where the screen is.
+    expect(packet.recentActions?.every((action) => !("inputs" in action) && !("parameters" in action))).toBe(true);
+  });
+
+  // 1b. What each step ran with, and what it produced.
+  it("carries each step's screened parameters and its own result", () => {
+    const steps = (packet.recoveryContext?.sections.step_parameters as { steps: JsonObject[] } | undefined)?.steps ?? [];
+    expect(steps.map((step) => step.nodeId)).toEqual(["node.s1", "node.s2", "node.s4", "node.s5", "node.s5"]);
+    // A navigation says where it went, as an origin: the path and the query are
+    // where a search term and a session token live.
+    expect(steps[0]).toMatchObject({ definitionId: "web.browser.navigate", parameters: { url: "https://shop.example.com" } });
+    // A click says which control, by the name a person would recognise, and
+    // never by the selector beside it -- which is a key this domain denies.
+    expect(steps[1]).toMatchObject({ parameters: { element: { accessibleName: "Sort by: Featured", role: "button" } } });
+    expect(steps[1]?.parametersWithheld).toEqual(expect.arrayContaining(["selector", "target"]));
+    // An extraction says which columns it asked the page for, and how many rows
+    // it got. That is the pair the wrong-answer repair turns on. The column ids
+    // are the field map's keys; their values are the page's own field names and
+    // are not carried, so each key stands with a `null`.
+    expect(steps[3]).toMatchObject({
+      definitionId: "web.dom.extract_list",
+      recordCount: 24,
+      status: "succeeded",
+      parameters: { extractList: { fields: { name: null, price: null, rating: null }, minItems: 0, paginate: false } },
+      outputShape: { records: 24 }
+    });
+    // The refutation's own attempt sits last, naming the step whose output was
+    // judged wrong and carrying the same parameters, because it is the same node.
+    expect(steps[4]).toMatchObject({
+      status: "failed",
+      failureCode: "core.result.does_not_answer_request",
+      parameters: { extractList: { fields: { name: null } } }
+    });
+    // What was screened out is named, never silently dropped: a parameter that
+    // was withheld and a parameter the step never had must not read alike.
+    expect(steps[3]?.parametersWithheld).toEqual(expect.arrayContaining(["extractList.handle", "apiKey"]));
   });
 
   // 2. The conversation so far.
@@ -135,6 +178,37 @@ describe("the request a wrong answer is repaired from", () => {
     expect(packet.recoveryContext?.sections.failure).toMatchObject({ nodeId: "node.s5", definitionId: "web.dom.extract_list" });
   });
 
+  // 4b. The Flow as a graph rather than as a line.
+  it("carries the Flow's edges and its router's rules, with the failing node in place in them", () => {
+    const graph = packet.recoveryContext?.sections.flow_graph as {
+      nodes: JsonObject[]; edges: JsonObject[]; routers: JsonObject[]; failingNode: JsonObject;
+    } | undefined;
+    expect(graph?.nodes.map((node) => node.nodeId)).toEqual(["node.s1", "node.s2", "node.s4", "node.s5"]);
+    // The edges: the thing a flat step list cannot express, and the thing a
+    // reroute is written in terms of.
+    expect(graph?.edges).toEqual([
+      { edgeId: "edge.1", from: "node.s1", to: "node.s2", fromPort: "success", toPort: "in" },
+      { edgeId: "edge.2", from: "node.s2", to: "node.s4", fromPort: "success", toPort: "in" },
+      { edgeId: "edge.3", from: "node.s2", to: "node.s4", fromPort: "failed", toPort: "in" },
+      { edgeId: "edge.4", from: "node.s4", to: "node.s5", fromPort: "out", toPort: "in" }
+    ]);
+    // The router's rules, in order, each with the condition that selects it and
+    // the Subflow it selects. A branch the model was never shown is a branch it
+    // could not have repaired.
+    expect(graph?.routers).toEqual([{
+      routerId: "router.1",
+      name: "Store router",
+      status: "active",
+      rules: [
+        { ruleId: "rule.plus", name: "Plus members", order: 1, status: "active", target: { kind: "subflow", subflowId: "subflow.plus" }, condition: { signalPath: "page.url", operator: "contains", expected: "/plus" } },
+        { ruleId: "rule.guest", name: "Everyone else", order: 2, status: "active", target: { kind: "subflow", subflowId: "subflow.guest" } }
+      ],
+      fallback: { kind: "subflow", subflowId: "subflow.guest" }
+    }]);
+    // Where the failure sits in that structure, not merely which node it was.
+    expect(graph?.failingNode).toEqual({ nodeId: "node.s5", incomingEdgeIds: ["edge.4"] });
+  });
+
   // 5. The failure's own record.
   it("carries what was expected and what was observed instead", () => {
     expect(packet.recoveryContext?.sections.failure).toMatchObject({
@@ -153,11 +227,39 @@ describe("the request a wrong answer is repaired from", () => {
   // provider's own check refused it, so widening one without the other would
   // have stopped every repair call before it left the process.
   it("passes the provider's pre-send evidence check, summary and all", () => {
-    expect(automationStudioLlmRequestEvidenceRefusal({
-      taskKind: "runtime_patch",
-      context: packet,
-      deniedEvidenceKeys: [...DENIED]
-    } as unknown as Parameters<typeof automationStudioLlmRequestEvidenceRefusal>[0])).toBeUndefined();
+    expect(refusal(packet)).toBeUndefined();
+  });
+
+  // The screen is only worth having if the pre-send check would catch it
+  // failing. The recovery context was not checked there at all until it began
+  // carrying a projection of the Flow's parameters and a domain's output port
+  // ids; each of the three ways it could now leak is poisoned in turn, through
+  // the real check rather than around it.
+  it("is refused before it is sent if anything unscreened reaches the recovery context", () => {
+    for (const poison of [
+      { section: "step_parameters", value: { steps: [{ nodeId: "node.s5", parameters: { html: "<table>…</table>" } }] } },
+      { section: "step_parameters", value: { steps: [{ nodeId: "node.s5", parameters: { note: "bearer sk-live-4f8a2b9c1d7e3a5f6b0c" } }] } },
+      { section: "flow_graph", value: { nodes: [{ nodeId: "node.s5", label: "button[data-testid=\"pay\"]" }] } }
+    ]) {
+      const poisoned = {
+        ...packet,
+        recoveryContext: {
+          ...packet.recoveryContext!,
+          sections: { ...packet.recoveryContext!.sections, [poison.section]: poison.value }
+        }
+      };
+      expect(refusal(poisoned as typeof packet)).toBe("llm.provider_recovery_context_invalid");
+    }
+  });
+
+  // What the screen leaves behind, asserted by its absence in the whole request
+  // rather than in the field it was put in: the next leak arrives somewhere
+  // else. These are the four things the fixture's Flow authored.
+  it("carries none of the page, the person's text, the selector or the handle anywhere in the request", () => {
+    const serialized = JSON.stringify(packet);
+    for (const secret of ["#plus-filter", "Aiden Stapler", "listings-abc123", "productTitle", "sk-live-9f2c7a1b3d5e8f0a4c6b", "/search?q=plus+items&session=9f2c"]) {
+      expect(serialized, secret).not.toContain(secret);
+    }
   });
 
   it("carries none of it into a call that is not repairing a finished run", () => {
@@ -175,6 +277,15 @@ function patchRequestPacket() {
   return packAutomationStudioLlmContext(harnessInput());
 }
 
+/** The provider's own pre-send check, run on the request as it would be sent. */
+function refusal(context: ReturnType<typeof patchRequestPacket>) {
+  return automationStudioLlmRequestEvidenceRefusal({
+    taskKind: "runtime_patch",
+    context,
+    deniedEvidenceKeys: [...DENIED]
+  } as unknown as Parameters<typeof automationStudioLlmRequestEvidenceRefusal>[0]);
+}
+
 function harnessInput(): AutomationStudioLlmHarnessInput {
   const attempt = automationStudioRefutedResultAttempt({ runId: "run.1", detail: cleanRun(), outcome: refuted(), now: NOW });
   if (!attempt) throw new Error("A refuted result must produce an attempt for this test to mean anything.");
@@ -190,7 +301,13 @@ function harnessInput(): AutomationStudioLlmHarnessInput {
     runDetail: detail,
     deniedEvidenceKeys: [...DENIED],
     failureEvidence: { schemaVersion: "web-llm-evidence.v2", resultsHeading: "1-16 of over 1,000 results", plusFilterChecked: false },
-    recoveryContext: buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: attempt.trace }),
+    recoveryContext: buildAutomationStudioRuntimeRecoveryContext({
+      detail,
+      failedAttempt: attempt.trace,
+      flow: flowDocument(),
+      routers: [router()],
+      deniedEvidenceKeys: [...DENIED]
+    }),
     resultSummary: resultSummary(),
     conversation: [
       { turnId: "t1", conversationId: "c1", ordinal: 1, author: "person", createdAt: 1, text: "Get me every Plus item under $50 rated 4 or better.", actorId: "user.1", ask: null, attachment: null },
@@ -228,6 +345,90 @@ function resultSummary(): AutomationStudioRunResultSummary {
   };
 }
 
+/**
+ * The Flow as authored, with the parameters the run's steps ran with.
+ *
+ * Everything a repair must be able to see is here, and so is everything it must
+ * not: a raw selector, a search query with a session in it, the person's own
+ * words in a typed field, an opaque extraction handle, and an API key somebody
+ * pasted into a parameter.
+ */
+function flowDocument(): AutomationStudioFlowDocument {
+  return {
+    schemaVersion: "0.1",
+    flowId: "flow.1",
+    ownerKind: "policy",
+    ownerId: "flow.1",
+    name: "Store listings",
+    createdAt: 1,
+    updatedAt: 2,
+    nodes: [
+      {
+        id: "node.s1",
+        definitionId: "web.browser.navigate",
+        parameterValues: { url: "https://shop.example.com/search?q=plus+items&session=9f2c", newTab: false }
+      },
+      {
+        id: "node.s2",
+        definitionId: "web.dom.click",
+        parameterValues: {
+          selector: "#plus-filter",
+          target: "target.7",
+          element: { accessibleName: "Sort by: Featured", role: "button", text: "Aiden Stapler" },
+          timeoutMs: 10_000
+        }
+      },
+      { id: "node.s4", definitionId: "builtin.control.merge" },
+      {
+        id: "node.s5",
+        definitionId: "web.dom.extract_list",
+        parameterValues: {
+          extractList: {
+            handle: "listings-abc123",
+            fields: { name: "productTitle", price: "priceText", rating: "ratingText" },
+            minItems: 0,
+            paginate: false
+          },
+          apiKey: "sk-live-9f2c7a1b3d5e8f0a4c6b",
+          timeoutMs: 15_000
+        }
+      }
+    ],
+    edges: [
+      { id: "edge.1", sourceNodeId: "node.s1", targetNodeId: "node.s2", sourcePortId: "success", targetPortId: "in" },
+      { id: "edge.2", sourceNodeId: "node.s2", targetNodeId: "node.s4", sourcePortId: "success", targetPortId: "in" },
+      { id: "edge.3", sourceNodeId: "node.s2", targetNodeId: "node.s4", sourcePortId: "failed", targetPortId: "in" },
+      { id: "edge.4", sourceNodeId: "node.s4", targetNodeId: "node.s5", sourcePortId: "out", targetPortId: "in" }
+    ]
+  };
+}
+
+/** The branch the flat step list could not express. */
+function router(): AutomationStudioFlowRouter {
+  return {
+    schemaVersion: "0.1",
+    routerId: "router.1",
+    flowId: "flow.1",
+    projectId: "project.1",
+    name: "Store router",
+    status: "active",
+    createdAt: 1,
+    updatedAt: 2,
+    fallback: { kind: "subflow", subflowId: "subflow.guest" },
+    rules: [
+      {
+        schemaVersion: "0.1", ruleId: "rule.guest", routerId: "router.1", name: "Everyone else",
+        target: { kind: "subflow", subflowId: "subflow.guest" }, order: 2, status: "active", createdAt: 1, updatedAt: 2
+      },
+      {
+        schemaVersion: "0.1", ruleId: "rule.plus", routerId: "router.1", name: "Plus members",
+        target: { kind: "subflow", subflowId: "subflow.plus" }, order: 1, status: "active", createdAt: 1, updatedAt: 2,
+        condition: { signalPath: "page.url", operator: "contains", expected: "/plus" }
+      }
+    ]
+  };
+}
+
 /** The same verification, having judged that the result does answer. */
 function answered(): AutomationStudioResultVerificationOutcome {
   const { failure: _none, ...rest } = refuted() as Extract<AutomationStudioResultVerificationOutcome, { performed: true }>;
@@ -262,7 +463,7 @@ function cleanRun(): AutomationStudioFlowRunDetail {
     { attemptId: "a.1", nodeId: "node.s1", definitionId: "web.browser.navigate", order: 1, status: "succeeded", startedAt: 1_000, finishedAt: 1_100 },
     { attemptId: "a.2", nodeId: "node.s2", definitionId: "web.dom.click", order: 2, status: "succeeded", startedAt: 1_200, finishedAt: 1_240 },
     { attemptId: "a.3", nodeId: "node.s4", definitionId: "builtin.control.merge", order: 3, status: "succeeded", startedAt: 1_300, finishedAt: 1_310 },
-    { attemptId: "a.4", nodeId: "node.s5", definitionId: "web.dom.extract_list", order: 4, status: "succeeded", startedAt: 1_400, finishedAt: 2_800, metadata: { recordCount: 24 } }
+    { attemptId: "a.4", nodeId: "node.s5", definitionId: "web.dom.extract_list", order: 4, status: "succeeded", startedAt: 1_400, finishedAt: 2_800, metadata: { recordCount: 24, outputShape: { records: 24 } } }
   ];
   return {
     schemaVersion: "0.1",

@@ -42,6 +42,7 @@ const FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES: {
   "llm.provider_failure_evidence_invalid": "flow_bootstrap.provider_failure_evidence_invalid",
   "llm.provider_exploration_evidence_invalid": "flow_bootstrap.provider_exploration_evidence_invalid",
   "llm.provider_result_summary_invalid": "flow_bootstrap.provider_result_summary_invalid",
+  "llm.provider_recovery_context_invalid": "flow_bootstrap.provider_recovery_context_invalid",
   "llm.provider_flow_bootstrap_context_invalid": "flow_bootstrap.provider_flow_bootstrap_context_invalid",
   "llm.provider_evidence_loop_context_invalid": "flow_bootstrap.provider_evidence_loop_context_invalid",
   "llm.provider_request_limits_invalid": "flow_bootstrap.provider_request_limits_invalid",
