@@ -546,13 +546,18 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
     || !Array.isArray(loop.evidence) || loop.evidence.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return false;
   const ids = new Set<string>();
   for (const tool of loop.tools) {
-    if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "repeatPolicy", "initialObservation"].includes(key))
+    if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "perCallEffect", "repeatPolicy", "initialObservation"].includes(key))
       || typeof tool.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(tool.toolId) || ids.has(tool.toolId)
       || typeof tool.description !== "string" || tool.description.length < 1 || tool.description.length > 2_000
       || !isRecord(tool.inputSchema)
       || (tool.effect !== undefined && tool.effect !== "observe" && tool.effect !== "mutate")
       || (tool.repeatPolicy !== undefined && (tool.repeatPolicy !== "after_mutation" || tool.effect !== "observe"))
-      || (tool.initialObservation !== undefined && (tool.effect !== "observe" || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input") || !isRecord(tool.initialObservation.input)))) return false;
+      || (tool.perCallEffect !== undefined && typeof tool.perCallEffect !== "boolean")
+      // A free first look is a look. That is a tool that only observes -- or one
+      // whose calls declare their own effect, whose initial argument the host
+      // writes rather than the model, and which is therefore the host's
+      // statement that this one call observes.
+      || (tool.initialObservation !== undefined && ((tool.effect !== "observe" && tool.perCallEffect !== true) || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input") || !isRecord(tool.initialObservation.input)))) return false;
     ids.add(tool.toolId);
   }
   for (const item of loop.evidence) {

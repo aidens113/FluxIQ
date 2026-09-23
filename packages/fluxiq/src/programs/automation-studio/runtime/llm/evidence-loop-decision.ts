@@ -14,7 +14,12 @@
 // could not read ends the run or is fed back.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA, type AutomationStudioFlowDraftAmendment } from "../flow-draft/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
+  AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
+  type AutomationStudioFlowDraftAmendment,
+  type AutomationStudioFlowDraftAmendmentChange
+} from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type {
   AutomationStudioLlmEvidenceLoopDecision,
@@ -48,15 +53,42 @@ export function automationStudioLlmEvidenceCanonicalJson(value: JsonValue): stri
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(value.resultCode)))) return undefined;
-    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}) };
+    const draft = readCallRecord(value.draft);
+    if (value.draft !== undefined && !draft) return undefined;
+    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}), ...(draft ? { draft } : {}) };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };
+}
+
+/**
+ * What one call said it did, or nothing when it is not a statement the loop can
+ * read.
+ *
+ * Read strictly and then carried opaquely. The name is the caller's and Core
+ * never interprets it; the argument is carried so the step can be written down
+ * or run again; the two flags are the caller's statement about its own call.
+ */
+function readCallRecord(value: unknown): AutomationStudioLlmEvidenceToolExecutionResult["draft"] | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes"])) return undefined;
+  if (value.actionId !== undefined && !validId(value.actionId)) return undefined;
+  if (value.input !== undefined && !isJsonObject(value.input)) return undefined;
+  if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return undefined;
+  if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") return undefined;
+  if (value.proposes !== undefined && typeof value.proposes !== "boolean") return undefined;
+  return {
+    ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
+    ...(value.input === undefined ? {} : { input: value.input }),
+    ...(value.ranWith === undefined ? {} : { ranWith: value.ranWith }),
+    ...(value.effect === undefined ? {} : { effect: value.effect }),
+    ...(value.proposes === undefined ? {} : { proposes: value.proposes })
+  };
 }
 
 /**
@@ -122,11 +154,24 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
   if (!Array.isArray(value) || !value.length || value.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
   const read: AutomationStudioFlowDraftAmendment[] = [];
   for (const item of value) {
-    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings"])) continue;
+    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input"])) continue;
     if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) continue;
-    if (item.change !== "drop" && item.change !== "exploratory" && item.change !== "keep") continue;
+    if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) continue;
     if (item.settings !== undefined && !isJsonObject(item.settings)) continue;
-    read.push({ step: item.step as number, change: item.change, ...(item.settings ? { settings: item.settings } : {}) });
+    if (item.to !== undefined && (!Number.isSafeInteger(item.to) || (item.to as number) < 1)) continue;
+    if (item.input !== undefined && !isJsonObject(item.input)) continue;
+    // The two changes that need a value are dropped when it is missing, rather
+    // than applied as something else: a `rerun` with no argument would rerun
+    // the step with the argument that was already wrong.
+    if (item.change === "reorder" && item.to === undefined) continue;
+    if (item.change === "rerun" && item.input === undefined) continue;
+    read.push({
+      step: item.step as number,
+      change: item.change as AutomationStudioFlowDraftAmendmentChange,
+      ...(item.settings ? { settings: item.settings } : {}),
+      ...(item.to === undefined ? {} : { to: item.to as number }),
+      ...(item.input ? { input: item.input } : {})
+    });
   }
   return read.length ? read : undefined;
 }
@@ -149,8 +194,13 @@ export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlm
   const structurallyValid = tools.every((tool) => validId(tool.toolId) && !ids.has(tool.toolId) && Boolean(ids.add(tool.toolId))
     && typeof tool.description === "string" && tool.description.length > 0 && tool.description.length <= 2_000 && isJsonObject(tool.inputSchema)
     && (tool.effect === undefined || tool.effect === "observe" || tool.effect === "mutate")
+    && (tool.perCallEffect === undefined || typeof tool.perCallEffect === "boolean")
     && (tool.repeatPolicy === undefined || (tool.repeatPolicy === "after_mutation" && tool.effect === "observe"))
-    && (tool.initialObservation === undefined || (tool.effect === "observe" && isJsonObject(tool.initialObservation) && exactKeys(tool.initialObservation, ["input"]) && isJsonObject(tool.initialObservation.input))));
+    // A first look is free only where it is a look. That is a tool that only
+    // observes -- or one whose calls declare their own effect, whose initial
+    // argument the *caller* writes rather than the model, and which is
+    // therefore the caller's statement that this one call observes.
+    && (tool.initialObservation === undefined || ((tool.effect === "observe" || tool.perCallEffect === true) && isJsonObject(tool.initialObservation) && exactKeys(tool.initialObservation, ["input"]) && isJsonObject(tool.initialObservation.input))));
   return structurallyValid
     && tools.filter((tool) => tool.initialObservation !== undefined).length <= 1
     && (!tools.some((tool) => tool.repeatPolicy === "after_mutation") || tools.some((tool) => tool.effect === "mutate"));

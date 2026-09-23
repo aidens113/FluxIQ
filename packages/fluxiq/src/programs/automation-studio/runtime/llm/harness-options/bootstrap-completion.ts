@@ -22,8 +22,13 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
   acceptAutomationStudioFlowBootstrapResult,
+  assembleAutomationStudioFlowDraftPlan,
+  type AutomationStudioFlowBootstrapAcceptance,
   automationStudioFlowBootstrapIssueFeedback,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
@@ -85,6 +90,16 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters"> | undefined;
+  /**
+   * The draft the build accrued, when the Flow is to be built from what the
+   * build did rather than from what the model wrote at the end.
+   *
+   * Given, it is authoritative: the plan is assembled from the steps that ran
+   * and worked and that the model kept, and any plan the reply happens to
+   * carry is ignored. That is the point of the whole design -- a Flow whose
+   * steps are nodes that provably ran cannot contain one that never did.
+   */
+  draftSteps?: readonly AutomationStudioFlowDraftStep[] | undefined;
   /** The build's permission check for each step, handed to the domain as it resolves the step. */
   permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
@@ -93,9 +108,15 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   if (!Object.keys(result).length) {
     return refused("flow_bootstrap.evidence_completion_wrapper_invalid", [issue("bootstrap.completion_wrapper_invalid", "result")]);
   }
-  // One door for every shape a build may arrive in -- a Flow script, or the
-  // nested plan that was once the only one -- and one place that normalises it.
-  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry: input.registry, resolution: input.resolution });
+  // The draft wins wherever there is one. Where there is none -- a domain
+  // whose actions are not nodes of the registry, or a build that completed
+  // without running anything -- the reply's own plan is still read, because a
+  // host that cannot run a node must still be able to build a Flow.
+  const proposed = input.draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
+  const drafted = proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
+    ? fromDraft(input.draftSteps!, result, input.registry, input.resolution)
+    : undefined;
+  const accepted = drafted ?? fromReply(result, input.registry, input.resolution);
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
   const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
@@ -138,6 +159,55 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
   return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
+
+/**
+ * The plan the reply itself carried: one door for every shape a build may
+ * arrive in -- a Flow script, or the nested plan that was once the only one --
+ * and one place that normalises it.
+ */
+function fromReply(
+  result: JsonObject,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioFlowBootstrapAcceptance {
+  return acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution });
+}
+
+/**
+ * The plan the build's own draft makes: the steps it ran, that worked, and that
+ * the model kept, in the order it ran them.
+ *
+ * It goes through the same assembler a written script goes through, so keys,
+ * ports, edges, the router and every parameter are derived by one piece of
+ * code. A step the writer cannot write down refuses the plan rather than being
+ * left out quietly -- a step that was performed and is missing from the result
+ * is exactly the failure this design exists to remove.
+ */
+function fromDraft(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  result: JsonObject,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioFlowBootstrapAcceptance {
+  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+  const assembled = assembleAutomationStudioFlowDraftPlan({
+    steps: steps.filter(automationStudioFlowDraftStepIsProposed),
+    write: automationStudioFlowBootstrapDraftNodeStep,
+    registry,
+    resolution,
+    summary
+  });
+  if (!assembled.plan) {
+    return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };
+  }
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE };
+}
+
+/**
+ * What a refusal hands back in place of the script the model wrote, since it
+ * wrote none: the Flow is the draft, and the draft is already in front of it.
+ */
+const DRAFT_SCRIPT_NOTE = "The Flow is the list of steps in your draft. Correct it with amend_draft decisions -- drop, exploratory, reorder, rerun -- or run the step it is missing, then finish again.";
 
 /** The plan a refusal is about, and where its nodes are defined. */
 type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };

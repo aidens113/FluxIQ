@@ -47,7 +47,7 @@
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "./evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
 
 /**
  * The most tokens one Flow Bootstrap can record in its accounting: the largest
@@ -147,7 +147,15 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   return {
     loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: ceiling.maxEvidenceBytes, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES, budget },
     ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {}),
-    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS, maxIterations)
+    // Three was this number until 2026-09-22, and three ended builds that were
+    // working: it is the loop's no-progress guard as well as its unusable-reply
+    // guard, and a build that meets a setback, looks again and tries another way
+    // has taken two steps that gathered nothing new while doing exactly the right
+    // thing. What bounds a build is what it spends -- the grant's cost, its
+    // tokens and the run's deadline, all of which this function hands the loop as
+    // its budget. This is only the stop for a build that has started repeating
+    // itself and will not stop on its own.
+    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations)
   };
 }
 

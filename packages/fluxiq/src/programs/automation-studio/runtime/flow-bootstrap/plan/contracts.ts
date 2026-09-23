@@ -14,6 +14,17 @@ export type AutomationStudioFlowBootstrapNode = {
   definitionVersion: string;
   parameters?: JsonObject;
   outputActionId?: string;
+  /**
+   * What this step's own action would lastingly do, in the permission gate's
+   * classes, as the step declared it.
+   *
+   * Kept as plain strings on purpose: the vocabulary belongs to
+   * `runtime/action-permissions/`, which reads it fail-closed, so nothing here
+   * has to learn a word of it. `[]` is a step saying it causes nothing lasting;
+   * absent is a step that said nothing at all, and the two are not the same
+   * answer.
+   */
+  consequences?: string[];
 };
 
 export type AutomationStudioFlowBootstrapEdge = {

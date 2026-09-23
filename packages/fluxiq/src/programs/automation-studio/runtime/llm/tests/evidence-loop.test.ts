@@ -13,7 +13,9 @@ describe("Automation Studio LLM evidence loop", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { candidateId: "candidate.1" }, usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15, estimatedCostUsd: 0.001 } });
     const executeTool = vi.fn().mockResolvedValue({ facts: ["ready"] });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool });
+    // The guard is named here rather than inherited: its default is now a far
+    // backstop (twenty-four), because three ended builds that were working.
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3 });
 
     expect(result).toMatchObject({ ok: true, result: { candidateId: "candidate.1" }, accounting: { iterations: 2, toolCalls: 1, inputTokens: 22, outputTokens: 7, totalTokens: 29, estimatedCostUsd: 0.002 } });
     expect(executeTool).toHaveBeenCalledWith({ callId: "call.1", toolId: "inspect", value: { scope: "current" }, maxEvidenceBytes: 63_488 });
@@ -57,7 +59,7 @@ describe("Automation Studio LLM evidence loop", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.observe.3", toolId: "inspect", input: { scope: "wider" } })
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.observe.4", toolId: "inspect", input: { scope: "widest" } });
     const blockedExecute = vi.fn().mockResolvedValue({ observed: true });
-    const blocked = await runAutomationStudioLlmEvidenceLoop({ tools: progressTools, decide: blockedDecide, executeTool: blockedExecute });
+    const blocked = await runAutomationStudioLlmEvidenceLoop({ tools: progressTools, decide: blockedDecide, executeTool: blockedExecute, maxStepsWithoutProgress: 3 });
     expect(blocked).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { iterations: 4, toolCalls: 1 } });
     expect(blockedExecute).toHaveBeenCalledTimes(1);
     expect(blockedDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
@@ -329,7 +331,9 @@ describe("a tool request the loop has already answered", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = vi.fn().mockResolvedValue({ facts: ["ready"] });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool });
+    // The guard is named here rather than inherited: its default is now a far
+    // backstop (twenty-four), because three ended builds that were working.
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3 });
 
     expect(result).toMatchObject({ ok: true, result: { done: true }, accounting: { iterations: 3, toolCalls: 1, totalTokens: 6 } });
     expect(executeTool).toHaveBeenCalledTimes(1);
@@ -390,7 +394,7 @@ describe("a tool request the loop has already answered", () => {
       .mockResolvedValueOnce(page(1, "again.1")).mockResolvedValueOnce(page(2, "again.2"))
       .mockResolvedValueOnce(page(1, "again.3")).mockResolvedValueOnce(page(1, "again.4")).mockResolvedValueOnce(page(1, "again.5"));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 20_000, maxEvidenceContextBytes: 2_048,
+      tools, decide, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 20_000, maxEvidenceContextBytes: 2_048, maxStepsWithoutProgress: 3,
       executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
     });
 
@@ -405,7 +409,7 @@ describe("a tool request the loop has already answered", () => {
     const decide = vi.fn(async () => (call += 1) === 1 ? first : again(`call.${call}`));
     const executeTool = vi.fn().mockResolvedValue({ facts: ["ready"] });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 20 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 20, maxStepsWithoutProgress: 3 });
 
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { iterations: 4, toolCalls: 1 } });
     expect(executeTool).toHaveBeenCalledTimes(1);
@@ -478,7 +482,9 @@ describe("a tool request the loop has already answered", () => {
       .mockResolvedValueOnce({ kind: "complete", result: {} });
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({ page: value.page ?? null }));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool });
+    // The guard is named here rather than inherited: its default is now a far
+    // backstop (twenty-four), because three ended builds that were working.
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3 });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 4 } });
     const callIds = executeTool.mock.calls.map(([call]) => (call as unknown as { callId: string }).callId);
