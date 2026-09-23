@@ -55,6 +55,27 @@
 // Replayed with no model, the Flow met both overlays. The statement says what
 // the replay starts from, and that a change the answer depended on is a step.
 //
+// The sixth is the consequence declaration, added on 2026-09-22. A step that
+// presses something is the one web act whose effect the page decides rather
+// than the action -- the same click applies a filter on one page and publishes
+// on the next -- so the model is the only party that can say what a step would
+// lastingly do, and the permission gate cannot ask a person about a step that
+// never said. Two live builds met the refusal that asks for it, wrote exactly
+// the right line, and were answered `bootstrap.unknown_parameter` because the
+// authoring readers had nowhere to put it (`run-mud7fssy-902f877b`,
+// `run-mud7p1wg-3049531f`). The reserved word now exists
+// (`../authoring/consequences.ts`), and this is where the model is told it
+// does. The classes are interpolated from `action-permissions/` rather than
+// spelled here, so a class added there is offered without anyone editing this
+// file.
+//
+// It is stated even though a build ordinarily reaches the gate the other way.
+// The model runs the library's nodes and each `run_node` call declares its own
+// consequences, so a Flow assembled from the steps that ran carries the
+// declaration already. This format is what a nested plan and any script the
+// model writes by hand go through, and a step that arrives here undeclared is
+// refused -- so the sentence is what makes that refusal answerable.
+//
 // The routing lines were rewritten on 2026-09-18. The format used to say that
 // `step: run subflow <label>` reaches a block, and Core read that as a route
 // rule with no condition -- which always holds, so every Flow built with a
@@ -63,6 +84,8 @@
 // step runs, and the steps outside every block are what runs when none holds.
 // The paths a condition may read, and the values exploration saw for them,
 // arrive beside the format under `routing`.
+
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",
@@ -74,6 +97,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Every other line in a step sets one of that node's parameters by its id, `url: https://example.test/a`. Reach inside a structured parameter with a dotted key, `extractList.fields.name: product-name`. A list is comma separated. Leave a parameter out and its default is used.",
   "A key a parameter takes is written inside it: `extractList.minItems: 0`, `target.location: https://shop.test/members`.",
   "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
+  `A step that presses something says what pressing it would lastingly do: \`consequences: <classes>\`, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}, comma separated; \`consequences: none\` when it only reveals, opens, expands, filters, sorts, ticks, dismisses or navigates. Every press needs the line, and it says what that one press would cause, not what the Flow is for: the press that applies a filter is none, the press that publishes is send_or_publish. A step that types, chooses, waits or reads never needs it.`,
   "The Flow runs later on its own, with no model, from the page the run starts on, and nothing you did while gathering evidence is still in effect then: a notice you closed, a consent you answered, a search you ran and a filter you chose are all as they were before you touched them. So every change the answer depended on is a step, in the order you made it, including closing a notice, prompt or banner that stood in front of a control. Arriving at an address changes nothing else: whatever that page puts in front of its content on arrival is still there.",
   "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
@@ -92,6 +116,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "step row: click the member's row",
   "  node: web.dom.click",
   "  target: target.7",
+  "  consequences: none",
   "  on failed: go to shout",
   "step: type the new name",
   "  node: web.dom.type",
@@ -112,6 +137,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "step: apply it",
   "  node: web.dom.click",
   "  target: target.5",
+  "  consequences: none",
   "step: read what is left",
   "  node: web.dom.extract_list",
   "  extractList: extraction.1",
@@ -123,6 +149,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "  step: close the notice",
   "    node: web.dom.click",
   "    target: target.9",
+  "    consequences: none",
   "  step: read the orders",
   "    node: web.dom.extract_list",
   "    extractList: extraction.1",
