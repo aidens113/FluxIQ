@@ -3,6 +3,7 @@ export * from "./action-permissions/index.ts";
 export * from "./adapters.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
+export * from "./conversations/index.ts";
 export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";
 export * from "./executor.ts";
