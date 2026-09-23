@@ -8,6 +8,7 @@
 // the one that would quietly break the join between a run that stopped and the
 // person who answers.
 
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_TEXT_MAX, type AutomationStudioConversationAttachment, type AutomationStudioConversationAuthor } from "./turn.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAskInput } from "./ask.ts";
 import type { AutomationStudioConversationStatus, AutomationStudioConversationSubjectKind } from "./thread.ts";
@@ -84,9 +85,26 @@ export function automationStudioConversationAskOrRefuse(value: AutomationStudioC
   for (const route of [value.routes?.granted, value.routes?.denied, value.routes?.timedOut]) {
     if (route !== null && route !== undefined) automationStudioConversationIdOrRefuse(route, "route");
   }
+  for (const consequence of [...(value.consequences ?? []), ...(value.missing ?? [])]) automationStudioConversationConsequenceOrRefuse(consequence);
   if (value.permissionRequest && value.permissionRequest.requestId !== value.askId) throw new Error("A permission ask is keyed by the request's own requestId.");
   if (value.timeoutMs !== null && value.timeoutMs !== undefined && !(Number.isFinite(value.timeoutMs) && value.timeoutMs > 0)) throw new Error("A conversation ask timeout must be a positive number of milliseconds.");
   return value;
+}
+
+/**
+ * A consequence class is one of the five Core names and nothing else. It is
+ * checked here because the runtime that raises an ask cannot check it: the
+ * browser bundle reaches `runtime/parking/` through the approval node, and the
+ * consequence vocabulary's own module brings `node:crypto` with it. An
+ * unrecognised class would otherwise be stored as though Core had named it, and
+ * read back by everything that decides whether an answer may be given in
+ * passing.
+ */
+function automationStudioConversationConsequenceOrRefuse(value: string): AutomationStudioActionConsequence {
+  if (!(AUTOMATION_STUDIO_ACTION_CONSEQUENCES as readonly string[]).includes(value)) {
+    throw new Error(`A consequence class is one of: ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}.`);
+  }
+  return value as AutomationStudioActionConsequence;
 }
 
 export function automationStudioConversationTextOrRefuse(value: string): string {

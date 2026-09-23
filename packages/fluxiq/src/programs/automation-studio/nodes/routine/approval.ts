@@ -51,7 +51,7 @@ export const approvalNode = defineBuiltinNode({
         parks: true,
         text: approvalPrompt(context.parameters.prompt),
         ...(timeoutMs > 0 ? { timeoutMs } : {}),
-        routes: { answered: "approved", denied: "rejected", expired: approvalDefaultRoute(context.parameters.defaultRoute) }
+        routes: { granted: "approved", denied: "rejected", timedOut: approvalDefaultRoute(context.parameters.defaultRoute) }
       })]
     };
   }

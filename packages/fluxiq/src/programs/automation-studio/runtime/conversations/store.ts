@@ -199,6 +199,41 @@ export class AutomationStudioProjectConversationStore {
     return result.response;
   }
 
+  /**
+   * Closes an ask nobody answered in time.
+   *
+   * Expiry is a clock event, not a person's act, so this never refuses: an ask
+   * already answered or already expired comes back as it stands and the clock
+   * has simply lost. That is deliberate and it is what makes the race safe --
+   * whoever waited for this ask asks the store to close it at the deadline,
+   * and if the answer landed first the store hands the answer back instead of
+   * a timeout, so an ask can never be both answered and timed out.
+   */
+  async expireAsk(input: { mutationId: string; askId: string; changedAt?: number }): Promise<AutomationStudioConversationAsk> {
+    const askId = automationStudioConversationIdOrRefuse(input.askId, "conversation ask");
+    const result = await this.unit.runIdempotent(
+      {
+        mutationId: automationStudioConversationIdOrRefuse(input.mutationId, "mutation"),
+        operationKind: "conversation.ask.expire",
+        ownerKind: "conversation_ask",
+        ownerId: askId,
+        request: { askId },
+        ...automationStudioConversationChangedAt(input.changedAt)
+      },
+      async (context) => {
+        const row = requireAsk(await readAsk(context.sql, askId), askId);
+        if (row.status !== "pending") return automationStudioConversationAskFromRow(row);
+        const conversation = requireConversation(await readConversation(context.sql, row.conversation_id), row.conversation_id);
+        const revision = conversation.revision + 1;
+        await context.sql.run("update conversation_asks set status = 'expired' where ask_id = ? and status = 'pending'", [askId]);
+        await context.recordChange({ entityKind: "conversation_ask", entityId: askId, operation: "update", revision });
+        await bumpThread(context, { conversationId: row.conversation_id, revision, turnCount: conversation.turn_count, pendingAskDelta: -1 });
+        return automationStudioConversationAskFromRow(requireAsk(await readAsk(context.sql, askId), askId));
+      }
+    );
+    return result.response;
+  }
+
   /** The project's threads, most recently touched first, narrowed by subject or status. */
   async listConversations(input: AutomationStudioConversationListInput = {}): Promise<AutomationStudioConversation[]> {
     const clauses: string[] = [];

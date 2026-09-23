@@ -27,9 +27,9 @@ export type AutomationStudioAskSettlement =
 /**
  * The route a parked run resumes down, from the answer it was given.
  *
- * Answering with nothing is nobody having answered, and takes the expired
+ * Answering with nothing is nobody having answered, and takes the timed-out
  * route -- the node's "if nobody responds" choice, already resolved into
- * `routes.expired` when the run parked. Whether the ask had in fact run out of
+ * `routes.timedOut` when the run parked. Whether the ask had in fact run out of
  * time is the caller's to establish: a port that waited as long as it was told
  * knows it by having waited, and a resume from a stored record knows it from
  * the clock.
@@ -42,7 +42,7 @@ export function automationStudioAskSettlement(
   if (parked.ask.status !== "pending") {
     return { outcome: "refused", reason: "already_settled", message: `Ask ${parked.ask.askId} was already ${parked.ask.status}. A parked run is resumed once.` };
   }
-  if (!answer) return { outcome: "expired", route: parked.routes.expired, settledAtMs: nowMs };
+  if (!answer) return { outcome: "expired", route: parked.routes.timedOut, settledAtMs: nowMs };
   if (answer.askId !== parked.ask.askId) {
     return { outcome: "refused", reason: "ask_mismatch", message: `Answer names ask ${answer.askId}, but this run is parked on ${parked.ask.askId}.` };
   }
@@ -50,13 +50,13 @@ export function automationStudioAskSettlement(
   if (!route) {
     return { outcome: "refused", reason: "unknown_choice", message: `Ask ${parked.ask.askId} does not offer the option ${JSON.stringify(answer.value)}.` };
   }
-  return { outcome: "answered", route, settledAtMs: answer.answeredAtMs, answer };
+  return { outcome: "answered", route, settledAtMs: answer.answeredAt, answer };
 }
 
 function routeForAnswer(parked: AutomationStudioParkedRun, answer: AutomationStudioAskAnswer): string | undefined {
   if (answer.kind === "deny") return parked.routes.denied;
-  if (answer.kind !== "choice") return parked.routes.answered;
-  const chosen = parked.ask.options?.find((option) => option.value === answer.value);
+  if (answer.kind !== "choice") return parked.routes.granted;
+  const chosen = parked.ask.options?.find((option) => option.id === answer.value);
   if (!chosen) return undefined;
-  return chosen.route ?? parked.routes.answered;
+  return chosen.route ?? parked.routes.granted;
 }

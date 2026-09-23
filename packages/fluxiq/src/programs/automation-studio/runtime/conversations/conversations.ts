@@ -13,6 +13,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioProjectDatabasePool } from "../../storage/index.ts";
+import { automationStudioConversationParkingPort, type AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAsk } from "./ask.ts";
 import { AutomationStudioProjectConversationStore } from "./store.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubject, AutomationStudioConversationThread } from "./thread.ts";
@@ -86,6 +87,14 @@ export type AutomationStudioConversationAttachmentAnswer = {
   payload: unknown;
 };
 
+/** A parking port bound to one subject's thread: where a run's questions go and where their answers come back from. */
+export type AutomationStudioConversationParkingRequest = {
+  projectId: string;
+  subject: AutomationStudioConversationSubject;
+  /** How often the thread is re-read while a run waits. The default suits a person answering; a test shortens it. */
+  pollIntervalMs?: number;
+};
+
 export type AutomationStudioConversationWriterRequest = {
   projectId: string;
   subject: AutomationStudioConversationSubject;
@@ -96,6 +105,15 @@ export type AutomationStudioConversationWriterRequest = {
 export class AutomationStudioConversations {
   /** False without a project database pool. Every method then throws, because there is nowhere for a thread to live. */
   readonly available: boolean;
+
+  /**
+   * Who to wake when an ask is settled in this process. A run waiting on a
+   * question is waiting on a row, and polling that row is the only way to see
+   * an answer written by another process -- but an answer written by this one
+   * is already here, and making the run wait out a poll interval for news it
+   * could have had immediately is latency for nothing.
+   */
+  private readonly askSettledListeners = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly pool: AutomationStudioProjectDatabasePool | undefined,
@@ -209,7 +227,7 @@ export class AutomationStudioConversations {
 
   /** Settles one ask. An ask is answered once; a second, different answer is refused. */
   answerAsk(input: AutomationStudioConversationAnswerRequest): Promise<AutomationStudioConversationAsk> {
-    return this.withStore(input.projectId, (store) =>
+    return this.settling(this.withStore(input.projectId, (store) =>
       store.answerAsk({
         mutationId: input.mutationId ?? answerMutationId(input),
         askId: input.askId,
@@ -217,7 +235,43 @@ export class AutomationStudioConversations {
         value: input.value ?? null,
         actorId: input.actorId ?? null
       })
-    );
+    ));
+  }
+
+  /**
+   * Closes an ask nobody answered in time, or hands back the answer that beat
+   * the deadline. Expiry never refuses: the clock is not a person, and losing
+   * the race to a real answer is the outcome that should win.
+   */
+  expireAsk(input: { projectId: string; askId: string }): Promise<AutomationStudioConversationAsk> {
+    return this.settling(this.withStore(input.projectId, (store) => store.expireAsk({ mutationId: `conversation.expire:${input.askId}`, askId: input.askId })));
+  }
+
+  /** Tells the caller the moment an ask is settled in this process. Returns the way to stop listening. */
+  onAskSettled(askId: string, listener: () => void): () => void {
+    const listeners = this.askSettledListeners.get(askId) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.askSettledListeners.set(askId, listeners);
+    return () => {
+      const current = this.askSettledListeners.get(askId);
+      if (!current) return;
+      current.delete(listener);
+      if (!current.size) this.askSettledListeners.delete(askId);
+    };
+  }
+
+  /**
+   * The thread as a parking port: `open` posts the question as a turn, and
+   * `awaitAnswer` holds the run in place until the person answers it, the ask
+   * runs out of time, or the run is cancelled.
+   */
+  parkingPort(input: AutomationStudioConversationParkingRequest): AutomationStudioParkingPort {
+    return automationStudioConversationParkingPort({
+      host: this,
+      projectId: input.projectId,
+      subject: input.subject,
+      ...(input.pollIntervalMs === undefined ? {} : { pollIntervalMs: input.pollIntervalMs })
+    });
   }
 
   /** A writer bound to one subject, for the code that has something to say rather than a thread to manage. */
@@ -229,6 +283,13 @@ export class AutomationStudioConversations {
       ...(input.title === undefined ? {} : { title: input.title }),
       ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId })
     });
+  }
+
+  /** Wakes whoever is waiting on an ask once it is no longer pending, and answers with the ask either way. */
+  private async settling(write: Promise<AutomationStudioConversationAsk>): Promise<AutomationStudioConversationAsk> {
+    const ask = await write;
+    if (ask.status !== "pending") for (const listener of [...(this.askSettledListeners.get(ask.askId) ?? [])]) listener();
+    return ask;
   }
 
   private async withStore<TResult>(projectId: string, operation: (store: AutomationStudioProjectConversationStore) => Promise<TResult>): Promise<TResult> {
