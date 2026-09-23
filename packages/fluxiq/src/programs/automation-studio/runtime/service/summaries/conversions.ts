@@ -17,6 +17,7 @@ import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiv
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
+import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
 // records that the summary indexes and the public run views are built from.
@@ -155,6 +156,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       }))
       : undefined;
     const recordCount = datasetMarkerRecordCount(attempt.outputs);
+    const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
@@ -175,6 +177,20 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
         ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
         ...(attempt.targetResolution ? { targetResolution: attempt.targetResolution } : {}),
+        // What the browser did once the command arrived, as against Core's
+        // pre-dispatch choice above. The strategy is the only record that the
+        // host re-resolved a control the recording named differently, which is
+        // a recovery the ladder never sees because it happens before a failure
+        // is reported.
+        ...(hostTargetResolution ? { hostTargetResolution } : {}),
+        // Which attempt of this node this is and which ladder rung asked for
+        // it: a closed rung name and two integers. Without it a retried node
+        // is indistinguishable from a Flow that authored the same node twice,
+        // and no rung can be attributed to anything.
+        ...(attempt.retry ? { retry: { attemptNumber: attempt.retry.attemptNumber, maxAttempts: attempt.retry.maxAttempts, backoffMs: attempt.retry.backoffMs, rung: attempt.retry.rung } } : {}),
+        // What the run did about the state the node expected to find before it
+        // ran. `message` is the host's sentence and stays behind.
+        ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
         ...(adaptiveFailure ? { adaptiveFailure } : {}),
         ...(recordCount !== undefined ? { recordCount } : {})
       }
