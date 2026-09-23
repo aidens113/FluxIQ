@@ -150,6 +150,60 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
   };
 }
 
+/** The three shapes a decision may take, which is also what a reply may arrive as instead of the wrapper. */
+const DECISION_KINDS = new Set(["tool_call", "complete", "amend_draft"]);
+
+/**
+ * A reply as the evidence-decision wrapper, with everything Core can work out
+ * for itself worked out rather than demanded.
+ *
+ * **A whole paid call is thrown away when a reply is complete but not shaped
+ * exactly as asked**, and two of the sixteen calls a live build made ended that
+ * way (`run-mudw1ktb-0557816b`: `llm.provider_output_invalid` and
+ * `llm_output.invalid_evidence_decision`). Core records no per-call payload, so
+ * which of the checks refused them is not on the record -- but every one of
+ * them refuses over something Core already knows or does not need:
+ *
+ *   - `kind` is the wrapper's own name. Core asked for exactly one output
+ *     shape and would refuse any other, so the field carries no information at
+ *     all; when it is absent it is filled in.
+ *   - A reply that *is* the decision, with no wrapper around it, has said
+ *     everything the wrapper would have. It is lifted into one. This is the
+ *     likeliest shape error in a nested grammar, and it is unambiguous: only
+ *     the three decision kinds are read this way.
+ *   - `summary` is a line a person reads. It was required, held to 240
+ *     characters, and a reply one character over lost its decision with it.
+ *     An over-long one is cut and a missing one is written from the decision.
+ *
+ * A wrapper is rebuilt from the three fields that mean something, so a reply
+ * that also carried a field of its own -- a note, a rationale -- loses that
+ * field instead of losing the call. That is deliberate and it is the safe
+ * direction: the rule it replaces refused the reply because a field Core cannot
+ * check must not be carried onward, and dropping the field carries it onward
+ * even less than refusing did.
+ *
+ * Nothing here relaxes what a decision may *be*: the decision itself still goes
+ * through `automationStudioLlmEvidenceParseDecision` unchanged, and a `kind`
+ * that names some other task's answer is still refused rather than relabelled.
+ */
+export function automationStudioLlmEvidenceNormalizedDecisionResponse(value: unknown, maxSummaryLength: number): JsonObject | undefined {
+  if (!isRecord(value)) return undefined;
+  const bare = typeof value.kind === "string" && DECISION_KINDS.has(value.kind) && value.decision === undefined;
+  if (!bare && value.kind !== undefined && value.kind !== "evidence_tool_decision") return undefined;
+  const { summary, ...rest } = value;
+  const decision = bare ? rest : value.decision;
+  if (!isRecord(decision)) return undefined;
+  return { kind: "evidence_tool_decision", summary: decisionSummary(summary, decision, maxSummaryLength), decision: decision as JsonObject };
+}
+
+/** The reply's own line where it wrote a usable one, otherwise the shortest true thing Core can say about the decision. */
+function decisionSummary(summary: unknown, decision: Record<string, unknown>, maxLength: number): string {
+  if (typeof summary === "string" && summary.trim()) return summary.slice(0, maxLength);
+  const kind = typeof decision.kind === "string" ? decision.kind : "decision";
+  const toolId = typeof decision.toolId === "string" ? ` ${decision.toolId}` : "";
+  return `${kind}${toolId}`.slice(0, maxLength);
+}
+
 export function automationStudioLlmEvidenceParseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision | undefined {
   if (!isRecord(value)) return undefined;
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
@@ -238,10 +292,18 @@ export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlm
     && (!tools.some((tool) => tool.repeatPolicy === "after_mutation") || tools.some((tool) => tool.effect === "mutate"));
 }
 
+/**
+ * A decision's usage report, checked against an exact key list.
+ *
+ * The list is exact, so a field the provider adapter learns to report and this
+ * check does not know is not an extra field on a usable decision -- it is a
+ * decision the loop throws away. The cache split was added to both at once for
+ * that reason.
+ */
 function validUsage(value: unknown): boolean {
   if (value === undefined) return true;
-  if (!isRecord(value) || !exactKeys(value, ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"])) return false;
-  return [value.inputTokens, value.outputTokens, value.totalTokens].every((item) => item === undefined || (Number.isSafeInteger(item) && (item as number) >= 0))
+  if (!isRecord(value) || !exactKeys(value, ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens", "estimatedCostUsd"])) return false;
+  return [value.inputTokens, value.outputTokens, value.totalTokens, value.cacheHitInputTokens, value.cacheMissInputTokens].every((item) => item === undefined || (Number.isSafeInteger(item) && (item as number) >= 0))
     && (value.estimatedCostUsd === undefined || (typeof value.estimatedCostUsd === "number" && Number.isFinite(value.estimatedCostUsd) && value.estimatedCostUsd >= 0));
 }
 

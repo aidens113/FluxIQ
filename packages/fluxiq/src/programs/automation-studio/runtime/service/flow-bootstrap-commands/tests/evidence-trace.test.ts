@@ -151,4 +151,51 @@ describe("what a build's created-audit counts", () => {
       expect(evidenceTraceAuditDetail(SPEND_TRACE, bad).totalProviderCallCount).toBe(2);
     }
   });
+
+  it("counts a call per iteration and not per trace row, when a decision edited the draft and re-ran a step", () => {
+    // The defect this pins. An `amend_draft` carrying a `rerun` writes its own
+    // row and then the row for the call the rerun makes, both under the one
+    // iteration that paid for them. Counting rows charged
+    // `run-mudw1ktb-0557816b` with 22 provider calls when it made 16, and every
+    // per-call figure derived from it -- tokens, money, seconds -- came out 27%
+    // too low.
+    const withReruns: AutomationStudioLlmEvidenceLoopTrace[] = [
+      { iteration: 0, decision: "tool_call", callId: "call.0", toolId: "core.run_node", evidenceBytes: 10 },
+      { iteration: 1, decision: "tool_call", callId: "call.1", toolId: "core.run_node", evidenceBytes: 20 },
+      { iteration: 2, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_rerun" },
+      { iteration: 2, decision: "tool_call", callId: "rerun.1", toolId: "core.run_node", evidenceBytes: 30 },
+      { iteration: 3, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_rerun" },
+      { iteration: 3, decision: "tool_call", callId: "rerun.2", toolId: "core.run_node", evidenceBytes: 30 },
+      { iteration: 4, decision: "complete" }
+    ];
+
+    const detail = evidenceTraceAuditDetail(withReruns);
+
+    expect(detail.providerCallCount).toBe(4);
+    expect(detail.decisionCount).toBe(4);
+    expect(detail.totalProviderCallCount).toBe(4);
+    // Seven rows, four decisions, five iterations counting the deterministic
+    // opening observation. The reader's whole contract still holds on them.
+    expect(detail.traceStepCount).toBe(7);
+    expect(detail.iterationCount).toBe(5);
+    expect(detail.toolCallCount).toBe(4);
+    expect(detail.decisionCount).toBe(detail.providerCallCount);
+    expect(detail.iterationCount as number).toBeGreaterThanOrEqual(detail.providerCallCount as number);
+    expect(detail.iterationCount as number).toBeLessThanOrEqual((detail.providerCallCount as number) + 1);
+  });
+
+  it("keeps a trace whose decisions each wrote two rows, rather than throwing the build's whole record away", () => {
+    // The row bound was one per decision, which is not what the loop writes, so
+    // a build that corrected itself often enough would have had its entire
+    // published record discarded as malformed.
+    const doubled: AutomationStudioLlmEvidenceLoopTrace[] = Array.from({ length: 64 }, (_, index) => [
+      { iteration: index + 1, decision: "amend_draft" as const, resultCode: "llm_evidence_loop.draft_rerun" },
+      { iteration: index + 1, decision: "tool_call" as const, callId: `rerun.${index + 1}`, toolId: "core.run_node", evidenceBytes: 1 }
+    ]).flat();
+
+    expect(() => sanitizeEvidenceLoopTrace(doubled)).not.toThrow();
+    expect(evidenceTraceAuditDetail(doubled).providerCallCount).toBe(64);
+    expect(evidenceTraceAuditDetail(doubled).traceStepCount).toBe(128);
+    expect(() => sanitizeEvidenceLoopTrace([...doubled, ...doubled])).toThrow("Flow Bootstrap evidence trace is invalid.");
+  });
 });

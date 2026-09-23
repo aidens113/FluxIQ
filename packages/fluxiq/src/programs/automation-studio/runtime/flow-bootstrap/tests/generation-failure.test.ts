@@ -29,7 +29,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       code,
       trace: [{ iteration: 1, decision: "tool_call", callId: "private.call", toolId: "web.click_safe", evidenceBytes: 123, effectApplied: false, resultCode: "action.recoverable" }],
       steps: [],
-      accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 123, inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
+      accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 123, inputTokens: 10, cacheHitInputTokens: 0, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
     });
     expect(failure.diagnostic).toEqual({
       code: expectedCode,
@@ -123,9 +123,19 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
     };
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(long)).toEqual(long);
+    // The steps are one per trace row, not one per decision, and the one kind
+    // of decision that edits the draft and re-runs a step writes two rows under
+    // its single iteration. So they are bounded by the rows: at the decision
+    // ceiling this refused a record the loop can legitimately write, and threw
+    // away the whole named reason for a build that had corrected itself.
+    const mostRows = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
+      ...long,
+      evidenceLoop: { ...long.evidenceLoop, steps: Array.from({ length: mostRows }, () => ({ toolId: "web.click" })) }
+    })).not.toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
       ...valid,
-      evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: longest + 1 }, () => ({ toolId: "web.click" })) }
+      evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: mostRows + 1 }, () => ({ toolId: "web.click" })) }
     })).toBeNull();
     for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
@@ -140,7 +150,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         { iteration: 2, decision: "unusable", resultCode: "a refusal in prose, not a code" },
         { iteration: 3, decision: "unusable" }
       ],
-      accounting: { iterations: 3, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+      accounting: { iterations: 3, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
       issueCodes: ["bootstrap.invalid_parameter_value", "bootstrap.invalid_parameter_value", "a refusal in prose, not a code"]
     }, { requestId: "evidence.1", estimatedInputTokens: 9_000, inputTokens: 7_000, totalTokens: 8_000 });
     expect(parseAutomationStudioFlowBootstrapGenerationError(error)).toEqual({
@@ -154,7 +164,9 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       // the code that refused each, so the record says what each call came to.
       evidenceLoop: {
         iterationCount: 3,
-        decisionCount: 4,
+        // Three decisions, not four rows: iteration 0 is the deterministic
+        // opening observation and was never a provider call.
+        decisionCount: 3,
         toolCallCount: 1,
         evidenceBytes: 40,
         steps: [
@@ -171,7 +183,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("records a loop that never called a tool by its decisions alone, and an accepted completion by name", () => {
     const stalled = flowBootstrapEvidenceUnusableDecisionFailure({
       trace: [{ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" }],
-      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(stalled.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" }]);
@@ -180,7 +192,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       code: "llm_evidence_loop.iteration_limit",
       trace: [{ iteration: 1, decision: "complete" }],
       steps: [],
-      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
+      accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
     });
     expect(ended.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_complete" }]);
     // The names fit the step shape a reader already parses.

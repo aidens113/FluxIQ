@@ -130,7 +130,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       },
       evidenceLoop: {
         iterationCount: 3,
-        decisionCount: 4,
+        // Three decisions and four trace rows: the opening observation is
+        // iteration 0 and was never a provider call.
+        decisionCount: 3,
         toolCallCount: 1,
         // The opening observation, then each refused plan and the first code that refused it.
         steps: [{ toolId: "inspect" }, ...Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]

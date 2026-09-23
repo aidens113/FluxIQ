@@ -452,10 +452,33 @@ still required to materialize topology.
 Successful DeepSeek usage accounting includes a conservative finite
 `estimatedCostUsd`. As reviewed on 2026-09-08, `deepseek-chat` compatibility
 maps to the non-thinking `deepseek-v4-flash` model. Core uses the official peak
-cache-miss rate of USD 0.44 per million input tokens and the peak rate of USD
-1.32 per million output tokens; it intentionally does not assume cache-hit or
-off-peak discounts. These provider-owned prices are a dated maintenance input
-and must be reviewed when DeepSeek changes model compatibility or pricing.
+cache-miss rate of USD 0.44 per million input tokens, the peak cache-hit rate of
+USD 0.044, and the peak rate of USD 1.32 per million output tokens; it does not
+assume off-peak discounts. These provider-owned prices are a dated maintenance
+input and must be reviewed when DeepSeek changes model compatibility or pricing.
+
+The cache-hit rate is applied only to the tokens DeepSeek reports it served from
+its own context cache, which the adapter reads from `prompt_cache_hit_tokens`
+and `prompt_cache_miss_tokens` (or `prompt_tokens_details.cached_tokens`) into
+`cacheHitInputTokens` and `cacheMissInputTokens` on the usage summary. A report
+whose two halves do not add up to the input tokens is dropped and the call is
+priced as though none of it was cached. **Reservations never see the hit rate.**
+A grant reserves against `estimateAutomationStudioDeepSeekInputTokens`, which
+measures the bytes about to be sent and knows nothing about caching, so a grant
+still holds back the cache-miss price for every call it authorizes; the hit rate
+prices only a call that has already been made.
+
+Because every decision of an evidence loop is a fresh, stateless request, the
+whole of that cache turns on the order of the user message, and
+`providerUserPayload` arranges it deliberately: the task envelope, the decision
+grammar, the person's instruction, the tool descriptions, the node catalog and
+the policy gates first, then the evidence window, and the iteration counter
+last. Everything invariant is therefore one contiguous prefix, and the window --
+which usually only gains an entry between calls -- extends it. The order used to
+put the counter before the tool descriptions and the catalog, which left 20,341
+identical bytes of a 50,840-byte message behind a value that changed on every
+call. A key added here must go on the correct side of that line: anything that
+varies per call belongs after the evidence.
 
 ## Generation readiness capability
 
