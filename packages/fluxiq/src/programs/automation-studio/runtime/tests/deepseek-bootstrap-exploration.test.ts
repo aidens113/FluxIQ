@@ -241,8 +241,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.sentIterations).toEqual([1, 2, 3]);
     expect(run.revealed).toHaveLength(3);
     expect(run.stored?.evidenceTrace?.map((step) => step.decision)).toEqual(["unusable", "tool_call", "complete"]);
-    // A bad reply is kept as a step that names nothing: no tool, no content.
-    expect(run.stored?.evidenceTrace?.[0]).toEqual({ iteration: 1, decision: "unusable" });
+    // A bad reply names no tool and carries no content, but it does say what
+    // was wrong with it: the stored trace keeps the result code, so a reader of
+    // a finished build can tell a malformed reply from a refused step.
+    expect(run.stored?.evidenceTrace?.[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" });
     expect(run.stored?.evidenceTrace?.[1]).toMatchObject({ iteration: 2, callId: "call.2", toolId: LOOK_TOOL_ID });
     expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, decisionCount: 3, toolCallCount: 1 });
     // Released when creation ended, not before.

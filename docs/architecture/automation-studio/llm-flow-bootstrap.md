@@ -59,6 +59,52 @@ not part of the schema or context. A `flow_bootstrap` request fails before
 provider invocation when it has no effective active instruction or no
 scope-aware registry context.
 
+## Permission on the authoring path
+
+A build carries a grant, and the grant says which lasting consequences its
+actions may have. The domain declares, action by action, what one would do --
+for a step the build takes now while exploring, and for a step the finished Flow
+would take each time it runs -- and
+`AutomationStudioActionPermissionGate` answers from the grant and from what the
+person's own instruction already asks for. An action whose consequences the
+build does not hold raises an
+`automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
+
+**The request is put to the person, in the Flow's own thread.** The request's
+`requestId` is the id of a `permission` ask
+(`runtime/conversations/ask.ts`), so the gate and the conversation name the same
+question without either inventing an id, and the ask carries the request
+verbatim. Answering `grant` adds exactly the classes the request listed as
+`missing` and the build carries straight on -- the same check is asked again
+rather than answered a second time. A refusal, or nobody answering, leaves the
+domain's own recoverable `permission_required` for the model to route around.
+One question is asked per build: a refusal nobody granted is remembered, so a
+build nobody is watching costs one question rather than one per action.
+
+**Whether the build waits is the caller's decision.**
+`permissionAskTimeoutMs` on the generation input is how long it holds open for
+an answer; absent, the question is still opened in the thread and the build
+carries on without waiting. The API handler passes
+`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS`, because somebody
+has just pressed build; an unattended caller passes nothing. The caller decides
+whether to wait; how long is capped at that same constant, since a build holds a
+provider grant and its caller's request open while it waits.
+
+**A build may propose while carrying an unanswered request.** It ends on the
+request only when it produced nothing; a plan the completion check accepted is
+still a Flow worth having, and the request is stored on the adaptation as
+`permissionRequest` and returned with the proposal. Approving or applying such
+an adaptation is refused until the ask it names is answered `grant`
+(`assertAutomationStudioBootstrapPermissionAnswered`), because a saved Flow
+replays with no gate in front of it, by design.
+
+**Both generation paths go through the same gate.** The evidence-guided build
+hands the check to every exploration call and to every step of the plan it
+completes; the one-call build, which explores nothing, hands it to every step of
+the plan as its parameters are resolved. Before this, the one-call path resolved
+with no check at all, so every step that declared a lasting consequence was
+refused with no request raised and nobody asked.
+
 ## Untrusted output boundary
 
 The model returns symbolic keys rather than durable IDs. Symbolic keys are

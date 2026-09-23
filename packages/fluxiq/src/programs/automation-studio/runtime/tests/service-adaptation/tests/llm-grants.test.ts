@@ -61,9 +61,9 @@ describe("AutomationStudioService recording persistence", () => {
     expect(revoked).toEqual(["llm-grant:test"]);
     expect(detail?.adaptationIds).toEqual([]);
     expect(JSON.stringify(detail)).not.toContain("session.sensitive");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).rejects.toThrow("incompatible");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).rejects.toThrow("incompatible");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).rejects.toThrow("cannot be an LLM dry run");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).rejects.toThrow("cannot carry side-effect authorization");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).rejects.toThrow("cannot carry side-effect authorization");
     await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, idempotencyKey: "live-diagnosis" })).rejects.toThrow("does not accept idempotency");
     await service.close();
     expect(grantServiceClosed).toBe(true);
@@ -261,8 +261,8 @@ describe("AutomationStudioService recording persistence", () => {
     const queued = await service.startRuntimeSession({ projectId: project.id, flowId: configured.flowId, authorizedDomainIds: ["other-domain"] });
     const grant = { grantId: "llm-grant:staged", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
 
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant })).rejects.toThrow("incompatible");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: "", llmExecution: grant })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant })).rejects.toThrow("cannot attach to a session it did not create");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: "", llmExecution: grant })).rejects.toThrow("cannot attach to a session it did not create");
 
     expect(providerResolutionCount).toBe(0);
     expect(dispatchCount).toBe(0);

@@ -89,10 +89,10 @@ import {
 export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
+import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantMayAct, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
-import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioInstructedConsequence } from "./action-permissions/index.ts";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionRequest, type AutomationStudioInstructedConsequence } from "./action-permissions/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
@@ -109,11 +109,10 @@ import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import {
-  type RecordingFlowActionCandidate,
   type RecordingFlowProposalArtifact,
   type RecordingFlowProposalDestination
 } from "./recording-flow-proposal.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import {
   addRecordingPipelineArtifactId,
   createRecordingPipelineDocument,
@@ -182,7 +181,7 @@ import {
   AutomationStudioRecordingDeletion,
   type AutomationPipelineArtifacts,
   type ReplayResultArtifact,
-  recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingMapperCalls, recordingFlowActionCandidate, appendRecordingProposalToFlow, recordingCandidateDefinition, materializeRecordingNode,
+  recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingProposalForMapper, appendRecordingProposalToFlow, recordingCandidateDefinition, materializeRecordingNode,
   AutomationStudioProposalApproval,
   clampInteger,
   embedAutomationStudioTaskGraphs, inspectAutomationStudioFlowMigration, type AutomationStudioFlowMigrationInspection, listAutomationStudioProposalSummaries, repairAutomationStudioFlowSummaryMetadataIndex, updateAutomationStudioProject, withAutomationStudioCanonicalFlowHierarchySubflows,
@@ -264,15 +263,15 @@ import {
   encodeAutomationStudioPageCursor
 } from "../storage/index.ts";
 import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, approvalDecisionHistory, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
-import { assertExactObjectFields, bootstrapAdaptationAuditEvent, evidenceTraceAuditDetail, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
+import { assertAutomationStudioBootstrapPermissionAnswered, assertExactObjectFields, automationStudioBootstrapStateDigestHook, bootstrapAdaptationAuditEvent, bootstrapHarnessAccounting, evidenceTraceAuditDetail, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
 import { flowMapExpansionStatus, nextRouteGroupOrder, nextRouteOrder, removeUndefinedRouteRuleFields, routeConditionFromInput, routeRuleMetadataWithGroup, routeRuleMetadataWithoutGroup, sqlRouterGroupToFlowGroup, sqlRouterRouteToFlowRule, withFlowMapRouteGroups, type AutomationStudioRouterRoutePage, type AutomationStudioRouterTargetReferenceBatch, type AutomationStudioSubflowTargetPage, type UpsertFlowMapRouteGroupInput, type UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
 import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, booleanSetting, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
 import { normalizeCustomHierarchyNode, requiredHierarchyId } from "./service/hierarchy-nodes/index.ts";
 import { readJsonLinePage } from "./service/json-lines/index.ts";
 import { listAutomationStudioProjectProblems, type AutomationStudioProblemPage } from "./service/problems/index.ts";
 import { executionPublicationDependencyState } from "./service/publication-dependencies/index.ts";
-import { countRecordingEntryTypes, recordingActionEntryCandidate, recordingProposalReplacementBase, recordingSummaryFromSession, recordingUpdatedAt, summaryRecordingSession, type RecordingSummaryItem, type RecordingSummaryList } from "./service/recording-projections/index.ts";
-import { buildRecordingStateIndex, missingRecordingStateLookup, proposalNodeStateLinkFromIndex, recordingEntryIsActionLike, resolveCandidateActionEntryId, resolveRecordingStateIndexItem, type RecordingEntryStateLookupInput, type RecordingEntryStateLookupResult, type RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
+import { countRecordingEntryTypes, recordingProposalReplacementBase, recordingSummaryFromSession, recordingUpdatedAt, summaryRecordingSession, type RecordingSummaryItem, type RecordingSummaryList } from "./service/recording-projections/index.ts";
+import { buildRecordingStateIndex, missingRecordingStateLookup, recordingEntryIsActionLike, resolveRecordingStateIndexItem, type RecordingEntryStateLookupInput, type RecordingEntryStateLookupResult, type RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
 import { reusableLlmContextSummary, type AutomationStudioReusableLlmContextFeatureStatus, type AutomationStudioReusableLlmContextFreshEvidenceInput, type AutomationStudioReusableLlmContextHostConfiguration, type AutomationStudioReusableLlmContextOption, type AutomationStudioReusableLlmContextSelection, type AutomationStudioReusableLlmContextSummary } from "./service/reusable-context/index.ts";
 import { normalizeAutomationStudioRuntimeInterventionMode, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, runtimeRunDetailWithAdaptationContext, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
 import { clampNumber, normalizePositiveInteger } from "./service/scalar-readings/index.ts";
@@ -1488,7 +1487,7 @@ export class AutomationStudioService {
     let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
     let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
     try {
-      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext"], "Flow Bootstrap generation input");
+      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext", "permissionAskTimeoutMs"], "Flow Bootstrap generation input");
       if (unsafeInput.evidenceGuided !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Evidence-guided generation flag is invalid.");
       if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
       if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
@@ -1565,21 +1564,25 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let buildPlan: AutomationStudioFlowBuildPlan;
         let evidenceTrace: AutomationStudioLlmEvidenceLoopTrace[] | undefined;
         let instructedConsequences: readonly AutomationStudioInstructedConsequence[] | undefined;
+        let permissionRequest: AutomationStudioActionPermissionRequest | undefined;
         let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
         let accounting: AutomationStudioBootstrapAccounting;
         const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs });
+        const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id) }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+        const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
+        const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
+        // The gate belongs to the build, not to the loop: a build that explored and one that wrote its Flow in a single call both put a step with a lasting consequence to the same person, through the Flow's own thread.
+        const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive,
+          ...(this.conversations.available ? { ask: { port: this.conversations.parkingPort({ projectId, subject: { kind: "flow", id: flowId } }), timeoutMs: input.permissionAskTimeoutMs } } : {}) });
         if (input.evidenceGuided) {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           let estimatedInputTokens = 0;
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA;
-          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id) }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
-          const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
-          const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
-          const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive });
           const loopAccounting = (spent: AutomationStudioLlmEvidenceLoopResult["accounting"]) => sanitizedBootstrapAccounting({ requestId: `evidence.${randomUUID()}`, estimatedInputTokens: estimatedInputTokens + authority.usage.estimatedInputTokens,
             provider: unresolvedProvider.provider.metadata.provider, model: unresolvedProvider.provider.metadata.model,
             inputTokens: spent.inputTokens + authority.usage.inputTokens, outputTokens: spent.outputTokens + authority.usage.outputTokens, totalTokens: spent.totalTokens + authority.usage.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + authority.usage.estimatedCostUsd });
           const accepted: { verdict?: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: true }> | undefined } = {};
+          const stateDigest = automationStudioBootstrapStateDigestHook(this.llmEvidenceRuntime, { projectId, flowId });
           const loop = await runAutomationStudioLlmEvidenceLoop({
             tools: harnessOptions.tools,
             propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
@@ -1590,6 +1593,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               return verdict.ok ? { ok: true } : verdict.check;
             },
             completionSchema, signal: permissions.signal,
+            // What the page was either side of each step, so the build's steps
+            // form the digest chain the reduction reads. Absent where the bound
+            // domain cannot observe its own state.
+            ...(stateDigest ? { captureStateDigest: stateDigest } : {}),
             ...bootstrapLoopLimits.loop,
             decide: routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
               if (input.useReusableContext === true && evidence.length) {
@@ -1619,10 +1626,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             }),
             executeTool: permissions.executeTool
           });
+          // A request ends the build only when the build produced nothing. A
+          // plan the completion check accepted is still a Flow worth having,
+          // and the request travels with it instead of discarding it: the
+          // person answers before it is applied (`flow-bootstrap/adaptation.ts`).
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
-          if (askedPermission) throw askedPermission;
+          if (askedPermission && !accepted.verdict) throw askedPermission;
           if (!loop.ok) throw flowBootstrapEvidenceLoopFailure(loop, loopAccounting(loop.accounting));
-          evidenceTrace = loop.trace; instructedConsequences = permissions.instructed();
+          evidenceTrace = loop.trace; instructedConsequences = permissions.instructed(); permissionRequest = permissions.request();
           failureStage = "provider_output_validation";
           accounting = loopAccounting(loop.accounting);
           failureAccounting = accounting;
@@ -1640,17 +1651,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           });
           if (!result.ok || result.response?.kind !== "flow_bootstrap") throw flowBootstrapHarnessFailure(result);
           generatedSummary = result.response.summary;
-          accounting = sanitizedBootstrapAccounting({ requestId: result.request.requestId, estimatedInputTokens: result.request.estimatedInputTokens,
-            ...(result.provider?.provider ? { provider: result.provider.provider } : {}), ...(result.provider?.model ? { model: result.provider.model } : {}),
-            ...(result.usage?.inputTokens !== undefined ? { inputTokens: result.usage.inputTokens } : {}), ...(result.usage?.outputTokens !== undefined ? { outputTokens: result.usage.outputTokens } : {}),
-            ...(result.usage?.totalTokens !== undefined ? { totalTokens: result.usage.totalTokens } : {}), ...(result.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: result.usage.estimatedCostUsd } : {}) });
+          accounting = bootstrapHarnessAccounting(result, authority.usage);
           failureStage = "provider_output_validation";
           failureCode = "flow_bootstrap.provider_output_validation_failed";
           failureAccounting = accounting;
           // The domain's parameters, then validation. Nothing explored, so no handle was issued and naming one refuses the plan.
-          const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: result.response.plan, projectId, flowId, binding: this.llmEvidenceRuntime, handlesIssued: false });
+          const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: result.response.plan, projectId, flowId, binding: this.llmEvidenceRuntime, handlesIssued: false, permissionFor: permissions.planStep });
           const validated = resolved.ok ? validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry, resolution }) : undefined;
-          if (!validated?.ok || !validated.validated) throw new Error("Flow Bootstrap generation returned an invalid plan.");
+          if (!validated?.ok || !validated.validated) throw permissions.endedOnRequest(undefined, accounting) ?? new Error("Flow Bootstrap generation returned an invalid plan.");
+          instructedConsequences = permissions.instructed(); permissionRequest = permissions.request();
           buildPlan = validated.validated;
         }
         failureStage = "post_provider_validation";
@@ -1673,6 +1682,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           accounting,
           ...(evidenceTrace ? { evidenceTrace } : {}),
           ...(instructedConsequences?.length ? { instructedConsequences: [...instructedConsequences] } : {}),
+          ...(permissionRequest ? { permissionRequest } : {}),
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {}),
           actorId: executionGrant.actorUserId
         });
@@ -1685,7 +1695,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           sourceInstructionIds: [...adaptation.sourceInstructionIds],
           baseDependencyDigest: adaptation.baseDependencyDigest,
           baseSettingsRevision: adaptation.baseSettingsRevision,
-          accounting: structuredClone(accounting)
+          accounting: structuredClone(accounting),
+          ...(adaptation.permissionRequest ? { permissionRequest: structuredClone(adaptation.permissionRequest) } : {})
         };
       });
     } catch (error) {
@@ -1707,6 +1718,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[];
     reusableContext?: JsonObject;
     instructedConsequences?: AutomationStudioInstructedConsequence[];
+    permissionRequest?: AutomationStudioActionPermissionRequest;
     actorId?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
     return await this.locks.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
@@ -1761,6 +1773,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.evidenceTrace ? { evidenceTrace: sanitizeEvidenceLoopTrace(input.evidenceTrace) } : {}),
         ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}),
         ...(input.instructedConsequences?.length ? { instructedConsequences: structuredClone(input.instructedConsequences) } : {}),
+        ...(input.permissionRequest ? { permissionRequest: structuredClone(input.permissionRequest) } : {}),
         buildPlan,
         topology: normalizeAutomationStudioFlowBuildPlan({
           adaptationId,
@@ -1797,6 +1810,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if (!adaptation) throw new Error(`Unknown Flow Bootstrap adaptation: ${input.adaptationId}`);
       if (input.action === "approve") {
         if (adaptation.status !== "proposed") throw new Error("Only a proposed Flow Bootstrap adaptation can be approved.");
+        await assertAutomationStudioBootstrapPermissionAnswered(adaptation, this.conversations);
         return await this.transitionFlowBootstrapAdaptation(adaptation, "validated", "approved", input.actorId ?? null);
       }
       if (input.action === "reject") {
@@ -2046,65 +2060,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       issues.push(`No mapper-visible entries remained after compacting high-frequency state. The recording contains ${entryCounts}.`);
     }
     for (const mapper of mappers) {
-      const controller = new AbortController();
-      const candidates: RecordingFlowActionCandidate[] = [];
-      let emittedCandidateCount = 0;
-      let mappedEntryCount = 0;
-      const calls = recordingMapperCalls(mapperTimeline, recording.recordingId, domainId);
-      for (const [index, entry] of mapperTimeline.entries()) {
-        const { observation, following } = calls[index]!;
-        try {
-          const mapped = await mapper.implementation(observation, { signal: controller.signal, elementMatcher: this.nativeNodeRuntime.elementMatcher, following });
-          const mappedCandidates = !mapped ? [] : "candidates" in mapped ? mapped.candidates : [mapped];
-          if (mappedCandidates.length) {
-            mappedEntryCount += 1;
-            emittedCandidateCount += mappedCandidates.length;
-          }
-          const candidateInputs = mappedCandidates.length ? mappedCandidates : entry.type === "action" ? [recordingActionEntryCandidate(entry)].filter(Boolean) as AutomationStudioRecordingMapperCandidate[] : [];
-          if (!mappedCandidates.length && candidateInputs.length) {
-            mappedEntryCount += 1;
-            emittedCandidateCount += candidateInputs.length;
-          }
-          for (const candidate of candidateInputs) {
-            const actionEntryId = resolveCandidateActionEntryId(recordingStateIndex, entry.id, candidate);
-            const stateLink = recordingStateIndex ? proposalNodeStateLinkFromIndex(recordingStateIndex, actionEntryId) : undefined;
-            candidates.push(recordingFlowActionCandidate(this.ioRuntime.io, {
-              candidate,
-              actionEntryId,
-              sourceEntryId: entry.id,
-              recordingId: recording.recordingId,
-              domainId,
-              ...(stateLink ? { stateLink } : {}),
-              ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {})
-            }));
-          }
-        } catch (error) {
-          issues.push(`Mapper ${mapper.definition.id} could not map entry ${entry.id}: ${errorMessage(error, "Unknown mapper error.")}`);
-        }
-      }
-      if (!candidates.length) {
-        const seenEntrySummary = mapperTimeline.length === recording.timeline.length
-          ? `saw ${recording.timeline.length} entries (${entryCounts})`
-          : `saw ${mapperTimeline.length} proposal entries from ${recording.timeline.length} raw entries (${entryCounts})`;
-        issues.push(`Mapper ${mapper.definition.id} emitted no valid action candidates for recording ${recording.recordingId}. It ${seenEntrySummary}, matched ${mappedEntryCount}, emitted ${emittedCandidateCount} raw candidates, and accepted 0 valid candidates.`);
-        continue;
-      }
-      const now = Date.now();
-      const proposal: RecordingFlowProposalArtifact = {
-        schemaVersion: "0.1",
-        proposalId: `recording-proposal.${safeSegment(recording.recordingId)}.${safeSegment(mapper.definition.id)}.${randomUUID()}`,
-        projectId: project.id,
-        recordingId: recording.recordingId,
-        domainId,
-        mapper: { id: mapper.definition.id, version: mapper.definition.version, packageId: mapper.packageId, packageVersion: mapper.packageVersion },
-        status: "proposed",
-        candidates,
-        generatedAt: now,
-        updatedAt: now,
-        metadata: { rawEvidenceImmutable: true, ...openRecordingProposalNotice(recording).metadata }
-      };
-      await this.recordings.writePipelineArtifact(project.id, "recordingFlowProposals", proposal.proposalId, proposal as unknown as JsonObject);
-      proposals.push(proposal);
+      const pass = await recordingProposalForMapper({
+        mapper, io: this.ioRuntime.io, elementMatcher: this.nativeNodeRuntime.elementMatcher,
+        projectId: project.id, domainId, recording, mapperTimeline, entryCounts,
+        stateIndex: recordingStateIndex, noticeMetadata: openRecordingProposalNotice(recording).metadata
+      });
+      issues.push(...pass.issues);
+      if (!pass.proposal) continue;
+      await this.recordings.writePipelineArtifact(project.id, "recordingFlowProposals", pass.proposal.proposalId, pass.proposal as unknown as JsonObject);
+      proposals.push(pass.proposal);
     }
     return { proposals, issues };
   }
@@ -2716,7 +2680,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
         throw new Error(refusal);
       }
-      input = { ...input, adaptiveMode: "manual_approval", authorizedExternalSideEffects: false };
+      // Manual approval always; side effects only where the purpose acts. The
+      // refusal above has already turned away a purpose that changes nothing
+      // and asked to act, so this narrows rather than contradicts it.
+      input = { ...input, adaptiveMode: "manual_approval", ...(automationStudioRuntimeSessionGrantMayAct(input.llmExecution.purpose) ? {} : { authorizedExternalSideEffects: false }) };
     }
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
     if (input.llmExecution && idempotencyKey) {
@@ -2753,7 +2720,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ? createRuntimePolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId, this.runtimeService)
         : createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
       graphOptions.runtimeCapabilities = ["policy-output", "io"];
-      const requestedDomainIds = input.llmExecution ? [] : uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
+      // A granted run that may act keeps the domains it was authorized for, like
+      // any other run. One that may not act was refused above if it named any.
+      const requestedDomainIds = input.llmExecution && !automationStudioRuntimeSessionGrantMayAct(input.llmExecution.purpose)
+        ? []
+        : uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
       if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
     }
     if (this.nativeNodeRuntime) { graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])]; graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext); }
@@ -2860,7 +2831,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
         });
-        const retry = adaptationContext && !input.llmExecution ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
+        // A verified repair resumes a granted run too. Withholding it here is
+        // what left an explicit repair applying a patch and then reporting the
+        // original failure, with nothing having re-run.
+        const retry = adaptationContext ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
           projectId: input.projectId,
           session: next,
           detail: annotatedDetail,
@@ -2914,7 +2888,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
       });
-      const retry = input.llmExecution ? null : await this.retryRuntimeSessionAfterAutoAppliedPatch({
+      const retry = await this.retryRuntimeSessionAfterAutoAppliedPatch({
         projectId: input.projectId,
         session: next,
         detail: annotatedDetail,
@@ -3682,6 +3656,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     appliedBy: string
   ): Promise<AutomationStudioBootstrapAdaptation> {
     if (adaptation.status !== "validated") throw new Error("Only a validated Flow Bootstrap adaptation can be applied.");
+    // The backstop for a record approved before the request was carried at all.
+    await assertAutomationStudioBootstrapPermissionAnswered(adaptation, this.conversations);
     const parent = await this.assertBlankBootstrapTarget(adaptation.projectId, adaptation.flowId);
     const currentDigest = await this.getLlmExecutionDependencyDigest(adaptation.projectId, adaptation.flowId);
     if (currentDigest !== adaptation.baseDependencyDigest) {
