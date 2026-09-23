@@ -4,4 +4,5 @@ export * from "./evidence-trace.ts";
 export * from "./field-readings.ts";
 export * from "./harness-accounting.ts";
 export * from "./permission-hold.ts";
+export * from "./permission-outcome.ts";
 export * from "./state-digest.ts";

@@ -49,50 +49,50 @@
 // later refusal reports that same request rather than asking again. So a build
 // nobody is watching costs one wait, not one per action.
 //
+// **What every step declared travels with the build, not only the refused one.**
+// A build's proposal carries the gate's whole record and Core's cross-check of
+// it against the person's own instruction (`action-permissions/cross-check.ts`).
+// Until this existed a permitted declaration was discarded where it was read,
+// so the one question the seam exists to answer -- what did this step say it
+// would do? -- could only be deduced from the absence of a refusal.
+//
+// The cross-check costs a provider call the build would not otherwise make,
+// and only in the case worth paying for: at least one action was put to the
+// gate and not one of them declared anything lasting, so the derivation that
+// reads the instruction was never triggered. A build that declared something
+// has already paid for it, and a build that acted on nothing has nothing to
+// compare.
+//
 // A build that finishes while carrying an unanswered request is proposed with
 // the request on it. The person is asked before anything is applied, never
 // instead of getting a Flow:
 // `assertAutomationStudioBootstrapPermissionRequestAnswered` is what stops an
 // unanswered one reaching a replay, where there is no gate.
 
-import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest, type AutomationStudioInstructedConsequence } from "../action-permissions/index.ts";
+import {
+  AutomationStudioActionPermissionGate,
+  automationStudioActionDeclarationCrossCheck,
+  type AutomationStudioActionDeclarationCrossCheck,
+  type AutomationStudioActionDeclarationRecord,
+  type AutomationStudioActionPermissionCheck,
+  type AutomationStudioActionPermissionRequest,
+  type AutomationStudioInstructedConsequence
+} from "../action-permissions/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
-import type { AutomationStudioAsk, AutomationStudioParkingPort } from "../parking/index.ts";
+import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.
  *
- * Short on purpose. A build holds a provider grant and its caller's request
- * open while it waits, so this is the cost of nobody being there, paid once per
- * build. A person watching the thread answers in seconds; one who is not never
- * had a build to rescue. A caller with nobody in front of it passes no timeout
- * and does not wait -- the question is still asked, and the answer releases the
- * proposal it comes back to.
+ * The one Core bound, under the name this path has always exported it by. The
+ * mechanism and the reasoning moved to `parking/permission-ask.ts` on
+ * 2026-09-22, when the repair path had to ask the same question the same way.
  */
-export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS = 120_000;
-
-/**
- * How long a build waits, or nothing when it opens the question and carries on.
- *
- * Capped at the default rather than taken as given. The caller decides *whether*
- * to wait; how long a build may be held open is Core's, because a caller asking
- * for a week would hold a provider grant and its own request for a week.
- */
-function askWaitMs(timeoutMs: number | undefined): number | undefined {
-  if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) return undefined;
-  return Math.min(Math.round(timeoutMs), AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS);
-}
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS = AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS;
 
 /** Where a build's permission question goes, and where its answer comes back from. */
-export type AutomationStudioFlowBootstrapPermissionAsk = {
-  port: AutomationStudioParkingPort;
-  /** Absent, or not positive, opens the question without waiting for it. */
-  timeoutMs?: number | undefined;
-  /** The build's own cancellation, so a cancelled build stops waiting. */
-  signal?: AbortSignal | undefined;
-  now?: (() => number) | undefined;
-};
+export type AutomationStudioFlowBootstrapPermissionAsk = AutomationStudioPermissionAsk;
 
 export type AutomationStudioFlowBootstrapActionPermissions = {
   /** The domain's executor, with the build's permission check handed to every action. */
@@ -109,6 +109,19 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
   instructed(): readonly AutomationStudioInstructedConsequence[] | undefined;
   /** The request a refusal raised, or `undefined` when none was. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
+  /** What every action put to the gate declared about itself, in the order it was asked. */
+  declarations(): readonly AutomationStudioActionDeclarationRecord[];
+  /**
+   * What the build declared, held against what the person's instruction asks
+   * for. `undefined` when no action was ever put to the gate, because a build
+   * that acted on nothing has nothing to contradict.
+   *
+   * Called once, after the loop has stopped. It may derive the instruction's
+   * authority -- one provider call -- for a build that never needed it, and
+   * where a caller passed an `ask` it says the finding out loud in the same
+   * thread the permission question uses. It never refuses anything.
+   */
+  crossCheck(): Promise<AutomationStudioActionDeclarationCrossCheck | undefined>;
   /**
    * The ending a raised request makes, or `undefined` when none was raised.
    * Read first once the loop stops: a request is why it stopped, and the loop
@@ -159,7 +172,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       const request = gate.request;
       if (decision.permitted || !input.ask || asked || !request || request.requestId !== decision.requestId) return decision;
       asked = true;
-      if (!(await askedAndGranted(input.ask, request))) {
+      if (!(await automationStudioAskedAndGranted(input.ask, request))) {
         gate.settle("refused");
         return decision;
       }
@@ -192,6 +205,16 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     signal: planRefused.signal,
     instructed: () => gate.instructed,
     request: () => gate.request,
+    declarations: () => gate.declarations,
+    crossCheck: async () => {
+      if (!gate.declarations.length) return undefined;
+      const crossCheck = automationStudioActionDeclarationCrossCheck({
+        declarations: gate.declarations,
+        instructed: await gate.resolveInstructed()
+      });
+      if (crossCheck.verdict === "undeclared" && input.ask) await saidOutLoud(input.ask, crossCheck);
+      return crossCheck;
+    },
     endedOnRequest: (progress, accounting) => gate.request
       ? flowBootstrapPermissionRequiredFailure(gate.request, progress ?? NO_LOOP_PROGRESS, accounting)
       : undefined
@@ -205,52 +228,34 @@ const NO_LOOP_PROGRESS: { trace: readonly AutomationStudioLlmEvidenceLoopTrace[]
 });
 
 /**
- * Puts one request to a person and waits, or carries on without an answer.
+ * Says a contradiction in the Flow's own thread, and does not wait.
  *
- * A thread that cannot be written to, or a port with no way to wait, leaves the
- * build with the refusal it already had. That is deliberately not the parking
- * port's own rule, where a question that reached nobody fails the run: a build
- * that loses its Flow over an unreachable thread is worse than a build that
- * proposes one and says a person still has to answer.
+ * Not a parking ask: the build has finished and has a Flow, and the question is
+ * whether to apply it, which the person answers by approving the proposal the
+ * finding is recorded on. A `confirm` rather than an `open` question, so the
+ * thread offers yes and no and an answer means something; `parks: false`,
+ * because nothing is being held. A thread that cannot be written to loses the
+ * turn and keeps the record, which is the same trade the permission ask makes.
  */
-async function askedAndGranted(ask: AutomationStudioFlowBootstrapPermissionAsk, request: AutomationStudioActionPermissionRequest): Promise<boolean> {
-  const now = ask.now ?? Date.now;
-  const waitMs = askWaitMs(ask.timeoutMs);
-  // The ask always says what it would wait for, whether or not this build does:
-  // the row is how a person reads the question and how it expires if nobody
-  // answers, and neither of those is this process's business.
-  const timeoutMs = waitMs ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS;
-  const raised: AutomationStudioAsk = {
-    // The request's own id, which its payload already calls the key a store
-    // would hold it under. Nothing invents a second one.
-    askId: request.requestId,
-    kind: "permission",
-    // True whether or not this build waits. `parks` is what tells a person that
-    // answering releases something, and it does either way: the build while it
-    // waits, and the proposal it produced afterwards, which cannot be approved
-    // or applied until this is granted.
-    parks: true,
-    timeoutMs,
-    onTimeout: "deny",
-    options: null,
-    routes: null,
-    consequences: [...request.consequences],
-    missing: [...request.missing],
-    control: { name: request.control.name, kind: request.control.kind },
-    permissionRequest: request,
-    status: "pending",
-    text: request.sentence,
-    raisedBy: { stage: "authoring", definitionId: request.action.id }
-  };
+async function saidOutLoud(ask: AutomationStudioFlowBootstrapPermissionAsk, crossCheck: AutomationStudioActionDeclarationCrossCheck): Promise<void> {
   try {
-    await ask.port.open(raised);
-    if (waitMs === undefined) return false;
-    const answer = await ask.port.awaitAnswer?.(raised, {
-      expiresAtMs: now() + waitMs,
-      ...(ask.signal ? { signal: ask.signal } : {})
+    await ask.port.open({
+      askId: `declaration-cross-check:${crossCheck.undeclared.join("-")}:${Math.trunc((ask.now ?? Date.now)())}`,
+      kind: "confirm",
+      parks: false,
+      timeoutMs: null,
+      onTimeout: null,
+      options: null,
+      routes: null,
+      consequences: [...crossCheck.undeclared],
+      missing: null,
+      control: null,
+      permissionRequest: null,
+      status: "pending",
+      text: `${crossCheck.sentence} Apply it as it stands?`,
+      raisedBy: { stage: "authoring" }
     });
-    return answer?.kind === "grant";
   } catch {
-    return false;
+    /* best-effort: a thread that could not be written to is not a reason to lose the Flow, and the finding is recorded on the proposal either way. */
   }
 }

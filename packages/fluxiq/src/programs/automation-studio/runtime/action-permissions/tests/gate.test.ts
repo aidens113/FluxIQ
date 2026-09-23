@@ -101,7 +101,11 @@ describe("the action permission gate", () => {
     const check = gate(["move_money"]).checkFor(STEP);
     const malformed: unknown[] = [
       undefined,
-      { consequences: [], control: { name: "Refund" }, verb: "press" },
+      // An empty list is a declaration -- "this acts and causes nothing
+      // lasting" -- and is read, recorded and permitted. A missing key still is
+      // not: saying nothing and saying none are different facts.
+      { control: { name: "Refund" }, verb: "press" },
+      { consequences: "none", control: { name: "Refund" }, verb: "press" },
       { consequences: ["purchase"], control: { name: "Refund" }, verb: "press" },
       { consequences: ["move_money"], control: { name: "" }, verb: "press" },
       { consequences: ["move_money"], control: { name: "Refund", kind: "<button>" }, verb: "press" },

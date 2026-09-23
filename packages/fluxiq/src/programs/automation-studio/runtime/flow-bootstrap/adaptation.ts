@@ -13,7 +13,12 @@ import type {
   AutomationStudioFlowBuildPlan,
   AutomationStudioFlowBootstrapRisk
 } from "./plan.ts";
-import type { AutomationStudioActionPermissionRequest, AutomationStudioInstructedConsequence } from "../action-permissions/index.ts";
+import type {
+  AutomationStudioActionDeclarationCrossCheck,
+  AutomationStudioActionDeclarationRecord,
+  AutomationStudioActionPermissionRequest,
+  AutomationStudioInstructedConsequence
+} from "../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 
@@ -105,6 +110,22 @@ export type AutomationStudioBootstrapAdaptation = {
    * run reads it without a model while each instruction's text is unchanged.
    */
   instructedConsequences?: AutomationStudioInstructedConsequence[];
+  /**
+   * What every action of the build declared about itself, in the order the gate
+   * was asked, with Core's answer beside each. A permitted declaration used to
+   * be discarded where it was read, so what a step said it would do could only
+   * be deduced from the absence of a refusal.
+   */
+  declaredConsequences?: AutomationStudioActionDeclarationRecord[];
+  /**
+   * Those declarations held against what the person's instruction was read as
+   * asking for. `verdict: "undeclared"` is the contradiction nothing else
+   * catches: the instruction plainly asks for something lasting and not one
+   * action said it would cause it. It refuses nothing -- the instruction is the
+   * authority for permitting, so nothing was bypassed -- and it is here so the
+   * person approving this Flow approves it in sight of the contradiction.
+   */
+  consequenceCrossCheck?: AutomationStudioActionDeclarationCrossCheck;
   /**
    * The permission request a build raised and finished anyway.
    *

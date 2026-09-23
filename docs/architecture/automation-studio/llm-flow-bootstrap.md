@@ -105,6 +105,45 @@ the plan as its parameters are resolved. Before this, the one-call path resolved
 with no check at all, so every step that declared a lasting consequence was
 refused with no request raised and nobody asked.
 
+**Every declaration is kept, including the empty one.** An action that says it
+causes nothing lasting is put to the gate like any other: it is read, recorded
+and permitted. The gate keeps one `AutomationStudioActionDeclarationRecord` per
+action asked about -- the action, the control as a person would name it under
+the same evidence rule the request uses, the classes, and Core's answer -- and
+the build stores them on the proposal as `declaredConsequences`. Until
+2026-09-22 a permitted verdict discarded the declaration where it was read and
+the domain never even called the check for an empty one, so what a step had said
+about itself could only be deduced from the absence of a refusal. Four live
+builds authored Flows containing presses that nobody could account for.
+
+**Core holds the declarations against the instruction.** After the loop stops,
+`automationStudioActionDeclarationCrossCheck` compares what the build declared
+with what the person's instruction was read as asking for, and stores the
+finding on the proposal as `consequenceCrossCheck`. `verdict: "undeclared"` is
+the contradiction nothing else catches: the instruction plainly asks for
+something lasting, actions that commit ran, and not one of them said it would
+cause it. Measured live on `social-scheduler-schedule-post`, twice: the press on
+"Schedule post" declared `send_or_publish`, the instruction asked for
+`send_or_publish` **and** `create_new`, and `create_new` was declared by
+nothing.
+
+It refuses nothing and grants nothing. The instruction is the authority for
+permitting, so a class the instruction asks for was already allowed and an
+under-declaration bypasses no permission; refusing the build would be Core
+overruling the person's own instruction on Core's reading of their words.
+Instead the finding is recorded on what the person approves and said out loud as
+a `confirm` ask in the Flow's thread, which does not park -- the build has a
+Flow, and the question is about applying it. Nothing here reads a control, a
+label or a node id: both sides of the comparison are the model's own statements.
+
+The comparison may cost one provider call the build would not otherwise make,
+and only in the case worth paying for -- at least one action was put to the gate
+and none of them declared anything lasting, so the derivation that reads the
+instruction was never triggered. That call is counted:
+`totalProviderCallCount` on the created-audit detail is every call the build
+made. `providerCallCount` and `decisionCount` remain the evidence loop's own and
+stay equal to each other, because a downstream reader holds them to that.
+
 ## Untrusted output boundary
 
 The model returns symbolic keys rather than durable IDs. Symbolic keys are

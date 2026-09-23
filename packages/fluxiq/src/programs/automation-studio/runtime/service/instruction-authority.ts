@@ -23,6 +23,13 @@ type HarnessResult = Awaited<ReturnType<typeof runAutomationStudioLlmHarness>>;
 
 /** What reading the instruction spent, added to the build's accounting. Zero when it never ran. */
 export type AutomationStudioInstructionAuthorityUsage = {
+  /**
+   * How many provider calls this made. Counted, because the build's own
+   * `providerCallCount` comes from the evidence loop's trace and this call is
+   * not in it -- so every per-build call count published anywhere was short by
+   * exactly this, silently, while its tokens and its money were counted.
+   */
+  calls: number;
   estimatedInputTokens: number;
   inputTokens: number;
   outputTokens: number;
@@ -41,7 +48,7 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
   provider: { provider: NonNullable<HarnessInput["provider"]>; tokenLimits?: HarnessInput["tokenLimits"]; timeoutMs?: number };
   maxEstimatedCostUsd?: number | undefined;
 }): { derive: () => Promise<readonly AutomationStudioInstructedConsequence[]>; usage: AutomationStudioInstructionAuthorityUsage } {
-  const usage: AutomationStudioInstructionAuthorityUsage = { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
+  const usage: AutomationStudioInstructionAuthorityUsage = { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
   const completionSchema = AUTOMATION_STUDIO_INSTRUCTED_CONSEQUENCES_SCHEMA;
   const derive = async (): Promise<readonly AutomationStudioInstructedConsequence[]> => {
     const answer = await input.run({
@@ -57,6 +64,7 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
       expectedOutput: "evidence_tool_decision",
       metadata: { source: "instructionAuthority" }
     });
+    usage.calls += 1;
     usage.estimatedInputTokens += answer.request.estimatedInputTokens;
     usage.inputTokens += answer.usage?.inputTokens ?? 0;
     usage.outputTokens += answer.usage?.outputTokens ?? 0;

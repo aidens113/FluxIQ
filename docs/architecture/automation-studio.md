@@ -1001,6 +1001,20 @@ beside `metadata.llmGate.permissions`, which lists the classes `granted`,
 `instructed` and `lapsed`. A person's answer reaches the next run as that
 run's grant.
 
+**A request raised while exploring is put to the person, in the run's own
+thread.** Where the run has a parking port bound -- every run that has a
+conversation does -- the exploration opens the gate's request as the same
+`permission` ask the authoring path uses, keyed by the request's own
+`requestId`, and waits. A grant widens what the run holds, the same check is
+asked again rather than answered a second time, and the action goes ahead. A
+refusal, or nobody answering, ends the exploration on the request as before, and
+one question is asked per exploration. Without a port there is nowhere to ask
+and a request is terminal, which is how every recovery behaved until
+2026-09-22 -- the exact ending the build path had just stopped producing.
+Creation, a runtime failure and improving an existing Flow are three entry
+points into one loop, so a question that parks a build and kills a repair is the
+loop half-built.
+
 **A repair that would lastingly act asks the same gate.** The patch schema a
 model is shown requires `consequences` on each acting patch that may run
 (`temporary_target_override`, `temporary_action_sequence`): Core's classes,
