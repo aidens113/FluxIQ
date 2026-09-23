@@ -9,6 +9,7 @@ import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
@@ -198,6 +199,22 @@ export type AutomationStudioNodeAttemptTrace = {
    * the model's -- names the snapshot the run was supposed to be standing in.
    */
   recordedState?: AutomationStudioRecordedState;
+  /**
+   * The question this attempt put to a person, and what became of it.
+   * `pending` is a run that parked here and has not been answered yet;
+   * `answered` or `expired` is a resumed run's record of how it went on, and
+   * `route` the way it left this node. An attempt carries this whether or not
+   * anybody was reachable, so a trace never has to be read to work out that
+   * something was waiting.
+   */
+  ask?: {
+    askId: string;
+    kind: AutomationStudioAskKind;
+    parks: boolean;
+    status: "pending" | "answered" | "expired";
+    route?: string;
+    settledAtMs?: number;
+  };
   logs?: AutomationStudioNativeLogEntry[];
   stateRefs?: {
     beforeAction?: AutomationStudioHostStateSnapshotRef;
@@ -226,6 +243,19 @@ export type AutomationStudioGraphExecutionTrace = {
   values: Record<string, JsonValue>;
   effects: Array<{ type: string; payload?: JsonValue; nodeId: string }>;
   regionTransitions?: Array<{ handoffId: string; fromRegionId: string; toRegionId: string; edgeId: string; at: number }>;
+  /**
+   * Present on a `waiting` trace whose run stopped on a question: everything
+   * `resumeAutomationStudioGraph` needs to go on from the answer. It rides on
+   * the trace because the trace is what a host already persists, so a parked
+   * run keeps for as long as its run record does and needs no store of its own.
+   *
+   * It is the *saved* trace's copy, so it holds what the saved trace holds:
+   * withheld values where the run resolved one out of state, and dataset
+   * markers where it captured rows. A host resuming in the same process should
+   * park from the executed trace `onExecutedTrace` hands it, which holds
+   * neither.
+   */
+  parked?: AutomationStudioParkedRun;
   message?: string;
 };
 
@@ -324,4 +354,11 @@ export type AutomationStudioGraphExecutionOptions = {
    */
   allowLlmDiagnosis?: boolean;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
+  /**
+   * Where a question this run raises is put to a person, and -- for a host that
+   * can hold a run open -- where the answer comes back from. Unbound, a run
+   * that reaches a question still parks and is still resumable; nobody is told
+   * about it.
+   */
+  parking?: AutomationStudioParkingPort;
 };

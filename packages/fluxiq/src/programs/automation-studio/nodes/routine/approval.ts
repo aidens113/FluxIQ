@@ -1,5 +1,16 @@
+import { automationStudioAskEffect } from "../../runtime/parking/index.ts";
 import { defineBuiltinNode } from "../shared/definition.ts";
 
+/**
+ * Stops the routine and asks a person to approve it, then goes on down the
+ * route their answer chooses.
+ *
+ * The node raises an ask and returns `waiting`; the executor is what parks the
+ * run on it, carries the question out to wherever a person is, and resumes the
+ * run from the answer without running this node again. Nothing here knows what
+ * a conversation is, and nothing about parking is particular to this node --
+ * anything inside a run that emits the same effect waits the same way.
+ */
 export const approvalNode = defineBuiltinNode({
   id: "builtin.routine.approval",
   label: "Approval",
@@ -27,5 +38,37 @@ export const approvalNode = defineBuiltinNode({
     }
   ],
   icon: "badge-check",
-  execute: (context) => ({ status: "waiting", route: "approved", outputs: { approved: context.inputs.in ?? null, timeoutMs: context.parameters.timeoutMs ?? 0, defaultRoute: context.parameters.defaultRoute ?? "rejected" }, effects: [{ type: "routine.approval.requested", payload: { prompt: context.parameters.prompt ?? "", timeoutMs: context.parameters.timeoutMs ?? 0, defaultRoute: context.parameters.defaultRoute ?? "rejected" } }] })
+  execute: (context) => {
+    const carried = context.inputs.in ?? null;
+    const timeoutMs = approvalTimeoutMs(context.parameters.timeoutMs);
+    return {
+      status: "waiting",
+      // Both branches carry what arrived, so whichever route the answer takes
+      // reaches the next node with the same value.
+      outputs: { approved: carried, rejected: carried },
+      effects: [automationStudioAskEffect({
+        kind: "confirm",
+        parks: true,
+        text: approvalPrompt(context.parameters.prompt),
+        ...(timeoutMs > 0 ? { timeoutMs } : {}),
+        routes: { answered: "approved", denied: "rejected", expired: approvalDefaultRoute(context.parameters.defaultRoute) }
+      })]
+    };
+  }
 });
+
+function approvalPrompt(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || "Approve this routine step?";
+}
+
+/** A parameter that is not a positive whole number of milliseconds waits indefinitely, as the parameter's own description says. */
+function approvalTimeoutMs(value: unknown): number {
+  const milliseconds = Number(value ?? 0);
+  return Number.isFinite(milliseconds) && milliseconds > 0 ? Math.floor(milliseconds) : 0;
+}
+
+/** Only the two routes the parameter offers; anything else is the declared default. */
+function approvalDefaultRoute(value: unknown): "approved" | "rejected" {
+  return value === "approved" ? "approved" : "rejected";
+}

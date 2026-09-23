@@ -5,3 +5,4 @@
 export * from "./admission.ts";
 export * from "./ending.ts";
 export * from "./requested-run-id.ts";
+export * from "./terminal-status.ts";
