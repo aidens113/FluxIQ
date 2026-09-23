@@ -14,3 +14,4 @@ export * from "./evidence-loop-steps.ts";
 export * from "./generation-failure.ts";
 export * from "./plan.ts";
 export * from "./review-projection.ts";
+export * from "./start-location.ts";

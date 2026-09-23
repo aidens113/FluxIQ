@@ -136,11 +136,12 @@ export class AutomationStudioProjectRuntimeStreamStore {
 
   async upsertRunSummary(summary: AutomationStudioFlowRunSummary): Promise<AutomationStudioFlowRunSummary> {
     await this.lease.database.run(
-      `insert into runtime_runs (run_id, flow_id, flow_revision, status, trigger_kind, queued_at_ms, started_at_ms, finished_at_ms, action_count, effect_count, error_count, adaptation_count, last_event_sequence, updated_at_ms, summary_json)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce((select last_event_sequence from runtime_runs where run_id = ?), 0), ?, ?)
+      `insert into runtime_runs (run_id, flow_id, flow_revision, status, trigger_kind, queued_at_ms, started_at_ms, finished_at_ms, action_count, effect_count, error_count, adaptation_count, last_event_sequence, updated_at_ms, summary_json, result_verification_status, result_check_epoch)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce((select last_event_sequence from runtime_runs where run_id = ?), 0), ?, ?, ?, ?)
        on conflict(run_id) do update set flow_id = excluded.flow_id, status = excluded.status, started_at_ms = excluded.started_at_ms,
          finished_at_ms = excluded.finished_at_ms, action_count = excluded.action_count, error_count = excluded.error_count,
-         adaptation_count = excluded.adaptation_count, updated_at_ms = excluded.updated_at_ms, summary_json = excluded.summary_json`,
+         adaptation_count = excluded.adaptation_count, updated_at_ms = excluded.updated_at_ms, summary_json = excluded.summary_json,
+         result_verification_status = excluded.result_verification_status, result_check_epoch = excluded.result_check_epoch`,
       [
         requiredId(summary.runId, "run"),
         requiredId(summary.flowId, "flow"),
@@ -156,10 +157,57 @@ export class AutomationStudioProjectRuntimeStreamStore {
         nonNegativeInteger(summary.adaptationCount, "adaptation count"),
         requiredId(summary.runId, "run"),
         nonNegativeInteger(summary.updatedAt, "updated at"),
-        JSON.stringify(summary)
+        JSON.stringify(summary),
+        // Only a run the schedule chose to check carries a status. A run that
+        // was never part of a check reads back null, which is a different fact
+        // from `unverified`, and is what `readResultCheckState` counts on.
+        runResultVerificationStatus(summary),
+        runResultCheckEpoch(summary)
       ]
     );
     return summary;
+  }
+
+  /**
+   * Where a Flow stands in its checking schedule, at the epoch given.
+   *
+   * Derived from the rows the runtime writes anyway, never from a counter
+   * column. `flow_settings.revision` is bumped by every mutation, so a per-run
+   * write there would make the settings fingerprint change on every run, and a
+   * read-modify-write of a counter is a value two concurrent runs of the same
+   * Flow can lose. These rows have neither problem and double as the audit
+   * trail.
+   *
+   * Four indexed counts against `(flow_id, result_check_epoch, finished_at_ms
+   * desc, run_id)` rather than a scan, so a Flow with ten thousand runs answers
+   * in the same four statements as one with three. Ordering breaks ties on
+   * `run_id`, so two runs finishing in the same millisecond still have a
+   * definite ordinal.
+   */
+  async readResultCheckState(input: { flowId: string; epoch: number }): Promise<{ ordinal: number; lastCheckedOrdinal: number | null; checksPassed: number; lastStatus: string | null }> {
+    const flowId = requiredId(input.flowId, "flow");
+    const epoch = positiveInteger(Math.trunc(input.epoch) || 1, "result check epoch");
+    const scope = "from runtime_runs where flow_id = ? and result_check_epoch = ? and finished_at_ms is not null";
+    return await this.lease.database.transaction(async (sql) => {
+      const total = await sql.get<{ total: number }>(`select count(*) as total ${scope}`, [flowId, epoch]);
+      const passed = await sql.get<{ total: number }>(`select count(*) as total ${scope} and result_verification_status = 'confirmed'`, [flowId, epoch]);
+      const newest = await sql.get<{ run_id: string; finished_at_ms: number; result_verification_status: string }>(
+        `select run_id, finished_at_ms, result_verification_status ${scope} and result_verification_status is not null order by finished_at_ms desc, run_id desc limit 1`,
+        [flowId, epoch]
+      );
+      const position = newest
+        ? await sql.get<{ total: number }>(
+          `select count(*) as total ${scope} and (finished_at_ms < ? or (finished_at_ms = ? and run_id <= ?))`,
+          [flowId, epoch, newest.finished_at_ms, newest.finished_at_ms, newest.run_id]
+        )
+        : null;
+      return {
+        ordinal: total?.total ?? 0,
+        lastCheckedOrdinal: position ? position.total : null,
+        checksPassed: passed?.total ?? 0,
+        lastStatus: newest?.result_verification_status ?? null
+      };
+    });
   }
 
   async putRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
@@ -649,5 +697,29 @@ function positiveInteger(value: number, label: string): number { const normalize
 function nonNegativeInteger(value: unknown, label: string): number { const normalized = Math.trunc(Number(value)); if (!Number.isFinite(normalized) || normalized < 0) throw new Error(`${label} must be a non-negative integer.`); return normalized; }
 function optionalInteger(value: unknown): number | null { return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null; }
 function clampInteger(value: unknown, min: number, max: number, fallback: number): number { const normalized = Math.trunc(Number(value)); if (!Number.isFinite(normalized)) return fallback; return Math.max(min, Math.min(max, normalized)); }
+
+/**
+ * The verdict word this run's own check reached, or null when no check was made
+ * of it.
+ *
+ * `checked` is the schedule's decision and is what keeps the two apart. A run
+ * the schedule passed over still runs the verification, still reaches
+ * `core.result.no_model_available`, and is still recorded `unverified` on its
+ * detail -- but it was never put to the question, and counting it as a check
+ * that settled nothing would make the schedule re-ask after every run it
+ * deliberately skipped.
+ */
+function runResultVerificationStatus(summary: AutomationStudioFlowRunSummary): string | null {
+  const resultCheck = compactJsonObject(summary.metadata?.resultCheck);
+  if (resultCheck.checked !== true) return null;
+  const status = resultCheck.status;
+  return status === "confirmed" || status === "refuted" || status === "unverified" || status === "no_result" ? status : null;
+}
+
+/** The Flow revision this run belongs to. 1 for a run written before the schedule existed, and for a Flow whose revision could not be read. */
+function runResultCheckEpoch(summary: AutomationStudioFlowRunSummary): number {
+  const epoch = Math.trunc(Number(compactJsonObject(summary.metadata?.resultCheck).epoch));
+  return Number.isFinite(epoch) && epoch >= 1 ? epoch : 1;
+}
 function compactJsonObject(value: unknown): JsonObject { return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {}; }
 function parseJsonObject(value: string): JsonObject { try { return compactJsonObject(JSON.parse(value)); } catch { return {}; } }

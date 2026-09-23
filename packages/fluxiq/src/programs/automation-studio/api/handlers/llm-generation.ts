@@ -3,7 +3,7 @@
 
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type AutomationStudioLlmExecutionGrantRequest, type AutomationStudioLlmExecutionPreflightRequest, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -91,6 +91,11 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
+      // Refused here rather than carried: a build that lost the one thing
+      // telling it where its Flow starts would explore from nowhere.
+      let startLocation: string | undefined;
+      try { startLocation = automationStudioFlowStartLocation(payload.startLocation); }
+      catch { return { ok: false, error: "Flow bootstrap generation request contains an invalid start location." }; }
       const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       if (!llmExecutionGrants) return { ok: false, error: "Flow bootstrap generation is unavailable." };
@@ -126,6 +131,10 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           },
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
+          // Where the Flow starts, when the caller named one. Validated above,
+          // so a request that named an unusable one was already refused rather
+          // than built from nowhere.
+          ...(startLocation === undefined ? {} : { startLocation }),
           // Somebody has just pressed build, so a question this build raises is
           // worth holding it open for: answered, the build carries on with
           // permission instead of coming back needing another one.
@@ -153,7 +162,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "llmExecutionGrantId",
   "authSessionId",
   "evidenceGuided",
-  "useReusableContext"
+  "useReusableContext",
+  "startLocation"
 ]);
 
 function flowBootstrapGenerationReadiness(

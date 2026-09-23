@@ -9,6 +9,7 @@ import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsD
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
 import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
+import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-check-model";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 
@@ -139,6 +140,8 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     setCompareConflict(false);
   }, [props.flow?.flowId, props.flow?.updatedAt]);
   const generalRuntimeErrors = flowGeneralRuntimeErrors(draft);
+  const resultCheckErrors = flowResultCheckErrors(draft);
+  const resultCheckSummary = flowResultCheckSummary(draft);
   const effectiveSettings = flowEffectiveSettings(flow, draft);
   const resetEffectiveSetting = (key: keyof FlowSettingsDraft) => {
     const value = FLOW_SETTINGS_DEFAULT_VALUES[key];
@@ -155,7 +158,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const llmSecretError = llmSettingsErrors.find((item) => item.toLowerCase().includes("key")) ?? "";
   const adaptationErrors = flowAdaptationErrors(draft);
   const limitsInterfaceErrors = flowLimitsInterfaceErrors(draft);
-  const settingsErrors = [...generalRuntimeErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
+  const settingsErrors = [...generalRuntimeErrors, ...resultCheckErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
   const settingsPending = settingsLoading;
   const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const saveSettings = async (authorizationPin: string, propagateError = false) => {
@@ -261,6 +264,30 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
             <label><span>Adaptation interventions/run</span><input min={0} type="number" value={draft.maxAdaptationInterventionsPerRun} onChange={(event) => updateDraft("maxAdaptationInterventionsPerRun", event.target.value)} /></label>
             <label><span>Adaptation cost/run</span><input min={0} step={0.01} type="number" value={draft.maxAdaptationCostUsdPerRun} onChange={(event) => updateDraft("maxAdaptationCostUsdPerRun", event.target.value)} /></label>
           </div>
+          <div className="automation-settings-divider"><strong>Training checks</strong><span>Even when nothing fails, the model reads what came back and judges whether it answered what you asked for. A wrong answer opens a repair.</span></div>
+          <SettingsToggle checked={draft.resultCheckEnabled} label="Check that results are right" onChange={(checked) => updateDraft("resultCheckEnabled", checked)} />
+          {draft.resultCheckEnabled ? <>
+            <label><span>How often</span><select aria-label="How often results are checked" value={draft.resultCheckShape} onChange={(event) => updateDraft("resultCheckShape", event.target.value as FlowSettingsDraft["resultCheckShape"])}>
+              <option value="initial_then_exponential">After creation, then less and less often</option>
+              <option value="linear_decay">After creation, then gradually less often</option>
+              <option value="fixed_interval">Every Nth run, always</option>
+              <option value="every_run">Every run</option>
+              <option value="never">Never</option>
+            </select></label>
+            {draft.resultCheckShape !== "every_run" && draft.resultCheckShape !== "never" ? <>
+              <div className="automation-settings-inline-fields">
+                <label><span>Runs checked to begin with</span><input min={0} step={1} type="number" value={draft.resultCheckInitialRunCount} onChange={(event) => updateDraft("resultCheckInitialRunCount", event.target.value)} /></label>
+                <label><span>Then every</span><input min={1} step={1} type="number" value={draft.resultCheckInterval} onChange={(event) => updateDraft("resultCheckInterval", event.target.value)} /></label>
+              </div>
+              <div className="automation-settings-inline-fields">
+                {draft.resultCheckShape === "fixed_interval" ? null : <label><span>{draft.resultCheckShape === "linear_decay" ? "Widening by (runs)" : "Widening by (times)"}</span><input min={1} step={1} type="number" value={draft.resultCheckDecay} onChange={(event) => updateDraft("resultCheckDecay", event.target.value)} /></label>}
+                <label><span>Never wait longer than</span><input min={1} placeholder="No limit" step={1} type="number" value={draft.resultCheckMaxInterval} onChange={(event) => updateDraft("resultCheckMaxInterval", event.target.value)} /></label>
+              </div>
+            </> : null}
+            <SettingsToggle checked={draft.resultCheckRepairOnRefutation} label="Try to repair when a check fails" onChange={(checked) => updateDraft("resultCheckRepairOnRefutation", checked)} />
+            <div className="automation-settings-inline-notice"><Info size={16} aria-hidden /><span>{resultCheckSummary}</span></div>
+          </> : null}
+          {resultCheckErrors.length ? <div className="automation-settings-inline-notice error" role="alert"><AlertCircle size={16} aria-hidden /><span>{resultCheckErrors.join(" ")}</span></div> : null}
         </section>
         <section className="automation-settings-panel" id="flow-settings-limits">
           <header><strong>LLM Budget</strong><span>Caps for intervention frequency, token use, and spend</span></header>

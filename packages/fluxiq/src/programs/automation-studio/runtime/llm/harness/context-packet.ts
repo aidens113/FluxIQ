@@ -208,6 +208,11 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
       resolution: input.flowBootstrap.resolution,
+      // Where the Flow starts, when the build was told. It reaches the model
+      // through the context and not through the instruction, because no
+      // instruction a person writes names it: they say what they want done, and
+      // only the caller knows where the Flow is meant to do it.
+      ...(input.flowBootstrap.startLocation === undefined ? {} : { startLocation: input.flowBootstrap.startLocation }),
       instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
       maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
         maxInputTokens: input.flowBootstrap.maxInputTokens ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
