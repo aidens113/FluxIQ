@@ -276,6 +276,12 @@ export async function runAutomationStudioRuntimeExploration(
         maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
         maxEvidenceBytes: input.budget.maxEvidenceBytes,
+        // Recovery's own no-progress streak, named rather than inherited. The
+        // loop's default became a far backstop when Flow creation stopped being
+        // ended by three non-productive steps; a recovery is a different job
+        // with a different budget, and its guard is the one its own ledger and
+        // `progress-guard.ts` agree on.
+        maxStepsWithoutProgress: input.budget.maxStepsWithoutProgress,
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         toolFailures: "observe",
         signal: stopSignal

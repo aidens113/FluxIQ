@@ -41,6 +41,7 @@ import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.
 import type { AutomationStudioFlowBootstrapRouteCondition } from "../plan/index.ts";
 import { combineAutomationStudioRouteConditions, readAutomationStudioRouteCondition } from "./condition.ts";
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptStep } from "./contracts.ts";
+import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError, authoringWarning } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
@@ -241,6 +242,11 @@ function buildNode(input: {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const written: Record<string, JsonValue> = {};
   let outputActionId: string | undefined;
+  // The step's own declaration of what it would lastingly do
+  // (`./consequences.ts`). A reserved word, read exactly as the output action
+  // is, because no node declares it as a parameter and the gate cannot work
+  // without it.
+  let consequences: string[] | undefined;
   for (const entry of input.step.entries) {
     let segments = entry.key.split(".").map((segment) => segment.trim()).filter(Boolean);
     let head = segments[0] ?? "";
@@ -248,7 +254,7 @@ function buildNode(input: {
     let parameter = matchAuthoringParameter(head, input.definition);
     // A key that names no parameter but that exactly one structured parameter
     // declares as one of its own is read as having been written inside it.
-    if (!parameter && !(segments.length === 1 && OUTPUT_ACTION_WORDS.has(authoringKey(head)))) {
+    if (!parameter && !(segments.length === 1 && (OUTPUT_ACTION_WORDS.has(authoringKey(head)) || isAuthoringConsequenceKey(head)))) {
       const inside = matchAuthoringParameterContaining(head, input.definition);
       if (inside) {
         parameter = inside;
@@ -258,7 +264,11 @@ function buildNode(input: {
     }
     if (!parameter) {
       if (segments.length === 1 && OUTPUT_ACTION_WORDS.has(authoringKey(head))) outputActionId = text;
-      else issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`));
+      else if (segments.length === 1 && isAuthoringConsequenceKey(head)) {
+        const declared = readAuthoringConsequences(text);
+        if (declared) consequences = declared;
+        else issues.push(authoringError("bootstrap.invalid_consequences", "Step consequences must name the permission classes, or none.", `${input.path}.consequences`));
+      } else issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`));
       continue;
     }
     if (segments.length === 1) {
@@ -292,7 +302,8 @@ function buildNode(input: {
       definitionId: input.definition.id,
       definitionVersion: input.definition.version,
       ...(Object.keys(normalised.parameters).length ? { parameters: normalised.parameters } : {}),
-      ...(derived ? { outputActionId: derived } : {})
+      ...(derived ? { outputActionId: derived } : {}),
+      ...(consequences ?? normalised.consequences ? { consequences: (consequences ?? normalised.consequences)! } : {})
     },
     issues
   };

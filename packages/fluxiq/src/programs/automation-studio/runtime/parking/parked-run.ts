@@ -1,5 +1,5 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskRoutes } from "./ask.ts";
+import type { AutomationStudioAsk, AutomationStudioResolvedAskRoutes } from "./ask.ts";
 
 /**
  * One node's place in a list it was iterating, carried across a park.
@@ -48,17 +48,24 @@ export type AutomationStudioParkedRun = {
   parkedAtMs: number;
   /** When nobody answering starts to count as an answer. Absent waits indefinitely. */
   expiresAtMs?: number;
-  routes: AutomationStudioAskRoutes;
+  /** The ask's routes, resolved: every way of settling it names a route the run can leave by. */
+  routes: AutomationStudioResolvedAskRoutes;
   carried: AutomationStudioParkedRunCarry;
 };
 
 /**
- * Where an ask that names no routes of its own resumes: on through the node's
+ * Where an ask that names no route of its own resumes: on through the node's
  * success route when it is answered, out of its failure route when it is
  * refused or nobody answers. A node with branch routes of its own -- Approval's
  * `approved` and `rejected` -- names them on the ask instead.
+ *
+ * The durable ask allows a null route, meaning "none named". A run cannot
+ * leave a node by a null, so a route is filled in here, once, when the run
+ * parks -- which is also when `onTimeout: "deny"` is folded in, so the record
+ * says outright where silence leads rather than making a resume days later
+ * re-read what the node meant.
  */
-export const AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES: AutomationStudioAskRoutes = Object.freeze({ answered: "success", denied: "failed", expired: "failed" });
+export const AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES: AutomationStudioResolvedAskRoutes = Object.freeze({ granted: "success", denied: "failed", timedOut: "failed" });
 
 export function automationStudioParkedRun(input: {
   ask: AutomationStudioAsk;
@@ -68,10 +75,14 @@ export function automationStudioParkedRun(input: {
   parkedAtMs: number;
   carried: AutomationStudioParkedRunCarry;
 }): AutomationStudioParkedRun {
-  const declared = input.ask.routes ?? AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES;
-  // `onTimeout: "deny"` is resolved now rather than at answering time, so the
-  // record says outright where nobody answering leads.
-  const routes: AutomationStudioAskRoutes = input.ask.onTimeout === "deny" ? { ...declared, expired: declared.denied } : declared;
+  const declared = input.ask.routes;
+  const granted = declared?.granted ?? AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES.granted;
+  const denied = declared?.denied ?? AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES.denied;
+  const routes: AutomationStudioResolvedAskRoutes = {
+    granted,
+    denied,
+    timedOut: input.ask.onTimeout === "deny" ? denied : declared?.timedOut ?? AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES.timedOut
+  };
   const timeoutMs = input.ask.timeoutMs ?? 0;
   return {
     ask: input.ask,

@@ -93,7 +93,7 @@ import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRunti
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioInstructedConsequence } from "./action-permissions/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   bootstrapAdaptationAsFlowAdaptation,
@@ -113,7 +113,7 @@ import {
   type RecordingFlowProposalArtifact,
   type RecordingFlowProposalDestination
 } from "./recording-flow-proposal.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
 import {
   addRecordingPipelineArtifactId,
   createRecordingPipelineDocument,
@@ -213,15 +213,12 @@ import {
   type RecordingIndex,
   type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority
 } from "./service/index.ts";
+import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
 import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
-export type { AutomationPipelineArtifacts, ReplayResultArtifact } from "./service/index.ts";
-export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
-export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
-export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput } from "./service/index.ts";
+export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
@@ -367,8 +364,9 @@ export class AutomationStudioService {
   private readonly normalizationReview: AutomationStudioNormalizationReview;
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
-  /** Run datasets (CD16, CD17), reached as a field so the frozen facade gains no methods (C8). */
+  /** Run datasets (CD16, CD17), and the conversation a person and FluxIQ talk in: reached as fields so the frozen facade gains no methods (C8). */
   readonly runDatasets: AutomationStudioRunDatasets;
+  readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
@@ -435,6 +433,7 @@ export class AutomationStudioService {
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
     this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool);
+    this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool);
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
     this.proposalGeneration = new AutomationStudioProposalGeneration(this.recordings, automationStudioFacadePorts(this));
@@ -1538,7 +1537,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           registry,
           resolution,
           instructionText: bootstrapInstructionText,
-          ...(input.evidenceGuided ? { maxCatalogEntries: 12 } : {}),
+          ...(input.evidenceGuided ? { maxCatalogEntries: 64 } : {}),
           maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
             maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
             instructionBytes: Buffer.byteLength(JSON.stringify(resolvedInstructions), "utf8")
@@ -1572,8 +1571,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         if (input.evidenceGuided) {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           let estimatedInputTokens = 0;
-          const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
-          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+          const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA;
+          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id) }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
           const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider);
           const authority = automationStudioFlowBootstrapInstructionAuthority({ run: (request) => this.runFlowBootstrapLlmHarness(request), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall });
           const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: executionGrant.permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive });
@@ -1585,8 +1584,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             tools: harnessOptions.tools,
             propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
-            checkCompletion: async (result) => {
-              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep });
+            checkCompletion: async (result, context) => {
+              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.ok ? { ok: true } : verdict.check;
             },
@@ -1607,7 +1606,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 // Reserve evidence-decision input capacity for the dynamic tool
                 // schema and accumulated evidence instead of allowing the node
                 // catalog to consume the ordinary Bootstrap input allocation.
-                flowBootstrap: { registry, resolution, maxInputTokens: 5_000, routing: routing.context() },
+                flowBootstrap: { registry, resolution, maxInputTokens: 16_000, routing: routing.context() },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
                 ...(bootstrapLoopLimits.maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsd: bootstrapLoopLimits.maxEstimatedCostUsdPerCall } : {}),
@@ -2760,8 +2759,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (this.nativeNodeRuntime) { graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])]; graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext); }
     if (this.hostRuntime) graphOptions.hostRuntime = this.hostRuntime;
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
-    // The run's captured rows reach the project's store under this run id. A retry or live patch reuses these options and this session, so its batches land under the same run (K4c).
+    // The run's captured rows reach the project's store under this run id, and a question it raises reaches the run's own thread, where its answer comes back from. A retry or live patch reuses these options and this session, so both land under the same run (K4c). Without project storage there is nowhere for a thread to live, and a run that asks still parks with nobody told.
     if (input.projectId && this.runDatasets.available) graphOptions.onRecordBatch = this.runDatasets.recordBatchHandler(input.projectId, session.runId);
+    if (input.projectId && this.conversations.available) graphOptions.parking = this.conversations.parkingPort({ projectId: input.projectId, subject: { kind: "run", id: session.runId } });
     // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");

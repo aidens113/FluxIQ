@@ -22,7 +22,9 @@ describe("a tool call that fails, in a loop that observes failures", () => {
       return { page: "home" };
     });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, unusableDecisions: { stalled } });
+    // The guard is named rather than inherited: its default is now a far
+    // backstop, because three in a row ended builds that were working.
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
 
     expect(result).toMatchObject({ ok: true, result: { plan: "close the prompt first" }, accounting: { iterations: 2, toolCalls: 2 } });
     expect(result.trace[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call.press.1", toolId: "press", resultCode: "llm_evidence_loop.tool_failed", evidenceBytes: expect.any(Number) });
@@ -103,7 +105,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
       if (toolId === "press") throw new Error(PRIVATE);
       return { page: "home" };
     });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.tool_failed", accounting: { iterations: 3, toolCalls: 4 } });
     expect(result.trace.slice(1).map((step) => [step.callId, step.resultCode])).toEqual([
       ["call.press.1", "llm_evidence_loop.tool_failed"],

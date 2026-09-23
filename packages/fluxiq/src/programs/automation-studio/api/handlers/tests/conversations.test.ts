@@ -34,7 +34,7 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
   const assertProjectDomainAccess = vi.fn().mockResolvedValue(undefined);
   const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "project.one" }, { id: "project.two" }] });
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects }, conversations: conversations as unknown as AutomationStudioConversations });
+  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, conversations: conversations as unknown as AutomationStudioConversations } });
   return { registry, conversations, assertProjectDomainAccess, listProjects };
 }
 

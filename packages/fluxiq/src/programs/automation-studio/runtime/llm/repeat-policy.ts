@@ -51,7 +51,13 @@ export function automationStudioLlmEvidenceRequestSignature(input: {
   attemptEpoch: number;
   input: JsonObject;
 }): string {
-  const epoch = input.tool.effect === "mutate" ? input.mutationEpoch : input.attemptEpoch;
+  // A tool whose calls say for themselves what they did cannot be keyed on
+  // what has *changed*, because whether this call will change anything is not
+  // known until it has run. It is keyed on what has *happened*, which is the
+  // looser of the two: a look repeated after a failed action is a new question,
+  // and an action repeated after one is a retry, which is also a new question.
+  const epoch = input.tool.perCallEffect === true ? input.attemptEpoch
+    : input.tool.effect === "mutate" ? input.mutationEpoch : input.attemptEpoch;
   return canonicalJson([epoch, input.tool.toolId, input.input]);
 }
 
@@ -77,6 +83,11 @@ export function automationStudioLlmEvidenceRequestSignature(input: {
  * new.
  */
 export function automationStudioLlmEvidenceLookNeedsAttempt(tool: AutomationStudioLlmEvidenceTool, mutable: boolean): boolean {
+  // Only an observation waits. A tool that can act is not a look, and one whose
+  // calls declare their own effect is not one either -- withholding it until
+  // something has happened would shut the only way anything can happen, which
+  // is exactly what it did the first time the library became one tool.
+  if (tool.effect === "mutate" || tool.perCallEffect === true) return false;
   return mutable && (tool.repeatPolicy === "after_mutation" || tool.initialObservation !== undefined);
 }
 

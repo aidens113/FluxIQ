@@ -26,6 +26,7 @@ import type {
 } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
 import { derivedOutputActionId } from "./assemble.ts";
+import { readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter } from "./matching.ts";
@@ -126,7 +127,10 @@ function buildSubflow(input: {
       definitionId: found.definition.id,
       definitionVersion: found.definition.version,
       ...(Object.keys(normalised.parameters).length ? { parameters: normalised.parameters } : {}),
-      ...(outputActionId ? { outputActionId } : {})
+      ...(outputActionId ? { outputActionId } : {}),
+      // The step's own declaration of what it would lastingly do, whether it
+      // came as a field of the node or rode in with its keys.
+      ...(nodeConsequences(value) ?? normalised.consequences ? { consequences: (nodeConsequences(value) ?? normalised.consequences)! } : {})
     });
     definitionByKey.set(key, found.definition);
   }
@@ -268,4 +272,9 @@ function uniqueSymbols(candidates: string[]): string[] {
 function bounded(text: string, limit: number): string {
   const trimmed = text.replace(/\s+/gu, " ").trim();
   return (trimmed || "Flow").slice(0, limit);
+}
+
+/** A nested plan node's own consequence declaration, when it wrote one. */
+function nodeConsequences(value: Record<string, unknown>): string[] | undefined {
+  return readAuthoringConsequences(value.consequences);
 }

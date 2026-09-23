@@ -1,5 +1,6 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskDraft, AutomationStudioAskKind, AutomationStudioAskOption, AutomationStudioAskRoutes } from "./ask.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskControl, AutomationStudioAskDraft, AutomationStudioAskKind, AutomationStudioAskOption, AutomationStudioAskRoutes } from "./ask.ts";
 
 /**
  * The effect anything executing inside a run emits to ask the person something.
@@ -23,6 +24,11 @@ export function automationStudioAskEffect(draft: AutomationStudioAskDraft): { ty
  * raiser gave it and is otherwise named after the attempt, which is unique
  * within the run.
  *
+ * Every field is read the way the conversation store will have to accept it --
+ * an option with its label and its route, a route that may be null, a
+ * consequence class that is one of the five Core names -- because this ask is
+ * the one that goes into the thread, not a runtime copy of it.
+ *
  * Returns nothing when no attempt effect is an ask, and nothing when the
  * payload is not one: a malformed payload must not park a run on a question
  * nobody can read, and an attempt that emitted rubbish is better carried on
@@ -40,15 +46,20 @@ export function automationStudioAskInEffects(
   return { ...draft, askId: draft.askId ?? askId, status: "pending", raisedBy: origin };
 }
 
+/** A raised ask with everything normalized but the three things only the runtime can supply. */
+type AutomationStudioNormalizedAskDraft = Omit<AutomationStudioAsk, "askId" | "status" | "raisedBy"> & { askId?: string };
+
 const ASK_KINDS: ReadonlySet<string> = new Set<AutomationStudioAskKind>(["permission", "choice", "confirm", "open"]);
 
-function askDraft(payload: JsonValue | undefined): AutomationStudioAskDraft | undefined {
+function askDraft(payload: JsonValue | undefined): AutomationStudioNormalizedAskDraft | undefined {
   if (!isRecord(payload)) return undefined;
   const { kind, parks, text } = payload;
   if (typeof kind !== "string" || !ASK_KINDS.has(kind)) return undefined;
   if (typeof parks !== "boolean" || typeof text !== "string" || !text.trim()) return undefined;
   const options = askOptions(payload.options);
   const routes = askRoutes(payload.routes);
+  const consequences = askConsequences(payload.consequences);
+  const missing = askConsequences(payload.missing);
   return {
     kind: kind as AutomationStudioAskKind,
     parks,
@@ -58,39 +69,87 @@ function askDraft(payload: JsonValue | undefined): AutomationStudioAskDraft | un
     ...(routes ? { routes } : {}),
     ...(typeof payload.timeoutMs === "number" && Number.isFinite(payload.timeoutMs) && payload.timeoutMs > 0 ? { timeoutMs: Math.floor(payload.timeoutMs) } : {}),
     ...(payload.onTimeout === "deny" || payload.onTimeout === "default" ? { onTimeout: payload.onTimeout } : {}),
-    ...(Array.isArray(payload.missing) ? { missing: payload.missing.filter((entry): entry is string => typeof entry === "string") } : {}),
+    ...(consequences ? { consequences } : {}),
+    ...(missing ? { missing } : {}),
     ...(isRecord(payload.control) ? { control: askControl(payload.control) } : {}),
-    ...(isRecord(payload.metadata) ? { metadata: payload.metadata } : {})
+    ...(askPermissionRequest(payload) ?? {})
   };
 }
 
+/**
+ * An option with no label is labelled by its id, which is what an answer names
+ * anyway. A label and a route are filled in here rather than left absent: a
+ * thread read back a week later cannot infer either.
+ */
 function askOptions(value: JsonValue | undefined): AutomationStudioAskOption[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const options: AutomationStudioAskOption[] = [];
   for (const entry of value) {
-    if (!isRecord(entry) || typeof entry.value !== "string") continue;
+    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id) continue;
     options.push({
-      value: entry.value,
-      label: typeof entry.label === "string" ? entry.label : entry.value,
-      ...(typeof entry.route === "string" && entry.route ? { route: entry.route } : {})
+      id: entry.id,
+      label: typeof entry.label === "string" && entry.label ? entry.label : entry.id,
+      route: typeof entry.route === "string" && entry.route ? entry.route : null
     });
   }
   return options.length ? options : undefined;
 }
 
+/**
+ * A route the raiser did not name is null, not a dropped routes object: the
+ * ask's own model allows a null route, and the parked run fills it in from the
+ * defaults. A routes object naming nothing at all is dropped, because it says
+ * nothing the defaults do not already say.
+ */
 function askRoutes(value: JsonValue | undefined): AutomationStudioAskRoutes | undefined {
   if (!isRecord(value)) return undefined;
-  const { answered, denied, expired } = value;
-  if (typeof answered !== "string" || typeof denied !== "string" || typeof expired !== "string") return undefined;
-  if (!answered || !denied || !expired) return undefined;
-  return { answered, denied, expired };
+  const routes = { granted: route(value.granted), denied: route(value.denied), timedOut: route(value.timedOut) };
+  return routes.granted || routes.denied || routes.timedOut ? routes : undefined;
 }
 
-function askControl(value: Record<string, JsonValue>): NonNullable<AutomationStudioAsk["control"]> {
+function route(value: JsonValue | undefined): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * The consequence classes as strings, checked against Core's five names by the
+ * store rather than here.
+ *
+ * The check belongs at the write and cannot be done here: the browser bundle
+ * reaches this module through `builtin.routine.approval`, and
+ * `runtime/action-permissions/`'s barrel pulls `node:crypto` in with it, which
+ * the extension's bundle guard refuses. So the vocabulary arrives as a type,
+ * which is erased, and `runtime/conversations/inputs.ts` refuses a class that is
+ * not one of the five -- loudly, at the one place that exists for what a write
+ * has to satisfy, rather than by quietly dropping a class out of `missing` and
+ * understating what is being asked for.
+ */
+function askConsequences(value: JsonValue | undefined): AutomationStudioActionConsequence[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const consequences = value.filter((entry): entry is AutomationStudioActionConsequence => typeof entry === "string" && entry.length > 0);
+  return consequences.length ? consequences : undefined;
+}
+
+function askControl(value: Record<string, JsonValue>): AutomationStudioAskControl {
   return {
-    ...(typeof value.name === "string" ? { name: value.name } : {}),
-    ...(typeof value.kind === "string" ? { kind: value.kind } : {})
+    name: typeof value.name === "string" && value.name ? value.name : null,
+    kind: typeof value.kind === "string" && value.kind ? value.kind : null
   };
+}
+
+/**
+ * A permission ask carries the request the gate built, whole. It is checked at
+ * the one field the join turns on -- the request's `requestId` must be the ask
+ * id, which is also what the store refuses on -- and otherwise travels as the
+ * gate wrote it, because rebuilding it here would be a second, worse copy of
+ * what Core already said.
+ */
+function askPermissionRequest(payload: Record<string, JsonValue>): { permissionRequest: AutomationStudioActionPermissionRequest } | undefined {
+  const request = payload.permissionRequest;
+  if (!isRecord(request) || typeof request.requestId !== "string" || !request.requestId) return undefined;
+  const askId = typeof payload.askId === "string" ? payload.askId : "";
+  if (askId && request.requestId !== askId) return undefined;
+  return { permissionRequest: request as unknown as AutomationStudioActionPermissionRequest };
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

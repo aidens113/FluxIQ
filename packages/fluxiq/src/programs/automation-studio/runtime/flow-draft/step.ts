@@ -58,8 +58,38 @@ export type AutomationStudioFlowDraftStep = {
   callId?: string;
   /** What was done. An opaque name; Core never interprets it. */
   actionId: string;
-  /** The argument it was given, carried so a kept step can be run again. */
+  /**
+   * The tool the call went through, when that is not `actionId` itself.
+   *
+   * One tool may run any number of named things -- the library of nodes a
+   * build may run is one tool whose argument names the node -- and then the
+   * draft's `actionId` is the node and this is the tool that ran it. An
+   * amendment that asks for a step to be run again needs both: the tool to
+   * call, and the name to record against what comes back.
+   */
+  toolId?: string;
+  /**
+   * The argument it was given, as the caller reported it, and the only one the
+   * model is ever shown back.
+   */
   input: JsonObject;
+  /**
+   * What the step actually ran with, when that is not what it was written with.
+   *
+   * The two differ whenever an argument names something by a token the caller
+   * has to make real -- a handle standing for a control the model was shown --
+   * and the difference matters twice. What is written down is the *resolved*
+   * form, because a token is a name for something on a page as it was, and a
+   * page that re-renders stops having it: a live build ran four nodes
+   * successfully and had its Flow refused because the handles no longer
+   * resolved. What the model is *shown* is the written form, because the
+   * resolved form is the caller's own medium -- selectors, in the web's case --
+   * and a domain declares keys that may never reach a model.
+   *
+   * Core reads neither. Both are opaque JSON carried for whoever writes the
+   * step down.
+   */
+  ranWith?: JsonObject;
   effect: AutomationStudioFlowDraftStepEffect;
   /** Whether a changing action changed anything, as the caller reported it. */
   effectApplied?: boolean;
@@ -70,6 +100,21 @@ export type AutomationStudioFlowDraftStep = {
   /** The same digest taken after it. */
   stateAfter?: string;
   disposition: AutomationStudioFlowDraftStepDisposition;
+  /**
+   * Whether a successful call of this kind is a step the result should
+   * contain, as the caller reported it.
+   *
+   * Absent, it is read from the effect, which is the rule that held while the
+   * only things a loop could do were look and change: an observation is how
+   * the loop looked and a change is what it did. That rule stops being true the
+   * moment the things a loop runs are the *nodes the result is made of*. A
+   * list extraction changes nothing on the page and is the whole point of a
+   * scraping Flow; a snapshot changes nothing and belongs in no Flow at all.
+   * Neither can be told from the other by its effect, so the caller that ran
+   * it says which it was, and says `false` for one that failed -- a step that
+   * did not work is not a step the result may contain.
+   */
+  proposes?: boolean;
   /** Settings the model amended onto the step. Carried opaquely. */
   settings?: JsonObject;
 };
@@ -77,13 +122,40 @@ export type AutomationStudioFlowDraftStep = {
 /**
  * Whether a step is one the draft proposes.
  *
- * Three conditions, and each rules out a different thing. It has to have
- * changed something, because an observation is how the loop looked and never
- * what it did. It has to have been reported as applied, because an action that
- * was refused or failed changed nothing to propose. And the model has to have
- * left it alone, because `dropped` and `exploratory` are exactly the two ways
- * it says otherwise.
+ * Two conditions. The step has to be one of the kind a result is made of, and
+ * to have worked: the caller says so on `proposes`, and where it said nothing
+ * the older rule stands -- it changed something, and the change applied. And
+ * the model has to have left it alone, because `dropped` and `exploratory` are
+ * exactly the two ways it says otherwise.
  */
 export function automationStudioFlowDraftStepIsProposed(step: AutomationStudioFlowDraftStep): boolean {
-  return step.effect === "mutate" && step.effectApplied !== false && step.disposition === "kept";
+  return step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step);
+}
+
+/**
+ * Whether a step is one the result could contain, before the model's own
+ * amendments are consulted.
+ *
+ * The draft shown to the model lists these, so a step it withdrew is still on
+ * the list with `inResult: false` beside it rather than silently gone. A step
+ * that only looked, or that failed, is not on it at all: neither is a thing the
+ * model could put in the Flow by changing its mind about it.
+ */
+export function automationStudioFlowDraftStepIsProposable(step: AutomationStudioFlowDraftStep): boolean {
+  return automationStudioFlowDraftStepIsAction(step) && step.effectApplied !== false;
+}
+
+/**
+ * Whether a step is one of the kind a result is made of, whether or not this
+ * attempt worked.
+ *
+ * This is what the draft *lists*, because the receipt is what makes the draft
+ * checkable: a reader can see that the loop pressed six controls, that one of
+ * them failed and one was withdrawn, and that the other four are what the
+ * result contains. A list with the other two silently absent is a claim nobody
+ * can audit. A step that only looked is not of that kind at all and is not
+ * listed.
+ */
+export function automationStudioFlowDraftStepIsAction(step: AutomationStudioFlowDraftStep): boolean {
+  return step.proposes ?? step.effect === "mutate";
 }
