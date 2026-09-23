@@ -46,6 +46,7 @@ export {
 export type { AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 export {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
+  automationStudioEvidenceKey,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
@@ -60,7 +61,8 @@ export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-ch
 // it before a slot exists: the result verification bounds a run's stored rows
 // into a summary, and a row that fails the screen must be dropped there rather
 // than refused at the provider, where the only answer left is to send nothing.
-export { screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
+export { automationStudioExecutableTargetKey, screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
+export { AUTOMATION_STUDIO_WITHHELD_LOCATOR, automationStudioLocatorShapedText, automationStudioWithoutLocators } from "./locator-text.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,

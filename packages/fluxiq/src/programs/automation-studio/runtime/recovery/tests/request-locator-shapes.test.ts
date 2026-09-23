@@ -8,7 +8,7 @@ import {
   type AutomationStudioLlmHarnessInput
 } from "../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
-import { automationStudioLocatorShapedText } from "../locator-text.ts";
+import { automationStudioLocatorShapedText } from "../../llm/harness/index.ts";
 
 // Nothing a repair is sent may be a way to address an element. The domain's
 // packets have obeyed that since they were written -- a control is an opaque

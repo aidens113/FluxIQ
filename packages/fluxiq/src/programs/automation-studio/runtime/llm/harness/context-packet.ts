@@ -23,7 +23,7 @@ import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-ll
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
 import { packAutomationStudioLlmConversation, type AutomationStudioLlmConversationContext } from "./conversation.ts";
-import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
+import { automationStudioExecutableTargetKey, screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
@@ -208,6 +208,11 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
       resolution: input.flowBootstrap.resolution,
+      // Where the Flow starts, when the build was told. It reaches the model
+      // through the context and not through the instruction, because no
+      // instruction a person writes names it: they say what they want done, and
+      // only the caller knows where the Flow is meant to do it.
+      ...(input.flowBootstrap.startLocation === undefined ? {} : { startLocation: input.flowBootstrap.startLocation }),
       instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
       maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
         maxInputTokens: input.flowBootstrap.maxInputTokens ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
@@ -412,7 +417,7 @@ function containsReusableExecutableTarget(value: JsonValue, deniedKeys: Readonly
   if (Array.isArray(value)) return value.some((item) => containsReusableExecutableTarget(item, deniedKeys, seen));
   return Object.entries(value).some(([key, item]) => {
     const normalized = key.toLowerCase().replace(/[^a-z0-9]/gu, "");
-    return /^(?:target|targets|targetid|targetids|targetnodeid|targetnodeids|actiontarget|actiontargets)$/u.test(normalized)
+    return automationStudioExecutableTargetKey(key)
       || deniedKeys.has(normalized)
       || containsReusableExecutableTarget(item as JsonValue, deniedKeys, seen);
   });

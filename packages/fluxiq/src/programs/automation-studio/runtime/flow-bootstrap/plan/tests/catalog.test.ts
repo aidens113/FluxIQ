@@ -476,3 +476,37 @@ describe("what the catalog may never trim away", () => {
     expect(tight.outputAction).toEqual(whole.outputAction);
   });
 });
+
+// Where the Flow starts is not a node, so the byte budget that decides which
+// nodes fit has no say over it: a build that was told where it starts is told
+// even when its catalog was cut to one entry.
+describe("the start location a build was told", () => {
+  const nodes = Array.from({ length: 8 }, (_, index) => definition(`domain.demo.node_${index}`));
+
+  it("is carried into the context the model is shown", () => {
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry: new AutomationStudioNodeRegistry(nodes),
+      resolution,
+      startLocation: "http://127.0.0.1:53017/scenarios/everything-store/"
+    });
+
+    expect(context.startLocation).toBe("http://127.0.0.1:53017/scenarios/everything-store/");
+  });
+
+  it("is absent for a build that was given its target instead of told where it is", () => {
+    expect(buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(nodes), resolution }))
+      .not.toHaveProperty("startLocation");
+  });
+
+  it("survives a catalog cut to a single node", () => {
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry: new AutomationStudioNodeRegistry(nodes),
+      resolution,
+      maxCatalogEntries: 1,
+      startLocation: "ledger:2026-10/period-open"
+    });
+
+    expect(context.nodeCatalog).toHaveLength(1);
+    expect(context.startLocation).toBe("ledger:2026-10/period-open");
+  });
+});

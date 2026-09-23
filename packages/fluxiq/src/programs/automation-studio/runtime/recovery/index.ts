@@ -6,7 +6,6 @@ export * from "./exploration-budget.ts";
 export * from "./exploration-outcome.ts";
 export * from "./exploration-state/index.ts";
 export * from "./llm-invocation.ts";
-export * from "./locator-text.ts";
 export * from "./context.ts";
 export * from "./context-summary.ts";
 export * from "./plan.ts";

@@ -18,6 +18,7 @@ import type {
   AutomationStudioFlowAdaptation,
   AutomationStudioFlowChangeProposal,
   AutomationStudioFlowInstruction,
+  AutomationStudioFlowRouter,
   AutomationStudioFlowScope
 } from "../../../model/index.ts";
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
@@ -62,6 +63,24 @@ export type AutomationStudioRuntimeRecoveryPorts = {
    * trace records that the plan asked for one and none happened.
    */
   flowForRecovery(projectId: string, flowId: string): Promise<{ scope: AutomationStudioFlowScope; metadata?: JsonObject | undefined } | undefined>;
+  /**
+   * The Flow's router, where its branching is actually written down.
+   *
+   * The Flow document carries nodes and edges; a router's rules live beside it
+   * and reach the model nowhere else. A repair asked to author routing -- which
+   * Core's own patch kinds permit, and which the standing requirement asks for
+   * in repair as well as in creation -- was being shown a straight line and
+   * could not tell a branch was there.
+   *
+   * It is the *parent* Flow's router that is read, whether or not a Subflow's
+   * graph is the thing that ran: a Subflow graph has no router of its own, and
+   * the rule that chose it is the parent's.
+   *
+   * Absent, or answering nothing, means this deployment has no router for the
+   * Flow. That is ordinary -- a single-graph Flow has none -- and the section
+   * simply carries nodes and edges.
+   */
+  flowRouterForRecovery?: ((projectId: string, flowId: string) => Promise<AutomationStudioFlowRouter | null | undefined>) | undefined;
   /**
    * The thread this run and this Flow are talked about in, in reading order.
    *

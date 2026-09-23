@@ -4,6 +4,7 @@ import {
   automationStudioDeepSeekModelRefusal,
   isAutomationStudioDeepSeekModel
 } from "fluxiq/automation-studio/llm-models";
+import { FLOW_RESULT_CHECK_DEFAULT_VALUES, flowResultCheckDraftFromSettings, flowResultCheckSchedule, type FlowResultCheckDraft } from "./flow-result-check-model";
 
 export const FLOW_LLM_HARD_MAX_TOKENS = 64_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
@@ -82,7 +83,10 @@ export type FlowSettingsDraft = {
   llmMaxCostUsd: string;
   llmRetryCount: string;
   adaptationPolicyId: string;
-};
+  // Training checks: whether a successful run's result is judged against the
+  // request, and how often. Their own module, because they are one question and
+  // this file is already the widest in the directory.
+} & FlowResultCheckDraft;
 
 export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInterventionsPerRun" | "maxTokensPerRun" | "maxCostUsdPerTrainingWindow" | "maxAdaptationInterventionsPerRun" | "maxAdaptationCostUsdPerRun" | "maxRetriesPerAction" | "maxRecoveryAttemptsPerSubflow" | "maxReroutesPerRun" | "interfaceInputs" | "interfaceOutputs">): string[] {
   const errors: string[] = [];
@@ -108,7 +112,8 @@ export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
   timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
   llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
-  maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2"
+  maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2",
+  ...FLOW_RESULT_CHECK_DEFAULT_VALUES
 };
 
 
@@ -288,6 +293,7 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     adaptationMode,
     trainingMode,
     trainForRunCount: numberInputValue(trainingSettings.trainForRunCount ?? metadata.trainForRunCount),
+    ...flowResultCheckDraftFromSettings(trainingSettings.resultCheck),
     minimumStabilityScore: numberInputValue(trainingSettings.minimumStabilityScore ?? metadata.minimumStabilityScore),
     proposalApprovalMode,
     requireFirstManualReviewBeforeAutoPromotion: booleanSetting(trainingSettings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
@@ -341,6 +347,10 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     budgetExhaustedBehavior: _oldBudgetBehavior, llmProvider: _oldLlmProvider, llmModel: _oldLlmModel,
     llmSecretKeyId: _oldLlmSecretKeyId, llmExecutionSettings: storedLlmExecutionSettings, adaptationPolicyId: _oldAdaptationPolicyId, ...retainedMetadata
   } = rawMetadata;
+  // The training settings this save replaces, kept so the standing result-check
+  // authorization stored beside the schedule survives it. The settings view
+  // never writes that record and must not drop it either.
+  const retainedTrainingSettings: any = _oldTrainingSettings && typeof _oldTrainingSettings === "object" ? _oldTrainingSettings : {};
   const llmProvider = draft.llmProvider.trim();
   const llmModel = draft.llmModel.trim();
   const llmSecretKeyId = draft.llmSecretKeyId.trim();
@@ -371,7 +381,8 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     ...(draft.allowPromotion !== true ? { allowPromotion: draft.allowPromotion } : {}),
     ...(draft.requireFirstManualReviewBeforeAutoPromotion ? { requireFirstManualReviewBeforeAutoPromotion: true } : {}),
     ...(Object.keys(recoveryBudget).length ? { recoveryBudget } : {}),
-    ...(Object.keys(budgets).length ? { budgets } : {})
+    ...(Object.keys(budgets).length ? { budgets } : {}),
+    resultCheck: { ...(retainedTrainingSettings.resultCheck ?? {}), schedule: flowResultCheckSchedule(draft) }
   };
   const adaptationPolicySettings = {
     ...(draft.adaptationPreset !== "adaptive" ? { preset: draft.adaptationPreset } : {}),

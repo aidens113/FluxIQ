@@ -77,3 +77,23 @@ export function screenAutomationStudioLlmEvidence(value: unknown, deniedKeys: re
 function credentialShaped(text: string): boolean {
   return CREDENTIAL_SHAPES.some((shape) => shape.test(text));
 }
+
+/**
+ * Whether a key is Core's own vocabulary for something a model could execute
+ * or address directly: the `target` family, which is what a repair addresses in
+ * every domain.
+ *
+ * Core denies these itself, wherever a projection of a run reaches a request.
+ * A medium's own word for a target -- `selector` in a browser -- is not here
+ * and never was Core's to name: it is the bound domain's declaration, checked
+ * beside this.
+ *
+ * It lives here rather than beside its first caller because it now has two:
+ * the reusable-context screen in `context-packet.ts` and the repair context's
+ * parameter projection. The list this file replaced was written out twice
+ * once before, in the packet and in the provider, and the copies drifted.
+ */
+export function automationStudioExecutableTargetKey(key: string): boolean {
+  return /^(?:target|targets|targetid|targetids|targetnodeid|targetnodeids|actiontarget|actiontargets)$/u
+    .test(key.toLowerCase().replace(/[^a-z0-9]/gu, ""));
+}

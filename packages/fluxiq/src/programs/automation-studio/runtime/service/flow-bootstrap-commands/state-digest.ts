@@ -24,7 +24,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.
  */
 export function automationStudioBootstrapStateDigestHook(
   binding: AutomationStudioLlmEvidenceRuntimeBinding | undefined,
-  context: { projectId: string; flowId: string }
+  context: { projectId: string; flowId: string; startLocation?: string }
 ): ((input: { callId: string; toolId: string; signal?: AbortSignal }) => Promise<string | undefined>) | undefined {
   const capture = binding?.captureStateDigest?.bind(binding);
   if (!capture) return undefined;
@@ -38,6 +38,10 @@ export function automationStudioBootstrapStateDigestHook(
       callId: input.callId,
       toolId: input.toolId,
       phase,
+      // A build told where its Flow starts has had nothing opened for it, so
+      // the state before its first step is no state. The domain is told, so it
+      // can answer "nothing" instead of failing the step that goes there.
+      ...(context.startLocation === undefined ? {} : { startLocation: context.startLocation }),
       ...(input.signal ? { signal: input.signal } : {})
     });
   };

@@ -282,7 +282,24 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     : input.useReusableContext === true && ports.reusableLlmContextEnabled
       ? { metadata: { status: "miss", reason: "fresh_evidence_required", freshContributionCount: 0, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } as JsonObject }
       : undefined;
-  const recoveryContext = buildAutomationStudioRuntimeRecoveryContext({ detail: input.detail, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), ...(input.subflowId ? { subflowId: input.subflowId } : {}), adaptations: input.context.recentAdaptations });
+  // The router is read from the *parent* Flow, which is what `input.context`
+  // names: a Subflow graph has none of its own, and the rule that selected it
+  // is the parent's. A deployment that supplies no port, or a Flow with no
+  // router, leaves the graph section carrying nodes and edges alone.
+  const router = await ports.flowRouterForRecovery?.(input.context.projectId, input.context.flowId);
+  const recoveryContext = buildAutomationStudioRuntimeRecoveryContext({
+    detail: input.detail,
+    ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}),
+    ...(input.runtimeFlow ? { flow: input.runtimeFlow } : {}),
+    ...(router ? { routers: [router] } : {}),
+    // Passed through exactly as the domain declared it, absent included: an
+    // absent declaration is what makes `step_parameters` refuse rather than
+    // project, and turning it into `[]` here would be Core deciding that a
+    // domain which said nothing denies nothing.
+    ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}),
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    adaptations: input.context.recentAdaptations
+  });
   const now = () => input.detail.summary.updatedAt || Date.now();
   const result = await runAutomationStudioLlmHarness({
     taskKind: "runtime_diagnosis", stage: "gather",

@@ -26,6 +26,12 @@ export const AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES = Object.freez
   // The bounded result summary a verification carries, re-checked the same way:
   // its own rule, the domain's keys, no credentials.
   "llm.provider_result_summary_invalid",
+  // The standardized account of the failure a runtime task carries. It now
+  // holds a projection of the Flow's authored parameters and of its graph, so
+  // it is an evidence-bearing slot like the rest and is re-checked like them:
+  // the domain's keys, no credentials, and nothing shaped like a way to address
+  // an element.
+  "llm.provider_recovery_context_invalid",
   "llm.provider_flow_bootstrap_context_invalid",
   "llm.provider_evidence_loop_context_invalid",
   "llm.provider_request_limits_invalid",

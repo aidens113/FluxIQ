@@ -118,6 +118,27 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     expect(context.sections.recovery_candidates).toMatchObject({ candidates: [{ kind: "reroute", priority: 1 }] });
   });
 
+  it("refuses to project a step's parameters when no domain declared what it denies, and says so", () => {
+    // An absent declaration means nobody said, never "deny nothing". The run
+    // did take steps, so `absent` would be a lie: `withheld` is the third
+    // reading the omission list exists to keep.
+    const undeclared = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
+    expect(undeclared.sections.step_parameters).toBeUndefined();
+    expect(undeclared.omitted).toContainEqual({ section: "step_parameters", reason: "withheld", byteCount: 0 });
+
+    const declared = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), deniedEvidenceKeys: ["selector"] });
+    expect(declared.sections.step_parameters).toMatchObject({ steps: [{ nodeId: "node.cart" }, { nodeId: "node.checkout" }] });
+    // With no Flow document there are no authored parameters to show, and the
+    // section says that rather than reading as a Flow whose steps take none.
+    expect(declared.sections.step_parameters).toMatchObject({ flowUnavailable: true });
+  });
+
+  it("records a Flow nobody could read as absent, not as an empty graph", () => {
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
+    expect(context.sections.flow_graph).toBeUndefined();
+    expect(context.omitted).toContainEqual({ section: "flow_graph", reason: "absent", byteCount: 0 });
+  });
+
   it("marks every section absent when the run produced nothing at all", () => {
     const empty: AutomationStudioFlowRunDetail = { schemaVersion: "0.1", summary: runDetail().summary, routeDecisions: [], subflows: [], interventions: [], adaptationIds: [], changeProposalIds: [] };
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: empty });
@@ -130,7 +151,7 @@ describe("summarizeAutomationStudioRuntimeRecoveryContext", () => {
   it("reports names, counts and reasons and carries no section content", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), adaptations: [adaptation()] });
     const summary = summarizeAutomationStudioRuntimeRecoveryContext(context);
-    expect(summary).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: context.schemaVersion, byteBudget: 4_000 });
+    expect(summary).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: context.schemaVersion, byteBudget: 8_000 });
     expect(summary.includedCount).toBe(context.included.length);
     const serialized = JSON.stringify(summary);
     for (const fragment of ["node.checkout", "web.target.selector_miss", "web-state-diff.v2", "router.1", "adaptation.1", "orderId", "a Pay button"]) {

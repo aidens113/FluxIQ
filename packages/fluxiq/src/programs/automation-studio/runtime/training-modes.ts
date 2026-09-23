@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "./service/adaptations/
 import type { AutomationStudioChangeProposalKind, AutomationStudioChangeProposalMode, AutomationStudioChangeProposalStatus, AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow } from "../model/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "./flow-bootstrap/index.ts";
 import type { AutomationStudioChangeConfidenceDecision } from "./flow-change/index.ts";
+import type { AutomationStudioResultCheckConfiguration } from "./result-check-schedule/index.ts";
 
 export type AutomationStudioTrainingAdaptationSummary = {
   adaptationId: string;
@@ -38,6 +39,8 @@ export type AutomationStudioTrainingModeSettings = {
     maxRecoveryAttemptsPerSubflow?: number;
     maxReroutesPerRun?: number;
   };
+  /** Whether a successful run's result is judged against the request, and who pays. See `runtime/result-check-schedule/`. */
+  resultCheck?: AutomationStudioResultCheckConfiguration;
   frozenScopes?: AutomationStudioFrozenScope[];
   metadata?: JsonObject;
 };

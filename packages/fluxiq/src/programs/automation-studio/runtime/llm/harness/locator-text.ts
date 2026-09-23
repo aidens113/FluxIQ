@@ -38,8 +38,18 @@
 // What this does not claim is that it knows every way to address an element.
 // It knows the ways this system has actually produced, and the guarantee is the
 // one it can keep: no string leaving here matches a shape the screen names.
+//
+// It lived under `runtime/recovery/` while the recovery context was its only
+// caller. It has two now -- the context builder that applies it, and the
+// provider pre-flight that re-checks it hasn't drifted -- and the pre-flight is
+// in `runtime/llm/`, which may not import a value out of `runtime/recovery/`
+// (see `scripts/structure-audit/config.mjs`: that edge closes a module cycle).
+// So it sits beside `evidence-screen.ts` and `failure-evidence.ts`, which is
+// where it belonged anyway: all three are screens applied to what leaves for a
+// provider, and `runtime/recovery/` importing a value out of `runtime/llm/` is
+// the direction that is allowed.
 
-import type { JsonValue } from "../../../../core/index.ts";
+import type { JsonValue } from "../../../../../core/index.ts";
 
 /** What replaces a locator. Short, and obviously not something to copy. */
 export const AUTOMATION_STUDIO_WITHHELD_LOCATOR = "[locator withheld]";
