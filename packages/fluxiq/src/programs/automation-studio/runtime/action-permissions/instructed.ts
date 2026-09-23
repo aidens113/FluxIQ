@@ -49,6 +49,16 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
  * carry the question; the class descriptions are where "schedule a post"
  * becomes both a new thing and a published one, so an instructed schedule is
  * not asked about again.
+ *
+ * Leaving that to the class descriptions alone did not work. Live
+ * (`run-mud7fssy-902f877b`), the instruction "Schedule a post to the Northwind
+ * Trails account ... saying: Trail clean-up on Saturday" was read as asking for
+ * `send_or_publish` and nothing else, so when the build reached for the control
+ * it had read as `create_new` the run stopped to ask the person for a class
+ * their own instruction plainly asks for. Both descriptions list "schedule";
+ * the model still answered with the closest single class. So the question now
+ * says, in the field the answer is given in, that one act often asks for
+ * several -- which is where a model reading "one entry for each" looks.
  */
 export const AUTOMATION_STUDIO_INSTRUCTED_CONSEQUENCES_SCHEMA: JsonObject = Object.freeze({
   type: "object",
@@ -58,7 +68,7 @@ export const AUTOMATION_STUDIO_INSTRUCTED_CONSEQUENCES_SCHEMA: JsonObject = Obje
     instructed: {
       type: "array",
       maxItems: AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length,
-      description: "Answer only this, from the person's instructions alone and not from anything a page shows: which lasting consequences do the instructions plainly ask the automation to cause? One entry for each consequence they plainly ask for, quoting the words that ask for it. Leave a consequence out when the instructions forbid it, only mention it, describe something that already happened, or do not clearly ask for it. An empty list is a complete answer.",
+      description: "Answer only this, from the person's instructions alone and not from anything a page shows: which lasting consequences do the instructions plainly ask the automation to cause? One entry for each consequence they plainly ask for, quoting the words that ask for it. One act they ask for often asks for more than one: scheduling or posting something creates a new thing that stays and publishes it to others, a refund moves money and changes an order that already exists, replacing a document creates one and changes what was there. Give every class the words ask for, not only the closest one. Leave a consequence out when the instructions forbid it, only mention it, describe something that already happened, or do not clearly ask for it. An empty list is a complete answer.",
       items: {
         type: "object",
         additionalProperties: false,

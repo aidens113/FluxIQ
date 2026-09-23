@@ -188,6 +188,24 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * `maxAmendments` is how many edits the run may spend, absent four.
    */
   draft?: false | { maxBytes?: number; maxAmendments?: number };
+  /**
+   * Whether a completed result must first have its draft replayed clean
+   * (`runtime/flow-draft/dry-run.ts`).
+   *
+   * On by default, and it costs a caller that cannot replay nothing: the gate
+   * applies only to a draft whose proposed steps carry what a replay needs, so
+   * a host that says nothing about replaying is never held to it. Where it does
+   * apply, the target is put back the way the draft's first step found it and
+   * every proposed step is run again through `executeTool` -- the same executor,
+   * so the same permission gate -- with **no provider call made by any of it**,
+   * and a result whose draft did not replay clean is refused back to the model
+   * as an ordinary issue rather than proposed.
+   *
+   * `false` turns it off, which is for a caller whose actions cannot be taken
+   * twice, never for making a build finish sooner: the replay is the only thing
+   * between "each step worked when I took it" and "these steps work as a Flow".
+   */
+  dryRun?: false;
   signal?: AbortSignal;
 };
 

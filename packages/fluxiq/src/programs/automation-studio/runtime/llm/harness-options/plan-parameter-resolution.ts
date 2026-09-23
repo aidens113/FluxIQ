@@ -16,12 +16,21 @@
 // `assertAutomationStudioFlowBootstrapPlanHandlesResolved` is the same promise
 // for a plan that did not come through generation -- one handed to
 // `createFlowBootstrapAdaptation` directly, or read back to be applied.
+//
+// This is also where a step meets the permission gate. Core hands the domain a
+// check with every node and, with it, what the step declared its own action
+// would lastingly do (`./plan-step-consequences.ts`). The domain adds what only
+// it knows -- which control, and the verb -- and calls the check. A step the
+// run is not permitted comes back `needs_permission`: an issue of its own, not
+// one of the model's mistakes, because no rewrite of the plan can answer it.
+// Only a person can, and the gate has already raised the request that asks.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
+import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
 
 type ParameterResolver = Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters">;
 
@@ -33,7 +42,11 @@ export const AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES = Object.freeze({
   failed: "bootstrap.parameter_resolution_failed",
   invalid: "bootstrap.parameter_resolution_invalid",
   refused: "bootstrap.parameters_refused",
-  unresolved: "bootstrap.handle_unresolved"
+  unresolved: "bootstrap.handle_unresolved",
+  /** The step declared consequences Core could not read as its own classes. */
+  consequences: "bootstrap.step_consequences_invalid",
+  /** The step would do something lasting that neither the instruction nor the grant allows. */
+  permission: "bootstrap.step_permission_required"
 } as const);
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
@@ -71,8 +84,17 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const permission = input.permissionFor?.({ definitionId: node.definitionId, ref: `${subflow.key}.${node.key}` }) ?? automationStudioActionPermissionDenied;
       const outcome = await resolveNode(node, input, permission);
+      const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
+      if (outcome.status === "needs_permission") {
+        // Not the model's mistake and not the model's to correct: the gate has
+        // raised the request, and the person answers it. Nothing after it is
+        // asked about, because the gate keeps only the first request and every
+        // later step would be answered with an id that asks for another step's
+        // classes -- a record that reads as though one request covered them all.
+        issues.push(permissionIssue(outcome, path));
+        return { ok: false, issues };
+      }
       if (outcome.status === "refused") {
-        const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
         for (const code of outcome.issueCodes) issues.push(parameterIssue(code, path));
         continue;
       }
@@ -99,20 +121,30 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 type NodeOutcome =
   | { status: "unchanged" }
   | { status: "resolved"; parameters: JsonObject }
-  | { status: "refused"; issueCodes: string[] };
+  | { status: "refused"; issueCodes: string[] }
+  | { status: "needs_permission"; missing: string[]; requestId: string | null };
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
   input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean },
   permission: AutomationStudioActionPermissionCheck
 ): Promise<NodeOutcome> {
-  const found = automationStudioPlanNodeHandleSites(node.parameters);
+  // The declaration comes off first, so nothing downstream -- the handle
+  // search, the domain, the registry -- ever sees a parameter no node declares.
+  const step = automationStudioPlanStepConsequences(node);
+  if (step.malformed) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.consequences);
+  const parameters = step.parameters;
+  const found = automationStudioPlanNodeHandleSites(parameters);
   if (found.malformed) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.malformed);
   const namesHandle = found.sites.length > 0;
   if (namesHandle && !input.handlesIssued) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notIssued);
   const resolver = input.binding?.resolvePlanNodeParameters;
   if (typeof resolver !== "function") {
-    return namesHandle ? refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported) : { status: "unchanged" };
+    if (namesHandle) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported);
+    // No domain to ask, so a step that says it would do something lasting is
+    // one nobody can permit; one that declared nothing lasting stands.
+    if (step.declared?.length) return { status: "needs_permission", missing: [...step.declared], requestId: null };
+    return stripped(step, parameters);
   }
   let answer: unknown;
   try {
@@ -120,8 +152,9 @@ async function resolveNode(
       projectId: input.projectId,
       flowId: input.flowId,
       nodeDefinitionId: node.definitionId,
-      parameters: structuredClone(node.parameters ?? {}),
-      permission
+      parameters: structuredClone(parameters),
+      permission,
+      ...(step.declared ? { declaredConsequences: [...step.declared] } : {})
     });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
@@ -131,16 +164,33 @@ async function resolveNode(
     const codes = [...new Set(answer.issueCodes.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)))].slice(0, MAX_REFUSAL_CODES);
     return codes.length ? { status: "refused", issueCodes: codes } : refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.refused);
   }
+  if (answer.status === "needs_permission" && exactKeys(answer, ["status", "missing", "requestId"])) {
+    const missing = Array.isArray(answer.missing) ? answer.missing.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)).slice(0, MAX_REFUSAL_CODES) : [];
+    const requestId = typeof answer.requestId === "string" && ISSUE_CODE.test(answer.requestId) ? answer.requestId : null;
+    // A domain that says "not permitted" and names nothing has not said which
+    // classes a person would have to grant, which is the whole of the answer.
+    return missing.length ? { status: "needs_permission", missing, requestId } : refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.refused);
+  }
   let outcome: NodeOutcome;
-  if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = { status: "unchanged" };
+  if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = stripped(step, parameters);
   else if (answer.status === "resolved" && exactKeys(answer, ["status", "parameters"]) && isBoundedJsonObject(answer.parameters)) {
     outcome = { status: "resolved", parameters: structuredClone(answer.parameters) };
   } else return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   // Whatever the node leaves with -- its own parameters or the domain's --
   // names no handle.
-  const leaving = outcome.status === "resolved" ? outcome.parameters : node.parameters;
+  const leaving = outcome.status === "resolved" ? outcome.parameters : parameters;
   if (automationStudioPlanNodeParametersNameHandle(leaving)) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved);
   return outcome;
+}
+
+/**
+ * A node the domain left as written. Its parameters are still rewritten when
+ * the step declared its consequences, because the declaration rode on them and
+ * a node that kept it would be refused by the registry for a parameter no node
+ * has.
+ */
+function stripped(step: { rodeOnParameters: boolean }, parameters: JsonObject): NodeOutcome {
+  return step.rodeOnParameters ? { status: "resolved", parameters } : { status: "unchanged" };
 }
 
 function refused(issueCode: string): NodeOutcome {
@@ -149,6 +199,21 @@ function refused(issueCode: string): NodeOutcome {
 
 function parameterIssue(code: string, path: string): AutomationStudioFlowBootstrapIssue {
   return { severity: "error", code, message: "A node's parameters were not accepted by the domain that runs it.", path };
+}
+
+/**
+ * A step nobody permitted. The classes and the request id are Core's own, so
+ * the message says which grant would answer it without carrying anything out
+ * of the domain.
+ */
+function permissionIssue(outcome: { missing: string[]; requestId: string | null }, path: string): AutomationStudioFlowBootstrapIssue {
+  const asked = outcome.requestId === null ? "nobody was there to ask" : `request ${outcome.requestId} asks for them`;
+  return {
+    severity: "error",
+    code: AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.permission,
+    message: `A step would do something lasting the run is not permitted (${outcome.missing.join(", ")}); ${asked}.`,
+    path
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
