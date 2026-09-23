@@ -151,7 +151,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 6275,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4638,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {
@@ -302,7 +302,6 @@
       "packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/reusable-llm-context.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/router-runtime.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/state-linker.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/llm-deepseek-flow-bootstrap.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/state-linker.test.ts": 1,
