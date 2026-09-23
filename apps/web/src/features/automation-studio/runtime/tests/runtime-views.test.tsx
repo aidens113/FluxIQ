@@ -170,12 +170,12 @@ describe("Automation Runtime workspace", () => {
 
   it("orders LLM, patch, adaptation, and retry stages", () => {
     const events = runtimeLlmAdaptationEvents({
-      interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "deepseek", model: "deepseek-chat", reason: "Diagnose mismatch.", tokenUsage: { totalTokens: 30 }, contextSummary: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", byteCount: 1842, truncated: false, digest: "private-digest", selector: "#private-target" } } }],
+      interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "deepseek", model: "deepseek-flash", reason: "Diagnose mismatch.", tokenUsage: { totalTokens: 30 }, contextSummary: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", byteCount: 1842, truncated: false, digest: "private-digest", selector: "#private-target" } } }],
       adaptationIds: ["adaptation.1"],
       metadata: { runtimePatchAttempts: [{ patchAttemptId: "patch.1", patchedTraceStatus: "succeeded" }], adaptiveRetry: { status: "succeeded", attemptCount: 2 } }
     });
     expect(events.map((event) => event.stage)).toEqual(["LLM", "Patch Test", "Adaptation", "Retry"]);
-    expect(events[0]).toMatchObject({ provider: "deepseek", model: "deepseek-chat", usage: "30 tokens | $0", evidenceProvenance: "Sanitized live evidence attached · web-llm-evidence.v1 · 1842 bytes · full" });
+    expect(events[0]).toMatchObject({ provider: "deepseek", model: "deepseek-flash", usage: "30 tokens | $0", evidenceProvenance: "Sanitized live evidence attached · web-llm-evidence.v1 · 1842 bytes · full" });
     expect(JSON.stringify(events[0]?.detail)).not.toMatch(/private-digest|private-target/);
     expect(events[2]).toMatchObject({ adaptationId: "adaptation.1", status: "created" });
   });
@@ -407,7 +407,22 @@ describe("Automation Runtime workspace", () => {
           retryCount: 0
         }
       }
-    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat", purpose: "diagnosis_only", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
+      // A Flow that names no model does not have one chosen for it here: the
+      // request leaves `model` out and Core resolves its configured default,
+      // which is what makes the model a setting rather than a constant repeated
+      // in every surface that builds a request.
+    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", purpose: "diagnosis_only", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
+    // A Flow that does name one carries it through untouched.
+    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
+      flowId: "flow.one",
+      metadata: { llmSecretKeyId: "key.deepseek", llmModel: "deepseek-v4-pro", llmExecutionSettings: { maxCalls: 1 } }
+    })).toMatchObject({ ok: true, payload: { model: "deepseek-v4-pro" } });
+    // One DeepSeek retired is not quietly sent on.
+    const retired = runtimeLlmExecutionRequestFromFlow("project.one", {
+      flowId: "flow.one",
+      metadata: { llmSecretKeyId: "key.deepseek", llmModel: "deepseek-chat", llmExecutionSettings: { maxCalls: 1 } }
+    });
+    expect(retired.ok && retired.payload).not.toHaveProperty("model");
     const adapting = runtimeLlmExecutionRequestFromFlow("project.one", {
       flowId: "flow.one",
       metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }

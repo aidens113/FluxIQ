@@ -1,4 +1,4 @@
-import type { AutomationStudioActionConsequence } from "../../runtime/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioDeepSeekModel } from "../../runtime/index.ts";
 import type { AutomationStudioReusableLlmContextList, AutomationStudioReusableLlmContextTag, AutomationStudioReusableLlmContextWrite } from "../../storage/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
 
@@ -90,7 +90,7 @@ export type AutomationStudioLlmExecutionGrantRequest = AutomationStudioLlmExecut
 export type AutomationStudioLlmExecutionPreflight = {
   keyId: string;
   provider: "deepseek";
-  model: "deepseek-chat";
+  model: AutomationStudioDeepSeekModel;
   projectId: string;
   flowId: string;
   executionDigest: string;

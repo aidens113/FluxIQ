@@ -14,12 +14,13 @@
 // nobody can tell whether any of this worked.
 
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS,
+  AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
   estimateAutomationStudioDeepSeekCostUsd
-} from "../deepseek-pricing.ts";
+} from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, type AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-bootstrap/index.ts";
@@ -96,9 +97,9 @@ describe("what the adapter reads back about the cache", () => {
       cacheMissInputTokens: 100,
       estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(1_000, 100, 900)
     });
-    // The point of reading it: 900 of the 1,000 input tokens cost a tenth of
-    // what they used to, and the call is measurably cheaper for it.
-    expect(result.usage.estimatedCostUsd).toBeCloseTo(0.0002156, 10);
+    // The point of reading it: 900 of the 1,000 input tokens cost a fiftieth
+    // of what they used to, and the call is measurably cheaper for it.
+    expect(result.usage.estimatedCostUsd).toBeCloseTo(0.0001554, 10);
     expect(result.usage.estimatedCostUsd).toBeLessThan(estimateAutomationStudioDeepSeekCostUsd(1_000, 100));
   });
 
@@ -126,14 +127,27 @@ describe("what the adapter reads back about the cache", () => {
   it("prices a call the provider said nothing about exactly as it did before any of this", async () => {
     const result = await runWithUsage({ prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 });
 
-    expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 5, totalTokens: 17, estimatedCostUsd: 0.00001188 });
+    expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 5, totalTokens: 17, estimatedCostUsd: 0.0000096 });
   });
 
-  it("charges a hit at a tenth of a miss and refuses a split that is not one", () => {
-    expect(AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS * 10)
+  // DeepSeek's published peak rates for deepseek-flash, per million tokens:
+  // $0.006 cache-hit input, $0.3 cache-miss input, $1.2 output
+  // (https://api-docs.deepseek.com/quick_start/pricing/, read 2026-09-23). The
+  // constants said 0.044, 0.44 and 1.32 until then, and the hit rate was
+  // written as "a tenth of a miss" from no source at all. It is a fiftieth,
+  // which is what makes lengthening a cached prefix worth doing.
+  it("charges a hit at a fiftieth of a miss and refuses a split that is not one", () => {
+    expect(AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS).toBe(0.3);
+    expect(AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS).toBe(0.006);
+    expect(AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS).toBe(1.2);
+    expect(AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS * 50)
       .toBeCloseTo(AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS, 10);
-    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 1_000)).toBe(0.000044);
-    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 0)).toBe(0.00044);
+    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 1_000)).toBe(0.000006);
+    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 0)).toBe(0.0003);
+    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 1_000, 0)).toBe(0.0015);
+    // A run that names the larger model is priced for the larger model.
+    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 1_000, 0, "deepseek-v4-pro")).toBe(0.00528);
+    expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 1_000, "deepseek-v4-pro")).toBe(0.000044);
     expect(() => estimateAutomationStudioDeepSeekCostUsd(1_000, 0, 1_001)).toThrow(RangeError);
     expect(() => estimateAutomationStudioDeepSeekCostUsd(1_000, 0, -1)).toThrow(RangeError);
   });

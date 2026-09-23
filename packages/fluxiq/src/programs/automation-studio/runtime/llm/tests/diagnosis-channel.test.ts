@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness.ts";
 
 const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };

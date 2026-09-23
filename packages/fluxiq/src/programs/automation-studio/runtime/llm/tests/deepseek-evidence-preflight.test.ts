@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import {

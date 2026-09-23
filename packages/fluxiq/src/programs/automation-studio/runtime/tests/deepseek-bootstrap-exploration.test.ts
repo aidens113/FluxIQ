@@ -126,7 +126,7 @@ async function create(options: {
       projectId: project.id,
       flowId: flow.flowId,
       provider: "deepseek",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       purpose: "build_and_adapt",
       maxCalls: options.maxCalls,
       tokenLimits,
@@ -176,7 +176,7 @@ function lookBinding(): AutomationStudioLlmEvidenceRuntimeBinding {
 
 /** The grant service with Identity Access and Secret Keys stood in. */
 function grantService(service: AutomationStudioService, fetchImpl: typeof fetch, revealed: string[]): AutomationStudioLlmExecutionGrantService {
-  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   let minted = 0;
   const secretKeys = {
     getKeySummary: async () => ({ ...key }),
@@ -281,7 +281,7 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       providerInvocation: "attempted",
       providerResponse: "received",
       // Every malformed reply was paid for nothing, so the record says so.
-      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-chat", inputTokens: 0, totalTokens: 0 }),
+      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 0, totalTokens: 0 }),
       evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, () => ({ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" })) },
       issueCodes: ["llm.provider_malformed_response"]
     });

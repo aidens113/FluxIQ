@@ -4,6 +4,12 @@ import type { IdentityAccessService } from "../../../identity-access/index.ts";
 import type { SecretKeysService } from "../../../secret-keys/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
 import {
+  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  automationStudioDeepSeekModelRefusal,
+  isAutomationStudioDeepSeekModel,
+  type AutomationStudioDeepSeekModel
+} from "./deepseek/index.ts";
+import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmProvider,
@@ -22,8 +28,8 @@ import {
   type AutomationStudioLlmExecutionGrantResolvePolicy
 } from "./grant-capabilities.ts";
 
-// Sized to deepseek-chat's real 64k context, less room for the reply, rather
-// than to a number nobody chose. At 8000 in and 10000 total, describing a real
+// Sized to Core's own per-request ceiling, less room for the reply, rather than
+// to a number nobody chose. At 8000 in and 10000 total, describing a real
 // page did not fit: measured 2026-09-17, the input guard fired before the
 // request was sent on every realistic page in the live corpus -- an infinite
 // feed, a multi-tab lookup, an auth gate, an admin console with a virtualised
@@ -74,7 +80,7 @@ const MAX_TOTAL_COST_USD = 2;
  * Ten full calls, derived from the per-call limit rather than written down as
  * an absolute, because an absolute silently changes meaning the moment a call
  * gets bigger. It was 100_000 beside a 10_000-token call -- ten calls. When the
- * per-call limit rose to deepseek-chat's real context it became under two
+ * per-call limit rose to Core's 64,000-token request ceiling it became under two
  * calls, and that broke recovery outright: the ledger's pot is capped by this
  * threshold, the patch reserve holds one call's worth of it, and each
  * exploration decision reserves another, so ZERO decisions could fit and every
@@ -180,7 +186,7 @@ export class AutomationStudioLlmExecutionGrantService {
   async preflight(input: { keyId: string; projectId: string; flowId: string; provider?: string; model?: string } & RequestedExecutionLimits): Promise<Omit<AutomationStudioLlmExecutionGrantMetadata, "grantId" | "expiresAtMs" | "remainingUses">> {
     const key = await this.options.secretKeys.getKeySummary(input.keyId);
     if (!key || !key.enabled || key.kind !== "llm") throw new Error("An enabled LLM key is required.");
-    validateKeyCompatibility(key, input);
+    const model = validateKeyCompatibility(key, input);
     const projectId = required(input.projectId);
     const flowId = required(input.flowId);
     const purpose = parseAutomationStudioLlmExecutionGrantPurpose(input.purpose);
@@ -222,7 +228,7 @@ export class AutomationStudioLlmExecutionGrantService {
     return {
       keyId: key.id,
       provider: "deepseek",
-      model: "deepseek-chat",
+      model,
       projectId,
       flowId,
       executionDigest: binding.executionDigest,
@@ -714,12 +720,26 @@ export class AutomationStudioLlmExecutionGrantService {
   private now(): number { return (this.options.now ?? Date.now)(); }
 }
 
-function validateKeyCompatibility(key: { provider?: string | undefined; scope: string; scopeRef?: string | undefined; metadata?: Record<string, unknown> | undefined }, input: { provider?: string; model?: string; flowId: string }): void {
+/**
+ * Whether this key may authorize this request, and which DeepSeek model the
+ * grant is for.
+ *
+ * The model is a setting, not a constant: the caller may name one, the key may
+ * record one, and where both do they must agree. Where neither does, the grant
+ * is for Core's configured default. What is refused is an id Core is not
+ * configured for -- named, with the configured set -- rather than anything that
+ * is not one particular string, which is what this check used to be.
+ */
+function validateKeyCompatibility(key: { provider?: string | undefined; scope: string; scopeRef?: string | undefined; metadata?: Record<string, unknown> | undefined }, input: { provider?: string; model?: string; flowId: string }): AutomationStudioDeepSeekModel {
   if ((input.provider ?? key.provider)?.trim().toLowerCase() !== "deepseek" || (key.provider && key.provider.trim().toLowerCase() !== "deepseek")) throw new Error("LLM provider mismatch.");
-  const model = input.model ?? (typeof key.metadata?.model === "string" ? key.metadata.model : "deepseek-chat");
-  if (model !== "deepseek-chat" || (typeof key.metadata?.model === "string" && key.metadata.model !== "deepseek-chat")) throw new Error("LLM model mismatch.");
+  const keyModel = typeof key.metadata?.model === "string" ? key.metadata.model : undefined;
+  if (keyModel !== undefined && !isAutomationStudioDeepSeekModel(keyModel)) throw new Error(automationStudioDeepSeekModelRefusal(keyModel));
+  const requested = input.model;
+  if (requested !== undefined && !isAutomationStudioDeepSeekModel(requested)) throw new Error(automationStudioDeepSeekModelRefusal(requested));
+  if (requested !== undefined && keyModel !== undefined && requested !== keyModel) throw new Error("LLM model mismatch.");
   if (key.scope === "flow" && key.scopeRef !== input.flowId) throw new Error("LLM key Flow scope mismatch.");
   if (key.scope !== "global" && key.scope !== "flow") throw new Error("LLM key scope is incompatible.");
+  return requested ?? keyModel ?? AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL;
 }
 
 function validateRevealedKey(key: { id: string; enabled: boolean; kind: string; provider?: string | undefined; scope: string; scopeRef?: string | undefined; updatedAtMs: number; metadata?: Record<string, unknown> | undefined }, expected: { keyId: string; provider: string; model: string; flowId: string; keyUpdatedAtMs?: number }): void {

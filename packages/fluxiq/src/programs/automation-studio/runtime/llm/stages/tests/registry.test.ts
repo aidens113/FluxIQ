@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioDeepSeekProvider } from "../../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../deepseek/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema

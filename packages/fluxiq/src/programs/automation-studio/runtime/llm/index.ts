@@ -5,15 +5,30 @@
 export * from "./harness.ts";
 export * from "./provider-contract.ts";
 export * from "./provider-factories.ts";
-export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek-provider.ts";
-// What a call costs, beside the adapter that makes it: dated provider prices,
-// and the cache split a reply reports (`deepseek-pricing.ts`).
+export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek/index.ts";
+// Which models Core will send to (`deepseek/models.ts`). The set and its
+// default are public because every layer between Flow settings and the provider
+// has to agree on them, and because one hardcoded string in each of those
+// layers is what made DeepSeek's last rename a source edit in two repositories
+// at once.
 export {
+  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS,
+  AUTOMATION_STUDIO_DEEPSEEK_MODELS,
+  automationStudioDeepSeekModelRefusal,
+  isAutomationStudioDeepSeekModel,
+  resolveAutomationStudioDeepSeekModel,
+  type AutomationStudioDeepSeekModel
+} from "./deepseek/index.ts";
+// What a call costs, beside the adapter that makes it: dated provider prices,
+// and the cache split a reply reports (`deepseek/pricing.ts`).
+export {
+  AUTOMATION_STUDIO_DEEPSEEK_OFF_PEAK_RATE_MULTIPLIER,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
   estimateAutomationStudioDeepSeekCostUsd
-} from "./deepseek-pricing.ts";
+} from "./deepseek/index.ts";
 export * from "./execution-grants.ts";
 // The grant's authorization table. Only the names `execution-grants.ts` used to
 // publish itself are exported; the checks the grant runs stay internal.

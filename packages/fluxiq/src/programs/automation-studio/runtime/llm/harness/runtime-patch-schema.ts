@@ -1,7 +1,7 @@
 // The shapes a runtime patch answer may take, as a provider shows them to a
 // model: a patch, or the answer that there is no repair.
 //
-// They lived in `deepseek-provider.ts`, which sits at the 800-line file limit,
+// They lived in `deepseek/provider.ts`, which sits at the 800-line file limit,
 // and what they describe is Core's contract with a model rather than anything
 // about one provider's transport. A second provider would show the same shapes.
 //

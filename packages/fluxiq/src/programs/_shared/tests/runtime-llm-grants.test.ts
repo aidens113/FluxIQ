@@ -44,7 +44,7 @@ describe("global runtime LLM execution-grant composition", () => {
         provider: "deepseek",
         scope: "flow",
         scopeRef: flow.flowId,
-        metadata: { model: "deepseek-chat" }
+        metadata: { model: "deepseek-flash" }
       });
       await runtime.secretKeys.unlockSession({
         sessionId: login.session.id,

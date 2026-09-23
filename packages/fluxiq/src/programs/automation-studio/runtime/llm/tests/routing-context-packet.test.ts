@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext } from "../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../flow-bootstrap/plan/tests/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import { runAutomationStudioLlmHarness } from "../harness.ts";
 

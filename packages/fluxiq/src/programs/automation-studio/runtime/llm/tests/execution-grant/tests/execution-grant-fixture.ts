@@ -9,7 +9,7 @@ import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../../evi
 import { AutomationStudioLlmExecutionGrantService } from "../../../execution-grants.ts";
 
 export function setupExecutionGrantFixture() {
-  const key: any = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key: any = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   let now = 1;
   let sessionValid = true;
   let pinConfigured = true;
@@ -196,7 +196,7 @@ export function setupExecutionGrantFixture() {
 }
 
 export function issueInput() {
-  return { actorUserId: "user.one", actorSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-chat" };
+  return { actorUserId: "user.one", actorSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-flash" };
 }
 export function evidenceRequest(): AutomationStudioLlmTaskRequest {
   const base = request();

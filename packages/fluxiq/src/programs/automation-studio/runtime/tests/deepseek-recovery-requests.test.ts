@@ -172,7 +172,7 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
     projectId: PROJECT_ID,
     flowId: FLOW_ID,
     provider: "deepseek",
-    model: "deepseek-chat",
+    model: "deepseek-flash",
     purpose: "diagnose_and_adapt",
     maxCalls: 26,
     // The live run's 600,000, or every call's worst case when that is less.
@@ -226,7 +226,7 @@ function explorationStage(detail: AutomationStudioFlowRunDetail): JsonObject | u
 
 /** The grant service with Identity Access and Secret Keys stood in. */
 function grantService(fetchImpl: typeof fetch, revealed: string[]): AutomationStudioLlmExecutionGrantService {
-  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   let minted = 0;
   const secretKeys = {
     getKeySummary: async () => ({ ...key }),

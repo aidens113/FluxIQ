@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../deepseek/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,

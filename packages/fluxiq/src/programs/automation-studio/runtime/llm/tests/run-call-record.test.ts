@@ -27,15 +27,15 @@ function reserve(budget: AutomationStudioLlmRunBudgetLedger, requestId: string, 
 describe("the run ledger's per-call receipt", () => {
   it("itemizes every counted call in order, and the lines add up to the snapshot", () => {
     const budget = ledger();
-    reserve(budget, "request.diagnosis", { call: { taskKind: "runtime_diagnosis", stage: "gather", promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-chat" } })
+    reserve(budget, "request.diagnosis", { call: { taskKind: "runtime_diagnosis", stage: "gather", promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" } })
       .complete({ inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001 }, { validationOk: true, issueCodes: [] });
     // A hold no call spends has no line.
     reserve(budget, "recovery.patch-reserve").release();
     // An evidence call whose provider reported nothing is charged its reservation, and says so.
-    reserve(budget, "request.evidence", { allowance: "exploration", call: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-chat" } })
+    reserve(budget, "request.evidence", { allowance: "exploration", call: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" } })
       .complete(undefined, { validationOk: false, issueCodes: ["llm.provider_timeout"] });
     // Tokens reported but no cost: the tokens are the provider's, the cost is the reservation's.
-    reserve(budget, "request.patch", { call: { taskKind: "runtime_patch", stage: "implement", promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-chat" } })
+    reserve(budget, "request.patch", { call: { taskKind: "runtime_patch", stage: "implement", promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-flash" } })
       .complete({ inputTokens: 60, outputTokens: 20, totalTokens: 80 }, { validationOk: true, issueCodes: [] });
 
     const receipt = budget.callRecords("run.receipt");
@@ -43,7 +43,7 @@ describe("the run ledger's per-call receipt", () => {
     expect(receipt.calls).toEqual([
       {
         sequence: 1, requestId: "request.diagnosis", taskKind: "runtime_diagnosis", stage: "gather", allowance: "run",
-        promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-chat",
+        promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
         validation: { ok: true, issueCodes: [] },
         reported: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001 },
         charged: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001, tokens: "reported", cost: "reported" },
@@ -51,7 +51,7 @@ describe("the run ledger's per-call receipt", () => {
       },
       {
         sequence: 2, requestId: "request.evidence", taskKind: "evidence_tool_decision", stage: "gather", allowance: "exploration",
-        promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-chat",
+        promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
         validation: { ok: false, issueCodes: ["llm.provider_timeout"] },
         reported: { inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null },
         charged: { ...RESERVED, tokens: "reserved", cost: "reserved" },
@@ -59,7 +59,7 @@ describe("the run ledger's per-call receipt", () => {
       },
       {
         sequence: 3, requestId: "request.patch", taskKind: "runtime_patch", stage: "implement", allowance: "run",
-        promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-chat",
+        promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-flash",
         validation: { ok: true, issueCodes: [] },
         reported: { inputTokens: 60, outputTokens: 20, totalTokens: 80, estimatedCostUsd: null },
         charged: { inputTokens: 60, outputTokens: 20, totalTokens: 80, estimatedCostUsd: RESERVED.estimatedCostUsd, tokens: "reported", cost: "reserved" },
@@ -144,7 +144,7 @@ describe("one call's line", () => {
       sequence: 2,
       requestId: "request.two",
       allowance: "exploration",
-      description: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-chat" },
+      description: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" },
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
       charged,
       budgetBreach: false
@@ -175,15 +175,15 @@ describe("the harness's line for each call", () => {
 
   it("describes a staged call, and records how it ended", async () => {
     const budget = ledger();
-    const answered = await call(budget, "request.answered", { metadata: { provider: "deepseek", model: "deepseek-chat" }, runTask: async () => ({ ...answer, usage: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 } }) });
-    const failed = await call(budget, "request.failed", { metadata: { provider: "deepseek", model: "deepseek-chat" }, runTask: async () => { throw new Error("socket closed with private detail"); } });
-    const garbled = await call(budget, "request.garbled", { metadata: { provider: "deepseek", model: "deepseek-chat" }, runTask: async () => ({ response: { kind: "diagnosis" }, stray: true }) });
+    const answered = await call(budget, "request.answered", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => ({ ...answer, usage: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 } }) });
+    const failed = await call(budget, "request.failed", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => { throw new Error("socket closed with private detail"); } });
+    const garbled = await call(budget, "request.garbled", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => ({ response: { kind: "diagnosis" }, stray: true }) });
 
     expect([answered.ok, failed.ok, garbled.ok]).toEqual([true, false, false]);
     const [first, second, third] = budget.callRecords("run.receipt").calls;
     expect(first).toMatchObject({
       requestId: "request.answered", taskKind: "runtime_diagnosis", stage: "gather", allowance: "run",
-      promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-chat",
+      promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
       validation: { ok: true, issueCodes: [] },
       reported: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 },
       charged: { tokens: "reported", cost: "reported" }

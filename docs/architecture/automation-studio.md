@@ -240,8 +240,11 @@ and persists only a compact structured-result summary without provider
 free-text or arbitrary metadata.
 
 Core also exports a production transport seam and a built-in DeepSeek adapter.
-The adapter has one fixed HTTPS chat-completions URL and the explicit
-`deepseek-chat` model; user/Flow endpoint overrides, redirects, hidden retries,
+The adapter has one fixed HTTPS chat-completions URL and a configured set of
+DeepSeek models (`AUTOMATION_STUDIO_DEEPSEEK_MODELS`: `deepseek-flash`, the
+default, and `deepseek-v4-pro`); a model outside that set is refused by name,
+with what replaced it where DeepSeek withdrew it, before a request is built.
+User/Flow endpoint overrides, redirects, hidden retries,
 and unbounded response reads are not supported. Requests use a concrete output
 allowance, a bounded timeout and abort signal, request/idempotency identifiers,
 and an opaque scoped secret resolver. A per-run reservation ledger is shared by
@@ -252,7 +255,7 @@ usage-less calls are charged conservatively. The default runtime composes this a
 an opaque, session-bound execution grant. Grant issue requires an authenticated
 actor session and a session-scoped Secret Keys unlock established at login; it
 does not accept or retain a password or PIN. The grant binds the enabled LLM key
-and revision, `deepseek-chat`, a canonical execution digest, effective per-call
+and revision, the resolved DeepSeek model, a canonical execution digest, effective per-call
 token limits, run token budget, call/cost/timeout limits, purpose, and claim
 window, and returns no secret. The
 execution digest covers the parent Flow, Flow Map Router, Subflow
@@ -278,7 +281,7 @@ web-runtime reload, SIGINT, or SIGTERM.
 [LLM execution grant lifetime](#llm-execution-grant-lifetime) states what bounds
 a grant before and after a run claims it. Core never reads a
 provider key from the environment. Flow Settings exposes only DeepSeek and
-deepseek-chat, selects only enabled Secret Keys metadata in global or current
+the configured model set, selects only enabled Secret Keys metadata in global or current
 Flow scope, and persists per-request input/output/total token limits, a call
 limit, timeout, estimated-cost cap, and zero-retry policy. The settings API
 rejects totals above 50,000, input-plus-output reservations above the total,

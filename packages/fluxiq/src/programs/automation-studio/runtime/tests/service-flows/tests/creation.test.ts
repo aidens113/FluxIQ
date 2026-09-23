@@ -111,7 +111,7 @@ describe("AutomationStudioService recording persistence", () => {
         metadata: {
           ...first.metadata,
           llmProvider: "deepseek",
-          llmModel: "deepseek-chat",
+          llmModel: "deepseek-flash",
           llmSecretKeyId: "key.deepseek",
           llmExecutionSettings: { tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1, retryCount: 0 },
           adaptationPolicyId: "policy.metadata"
@@ -129,7 +129,7 @@ describe("AutomationStudioService recording persistence", () => {
       name: "First metadata Flow",
       settings: {
         adaptation: { policyId: "policy.metadata" },
-        llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek", execution: { tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1, retryCount: 0 } }
+        llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek", execution: { tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1, retryCount: 0 } }
       }
     });
   });

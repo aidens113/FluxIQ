@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
-import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, type AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-bootstrap/index.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];

@@ -78,7 +78,7 @@ describe("Automation Studio LLM execution API contract", () => {
     const request: AutomationStudioLlmExecutionPreflightRequest = { projectId: "project.one", flowId: "flow.one", keyId: "secret:key", purpose: "diagnose_and_adapt" };
     const preflight = await service.preflight(request);
     // What the field comments in the contract promise. The per-call limits are
-    // deepseek-chat's own 64k context less room for the reply; the call count
+    // deepseek-flash's own 64k context less room for the reply; the call count
     // did not move with them, and the run budget is the confirmation threshold,
     // which is ten of those calls rather than a number written down beside
     // them -- written down, it stopped being ten calls the moment a call grew.
@@ -96,7 +96,7 @@ describe("Automation Studio LLM execution API contract", () => {
 /** A grant service that can answer a preflight: an enabled DeepSeek key and a
  * Flow bound to a settings revision. Preflight touches nothing else. */
 function contractGrantService(): AutomationStudioLlmExecutionGrantService {
-  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   const secretKeys = { getKeySummary: async (id: string) => (id === key.id ? key : undefined) } as unknown as SecretKeysService;
   return new AutomationStudioLlmExecutionGrantService({
     identityAccess: {} as IdentityAccessService,

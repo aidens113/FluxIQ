@@ -1,3 +1,4 @@
+import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-models";
 import { llmPreflightRunLimits } from "./llm-preflight-run-limits";
 
 /**
@@ -102,7 +103,7 @@ function blankFlowRequestBase(projectId: string | null, flow: any, readiness: Bl
     && readiness.subflowTotal === 0;
   const hasActiveInstruction = readiness.instructions.some((instruction) => instruction?.status === "active");
   if (!projectId || !flow?.flowId || readiness.loading || readiness.error || !isBlank || (requireActiveInstruction && !hasActiveInstruction)
-    || metadata.llmProvider !== "deepseek" || metadata.llmModel !== "deepseek-chat"
+    || metadata.llmProvider !== "deepseek" || !isAutomationStudioDeepSeekModel(metadata.llmModel)
     || typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false };
   return {
     ok: true,
@@ -113,7 +114,7 @@ function blankFlowRequestBase(projectId: string | null, flow: any, readiness: Bl
       flowId: flow.flowId,
       keyId: metadata.llmSecretKeyId,
       provider: "deepseek",
-      model: "deepseek-chat"
+      model: metadata.llmModel
     }
   };
 }

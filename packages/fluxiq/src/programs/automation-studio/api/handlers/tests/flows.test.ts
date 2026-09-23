@@ -218,7 +218,7 @@ describe("Automation Studio Flow settings: the intervention mode a caller names"
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings,
         scope: {},
         actor: writer,
-        payload: { projectId: project.id, flowId: flow.flowId, flow: { flowId: flow.flowId, description: "Renamed", metadata: { llmProvider: "deepseek", llmModel: "deepseek-chat" } } }
+        payload: { projectId: project.id, flowId: flow.flowId, flow: { flowId: flow.flowId, description: "Renamed", metadata: { llmProvider: "deepseek", llmModel: "deepseek-flash" } } }
       });
 
       expect(response.ok, response.error).toBe(true);

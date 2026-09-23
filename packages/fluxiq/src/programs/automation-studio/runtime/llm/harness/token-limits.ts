@@ -2,7 +2,18 @@ import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 
 /**
- * deepseek-chat's own 64k context, which is what a request may actually carry.
+ * The most a single request may carry: Core's own ceiling, not the model's.
+ *
+ * It was raised to 64,000 because that was `deepseek-chat`'s whole context
+ * window, and while that alias was the only model Core would send to, Core's
+ * ceiling and the model's window were the same number. They are not any more.
+ * `deepseek-flash` carries 1,000,000 tokens of context and will generate up to
+ * 384,000 in one reply (`AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS`), so this
+ * number is now a budget decision rather than a physical limit, and it is left
+ * where it is deliberately: at the peak cache-miss rate a 64,000-token request
+ * costs about $0.019, and a 1,000,000-token one about $0.30 -- before output,
+ * and before the run's other calls. Raising it raises what a single mistaken
+ * call can spend by the same factor, so it is moved on purpose or not at all.
  *
  * This was 50_000 and is the deepest of the seven places that held a ceiling of
  * this kind -- the Lab's default budget and contract cap, the Lab plan's bound,

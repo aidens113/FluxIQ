@@ -1,3 +1,10 @@
+import {
+  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  AUTOMATION_STUDIO_DEEPSEEK_MODELS,
+  automationStudioDeepSeekModelRefusal,
+  isAutomationStudioDeepSeekModel
+} from "fluxiq/automation-studio/llm-models";
+
 export const FLOW_LLM_HARD_MAX_TOKENS = 64_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
 export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
@@ -10,8 +17,11 @@ export const FLOW_LLM_EXECUTION_DEFAULTS = {
   retryCount: "0"
 } as const;
 
+/** The models the form offers, taken from Core's registry rather than listed
+ * again here: the panel offering a model Core will refuse, or refusing one Core
+ * would take, is the drift this list exists to prevent. */
 export const FLOW_LLM_PROVIDERS = [
-  { id: "deepseek", label: "DeepSeek", models: ["deepseek-chat"] }
+  { id: "deepseek", label: "DeepSeek", models: AUTOMATION_STUDIO_DEEPSEEK_MODELS }
 ] as const;
 export function flowLlmProvider(providerId: string) {
   return FLOW_LLM_PROVIDERS.find((provider) => provider.id === providerId) ?? FLOW_LLM_PROVIDERS[0];
@@ -95,7 +105,7 @@ export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInt
 type FlowEffectiveSetting = { key: keyof FlowSettingsDraft; group: string; label: string; value: string; source: "Flow override" | "Framework default" | "Flow contract"; resettable: boolean };
 
 export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
-  timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: "deepseek-chat",
+  timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
   llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2"
@@ -111,7 +121,7 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     { key: "timeoutSeconds", group: "Runtime", label: "Flow timeout", value: draft.timeoutSeconds + " seconds", overridden: Number(draft.timeoutSeconds) !== 30 },
     { key: "maxConcurrency", group: "Runtime", label: "Maximum concurrent runs", value: draft.maxConcurrency, overridden: Number(draft.maxConcurrency) !== 1 },
     { key: "llmProvider", group: "LLM", label: "Provider", value: flowLlmProvider(draft.llmProvider).label, overridden: false },
-    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || "deepseek-chat", overridden: false },
+    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, overridden: false },
     { key: "adaptationPreset", group: "Adaptation", label: "Behavior", value: draft.adaptationPreset === "adaptive" ? "Fully adaptive" : draft.adaptationPreset === "observe" ? "Observe only" : draft.adaptationPreset === "locked" ? "Locked" : "Broad autonomy", overridden: draft.adaptationPreset !== "adaptive" },
     { key: "adaptationProposalMode", group: "Adaptation", label: "Approval", value: describeApproval(draft.adaptationProposalMode), overridden: draft.adaptationProposalMode !== "auto" },
     { key: "maxInterventionsPerRun", group: "Limits", label: "LLM interventions per run", value: draft.maxInterventionsPerRun, overridden: Number(draft.maxInterventionsPerRun) !== 2 },
@@ -162,7 +172,7 @@ export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIn
   if (!draft.allowLlmIntervention) return [];
   const errors: string[] = [];
   if (draft.llmProvider !== "deepseek") errors.push("Only DeepSeek is supported for live LLM execution.");
-  if (draft.llmModel !== "deepseek-chat") errors.push("Only deepseek-chat is supported for live LLM execution.");
+  if (!isAutomationStudioDeepSeekModel(draft.llmModel)) errors.push(automationStudioDeepSeekModelRefusal(draft.llmModel));
   const tokenFields = [
     ["Input-token limit", draft.llmMaxInputTokens],
     ["Output-token limit", draft.llmMaxOutputTokens],
@@ -310,7 +320,7 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     maxAdaptationCostUsdPerRun: numberInputValue(adaptationSettings.maxEstimatedCostUsdPerRun),
     budgetExhaustedBehavior: budgets.exhaustedBehavior === "stop" || metadata.budgetExhaustedBehavior === "stop" ? "stop" : "ask",
     llmProvider: "deepseek",
-    llmModel: "deepseek-chat",
+    llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
     llmSecretKeyId: String(metadata.llmSecretKeyId ?? ""),
     llmMaxInputTokens: numberInputValue(llmTokenLimits.maxInputTokens ?? 8000),
     llmMaxOutputTokens: numberInputValue(llmTokenLimits.maxOutputTokens ?? 2000),
@@ -460,7 +470,7 @@ export function flowSettingsMetadata(flow: any) {
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
     llmProvider: "deepseek",
-    llmModel: "deepseek-chat",
+    llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
     llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: FLOW_LLM_UNSET_CALL_COUNT, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
     adaptationPolicyId: "policy.default",
     adaptationPolicySettings: { ...adaptationPolicySettings, ...existingAdaptationSettings },

@@ -80,7 +80,7 @@ describe("AutomationStudioService iterating recovery", () => {
       [4, "runtime_patch", "implement", "run", "automation-studio.runtime-patch.v1+stage.implement"]
     ]);
     for (const call of gate.providerCalls) {
-      expect(call).toMatchObject({ provider: "deepseek", model: "deepseek-chat", validation: { ok: true, issueCodes: [] }, budgetBreach: false });
+      expect(call).toMatchObject({ provider: "deepseek", model: "deepseek-flash", validation: { ok: true, issueCodes: [] }, budgetBreach: false });
       expect(call.reported).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
       expect(call.charged).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15, tokens: "reported", cost: "reported" });
       expect(call.reported.estimatedCostUsd).toBe(call.charged.estimatedCostUsd);
@@ -153,7 +153,7 @@ async function recoveryFixture(purpose: AutomationStudioRuntimeSessionGrantPurpo
   let revealCount = 0;
   let authorizationCount = 0;
   let service: AutomationStudioService | undefined;
-  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   const grants = new AutomationStudioLlmExecutionGrantService({
     resolveExecutionDigest: async (projectId, flowId) => service!.getLlmExecutionBinding(projectId, flowId),
     identityAccess: {
@@ -215,7 +215,7 @@ async function recoveryFixture(purpose: AutomationStudioRuntimeSessionGrantPurpo
     projectId: project.id,
     flowId: flow.flowId,
     provider: "deepseek",
-    model: "deepseek-chat",
+    model: "deepseek-flash",
     purpose
   });
   return {

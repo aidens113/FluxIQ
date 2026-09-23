@@ -1,3 +1,4 @@
+import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-models";
 export type AutomationRuntimeRunMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
 /**
  * The run modes a person authorizes one grant for. Each is also the run's
@@ -115,7 +116,7 @@ export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flo
       flowId: flow.flowId,
       keyId: metadata.llmSecretKeyId,
       provider: "deepseek",
-      model: "deepseek-chat",
+      ...(isAutomationStudioDeepSeekModel(metadata.llmModel) ? { model: metadata.llmModel } : {}),
       purpose,
       tokenLimits: {
         maxInputTokens: tokenLimits.maxInputTokens ?? 8000,

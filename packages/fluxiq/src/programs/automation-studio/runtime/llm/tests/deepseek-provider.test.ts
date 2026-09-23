@@ -3,8 +3,8 @@ import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL,
   createAutomationStudioDeepSeekProvider
-} from "../deepseek-provider.ts";
-import { estimateAutomationStudioDeepSeekCostUsd } from "../deepseek-pricing.ts";
+} from "../deepseek/index.ts";
+import { estimateAutomationStudioDeepSeekCostUsd } from "../deepseek/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderErrorCode } from "../provider-contract.ts";
 
 describe("Automation Studio DeepSeek provider", () => {
@@ -33,7 +33,7 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(new Headers(requestedInit?.headers).get("x-request-id")).toBe("request.one");
     expect(new Headers(requestedInit?.headers).get("idempotency-key")).toBe("idempotency.one");
     const outbound = JSON.parse(String(requestedInit?.body)) as { messages: Array<{ role: string; content: string }> };
-    expect(outbound).toMatchObject({ model: "deepseek-chat", max_tokens: 2000, temperature: 0, thinking: { type: "disabled" }, stream: false });
+    expect(outbound).toMatchObject({ model: "deepseek-flash", max_tokens: 2000, temperature: 0, thinking: { type: "disabled" }, stream: false });
     const systemPrompt = outbound.messages.find((message) => message.role === "system")!.content;
     const userPayload = JSON.parse(outbound.messages.find((message) => message.role === "user")!.content) as Record<string, unknown>;
     expect(systemPrompt).toContain("Return exactly one JSON object matching the requested expectedOutput.");
@@ -45,13 +45,13 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(userPayload.outputInstruction).toBeUndefined();
     expect(userPayload.outputSchema).toMatchObject({ properties: { kind: { const: "diagnosis" } }, required: ["kind", "summary"] });
     expect(secretRequests).toEqual([expect.objectContaining({ secretReference: "secret:deepseek", projectId: "project.one", flowId: "flow.one", requestId: "request.one" })]);
-    expect(result).toMatchObject({ response: { kind: "diagnosis" }, usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17, estimatedCostUsd: 0.00001188 } });
+    expect(result).toMatchObject({ response: { kind: "diagnosis" }, usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17, estimatedCostUsd: 0.0000096 } });
   });
 
   it("uses conservative peak cache-miss pricing and keeps the maximum live profile below its cost ceiling", () => {
-    expect(estimateAutomationStudioDeepSeekCostUsd(12, 5)).toBe(0.00001188);
+    expect(estimateAutomationStudioDeepSeekCostUsd(12, 5)).toBe(0.0000096);
     const maximumLiveProfileCostUsd = estimateAutomationStudioDeepSeekCostUsd(4_000, 1_000);
-    expect(maximumLiveProfileCostUsd).toBe(0.00308);
+    expect(maximumLiveProfileCostUsd).toBe(0.0024);
     expect(maximumLiveProfileCostUsd).toBeLessThan(0.25);
     expect(() => estimateAutomationStudioDeepSeekCostUsd(-1, 0)).toThrow(RangeError);
     expect(() => estimateAutomationStudioDeepSeekCostUsd(Number.MAX_VALUE, 0)).toThrow(RangeError);
@@ -391,7 +391,8 @@ describe("Automation Studio DeepSeek provider", () => {
     });
     await expectProviderError(missing.runTask(request()), "llm.provider_secret_unavailable");
     await expectProviderError(missing.runTask(request({ timeoutMs: 45_001 })), "llm.provider_request_timeout_invalid");
-    expect(constructionCode({ model: "deepseek-reasoner" as "deepseek-chat" })).toBe("llm.provider_model_unsupported");
+    expect(constructionCode({ model: "deepseek-reasoner" })).toBe("llm.provider_model_unsupported");
+    expect(constructionCode({ model: "gpt-9" })).toBe("llm.provider_model_unsupported");
     expect(constructionCode({ maxResponseBytes: 3_000_000 })).toBe("llm.provider_response_limit_invalid");
   });
 });

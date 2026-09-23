@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "fluxiq/automation-studio/llm-models";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
@@ -43,7 +44,7 @@ describe("Automation Settings workspace", () => {
           executionDefaults: { timeoutMs: 45000, maxConcurrency: 3 },
           training: { mode: "continuous_adaptive" },
           adaptation: { preset: "adaptive", proposalMode: "manual", policyId: "policy.checkout" },
-          llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek" },
+          llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek" },
           revision: 4
         },
         inputs: [{ portId: "input.order", name: "Order", valueType: { kind: "json" }, required: true, defaultValue: null, description: "Order payload" }],
@@ -57,7 +58,7 @@ describe("Automation Settings workspace", () => {
       maxConcurrency: "3",
       adaptationMode: "manual_approval",
       llmProvider: "deepseek",
-      llmModel: "deepseek-chat",
+      llmModel: "deepseek-flash",
       llmSecretKeyId: "key.deepseek",
       adaptationPolicyId: "policy.checkout",
       interfaceInputs: [{ id: "input.order", name: "Order" }]
@@ -84,7 +85,7 @@ describe("Automation Settings workspace", () => {
     await act(async () => {
       renderer = create(createElement(FlowSettingsViewContent, {
         projectId: null,
-        flow: { flowId: "flow.accessible-llm", name: "Accessible LLM", metadata: { llmProvider: "deepseek", llmModel: "deepseek-chat" } },
+        flow: { flowId: "flow.accessible-llm", name: "Accessible LLM", metadata: { llmProvider: "deepseek", llmModel: "deepseek-flash" } },
         commands: {} as any
       }));
     });
@@ -97,7 +98,7 @@ describe("Automation Settings workspace", () => {
       return matches[0]!;
     };
     expect(getByRoleAndExactName("combobox", "Provider").props.value).toBe("deepseek");
-    expect(getByRoleAndExactName("combobox", "Model").props.value).toBe("deepseek-chat");
+    expect(getByRoleAndExactName("combobox", "Model").props.value).toBe("deepseek-flash");
     for (const name of ["Input tokens", "Output tokens", "Total tokens", "Timeout (seconds)", "Max cost (USD)", "Provider retries"]) {
       getByRoleAndExactName("spinbutton", name);
     }
@@ -110,8 +111,12 @@ describe("Automation Settings workspace", () => {
   });
   it("uses controlled LLM provider/model choices and encrypted key summaries", () => {
     expect(FLOW_LLM_PROVIDERS.map((provider) => provider.id)).toContain("deepseek");
-    expect(flowLlmProvider("deepseek").models).toEqual(["deepseek-chat"]);
-    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
+    // The form offers exactly Core's configured set, and nothing it lists here
+    // of its own: a second list is how the panel came to offer a model DeepSeek
+    // had already withdrawn.
+    expect(flowLlmProvider("deepseek").models).toEqual(AUTOMATION_STUDIO_DEEPSEEK_MODELS);
+    expect(flowLlmProvider("deepseek").models).toContain("deepseek-flash");
+    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
     expect(flowLlmSettingsErrors(draft, [], true)).toContain("Choose an enabled encrypted key for DeepSeek.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxTotalTokens: "64001" }, [{ id: "secret.deepseek" }], true)).toContain("Total-token limit must be a whole number from 1 to 64,000.");
@@ -119,7 +124,7 @@ describe("Automation Settings workspace", () => {
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: { llmProvider: "deepseek", llmModel: "deepseek-reasoner" } } }));
     expect(html).toContain("LLM Connection");
     expect(html).toContain("DeepSeek");
-    expect(html).toContain("deepseek-chat");
+    expect(html).toContain("deepseek-flash");
     expect(html).not.toContain("deepseek-reasoner");
     expect(html).toContain("Per-request LLM limits");
     expect(html).toContain("64,000 total tokens");
@@ -155,7 +160,7 @@ describe("Automation Settings workspace", () => {
     expect(html).not.toContain('value="input.customer"');
   });
   it("shows effective sources and removes reset overrides from persistence", () => {
-    const flow: any = { flowId: "flow.override", name: "Override", source: { mode: "visual" }, interface: { inputs: [], outputs: [] }, executionDefaults: { timeoutMs: 90000 }, metadata: { llmProvider: "deepseek", llmModel: "deepseek-chat", trainingModeSettings: { recoveryBudget: { maxRetriesPerAction: 4 } } } };
+    const flow: any = { flowId: "flow.override", name: "Override", source: { mode: "visual" }, interface: { inputs: [], outputs: [] }, executionDefaults: { timeoutMs: 90000 }, metadata: { llmProvider: "deepseek", llmModel: "deepseek-flash", trainingModeSettings: { recoveryBudget: { maxRetriesPerAction: 4 } } } };
     const draft: any = flowSettingsDraftFromFlow(flow);
     expect(flowEffectiveSettings(flow, draft)).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "timeoutSeconds", source: "Flow override", resettable: true }),
