@@ -19,6 +19,7 @@ import { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
 
 export function ConversationTurn(props: {
   turn: ConversationTurnRecord;
+  projectId: string;
   busy: boolean;
   error?: string;
   loadAttachment?: ConversationCommands["loadAttachment"];
@@ -40,6 +41,7 @@ export function ConversationTurn(props: {
         <ConversationAttachmentPanel
           attachment={turn.attachment}
           conversationId={turn.conversationId}
+          projectId={props.projectId}
           turnId={turn.turnId}
           {...(props.loadAttachment ? { loadAttachment: props.loadAttachment } : {})}
           {...(props.onOpenAttachment ? { onOpenAttachment: props.onOpenAttachment } : {})}

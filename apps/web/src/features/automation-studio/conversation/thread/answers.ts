@@ -33,8 +33,18 @@ export type ConversationAskPresentation = {
   takesText: boolean;
 };
 
+/**
+ * The consequence classes this ask would commit. A permission ask names them
+ * in `missing` -- exactly what the run was refused -- and every other kind of
+ * ask names them in `consequences`.
+ */
+export function conversationAskConsequences(ask: ConversationAsk): AutomationStudioActionConsequence[] {
+  return ask.kind === "permission" ? ask.missing : ask.consequences;
+}
+
 export function conversationAskPresentation(ask: ConversationAsk): ConversationAskPresentation {
-  const consequencePhrases = ask.missing.map((consequence: AutomationStudioActionConsequence) =>
+  const granted = conversationAskConsequences(ask);
+  const consequencePhrases = granted.map((consequence: AutomationStudioActionConsequence) =>
     AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]
   );
   if (ask.kind === "permission") {
@@ -60,7 +70,7 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
           description: null,
           variant: "primary",
           destructive: true,
-          answer: { askId: ask.askId, kind: "grant", consequences: [...ask.missing] }
+          answer: { askId: ask.askId, kind: "grant", consequences: [...granted] }
         }
       ]
     };
@@ -86,7 +96,7 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
           description: null,
           variant: consequencePhrases.length ? "danger" : "primary",
           destructive: consequencePhrases.length > 0,
-          answer: { askId: ask.askId, kind: "grant", consequences: [...ask.missing] }
+          answer: { askId: ask.askId, kind: "grant", consequences: [...granted] }
         }
       ]
     };
@@ -133,7 +143,7 @@ export function conversationAuthorizationCopy(ask: ConversationAsk, action: Conv
   description: string;
   actionLabel: string;
 } {
-  const phrases = ask.missing.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]);
+  const phrases = conversationAskConsequences(ask).map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]);
   const consequences = phrases.length ? ` It would ${joinPhrases(phrases)}.` : "";
   return {
     title: ask.kind === "permission" ? "Allow this action" : "Confirm this answer",
@@ -145,4 +155,19 @@ export function conversationAuthorizationCopy(ask: ConversationAsk, action: Conv
 function joinPhrases(phrases: readonly string[]): string {
   if (phrases.length <= 1) return phrases[0] ?? "";
   return `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
+}
+
+/**
+ * The panel's answer union as Core's three request fields. Core's handler
+ * reads `askId`, `kind` and `value` off the request itself; a nested
+ * `answer: { ... }` object reaches it as no kind at all and is refused before
+ * it touches the store.
+ */
+export function conversationAnswerRequest(answer: ConversationAnswer): { askId: string; kind: string; value?: string } {
+  if (answer.kind === "choice") return { askId: answer.askId, kind: "choice", value: answer.optionId };
+  if (answer.kind === "text") return { askId: answer.askId, kind: "text", value: answer.text };
+  // `grant` names the consequence classes it permits, but they are the ask's
+  // own `missing` and Core reads them from the ask rather than from the
+  // answer; sending them back would be the panel restating what it was told.
+  return { askId: answer.askId, kind: answer.kind };
 }

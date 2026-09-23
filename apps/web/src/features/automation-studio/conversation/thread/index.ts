@@ -30,15 +30,20 @@ export {
   CONVERSATION_TAIL_SLACK_PX,
   CONVERSATION_VISIBLE_TURNS,
   conversationFollowsTail,
+  conversationSubjectDetail,
+  conversationSubjectFallbackLabel,
   conversationSubjectLabel,
   latestConversationTurnId,
   mergeConversationTurns,
   pendingConversationTurn,
   sortConversationsForThreadList,
+  unansweredConversationCount,
   visibleConversationTurns
 } from "./model";
 export {
   conversationAnswerNeedsReauthorization,
+  conversationAnswerRequest,
+  conversationAskConsequences,
   conversationAskPresentation,
   conversationAuthorizationCopy,
   type ConversationAnswerAction,

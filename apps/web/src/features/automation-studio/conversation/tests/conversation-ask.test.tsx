@@ -37,7 +37,7 @@ async function mountTurn(turn: ReturnType<typeof record>, extra: Record<string, 
   const onAnswer = vi.fn(async () => true);
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(<ConversationTurn busy={false} onAnswer={onAnswer} turn={turn} {...extra} />);
+    renderer = create(<ConversationTurn busy={false} onAnswer={onAnswer} projectId="project.one" turn={turn} {...extra} />);
   });
   await act(async () => { await Promise.resolve(); });
   return { onAnswer, renderer };
@@ -156,20 +156,25 @@ describe("what a turn carries", () => {
   const attachment = { kind: "flow-graph-diff", ref: "adaptation:a.1" };
 
   it("draws a structural Flow change where the panel owns a renderer for it", async () => {
+    // Core answers `{ attachment: { attachment, payload } }`: the reference it
+    // resolved, and what it resolved to. The renderer wants the second.
     const loadAttachment = vi.fn(async () => ({
       ok: true,
       payload: {
         attachment: {
-          flowId: "flow.checkout",
-          added: [{ id: "node.filter", label: "Filter by price", detail: "after node.search" }],
-          removed: [{ id: "edge.2" }],
-          changed: [{ id: "node.search", detail: "waits for the result list" }]
+          attachment: { kind: "flow-graph-diff", ref: "adaptation:a.1" },
+          payload: {
+            flowId: "flow.checkout",
+            added: [{ id: "node.filter", label: "Filter by price", detail: "after node.search" }],
+            removed: [{ id: "edge.2" }],
+            changed: [{ id: "node.search", detail: "waits for the result list" }]
+          }
         }
       }
     }));
     const { renderer } = await mountTurn(record({ attachment }), { loadAttachment });
     expect(loadAttachment).toHaveBeenCalledWith(
-      { conversationId: "conversation.1", turnId: "turn.1", ref: "adaptation:a.1" },
+      { projectId: "project.one", conversationId: "conversation.1", turnId: "turn.1" },
       expect.anything()
     );
     const table = renderer.root.findByProps({ "aria-label": "Structural changes" });
@@ -181,7 +186,10 @@ describe("what a turn carries", () => {
   });
 
   it("refuses a change it cannot read rather than drawing half a Flow", async () => {
-    const loadAttachment = vi.fn(async () => ({ ok: true, payload: { attachment: { added: [{ id: "<script>" }] } } }));
+    const loadAttachment = vi.fn(async () => ({
+      ok: true,
+      payload: { attachment: { attachment: { kind: "flow-graph-diff", ref: "adaptation:a.1" }, payload: { added: [{ id: "<script>" }] } } }
+    }));
     const { renderer } = await mountTurn(record({ attachment }), { loadAttachment });
     expect(textOf(renderer)).toContain("could not be read");
     expect(renderer.root.findAllByProps({ "aria-label": "Structural changes" })).toHaveLength(0);

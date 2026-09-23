@@ -17,6 +17,7 @@
   justify-content: space-between;
   gap: var(--space-sm);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .automation-conversation-picker {
@@ -228,6 +229,13 @@
 
 .automation-conversation-composer {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.automation-conversation-composer-row {
+  display: flex;
   align-items: flex-end;
   gap: var(--space-xs);
   min-width: 0;
@@ -235,6 +243,27 @@
 
 .automation-conversation-composer textarea {
   flex: 1 1 auto;
+}
+
+.automation-conversation-composer-reason,
+.automation-conversation-composer-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.automation-conversation-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.automation-conversation-title > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 768px) {
@@ -249,7 +278,7 @@
 }
 
 @media (max-width: 390px) {
-  .automation-conversation-composer {
+  .automation-conversation-composer-row {
     flex-direction: column;
     align-items: stretch;
   }

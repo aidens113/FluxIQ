@@ -1,14 +1,26 @@
 // The conversation as it arrives from Core, and the strict reading of it.
 //
 // A turn is the one place FluxIQ's words reach a person, so nothing renders
-// that Core did not build. Every record is read key by key: an unknown field,
-// an unknown enum value, a control character in text, or an over-long string
-// refuses that record rather than rendering a narrower version of it. That is
-// the rule `parseAutomationStudioActionPermissionRequest` already applies to
-// the permission payload, and a conversation carries the same weight.
+// that Core did not build. Every value is read key by key: an unknown enum
+// value, a control character in text, or an over-long string refuses that
+// record rather than rendering a narrower version of it. That is the rule
+// `parseAutomationStudioActionPermissionRequest` already applies to the
+// permission payload, and a conversation carries the same weight.
 //
-// The shapes are the contract fixed in the conversations plan before this task
-// and the API task were dispatched in parallel. They are not negotiated here.
+// **A field this reader does not know is ignored, not fatal.** It was fatal
+// until a live run against the real endpoints, and the result was that the
+// window rendered nothing at all: Core sends a conversation with `title`,
+// `revision`, `turnCount` and `pendingAskCount`, a turn with `ordinal` and
+// `actorId`, and an ask with `conversationId`, `turnId`, `routes`,
+// `consequences`, `permissionRequest`, `createdAt` and `answer`. A closed
+// whitelist refused every one of those records, so the transcript, the thread
+// list and every ask were silently empty. Refusing a record because Core added
+// a counter to it is not strictness, it is a panel that breaks whenever the
+// framework grows. The strictness that matters -- never render text or an enum
+// Core did not build -- is kept in full below.
+//
+// The shapes read here are Core's own, measured against
+// `packages/fluxiq/src/programs/automation-studio/runtime/conversations/`.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation-studio/action-permissions";
 
@@ -32,6 +44,7 @@ export type ConversationAnswerKind = "grant" | "deny" | "choice" | "text";
 export type ConversationAttachment = { kind: string; ref: string };
 
 export type ConversationAskOption = {
+  /** Core's own `id` for the option; the answer carries it back verbatim. */
   optionId: string;
   label: string;
   description: string | null;
@@ -50,12 +63,16 @@ export type ConversationAsk = {
   options: ConversationAskOption[];
   /** For a permission ask: exactly the consequence classes an answer would grant. */
   missing: AutomationStudioActionConsequence[];
+  /** Every lasting consequence answering yes would have, for asks that are not permission asks. */
+  consequences: AutomationStudioActionConsequence[];
   control: { name: string | null; kind: string | null } | null;
 };
 
 export type ConversationTurn = {
   turnId: string;
   conversationId: string;
+  /** Its place in the thread, from 1. Zero when Core did not send one. */
+  ordinal: number;
   author: ConversationTurnAuthor;
   createdAt: number;
   text: string;
@@ -68,6 +85,11 @@ export type Conversation = {
   projectId: string;
   subject: { kind: ConversationSubjectKind; id: string };
   status: ConversationStatus;
+  /** Core's own short name for the thread, or null when it was opened without one. */
+  title: string | null;
+  /** How many turns the thread holds, and how many asks are still waiting. */
+  turnCount: number;
+  pendingAskCount: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -95,25 +117,29 @@ const MAX_DESCRIPTION = 600;
 const CONSEQUENCES: ReadonlySet<string> = new Set(Object.keys(AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES));
 
 export function parseConversation(value: unknown): Conversation | null {
-  if (!isRecord(value) || !allowedFields(value, ["conversationId", "projectId", "subject", "status", "createdAt", "updatedAt"])) return null;
+  if (!isRecord(value)) return null;
   if (!isId(value.conversationId) || !isId(value.projectId)) return null;
   if (value.status !== "open" && value.status !== "resolved") return null;
   if (!isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) return null;
   const subject = value.subject;
-  if (!isRecord(subject) || !allowedFields(subject, ["kind", "id"]) || !isId(subject.id)) return null;
+  if (!isRecord(subject) || !isId(subject.id)) return null;
   if (subject.kind !== "project" && subject.kind !== "flow" && subject.kind !== "build" && subject.kind !== "run") return null;
+  if (!isAbsent(value.title) && !isSafeText(value.title, MAX_LABEL)) return null;
   return {
     conversationId: value.conversationId,
     projectId: value.projectId,
     subject: { kind: subject.kind, id: subject.id },
     status: value.status,
+    title: typeof value.title === "string" && value.title.trim() ? value.title : null,
+    turnCount: isTimestamp(value.turnCount) ? value.turnCount : 0,
+    pendingAskCount: isTimestamp(value.pendingAskCount) ? value.pendingAskCount : 0,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt
   };
 }
 
 export function parseConversationTurn(value: unknown): ConversationTurn | null {
-  if (!isRecord(value) || !allowedFields(value, ["turnId", "conversationId", "author", "createdAt", "text", "ask", "attachment"])) return null;
+  if (!isRecord(value)) return null;
   if (!isId(value.turnId) || !isId(value.conversationId) || !isTimestamp(value.createdAt)) return null;
   if (value.author !== "automation" && value.author !== "person") return null;
   if (!isSafeText(value.text, CONVERSATION_TEXT_MAX)) return null;
@@ -124,6 +150,7 @@ export function parseConversationTurn(value: unknown): ConversationTurn | null {
   return {
     turnId: value.turnId,
     conversationId: value.conversationId,
+    ordinal: isTimestamp(value.ordinal) ? value.ordinal : 0,
     author: value.author,
     createdAt: value.createdAt,
     text: value.text,
@@ -151,16 +178,21 @@ export function parseConversations(value: unknown): Conversation[] {
 }
 
 function parseConversationAsk(value: unknown): ConversationAsk | null {
-  if (!isRecord(value) || !allowedFields(value, ["askId", "kind", "status", "parks", "timeoutMs", "onTimeout", "options", "missing", "control"])) return null;
+  if (!isRecord(value)) return null;
   if (!isId(value.askId) || typeof value.parks !== "boolean") return null;
   if (value.kind !== "permission" && value.kind !== "choice" && value.kind !== "confirm" && value.kind !== "open") return null;
   if (value.status !== "pending" && value.status !== "answered" && value.status !== "expired") return null;
   if (!isAbsent(value.timeoutMs) && !isTimestamp(value.timeoutMs)) return null;
   if (!isAbsent(value.onTimeout) && value.onTimeout !== "deny" && value.onTimeout !== "default") return null;
-  const options = parseOptions(value.options);
   const missing = parseConsequences(value.missing);
+  const consequences = parseConsequences(value.consequences);
   const control = parseControl(value.control);
-  if (!options || !missing || control === undefined) return null;
+  if (!missing || !consequences || control === undefined) return null;
+  // An option commits whatever the ask as a whole commits: Core records
+  // consequences per ask, not per option, so the panel does not invent a
+  // finer-grained judgement than the record it was given.
+  const options = parseOptions(value.options, consequences.length > 0);
+  if (!options) return null;
   return {
     askId: value.askId,
     kind: value.kind,
@@ -170,24 +202,32 @@ function parseConversationAsk(value: unknown): ConversationAsk | null {
     onTimeout: value.onTimeout === "deny" || value.onTimeout === "default" ? value.onTimeout : null,
     options,
     missing,
+    consequences,
     control
   };
 }
 
-function parseOptions(value: unknown): ConversationAskOption[] | null {
+/**
+ * Core's option is `{ id, label, route }`: `route` is where a parked run
+ * resumes and means nothing to a reader, so it is read past rather than
+ * rendered. `optionId` is accepted as well, so an option built panel-side in a
+ * test reads back the same way.
+ */
+function parseOptions(value: unknown, destructive: boolean): ConversationAskOption[] | null {
   if (isAbsent(value)) return [];
   if (!Array.isArray(value) || value.length > MAX_OPTIONS) return null;
   const options: ConversationAskOption[] = [];
   for (const entry of value) {
-    if (!isRecord(entry) || !allowedFields(entry, ["optionId", "label", "description", "destructive"])) return null;
-    if (!isId(entry.optionId) || !isSafeText(entry.label, MAX_LABEL) || !entry.label.trim()) return null;
+    if (!isRecord(entry)) return null;
+    const optionId = isId(entry.id) ? entry.id : isId(entry.optionId) ? entry.optionId : null;
+    if (!optionId || !isSafeText(entry.label, MAX_LABEL) || !entry.label.trim()) return null;
     if (!isAbsent(entry.description) && !isSafeText(entry.description, MAX_DESCRIPTION)) return null;
     if (entry.destructive !== undefined && typeof entry.destructive !== "boolean") return null;
     options.push({
-      optionId: entry.optionId,
+      optionId,
       label: entry.label,
       description: typeof entry.description === "string" ? entry.description : null,
-      destructive: entry.destructive === true
+      destructive: entry.destructive === true || destructive
     });
   }
   return options;
@@ -202,7 +242,7 @@ function parseConsequences(value: unknown): AutomationStudioActionConsequence[] 
 /** `undefined` means the record was malformed; `null` means it carried no control. */
 function parseControl(value: unknown): ConversationAsk["control"] | undefined {
   if (isAbsent(value)) return null;
-  if (!isRecord(value) || !allowedFields(value, ["name", "kind"])) return undefined;
+  if (!isRecord(value)) return undefined;
   if (value.name !== null && value.name !== undefined && !isSafeText(value.name, MAX_LABEL)) return undefined;
   if (value.kind !== null && value.kind !== undefined && (typeof value.kind !== "string" || !CONTROL_KIND.test(value.kind))) return undefined;
   return {
@@ -212,7 +252,7 @@ function parseControl(value: unknown): ConversationAsk["control"] | undefined {
 }
 
 function parseAttachment(value: unknown): ConversationAttachment | null {
-  if (!isRecord(value) || !allowedFields(value, ["kind", "ref"])) return null;
+  if (!isRecord(value)) return null;
   if (typeof value.kind !== "string" || !ATTACHMENT_KIND.test(value.kind) || !isId(value.ref)) return null;
   return { kind: value.kind, ref: value.ref };
 }
@@ -223,10 +263,6 @@ function isAbsent(value: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function allowedFields(value: Record<string, unknown>, fields: readonly string[]): boolean {
-  return Object.keys(value).every((key) => fields.includes(key));
 }
 
 function isId(value: unknown): value is string {

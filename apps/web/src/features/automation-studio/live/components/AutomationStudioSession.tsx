@@ -6,6 +6,7 @@ import type { AutomationWorkspaceBreadcrumb } from "../../workspace/shell/contra
 import { automationWorkspaceViewStateForBase } from "../../workspace/view-state";
 import { automationStudioViewBaseId, automationStudioViewDefinition, automationStudioViewId, automationStudioViewObjectId } from "../../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
+import { ConversationDock } from "../../conversation/components";
 import { automationEntityCollectionSelector, useAutomationStoreSelector, type AutomationProjectEntityKind } from "../../stores";
 import { useAutomationProjectCatalogLoader } from "../../project";
 import type { AutomationSelection } from "../../shared/selection-contracts";
@@ -486,7 +487,6 @@ export function AutomationStudioSession(props: {
   });
   const conversationNavigation = useConversationWorkspaceNavigation({
     ...(selectedTaskGraph?.flowId ? { selectedFlowId: selectedTaskGraph.flowId } : {}),
-    updatePrefs: updateWorkspacePrefs,
     openAdaptation: adaptationNavigation.openAdaptation
   });
   const connectorScope = useMemo<AutomationCanonicalConnectorScope>(() => ({
@@ -530,7 +530,6 @@ export function AutomationStudioSession(props: {
     finalizeRecording: recordingCommands.finalize,
     listProblems: (payload: Record<string, unknown>) => listProjectProblems(foundation.api, payload),
     openAdaptation: adaptationNavigation.openAdaptation,
-    openConversationAttachment: conversationNavigation.openConversationAttachment,
     openInspector: openAutomationInspector,
     openNodeState: (nodeId: string) => openStateView({ nodeId, phase: "input" }),
     openProblem: openAutomationProblem,
@@ -544,7 +543,6 @@ export function AutomationStudioSession(props: {
     restoreGraphDraft: graphRuntime.restoreDraft,
     saveGraph: graphRuntime.saveGraph,
     selectAdaptation: adaptationNavigation.selectAdaptation,
-    selectConversation: conversationNavigation.selectConversation,
     setGraphDirty: setHasDirtyTaskGraph,
     setSelection: setSelectionAndFollow,
     updateGraphDraft: graphRuntime.updateDraft,
@@ -662,6 +660,13 @@ export function AutomationStudioSession(props: {
       hierarchy={hierarchySurface}
       timeline={timelineSurface}
       inspector={inspectorBinding}
+    />
+    {/* Over the whole workspace, not inside a region: the conversation is the
+        product's channel to the person, so it has to be in front of whatever
+        they are looking at rather than one tab they have to go and find. */}
+    <ConversationDock
+      projectId={activeProject.id}
+      onOpenAttachment={conversationNavigation.openConversationAttachment}
     />
   </>;
 }

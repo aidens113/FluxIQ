@@ -2,8 +2,11 @@ export {
   conversationAttachmentKinds,
   conversationAttachmentLabel,
   conversationAttachmentRenderer,
+  ConversationDock,
+  conversationLauncherLabel,
   ConversationView,
   ConversationViewContent,
+  type ConversationDockProps,
   type ConversationViewProps
 } from "./components";
 export {
@@ -14,4 +17,3 @@ export {
 } from "./conversation-host";
 export * from "./thread";
 export { commitConversationChanged } from "./turn-commands";
-export { conversationFunctionalityContract } from "./functionality-contract";
