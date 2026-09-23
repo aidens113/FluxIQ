@@ -3,7 +3,7 @@ import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES, type AutomationStudioResultCheckAuthorization } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, resolveAutomationStudioResultCheckSchedule, type AutomationStudioResultCheckSettings } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../contracts.ts";
-import { automationStudioResultCheckEpoch, automationStudioResultCheckStateFromRows, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider } from "../result-check.ts";
+import { automationStudioRepairedRunResultCheck, automationStudioResultCheckEpoch, automationStudioResultCheckStateFromRows, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider } from "../result-check.ts";
 
 const NOW = 1_700_000_000_000;
 
@@ -147,6 +147,33 @@ describe("an unattended run obtaining a model", () => {
       resolveStandingProvider: async () => { throw new Error("the standing path must not be reached when a grant resolved"); }
     });
     expect(resolution).toBe(granted);
+  });
+});
+
+describe("a run that repaired itself and ran again", () => {
+  it("is checked on a run the sequence would have passed over", () => {
+    const skipping = { shape: "fixed_interval" as const, initialRunCount: 0, interval: 5 };
+    const instance = context({ ordinal: 1, schedule: skipping, authorization: authorization() });
+    expect(automationStudioRunResultCheck({ context: instance, nowMs: NOW }))
+      .toMatchObject({ checked: false, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.intervalNotReached });
+    expect(automationStudioRepairedRunResultCheck({ context: instance, check: null, nowMs: NOW }))
+      .toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, keyId: "key.deepseek", maxEstimatedCostUsd: 0.05, epoch: 1 });
+  });
+
+  it("redeems the same authorization on the same terms: expiry and ceiling still bind", () => {
+    const skipping = { shape: "fixed_interval" as const, initialRunCount: 0, interval: 5 };
+    expect(automationStudioRepairedRunResultCheck({ context: context({ ordinal: 1, schedule: skipping, authorization: authorization({ expiresAtMs: NOW - 1 }) }), check: null, nowMs: NOW }))
+      .toMatchObject({ checked: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.expired });
+    expect(automationStudioRepairedRunResultCheck({ context: context({ ordinal: 1, schedule: skipping, authorization: authorization(), spentUsd: 0.99 }), check: null, nowMs: NOW }))
+      .toMatchObject({ checked: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.exhausted });
+    expect(automationStudioRepairedRunResultCheck({ context: context({ ordinal: 1, schedule: skipping, authorization: undefined }), check: null, nowMs: NOW }))
+      .toMatchObject({ checked: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.absent });
+  });
+
+  it("leaves a run with no adaptation context exactly as it was, because it cannot have repaired itself", () => {
+    expect(automationStudioRepairedRunResultCheck({ context: null, check: null, nowMs: NOW })).toBeNull();
+    const already = automationStudioRunResultCheck({ context: context({ ordinal: 1, authorization: authorization() }), nowMs: NOW });
+    expect(automationStudioRepairedRunResultCheck({ context: null, check: already, nowMs: NOW })).toBe(already);
   });
 });
 

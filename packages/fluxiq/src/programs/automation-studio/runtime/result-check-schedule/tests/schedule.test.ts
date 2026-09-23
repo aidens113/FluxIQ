@@ -100,6 +100,25 @@ describe("result check schedule reset rules", () => {
     expect(decision).toMatchObject({ check: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRefutation, nextCheckAtOrdinal: 33 });
   });
 
+  it("checks a run that repaired itself, whatever the sequence says", () => {
+    const schedule = resolveAutomationStudioResultCheckSchedule("fixed_interval");
+    // A schedule whose first check falls at run 5. The same run, decided twice.
+    const skipping = settings({ shape: "fixed_interval", initialRunCount: 0, interval: 5 });
+    expect(schedule.decide({ state: state({ ordinal: 1 }), settings: skipping }))
+      .toMatchObject({ check: false, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.intervalNotReached, nextCheckAtOrdinal: 5 });
+    expect(schedule.decide({ state: state({ ordinal: 1 }), settings: skipping, repairedThisRun: true }))
+      .toMatchObject({ check: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, nextCheckAtOrdinal: 5 });
+  });
+
+  it("does not let a repair overrule the person's own two switches", () => {
+    const off = resolveAutomationStudioResultCheckSchedule("initial_then_exponential")
+      .decide({ state: state({ ordinal: 4 }), settings: settings({ enabled: false }), repairedThisRun: true });
+    expect(off).toMatchObject({ check: false, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.disabled });
+    const never = resolveAutomationStudioResultCheckSchedule("never")
+      .decide({ state: state({ ordinal: 4 }), settings: settings({ shape: "never" }), repairedThisRun: true });
+    expect(never).toMatchObject({ check: false, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.never });
+  });
+
   it("asks once more after a scheduled check that settled nothing, and only once", () => {
     const schedule = resolveAutomationStudioResultCheckSchedule("initial_then_exponential");
     const reask = schedule.decide({ state: state({ ordinal: 9, lastCheckedOrdinal: 8, lastStatus: "unverified", checksPassed: 3 }), settings: settings() });

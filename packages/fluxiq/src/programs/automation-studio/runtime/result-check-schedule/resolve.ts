@@ -22,6 +22,6 @@ export function resolveAutomationStudioResultCheckSchedule(shape: unknown): Auto
   const resolved = automationStudioResultCheckShapeValue(shape);
   return {
     shape: resolved,
-    decide: (input) => decideAutomationStudioResultCheck({ state: input.state, settings: { ...input.settings, shape: resolved } })
+    decide: (input) => decideAutomationStudioResultCheck({ state: input.state, settings: { ...input.settings, shape: resolved }, ...(input.repairedThisRun === true ? { repairedThisRun: true } : {}) })
   };
 }
