@@ -23,6 +23,15 @@
 // and a port a node does not declare are all refused with what was accepted
 // named -- never guessed at, because a wrong edge is a Flow that does the
 // wrong thing quietly.
+//
+// Two things a model never writes are read here for the benefit of a script
+// that was derived rather than written (`./assemble-draft.ts`, `./draft-routing.ts`).
+// A branch may name the input port it arrives at, for a node whose ways in mean
+// different things -- a list walker's rows and its path. And a step may be
+// `routed`, meaning every edge out of it is written, so it does not also fall
+// through to whatever stands next. Both exist because the code that derives a
+// diamond or a loop knows exactly where each port goes, where a model writing
+// prose relies on the order to say it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationNodePort,
@@ -330,7 +339,7 @@ function wire(input: {
   const edges: AutomationStudioFlowBootstrapEdge[] = [];
   const claimed = new Map<string, Set<string>>(input.nodes.map((node) => [node.key, new Set<string>()]));
   const used = new Map<string, Set<string>>(input.nodes.map((node) => [node.key, new Set<string>()]));
-  const branches: Array<{ sourceKey: string; port: AutomationNodePort; targetKey: string }> = [];
+  const branches: Array<{ sourceKey: string; port: AutomationNodePort; targetKey: string; targetPortId?: string }> = [];
   for (const [index, step] of input.steps.entries()) {
     const sourceKey = input.nodes[index]?.key;
     const definition = sourceKey ? input.definitionByKey.get(sourceKey) : undefined;
@@ -350,7 +359,7 @@ function wire(input: {
         continue;
       }
       claimed.get(sourceKey)!.add(port.id);
-      branches.push({ sourceKey, port, targetKey });
+      branches.push({ sourceKey, port, targetKey, ...(branch.targetPort ? { targetPortId: branch.targetPort } : {}) });
     }
   }
   // A branch to the step written next takes that step's one way in. When the
@@ -359,22 +368,31 @@ function wire(input: {
   // stop there -- which is what a live build's "close it if it is showing;
   // on failed: go to the next step" did on 2026-09-18. Branching every port
   // of a step is fine; leaving one to fall into a taken step is refused.
+  //
+  // Two steps are not that mistake and are skipped. A `routed` step has no
+  // fall-through to strand, because the code that wrote it wrote every edge
+  // out of it. And a target that joins paths -- an input port declaring
+  // `multiple` -- has more than one way in by construction, which is how a
+  // branch and the path it left rejoin (`./assemble-draft.ts`).
   for (const branch of branches) {
     const index = input.nodes.findIndex((node) => node.key === branch.sourceKey);
     if (branch.targetKey !== input.nodes[index + 1]?.key) continue;
+    if (input.steps[index]?.routed || joins(branch.targetKey, input.definitionByKey)) continue;
     const outputs = input.definitionByKey.get(branch.sourceKey)?.outputs ?? [];
     if (!outputs.some((port) => !claimed.get(branch.sourceKey)!.has(port.id))) continue;
     const line = input.steps[index]?.branches.find((written) => input.keyByLabel.get(written.target) === branch.targetKey)?.line ?? input.steps[index]?.line ?? 0;
     input.issues.push(authoringError("flow_script.branch_to_next_step", `The branch at line ${line} goes to the step written next, which the step already falls into; a step takes one way in, so the run would stop after this step. To do different things in different situations the run can start in, give each situation a \`subflow <label>:\` block with a \`when:\` line.`, `flow.line.${line}`));
   }
   for (const branch of branches) {
-    const target = targetPort(branch.targetKey, input.definitionByKey, used);
+    const target = targetPort(branch.targetKey, input.definitionByKey, used, branch.targetPortId);
     if (!target) continue;
     edges.push(edge(edges.length, branch.sourceKey, branch.port.id, branch.targetKey, target));
   }
   for (const [index, node] of input.nodes.entries()) {
     const next = input.nodes[index + 1];
     if (!next) break;
+    // A step that wrote all its own edges does not also fall into the next one.
+    if (input.steps[index]?.routed) continue;
     const definition = input.definitionByKey.get(node.key);
     const source = definition?.outputs.find((port) => !claimed.get(node.key)!.has(port.id));
     const target = targetPort(next.key, input.definitionByKey, used);
@@ -385,10 +403,23 @@ function wire(input: {
   return edges;
 }
 
-function targetPort(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>, used: Map<string, Set<string>>): string | undefined {
+/** Whether a node declares a way in that several paths may arrive at. */
+function joins(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>): boolean {
+  return (definitions.get(key)?.inputs ?? []).some((port) => port.multiple === true);
+}
+
+/**
+ * Which of a target's input ports an edge arrives at: the one asked for, or
+ * the first still free.
+ *
+ * A named port is taken as written and still marked used, so two edges naming
+ * the same single-connection port are caught by validation rather than
+ * silently redirected to another port that happened to be free.
+ */
+function targetPort(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>, used: Map<string, Set<string>>, asked?: string): string | undefined {
   const inputs = definitions.get(key)?.inputs ?? [];
   const taken = used.get(key) ?? new Set<string>();
-  const port = inputs.find((candidate) => candidate.multiple === true || !taken.has(candidate.id));
+  const port = asked ? inputs.find((candidate) => candidate.id === asked) : inputs.find((candidate) => candidate.multiple === true || !taken.has(candidate.id));
   if (!port) return undefined;
   taken.add(port.id);
   used.set(key, taken);

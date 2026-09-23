@@ -22,6 +22,17 @@ export type AutomationStudioFlowScriptBranch = {
   port: string;
   /** The label of the step this port goes to. */
   target: string;
+  /**
+   * Which of the target's input ports this edge arrives at, when it matters.
+   *
+   * A model never writes this: it says where a path goes, and which way in the
+   * step takes is derived -- the first one still free. It matters only for a
+   * node whose input ports mean different things, which is how a repeating span
+   * is wired (`./assemble-draft.ts`): the rows go into For Each's `items` and
+   * the path into its control input, and taking whichever was free first would
+   * wire the rows as the path.
+   */
+  targetPort?: string;
   line: number;
 };
 
@@ -36,6 +47,18 @@ export type AutomationStudioFlowScriptStep = {
   runsBlock?: string;
   entries: AutomationStudioFlowScriptEntry[];
   branches: AutomationStudioFlowScriptBranch[];
+  /**
+   * Every edge out of this step is written above; nothing falls through.
+   *
+   * Order carries the meaning in a script a model wrote, and it must keep
+   * doing so. A derived step is different: it is written by the code that
+   * decided the shape (`./assemble-draft.ts`), which knows exactly where each
+   * of its ports goes -- a For Each's `body` and `done`, a step whose success
+   * and failure part company. Letting such a step also fall through to whatever
+   * was written next would add an edge nobody meant, off whichever port
+   * happened to be left over.
+   */
+  routed?: true;
   line: number;
 };
 

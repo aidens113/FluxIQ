@@ -27,6 +27,8 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
+import { automationStudioFlowDraftStepById } from "./routing.ts";
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
@@ -79,12 +81,12 @@ function entryValue(steps: readonly AutomationStudioFlowDraftStep[], withInput: 
   return {
     code: DRAFT_CODE,
     ...(unlisted > 0 ? { unlisted } : {}),
-    steps: steps.map((step, index) => stepLine(step, index >= from)),
+    steps: steps.map((step, index) => stepLine(step, index >= from, steps)),
     instruction: DRAFT_INSTRUCTION
   };
 }
 
-function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean): JsonObject {
+function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
   const argument = withInput ? boundedInput(step.input) : undefined;
   return {
     step: step.position,
@@ -103,8 +105,29 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean): Json
     // Spending two hundred bytes of every draft entry on a sentence about a
     // check that usually passes would cost the entry steps it has to list.
     ...(step.replayed ? { replayed: step.replayed.status } : {}),
+    // What the step says about when it runs, in the step numbers the model
+    // reads rather than the ids the draft keeps (`./routing.ts`). It is shown
+    // back for the same reason the disposition is: an edit the model made and
+    // cannot see is one it makes again. Like `replayed`, it is deliberately not
+    // explained in the instruction above -- the grammar is in the amendment
+    // schema, which every decision that may amend already carries, and a
+    // sentence here would be paid for on every request by every build,
+    // including the ones whose Flow is a straight line.
+    ...(step.routing ? { runs: routingLine(step.routing, all) } : {}),
     ...(step.settings ? { settings: step.settings } : {})
   };
+}
+
+/** One routing statement in the words and the numbers an amendment took. */
+function routingLine(routing: AutomationStudioFlowDraftStepRouting, all: readonly AutomationStudioFlowDraftStep[]): string {
+  const at = (id: string): string => {
+    const step = automationStudioFlowDraftStepById(all, id);
+    return step ? String(step.position) : "a step no longer in the draft";
+  };
+  if (routing.kind === "optional") return "optional: the Flow carries on when this fails";
+  if (routing.kind === "only_if") return `only if step ${at(routing.check)} succeeded`;
+  if (routing.kind === "on_failed") return `on failure, step ${at(routing.to)} runs instead`;
+  return `repeats through step ${at(routing.through)}, over step ${at(routing.over)}`;
 }
 
 /** The argument when it is small enough to carry, and nothing when it is not. */
