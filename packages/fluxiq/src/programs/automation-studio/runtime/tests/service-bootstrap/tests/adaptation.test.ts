@@ -295,7 +295,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
 
   it("bridges a generated proposal ID through the standard Adaptation Audit get, approve, and apply endpoints", async () => {
     const provider = {
-      metadata: { provider: "deepseek", model: "deepseek-chat" },
+      metadata: { provider: "deepseek", model: "deepseek-flash" },
       runTask: vi.fn(async () => ({
         response: { kind: "flow_bootstrap", summary: "Build the requested deterministic Flow.", plan: validPlan() },
         usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000, estimatedCostUsd: 0.001 }
@@ -350,7 +350,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
         baseExecutionDigest: binding.executionDigest,
         baseSettingsRevision: binding.settingsRevision,
         currentExecutionDigest: binding.executionDigest,
-        accounting: { provider: "deepseek", model: "deepseek-chat", inputTokens: 900, totalTokens: 1000 }
+        accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 900, totalTokens: 1000 }
       } }
     } } });
     expect(opened.payload.adaptation.metadata.phase9.auditEvents.map((event: any) => event.eventType)).toEqual(["created"]);

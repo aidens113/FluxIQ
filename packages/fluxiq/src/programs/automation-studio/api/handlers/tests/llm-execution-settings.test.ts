@@ -8,7 +8,7 @@ import { assertFlowLlmExecutionSettings } from "../index.ts";
 describe("Flow LLM execution settings API validation", () => {
   const valid = {
     llmProvider: "deepseek",
-    llmModel: "deepseek-chat",
+    llmModel: "deepseek-flash",
     llmExecutionSettings: {
       tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 },
       maxCalls: 1,

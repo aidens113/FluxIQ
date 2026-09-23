@@ -450,12 +450,23 @@ identity, execution grant ID, or secret material. Explicit review and apply are
 still required to materialize topology.
 
 Successful DeepSeek usage accounting includes a conservative finite
-`estimatedCostUsd`. As reviewed on 2026-09-08, `deepseek-chat` compatibility
-maps to the non-thinking `deepseek-v4-flash` model. Core uses the official peak
-cache-miss rate of USD 0.44 per million input tokens, the peak cache-hit rate of
-USD 0.044, and the peak rate of USD 1.32 per million output tokens; it does not
-assume off-peak discounts. These provider-owned prices are a dated maintenance
-input and must be reviewed when DeepSeek changes model compatibility or pricing.
+`estimatedCostUsd`. As read from DeepSeek's own price list on 2026-09-23
+(`https://api-docs.deepseek.com/quick_start/pricing/`), the default model
+`deepseek-flash` is served by DeepSeek-V4.1-Flash at a peak cache-miss rate of
+USD 0.3 per million input tokens, a peak cache-hit rate of USD 0.006, and USD
+1.2 per million output tokens; `deepseek-v4-pro` costs USD 1.32, 0.044 and 3.96
+on the same three axes. Core prices per model and does not assume the off-peak
+discount, which halves every rate outside 01:00-04:00 and 06:00-10:00 UTC on
+weekdays: a grant reserves before a call is made, so an off-peak run is billed
+less than Core estimated and never more. These provider-owned prices are a dated
+maintenance input and must be reviewed when DeepSeek changes its line-up or
+pricing.
+
+A cache hit costs a **fiftieth** of a miss, not a tenth. Until 2026-09-23 this
+document and the constants behind it said 0.44, 0.044 and 1.32 -- figures that
+matched no model on the current price list, with the hit rate derived from an
+unsourced "a tenth of a miss". Anything that lengthens the cached prefix of a
+payload is worth five times what those numbers credited it with.
 
 The cache-hit rate is applied only to the tokens DeepSeek reports it served from
 its own context cache, which the adapter reads from `prompt_cache_hit_tokens`

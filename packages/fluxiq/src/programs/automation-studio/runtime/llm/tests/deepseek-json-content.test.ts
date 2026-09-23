@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 
 // Live DeepSeek, in JSON mode at temperature 0, returned one complete object and

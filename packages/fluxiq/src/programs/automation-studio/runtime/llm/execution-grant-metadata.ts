@@ -4,6 +4,7 @@
 // face and the projection that produces it sit together.
 
 import type { AutomationStudioActionConsequence } from "../action-permissions/index.ts";
+import type { AutomationStudioDeepSeekModel } from "./deepseek/index.ts";
 import type { AutomationStudioLlmExecutionGrantPurpose } from "./grant-capabilities.ts";
 import type { AutomationStudioLlmTokenLimits } from "./harness.ts";
 
@@ -11,7 +12,9 @@ export type AutomationStudioLlmExecutionGrantMetadata = {
   grantId: string;
   keyId: string;
   provider: "deepseek";
-  model: "deepseek-chat";
+  /** The DeepSeek model the grant authorizes calls to: what the caller asked
+   * for, the key's own recorded model, or Core's configured default. */
+  model: AutomationStudioDeepSeekModel;
   projectId: string;
   flowId: string;
   executionDigest: string;

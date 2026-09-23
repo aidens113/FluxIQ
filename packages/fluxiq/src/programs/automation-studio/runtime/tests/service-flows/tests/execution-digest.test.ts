@@ -212,7 +212,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       });
       await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
 
-      const key = { id: "secret:external", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: caller.flowId, enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+      const key = { id: "secret:external", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: caller.flowId, enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
       let revealCount = 0;
       let fetchCount = 0;
       const grants = new AutomationStudioLlmExecutionGrantService({

@@ -28,7 +28,7 @@ const flowWithExecution = (execution: Record<string, unknown> | undefined): any 
   name: "Stored",
   source: { mode: "visual" },
   interface: { inputs: [], outputs: [] },
-  metadata: { llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "key.deepseek", ...(execution ? { llmExecutionSettings: execution } : {}) }
+  metadata: { llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: "key.deepseek", ...(execution ? { llmExecutionSettings: execution } : {}) }
 });
 const savedExecution = (flow: any, draftPatch: Record<string, unknown> = {}) => buildFlowSettingsSavePayload(flow, { ...flowSettingsDraftFromFlow(flow), ...draftPatch } as FlowSettingsDraft).metadata.llmExecutionSettings;
 
@@ -71,7 +71,7 @@ describe("Flow Settings without a call limit", () => {
   it("carries a stored count through the loaded settings detail the view saves from", () => {
     const loaded = flowSettingsFlowFromDetail(
       { flowId: "flow.stored", name: "", metadata: { summaryOnly: true }, source: { mode: "visual" } },
-      { flowId: "flow.stored", name: "Stored", updatedAt: 7, settings: { llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek", execution: { tokenLimits, maxCalls: 26, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }, inputs: [], outputs: [] }
+      { flowId: "flow.stored", name: "Stored", updatedAt: 7, settings: { llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek", execution: { tokenLimits, maxCalls: 26, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }, inputs: [], outputs: [] }
     );
     expect(savedExecution(loaded).maxCalls).toBe(26);
   });
@@ -83,7 +83,7 @@ describe("Flow Settings without a call limit", () => {
       flowId: "flow.stored",
       name: "Stored",
       updatedAt: 7,
-      settings: { llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek", execution: { tokenLimits, maxCalls: 26, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } },
+      settings: { llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek", execution: { tokenLimits, maxCalls: 26, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } },
       inputs: [],
       outputs: []
     };

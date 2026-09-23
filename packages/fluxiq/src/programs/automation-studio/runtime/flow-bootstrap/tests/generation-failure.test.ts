@@ -58,7 +58,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         maxEstimatedCostUsd: 0.25,
         timeoutMs: 20_000
       },
-      provider: { provider: "deepseek", model: "deepseek-chat" }
+      provider: { provider: "deepseek", model: "deepseek-flash" }
     });
 
     expect(failure.diagnostic).toEqual({
@@ -67,7 +67,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.one", estimatedInputTokens: 1996, provider: "deepseek", model: "deepseek-chat", providerStatus: 400 }
+      accounting: { requestId: "request.one", estimatedInputTokens: 1996, provider: "deepseek", model: "deepseek-flash", providerStatus: 400 }
     });
     expect(JSON.stringify(failure.diagnostic)).not.toContain("must not escape");
   });
@@ -79,7 +79,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.one", estimatedInputTokens: 1996, provider: "deepseek", model: "deepseek-chat", providerStatus: 400 }
+      accounting: { requestId: "request.one", estimatedInputTokens: 1996, provider: "deepseek", model: "deepseek-flash", providerStatus: 400 }
     };
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(valid)).toEqual(valid);
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", providerInvocation: "not_attempted", providerResponse: "not_received", accounting: undefined })).toEqual({ code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", retryable: false, providerInvocation: "not_attempted", providerResponse: "not_received" });
@@ -297,7 +297,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code: "llm.provider_output_truncated", message: partialContent, metadata: { rawResponse: partialContent } }],
       request: { requestId: "request.truncated", estimatedInputTokens: 1_996 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" },
+      provider: { provider: "deepseek", model: "deepseek-flash" },
       usage: { inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
     });
 
@@ -307,7 +307,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.truncated", estimatedInputTokens: 1_996, provider: "deepseek", model: "deepseek-chat", inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
+      accounting: { requestId: "request.truncated", estimatedInputTokens: 1_996, provider: "deepseek", model: "deepseek-flash", inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
     });
     expect(JSON.stringify(failure)).not.toContain(partialContent);
   });
@@ -317,7 +317,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code: "llm.provider_output_invalid", message: privateDetail, metadata: { rawResponse: privateDetail } }],
       request: { requestId: "request.invalid-output", estimatedInputTokens: 1_000 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" }
+      provider: { provider: "deepseek", model: "deepseek-flash" }
     });
 
     expect(failure.diagnostic).toEqual({
@@ -326,7 +326,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.invalid-output", estimatedInputTokens: 1_000, provider: "deepseek", model: "deepseek-chat" }
+      accounting: { requestId: "request.invalid-output", estimatedInputTokens: 1_000, provider: "deepseek", model: "deepseek-flash" }
     });
     expect(JSON.stringify(failure)).not.toContain(privateDetail);
   });
@@ -338,7 +338,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         { severity: "error", code: "llm.provider_request_limits_invalid", message: "private provider detail", metadata: { retryable: false } }
       ],
       request: { requestId: "request.ordered", estimatedInputTokens: 1_000 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" }
+      provider: { provider: "deepseek", model: "deepseek-flash" }
     });
     expect(failure.diagnostic).toMatchObject({
       code: "flow_bootstrap.provider_request_limits_invalid",
@@ -354,7 +354,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code, message: "private provider detail", metadata: { retryable: false } }],
       request: { requestId: "request.refused", estimatedInputTokens: 1_000 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" }
+      provider: { provider: "deepseek", model: "deepseek-flash" }
     });
     expect(failure.diagnostic).toMatchObject({
       code: code.replace(/^llm\./u, "flow_bootstrap."),
@@ -375,7 +375,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code: "llm.provider_usage_limit_exceeded", message: privateUsage, metadata: { rawUsage: privateUsage } }],
       request: { requestId: "request.usage-limit", estimatedInputTokens: 1_000 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" }
+      provider: { provider: "deepseek", model: "deepseek-flash" }
     });
 
     expect(failure.diagnostic).toEqual({
@@ -384,7 +384,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.usage-limit", estimatedInputTokens: 1_000, provider: "deepseek", model: "deepseek-chat" }
+      accounting: { requestId: "request.usage-limit", estimatedInputTokens: 1_000, provider: "deepseek", model: "deepseek-flash" }
     });
     expect(JSON.stringify(failure)).not.toContain(privateUsage);
   });
@@ -394,7 +394,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const failure = flowBootstrapHarnessFailure({
       diagnostics: [{ severity: "error", code: "llm.provider_output_padding_truncated", message: providerContent, metadata: { rawResponse: providerContent } }],
       request: { requestId: "request.padding", estimatedInputTokens: 1_996 } as any,
-      provider: { provider: "deepseek", model: "deepseek-chat" },
+      provider: { provider: "deepseek", model: "deepseek-flash" },
       usage: { inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
     });
 
@@ -404,7 +404,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.padding", estimatedInputTokens: 1_996, provider: "deepseek", model: "deepseek-chat", inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
+      accounting: { requestId: "request.padding", estimatedInputTokens: 1_996, provider: "deepseek", model: "deepseek-flash", inputTokens: 1_996, outputTokens: 512, totalTokens: 2_508 }
     });
     expect(Object.values(failure.diagnostic)).not.toContain(providerContent);
   });

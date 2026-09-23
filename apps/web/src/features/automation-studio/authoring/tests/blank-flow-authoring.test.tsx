@@ -23,7 +23,7 @@ const flow = {
     flowRepresentationVersion: 1,
     flowRepresentationKind: "orchestration",
     llmProvider: "deepseek",
-    llmModel: "deepseek-chat",
+    llmModel: "deepseek-flash",
     llmSecretKeyId: "key.deepseek",
     llmExecutionSettings: {
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
@@ -41,7 +41,7 @@ const explorationFlow = { ...flow, metadata: { ...flow.metadata, llmExecutionSet
 // default of 26 calls, with the whole-run token budget held to 100,000.
 const defaultExplorationPreflight = { purpose: "build_and_adapt", tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, maxCalls: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, timeoutMs: 45_000 };
 const explorationPayload = {
-  purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat",
+  purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-flash",
   tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 560_000, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0
 };
 const actionPermissionRequest = {
@@ -87,7 +87,7 @@ async function mount(authoringCommands: ReturnType<typeof commands>, onOpenAdapt
 describe("blank Flow instruction authoring", () => {
   it("keeps normal builds exact while deriving bounded exploration limits at request time", () => {
     expect(blankFlowAuthoringRequest("project.one", flow, readiness)).toEqual({ ok: true, payload: {
-      purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat",
+      purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.blank", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-flash",
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, providerRetryCount: 0
     } });
     expect(blankFlowAuthoringRequest("project.one", { ...flow, nodes: [{ id: "start" }] }, readiness).ok).toBe(false);

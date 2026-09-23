@@ -27,7 +27,7 @@ function failed(codes: Array<{ code: string; status?: number }>, reached = true)
   return {
     ok: false,
     request: { requestId: "request.1", estimatedInputTokens: 10 },
-    ...(reached ? { provider: { provider: "deepseek", model: "deepseek-chat" } } : {}),
+    ...(reached ? { provider: { provider: "deepseek", model: "deepseek-flash" } } : {}),
     diagnostics: [
       { severity: "warning", code: "instruction.note", message: "Not an error." },
       ...codes.map(({ code, status }) => ({ severity: "error" as const, code, message: "withheld", ...(status !== undefined ? { metadata: { providerStatus: status } } : {}) }))

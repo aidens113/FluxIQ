@@ -108,7 +108,7 @@ describe("the limits a default recovery grant and a recovery share", () => {
  * from the real grant service. A preflight needs an enabled DeepSeek key and a
  * Flow bound to a settings revision, and touches nothing else. */
 async function defaultAdaptGrantLimits() {
-  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
   const service = new AutomationStudioLlmExecutionGrantService({
     identityAccess: {} as IdentityAccessService,
     secretKeys: { getKeySummary: async (id: string) => (id === key.id ? key : undefined) } as unknown as SecretKeysService,

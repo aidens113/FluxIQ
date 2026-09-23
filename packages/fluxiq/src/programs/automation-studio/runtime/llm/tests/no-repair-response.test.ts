@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioDeepSeekProvider } from "../deepseek-provider.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_NO_REPAIR_REASONS, parseAutomationStudioLlmProviderResult, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 
 // What a model may answer when there is nothing to repair.

@@ -2,7 +2,7 @@
 //
 // **Why this file exists.** A tool's description may be at most 2,000
 // characters, checked in three places -- `harness-options/option.ts`,
-// `deepseek-provider.ts` and `evidence-loop-decision.ts` -- and nothing checks
+// `deepseek/provider.ts` and `evidence-loop-decision.ts` -- and nothing checks
 // it while the prose is being written. Adding three sentences of guidance about
 // `consequences` took this description to 2,179 characters, and the next live
 // build died at its first provider request with

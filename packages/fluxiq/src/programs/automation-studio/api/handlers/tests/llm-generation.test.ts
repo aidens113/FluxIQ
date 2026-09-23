@@ -20,8 +20,8 @@ describe("Automation Studio LLM execution API", () => {
   it("issues an opaque grant with actor/session binding and forwards diagnosis-only intent", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "failed" });
     const grants = {
-      preflight: vi.fn().mockResolvedValue({ provider: "deepseek", model: "deepseek-chat", keyId: "secret:key" }),
-      issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:one", provider: "deepseek", model: "deepseek-chat", remainingUses: 1 }),
+      preflight: vi.fn().mockResolvedValue({ provider: "deepseek", model: "deepseek-flash", keyId: "secret:key" }),
+      issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:one", provider: "deepseek", model: "deepseek-flash", remainingUses: 1 }),
       // A granted run holds its grant as it starts, so a late failure keeps its recovery.
       holdForRun: vi.fn().mockResolvedValue(undefined),
       revoke: vi.fn()
@@ -117,7 +117,7 @@ describe("Automation Studio LLM execution API", () => {
   // handler's field-by-field copy into the grant service, be stored on the
   // grant, and come back on both answers; left out, the default applies.
   it("forwards a caller's lower run token budget, which the grant stores and returns", async () => {
-    const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+    const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
     let minted = 0;
     const grants = new AutomationStudioLlmExecutionGrantService({
       resolveExecutionDigest: async () => ({ executionDigest: "digest.one", settingsRevision: 3 }),
@@ -271,7 +271,7 @@ describe("Automation Studio LLM execution API", () => {
         requestId: "request.one",
         estimatedInputTokens: 300,
         provider: "deepseek",
-        model: "deepseek-chat",
+        model: "deepseek-flash",
         inputTokens: 250,
         outputTokens: 100,
         totalTokens: 350,
@@ -461,7 +461,7 @@ describe("Automation Studio LLM execution API", () => {
       requestId: "evidence.build",
       estimatedInputTokens: 91_191,
       provider: "deepseek",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       inputTokens: 91_191,
       outputTokens: 1_803,
       totalTokens: 92_994,
@@ -516,7 +516,7 @@ describe("Automation Studio LLM execution API", () => {
             requestId: "llm-request:one",
             estimatedInputTokens: 1996,
             provider: "deepseek",
-            model: "deepseek-chat",
+            model: "deepseek-flash",
             inputTokens: 1996,
             outputTokens: 512,
             totalTokens: 2508
@@ -550,7 +550,7 @@ describe("Automation Studio LLM execution API", () => {
           requestId: "llm-request:one",
           estimatedInputTokens: 1996,
           provider: "deepseek",
-          model: "deepseek-chat",
+          model: "deepseek-flash",
           inputTokens: 1996,
           outputTokens: 512,
           totalTokens: 2508

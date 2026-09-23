@@ -15,7 +15,7 @@ import { evidenceRequest, gatherRequest, issueInput, patchRequest, request, reso
  *
  * It is ten full calls, not an absolute, so it follows the per-call limit when
  * that moves. It was the literal 100_000 on both sides -- in the code and in
- * these titles -- and when the per-call limit rose to deepseek-chat's real
+ * these titles -- and when the per-call limit rose to deepseek-flash's real
  * context that silently became under two calls' worth. The titles below take
  * the formatted number from the same place the assertions do, so no title here
  * can state a number the code no longer uses.
@@ -33,7 +33,7 @@ describe("Automation Studio LLM execution grants", () => {
     expect(JSON.stringify(fixture.service)).not.toContain("password");
     expect(grant).toMatchObject({
       provider: "deepseek",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       purpose: "diagnosis_only",
       maxCalls: 1,
       maxEstimatedCostUsd: 0.25,
@@ -170,7 +170,7 @@ describe("Automation Studio LLM execution grants", () => {
       projectId: "project.one",
       flowId: "flow.one",
       provider: "deepseek",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
       maxCalls: 1,
       maxEstimatedCostUsd: 0.1,
@@ -531,7 +531,7 @@ describe("Automation Studio LLM execution grants", () => {
   // budget that sits exactly at the confirmation threshold, $2.00, and no
   // high-token prompt.
   //
-  // The per-call limits are deepseek-chat's own 64k context, less room for the
+  // The per-call limits are deepseek-flash's own 64k context, less room for the
   // reply: 48,000 in, 8,000 out, 56,000 together. They were 8,000/2,000/10,000,
   // at which describing a real page did not fit and the input guard ended the
   // grant before a request was sent. The run budget is 26 x 56,000 held to the
