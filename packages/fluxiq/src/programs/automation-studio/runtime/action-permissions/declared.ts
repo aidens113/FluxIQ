@@ -16,6 +16,7 @@
 // because this record travels to the same places.
 
 import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
+import type { AutomationStudioActionEffect } from "./declaration.ts";
 import type { AutomationStudioActionPermissionActionKind } from "./request.ts";
 
 /** How many declarations one gate keeps. Past it the run acts as before and stops recording. */
@@ -30,6 +31,8 @@ export type AutomationStudioActionDeclarationRecord = {
     /** The call id, or the step's ref: what joins this record to the trace. */
     ref: string;
     verb: string;
+    /** Whether taking it changes anything, as the domain stated it. */
+    effect: AutomationStudioActionEffect;
   };
   /** The control as a person would name it, withheld when the model was never shown that name. */
   control: { name: string | null; kind: string | null };
@@ -40,6 +43,16 @@ export type AutomationStudioActionDeclarationRecord = {
   missing?: AutomationStudioActionConsequence[];
   /** Present only on a refusal that raised or reported a request. */
   requestId?: string;
+  /**
+   * Classes an *observing* action named, which Core did not treat as lasting.
+   *
+   * Kept rather than dropped, and this is the whole reason a read still goes to
+   * the gate. The classes here are a model saying that reading a page creates
+   * something, which is worth being able to see and count -- it is what a
+   * build's guidance is measured by -- and it is also how a reader tells
+   * "declared nothing" apart from "declared something that could not apply".
+   */
+  disregarded?: AutomationStudioActionConsequence[];
 };
 
 /** Every class any of these actions declared, deduplicated and in Core's order. */
@@ -49,9 +62,16 @@ export function automationStudioDeclaredConsequences(
   return automationStudioConsequencesInOrder(records.flatMap((record) => record.consequences));
 }
 
-/** The actions that acted and said they would cause nothing lasting. */
+/**
+ * The actions that acted and said they would cause nothing lasting.
+ *
+ * An observing action is not among them however it declared: it did not act,
+ * so "it acted and said it would cause nothing" is not true of it, and counting
+ * reads here would make a build that looked at a page look like a build that
+ * pressed things and swore each press was harmless.
+ */
 export function automationStudioDeclaredNothingLasting(
   records: readonly AutomationStudioActionDeclarationRecord[]
 ): AutomationStudioActionDeclarationRecord[] {
-  return records.filter((record) => record.consequences.length === 0);
+  return records.filter((record) => record.action.effect !== "observe" && record.consequences.length === 0);
 }

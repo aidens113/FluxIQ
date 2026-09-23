@@ -39,7 +39,7 @@
 // every one of them said it would cause nothing.
 
 import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
-import { automationStudioDeclaredConsequences, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
+import { automationStudioDeclaredConsequences, automationStudioDeclaredNothingLasting, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 
 export const AUTOMATION_STUDIO_ACTION_DECLARATION_CROSS_CHECK_SCHEMA_VERSION = "automation-studio.action-declaration-cross-check.v1";
@@ -69,7 +69,7 @@ export type AutomationStudioActionDeclarationCrossCheck = {
   beyondInstruction: AutomationStudioActionConsequence[];
   /** How many actions were put to the gate at all. */
   actions: number;
-  /** How many of them said they would cause nothing lasting. */
+  /** How many of them acted and said they would cause nothing lasting. A read is not one of them. */
   declaredNothing: number;
   /** The person's own words, for each class in `undeclared`. */
   quotes: Array<{ consequence: AutomationStudioActionConsequence; instructionId: string; quote: string }>;
@@ -87,7 +87,7 @@ export function automationStudioActionDeclarationCrossCheck(input: {
     ? instructedClasses.filter((consequence) => !declared.includes(consequence))
     : [];
   const beyondInstruction = declared.filter((consequence) => !instructedClasses.includes(consequence));
-  const declaredNothing = input.declarations.filter((record) => record.consequences.length === 0).length;
+  const declaredNothing = automationStudioDeclaredNothingLasting(input.declarations).length;
   const verdict: AutomationStudioActionDeclarationCrossCheckVerdict = !input.declarations.length
     ? "not_comparable"
     : undeclared.length
