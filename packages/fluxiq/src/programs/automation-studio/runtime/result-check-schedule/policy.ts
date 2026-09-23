@@ -15,5 +15,13 @@ export type AutomationStudioResultCheckSchedule = {
   decide(input: {
     state: AutomationStudioResultCheckState;
     settings: AutomationStudioResultCheckSettings;
+    /**
+     * True when a repair landed during this run and the retry produced the
+     * result being judged. It is a fact about *this* run rather than about the
+     * Flow's history, which is why it is handed in beside the state rather than
+     * read off it: `state` is derived from finished runs, and this run is the
+     * one being decided about.
+     */
+    repairedThisRun?: boolean;
   }): AutomationStudioResultCheckDecision;
 };

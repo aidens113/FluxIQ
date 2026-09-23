@@ -14,16 +14,14 @@
 // document and runs it. The verification must then be handed five. Before the
 // fix it was handed four.
 //
-// **Why the assertion is on the call and not on a provider request.** The
-// verification only resolves a model when the run carries a grant that permits
-// `loop_verification` (`service.ts`, `resultPorts`), and a run carrying any
-// grant is forced to `manual_approval`, which makes the promotion gate record
-// `autoApply: false`, which makes `decideAutomationStudioAdaptiveRetry` answer
-// `null`. So a granted run never retries and an ungranted retry never asks a
-// model: the two halves cannot meet as the code stands, and no `resultSummary`
-// reaches a provider on this path at all. That is a real gap and it is written
-// down in the task's report; until it closes, the Flow handed to the
-// verification is the only place this is observable, so that is what is read.
+// **Why the assertion is on the call and not on a provider request.** This
+// service holds no standing result-check authorization and is given no host
+// resolver, so its verification reaches `core.result.no_model_available` and no
+// `resultSummary` goes to a provider. That is this test's own setup, not a limit
+// of the runtime: `unattended-retry-verification.test.ts` runs the same repair
+// with an authorization stored and watches the retried session's result be
+// judged by a real call, with no grant anywhere. The Flow handed to the
+// verification is what *this* test is about, so that is what it reads.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

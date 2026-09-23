@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL } from "../../llm/index.ts";
 import {
   createAutomationStudioResultCheckProvider,
   revealAutomationStudioResultCheckSecret,
@@ -72,9 +73,12 @@ describe("releasing the key for an unattended check", () => {
 });
 
 describe("the provider a standing authorization resolves to", () => {
-  it("is the one DeepSeek model, carrying the ceiling the redemption worked out", () => {
+  // The model name is read from the models module rather than written out
+  // here. Spelling it out is what left this test red from 2026-09-23, when the
+  // default moved to `deepseek-flash` and this expectation did not.
+  it("is the configured default DeepSeek model, carrying the ceiling the redemption worked out", () => {
     const resolved = createAutomationStudioResultCheckProvider({ ports: ports(), scope });
     expect(resolved.maxEstimatedCostUsd).toBe(0.05);
-    expect(resolved.provider.metadata).toEqual({ provider: "deepseek", model: "deepseek-chat" });
+    expect(resolved.provider.metadata).toEqual({ provider: "deepseek", model: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL });
   });
 });
