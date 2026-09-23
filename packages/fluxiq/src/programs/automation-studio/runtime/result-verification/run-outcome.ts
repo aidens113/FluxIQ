@@ -38,7 +38,11 @@ import type {
 } from "../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import {
+  repairAutomationStudioRefutedRunResult,
+  type AutomationStudioRefutedResultRepairPort
+} from "../recovery/refuted-result/index.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
@@ -92,6 +96,16 @@ export type AutomationStudioResultVerificationPorts = {
   resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
   /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * Hands a run whose result was judged wrong back to the loop's failure entry
+   * point, so the ladder repairs it as it repairs a failed step.
+   *
+   * Absent means nothing repairs a wrong answer here, and the verification's
+   * verdict is a receipt again. That is the behaviour this port was added to
+   * end, so it is left optional only because a deployment with no recovery
+   * configured has nowhere to hand it.
+   */
+  repairRefutedResult?: AutomationStudioRefutedResultRepairPort | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -124,11 +138,34 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  await recordOnRunDetail(input, next, outcome, report.interventions);
+  const recorded = await recordOnRunDetail(input, next, outcome, report.interventions);
+  // The half that makes a wrong answer repairable. A run that failed here
+  // failed at `verification`, and until now that was the end of it: the ladder
+  // is keyed on a failed *attempt*, a clean run has none, and the planner
+  // answered `stop`. The run is handed to the same failure entry point every
+  // other failure goes through, carrying the attempt the refutation amounts to.
+  if (recorded && report.summary && input.ports.repairRefutedResult) {
+    await repairAutomationStudioRefutedRunResult({
+      runId: next.runId,
+      detail: recorded,
+      outcome,
+      summary: report.summary,
+      ...(input.flow ? { flow: input.flow } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      now: next.finishedAt ?? Date.now(),
+      repair: input.ports.repairRefutedResult,
+      saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail)
+    });
+  }
   return next;
 }
 
-async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>> {
+type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & {
+  /** What the run produced, when it could be read. The repair is shown it; the verification was already. */
+  summary?: AutomationStudioRunResultSummary;
+};
+
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSessionVerificationReport> {
   const session = input.session;
   let recordSets: AutomationStudioResultRecordSetInput[];
   try {
@@ -145,12 +182,12 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   if (summary.totalRecordCount === 0) {
-    return await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] });
+    return { ...await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] }), summary };
   }
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  return await verifyAutomationStudioRunResult({
+  return { summary, ...await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
     runId: session.runId,
@@ -165,7 +202,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
-  });
+  }) };
 }
 
 /** The narrower of what the caller allows this call and what the resolution allows it. */
@@ -255,11 +292,15 @@ async function recordOnRunDetail(
   session: AutomationStudioRuntimeSession,
   outcome: AutomationStudioResultVerificationOutcome,
   interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"]
-): Promise<void> {
+): Promise<AutomationStudioFlowRunDetail | undefined> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  if (!detail) return;
+  if (!detail) return undefined;
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
-  await input.ports.saveFlowRunDetail({
+  // Answered as well as saved, because the repair that may follow continues
+  // from exactly this record: re-reading it would be a second read of a row
+  // this call just wrote, and a repair built from a stale one would annotate a
+  // run detail that no longer carries its own verdict.
+  const recorded: AutomationStudioFlowRunDetail = {
     ...detail,
     summary: { ...detail.summary, status: session.status, updatedAt: session.finishedAt ?? detail.summary.updatedAt },
     ...(interventions.length ? { interventions: [...detail.interventions, ...interventions] } : {}),
@@ -268,5 +309,7 @@ async function recordOnRunDetail(
       resultVerification: recordedOutcome(outcome),
       ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})
     }
-  });
+  };
+  await input.ports.saveFlowRunDetail(recorded);
+  return recorded;
 }

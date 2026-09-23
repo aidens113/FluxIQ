@@ -11,6 +11,7 @@ export * from "./context.ts";
 export * from "./context-summary.ts";
 export * from "./plan.ts";
 export * from "./progress-guard.ts";
+export * from "./refuted-result/index.ts";
 export * from "./recovery-deadline.ts";
 export * from "./runtime-exploration.ts";
 export * from "./stages.ts";
