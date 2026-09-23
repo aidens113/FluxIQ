@@ -270,7 +270,10 @@ describe("Automation Studio evidence-loop provider task", () => {
     // `flow-bootstrap/tests/plan.test.ts`: the replay premise t065 (P17) added
     // to the Flow script format costs the schema about 470 bytes. The input
     // budget the next line holds is the one that binds.
-    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(5_600);
+    // 6,000 since t081, for the consequence declaration the format now asks a
+    // press step for; the reason and the byte cost are in
+    // `flow-bootstrap/tests/plan.test.ts`, which holds the same ratchet.
+    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(6_000);
     expect(estimateAutomationStudioDeepSeekInputTokens(productionRequest)).toBeLessThanOrEqual(8_000);
     await expect(provider.runTask(productionRequest)).resolves.toMatchObject({ response: { kind: "evidence_tool_decision" } });
     expect(secretCalls).toBe(1);
