@@ -4,18 +4,27 @@
 // `answer-ask` because it is not a read), so both get thirty seconds, no
 // retry and no deduplication. Retrying an answer would be wrong anyway: an ask
 // is answered once and a second answer is refused.
+//
+// **The answer goes out flat.** Core's handler reads `askId`, `kind` and
+// `value` off the request itself; a nested `answer: { kind, ... }` object
+// reaches it as no kind at all and is refused with
+// `An answer is one of: grant, deny, choice, text.` before it touches the
+// store. So the panel's own `ConversationAnswer` union -- which is the right
+// shape to reason about, because it makes an impossible answer unrepresentable
+// -- is flattened here, at the wire, and nowhere else.
 
 import type { ProgramCommandTransport } from "../data/program-transport";
 import { commitAutomationStudioMutation } from "../stores";
-import type { ConversationAnswer } from "./thread";
+import { conversationAnswerRequest, type ConversationAnswer } from "./thread";
 
 export type ConversationAppendTurnPayload = {
+  projectId: string;
   conversationId: string;
   text: string;
 };
 
 export type ConversationAnswerAskPayload = {
-  conversationId: string;
+  projectId: string;
   answer: ConversationAnswer;
   /** Present only when the answer was re-authorized, and never logged or echoed. */
   authorizationPin?: string;
@@ -26,9 +35,9 @@ export function appendConversationTurn(api: ProgramCommandTransport, payload: Co
 }
 
 export function answerConversationAsk(api: ProgramCommandTransport, payload: ConversationAnswerAskPayload) {
-  return api.post<{ turn?: unknown; ask?: unknown }>("answer-ask", {
-    conversationId: payload.conversationId,
-    answer: { ...payload.answer },
+  return api.post<{ ask?: unknown }>("answer-ask", {
+    projectId: payload.projectId,
+    ...conversationAnswerRequest(payload.answer),
     ...(payload.authorizationPin ? { authorizationPin: payload.authorizationPin } : {})
   });
 }
@@ -36,7 +45,7 @@ export function answerConversationAsk(api: ProgramCommandTransport, payload: Con
 /**
  * Tell every other mounted surface that this thread moved. The change feed
  * only fires on a mutation this tab dispatched, so without this a second
- * conversation view in another pane would not see the turn until it polled.
+ * conversation surface would not see the turn until it polled.
  */
 export function commitConversationChanged(detail: { projectId: string | null; conversationId: string; flowId?: string }): void {
   commitAutomationStudioMutation({

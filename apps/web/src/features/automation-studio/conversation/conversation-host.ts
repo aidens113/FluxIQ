@@ -1,10 +1,9 @@
 "use client";
 
-// The view's seam onto the Program API, in the shape every other Studio view
-// uses: a model the connector selects, commands the workspace injects, and a
-// hook that binds the commands to the transport. `ConversationViewContent`
-// takes the commands as props, so a test mounts it with doubles and never
-// touches a transport.
+// The conversation's seam onto the Program API: commands the surface injects
+// and a hook that binds them to the transport. `ConversationViewContent` takes
+// the commands as props, so a test mounts it with doubles and never touches a
+// transport.
 
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
@@ -24,9 +23,9 @@ import {
 } from "./turn-commands";
 
 export type ConversationViewHostModel = {
+  /** The project whose threads are listed, or null to list across every project the person can see. */
   projectId: string | null;
-  flow?: any;
-  /** Restored from the saved workspace state so a warm tab reopens on the same thread. */
+  /** Restored by whatever mounted the surface, so it reopens on the same thread. */
   requestedConversationId?: string;
 };
 

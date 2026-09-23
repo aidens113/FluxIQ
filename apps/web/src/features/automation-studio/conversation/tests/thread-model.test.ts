@@ -18,6 +18,7 @@ import {
   mergeConversationTurns,
   pendingConversationTurn,
   sortConversationsForThreadList,
+  unansweredConversationCount,
   visibleConversationTurns
 } from "../thread";
 import { openConversationsFromPayload, promptableConversationTurn, withDismissedAsk } from "../thread";
@@ -54,8 +55,14 @@ describe("conversation turn contract", () => {
     expect(turn?.ask?.control).toEqual({ name: "Add to queue", kind: "button" });
     expect(turn?.attachment).toEqual({ kind: "flow-graph-diff", ref: "adaptation:a.1" });
 
+    // Core sends `ordinal` and `actorId` on every turn, and a field this
+    // reader does not know must not cost the whole record: refusing them is
+    // what made the live window render an empty transcript.
+    const asCoreSendsIt = parseConversationTurn(wireTurn({ ordinal: 3, actorId: "user.1", surprise: 1 }));
+    expect(asCoreSendsIt?.ordinal).toBe(3);
+    expect(asCoreSendsIt?.text).toBe("Reading the page.");
+
     expect(parseConversationTurn(wireTurn({ author: "assistant" }))).toBeNull();
-    expect(parseConversationTurn(wireTurn({ surprise: 1 }))).toBeNull();
     expect(parseConversationTurn(wireTurn({ text: "line\u0007bell" }))).toBeNull();
     expect(parseConversationTurn(wireTurn({ createdAt: -1 }))).toBeNull();
     expect(parseConversationTurn(wireTurn({ ask: wireAsk({ missing: ["set_the_house_on_fire"] }) }))).toBeNull();
@@ -75,11 +82,19 @@ describe("conversation turn contract", () => {
       projectId: "project.one",
       subject: { kind: "run", id: "run.7" },
       status: "open",
+      title: "Nightly listings run",
+      revision: 4,
+      turnCount: 3,
+      pendingAskCount: 1,
       createdAt: 1,
       updatedAt: 2
     });
     expect(conversation?.subject).toEqual({ kind: "run", id: "run.7" });
-    expect(conversationSubjectLabel(conversation!)).toBe("Run run.7");
+    expect(conversation?.pendingAskCount).toBe(1);
+    // Core's own title, which is a name a person recognises; the subject is
+    // still there underneath for a thread that was opened without one.
+    expect(conversationSubjectLabel(conversation!)).toBe("Nightly listings run");
+    expect(conversationSubjectLabel({ ...conversation!, title: null })).toBe("Run run.7");
     expect(parseConversation({
       conversationId: "conversation.1",
       projectId: "project.one",
@@ -134,14 +149,26 @@ describe("conversation transcript", () => {
     expect(conversationFollowsTail({ scrollTop: 400, scrollHeight: 1_000, clientHeight: 100 })).toBe(false);
   });
 
-  it("opens the list on live work", () => {
-    const base = { conversationId: "c", projectId: "p", subject: { kind: "project" as const, id: "p" }, createdAt: 0 };
+  it("opens the list on whatever is waiting on an answer, then on live work", () => {
+    const base = {
+      conversationId: "c",
+      projectId: "p",
+      subject: { kind: "project" as const, id: "p" },
+      title: null,
+      turnCount: 1,
+      pendingAskCount: 0,
+      createdAt: 0
+    };
     const sorted = sortConversationsForThreadList([
-      { ...base, conversationId: "c.resolved", status: "resolved", updatedAt: 99 },
-      { ...base, conversationId: "c.old", status: "open", updatedAt: 1 },
-      { ...base, conversationId: "c.new", status: "open", updatedAt: 5 }
+      { ...base, conversationId: "c.resolved", status: "resolved" as const, updatedAt: 99 },
+      { ...base, conversationId: "c.old", status: "open" as const, updatedAt: 1 },
+      { ...base, conversationId: "c.new", status: "open" as const, updatedAt: 5 },
+      { ...base, conversationId: "c.waiting", status: "open" as const, updatedAt: 0, pendingAskCount: 1 }
     ]);
-    expect(sorted.map((entry) => entry.conversationId)).toEqual(["c.new", "c.old", "c.resolved"]);
+    // The question holding work up comes first, whatever its timestamp: it is
+    // the reason the person opened the window.
+    expect(sorted.map((entry) => entry.conversationId)).toEqual(["c.waiting", "c.new", "c.old", "c.resolved"]);
+    expect(unansweredConversationCount(sorted)).toBe(1);
   });
 });
 
@@ -165,12 +192,14 @@ describe("conversation reachability", () => {
       let hidden = false;
       let inFlight = 0;
       let overlaps = 0;
+      let runs = 0;
       const delays: number[] = [];
       let resolveRun: null | (() => void) = null;
       const poller = createBackoffPoller<ReturnType<typeof setTimeout>>({
         active: () => true,
         hidden: () => hidden,
         run: async () => {
+          runs += 1;
           inFlight += 1;
           if (inFlight > 1) overlaps += 1;
           await new Promise<void>((resolve) => { resolveRun = resolve as () => void; });
@@ -193,8 +222,17 @@ describe("conversation reachability", () => {
       await Promise.resolve();
       expect(delays.at(-1)).toBe(1_600);
 
+      // Hidden means a slow beat, not no beat. This branch used to re-queue
+      // without ever calling `run`, so a tab in the background made no request
+      // at all and a question raised by a run reached nobody until the person
+      // came back and looked.
       hidden = true;
+      const readsBefore = runs;
       await vi.advanceTimersByTimeAsync(1_700);
+      expect(runs).toBe(readsBefore + 1);
+      (resolveRun as null | (() => void))?.();
+      await Promise.resolve();
+      await Promise.resolve();
       expect(delays.at(-1)).toBe(CONVERSATION_POLL_HIDDEN_MS);
 
       poller.dispose();
@@ -222,7 +260,7 @@ describe("conversation reachability", () => {
 
   it("reads open conversations out of a list payload, newest first", () => {
     const conversation = (conversationId: string, status: string, updatedAt: number) => ({
-      conversationId, projectId: "project.one", subject: { kind: "project", id: "project.one" }, status, createdAt: 0, updatedAt
+      conversationId, projectId: "project.one", subject: { kind: "project", id: "project.one" }, status, title: null, revision: 1, turnCount: 1, pendingAskCount: 0, createdAt: 0, updatedAt
     });
     const open = openConversationsFromPayload({
       conversations: [conversation("c.1", "open", 1), conversation("c.2", "resolved", 9), conversation("c.3", "open", 5), { junk: true }]
@@ -269,7 +307,9 @@ describe("conversation answers", () => {
 
   it("takes words for an open ask and fixed answers for a confirm", () => {
     expect(conversationAskPresentation(ask({ kind: "open", missing: [], control: null })).takesText).toBe(true);
-    const confirm = conversationAskPresentation(ask({ kind: "confirm", missing: ["delete"], control: null }));
+    // A permission ask names what it was refused in `missing`; every other
+    // kind of ask names what answering yes would commit in `consequences`.
+    const confirm = conversationAskPresentation(ask({ kind: "confirm", missing: [], consequences: ["delete"], control: null }));
     expect(confirm.takesText).toBe(false);
     expect(confirm.actions.map((action) => action.actionId)).toEqual(["deny", "confirm"]);
     expect(confirm.actions[1]?.destructive).toBe(true);

@@ -12,7 +12,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button, EmptyState } from "../../../programs/components";
-import { MessagesSquare } from "lucide-react";
+import { ArrowDown, MessagesSquare, TriangleAlert } from "lucide-react";
 import type { ConversationCommands } from "../conversation-host";
 import {
   conversationFollowsTail,
@@ -24,7 +24,13 @@ import { ConversationTurn } from "./ConversationTurn";
 
 export function ConversationThread(props: {
   turns: readonly ConversationTurnRecord[];
+  /** The project the thread belongs to; a turn's attachment read is project-scoped. */
+  projectId: string;
   busy: boolean;
+  /** False while the surface holding the transcript is collapsed. */
+  visible?: boolean;
+  /** The turn holding the question the person still owes an answer to. */
+  pendingTurnId?: string;
   error?: string;
   loadAttachment?: ConversationCommands["loadAttachment"];
   onAnswer(answer: ConversationAnswer, authorizationPin?: string): Promise<boolean>;
@@ -50,6 +56,30 @@ export function ConversationThread(props: {
     }
     setBehind(true);
   }, [props.turns.length]);
+
+  // A collapsed surface has no layout, so the effect above measures a zero-height
+  // list and the transcript opens at the top of the oldest turn the person has
+  // already read. Opening is the moment the geometry exists, so the tail is
+  // found then.
+  const onScreen = props.visible !== false;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!onScreen || !list) return;
+    list.scrollTop = list.scrollHeight;
+    followRef.current = true;
+    setBehind(false);
+  }, [onScreen]);
+
+  function jumpToTurn(turnId: string) {
+    const list = listRef.current;
+    const target = list?.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(turnId)}"]`);
+    if (!list || !target) return;
+    // Manual scroll maths rather than `scrollIntoView`: the transcript is a
+    // nested scroller inside a floating panel, and the browser would scroll the
+    // workspace behind it as well.
+    list.scrollTop = target.offsetTop - list.offsetTop;
+    trackScroll();
+  }
 
   function trackScroll() {
     const list = listRef.current;
@@ -82,6 +112,13 @@ export function ConversationThread(props: {
 
   return (
     <div className="automation-conversation-thread-frame">
+      {props.pendingTurnId ? (
+        <div className="automation-conversation-thread-waiting">
+          <TriangleAlert aria-hidden size={14} />
+          <span>FluxIQ stopped here and is waiting on your answer.</span>
+          <Button onClick={() => jumpToTurn(props.pendingTurnId!)} size="compact">Show me</Button>
+        </div>
+      ) : null}
       {hidden ? (
         <div className="automation-conversation-thread-earlier">
           <Button onClick={() => setShowAll(true)} size="compact">{`Show ${hidden} earlier turn${hidden === 1 ? "" : "s"}`}</Button>
@@ -95,9 +132,10 @@ export function ConversationThread(props: {
         ref={listRef}
       >
         {visible.map((turn) => (
-          <li key={turn.turnId}>
+          <li data-turn-id={turn.turnId} key={turn.turnId}>
             <ConversationTurn
               busy={props.busy}
+              projectId={props.projectId}
               turn={turn}
               {...(props.error ? { error: props.error } : {})}
               {...(props.loadAttachment ? { loadAttachment: props.loadAttachment } : {})}
@@ -109,7 +147,10 @@ export function ConversationThread(props: {
       </ol>
       {behind ? (
         <div className="automation-conversation-thread-behind">
-          <Button onClick={jumpToLatest} size="compact" variant="primary">New turns below</Button>
+          <Button onClick={jumpToLatest} size="compact" variant="primary">
+            <ArrowDown aria-hidden size={13} />
+            New turns below
+          </Button>
         </div>
       ) : null}
     </div>

@@ -14,6 +14,14 @@
 // a fixed interval would stack reads on a slow answer, and a source-text test
 // fails a controller that contains one.
 //
+// **A slow beat, not no beat.** This is the one thing in the whole feature that
+// has to be right, and it was wrong: the hidden branch re-queued itself without
+// ever calling `run`, so a tab in the background made no request at all and a
+// question raised by a run reached nobody until the person happened to come
+// back and look. Measured in a browser, twelve seconds of a hidden tab produced
+// zero reads. Hidden now means the read still happens, on the five-second beat,
+// which is the whole point of having a hidden beat at all.
+//
 // The existing `createActivePoller` is not reused because its delay is fixed at
 // construction. A conversation needs the delay to move with what the last read
 // found, which is the whole point of the backoff.
@@ -72,17 +80,17 @@ export function createBackoffPoller<TTimer>(options: {
       clear();
       return;
     }
-    if (options.hidden()) {
-      queue(CONVERSATION_POLL_HIDDEN_MS);
-      return;
-    }
+    const hidden = options.hidden();
     running = true;
     let outcome: ConversationPollOutcome = "failed";
     try {
       outcome = await options.run();
     } finally {
       running = false;
-      delayMs = nextConversationPollDelayMs(delayMs, outcome);
+      // A hidden tab keeps a steady slow beat rather than decaying: the decay
+      // exists to stop a watched, quiet thread from asking ten times a second,
+      // and a tab nobody is watching is already as slow as it should get.
+      delayMs = hidden ? CONVERSATION_POLL_HIDDEN_MS : nextConversationPollDelayMs(delayMs, outcome);
       queue(delayMs);
     }
   };

@@ -9,6 +9,7 @@ vi.mock("../../../programs/components/overlays/Modal", () => ({
 import { ConversationViewContent } from "../components";
 import { CONVERSATION_VISIBLE_TURNS } from "../thread";
 import type { ConversationCommands } from "../conversation-host";
+import { conversationThreadPage } from "../turn-queries";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -17,6 +18,10 @@ const conversation = {
   projectId: "project.one",
   subject: { kind: "flow", id: "flow.checkout" },
   status: "open",
+  title: "Checkout flow",
+  revision: 5_000,
+  turnCount: 5_000,
+  pendingAskCount: 0,
   createdAt: 0,
   updatedAt: 5_000
 };
@@ -36,7 +41,7 @@ function commands() {
     listConversations: vi.fn(async () => ({ ok: true, payload: { conversations: [conversation] } })),
     loadConversation: vi.fn(async (payload: Record<string, unknown>) => {
       detailCalls.push(payload);
-      return { ok: true, payload: { conversation, turns } };
+      return { ok: true, page: conversationThreadPage({ conversation, turns, hasMore: false }) };
     }),
     appendTurn: vi.fn(async () => ({ ok: true, payload: {} })),
     answerAsk: vi.fn(async () => ({ ok: true, payload: {} }))
@@ -74,7 +79,7 @@ describe("a long conversation", () => {
       create(<ConversationViewContent commands={api} projectId="project.one" />);
     });
     await act(async () => { await Promise.resolve(); });
-    expect((api as any).detailCalls[0]).toEqual({ conversationId: "conversation.1", limit: 100 });
+    expect((api as any).detailCalls[0]).toEqual({ projectId: "project.one", conversationId: "conversation.1", limit: 100 });
     expect((api as any).detailCalls).toHaveLength(1);
   });
 });

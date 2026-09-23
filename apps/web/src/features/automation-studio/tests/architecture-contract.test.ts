@@ -33,6 +33,7 @@ const canonicalViewIds = new Set<string>(automationStudioViewIds);
 const canonicalEntryViews = [
   "adaptations/AdaptationsView.tsx",
   "clients/ClientGatewayView.tsx",
+  "conversation/components/ConversationDock.tsx",
   "conversation/components/ConversationView.tsx",
   "conversation/components/ConversationViewContent.tsx",
   "flow-editor/components/FlowEditorView.tsx",
@@ -414,7 +415,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     const connectorConsumers = sources
       .filter((source) => runtimeImportSpecifiers(source).some((specifier) => specifier.endsWith("/canonical-connected-views")))
       .map((source) => source.path);
-    expect(connectorConsumers).toEqual(["live/view-host/connected-view-entries.tsx", "live/view-host/conversation-connected-view.ts"]);
+    expect(connectorConsumers).toEqual(["live/view-host/connected-view-entries.tsx"]);
   });
 
   it("forbids imports of sibling domain-private modules", () => {

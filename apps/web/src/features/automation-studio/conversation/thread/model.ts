@@ -19,6 +19,14 @@ export const CONVERSATION_TAIL_SLACK_PX = 48;
  * so a re-read never rewrites what the person already read; ordering is by
  * `createdAt`, then `turnId`, so two turns written in the same millisecond keep
  * a stable order across reads.
+ *
+ * **Its ask is the exception, and it has to be.** What a turn said is fixed
+ * once it is written, but the ask hanging on it is settled later -- by this
+ * person, by someone else in another tab, or by the ask timing out. Preferring
+ * the held copy wholesale left an answered question showing its Allow and
+ * Don't allow buttons and a banner saying the work was waiting, for the rest of
+ * the session, because nothing ever re-read the turn the ask hung on. So the
+ * words are kept and the ask is taken from whichever copy is newer.
  */
 export function mergeConversationTurns(
   existing: readonly ConversationTurn[],
@@ -27,7 +35,10 @@ export function mergeConversationTurns(
   if (!incoming.length) return [...existing];
   const byId = new Map<string, ConversationTurn>();
   for (const turn of incoming) byId.set(turn.turnId, turn);
-  for (const turn of existing) byId.set(turn.turnId, turn);
+  for (const turn of existing) {
+    const arriving = byId.get(turn.turnId);
+    byId.set(turn.turnId, arriving && arriving.ask ? { ...turn, ask: arriving.ask } : turn);
+  }
   return [...byId.values()].sort((left, right) =>
     left.createdAt - right.createdAt || (left.turnId < right.turnId ? -1 : left.turnId > right.turnId ? 1 : 0)
   );
@@ -72,17 +83,44 @@ export function conversationFollowsTail(metrics: { scrollTop: number; scrollHeig
   return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= CONVERSATION_TAIL_SLACK_PX;
 }
 
-/** Open conversations first, then most recently updated, so the list opens on live work. */
+/**
+ * A thread waiting on an answer first, then open threads, then most recently
+ * updated. The order is what someone opening the window lands on, so the
+ * question that is holding work up is the one in front of them.
+ */
 export function sortConversationsForThreadList(conversations: readonly Conversation[]): Conversation[] {
   return [...conversations].sort((left, right) => {
+    const waiting = Number(right.pendingAskCount > 0) - Number(left.pendingAskCount > 0);
+    if (waiting) return waiting;
     if (left.status !== right.status) return left.status === "open" ? -1 : 1;
     return right.updatedAt - left.updatedAt;
   });
 }
 
-/** How a subject reads in the conversation list, without inventing a name Core did not send. */
+/** How many threads are holding a question nobody has answered. */
+export function unansweredConversationCount(conversations: readonly Conversation[]): number {
+  return conversations.reduce((total, conversation) => total + (conversation.pendingAskCount > 0 ? 1 : 0), 0);
+}
+
+/**
+ * How a thread reads in the list. Core's own title when it opened the thread
+ * with one -- "Nightly listings run" rather than "Run run.2026-09-22.nightly"
+ * -- and the subject otherwise, which is still a name a person recognises even
+ * if it is an id. Nothing is invented that Core did not send.
+ */
 export function conversationSubjectLabel(conversation: Conversation): string {
+  return conversation.title ?? conversationSubjectFallbackLabel(conversation);
+}
+
+/** The subject as a noun and an id, for a thread Core opened without a title. */
+export function conversationSubjectFallbackLabel(conversation: Conversation): string {
   const kind = conversation.subject.kind;
   const noun = kind === "project" ? "Project" : kind === "flow" ? "Flow" : kind === "build" ? "Build" : "Run";
   return `${noun} ${conversation.subject.id}`;
+}
+
+/** The one-line subtitle under a thread's name: what it is about, and whether it is closed. */
+export function conversationSubjectDetail(conversation: Conversation): string {
+  const subject = conversationSubjectFallbackLabel(conversation);
+  return conversation.status === "resolved" ? `${subject} - resolved` : subject;
 }

@@ -18,6 +18,8 @@ import type { ConversationAttachment } from "../thread";
 
 export function ConversationAttachmentPanel(props: {
   attachment: ConversationAttachment;
+  /** The project the thread belongs to; Core's attachment read is project-scoped. */
+  projectId: string;
   conversationId: string;
   turnId: string;
   loadAttachment?: ConversationCommands["loadAttachment"];
@@ -27,23 +29,23 @@ export function ConversationAttachmentPanel(props: {
   const [payload, setPayload] = useState<unknown>(undefined);
   const [failed, setFailed] = useState(false);
   const requestRef = useRef(0);
-  const { attachment, conversationId, loadAttachment, turnId } = props;
+  const { attachment, conversationId, loadAttachment, projectId, turnId } = props;
 
   useEffect(() => {
     if (!Renderer || !loadAttachment) return;
     const controller = new AbortController();
     const generation = ++requestRef.current;
-    void loadAttachment({ conversationId, turnId, ref: attachment.ref }, controller.signal).then((result) => {
+    void loadAttachment({ projectId, conversationId, turnId }, controller.signal).then((result) => {
       if (generation !== requestRef.current || result.aborted) return;
       if (!result.ok) {
         setFailed(true);
         return;
       }
       setFailed(false);
-      setPayload(result.payload?.attachment);
+      setPayload(resolvedAttachmentPayload(result.payload?.attachment));
     });
     return () => controller.abort();
-  }, [Renderer, attachment.ref, conversationId, loadAttachment, turnId]);
+  }, [Renderer, attachment.ref, conversationId, loadAttachment, projectId, turnId]);
 
   if (Renderer && payload !== undefined) return <Renderer attachmentRef={attachment.ref} payload={payload} />;
 
@@ -63,4 +65,17 @@ export function ConversationAttachmentPanel(props: {
         : null}
     </div>
   );
+}
+
+/**
+ * Core answers `{ attachment: { attachment, payload } }`: the reference it
+ * resolved, and what it resolved to. The renderer wants the second. A payload
+ * that is not wrapped is passed through, so a double in a test can hand over
+ * the thing itself.
+ */
+function resolvedAttachmentPayload(value: unknown): unknown {
+  if (value && typeof value === "object" && "payload" in value && "attachment" in value) {
+    return (value as { payload: unknown }).payload;
+  }
+  return value;
 }
