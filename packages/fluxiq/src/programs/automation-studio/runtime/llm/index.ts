@@ -5,12 +5,15 @@
 export * from "./harness.ts";
 export * from "./provider-contract.ts";
 export * from "./provider-factories.ts";
+export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek-provider.ts";
+// What a call costs, beside the adapter that makes it: dated provider prices,
+// and the cache split a reply reports (`deepseek-pricing.ts`).
 export {
+  AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
-  estimateAutomationStudioDeepSeekCostUsd,
-  estimateAutomationStudioDeepSeekInputTokens
-} from "./deepseek-provider.ts";
+  estimateAutomationStudioDeepSeekCostUsd
+} from "./deepseek-pricing.ts";
 export * from "./execution-grants.ts";
 // The grant's authorization table. Only the names `execution-grants.ts` used to
 // publish itself are exported; the checks the grant runs stay internal.

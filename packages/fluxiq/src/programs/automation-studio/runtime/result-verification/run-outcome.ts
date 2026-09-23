@@ -38,7 +38,11 @@ import type {
 } from "../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
+import {
+  repairAutomationStudioRefutedRunResult,
+  type AutomationStudioRefutedResultRepairPort
+} from "../recovery/refuted-result/index.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
@@ -102,6 +106,16 @@ export type AutomationStudioResultVerificationPorts = {
    * failure.
    */
   sayResultCheck?: ((input: { runId: string; status: string; checked: boolean; reason: string; observation: string; datasetId?: string }) => Promise<unknown>) | undefined;
+  /**
+   * Hands a run whose result was judged wrong back to the loop's failure entry
+   * point, so the ladder repairs it as it repairs a failed step.
+   *
+   * Absent means nothing repairs a wrong answer here, and the verification's
+   * verdict is a receipt again. That is the behaviour this port was added to
+   * end, so it is left optional only because a deployment with no recovery
+   * configured has nowhere to hand it.
+   */
+  repairRefutedResult?: AutomationStudioRefutedResultRepairPort | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -144,15 +158,17 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
-  const recorded = { resultVerification: recordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
+  const recordedMetadata = { resultVerification: recordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
   const next: AutomationStudioRuntimeSession = failing
-    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recorded } }
-    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recorded } };
+    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
+    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  await recordOnRunDetail(input, next, outcome, report.interventions);
+  const recorded = await recordOnRunDetail(input, next, outcome, report.interventions);
   // Only a run that was actually put to the question has anything to say. What
   // to say, and whether to say it at all, belongs to the schedule: this hands
-  // over the facts and Core's own words, never the model's prose.
+  // over the facts and Core's own words, never the model's prose. It is said
+  // before the repair below is entered, so the thread reads in the order the
+  // run lived it: what the check found, then what was done about it.
   if (input.resultCheck && outcome.performed === true) {
     await input.ports.sayResultCheck?.({
       runId: input.session.runId,
@@ -161,6 +177,26 @@ export async function verifyAutomationStudioRuntimeSessionResult(
       reason: outcome.reason,
       observation: outcome.observation,
       ...(report.datasetId !== undefined ? { datasetId: report.datasetId } : {})
+    });
+  }
+  // The half that makes a wrong answer repairable. A run that failed here
+  // failed at `verification`, and until now that was the end of it: the ladder
+  // is keyed on a failed *attempt*, a clean run has none, and the planner
+  // answered `stop`. The run is handed to the same failure entry point every
+  // other failure goes through, carrying the attempt the refutation amounts to.
+  // It continues from the detail `recordOnRunDetail` just wrote, verdict and
+  // schedule decision included, rather than re-reading the row it wrote.
+  if (recorded && report.summary && input.ports.repairRefutedResult) {
+    await repairAutomationStudioRefutedRunResult({
+      runId: next.runId,
+      detail: recorded,
+      outcome,
+      summary: report.summary,
+      ...(input.flow ? { flow: input.flow } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      now: next.finishedAt ?? Date.now(),
+      repair: input.ports.repairRefutedResult,
+      saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail)
     });
   }
   return next;
@@ -186,15 +222,22 @@ function recordedResultCheck(
   return { checked: scheduled.checked, epoch: scheduled.epoch, code: scheduled.code, reason: scheduled.reason, status: automationStudioResultVerificationStatus(outcome) };
 }
 
-/**
- * The verification, plus the first record set it judged.
- *
- * The dataset id travels with the report so a conversation turn about a
- * refutation can attach the rows that were judged. It is an id, never a row:
- * what the person then opens is the stored record set, through the surface
- * that already has permission to show it.
- */
-async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & { datasetId?: string }> {
+type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & {
+  /** What the run produced, when it could be read. The repair is shown it; the verification was already. */
+  summary?: AutomationStudioRunResultSummary;
+  /**
+   * The first record set the verification judged.
+   *
+   * The dataset id travels with the report so a conversation turn about a
+   * refutation can attach the rows that were judged. It is an id, never a row:
+   * what the person then opens is the stored record set, through the surface
+   * that already has permission to show it.
+   */
+  datasetId?: string;
+};
+
+/** The verification, plus what the run produced and the first record set it judged. */
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSessionVerificationReport> {
   const session = input.session;
   let recordSets: AutomationStudioResultRecordSetInput[];
   try {
@@ -212,7 +255,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   });
   const datasetId = recordSets[0]?.summary.datasetId;
   if (summary.totalRecordCount === 0) {
-    return await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] });
+    return { ...await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] }), summary };
   }
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
@@ -233,7 +276,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
-  return { ...report, ...(datasetId !== undefined ? { datasetId } : {}) };
+  return { summary, ...report, ...(datasetId !== undefined ? { datasetId } : {}) };
 }
 
 /** The narrower of what the caller allows this call and what the resolution allows it. */
@@ -323,12 +366,16 @@ async function recordOnRunDetail(
   session: AutomationStudioRuntimeSession,
   outcome: AutomationStudioResultVerificationOutcome,
   interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"]
-): Promise<void> {
+): Promise<AutomationStudioFlowRunDetail | undefined> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  if (!detail) return;
+  if (!detail) return undefined;
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
-  await input.ports.saveFlowRunDetail({
+  // Answered as well as saved, because the repair that may follow continues
+  // from exactly this record: re-reading it would be a second read of a row
+  // this call just wrote, and a repair built from a stale one would annotate a
+  // run detail that no longer carries its own verdict.
+  const recorded: AutomationStudioFlowRunDetail = {
     ...detail,
     summary: {
       ...detail.summary,
@@ -347,5 +394,7 @@ async function recordOnRunDetail(
       ...(scheduled ? { resultCheck: scheduled } : {}),
       ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})
     }
-  });
+  };
+  await input.ports.saveFlowRunDetail(recorded);
+  return recorded;
 }

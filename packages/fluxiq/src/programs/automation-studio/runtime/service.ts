@@ -87,7 +87,7 @@ import {
   type AutomationStudioLlmProviderResolverInput,
 } from "./llm/index.ts";
 export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantMayAct, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
@@ -2435,17 +2435,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
    * `recovery/annotation/`, where it can be driven without a service; what
    * stays here is the binding of the eight things it reaches this service for.
    */
-  private async maybeAnnotateRunDetailWithRuntimeLlm(input: {
-    detail: AutomationStudioFlowRunDetail;
-    context: AutomationStudioRuntimeAdaptationContext | null;
-    runtimeFlow?: AutomationStudioFlowDocument;
-    subflowId?: string;
-    failedTraceAttempt?: Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"];
-    authorizedExternalSideEffects?: boolean;
-    graphOptions?: Parameters<typeof runAutomationStudioGraph>[1];
-    executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"];
-    useReusableContext?: true;
-  }): Promise<AutomationStudioFlowRunDetail> {
+  // The recovery's own input, rather than a hand-copied restatement of it: a
+  // field the loop learned to read -- the result summary a refuted run is
+  // repaired from -- reached the recovery only once this stopped listing them.
+  private async maybeAnnotateRunDetailWithRuntimeLlm(input: Omit<AutomationStudioRuntimeRecoveryAnnotationInput, "ports">): Promise<AutomationStudioFlowRunDetail> {
     return await annotateAutomationStudioRunDetailWithRuntimeLlm({
       ...input,
       ports: {
@@ -2454,6 +2447,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         reusableLlmContextEnabled: this.reusableLlmContextEnabled,
         flowInstructionSet: (request) => this.getFlowInstructionSet(request),
         reusableLlmContextForFreshEvidence: (request) => this.reusableLlmContextForFreshEvidence(request),
+        // The thread this run is talked about in, when the deployment keeps one.
+        ...(this.conversations.available ? { conversationForRecovery: (request) => automationStudioRecoveryConversationTurns(this.conversations, request) } : {}),
         // An unreadable Flow answers with no scope rather than with "anywhere":
         // the exploration is then not run, and the trace says the plan asked for
         // one and none happened.
@@ -2699,7 +2694,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // A person's grant still wins, and behaves exactly as it did before this existed.
       ...(verificationGrant && automationStudioRuntimeSessionGrantTaskKinds(verificationGrant.purpose).includes("loop_verification") ? { resolveGrantedProvider: async () => automationStudioResultVerificationProvider(await this.llmProviderResolver?.({ ...scope, providerId: "host", executionGrant: verificationGrant })) } : {}),
       ...(this.resultCheckProviderResolver ? { resolveStandingProvider: async (request) => await this.resultCheckProviderResolver?.(request) } : {})
-    }), ...(input.projectId && this.conversations.available ? { sayResultCheck: async (found) => await sayAutomationStudioResultCheck({ thread: this.conversations.writerFor({ projectId: input.projectId!, subject: { kind: "run", id: found.runId } }), found: { ...found, status: found.status as AutomationStudioResultVerificationStatus } }) } : {}) };
+    }), ...(input.projectId && this.conversations.available ? { sayResultCheck: async (found) => await sayAutomationStudioResultCheck({ thread: this.conversations.writerFor({ projectId: input.projectId!, subject: { kind: "run", id: found.runId } }), found: { ...found, status: found.status as AutomationStudioResultVerificationStatus } }) } : {}), repairRefutedResult: (refuted) => this.maybeAnnotateRunDetailWithRuntimeLlm({ detail: refuted.detail, context: adaptationContext, failedTraceAttempt: refuted.failedTraceAttempt, resultSummary: refuted.resultSummary, ...(refuted.flow ? { runtimeFlow: refuted.flow } : {}), ...(refuted.subflowId ? { subflowId: refuted.subflowId } : {}), ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}), graphOptions, ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}), ...(input.useReusableContext ? { useReusableContext: true as const } : {}) }) };
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
       inputs: (input.inputs ?? {}) as Record<string, any>,
       signal: abortController.signal
@@ -2835,7 +2830,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           adaptationContext,
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
         }) : null;
-        if (retry?.session) return retry.session;
+        if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
         await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
         return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal });
       }
@@ -2888,7 +2883,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         graphOptions,
         adaptationContext
       });
-      if (retry?.session) return retry.session;
+      if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
       await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
     }
     return input.projectId ? await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }) : next;

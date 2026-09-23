@@ -31,6 +31,24 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(JSON.stringify({ ...result, steps: undefined })).not.toContain("scope");
   });
 
+  it("accepts the provider's cache split on a decision and totals it for the build", async () => {
+    // `validUsage` holds a decision's usage to an exact key list, so a field
+    // the adapter learns to report and the loop has not learned is not an extra
+    // field -- it is a decision thrown away. The split is the one figure that
+    // says whether the request's constant prefix is being reused at all, so it
+    // has to reach the build's totals.
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: {}, usage: { inputTokens: 1_000, outputTokens: 40, totalTokens: 1_040, cacheHitInputTokens: 0, cacheMissInputTokens: 1_000, estimatedCostUsd: 0.00049 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { candidateId: "candidate.1" }, usage: { inputTokens: 1_100, outputTokens: 40, totalTokens: 1_140, cacheHitInputTokens: 960, cacheMissInputTokens: 140, estimatedCostUsd: 0.00016 } });
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({ facts: ["ready"] }) });
+
+    // Both decisions were usable -- an exact-key check that had not learned the
+    // new fields would have refused the second one outright -- and the second
+    // call's input cost a fraction of the first's for the same work.
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: 2, inputTokens: 2_100, cacheHitInputTokens: 960 } });
+  });
+
   it("fails closed for unknown tools and evidence overflow", async () => {
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: async () => ({ kind: "tool_call", callId: "call.1", toolId: "navigate", input: {} }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.unknown_tool" });

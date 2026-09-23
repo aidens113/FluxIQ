@@ -19,7 +19,7 @@ import {
   automationStudioLlmEvidenceValidTools,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
-import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
+import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
 // What a loop may be configured with, and how those numbers resolve
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
@@ -240,6 +240,18 @@ export type AutomationStudioLlmEvidenceLoopAccounting = {
   toolCalls: number;
   evidenceBytes: number;
   inputTokens: number;
+  /**
+   * How much of `inputTokens` the provider served from its own context cache,
+   * where it reported the split. Every decision of a loop re-sends the same
+   * constant prefix, so this is what says whether that prefix is being reused
+   * or read again and charged again; zero means it was never reported, which
+   * reads the same as never hit and is priced the same way.
+   *
+   * Optional, so that a caller assembling a zero accounting of its own -- there
+   * are several, in both repositories -- is not broken by a figure it has
+   * nothing to say about. The loop always writes it.
+   */
+  cacheHitInputTokens?: number;
   outputTokens: number;
   totalTokens: number;
   estimatedCostUsd: number;
@@ -478,9 +490,17 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (evidenceBytes > limits.maxEvidenceBytes) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
       accounting.toolCalls = 1;
       accounting.evidenceBytes = evidenceBytes;
-      answeredRequests.set(automationStudioLlmEvidenceCanonicalJson([mutationEpoch, initialTool.toolId, initialInput]), callId);
-      observationEpochs.set(initialTool.toolId, attemptEpoch);
-      latestObservations.set(initialTool.toolId, callId);
+      // A free first look that was refused looked at nothing, so it is not
+      // filed as this epoch's answer or as this tool's observation -- the same
+      // rule the loop applies to every later call (`repeat-policy.ts`). Filing
+      // it would make the model's first decision a repeat before it had been
+      // shown anything. The host wrote this call's argument and is answerable
+      // for it being a look, so it is judged as one whatever the tool declares.
+      if (!automationStudioLlmEvidenceLookWasRefused({ evidence: execution.evidence, effect: "observe", effectApplied: execution.effectApplied })) {
+        answeredRequests.set(automationStudioLlmEvidenceCanonicalJson([mutationEpoch, initialTool.toolId, initialInput]), callId);
+        observationEpochs.set(initialTool.toolId, attemptEpoch);
+        latestObservations.set(initialTool.toolId, callId);
+      }
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence, call: { resultCode: execution.resultCode ?? "ok", changed: "no" } });
       trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
       draftRecord({ iteration: 0, callId, ...callRecord(initialTool, initialInput, execution), effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
@@ -674,16 +694,42 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;
-    progressed();
     const record = callRecord(tool, decision.input, execution);
+    // A look the domain refused looked at nothing, so it did not answer the
+    // request it was registered against and the identical retry must be run
+    // rather than answered from it (`repeat-policy.ts` says why this is the
+    // look and never the action). Both doors have to open: the request's own
+    // signature, and the tool's latest observation for this epoch -- leaving
+    // either shut answers the retry from a refusal carrying nothing.
+    const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
+    if (lookRefused) answeredRequests.delete(toolRequestSignature);
     if (record.effect === "mutate") { attemptEpoch += 1; if (effectApplied) mutationEpoch += 1; }
-    if (automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
+    if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, attemptEpoch);
       latestObservations.set(tool.toolId, callId);
     }
     evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no" } });
     trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
     draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
+    // **A refused look is not progress**, and saying so is the deliberate half
+    // of letting it be retried. Deleting its signature takes away the bound
+    // that used to stop it being asked forever, so the no-progress guard has to
+    // be that bound instead. A call that threw is already counted this way
+    // (`toolFailed`); a look that returned tidily and said no is the same event
+    // in a better envelope, and counting one while resetting for the other is
+    // exactly what would leave the retry unbounded. The model still learns from
+    // the first refusal, and acting on what it learned means doing something
+    // else, which clears the count on its first answered call. At the default
+    // of 24 steps a build genuinely working around a refusal has room, and one
+    // that is only asking again stops.
+    //
+    // A refused *action* keeps clearing the count, as it always did: it is
+    // bounded by its own signature instead, since nothing it changed means the
+    // retry is answered rather than run.
+    if (!lookRefused) progressed();
+    else if ((stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
+      return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+    }
   }
   return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
 }
@@ -735,12 +781,13 @@ function failure(steps: AutomationStudioFlowDraftStep[], code: AutomationStudioL
 }
 
 function emptyAccounting(): AutomationStudioLlmEvidenceLoopAccounting {
-  return { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
+  return { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
 }
 
 function addUsage(accounting: AutomationStudioLlmEvidenceLoopAccounting, usage?: AutomationStudioLlmUsageSummary): void {
   if (!usage) return;
   accounting.inputTokens += usage.inputTokens ?? 0;
+  accounting.cacheHitInputTokens = (accounting.cacheHitInputTokens ?? 0) + (usage.cacheHitInputTokens ?? 0);
   accounting.outputTokens += usage.outputTokens ?? 0;
   accounting.totalTokens += usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
   accounting.estimatedCostUsd += usage.estimatedCostUsd ?? 0;
