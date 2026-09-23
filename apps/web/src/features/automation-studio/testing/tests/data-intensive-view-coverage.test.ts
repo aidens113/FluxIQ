@@ -26,6 +26,13 @@ const coverage = {
     error: { nonCollectionReason: "Gateway errors are controller-owned and require a mounted client-effect harness.", test: "clients/tests/active-poller.test.ts" },
     permission: { test: "clients/tests/large-project-behavior.test.ts", behavior: "authorization failure propagation" }
   },
+  "conversation-thread": {
+    empty: { test: "conversation/tests/conversation-view.test.tsx", behavior: "nothing said yet" },
+    large: { test: "conversation/tests/large-conversation-behavior.test.tsx", behavior: "200-turn tail window over 5,000 turns with a cursor read" },
+    loading: { test: "conversation/tests/conversation-view.test.tsx", behavior: "reading the conversation" },
+    error: { test: "conversation/tests/conversation-view.test.tsx", behavior: "failed read leaves the transcript intact" },
+    permission: { test: "conversation/tests/conversation-ask.test.tsx", behavior: "re-authorized grant and a refusal that grants nothing" }
+  },
   "timeline-recording": {
     empty: { test: "recordings/tests/large-project-behavior.test.tsx", behavior: "empty recording history" },
     large: { test: "recordings/tests/large-project-behavior.test.tsx", behavior: "25-row list page and 200-event timeline window" },

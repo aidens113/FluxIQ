@@ -20,6 +20,7 @@ import {
   AutomationSubflowsConnectedView,
   type AutomationCanonicalConnectorScope
 } from "./canonical-connected-views";
+import { AutomationConversationConnectedView } from "./conversation-connected-view";
 import { createAutomationDirectViewConnection } from "./direct-view-connector";
 
 type AutomationConnectedViewEntryOptions = {
@@ -162,6 +163,7 @@ const emptyCommands = Object.freeze({}) as Record<string, unknown>;
 
 const connectorByViewId = new Map<string, any>([
   [automationStudioViewId.clients, AutomationClientsConnectedView],
+  [automationStudioViewId.conversation, AutomationConversationConnectedView],
   [automationStudioViewId.flowEditor, AutomationFlowEditorConnectedView],
   [automationStudioViewId.recordingTimeline, AutomationRecordingConnectedView],
   [automationStudioViewId.state, AutomationStateConnectedView],

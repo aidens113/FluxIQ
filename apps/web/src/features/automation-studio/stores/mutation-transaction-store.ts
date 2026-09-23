@@ -22,6 +22,13 @@ export type AutomationStudioMutation =
       flowId: string;
     }
   | {
+      /** A turn was written or an ask answered, so any other mounted thread should read again. */
+      kind: "conversation.changed";
+      projectId: string | null;
+      flowId?: string;
+      conversationId: string;
+    }
+  | {
       kind: "runtime-run.changed";
       projectId: string | null;
       flowId?: string;

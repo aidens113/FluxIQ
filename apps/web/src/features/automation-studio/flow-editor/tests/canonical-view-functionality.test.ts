@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { adaptationsFunctionalityContract } from "../../adaptations/functionality-contract";
 import { clientsFunctionalityContract } from "../../clients/functionality-contract";
+import { conversationFunctionalityContract } from "../../conversation";
 import { inspectorFunctionalityContract } from "../../inspector/functionality-contract";
 import { instructionsFunctionalityContract } from "../../instructions/functionality-contract";
 import { problemsFunctionalityContract } from "../../problems/functionality-contract";
@@ -14,6 +15,7 @@ import { flowEditorFunctionalityContract } from "../functionality-contract";
 
 const contracts = [
   clientsFunctionalityContract,
+  conversationFunctionalityContract,
   recordingsFunctionalityContract,
   flowEditorFunctionalityContract,
   routerFunctionalityContract,
@@ -34,6 +36,7 @@ describe("Phase 10G canonical view functionality contracts", () => {
     expect(contracts.map((contract) => contract.canonicalViewId).sort()).toEqual([
       "adaptations",
       "client-gateway",
+      "conversation-thread",
       "flow-instructions",
       "flow-nodes",
       "flow-router",

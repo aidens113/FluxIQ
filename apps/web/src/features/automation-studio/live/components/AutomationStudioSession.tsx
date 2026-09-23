@@ -12,7 +12,7 @@ import type { AutomationSelection } from "../../shared/selection-contracts";
 import { useAutomationNarrowWorkspace } from "../../workspace/studio-ui-store";
 import type { AutomationStudioRuntime } from "../../bootstrap/studio-runtime";
 import { useAutomationProjectPreload } from "../../sync";
-import { useAutomationGatewayRecordingBridge, useAutomationStudioFoundation, useAutomationBrowserEntry, useAutomationWorkspaceRuntime, useAutomationHierarchyUiRuntime, useAutomationHierarchyCommandBridge, useAutomationProjectRuntime, useAutomationGraphRuntime, useAutomationSelectionNavigation, useAutomationRecordingCommands, useAdaptationWorkspaceNavigation, useAutomationExternalLifecycle, useAutomationDeepLinkRuntime, useAutomationSessionDirtyGuards, useStableAutomationEvent, useAutomationConnectedRegionSurfaces } from "../hooks";
+import { useAutomationGatewayRecordingBridge, useAutomationStudioFoundation, useAutomationBrowserEntry, useAutomationWorkspaceRuntime, useAutomationHierarchyUiRuntime, useAutomationHierarchyCommandBridge, useAutomationProjectRuntime, useAutomationGraphRuntime, useAutomationSelectionNavigation, useAutomationRecordingCommands, useAdaptationWorkspaceNavigation, useConversationWorkspaceNavigation, useAutomationExternalLifecycle, useAutomationDeepLinkRuntime, useAutomationSessionDirtyGuards, useStableAutomationEvent, useAutomationConnectedRegionSurfaces } from "../hooks";
 import type { CurrentUser } from "../../../programs/types";
 import { notifyGlobalAlert } from "../../../programs/shared-ui";
 import { createAutomationStudioViewInstances } from "../../views/view-instances";
@@ -484,6 +484,11 @@ export function AutomationStudioSession(props: {
     openProblems: openAutomationProblems,
     setSelection
   });
+  const conversationNavigation = useConversationWorkspaceNavigation({
+    ...(selectedTaskGraph?.flowId ? { selectedFlowId: selectedTaskGraph.flowId } : {}),
+    updatePrefs: updateWorkspacePrefs,
+    openAdaptation: adaptationNavigation.openAdaptation
+  });
   const connectorScope = useMemo<AutomationCanonicalConnectorScope>(() => ({
     projectId: activeProjectId,
     projectView: projectViewCache,
@@ -525,6 +530,7 @@ export function AutomationStudioSession(props: {
     finalizeRecording: recordingCommands.finalize,
     listProblems: (payload: Record<string, unknown>) => listProjectProblems(foundation.api, payload),
     openAdaptation: adaptationNavigation.openAdaptation,
+    openConversationAttachment: conversationNavigation.openConversationAttachment,
     openInspector: openAutomationInspector,
     openNodeState: (nodeId: string) => openStateView({ nodeId, phase: "input" }),
     openProblem: openAutomationProblem,
@@ -538,6 +544,7 @@ export function AutomationStudioSession(props: {
     restoreGraphDraft: graphRuntime.restoreDraft,
     saveGraph: graphRuntime.saveGraph,
     selectAdaptation: adaptationNavigation.selectAdaptation,
+    selectConversation: conversationNavigation.selectConversation,
     setGraphDirty: setHasDirtyTaskGraph,
     setSelection: setSelectionAndFollow,
     updateGraphDraft: graphRuntime.updateDraft,

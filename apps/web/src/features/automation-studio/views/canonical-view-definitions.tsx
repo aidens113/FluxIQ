@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, type ComponentProps } from "react";
-import { AlertTriangle, Bug, FileSearch, GitBranch, ListChecks, Radio, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Bug, FileSearch, GitBranch, ListChecks, MessagesSquare, Radio, SlidersHorizontal } from "lucide-react";
 import { AdaptationsView } from "../adaptations/AdaptationsView";
 import type { AdaptationsViewHostCommands, AdaptationsViewHostModel } from "../adaptations/adaptation-host";
 import { ClientGatewayView } from "../clients/ClientGatewayView";
+import { ConversationView } from "../conversation/components";
 import { FlowEditorView } from "../flow-editor/components/FlowEditorView";
 import { InspectorView } from "../inspector/InspectorView";
 import { InstructionsView } from "../instructions/InstructionsView";
@@ -38,6 +39,10 @@ const clientsHost = defineComponentAutomationViewHost<ComponentProps<typeof Clie
 const flowEditorHost = defineComponentAutomationViewHost<ComponentProps<typeof FlowEditorView>, "activeRef">(
   () => FlowEditorView,
   (activity) => ({ activeRef: activity.activeRef })
+);
+const conversationHost = defineComponentAutomationViewHost<ComponentProps<typeof ConversationView>, "active">(
+  () => ConversationView,
+  (activity) => ({ active: activity.active })
 );
 const recordingTimelineHost = defineComponentAutomationViewHost<ComponentProps<typeof RecordingTimelineView>>(() => RecordingTimelineView);
 const stateHost = defineComponentAutomationViewHost<ComponentProps<typeof StateExplorerView>>(() => StateExplorerView);
@@ -81,6 +86,13 @@ export const automationStudioViews = defineAutomationStudioViews({
     isAvailable: available("hasProject"), addable: true, lifecycle: lifecycle(false), cache,
     functionality: functionality("client-gateway", "Connect and monitor project automation clients.", ["project"], ["client summaries"], ["client capabilities", "connection diagnostics"], "paged"),
     host: clientsHost
+  },
+  conversation: {
+    id: "conversation-thread", aliases: [], kind: "conversation", label: "Conversation", icon: MessagesSquare,
+    group: "Workspace", region: "right", allowedRegions: ["right", "main"], scope: "Current project or Flow", requires: "hasProject",
+    isAvailable: available("hasProject"), addable: true, lifecycle: lifecycle(false), cache,
+    functionality: functionality("conversation-thread", "Hold one ordered exchange with FluxIQ and answer what it asked.", ["project", "flow"], ["open conversations", "whether a question is waiting"], ["ordered turns", "the ask a turn carries", "an attachment a turn references"], "paged"),
+    host: conversationHost
   },
   recordingTimeline: {
     id: "timeline-recording", aliases: [], kind: "recordings", label: "Timeline", icon: Radio,

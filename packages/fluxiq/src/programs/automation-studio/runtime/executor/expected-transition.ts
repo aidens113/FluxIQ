@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_ASK_EFFECT } from "../parking/index.ts";
 import type { AutomationStudioExpectedTransition, AutomationStudioGraphRunStatus, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 
 export function expectedTransitionForNode(node: AutomationStudioFlowNode, attempt: AutomationStudioNodeAttemptTrace): AutomationStudioExpectedTransition {
@@ -45,7 +46,7 @@ function expectedEffectsForNode(node: AutomationStudioFlowNode): Array<{ type: s
   if (Array.isArray(node.parameterValues?.expectedEffects)) return node.parameterValues.expectedEffects.filter(isEffectShape);
   if (node.definitionId === "builtin.policy.action") return [{ type: "policy.output.dispatch" }];
   if (node.definitionId === "builtin.policy.expectation") return [{ type: "policy.expectation.checked" }];
-  if (node.definitionId === "builtin.routine.approval") return [{ type: "routine.approval.requested" }];
+  if (node.definitionId === "builtin.routine.approval") return [{ type: AUTOMATION_STUDIO_ASK_EFFECT }];
   if (node.definitionId === "builtin.routine.task-policy") return [{ type: "routine.task-policy.requested" }];
   if (node.definitionId === "builtin.routine.subroutine") return [{ type: "routine.subroutine.requested" }];
   if (node.definitionId.startsWith("builtin.database.")) return [{ type: `${node.definitionId.replace("builtin.", "")}.requested` }];
