@@ -14,6 +14,7 @@ const deletedLegacyStylesheet = normalize(
   join(stylesRoot, "instructions-settings-adaptations-problems/02-proposals.css"),
 );
 const expectedDomains = new Set([
+  "conversation",
   "datasets",
   "flow-editor",
   "instructions-settings-adaptations-problems",

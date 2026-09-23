@@ -12,7 +12,7 @@ export type AutomationStudioView =
   | "settings"
   | "problems";
 
-export type AutomationViewType = AutomationStudioView | "clients" | "routine" | "state" | "inspector";
+export type AutomationViewType = AutomationStudioView | "clients" | "conversation" | "routine" | "state" | "inspector";
 
 export type PersistedAutomationViewType = AutomationViewType | "config" | "proposal" | "proposal-generator";
 

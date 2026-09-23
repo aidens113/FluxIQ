@@ -26,3 +26,30 @@ export {
   type AutomationViewRequestToken
 } from "./Renderer";
 export type { AutomationStudioView, AutomationViewType, PersistedAutomationViewType, AutomationViewInstance } from "./view-types";
+export {
+  automationStudioObjectViewInstanceId,
+  automationStudioViewAvailable,
+  automationStudioViewBaseId,
+  automationStudioViewDefinition,
+  automationStudioViewDefinitions,
+  automationStudioViewId,
+  automationStudioViewIds,
+  automationStudioViewObjectId,
+  automationStudioViews,
+  canonicalAutomationStudioViewId,
+  isAutomationStudioViewId,
+  isRetiredAutomationStudioViewId,
+  migrateAutomationStudioViewState,
+  resolveAutomationStudioView,
+  retiredAutomationStudioViewIds,
+  type AutomationStudioViewAvailability,
+  type AutomationStudioViewDefinition,
+  type AutomationStudioViewGroup,
+  type AutomationStudioViewId,
+  type AutomationStudioViewKey,
+  type AutomationStudioViewMigrationContext,
+  type AutomationStudioViewRegion,
+  type AutomationStudioViewRequirement,
+  type AutomationStudioViewResolution,
+  type RetiredAutomationStudioViewId
+} from "./view-registry";
