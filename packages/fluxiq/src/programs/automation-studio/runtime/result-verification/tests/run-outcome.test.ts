@@ -375,3 +375,41 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(context.requests).toHaveLength(0);
   });
 });
+
+// What the checking schedule leaves on a run, and why the run store keys its
+// `result_verification_status` column on it rather than on the verdict alone.
+describe("the checking schedule's decision on the run record", () => {
+  const scheduled = (checked: boolean, code: string) => ({ resultCheck: { checked, epoch: 4, code, reason: "Run 8 is the next one this Flow's schedule checks." } });
+
+  it("marks a checked run as checked, with its epoch and the verdict beside the decision", async () => {
+    const context = harness({ answer: ANSWER.yes });
+    const next = await verify(context, scheduled(true, "core.check.interval_reached"));
+    expect(next.metadata?.resultCheck).toEqual({ checked: true, epoch: 4, code: "core.check.interval_reached", reason: expect.any(String), status: "confirmed" });
+    // The summary carries it too: that is what `upsertRunSummary` writes the row from.
+    expect(context.saved.at(-1)?.summary.metadata?.resultCheck).toMatchObject({ checked: true, epoch: 4, status: "confirmed" });
+    expect(context.saved.at(-1)?.metadata?.resultCheck).toMatchObject({ checked: true, status: "confirmed" });
+  });
+
+  it("marks a run the schedule passed over as unchecked, so its unverified is not counted as a check", async () => {
+    const context = harness({ withProvider: false });
+    const next = await verify(context, scheduled(false, "core.check.interval_not_reached"));
+    // The verification still ran and still recorded `unverified`; what changes
+    // is that the run says it was never put to the question.
+    expect((next.metadata?.resultVerification as JsonObject).status).toBe("unverified");
+    expect(next.metadata?.resultCheck).toMatchObject({ checked: false, code: "core.check.interval_not_reached", status: "unverified" });
+    expect(context.saved.at(-1)?.summary.metadata?.resultCheck).toMatchObject({ checked: false, status: "unverified" });
+  });
+
+  it("records a refutation as a checked run that refuted, which is what opens the repair entry", async () => {
+    const next = await verify(harness({ answer: ANSWER.no }), scheduled(true, "core.check.initial_window"));
+    expect(next.status).toBe("failed");
+    expect(next.metadata?.resultCheck).toMatchObject({ checked: true, status: "refuted" });
+  });
+
+  it("leaves a caller with no schedule exactly as it was, with nothing added", async () => {
+    const context = harness({ answer: ANSWER.yes });
+    const next = await verify(context);
+    expect(next.metadata?.resultCheck).toBeUndefined();
+    expect(context.saved.at(-1)?.summary.metadata?.resultCheck).toBeUndefined();
+  });
+});

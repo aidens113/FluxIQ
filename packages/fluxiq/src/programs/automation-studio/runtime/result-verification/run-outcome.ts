@@ -92,6 +92,16 @@ export type AutomationStudioResultVerificationPorts = {
   resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
   /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * Says what this check found on the run's own conversation thread.
+   *
+   * Handed the facts and Core's own words, never a composed sentence: what to
+   * say, and whether a passing check says anything at all, is the schedule's to
+   * decide (`result-check-schedule/conversation.ts`). Absent where the
+   * deployment has no conversations, which is a configuration and not a
+   * failure.
+   */
+  sayResultCheck?: ((input: { runId: string; status: string; checked: boolean; reason: string; observation: string; datasetId?: string }) => Promise<unknown>) | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -103,6 +113,19 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
   subflowId?: string | undefined;
   policy?: AutomationStudioAdaptationPolicy | undefined;
   maxEstimatedCostUsd?: number | undefined;
+  /**
+   * What the checking schedule decided about this run, recorded whether or not
+   * the run was checked.
+   *
+   * A run the schedule passed over is not silent about it. It still runs this
+   * verification, still reaches `core.result.no_model_available` and is still
+   * recorded `unverified` -- and it now carries the decision's own code and
+   * sentence beside that, so a reader can tell "this run is not one the
+   * schedule checks" from "nobody configured checking" from "the authorization
+   * ran out". Absent for a caller with no schedule in force, which leaves that
+   * caller's behaviour exactly as it was.
+   */
+  resultCheck?: { checked: boolean; epoch: number; code: string; reason: string } | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -120,15 +143,58 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   const report = await runVerification(input);
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
+  const scheduled = recordedResultCheck(input, outcome);
+  const recorded = { resultVerification: recordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
   const next: AutomationStudioRuntimeSession = failing
-    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } }
-    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), resultVerification: recordedOutcome(outcome) } };
+    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recorded } }
+    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recorded } };
   await input.ports.writeRuntimeSession(input.projectId, next);
   await recordOnRunDetail(input, next, outcome, report.interventions);
+  // Only a run that was actually put to the question has anything to say. What
+  // to say, and whether to say it at all, belongs to the schedule: this hands
+  // over the facts and Core's own words, never the model's prose.
+  if (input.resultCheck && outcome.performed === true) {
+    await input.ports.sayResultCheck?.({
+      runId: input.session.runId,
+      status: automationStudioResultVerificationStatus(outcome),
+      checked: input.resultCheck.checked,
+      reason: outcome.reason,
+      observation: outcome.observation,
+      ...(report.datasetId !== undefined ? { datasetId: report.datasetId } : {})
+    });
+  }
   return next;
 }
 
-async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>> {
+/**
+ * The schedule's decision as the run record holds it, with the verdict this run
+ * actually reached written beside it.
+ *
+ * `checked` is what tells a status that a check produced from a status that
+ * nothing produced, and the run store keys its `result_verification_status`
+ * column on exactly this: a run the schedule passed over writes null there,
+ * which is a different fact from `unverified` and must stay so. `epoch` is the
+ * Flow revision the run belongs to, which is what makes the count restart when
+ * a repair lands.
+ */
+function recordedResultCheck(
+  input: AutomationStudioRuntimeSessionVerificationInput,
+  outcome: AutomationStudioResultVerificationOutcome
+): JsonObject | undefined {
+  const scheduled = input.resultCheck;
+  if (!scheduled) return undefined;
+  return { checked: scheduled.checked, epoch: scheduled.epoch, code: scheduled.code, reason: scheduled.reason, status: automationStudioResultVerificationStatus(outcome) };
+}
+
+/**
+ * The verification, plus the first record set it judged.
+ *
+ * The dataset id travels with the report so a conversation turn about a
+ * refutation can attach the rows that were judged. It is an id, never a row:
+ * what the person then opens is the stored record set, through the surface
+ * that already has permission to show it.
+ */
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & { datasetId?: string }> {
   const session = input.session;
   let recordSets: AutomationStudioResultRecordSetInput[];
   try {
@@ -144,13 +210,14 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.flow ? { flowNodes: input.flow.nodes } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
+  const datasetId = recordSets[0]?.summary.datasetId;
   if (summary.totalRecordCount === 0) {
     return await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] });
   }
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  return await verifyAutomationStudioRunResult({
+  const report = await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
     runId: session.runId,
@@ -166,6 +233,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
+  return { ...report, ...(datasetId !== undefined ? { datasetId } : {}) };
 }
 
 /** The narrower of what the caller allows this call and what the resolution allows it. */
@@ -259,13 +327,24 @@ async function recordOnRunDetail(
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   if (!detail) return;
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
+  const scheduled = recordedResultCheck(input, outcome);
   await input.ports.saveFlowRunDetail({
     ...detail,
-    summary: { ...detail.summary, status: session.status, updatedAt: session.finishedAt ?? detail.summary.updatedAt },
+    summary: {
+      ...detail.summary,
+      status: session.status,
+      updatedAt: session.finishedAt ?? detail.summary.updatedAt,
+      // On the summary as well as the detail, because the summary is what the
+      // run store writes its row from: `result_verification_status` and
+      // `result_check_epoch` are read from exactly this, and they are what the
+      // next run's schedule counts.
+      ...(scheduled ? { metadata: { ...(detail.summary.metadata ?? {}), resultCheck: scheduled } } : {})
+    },
     ...(interventions.length ? { interventions: [...detail.interventions, ...interventions] } : {}),
     metadata: {
       ...(detail.metadata ?? {}),
       resultVerification: recordedOutcome(outcome),
+      ...(scheduled ? { resultCheck: scheduled } : {}),
       ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})
     }
   });
