@@ -26,6 +26,7 @@
 // beside it.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioFlowDraftReplayOutcome, AutomationStudioFlowDraftStepReplay } from "./dry-run.ts";
 
 /**
  * Whether a step only read the state or changed it.
@@ -117,6 +118,25 @@ export type AutomationStudioFlowDraftStep = {
   proposes?: boolean;
   /** Settings the model amended onto the step. Carried opaquely. */
   settings?: JsonObject;
+  /**
+   * What running this step again needs, when the caller can run it again.
+   *
+   * Opaque, like `input` and `ranWith`: how to put the target back the way this
+   * step found it, and what it produced, so the caller can say whether a replay
+   * reproduced it. Core carries both and reads neither (`./dry-run.ts`). A
+   * draft whose proposed steps all carry it is a draft that must replay clean
+   * before it may be proposed; one that does not is simply not replayed.
+   */
+  replay?: AutomationStudioFlowDraftStepReplay;
+  /**
+   * How this step answered the last time the draft was replayed.
+   *
+   * Written by the loop, not by the caller, and kept on the step so the record
+   * of what the Flow did when it was run as a Flow travels with the step it is
+   * about -- the draft the model is shown reads it, and so does anyone reading
+   * the steps afterwards.
+   */
+  replayed?: AutomationStudioFlowDraftReplayOutcome;
 };
 
 /**

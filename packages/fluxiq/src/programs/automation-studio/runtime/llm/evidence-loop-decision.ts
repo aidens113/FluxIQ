@@ -18,6 +18,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
   type AutomationStudioFlowDraftAmendment,
+  type AutomationStudioFlowDraftStepReplay,
   type AutomationStudioFlowDraftAmendmentChange
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
@@ -76,18 +77,42 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
  */
 function readCallRecord(value: unknown): AutomationStudioLlmEvidenceToolExecutionResult["draft"] | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value) || !exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes"])) return undefined;
+  if (!isRecord(value) || !exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay"])) return undefined;
   if (value.actionId !== undefined && !validId(value.actionId)) return undefined;
   if (value.input !== undefined && !isJsonObject(value.input)) return undefined;
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return undefined;
   if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") return undefined;
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return undefined;
+  const replay = readReplayRecord(value.replay);
+  if (value.replay !== undefined && !replay) return undefined;
   return {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
     ...(value.ranWith === undefined ? {} : { ranWith: value.ranWith }),
     ...(value.effect === undefined ? {} : { effect: value.effect }),
-    ...(value.proposes === undefined ? {} : { proposes: value.proposes })
+    ...(value.proposes === undefined ? {} : { proposes: value.proposes }),
+    ...(replay ? { replay } : {})
+  };
+}
+
+/**
+ * What a call said about running it again, or nothing when it is not a
+ * statement the loop can read.
+ *
+ * Both fields are the caller's own and are carried unread: how to put the
+ * target back the way this step found it, and what the step produced, so the
+ * caller can say on the replay whether it produced it again
+ * (`../flow-draft/dry-run.ts`). Read strictly, because a statement Core cannot
+ * read must make the step unreplayable rather than half-replayable.
+ */
+function readReplayRecord(value: unknown): AutomationStudioFlowDraftStepReplay | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !exactKeys(value, ["from", "produced"])) return undefined;
+  if (value.from !== undefined && !isJsonObject(value.from)) return undefined;
+  if (value.produced !== undefined && !isJsonObject(value.produced)) return undefined;
+  return {
+    ...(value.from === undefined ? {} : { from: value.from }),
+    ...(value.produced === undefined ? {} : { produced: value.produced })
   };
 }
 
