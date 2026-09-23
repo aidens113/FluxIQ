@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL,
-  createAutomationStudioDeepSeekProvider,
-  estimateAutomationStudioDeepSeekCostUsd
+  createAutomationStudioDeepSeekProvider
 } from "../deepseek-provider.ts";
+import { estimateAutomationStudioDeepSeekCostUsd } from "../deepseek-pricing.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderErrorCode } from "../provider-contract.ts";
 
 describe("Automation Studio DeepSeek provider", () => {

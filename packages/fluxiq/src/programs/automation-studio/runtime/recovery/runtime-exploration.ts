@@ -620,5 +620,5 @@ function canonicalJson(value: JsonValue): string {
 }
 
 function emptyAccounting(): AutomationStudioLlmEvidenceLoopAccounting {
-  return { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
+  return { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
 }

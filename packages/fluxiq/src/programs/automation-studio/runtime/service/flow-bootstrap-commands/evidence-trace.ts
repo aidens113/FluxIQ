@@ -21,8 +21,22 @@ import { requiredBootstrapCommandId } from "./field-readings.ts";
 /** The shape a result code must have to be kept: no whitespace, so no sentence. */
 const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
+/**
+ * The most rows one trace may carry: two per decision, plus the deterministic
+ * iteration-0 observation.
+ *
+ * It was one per decision, which is not what the loop writes. An `amend_draft`
+ * decision that carries a `rerun` pushes its own row and then the row for the
+ * call the rerun makes, both under one iteration, so a build that corrected a
+ * step on many of its decisions could write more rows than there were
+ * iterations -- and this bound would then have thrown away the whole record of
+ * a build that had completed. Two is the loop's real ceiling: no path writes a
+ * third row for one iteration (`runtime/llm/evidence-loop.ts`).
+ */
+const MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
+
 export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
-  if (!Array.isArray(trace) || trace.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  if (!Array.isArray(trace) || trace.length > MAX_TRACE_ROWS) throw new Error("Flow Bootstrap evidence trace is invalid.");
   return trace.map((item) => {
     if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations || !["tool_call", "complete", "unusable", "amend_draft"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
     const clean: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
@@ -58,30 +72,47 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
  * They are published beside `providerCallCount` rather than inside it, and
  * that is a constraint rather than a preference. A reader holds this record to
  * `decisionCount === providerCallCount` and `iterationCount` within one of it
- * (`packages/test-runner/src/existing-fluxiq-control.ts` in the downstream
- * testing facility), so folding the extra call into `providerCallCount` makes
- * every evidence-guided build fail that contract before its Flow is read --
- * measured, on `run-mudna2ng-ceadeb69`. `totalProviderCallCount` is the true
- * number a reader should move to; until it does, the two loop counts keep
- * meaning exactly what they meant.
+ * (`packages/test-runner/src/existing-fluxiq-control/adaptation-evidence-loop.ts`
+ * in the downstream testing facility), so folding the extra call into
+ * `providerCallCount` makes every evidence-guided build fail that contract
+ * before its Flow is read -- measured, on `run-mudna2ng-ceadeb69`.
+ * `totalProviderCallCount` is the true number a reader should move to; until it
+ * does, the two loop counts keep meaning exactly what they meant.
+ *
+ * **The four counts are three different things and must not be confused.**
+ * `providerCallCount` and `decisionCount` are the loop's paid calls, one per
+ * iteration. `iterationCount` is those plus the deterministic iteration-0
+ * observation where there was one. `traceStepCount` is the rows, which is the
+ * only one of the four that a decision editing the draft and re-running a step
+ * moves by two.
  */
 export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[], additionalProviderCalls = 0): JsonObject {
   const clean = sanitizeEvidenceLoopTrace(trace);
-  const providerDecisions = clean.filter((item) => item.iteration > 0);
+  // **A provider call is an iteration, not a row.** One decision is one paid
+  // call, and the loop writes one row for most of them -- but an `amend_draft`
+  // carrying a `rerun` writes two, its own and the one for the call the rerun
+  // makes, both under the iteration that paid for them. Counting rows
+  // therefore charged a build for calls it never made: `run-mudw1ktb-0557816b`
+  // made 16 provider calls and was published, and measured, as having made 22,
+  // and every per-call figure anyone computed from it -- tokens, money,
+  // seconds -- was 27% too low.
+  const providerIterations = new Set(clean.flatMap((item) => item.iteration > 0 ? [item.iteration] : []));
   const extra = Number.isSafeInteger(additionalProviderCalls) && additionalProviderCalls > 0 ? additionalProviderCalls : 0;
   return {
     evidenceGuided: true,
-    // Retained for compatibility with existing audit readers. This is the
-    // total trace length and can include the deterministic iteration-0
-    // observation, so it must not be interpreted as provider-call accounting.
-    iterationCount: clean.length,
+    // Every iteration the loop ran, including the deterministic iteration-0
+    // observation where it made one -- so this is the loop's decisions plus at
+    // most one, which is exactly what its name says and what a reader holds it
+    // to. `traceStepCount` beside it is the rows, and the two differ by
+    // however many decisions edited the draft and re-ran a step.
+    iterationCount: providerIterations.size + (clean.some((item) => item.iteration === 0) ? 1 : 0),
     traceStepCount: clean.length,
-    providerCallCount: providerDecisions.length,
-    decisionCount: providerDecisions.length,
+    providerCallCount: providerIterations.size,
+    decisionCount: providerIterations.size,
     /** The build's provider calls that were not the loop's own. */
     additionalProviderCallCount: extra,
     /** Every provider call the build made. The one figure that is the whole of what it spent. */
-    totalProviderCallCount: providerDecisions.length + extra,
+    totalProviderCallCount: providerIterations.size + extra,
     toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
     evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
     toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort(),

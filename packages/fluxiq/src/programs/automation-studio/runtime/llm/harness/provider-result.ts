@@ -237,14 +237,20 @@ function parseAutomationStudioLlmUsage(value: unknown, diagnostics: AutomationSt
     diagnostics.push({ severity: "error", code: "llm_usage.invalid", message: "Provider usage must be an object.", path: "providerResult.usage" });
     return undefined;
   }
-  rejectUnexpectedFields(value, ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"], "providerResult.usage", diagnostics);
-  for (const key of ["inputTokens", "outputTokens", "totalTokens"] as const) {
+  rejectUnexpectedFields(value, ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens", "estimatedCostUsd"], "providerResult.usage", diagnostics);
+  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const) {
     if (value[key] !== undefined && (!Number.isInteger(value[key]) || (value[key] as number) < 0)) diagnostics.push({ severity: "error", code: "llm_usage.invalid_token_count", message: `${key} must be a non-negative integer.`, path: `providerResult.usage.${key}` });
   }
   if (value.estimatedCostUsd !== undefined && (!isFiniteNumber(value.estimatedCostUsd) || value.estimatedCostUsd < 0)) diagnostics.push({ severity: "error", code: "llm_usage.invalid_cost", message: "estimatedCostUsd must be a non-negative finite number.", path: "providerResult.usage.estimatedCostUsd" });
   if (Number.isInteger(value.inputTokens) && Number.isInteger(value.outputTokens) && Number.isInteger(value.totalTokens)
     && value.totalTokens !== (value.inputTokens as number) + (value.outputTokens as number)) {
     diagnostics.push({ severity: "error", code: "llm_usage.inconsistent_total", message: "Provider totalTokens must equal inputTokens plus outputTokens.", path: "providerResult.usage.totalTokens" });
+  }
+  // The cache split divides the input rather than adding to it, so a report
+  // whose halves do not make up the whole is not a report of this call.
+  if (Number.isInteger(value.inputTokens) && Number.isInteger(value.cacheHitInputTokens) && Number.isInteger(value.cacheMissInputTokens)
+    && (value.cacheHitInputTokens as number) + (value.cacheMissInputTokens as number) !== (value.inputTokens as number)) {
+    diagnostics.push({ severity: "error", code: "llm_usage.inconsistent_cache_split", message: "Provider cacheHitInputTokens plus cacheMissInputTokens must equal inputTokens.", path: "providerResult.usage.cacheHitInputTokens" });
   }
   return diagnostics.some((diagnostic) => diagnostic.code.startsWith("llm_usage.")) ? undefined : value as AutomationStudioLlmUsageSummary;
 }
