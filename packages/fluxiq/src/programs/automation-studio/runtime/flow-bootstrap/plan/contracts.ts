@@ -102,6 +102,16 @@ export type AutomationStudioFlowBootstrapContext = {
   };
   /** What the model routes with: the structure as it stands, what a condition can test, and what exploration saw. */
   routing?: AutomationStudioFlowBootstrapRoutingContext;
+  /**
+   * Where the Flow this build writes starts, in the bound domain's own spelling
+   * (`../start-location.ts`).
+   *
+   * The build is not there: its first step has to be the one that goes there,
+   * and the domain refuses everything else until it has. Absent for a build
+   * that was given its target instead of being told where it is, which is still
+   * the right shape when a person is asking about what is in front of them.
+   */
+  startLocation?: string;
 };
 
 export type AutomationStudioFlowBootstrapIssue = {

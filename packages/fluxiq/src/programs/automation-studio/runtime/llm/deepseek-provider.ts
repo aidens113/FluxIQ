@@ -511,11 +511,37 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
   };
 }
 
-/** What a build is shown of its catalog context: the catalog, and the routing context when the build has one. */
+/**
+ * What a build is shown of its catalog context: where its Flow starts, the
+ * catalog, and the routing context when the build has one.
+ *
+ * `startLocation` comes first because it is the first thing the build has to
+ * act on: it is not there, and nothing else it calls will work until it is.
+ * The note beside it says so in words, because a bare address in a context
+ * object is a fact and this is an instruction.
+ */
 function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): JsonObjectLike {
-  const { nodeCatalog, catalogTruncated, catalogSelection, routing } = context;
-  return { nodeCatalog, catalogTruncated, catalogSelection, ...(routing ? { routing } : {}) };
+  const { nodeCatalog, catalogTruncated, catalogSelection, routing, startLocation } = context;
+  return {
+    ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
+    nodeCatalog,
+    catalogTruncated,
+    catalogSelection,
+    ...(routing ? { routing } : {})
+  };
 }
+
+/**
+ * What `startLocation` means, said once.
+ *
+ * The build begins nowhere: the target it is to work on has not been opened for
+ * it, and every call it makes is refused until it has gone there itself. That
+ * is deliberate. A Flow is assembled from the steps that ran, so a build that
+ * was handed its page writes a Flow with no step that reaches one -- measured
+ * on 2026-09-23, and the reason this field exists.
+ */
+const FLOW_START_LOCATION_NOTE =
+  "You are not at startLocation yet, and nothing was opened for you. Your first call must be the node that goes there, with startLocation as its destination; every other call is refused until it has run. It is also the Flow's own first step, because the Flow is built from the steps you run.";
 
 function outputSchemaForRequest(request: AutomationStudioLlmTaskRequest): JsonObjectLike | undefined {
   if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) return DIAGNOSIS_OUTPUT_SCHEMA;

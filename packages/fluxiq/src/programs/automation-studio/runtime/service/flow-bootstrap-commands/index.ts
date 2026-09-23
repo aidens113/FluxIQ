@@ -2,6 +2,7 @@ export * from "./audit-event.ts";
 export * from "./contracts.ts";
 export * from "./evidence-trace.ts";
 export * from "./field-readings.ts";
+export * from "./generation-request.ts";
 export * from "./harness-accounting.ts";
 export * from "./permission-hold.ts";
 export * from "./permission-outcome.ts";

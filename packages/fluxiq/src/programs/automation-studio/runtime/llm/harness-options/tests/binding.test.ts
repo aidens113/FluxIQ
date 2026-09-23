@@ -119,3 +119,50 @@ describe("Automation Studio harness option binding", () => {
     expect(loopBinding.tools.map((tool) => tool.toolId)).toEqual([AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS.flowGraph, "erp.inspect", "erp.advance"]);
   });
 });
+
+// Where the Flow being built starts. It belongs to one build, and a binding
+// outlives every build made through it, so it travels on the call rather than
+// on the binding -- and it has to reach the free first look, because that look
+// is where a domain says "you are not there yet" instead of trying to read a
+// target nobody opened.
+describe("the start location a build was told", () => {
+  it("reaches the domain on every call, the initial observation included", async () => {
+    const executeTool = vi.fn(async () => ({ observed: true }));
+    const registry = automationStudioHarnessOptionRegistry({
+      binding: slot(executeTool),
+      startLocation: "http://127.0.0.1:53017/scenarios/everything-store/"
+    });
+    const resolution: AutomationStudioHarnessOptionResolution = { ...SCOPE, allowSideEffectsWithoutPolicy: true };
+
+    const binding = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, resolution);
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: binding.tools,
+      executeTool: binding.executeTool,
+      decide: async ({ evidence }) => (evidence.length >= 2
+        ? { kind: "complete", result: { done: true } }
+        : { kind: "tool_call", callId: "call.1", toolId: "erp.advance", input: { to: "2026-10" } })
+    });
+
+    // The slot's default mock declares no parameters, so the recorded calls are
+    // read through the shape the binding is contracted to pass.
+    const calls = executeTool.mock.calls as unknown as Array<[{ startLocation?: string }]>;
+    expect(calls).toHaveLength(2);
+    for (const [passed] of calls) expect(passed).toMatchObject({ startLocation: "http://127.0.0.1:53017/scenarios/everything-store/" });
+  });
+
+  it("is absent from the call when the build was told none, so a domain sees exactly what it saw before", async () => {
+    const executeTool = vi.fn(async () => ({ observed: true }));
+    const registry = automationStudioHarnessOptionRegistry({ binding: slot(executeTool) });
+    const binding = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true });
+
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: binding.tools,
+      executeTool: binding.executeTool,
+      decide: async () => ({ kind: "complete", result: { done: true } })
+    });
+
+    const calls = executeTool.mock.calls as unknown as Array<[{ startLocation?: string }]>;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).not.toHaveProperty("startLocation");
+  });
+});
