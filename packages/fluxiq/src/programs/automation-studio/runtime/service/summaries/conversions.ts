@@ -156,6 +156,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       }))
       : undefined;
     const recordCount = datasetMarkerRecordCount(attempt.outputs);
+    const outputShape = attemptOutputShape(attempt.outputs);
     const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
     return {
       attemptId: attempt.attemptId,
@@ -192,7 +193,9 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         // ran. `message` is the host's sentence and stays behind.
         ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
         ...(adaptiveFailure ? { adaptiveFailure } : {}),
-        ...(recordCount !== undefined ? { recordCount } : {})
+        ...(recordCount !== undefined ? { recordCount } : {}),
+        // What the step produced, as names and counts. See `attemptOutputShape`.
+        ...(outputShape ? { outputShape } : {})
       }
     };
   });
@@ -202,6 +205,29 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
 // (CD14), so the run record says how many rows the attempt captured without
 // holding any of them. Session traces are read back from storage, so the
 // marker's shape is checked rather than assumed.
+/**
+ * Which outputs a step produced, and how many rows each list held. Names and
+ * counts; never a value.
+ *
+ * `attempt.outputs` is live data of unknown sensitivity and the run record has
+ * always refused to copy it, which left the record able to say that a step
+ * succeeded and unable to say whether it produced anything. `recordCount`
+ * beside this answers only for a step that wrote a dataset marker. This answers
+ * for every step, in the one shape that carries nothing off the page: an output
+ * that is a list is its length, and any other output is `true`, meaning present.
+ *
+ * The keys are output port ids, which a domain mints, so they are screened
+ * against that domain's declared keys where they are projected into a request
+ * (`recovery/repair-context/step-parameters.ts`) rather than here, where no
+ * declaration is in reach.
+ */
+function attemptOutputShape(outputs: unknown): JsonObject | undefined {
+  if (!isJsonRecord(outputs)) return undefined;
+  const entries = Object.entries(outputs).slice(0, 12)
+    .map(([key, value]) => [key, Array.isArray(value) ? value.length : true] as const);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 function datasetMarkerRecordCount(outputs: unknown): number | undefined {
   if (!isJsonRecord(outputs) || !isJsonRecord(outputs.records) || !isJsonRecord(outputs.records.$dataset)) return undefined;
   const recordCount = outputs.records.$dataset.recordCount;

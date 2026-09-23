@@ -12,7 +12,10 @@ describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
     ]), "project.conversions");
 
     expect(detail.actionAttempts?.map((item) => item.metadata?.recordCount)).toEqual([3, 0]);
-    expect(detail.actionAttempts?.[0]?.metadata).toEqual({ recordCount: 3 });
+    // The output shape beside it: which ports produced something, and a list's
+    // length. Names and counts, so the record still carries no page value.
+    expect(detail.actionAttempts?.[0]?.metadata?.outputShape).toEqual({ records: true, result: true });
+    expect(detail.actionAttempts?.[0]?.metadata).toMatchObject({ recordCount: 3 });
   });
 
   it("writes no recordCount when an attempt has no $dataset marker, or its count is not a finite number", () => {

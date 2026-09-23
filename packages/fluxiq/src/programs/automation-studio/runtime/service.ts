@@ -171,7 +171,7 @@ import {
   removeUndefinedSubflowFields,
   uniqueStrings,
   upsertBy,
-  compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioRunDetailWithDeclinedAdaptiveRetry,
+  compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioFlowPriorManualAdaptationReview, automationStudioRunDetailWithDeclinedAdaptiveRetry,
   errorMessage,
   AutomationStudioProposalGeneration,
   AutomationStudioFlowSubflowMigration,
@@ -2441,6 +2441,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         // the exploration is then not run, and the trace says the plan asked for
         // one and none happened.
         flowForRecovery: async (projectId, flowId) => await this.getFlow(projectId, flowId).then((flow) => ({ scope: flow.scope, ...(flow.metadata ? { metadata: flow.metadata } : {}) })).catch(() => undefined),
+        // The router's rules, so a repair asked to author routing is shown the routing there is.
+        flowRouterForRecovery: (projectId, flowId) => this.getFlowRouter(projectId, flowId),
         saveFlowChangeProposal: (proposal) => this.saveFlowChangeProposal(proposal),
         saveFlowAdaptation: (adaptation) => this.saveFlowAdaptation(adaptation),
         promoteRuntimeAdaptation: (request) => this.maybePromoteRuntimeAdaptation(request)
@@ -2458,7 +2460,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const requireFirstManualReview = input.context.settings.requireFirstManualReviewBeforeAutoPromotion === true
       || input.context.policy.preset === "autonomous" && booleanSetting(input.context.settings.metadata?.requireFirstManualReviewBeforeAutoPromotion, false);
     const priorManualReviewExists = requireFirstManualReview
-      ? await this.flowHasPriorManualAdaptationReview(input.adaptation.projectId, input.adaptation.flowId, input.adaptation.adaptationId)
+      ? await automationStudioFlowPriorManualAdaptationReview({ listFlowAdaptationSummaries: (request) => this.listFlowAdaptationSummaries(request), getFlowAdaptation: (projectId, flowId, adaptationId) => this.getFlowAdaptation(projectId, flowId, adaptationId) }, input.adaptation.projectId, input.adaptation.flowId, input.adaptation.adaptationId) === "reviewed"
       : true;
     const hasExternalSideEffects = input.adaptation.patch.some((patch) => isJsonRecord(patch.metadata) && patch.metadata.externalSideEffect === true);
     const decision = decideAutomationStudioAdaptationPromotionGate({
@@ -2524,19 +2526,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
   }
 
-  private async flowHasPriorManualAdaptationReview(projectId: string, flowId: string, excludeAdaptationId: string): Promise<boolean> {
-    const page = await this.listFlowAdaptationSummaries({ projectId, flowId, limit: 100, offset: 0 }).catch(() => ({ adaptations: [] }));
-    for (const summary of page.adaptations ?? []) {
-      if (summary.adaptationId === excludeAdaptationId) continue;
-      const adaptation = await this.getFlowAdaptation(projectId, flowId, summary.adaptationId).catch(() => null);
-      const review = isJsonRecord(adaptation?.metadata?.review) ? adaptation.metadata.review : undefined;
-      const actorId = typeof review?.actorId === "string" ? review.actorId : "";
-      const lastAction = typeof review?.lastAction === "string" ? review.lastAction : "";
-      if (actorId && actorId !== "runtime" && actorId !== "system" && (lastAction === "approve" || lastAction === "apply")) return true;
-    }
-    return false;
-  }
-
   private async retryRuntimeSessionAfterAutoAppliedPatch(input: {
     projectId: string;
     session: AutomationStudioRuntimeSession;
@@ -2544,7 +2533,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     graphOptions: Parameters<typeof runAutomationStudioGraph>[1];
     adaptationContext: AutomationStudioRuntimeAdaptationContext;
     subflowId?: string;
-  }): Promise<{ session?: AutomationStudioRuntimeSession; declinedCode?: string } | null> {
+    // `flow` is the *patched* document this re-read to retry with. It is
+    // returned because the verification that follows was handed the pre-patch
+    // Flow, so `resultSummary.flowShape` described a repaired run by the graph
+    // it no longer had.
+  }): Promise<{ session?: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument; declinedCode?: string } | null> {
     if (input.session.status !== "failed") return null;
     const decision = decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: input.detail.metadata?.runtimePatchAttempts, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
     if (!decision) return null;
@@ -2619,7 +2612,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         }
       }
     });
-    return { session: retrySession };
+    return { session: retrySession, flow: canonicalFlowDocument(updatedFlow) };
   }
 
   async runRuntimeSession(input: {
@@ -2818,7 +2811,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           adaptationContext,
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
         }) : null;
-        if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
+        // Verified against the Flow the retry actually ran.
+        if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, flow: retry.flow ?? canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
         await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
         return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal });
       }
@@ -2871,7 +2865,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         graphOptions,
         adaptationContext
       });
-      if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
+      if (retry?.session) return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, ...(retry.flow ? { flow: retry.flow } : runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), signal: abortController.signal });
       await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
     }
     return input.projectId ? await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }) : next;
