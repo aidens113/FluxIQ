@@ -2,7 +2,7 @@
 //
 // These declarations are the grant's authorization table: which purposes
 // exist, which task kinds and output shapes each may request, and whether a
-// purpose may make more than one call. `execution-grants.ts` enforces them on
+// purpose may make more than one call. `execution/grants.ts` enforces them on
 // every call; this file is only what they say.
 
 import type {

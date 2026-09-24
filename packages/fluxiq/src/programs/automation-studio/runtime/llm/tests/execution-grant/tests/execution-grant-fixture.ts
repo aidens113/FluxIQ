@@ -6,7 +6,7 @@
 
 import type { AutomationStudioLlmTaskRequest } from "../../../harness.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../../evidence-loop.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../execution-grants.ts";
+import { AutomationStudioLlmExecutionGrantService } from "../../../execution/index.ts";
 
 export function setupExecutionGrantFixture() {
   const key: any = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: "flow.one", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };

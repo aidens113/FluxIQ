@@ -29,8 +29,8 @@ export {
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
   estimateAutomationStudioDeepSeekCostUsd
 } from "./deepseek/index.ts";
-export * from "./execution-grants.ts";
-// The grant's authorization table. Only the names `execution-grants.ts` used to
+export * from "./execution/index.ts";
+// The grant's authorization table. Only the names `execution/grants.ts` used to
 // publish itself are exported; the checks the grant runs stay internal.
 export {
   automationStudioLlmExecutionGrantTaskKinds,

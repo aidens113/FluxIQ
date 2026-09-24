@@ -17,7 +17,7 @@
 // declared.
 //
 // This module does arithmetic only. From `runtime/llm/` it reads the harness's
-// token constants and resolver; `llm/execution-grants.ts` would close a cycle
+// token constants and resolver; `llm/execution/grants.ts` would close a cycle
 // through the provider factory, so the two grant numbers used here are written
 // out and pinned by tests.
 //
@@ -55,7 +55,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
  * against that budget and refuses the one that would exceed it.
  *
  * A grant's `maxTotalTokensPerRun` may be at most its calls times its per-call
- * limit (`llm/execution-grants.ts`, `preflight`), so the largest is the grant's
+ * limit (`llm/execution/grants.ts`, `preflight`), so the largest is the grant's
  * call backstop, 64 (`AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS`, written
  * out -- see above), at the per-request ceiling. It used to be read off the
  * loop's iteration ceiling, which happens to be the same number; the budget is

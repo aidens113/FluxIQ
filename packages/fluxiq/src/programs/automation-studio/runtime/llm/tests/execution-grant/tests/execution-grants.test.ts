@@ -5,7 +5,7 @@ import {
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS,
   AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS,
   AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD
-} from "../../../execution-grants.ts";
+} from "../../../execution/index.ts";
 import { automationStudioRuntimeSessionGrantTaskKinds } from "../../../runtime-session-grant.ts";
 import { evidenceRequest, gatherRequest, issueInput, patchRequest, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
