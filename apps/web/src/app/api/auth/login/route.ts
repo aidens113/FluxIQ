@@ -1,6 +1,6 @@
+import path from "node:path";
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
-import path from "node:path";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
 import { getFluxIQ } from "../../../../lib/fluxiq";
 import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/login-attempts";
@@ -24,10 +24,12 @@ const trackers = new Map<string, DurableLoginAttemptTracker>();
 function attemptTracker(fileName: string, maxAttempts: number): DurableLoginAttemptTracker {
   let tracker = trackers.get(fileName);
   if (!tracker) {
-    tracker = new DurableLoginAttemptTracker(
-      path.join(getFluxIQ().paths.fluxiq, "security", fileName),
-      { windowMs: ATTEMPT_WINDOW_MS, lockoutMs: LOCKOUT_MS, maxAttempts, maxEntries: 10_000 },
-    );
+    tracker = new DurableLoginAttemptTracker(path.join(getFluxIQ().paths.fluxiq, "security", fileName), {
+      windowMs: ATTEMPT_WINDOW_MS,
+      lockoutMs: LOCKOUT_MS,
+      maxAttempts,
+      maxEntries: 10_000,
+    });
     trackers.set(fileName, tracker);
   }
   return tracker;
@@ -132,11 +134,14 @@ export async function POST(request: Request) {
     const lockedUntilMs = Math.max(failed.lockedUntilMs, addressFailed?.lockedUntilMs ?? 0, panelFailed?.lockedUntilMs ?? 0);
     const status = lockedUntilMs > Date.now() ? 429 : 401;
     const retryAfterMs = Math.max(0, lockedUntilMs - Date.now());
-    const attemptsRemaining = Math.max(0, Math.min(
-      MAX_ATTEMPTS - failed.count,
-      addressFailed ? ADDRESS_MAX_ATTEMPTS - addressFailed.count : MAX_ATTEMPTS,
-      panelFailed ? PANEL_MAX_ATTEMPTS - panelFailed.count : MAX_ATTEMPTS,
-    ));
+    const attemptsRemaining = Math.max(
+      0,
+      Math.min(
+        MAX_ATTEMPTS - failed.count,
+        addressFailed ? ADDRESS_MAX_ATTEMPTS - addressFailed.count : MAX_ATTEMPTS,
+        panelFailed ? PANEL_MAX_ATTEMPTS - panelFailed.count : MAX_ATTEMPTS,
+      ),
+    );
     if (error instanceof TotpRequiredError) {
       return NextResponse.json(
         {

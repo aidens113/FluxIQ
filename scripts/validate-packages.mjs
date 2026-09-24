@@ -36,7 +36,13 @@ try {
 }
 
 function inspectTarball(tarball, packageName, expectedLicense) {
-  const entries = run("tar", ["-tf", tarball], repositoryRoot, true).split(/\r?\n/).filter(Boolean);
+  // Listed from the tarball's own directory, by bare name. An absolute Windows
+  // path reaches GNU tar as a `C:\...` argument, which it reads as a remote host
+  // spec and refuses with "Cannot connect to C: resolve failed" -- so this step
+  // failed on every windows-latest CI run while passing on ubuntu. `--force-local`
+  // would fix GNU tar and break the bsdtar that ships with macOS and Windows, so
+  // the drive letter is removed instead of explained away.
+  const entries = run("tar", ["-tf", path.basename(tarball)], path.dirname(tarball), true).split(/\r?\n/).filter(Boolean);
   const forbidden = entries.filter((entry) =>
     /(^|\/)src\//.test(entry)
     || /(^|\/)(?:test|tests|__tests__)(?:\/|\.)/.test(entry)
@@ -47,7 +53,7 @@ function inspectTarball(tarball, packageName, expectedLicense) {
   for (const required of ["package/package.json", "package/README.md", "package/LICENSE.md"]) {
     if (!entries.includes(required)) throw new Error(`${packageName} tarball is missing ${required}.`);
   }
-  const packagedLicense = normalizeText(run("tar", ["-xOf", tarball, "package/LICENSE.md"], repositoryRoot, true));
+  const packagedLicense = normalizeText(run("tar", ["-xOf", path.basename(tarball), "package/LICENSE.md"], path.dirname(tarball), true));
   if (packagedLicense !== expectedLicense) {
     throw new Error(`${packageName} tarball license does not match the canonical repository license.`);
   }

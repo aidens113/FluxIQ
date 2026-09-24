@@ -34,11 +34,12 @@ const declarations = (project.children ?? [])
     source: sourceSummary(reflection),
     summary: commentSummary(reflection.comment),
   }))
-  .sort((left, right) =>
-    left.name.localeCompare(right.name)
-    || left.kind.localeCompare(right.kind)
-    || left.source.localeCompare(right.source)
-    || left.summary.localeCompare(right.summary)
+  .sort(
+    (left, right) =>
+      left.name.localeCompare(right.name) ||
+      left.kind.localeCompare(right.kind) ||
+      left.source.localeCompare(right.source) ||
+      left.summary.localeCompare(right.summary),
   );
 const counts = new Map();
 for (const declaration of declarations) counts.set(declaration.kind, (counts.get(declaration.kind) ?? 0) + 1);
