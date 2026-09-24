@@ -12,6 +12,13 @@
 // at `recordsPath` inside `outputs.result` as the same array. Excluded values
 // therefore reach neither the values map, a later node's inputs, nor the saved
 // trace.
+//
+// **A capture that finds rows and can keep none of them fails the node.** That
+// is a schema which does not describe what the output produces; the output will
+// not produce anything else on a retry, and the codes saying why are in hand
+// right here (`recordsRefused`). A capture that refused only some of its rows is
+// not this: it stored an answer, and the run's result verification judges what
+// it stored.
 import {
   parseAutomationStudioRecordOutput,
   parseAutomationStudioRecordsPath,
@@ -61,6 +68,11 @@ export function captureAutomationStudioRecordBatch(request: AutomationStudioReco
   const found = segments ? valueAtPath(outputs.result, segments) : undefined;
   if (!segments || !Array.isArray(found)) return { result: recordsMissing(dispatched, parsed.output.recordsPath) };
   const validated = validateAutomationStudioRecords(found, parsed.output.schema, { maxRecords: parsed.output.maxRecords });
+  // Rows were found and not one of them could be stored. That is the schema
+  // failing to describe what the output produces, and the output cannot be
+  // asked again for a shape it does not have, so the node fails here with the
+  // reason rather than reporting success over an empty dataset.
+  if (validated.rows.length === 0 && validated.invalidCount > 0) return { result: recordsRefused(dispatched, validated) };
   const rows = validated.rows;
   const result: AutomationNodeExecutionResult = {
     ...dispatched,
@@ -116,6 +128,12 @@ export function captureAutomationStudioWrittenRecords(request: AutomationStudioW
   const found = payload && Object.hasOwn(payload, "records") ? payload.records : undefined;
   if (!payload || !Array.isArray(found)) return { result: writtenRecordsMissing(), effect: withheldWrittenRecords(effect) };
   const validated = validateAutomationStudioRecords(found, parsed.output.schema, { maxRecords: parsed.output.maxRecords });
+  // Rows to write and a schema that refuses every one of them: the same total
+  // loss the dispatched capture above refuses to report as success, for the
+  // same reason.
+  if (validated.rows.length === 0 && validated.invalidCount > 0) {
+    return { result: recordsRefused({ status: "success", route: "success" }, validated), effect: withheldWrittenRecords(effect) };
+  }
   return {
     result: { status: "success", route: "success", outputs: { records: validated.rows } },
     effect: { ...effect, payload: { ...payload, records: validated.rows } },
@@ -188,6 +206,43 @@ function invalidRecordOutput(dispatched: AutomationNodeExecutionResult, issues: 
     { ...withheld, outputs: { ...(withheld.outputs ?? {}), error: { code, issues } } },
     "The output ran, but Save extracted records is not a valid record output, so no records were saved.",
     { category: "graph_validation_or_unknown_node", code, retryable: false, stage: "dispatch" }
+  );
+}
+
+/**
+ * Every row the output produced was refused by its own record schema.
+ *
+ * Until 2026-09-23 this reported success: the rows were validated away, the
+ * batch carried `invalidCount` and no rows, the dataset stored nothing, and the
+ * run only learned it had no answer when its result was verified at the end --
+ * `core.result.every_record_refused`, on a synthetic attempt two steps later,
+ * saying sixteen rows were refused and nothing about why
+ * (`test-runs/run-mueqynzb-ac54aab9`). The node that produced the rows is where
+ * that is knowable, and the validation's own codes are in hand there, so the
+ * failure is raised here and names them. A repair then has a real failed
+ * attempt, at the real node, with the real reason.
+ *
+ * A capture that refused *some* rows is not this: it stored an answer, partial
+ * or not, and the result verification judges what it stored. Only a capture
+ * that found rows and could keep none of them is a schema that does not fit.
+ *
+ * `retryable` is false. The output would return the same rows and the schema
+ * would refuse them again; what has to change is the Flow.
+ */
+function recordsRefused(dispatched: AutomationNodeExecutionResult, validated: AutomationStudioRecordValidationResult): AutomationNodeExecutionResult {
+  const refused = validated.invalidCount;
+  const withheld = withheldPayload(dispatched);
+  return failedCapture(
+    { ...withheld, outputs: { ...(withheld.outputs ?? {}), error: { code: "record_output.records_refused", issues: [...validated.issues] } } },
+    `The output returned ${refused} ${refused === 1 ? "record" : "records"} and the record schema refused every one of them, so no records were saved.`,
+    {
+      category: "output_not_observed",
+      code: "record_output.records_refused",
+      retryable: false,
+      stage: "dispatch",
+      expected: "records the Flow's own record schema can store.",
+      actual: `${refused} ${refused === 1 ? "record was" : "records were"} refused and none stored${validated.issues.length ? ` (${validated.issues.join(", ")})` : ""}.`
+    }
   );
 }
 

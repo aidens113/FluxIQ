@@ -113,6 +113,39 @@ describe("capturing the rows a record output declares", () => {
     else expect(result.outputs?.result).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
   });
 
+  it("fails with record_output.records_refused, naming the validation's codes, when the schema refuses every row", () => {
+    // What a live run met on 2026-09-23: the page read its rows and the schema
+    // beside it declared a column the page can only ever hand back as text as a
+    // number, so every row failed and the dataset stored nothing while the node
+    // reported success (`test-runs/run-mueqynzb-ac54aab9`).
+    const numeric: JsonObject = { ...recordOutput, schema: { schemaVersion: "0.1", fields: [{ id: "price", label: "Price", valueType: "number", required: true }] } };
+    const text: JsonValue = { page: { items: [{ price: "synthetic-price-text" }, { price: "synthetic-other-price-text" }] } };
+    const { result, batch } = capture(effect(numeric), answer(text));
+    const failure = {
+      category: "output_not_observed",
+      code: "record_output.records_refused",
+      retryable: false,
+      stage: "dispatch",
+      expected: "records the Flow's own record schema can store.",
+      actual: "2 records were refused and none stored (records.invalid_value)."
+    };
+
+    expect(batch).toBeUndefined();
+    expect(result).toMatchObject({ status: "failed", route: "failed", message: "The output returned 2 records and the record schema refused every one of them, so no records were saved." });
+    expect(result.failure).toEqual(failure);
+    expect(parseAutomationStudioFailureRecord(result.failure)).toEqual(failure);
+    expect(result.outputs?.error).toEqual({ code: "record_output.records_refused", issues: ["records.invalid_value"] });
+    expect(result.outputs).not.toHaveProperty("records");
+    expect(result.outputs?.result).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
+  });
+
+  it("captures as it always did when the schema refuses only some of the rows", () => {
+    const { result, batch } = capture(effect(recordOutput), answer(extractedPayload()));
+
+    expect(result).toMatchObject({ status: "success", route: "success" });
+    expect(batch).toMatchObject({ rows: validatedRows, invalidCount: 1 });
+  });
+
   it("does not capture a failed dispatch, and withholds the payload it returned", () => {
     const failure = { category: "timeout", code: "web.action.timed_out", retryable: true } as const;
     const dispatched: AutomationNodeExecutionResult = { status: "failed", route: "failed", outputs: { ok: false, result: extractedPayload() }, message: "The list did not load.", failure };
