@@ -30,7 +30,16 @@ describe("global program endpoint permission matrix", () => {
       ]),
     );
     expect(new Set(endpoints.map((endpoint) => endpoint.permission))).toEqual(
-      new Set<Permission>(["programs.read", "programs.write", "flows.write", "runtime.control", "compute.control", "identity.manage", "data.manage", "secrets.manage"]),
+      new Set<Permission>([
+        "programs.read",
+        "programs.write",
+        "flows.write",
+        "runtime.control",
+        "compute.control",
+        "identity.manage",
+        "data.manage",
+        "secrets.manage",
+      ]),
     );
   });
 

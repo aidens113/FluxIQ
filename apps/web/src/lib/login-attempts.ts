@@ -30,9 +30,10 @@ export class LoginAttemptTracker {
   registerFailure(key: string): LoginAttemptState {
     const nowMs = this.now();
     const existing = this.attempts.get(key);
-    const state = !existing || existing.lockedUntilMs > 0 || nowMs - existing.windowStartedAtMs > this.options.windowMs
-      ? { count: 0, windowStartedAtMs: nowMs, lockedUntilMs: 0, updatedAtMs: nowMs }
-      : existing;
+    const state =
+      !existing || existing.lockedUntilMs > 0 || nowMs - existing.windowStartedAtMs > this.options.windowMs
+        ? { count: 0, windowStartedAtMs: nowMs, lockedUntilMs: 0, updatedAtMs: nowMs }
+        : existing;
     state.count += 1;
     state.updatedAtMs = nowMs;
     if (state.count >= this.options.maxAttempts) state.lockedUntilMs = nowMs + this.options.lockoutMs;
@@ -72,9 +73,10 @@ export class DurableLoginAttemptTracker {
   async registerFailure(key: string): Promise<LoginAttemptState> {
     return this.withState((attempts, nowMs) => {
       const existing = attempts[key];
-      const state = !existing || existing.lockedUntilMs > 0 || nowMs - existing.windowStartedAtMs > this.options.windowMs
-        ? { count: 0, windowStartedAtMs: nowMs, lockedUntilMs: 0, updatedAtMs: nowMs }
-        : existing;
+      const state =
+        !existing || existing.lockedUntilMs > 0 || nowMs - existing.windowStartedAtMs > this.options.windowMs
+          ? { count: 0, windowStartedAtMs: nowMs, lockedUntilMs: 0, updatedAtMs: nowMs }
+          : existing;
       state.count += 1;
       state.updatedAtMs = nowMs;
       if (state.count >= this.options.maxAttempts) state.lockedUntilMs = nowMs + this.options.lockoutMs;
@@ -85,7 +87,9 @@ export class DurableLoginAttemptTracker {
   }
 
   async clear(key: string): Promise<void> {
-    await this.withState((attempts) => { delete attempts[key]; });
+    await this.withState((attempts) => {
+      delete attempts[key];
+    });
   }
 
   private async withState<T>(operation: (attempts: Record<string, LoginAttemptState>, nowMs: number) => T): Promise<T> {
@@ -162,7 +166,10 @@ function removeExpired(attempts: Record<string, LoginAttemptState>, nowMs: numbe
 function trimRecord(attempts: Record<string, LoginAttemptState>, maxEntries: number): void {
   const excess = Object.keys(attempts).length - Math.max(1, maxEntries);
   if (excess <= 0) return;
-  for (const [key] of Object.entries(attempts).sort((left, right) => left[1].updatedAtMs - right[1].updatedAtMs).slice(0, excess)) delete attempts[key];
+  for (const [key] of Object.entries(attempts)
+    .sort((left, right) => left[1].updatedAtMs - right[1].updatedAtMs)
+    .slice(0, excess))
+    delete attempts[key];
 }
 
 function trimOldest(attempts: Map<string, LoginAttemptState>, maxEntries: number): void {
@@ -177,20 +184,31 @@ function validAttemptRecord(value: unknown): Record<string, LoginAttemptState> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const candidate = (value as { attempts?: unknown }).attempts;
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return {};
-  return Object.fromEntries(Object.entries(candidate).flatMap(([key, state]) => {
-    if (!state || typeof state !== "object" || Array.isArray(state)) return [];
-    const entry = state as Partial<LoginAttemptState>;
-    if (!Number.isInteger(entry.count) || Number(entry.count) < 0
-      || !validTimestamp(entry.windowStartedAtMs)
-      || !validTimestamp(entry.lockedUntilMs)
-      || !validTimestamp(entry.updatedAtMs)) return [];
-    return [[key, {
-      count: Number(entry.count),
-      windowStartedAtMs: Number(entry.windowStartedAtMs),
-      lockedUntilMs: Number(entry.lockedUntilMs),
-      updatedAtMs: Number(entry.updatedAtMs)
-    } satisfies LoginAttemptState]];
-  }));
+  return Object.fromEntries(
+    Object.entries(candidate).flatMap(([key, state]) => {
+      if (!state || typeof state !== "object" || Array.isArray(state)) return [];
+      const entry = state as Partial<LoginAttemptState>;
+      if (
+        !Number.isInteger(entry.count) ||
+        Number(entry.count) < 0 ||
+        !validTimestamp(entry.windowStartedAtMs) ||
+        !validTimestamp(entry.lockedUntilMs) ||
+        !validTimestamp(entry.updatedAtMs)
+      )
+        return [];
+      return [
+        [
+          key,
+          {
+            count: Number(entry.count),
+            windowStartedAtMs: Number(entry.windowStartedAtMs),
+            lockedUntilMs: Number(entry.lockedUntilMs),
+            updatedAtMs: Number(entry.updatedAtMs),
+          } satisfies LoginAttemptState,
+        ],
+      ];
+    }),
+  );
 }
 
 function validTimestamp(value: unknown): boolean {

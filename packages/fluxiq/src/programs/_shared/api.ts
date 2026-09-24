@@ -2,11 +2,7 @@ import type { IdentityAccessService } from "../identity-access/index.ts";
 import type { Permission } from "../identity-access/types.ts";
 import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "./authorization.ts";
 import { GLOBAL_PROGRAMS } from "./catalog.ts";
-import {
-  recordProgramEndpointPerformance,
-  serializedMetricBytes,
-  withEndpointPerformanceScope
-} from "./performance-metrics.ts";
+import { recordProgramEndpointPerformance, serializedMetricBytes, withEndpointPerformanceScope } from "./performance-metrics.ts";
 import type { ProgramScope } from "./types.ts";
 
 /**
@@ -32,12 +28,7 @@ import type { ProgramScope } from "./types.ts";
  *   the program at all, or the gate was never written. Each one is listed in
  *   `docs/architecture/automation-studio/persistence.md`.
  */
-export type ProgramEndpointClassification =
-  | "read"
-  | "authoring"
-  | "destructive"
-  | "program-gated"
-  | "destructive-ungated";
+export type ProgramEndpointClassification = "read" | "authoring" | "destructive" | "program-gated" | "destructive-ungated";
 
 export type ProgramApiActor = {
   sessionId: string;
@@ -145,7 +136,7 @@ export class GlobalProgramApiRegistry {
       elapsedMs: performance.now() - startedAt,
       responseBytes: serializedMetricBytes(measured.result),
       ...measured.sql,
-      ok: measured.result.ok
+      ok: measured.result.ok,
     });
     return measured.result;
   }
@@ -163,5 +154,5 @@ function apiKey(programId: string, endpoint: string): string {
 }
 
 function pinAuthorizationPayload(payload: unknown): ProgramPinAuthorizationPayload {
-  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload as ProgramPinAuthorizationPayload : {};
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as ProgramPinAuthorizationPayload) : {};
 }
