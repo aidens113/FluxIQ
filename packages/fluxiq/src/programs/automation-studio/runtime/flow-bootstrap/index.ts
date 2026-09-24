@@ -11,6 +11,7 @@ export * from "./authoring/index.ts";
 export * from "./decision-step-ids.ts";
 export * from "./draft-reduction.ts";
 export * from "./evidence-loop-steps.ts";
+export * from "./extend.ts";
 export * from "./generation-failure.ts";
 export * from "./plan.ts";
 export * from "./review-projection.ts";

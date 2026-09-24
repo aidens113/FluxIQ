@@ -187,7 +187,27 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * the entry may cost, absent a quarter of the evidence context up to 4,000;
    * `maxAmendments` is how many edits the run may spend, absent four.
    */
-  draft?: false | { maxBytes?: number; maxAmendments?: number };
+  draft?: false | {
+    maxBytes?: number;
+    maxAmendments?: number;
+    /**
+     * Steps the draft already holds before the loop takes its first one.
+     *
+     * This is how a loop is asked to work on a result that exists rather than
+     * to write one from nothing: a Flow read back as steps
+     * (`node-tools/draft-from-flow.ts`) is handed in here, the model is shown
+     * it as its own draft, and every amendment -- drop, reorder, rerun -- edits
+     * it. The loop appends to it exactly as it appends to one it filled itself,
+     * and `steps` comes back as the whole list.
+     *
+     * A seeded step is one the loop did not take. It carries the caller's word
+     * for whether the result contains it and nothing else: no call id, because
+     * no call was made; no replay, so a seeded draft is not dry-run gated; and
+     * the caller keeps seeded ids clear of the `d<n>` this loop mints, so an
+     * amendment naming a step names one step.
+     */
+    seed?: readonly AutomationStudioFlowDraftStep[];
+  };
   /**
    * Whether a completed result must first have its draft replayed clean
    * (`runtime/flow-draft/dry-run.ts`).
@@ -208,6 +228,18 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   dryRun?: false;
   signal?: AbortSignal;
 };
+
+/**
+ * The steps a loop starts with, renumbered from 1 whatever the caller numbered
+ * them, so what the model is shown and what an amendment names agree however
+ * the seed was built. A loop given none starts empty, which is every build that
+ * writes a Flow from nothing.
+ */
+export function automationStudioLlmEvidenceLoopSeedSteps(
+  draft: AutomationStudioLlmEvidenceLoopInput["draft"]
+): AutomationStudioFlowDraftStep[] {
+  return (draft === false ? [] : draft?.seed ?? []).map((step, index) => ({ ...step, position: index + 1 }));
+}
 
 export type EvidenceLoopLimits = {
   maxIterations: number;

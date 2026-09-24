@@ -22,6 +22,8 @@ import {
   type AutomationStudioFlowChangeTrialReport
 } from "./flow-change/index.ts";
 import {
+  applyAutomationStudioInsertedSteps,
+  automationStudioInsertedStepNodeId,
   checkAutomationStudioRuntimeTargetOverride,
   type AutomationStudioRuntimeTargetOverrideCheck,
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
@@ -259,7 +261,7 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
   if (!options) {
     return { patch: input.patch, preflight, verification: { status: "not_executed", reason: "no_step_budget_left" }, restoredExpectedState: false, retryOriginalAction: false };
   }
-  const changedNodeId = changedNodeForPatch(input.patch, input.failedAttempt.nodeId);
+  const changedNodeId = changedNodeForPatch(input.patch, input.failedAttempt.nodeId, input.runId);
   const origin = runtimePatchOrigin(input);
   const trial = await trialAutomationStudioFlowChange({
     candidate: application.flow,
@@ -341,7 +343,7 @@ export function adaptationFromRuntimePatch(
   trial?: Pick<AutomationStudioFlowChangeTrialReport, "verdict" | "origin" | "observedState" | "expectedState">
 ): AutomationStudioFlowAdaptation {
   const now = input.now?.() ?? Date.now();
-  const patch = changePatchFromRuntimePatch(input.patch);
+  const patch = changePatchFromRuntimePatch(input.patch, input.runId);
   const restoredExpectedState = verification.status === "verified";
   const validationResult = trial
     ? automationStudioChangeValidationResult({ verdict: trial.verdict, runId: input.runId, checkedAt: now, kind: "trial" })
@@ -466,7 +468,7 @@ function targetOverrideProposalAdaptation(
     observedState,
     ...(expectedState ? { expectedState } : {}),
     diagnosis: input.patch.reason,
-    patch: [changePatchFromRuntimePatch(input.patch)],
+    patch: [changePatchFromRuntimePatch(input.patch, input.runId)],
     // No `validationResults`: this proposal declares `executed: false` in the
     // same object, and a validation entry means "it ran and was compared". The
     // structural check that did happen is recorded where no consumer asking
@@ -535,9 +537,13 @@ function applyRuntimePatchToFlow(flow: AutomationStudioFlowDocument, patch: Auto
       }
       return { applied: true, flow: next };
     }
-    // No application exists for these two kinds. Refusing them here is what
-    // stops the rerun from validating the unmodified Flow.
+    // The steps the Flow never had, inserted ahead of the node they must run
+    // before, so the trial runs the repair rather than the Flow that answered
+    // wrongly (`live-patch/step-insert.ts`).
     case "temporary_action_sequence":
+      return applyAutomationStudioInsertedSteps(flow, patch, runId);
+    // No application exists for this kind. Refusing it here is what stops the
+    // rerun from validating the unmodified Flow.
     case "temporary_recovery_subflow_call":
       return { applied: false, reason: `unapplied_patch_kind:${patch.kind}` };
     default:
@@ -551,12 +557,16 @@ function unappliedRuntimePatchKind(patch: never): AutomationStudioRuntimePatchAp
   return { applied: false, reason: `unapplied_patch_kind:${(patch as { kind?: string }).kind ?? "unknown"}` };
 }
 
-function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch): AutomationStudioFlowAdaptation["patch"][number] {
+function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch, runId: string): AutomationStudioFlowAdaptation["patch"][number] {
   if (patch.kind === "temporary_reroute") return { kind: "edit_router", targetId: patch.fromNodeId, summary: patch.reason, after: { toNodeId: patch.toNodeId } };
   if (patch.kind === "temporary_target_override") return { kind: "edit_action_target", targetId: patch.targetNodeId, summary: patch.reason, after: patch.target, metadata: { externalSideEffect: true } };
   if (patch.kind === "temporary_recovery_subflow_call") return { kind: "edit_recovery", targetId: patch.subflowId, summary: patch.reason };
   if (patch.kind === "temporary_wait_retry") return { kind: "edit_expectation", targetId: patch.targetNodeId, summary: patch.reason, after: { timeoutMs: patch.timeoutMs ?? null, retryCount: patch.retryCount ?? null } };
-  return { kind: "edit_recovery", targetId: patch.targetNodeId, summary: patch.reason, after: { actionDefinitionIds: patch.actionDefinitionIds } };
+  // An inserted sequence has no durable form: keeping a step belongs to the
+  // extend-mode build plan, which authors it from an exploration rather than
+  // from a patch (`live-patch/step-insert.ts`). `edit_recovery` has no durable
+  // applier, so a promotion of one is refused rather than half-applied.
+  return { kind: "edit_recovery", targetId: patch.targetNodeId, summary: patch.reason };
 }
 
 function patchMayCauseExternalSideEffects(patch: AutomationStudioRuntimePatch): boolean {
@@ -575,8 +585,13 @@ function runtimePatchTargetsFlow(flow: AutomationStudioFlowDocument, patch: Auto
  * changes where the failed node's path leads, so its trial starts at, and is
  * judged by, the node the new route reaches.
  */
-function changedNodeForPatch(patch: AutomationStudioRuntimePatch, failedNodeId: string): string {
+function changedNodeForPatch(patch: AutomationStudioRuntimePatch, failedNodeId: string, runId: string): string {
   if (patch.kind === "temporary_reroute") return patch.toNodeId;
+  // An insert changes nothing about the node it names: what it changed is the
+  // step now running before it, so that is where the trial starts and what the
+  // trial judges. Starting at the named node would run the Flow that answered
+  // wrongly and record the inserted steps as never reached.
+  if (patch.kind === "temporary_action_sequence") return automationStudioInsertedStepNodeId(runId, 0);
   if ("targetNodeId" in patch) return patch.targetNodeId;
   return failedNodeId;
 }

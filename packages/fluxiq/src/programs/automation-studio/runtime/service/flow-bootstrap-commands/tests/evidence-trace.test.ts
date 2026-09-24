@@ -41,12 +41,51 @@ describe("the trace stored on a build", () => {
 describe("the audit detail a proposed build carries", () => {
   it("publishes every decision in order, naming a tool-less one by Core's own step id", () => {
     expect(evidenceTraceAuditDetail(trace).steps).toEqual([
-      { toolId: "web.observe_page", effectApplied: false, resultCode: "ok" },
-      { toolId: "web.dom.type", effectApplied: true, resultCode: "ok" },
-      { toolId: "core.decision_unusable", resultCode: "flow_script.unknown_node" },
-      { toolId: "core.decision_amend_draft", resultCode: "llm_evidence_loop.draft_amended" },
-      { toolId: "core.decision_complete" }
+      { toolId: "web.observe_page", iteration: 0, effectApplied: false, resultCode: "ok", evidenceBytes: 1_200 },
+      { toolId: "web.dom.type", iteration: 1, effectApplied: true, resultCode: "ok", evidenceBytes: 800 },
+      { toolId: "core.decision_unusable", iteration: 2, resultCode: "flow_script.unknown_node" },
+      { toolId: "core.decision_amend_draft", iteration: 3, resultCode: "llm_evidence_loop.draft_amended" },
+      { toolId: "core.decision_complete", iteration: 4 }
     ]);
+  });
+
+  it("carries the iteration, the bytes, the moment and the tokens the trace had already kept", () => {
+    // The defect: the sanitized trace keeps `iteration`, `evidenceBytes`, `at`
+    // and the provider's `usage` for every row, and the published step kept
+    // three fields of the eight. A failed build's 32 decisions therefore
+    // arrived as a tool id and a code each -- twenty of them the same code,
+    // inside one undivided 99,375 ms gap -- so three different defects with
+    // three different fixes read as one word, twenty times.
+    const [step] = evidenceTraceAuditDetail([
+      { iteration: 7, decision: "tool_call", callId: "call-7", toolId: "web.dom.click", evidenceBytes: 640, at: 1_758_672_000_000, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.0004 } }
+    ]).steps as Array<Record<string, unknown>>;
+
+    expect(step).toEqual({
+      toolId: "web.dom.click",
+      iteration: 7,
+      evidenceBytes: 640,
+      at: 1_758_672_000_000,
+      usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.0004 }
+    });
+  });
+
+  it("leaves the model's own call id in the stored trace and never in a published step", () => {
+    // A call id is whatever the decision asked for, kept verbatim
+    // (`runtime/llm/evidence-loop.ts`'s `unusedCallId`), so it is model-written
+    // text and a published step carries codes and identifiers only. The stored
+    // trace keeps it; the step does not, and `iteration` ties the two together.
+    const row = { iteration: 1, decision: "tool_call" as const, callId: "whatever the model called it", toolId: "web.dom.click" };
+
+    expect(sanitizeEvidenceLoopTrace([row])[0]?.callId).toBe("whatever the model called it");
+    expect(JSON.stringify(evidenceTraceAuditDetail([row]).steps)).not.toContain("whatever the model called it");
+  });
+
+  it("leaves behind a moment that is not a moment, rather than failing a build that finished over a reader's detail", () => {
+    for (const at of [-1, 1.5, Number.NaN, "yesterday" as unknown as number]) {
+      const [row] = sanitizeEvidenceLoopTrace([{ iteration: 1, decision: "complete", at }]);
+
+      expect(row).toEqual({ iteration: 1, decision: "complete" });
+    }
   });
 
   it("keeps the counts and the sorted tool ids it always published, which say what was used and never what was done", () => {
@@ -97,11 +136,11 @@ describe("the audit detail a proposed build carries", () => {
     const created = (projected.metadata as { phase9: { auditEvents: Array<{ eventType: string; detail: { steps?: unknown } }> } }).phase9.auditEvents.find((event) => event.eventType === "created");
 
     expect(created?.detail.steps).toEqual([
-      { toolId: "web.observe_page", effectApplied: false, resultCode: "ok" },
-      { toolId: "web.dom.type", effectApplied: true, resultCode: "ok" },
-      { toolId: "core.decision_unusable", resultCode: "flow_script.unknown_node" },
-      { toolId: "core.decision_amend_draft", resultCode: "llm_evidence_loop.draft_amended" },
-      { toolId: "core.decision_complete" }
+      { toolId: "web.observe_page", iteration: 0, effectApplied: false, resultCode: "ok", evidenceBytes: 1_200 },
+      { toolId: "web.dom.type", iteration: 1, effectApplied: true, resultCode: "ok", evidenceBytes: 800 },
+      { toolId: "core.decision_unusable", iteration: 2, resultCode: "flow_script.unknown_node" },
+      { toolId: "core.decision_amend_draft", iteration: 3, resultCode: "llm_evidence_loop.draft_amended" },
+      { toolId: "core.decision_complete", iteration: 4 }
     ]);
   });
 });
@@ -197,5 +236,68 @@ describe("what a build's created-audit counts", () => {
     expect(evidenceTraceAuditDetail(doubled).providerCallCount).toBe(64);
     expect(evidenceTraceAuditDetail(doubled).traceStepCount).toBe(128);
     expect(() => sanitizeEvidenceLoopTrace([...doubled, ...doubled])).toThrow("Flow Bootstrap evidence trace is invalid.");
+  });
+});
+
+// A build's calls, one line each.
+//
+// A run gets a per-call ledger because it holds a budget lease and something
+// counts each call as it is settled. A build holds none, so nothing itemized
+// its calls and a downstream reader published an empty list beside a total it
+// could not break down (`packages/test-runner/src/live-llm/build-usage.ts`
+// hard-codes `observedCalls: []`). The lines below are read back from the rows
+// the loop had already written.
+
+describe("a build's provider calls, itemized", () => {
+  it("writes one line per paid call, in the same record a run's calls are itemized in", () => {
+    const calls = evidenceTraceAuditDetail([
+      { iteration: 0, decision: "tool_call", toolId: "web.observe_page", evidenceBytes: 10 },
+      { iteration: 1, decision: "tool_call", toolId: "web.dom.click", usage: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 } },
+      { iteration: 2, decision: "complete", usage: { inputTokens: 1_200, outputTokens: 40, totalTokens: 1_240, estimatedCostUsd: 0.0006 } }
+    ]).providerCalls as Array<Record<string, unknown>>;
+
+    // Two paid calls, not three rows: iteration 0 is the deterministic opening
+    // observation and no provider was asked anything for it.
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      sequence: 1,
+      requestId: null,
+      allowance: "exploration",
+      reported: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 },
+      charged: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005, tokens: "reported", cost: "reported" },
+      budgetBreach: false
+    });
+    // `sequence` is the iteration that paid for the call, which is what
+    // `steps[].iteration` says too, so a line and its decision join on it.
+    expect(calls[1]?.sequence).toBe(2);
+  });
+
+  it("charges a call the provider reported nothing for as zero, and says the figure was never measured", () => {
+    const [call] = evidenceTraceAuditDetail([{ iteration: 1, decision: "complete" }]).providerCalls as Array<Record<string, unknown>>;
+
+    expect(call).toMatchObject({
+      reported: { inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null },
+      charged: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, tokens: "reserved", cost: "reserved" }
+    });
+  });
+
+  it("folds the two rows of a decision that re-ran a step into the one call that paid for them", () => {
+    const calls = evidenceTraceAuditDetail([
+      { iteration: 1, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_rerun", usage: { inputTokens: 500, outputTokens: 20, totalTokens: 520 } },
+      { iteration: 1, decision: "tool_call", toolId: "core.run_node", evidenceBytes: 30 }
+    ]).providerCalls as Array<Record<string, unknown>>;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ sequence: 1, reported: { inputTokens: 500, totalTokens: 520 } });
+  });
+
+  it("says how many counted calls the lines do not itemize, so a reader can tell a short receipt from a whole one", () => {
+    // The build's calls outside the loop -- reading the person's instruction --
+    // leave no trace row, so they are counted and not itemized.
+    const detail = evidenceTraceAuditDetail(SPEND_TRACE, 1);
+
+    expect((detail.providerCalls as unknown[]).length).toBe(2);
+    expect(detail.providerCallsOmitted).toBe(1);
+    expect(detail.totalProviderCallCount).toBe(3);
   });
 });

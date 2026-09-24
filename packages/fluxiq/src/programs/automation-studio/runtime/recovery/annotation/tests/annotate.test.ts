@@ -327,6 +327,11 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
   // for a failure whose plan allows no target override the patch call can only
   // produce a substitute: the live repair campaign's guarded link and retired
   // page (2026-09-17) each proposed one against the page the run landed on.
+  //
+  // The same clause refuses every run that executed cleanly and answered
+  // wrongly (`recovery_path_or_reroute`, run-mufvlasz-c83071f7). Widening the
+  // grant is not the fix for that: a Flow missing a step needs editing, not a
+  // runtime patch, and that failure belongs in the authoring loop.
   it.each([
     ["navigation_unexpected", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a navigation unexpected failure, so no patch was requested."],
     ["page_changed", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a page changed failure, so no patch was requested."],

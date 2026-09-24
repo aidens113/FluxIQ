@@ -39,6 +39,7 @@ import type {
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
 import {
+  automationStudioRefutedResultFlowWasReauthored,
   repairAutomationStudioRefutedRunResult,
   type AutomationStudioRefutedResultRepairPort
 } from "../recovery/refuted-result/index.ts";
@@ -116,6 +117,21 @@ export type AutomationStudioResultVerificationPorts = {
    * configured has nowhere to hand it.
    */
   repairRefutedResult?: AutomationStudioRefutedResultRepairPort | undefined;
+  /**
+   * Runs the Flow again once a repair has actually changed it, and answers the
+   * run that produced.
+   *
+   * Without this the loop does not close. A repair that edits the Flow and
+   * stops has produced a corrected Flow sitting on disk, and the thing that was
+   * asked for is the corrected Flow *answering the question*: until it has run,
+   * nobody -- not the person, not the next agent, not an evaluation -- knows
+   * whether the edit helped. So the re-run happens here, where the verdict that
+   * triggered it was reached, and its own result is judged in its turn.
+   *
+   * Absent leaves the older behaviour: the edit lands and the run reports the
+   * answer it originally gave.
+   */
+  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined } | undefined>) | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -187,7 +203,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // It continues from the detail `recordOnRunDetail` just wrote, verdict and
   // schedule decision included, rather than re-reading the row it wrote.
   if (recorded && report.summary && input.ports.repairRefutedResult) {
-    await repairAutomationStudioRefutedRunResult({
+    const repaired = await repairAutomationStudioRefutedRunResult({
       runId: next.runId,
       detail: recorded,
       outcome,
@@ -198,6 +214,28 @@ export async function verifyAutomationStudioRuntimeSessionResult(
       repair: input.ports.repairRefutedResult,
       saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail)
     });
+    // The loop closes: the corrected Flow runs, and the run it produces is
+    // judged exactly as this one was. Only where the repair actually reached
+    // the Flow -- an edit that was built and could not be applied has changed
+    // nothing, and re-running would buy a second verdict on the same Flow.
+    //
+    // **One cycle, and the bound is structural rather than a counter.** The
+    // re-run keeps this run's id and carries its metadata forward, so the
+    // marker saying this result has been repaired once survives
+    // (`recovery/refuted-result/repair.ts`). On the pass below, that marker
+    // makes `repairAutomationStudioRefutedRunResult` answer nothing at its
+    // first line, so the recursion cannot reach this point a second time --
+    // a Flow that answers wrongly again is reported wrong, not repaired again.
+    if (repaired && automationStudioRefutedResultFlowWasReauthored(repaired) && input.ports.rerunRepairedFlow) {
+      const rerun = await input.ports.rerunRepairedFlow({ detail: repaired });
+      if (rerun) {
+        return await verifyAutomationStudioRuntimeSessionResult({
+          ...input,
+          session: rerun.session,
+          ...(rerun.flow ? { flow: rerun.flow } : {})
+        });
+      }
+    }
   }
   return next;
 }

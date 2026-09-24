@@ -131,11 +131,12 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
   }
   const targetCheck = targetOverrideEvidenceCheck(input);
   for (const patch of input.patches) {
-    // Only a target override is held to the plan's list. A wait or a reroute
+    // Only a patch that acts is held to the plan's list. A wait or a reroute
     // the plan did not name costs a rerun and changes nothing durable; a target
-    // override presses a control, and the plan's list is the only thing that
-    // says the failure is one a control could fix at all.
-    if (patch.kind === "temporary_target_override" && !input.allowedPatchKinds.includes(patch.kind)) {
+    // override presses a control and an inserted step runs one, and the plan's
+    // list is the only thing that says the failure is one either could fix at
+    // all.
+    if ((patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence") && !input.allowedPatchKinds.includes(patch.kind)) {
       attempts.push(unplannedPatchAttempt(input, patch));
       continue;
     }
@@ -164,7 +165,12 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       ...(input.graphOptions ? { options: input.graphOptions } : {})
     };
     const proposalOnlyTargetOverride = input.explicitProposalGrant && patch.kind === "temporary_target_override";
-    const permission = input.permissionGate && !proposalOnlyTargetOverride && patch.kind === "temporary_target_override"
+    // Both kinds that act answer to the gate. An inserted step runs a control
+    // the Flow never had, which is at least as consequential as re-pointing one
+    // it already had, so a step that would lastingly act is the person's
+    // question, never a refusal the run swallows.
+    const acting = patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence";
+    const permission = input.permissionGate && !proposalOnlyTargetOverride && acting
       ? await patchPermission(input.permissionGate, patchInput, input.failedAttempt)
       : undefined;
     if (permission?.outcome === "required" || permission?.outcome === "undeclared") {

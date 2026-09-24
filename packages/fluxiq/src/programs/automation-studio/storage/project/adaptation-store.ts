@@ -450,6 +450,8 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
       operations.push(...await deterministicPathOperations(graph, adaptation, targetFlowId, patch));
       continue;
     }
+    // The other wiring the same node list takes: steps the Flow never had, on
+    // the path a run already takes, ahead of the node they must run before.
     if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target") {
       if (!patch.targetId) throw new Error(`Patch ${patch.kind} requires a target node.`);
       const node = await graph.getNode(patch.targetId);

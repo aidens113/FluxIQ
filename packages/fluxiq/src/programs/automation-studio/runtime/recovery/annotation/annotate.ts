@@ -646,6 +646,16 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
  * decide: a model shown the same page cannot break the tie, and under this
  * grant its only answer would be one of them. Both are refusals the run records
  * without paying for a call.
+ *
+ * The first clause is also what refuses every run that executed cleanly and
+ * answered wrongly: that failure is classified `recovery_path_or_reroute`,
+ * whose allowed kinds never include a target override, so the refusal is
+ * `llm.runtime_patch_grant_scope_refused` at rung `plan` -- three times in live
+ * run `run-mufvlasz-c83071f7`, each after a validated diagnosis that had named
+ * the missing step correctly. Widening this is deliberately NOT the fix: a Flow
+ * that is missing a step needs editing, not a runtime patch, and that failure
+ * belongs in the exploration-and-authoring loop rather than in the patch
+ * planner at all (see the t124 report).
  */
 function grantSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis: { failureClass: string } }): string | undefined {
   if (!plan.allowedPatchKinds.includes("temporary_target_override")) {

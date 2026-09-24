@@ -52,6 +52,7 @@ export class AutomationStudioProjectGraphRepository {
   async getEdge(edgeId: string, sql: AutomationStudioSqlExecutor = this.sql): Promise<AutomationStudioGraphEdgeRecord | null> { const row = await sql.get<EdgeRow>("select * from graph_edges where edge_id = ?", [id(edgeId, "edge")]); return row ? edgeFromRow(row) : null; }
   async listNodesByIds(nodeIds: string[], sql: AutomationStudioSqlExecutor = this.sql): Promise<AutomationStudioGraphNodeRecord[]> { const ids = unique(nodeIds).map((value) => id(value, "node")); if (!ids.length) return []; const rows = await sql.all<NodeRow>(`select * from graph_nodes where node_id in (${q(ids.length)}) order by node_id`, ids); return rows.map(nodeFromRow); }
   async listEdgesByIds(edgeIds: string[], sql: AutomationStudioSqlExecutor = this.sql): Promise<AutomationStudioGraphEdgeRecord[]> { const ids = unique(edgeIds).map((value) => id(value, "edge")); if (!ids.length) return []; const rows = await sql.all<EdgeRow>(`select * from graph_edges where edge_id in (${q(ids.length)}) order by edge_id`, ids); return rows.map(edgeFromRow); }
+  /** The live edges that enter a node, which is what a step inserted before it has to take over. */
   async searchNodes(input: { flowId: string; query: string; limit?: number }): Promise<AutomationStudioGraphNodeRecord[]> {
     if (!input.query.trim()) return [];
     const rows = await this.sql.all<NodeRow>(`select graph_nodes.* from graph_nodes_fts join graph_nodes on graph_nodes.node_id = graph_nodes_fts.node_id

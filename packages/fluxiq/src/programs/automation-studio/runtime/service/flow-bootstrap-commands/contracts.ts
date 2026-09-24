@@ -1,6 +1,6 @@
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
-import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioBuildAndAdaptExecutionGrant } from "../../llm/index.ts";
+import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowBootstrapGenerationGrant } from "./generation-request.ts";
 
 // What a caller asks for when it generates a Flow Bootstrap adaptation, and
 // what it gets back.
@@ -8,9 +8,20 @@ import type { AutomationStudioBuildAndAdaptExecutionGrant } from "../../llm/inde
 export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   projectId: string;
   flowId: string;
-  executionGrant: AutomationStudioBuildAndAdaptExecutionGrant;
+  executionGrant: AutomationStudioFlowBootstrapGenerationGrant;
   evidenceGuided?: true;
   useReusableContext?: true;
+  /**
+   * What this build does to the Flow. Absent, `create`: a blank Flow, written
+   * from the instruction, which is every build there has ever been.
+   *
+   * `extend` starts from the Flow that is already there -- read back as the
+   * draft the model amends (`llm/node-tools/draft-from-flow.ts`) -- and keeps
+   * its Router, Subflow, graph Flow and node ids, so the result is an edit
+   * rather than a second Flow that happens to contain most of the same nodes.
+   * It is the door a run that answered the wrong question comes back through.
+   */
+  mode?: AutomationStudioBootstrapAdaptationMode;
   /**
    * Where the Flow this build writes starts, in the bound domain's own
    * spelling. Core carries it and never parses it

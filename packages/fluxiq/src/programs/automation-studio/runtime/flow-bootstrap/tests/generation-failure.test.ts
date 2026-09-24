@@ -37,7 +37,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      evidenceLoop: { iterationCount: 2, decisionCount: 1, toolCallCount: 1, evidenceBytes: 123, steps: [{ toolId: "web.click_safe", effectApplied: false, resultCode: "action.recoverable" }] }
+      evidenceLoop: { iterationCount: 2, decisionCount: 1, toolCallCount: 1, evidenceBytes: 123, steps: [{ toolId: "web.click_safe", iteration: 1, effectApplied: false, resultCode: "action.recoverable", evidenceBytes: 123 }] }
     });
     expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
     expect(JSON.stringify(failure)).not.toContain("private.call");
@@ -170,10 +170,10 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         toolCallCount: 1,
         evidenceBytes: 40,
         steps: [
-          { toolId: "web.inspect" },
-          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable, resultCode: "bootstrap.invalid_parameter_value" },
-          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable },
-          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable }
+          { toolId: "web.inspect", iteration: 0, evidenceBytes: 40 },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable, iteration: 1, resultCode: "bootstrap.invalid_parameter_value" },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable, iteration: 2 },
+          { toolId: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS.unusable, iteration: 3 }
         ]
       },
       issueCodes: ["bootstrap.invalid_parameter_value"]
@@ -186,7 +186,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
       issueCodes: ["llm.provider_malformed_response"]
     });
-    expect(stalled.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" }]);
+    expect(stalled.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_unusable", iteration: 1, resultCode: "llm.provider_malformed_response" }]);
     const ended = flowBootstrapEvidenceLoopFailure({
       ok: false,
       code: "llm_evidence_loop.iteration_limit",
@@ -194,10 +194,82 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       steps: [],
       accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }
     });
-    expect(ended.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_complete" }]);
+    expect(ended.diagnostic.evidenceLoop?.steps).toEqual([{ toolId: "core.decision_complete", iteration: 1 }]);
     // The names fit the step shape a reader already parses.
     expect(parseAutomationStudioFlowBootstrapGenerationError(stalled)).toEqual(stalled.diagnostic);
     expect(parseAutomationStudioFlowBootstrapGenerationError(ended)).toEqual(ended.diagnostic);
+  });
+
+  // The trap this phase was written around.
+  //
+  // `parseEvidenceLoopCounts` gates each step with `hasExactFields`, which
+  // rejects a record carrying any field it was not told about -- and a rejected
+  // step returns `null` for the *whole* diagnostic, so the build's named reason
+  // is replaced by a generic transport failure. Widening the step the builder
+  // emits without widening that allow-list in lockstep therefore does not make
+  // a record arrive short; it makes the record disappear, and the phase buys
+  // nothing while every gate stays green. These rows are the proof that the two
+  // sides agree, field by field.
+  describe("the published step and the allow-list that parses it", () => {
+    const widened = {
+      code: "flow_bootstrap.evidence_iteration_limit",
+      stage: "provider_output_validation",
+      retryable: false,
+      providerInvocation: "attempted",
+      providerResponse: "received",
+      evidenceLoop: {
+        iterationCount: 2,
+        decisionCount: 2,
+        toolCallCount: 1,
+        evidenceBytes: 640,
+        steps: [{
+          toolId: "web.dom.click",
+          iteration: 1,
+          callId: "initial.web.dom.click",
+          effectApplied: true,
+          resultCode: "web.action.rejected.target_unobserved",
+          evidenceBytes: 640,
+          at: 1_758_672_000_000,
+          usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, cacheHitInputTokens: 700, cacheMissInputTokens: 200, estimatedCostUsd: 0.0004 }
+        }]
+      }
+    };
+
+    it("parses a step carrying every field the step type declares, rather than rejecting the whole diagnostic", () => {
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(widened)).toEqual(widened);
+    });
+
+    it("still rejects a step carrying a field nothing declares, which is what makes the lockstep matter", () => {
+      const step = { ...widened.evidenceLoop.steps[0], promptText: "what the model was shown" };
+
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...widened, evidenceLoop: { ...widened.evidenceLoop, steps: [step] } })).toBeNull();
+    });
+
+    it("refuses a widened field whose value is out of bounds, so a number cannot arrive as anything it likes", () => {
+      const bad: Array<Record<string, unknown>> = [
+        { iteration: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 },
+        { iteration: -1 },
+        { evidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes + 1 },
+        { at: -1 },
+        { at: 4_102_444_800_001 },
+        { at: 1.5 },
+        { callId: "an id with spaces in it" },
+        { usage: { inputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } },
+        { usage: { estimatedCostUsd: 11 } },
+        { usage: { promptText: "what the model was shown" } }
+      ];
+      for (const override of bad) {
+        const step = { ...widened.evidenceLoop.steps[0], ...override };
+
+        expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...widened, evidenceLoop: { ...widened.evidenceLoop, steps: [step] } })).toBeNull();
+      }
+    });
+
+    it("parses a step written before the widening, so an older record is not thrown away", () => {
+      const old = { ...widened, evidenceLoop: { ...widened.evidenceLoop, steps: [{ toolId: "web.dom.click", effectApplied: true, resultCode: "web.action.rejected.target_unobserved" }] } };
+
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(old)).toEqual(old);
+    });
   });
 
   it("carries a refused plan's issue codes, bounded, and refuses a record whose codes are not codes", () => {

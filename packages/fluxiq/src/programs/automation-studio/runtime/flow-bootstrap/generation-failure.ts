@@ -13,7 +13,7 @@ import type {
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../llm/index.ts";
 import { parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
-import { automationStudioFlowBootstrapEvidenceSteps } from "./evidence-loop-steps.ts";
+import { automationStudioFlowBootstrapEvidenceSteps, parseAutomationStudioFlowBootstrapEvidenceSteps, type AutomationStudioFlowBootstrapEvidenceStep } from "./evidence-loop-steps.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 
@@ -195,12 +195,17 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
      * `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS`, with the first code
      * that refused it as its `resultCode` -- so a build stopped on refused
      * plans says, decision by decision, what refused each one.
+     *
+     * The step is `evidence-loop-steps.ts`'s own type rather than a copy of
+     * it, and that is deliberate. A copy is how this record came to publish
+     * three of the eight fields the trace had already kept: the builder there
+     * widened, the shape here did not, and `parseEvidenceLoopCounts` below
+     * rejects a step carrying a field this record has not been told about --
+     * so a widened step would not have arrived short, it would have taken the
+     * whole diagnostic down with it. One type, one allow-list, checked by a
+     * test.
      */
-    steps?: Array<{
-      toolId: string;
-      effectApplied?: boolean;
-      resultCode?: string;
-    }>;
+    steps?: AutomationStudioFlowBootstrapEvidenceStep[];
   };
   /**
    * Why a completed plan was refused, as the issue codes that refused it --
@@ -366,7 +371,8 @@ function diagnosticIssueCodes(codes: readonly string[]): string[] {
 
 /** What a loop has recorded so far: a finished result's, or a stopped loop's. */
 type EvidenceLoopProgress = {
-  trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
+  /** The loop's rows, each carrying the moment it was recorded where the loop stamped one. */
+  trace: readonly (AutomationStudioLlmEvidenceLoopTrace & { at?: number })[];
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
 };
 
@@ -719,28 +725,23 @@ const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.
 const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
 /** The published steps are one per trace row, and one decision may write two of them. */
 const EVIDENCE_LOOP_MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
-
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps"])) return null;
   if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
     || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
+  // The steps are read by the module that declares them. A step's shape and
+  // the allow-list that parses it must move together -- a field the shape
+  // gains and the list does not takes the whole diagnostic down rather than
+  // arriving short -- and keeping them in one file is what makes that a single
+  // edit instead of a convention.
   let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
   if (value.steps !== undefined) {
     if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_ROWS) return null;
-    steps = [];
-    for (const step of value.steps) {
-      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])
-        || typeof step.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(step.toolId)
-        || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
-        || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(step.resultCode)))) return null;
-      steps.push({
-        toolId: step.toolId,
-        ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
-        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {})
-      });
-    }
+    const parsed = parseAutomationStudioFlowBootstrapEvidenceSteps(value.steps);
+    if (!parsed) return null;
+    steps = parsed;
   }
   return {
     iterationCount: value.iterationCount as number,

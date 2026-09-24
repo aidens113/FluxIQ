@@ -282,7 +282,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       providerResponse: "received",
       // Every malformed reply was paid for nothing, so the record says so.
       accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 0, totalTokens: 0 }),
-      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, () => ({ toolId: "core.decision_unusable", resultCode: "llm.provider_malformed_response" })) },
+      // One step per decision, each naming the iteration that paid for it --
+      // which is the whole point: eleven refusals reading the same code are
+      // told apart by nothing else.
+      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response" })) },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(run.adaptationCount).toBe(0);

@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
-import { automationStudioLlmRunCallRecord } from "../run-call-record.ts";
+import { automationStudioLlmBuildCallRecord, automationStudioLlmRunCallRecord } from "../run-call-record.ts";
 
 const RESERVED = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.1 };
 
@@ -224,5 +224,69 @@ describe("the harness's line for each call", () => {
     expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_call_limit");
     expect(asked).toBe(1);
     expect(budget.callRecords("run.receipt").calls.map((line) => line.requestId)).toEqual(["request.first"]);
+  });
+});
+
+// A build's receipt, in the same shape.
+//
+// A build holds no budget lease, so nothing reserved, counted or charged its
+// calls one at a time and the ledger above never saw them. The downstream
+// reader therefore published an empty per-call list beside a total it could not
+// break down. These pin the two things that make a build's line honest: it
+// carries only what the provider actually reported, and where the provider
+// reported nothing the line says the figure was never measured rather than
+// inventing a reservation a build never made.
+
+describe("a build's call, itemized the way a run's is", () => {
+  it("keeps the provider's figures and charges exactly them, so the lines add up to the build's own accounting", () => {
+    const record = automationStudioLlmBuildCallRecord({
+      sequence: 3,
+      usage: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 }
+    });
+
+    expect(record).toMatchObject({
+      sequence: 3,
+      requestId: null,
+      allowance: "exploration",
+      reported: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 },
+      charged: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005, tokens: "reported", cost: "reported" },
+      budgetBreach: false
+    });
+  });
+
+  it("says a figure was never measured instead of filling it in from a reservation a build never made", () => {
+    const record = automationStudioLlmBuildCallRecord({ sequence: 1 });
+
+    expect(record.reported).toEqual({ inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null });
+    expect(record.charged).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, tokens: "reserved", cost: "reserved" });
+  });
+
+  it("derives a total the provider left out, because the build's accounting adds input and output the same way", () => {
+    const record = automationStudioLlmBuildCallRecord({ sequence: 1, usage: { inputTokens: 700, outputTokens: 40 } });
+
+    expect(record.reported.totalTokens).toBeNull();
+    expect(record.charged.totalTokens).toBe(740);
+  });
+
+  it("keeps a build's request id where it has one, and refuses a string that is not an identifier", () => {
+    expect(automationStudioLlmBuildCallRecord({ sequence: 1, requestId: "build.request.one" }).requestId).toBe("build.request.one");
+    expect(automationStudioLlmBuildCallRecord({ sequence: 1, requestId: "an id with spaces" }).requestId).toBeNull();
+  });
+
+  it("carries a description only as far as it is one, so an unknown task kind arrives as unknown", () => {
+    const record = automationStudioLlmBuildCallRecord({
+      sequence: 1,
+      description: { provider: "deepseek", model: "deepseek-chat" },
+      outcome: { validationOk: false, issueCodes: ["flow_script.unknown_node", "not a code"] }
+    });
+
+    expect(record).toMatchObject({
+      taskKind: null,
+      stage: null,
+      promptVersion: null,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      validation: { ok: false, issueCodes: ["flow_script.unknown_node"] }
+    });
   });
 });
