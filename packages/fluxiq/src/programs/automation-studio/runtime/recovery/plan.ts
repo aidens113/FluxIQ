@@ -23,8 +23,11 @@
 // succeeded and returned a diagnosis (Phase D's rule, reused rather than
 // restated), the diagnosis says a patch or exploration is needed, and the
 // policy permits at least one patch kind that could serve this failure. Each
-// refusal carries its own sentence, so a run that requested nothing says which
-// of the three stopped it.
+// refusal carries its own sentence *and its own code* (`diagnosis-chain.ts`),
+// so a run that requested nothing says which clause stopped it to a reader
+// that keeps no sentences. One code for all of them is what left live run
+// `run-muesyox4-930bef98` (2026-09-23) unable to say why a validated diagnosis
+// of a `target_not_found` produced no patch attempt at all.
 //
 // **A plan never allows a patch kind the policy forbids.** The allowed kinds
 // are narrowed twice: by the candidate kind, which says what shape of repair
@@ -38,7 +41,11 @@ import type { AutomationStudioAdaptationPolicy } from "../../model/index.ts";
 import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../llm/index.ts";
 import type { AutomationStudioAdaptiveCandidateKind } from "../adaptive-orchestrator.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "./deterministic-diagnosis.ts";
-import { decideAutomationStudioRuntimePatchRequest, type AutomationStudioRuntimePatchRequestDecision } from "./diagnosis-chain.ts";
+import {
+  AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES,
+  decideAutomationStudioRuntimePatchRequest,
+  type AutomationStudioRuntimePatchRequestDecision
+} from "./diagnosis-chain.ts";
 import {
   buildAutomationStudioRuntimeStructuredDiagnosis,
   type AutomationStudioRuntimeStructuredDiagnosis
@@ -164,7 +171,7 @@ function decidePatchRequest(input: {
   resolution: AutomationStudioRuntimeDeterministicDiagnosis["resolution"];
 }): AutomationStudioRuntimePatchRequestDecision {
   if (input.resolution !== "model_required") {
-    return { request: false, reason: `The deterministic diagnosis resolved this failure as ${input.resolution.replace(/_/g, " ")}, so no patch was requested.` };
+    return { request: false, reason: `The deterministic diagnosis resolved this failure as ${input.resolution.replace(/_/g, " ")}, so no patch was requested.`, code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.resolved_without_model, rung: "diagnosis" };
   }
   if (!input.chain.request) return input.chain;
   // The model's way of saying the page refuses this on purpose: the record is
@@ -172,13 +179,13 @@ function decidePatchRequest(input: {
   // substitute, and a `patchNeeded` the model left out defaults to the
   // classifier's yes, so this verdict stops the request on its own.
   if (input.diagnosis.stillAchievable === "no") {
-    return { request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested." };
+    return { request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested.", code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.goal_unachievable, rung: "plan" };
   }
   if (!input.diagnosis.patchNeeded && !input.diagnosis.explorationNeeded) {
-    return { request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested." };
+    return { request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested.", code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.diagnosis_asked_for_none, rung: "plan" };
   }
   if (!input.allowed.length) {
-    return { request: false, reason: `The adaptation policy permits no runtime patch kind for a ${input.diagnosis.candidateKind.replace(/_/g, " ")} failure, so no patch was requested.` };
+    return { request: false, reason: `The adaptation policy permits no runtime patch kind for a ${input.diagnosis.candidateKind.replace(/_/g, " ")} failure, so no patch was requested.`, code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.policy_allows_no_kind, rung: "plan" };
   }
   return { request: true, reason: `The diagnosis calls for a runtime patch and the policy permits ${input.allowed.join(", ")}.` };
 }

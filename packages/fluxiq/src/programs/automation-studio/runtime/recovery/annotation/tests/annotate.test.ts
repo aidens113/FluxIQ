@@ -39,12 +39,33 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(executed).toEqual([]);
     expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
-      patchSkippedCode: "llm.runtime_patch_not_requested",
+      patchSkippedCode: "llm.runtime_patch_goal_unachievable",
+      patchSkippedRung: "plan",
       costAccounting: { calls: 1, explorationCalls: 0 }
     });
     expect(explorationStage(detail)).toMatchObject({ status: "skipped", detail: { requested: true } });
     expect((detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages?.find((stage) => stage.stage === "resolution"))
-      .toMatchObject({ status: "skipped", detail: { outcome: "no_change_produced", skipCode: "llm.runtime_patch_not_requested" } });
+      .toMatchObject({ status: "skipped", detail: { outcome: "no_change_produced", skipCode: "llm.runtime_patch_goal_unachievable" } });
+  });
+
+  // The silence of live run `run-muesyox4-930bef98` (2026-09-23), as a run
+  // record. Its recovery engaged, its diagnosis of a `target_not_found`
+  // validated, and it then produced no patch attempt, no adaptation, no change
+  // proposal and no stated reason a reader could act on. A recovery that
+  // repairs nothing has to name the rung that declined and the code for why,
+  // and those two fields are what tell it apart from a loop that is switched
+  // off. The mutation this is written against: dropping either field from the
+  // gate record, which restores the silence exactly.
+  it("names the rung and the code when a validated diagnosis leads to no patch attempt", async () => {
+    const detail = await annotate({ executed: [], patchNeeded: false, explorationNeeded: false });
+    const gate = detail.metadata?.llmGate as JsonObject | undefined;
+
+    expect(detail.metadata).not.toHaveProperty("runtimePatchAttempts");
+    expect(detail.adaptationIds).toEqual([]);
+    expect(detail.changeProposalIds).toEqual([]);
+    expect(detail.interventions.at(-1)?.validation?.ok).toBe(true);
+    expect(gate?.patchSkippedCode).toBe("llm.runtime_patch_diagnosis_asked_for_none");
+    expect(gate?.patchSkippedRung).toBe("plan");
   });
 
   it("runs a bounded exploration when the plan asks for one, and takes an action to do it", async () => {

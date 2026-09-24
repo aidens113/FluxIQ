@@ -54,6 +54,7 @@ import type {
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
+import type { AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
@@ -350,12 +351,24 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // the exploration that would have served it is not run either.
   const grantSkip = explicitProposalGrant && plan.patchRequest.request ? grantSkipReason(plan) : undefined;
   const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
+  // Why no patch call follows, and which rung decided it. The code was one word
+  // -- `llm.runtime_patch_not_requested` -- for every clause of the plan's
+  // refusal, so a reader that keeps codes and drops sentences could not tell a
+  // model that said the goal was gone from a policy that permitted no patch
+  // kind. The plan now carries its own code and rung, and both are recorded.
   const plannedPatchSkippedCode = grantSkip
     ? "llm.runtime_patch_grant_scope_refused"
     : !plan.patchRequest.request
-      ? "llm.runtime_patch_not_requested"
+      ? plan.patchRequest.code ?? "llm.runtime_patch_not_requested"
       : !patchWillFollow
         ? "llm.runtime_patch_unavailable"
+        : undefined;
+  const plannedPatchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = grantSkip
+    ? "plan"
+    : !plan.patchRequest.request
+      ? plan.patchRequest.rung ?? "plan"
+      : !patchWillFollow
+        ? "resolution"
         : undefined;
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
@@ -408,6 +421,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const permissionRequest = permissions?.gate.request;
   const heldForPermission = Boolean(permissionRequest && patchWillFollow);
   const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : plannedPatchSkippedCode;
+  const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission ? "exploration" : plannedPatchSkippedRung;
   // Stage D sees what the exploration saw. Without this the patch was shown
   // the failure packet alone, and a control only the exploration revealed
   // could not be named in the repair. No packets, no slot: the request is the
@@ -515,7 +529,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         providerCallsOmitted: providerCalls.omitted,
         ...(grantSkip ? { patchSkipped: grantSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(patchSkippedCode ? { patchSkippedCode } : {}),
-        ...(patchHeldForPermission ? { patchHeldCode: "llm.runtime_patch_permission_required" } : {}),
+        // Which rung declined, beside the code for why. A run that repaired
+        // nothing and named no rung is the silence this pair exists to end.
+        ...(patchSkippedRung ? { patchSkippedRung } : {}),
+        ...(patchHeldForPermission ? { patchHeldCode: "llm.runtime_patch_permission_required", patchHeldRung: "resolution" } : {}),
         // Classes only: what the recovery held, and why. The request below says what it lacked.
         ...(permissions ? { permissions: permissions.summary() } : {}),
         ...(declined ? { patchDeclined: declined.reason } : {}),

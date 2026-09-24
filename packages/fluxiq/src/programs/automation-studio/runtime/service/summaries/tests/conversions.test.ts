@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
-import { runtimeSessionToFlowRunDetail } from "../index.ts";
+import { AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE, runtimeSessionToFlowRunDetail } from "../index.ts";
 
 describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
   it("reads recordCount from the $dataset marker a saved trace holds in place of the captured rows", () => {
@@ -58,8 +58,44 @@ describe("runtimeSessionToFlowRunDetail known adaptation matching", () => {
   });
 });
 
+// The intervention the ladder's last rung leaves behind, and the one issue
+// Core wrote as a bare sentence. Every reader that keeps codes and discards
+// messages reduced it to nothing, so the Lab's evaluation of live run
+// `run-muesyox4-930bef98` (2026-09-23) recorded `validationOk: false` with an
+// empty `validationCodes`: "something rejected the diagnosis and would not say
+// what", when nothing had rejected anything. The mutation this is written
+// against is putting the sentence back without its code.
+describe("runtimeSessionToFlowRunDetail ladder diagnosis intervention", () => {
+  it("states a code for the ladder's unanswered diagnosis rung, in the shape a reader extracts", () => {
+    const detail = runtimeSessionToFlowRunDetail(session([ladderAttempt()]), "project.conversions");
+    const issues = detail.interventions?.[0]?.validation?.issues ?? [];
+
+    expect(detail.interventions).toHaveLength(1);
+    expect(detail.interventions?.[0]?.kind).toBe("diagnosis");
+    expect(detail.interventions?.[0]?.validation?.ok).toBe(false);
+    expect(issues).toHaveLength(1);
+    // A reader takes the leading token up to the first colon; a sentence yields none.
+    expect(/^([a-z][a-z0-9_.-]{1,127})(?::|$)/u.exec(issues[0] ?? "")?.[1]).toBe(AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE);
+    // It is the rung being recorded, not a claim about the deployment: in the
+    // run above a provider was configured and answered moments later.
+    expect(issues[0]).not.toMatch(/not configured/u);
+  });
+});
+
 function failedAttempt(): AutomationStudioNodeAttemptTrace {
   return { attemptId: "node.action.attempt.1", nodeId: "node.action", definitionId: "builtin.policy.action", startedAt: 10, finishedAt: 15, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [] };
+}
+
+/** A failed attempt whose recovery ladder ran out of deterministic rungs and selected LLM diagnosis. */
+function ladderAttempt(): AutomationStudioNodeAttemptTrace {
+  return {
+    ...failedAttempt(),
+    recoveryDecision: {
+      lookup: { nodeId: "node.action", failureClass: "target_not_found" },
+      candidates: [{ kind: "llm_diagnosis", priority: 90, label: "Request LLM diagnosis", reason: "No lower-priority deterministic recovery fully resolved the failed transition." }],
+      selected: { kind: "llm_diagnosis", priority: 90, label: "Request LLM diagnosis", reason: "No lower-priority deterministic recovery fully resolved the failed transition." }
+    }
+  } as unknown as AutomationStudioNodeAttemptTrace;
 }
 
 function adaptationFor(nodeId: string): AutomationStudioFlowAdaptation {

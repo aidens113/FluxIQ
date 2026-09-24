@@ -65,8 +65,41 @@ describe("planAutomationStudioRuntimeRecovery", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(reported), policy: policy() });
 
     expect(plan.diagnosis.stillAchievable).toBe("no");
-    expect(plan.patchRequest).toEqual({ request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested." });
+    expect(plan.patchRequest).toEqual({ request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested.", code: "llm.runtime_patch_goal_unachievable", rung: "plan" });
     expect(plan.steps.map((step) => step.action)).not.toContain("request_patch");
+  });
+
+  // Live run `run-muesyox4-930bef98` (2026-09-23) failed on a stale selector,
+  // its recovery engaged, its second diagnosis validated -- and the evaluation
+  // recorded no patch attempt, no adaptation, no proposal and no refusal code.
+  // The one thing Core did record was `llm.runtime_patch_not_requested`, which
+  // was the code for all five of the clauses below, so the run could not say
+  // which of them had stopped it. Each clause now has its own code and names
+  // the rung that decided, and no two of them are the same word.
+  //
+  // The mutation this is written against: collapsing any two clauses onto one
+  // code, or dropping a clause's `rung`, so a reader that keeps codes and
+  // discards sentences is back to a single undifferentiated refusal.
+  it("gives every reason for not requesting a patch its own code and names the rung that decided", () => {
+    const clauses = [
+      ["no diagnosis at all", planFor(undefined), "llm.runtime_patch_no_diagnosis_requested", "diagnosis"],
+      ["a failed diagnosis call", planFor({ ...diagnosisResult(), ok: false }), "llm.runtime_patch_diagnosis_call_failed", "diagnosis"],
+      ["a response that is not a diagnosis", planFor({ ...diagnosisResult(), response: { kind: "instruction_suggestion" as const, summary: "Write it down.", instructions: [] } } as unknown as AutomationStudioLlmTaskResult), "llm.runtime_patch_diagnosis_not_returned", "diagnosis"],
+      ["a failure Core resolved without the model", planAutomationStudioRuntimeRecovery({ deterministic: deterministic({ resolution: "manual_intervention", modelNeeded: false }), result: diagnosisResult(), policy: policy() }), "llm.runtime_patch_resolved_without_model", "diagnosis"],
+      ["a goal the diagnosis says is gone", planFor(diagnosisResult({ stillAchievable: "no" })), "llm.runtime_patch_goal_unachievable", "plan"],
+      ["a diagnosis that asked for nothing", planFor(diagnosisResult({ patchNeeded: false, explorationNeeded: false })), "llm.runtime_patch_diagnosis_asked_for_none", "plan"],
+      ["a policy that permits no kind", planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy({ allowRuntimeRecovery: false }) }), "llm.runtime_patch_policy_allows_no_kind", "plan"]
+    ] as const;
+
+    for (const [label, plan, code, rung] of clauses) {
+      expect(plan.patchRequest.request, label).toBe(false);
+      expect(plan.patchRequest.code, label).toBe(code);
+      expect(plan.patchRequest.rung, label).toBe(rung);
+    }
+    expect(new Set(clauses.map(([, , code]) => code)).size).toBe(clauses.length);
+    // A plan that asks for a patch refuses nothing, so it names neither.
+    const asking = planFor(diagnosisResult());
+    expect(asking.patchRequest).toEqual({ request: true, reason: "The diagnosis calls for a runtime patch and the policy permits temporary_target_override, temporary_wait_retry." });
   });
 
   // A refusal is allowed to follow a look. Cancelling the exploration as well
@@ -167,6 +200,11 @@ describe("planAutomationStudioRuntimeRecovery", () => {
     expect(plan.diagnosis.refusals).toEqual(["No failed attempt reached the diagnosis, so nothing was classified."]);
   });
 });
+
+/** The default plan -- a `target_not_found` under a permissive policy -- for one diagnosis result. */
+function planFor(result: AutomationStudioLlmTaskResult | undefined) {
+  return planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), ...(result ? { result } : {}), policy: policy() });
+}
 
 function deterministic(overrides: Partial<AutomationStudioRuntimeDeterministicDiagnosis> = {}): AutomationStudioRuntimeDeterministicDiagnosis {
   return {
