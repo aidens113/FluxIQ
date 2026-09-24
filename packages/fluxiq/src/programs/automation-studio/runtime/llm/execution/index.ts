@@ -7,6 +7,7 @@
 // a grant; the metadata a caller may read off one; and the typed refusal a
 // claim raises. A caller that only needs to read a refusal code no longer
 // imports the whole service to do it.
+export * from "./grant-checks.ts";
 export * from "./grant-metadata.ts";
 export * from "./grant-refusal.ts";
 export * from "./grants.ts";
