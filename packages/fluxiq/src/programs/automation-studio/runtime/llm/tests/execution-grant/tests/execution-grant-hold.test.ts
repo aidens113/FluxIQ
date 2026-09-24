@@ -32,6 +32,69 @@ describe("holding a runtime grant for its run", () => {
     expect(fixture.revealCount).toBe(1);
   });
 
+  // The defect that stopped every repair of a wrong answer. A run that verifies
+  // its result resolves the grant to make its `loop_verification` calls, which
+  // claims it; the repair the refutation then triggers resolves the same grant
+  // again, and a claimed grant used to be refused outright. Live run
+  // `run-muexhp0k-73172f73` (2026-09-24) ended there with 29 of its 48 calls and
+  // $0.227 of its $0.25 unspent and its run lease untouched -- which is why "a
+  // clean run that answers wrongly is a repairable failure" had never once
+  // produced a repair. The mutation this is written against: restoring
+  // `state !== "available"` to `claimGrant`'s first refusal.
+  it("lets the same run resolve again, so a repair can follow the verification that claimed it", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
+
+    fixture.now = 5_000;
+    await fixture.service.holdForRun(scope(grant.grantId));
+    const verification = await fixture.service.resolve(scope(grant.grantId), policy);
+    await expect(verification.provider.runTask(request())).resolves.toBeDefined();
+    // The refutation lands, and the repair reaches for the same grant.
+    const repair = await fixture.service.resolve(scope(grant.grantId), policy);
+    await expect(repair.provider.runTask(request())).resolves.toBeDefined();
+    // Two calls off one grant's allowance: re-resolving buys nothing extra.
+    expect(repair.maxCallsPerRun).toBe(verification.maxCallsPerRun);
+    // And the two providers are still one grant: it runs one call at a time,
+    // which is the guard concurrency actually answers to now that a second
+    // resolve is allowed.
+    const inFlight = verification.provider.runTask(request());
+    await expect(repair.provider.runTask(request())).rejects.toThrow("call in progress");
+    await expect(inFlight).resolves.toBeDefined();
+  });
+
+  // Re-resolving is the same run continuing, not a fresh authorization, so it
+  // must not hand the run another lease. Without this a Flow could resolve on a
+  // loop and never expire.
+  it("does not restart the run lease when the same run resolves again", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
+
+    fixture.now = 5_000;
+    await fixture.service.resolve(scope(grant.grantId), policy);
+    // Almost the whole lease later, a second resolve still works ...
+    fixture.now = 5_000 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS - 1_000;
+    await expect(fixture.service.resolve(scope(grant.grantId), policy)).resolves.toBeDefined();
+    // ... and past the lease the first claim started, it does not.
+    fixture.now = 5_000 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS + 1;
+    await expect(fixture.service.resolve(scope(grant.grantId), policy)).rejects.toThrow(/unavailable/);
+  });
+
+  // A grant belonging to another actor, session, project, Flow or purpose is a
+  // different authorization, and a claimed one is no more shareable than an
+  // available one.
+  it("refuses a claimed grant asked for under another scope, naming the mismatch", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
+
+    fixture.now = 5_000;
+    await fixture.service.resolve(scope(grant.grantId), policy);
+    await expect(fixture.service.resolve({ ...scope(grant.grantId), actorSessionId: "session.other" }, policy))
+      .rejects.toThrow(/scope mismatch/);
+  });
+
   it("still ends an unheld grant at the issue TTL, as before", async () => {
     const fixture = setup();
     fixture.exactBinding = true;

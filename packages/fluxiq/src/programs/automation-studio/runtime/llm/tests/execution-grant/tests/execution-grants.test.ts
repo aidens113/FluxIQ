@@ -55,12 +55,40 @@ describe("Automation Studio LLM execution grants", () => {
     await expect(fixture.service.resolve(resolveInput(grant.grantId))).rejects.toThrow("unavailable");
   });
 
-  it("claims atomically before async validation and rejects concurrent resolution", async () => {
+  // This used to assert that a concurrent resolve is refused, and the refusal it
+  // read was `claimGrant` rejecting any grant that was not `available`. That
+  // rule is gone, because it was also what stopped every repair of a wrong
+  // answer: the verification claims the grant, and the repair that follows
+  // resolves the same grant again. Two resolves by the same scope are one run
+  // continuing.
+  //
+  // What the test was really protecting survives elsewhere. The claim is still
+  // atomic -- the state flips synchronously in `claimGrant`, before any `await`
+  // -- so nothing interleaves mid-claim; and a grant still runs one call at a
+  // time, which is the guard that actually matters for concurrency, is enforced
+  // per call rather than per resolve, and is asserted where a purpose buys more
+  // than the single call this one does (`execution-grant-hold.test.ts`).
+  it("claims atomically, and lets the same run resolve twice", async () => {
     const fixture = setup();
     const grant = await fixture.service.issue(issueInput());
     const first = fixture.service.resolve(resolveInput(grant.grantId));
-    await expect(fixture.service.resolve(resolveInput(grant.grantId))).rejects.toThrow("unavailable");
+    const second = fixture.service.resolve(resolveInput(grant.grantId));
     await expect(first).resolves.toMatchObject({ maxCallsPerRun: 1 });
+    await expect(second).resolves.toMatchObject({ maxCallsPerRun: 1 });
+    // One use, so the first call spends it and the second finds nothing left:
+    // re-resolving buys no extra allowance.
+    await expect((await first).provider.runTask(request())).resolves.toBeDefined();
+    await expect((await second).provider.runTask(request())).rejects.toThrow("unavailable");
+  });
+
+  // A grant is one authorization for one scope. A second resolve under another
+  // actor, session, project, Flow or purpose is a different claim, and being
+  // already claimed makes it no more shareable.
+  it("refuses a resolve under another scope, claimed or not", async () => {
+    const fixture = setup();
+    const grant = await fixture.service.issue(issueInput());
+    await expect(fixture.service.resolve(resolveInput(grant.grantId))).resolves.toBeDefined();
+    await expect(fixture.service.resolve({ ...resolveInput(grant.grantId), actorSessionId: "session.other" })).rejects.toThrow("scope mismatch");
   });
 
   it("requires an active matching actor session at issue time without credential resubmission", async () => {
