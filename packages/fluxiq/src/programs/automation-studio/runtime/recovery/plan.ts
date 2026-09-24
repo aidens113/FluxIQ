@@ -43,6 +43,7 @@ import type { AutomationStudioAdaptiveCandidateKind } from "../adaptive-orchestr
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "./deterministic-diagnosis.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES,
+  automationStudioRuntimePatchRefusalIsCheckableByExploration,
   decideAutomationStudioRuntimePatchRequest,
   type AutomationStudioRuntimePatchRequestDecision
 } from "./diagnosis-chain.ts";
@@ -113,7 +114,20 @@ export function planAutomationStudioRuntimeRecovery(input: AutomationStudioRunti
   // cancelling the look because the verdict is already "no" would make the
   // refusal one the model could not check before giving
   // (`reports/w2-model-context-audit.md`).
-  const explorationRequested = diagnosis.explorationNeeded;
+  //
+  // The second clause is what stops the model closing that door itself. A
+  // refusal `diagnosis-chain.ts` calls checkable is the model's claim *about a
+  // page*, and `explorationNeeded` is the model's own answer to whether the page
+  // is worth looking at -- so a model that says "the goal is gone" and "no need
+  // to look" has both made the claim and cancelled the only thing that could
+  // test it. That is not a hypothetical: thirteen live repair-lane runs on
+  // 2026-09-17 reported `exploration.requested: false` every single time, which
+  // is why `deterministicExplorationNeeded` exists at all, and it would have
+  // left the re-plan added in t114 firing almost never. Core decides this one,
+  // the way it already decides that its own "a person must act" outranks a model
+  // that disagrees. The cost of looking stays bounded by the run's own cost,
+  // token and deadline guards.
+  const explorationRequested = diagnosis.explorationNeeded || automationStudioRuntimePatchRefusalIsCheckableByExploration(patchRequest);
   return {
     schemaVersion: "automation-studio.recovery-plan.v1",
     loopStage: "plan",

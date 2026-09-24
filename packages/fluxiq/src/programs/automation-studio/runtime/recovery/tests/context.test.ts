@@ -185,6 +185,118 @@ describe("summarizeAutomationStudioRuntimeRecoveryContext", () => {
   });
 });
 
+// Live run `run-muesyox4-930bef98` (2026-09-23), as a run record. Its ladder
+// rescued three clicks on a control that only exists four seconds after load,
+// each with six controls of the same family in front of it, and then `s6` failed
+// for good on a page with nothing on it. The repair was shown `s6` alone, as
+// though the run had walked a clean path up to it, and the one thing the run had
+// actually proved -- this page mutates on a timer -- reached nobody.
+describe("the failures a run survived", () => {
+  it("carries each one with its category, its offset from the run's start, and what resolved it", () => {
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: rescuedRunDetail(), failedAttempt: terminalTraceAttempt() });
+    const section = context.sections.recovered_failures as JsonObject;
+
+    expect(section).toMatchObject({ totalFailuresSurvived: 2, nodesAffected: 1 });
+    expect(section.entries).toEqual([
+      { nodeId: "node.modal", definitionId: "web.output.dom-click", order: 1, failureCategory: "target_not_found", offsetMs: 1_000, resolution: "selected", candidateCount: 6, resolvedBy: "retry" },
+      { nodeId: "node.modal", definitionId: "web.output.dom-click", order: 2, failureCategory: "target_not_found", offsetMs: 2_400, resolution: "selected", candidateCount: 6, resolvedBy: "retry" }
+    ]);
+  });
+
+  // The failure under repair is the `failure` section. Repeating it here would
+  // spend the byte budget saying the same thing twice, and would make a run that
+  // survived nothing look like one that survived its own terminal failure.
+  it("leaves out the attempt being repaired, and is absent when the run survived nothing", () => {
+    const clean = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
+
+    expect(clean.sections.recovered_failures).toBeUndefined();
+    expect(clean.omitted).toContainEqual({ section: "recovered_failures", reason: "absent", byteCount: 0 });
+    expect(JSON.stringify(buildAutomationStudioRuntimeRecoveryContext({ detail: rescuedRunDetail(), failedAttempt: terminalTraceAttempt() }).sections.recovered_failures)).not.toContain("node.gone");
+  });
+
+  // Names, statuses and Core's own clock. The ladder's own `reason` travels the
+  // way `recovery_candidates` already carries one; an attempt's prose and its
+  // live values do not travel at all.
+  it("carries no attempt prose and no resolved value", () => {
+    const serialized = JSON.stringify(buildAutomationStudioRuntimeRecoveryContext({ detail: rescuedRunDetail(), failedAttempt: terminalTraceAttempt() }).sections.recovered_failures);
+
+    expect(serialized).not.toContain("Could not click");
+    expect(serialized).not.toContain("secret-session-token");
+    expect(serialized).not.toContain("ORD-99887");
+  });
+
+  // The ladder's `reason` is a domain's sentence, and the web domain's name the
+  // control they were about. The module-wide screen is what makes carrying one
+  // safe, so this pins that the screen reaches into here too rather than
+  // trusting that a later reader will remember it does.
+  it("screens a locator out of the ladder's own sentence, keeping the rest of it", () => {
+    const detail = rescuedRunDetail();
+    detail.recoveryAttempts![0]!.reason = "Retried because #\:r13b8o\: was not present yet.";
+    const section = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: terminalTraceAttempt() }).sections.recovered_failures as JsonObject;
+    const reason = String((section.entries as JsonObject[])[0]!.reason);
+
+    expect(reason).not.toContain("r13b8o");
+    expect(reason).toContain("was not present yet");
+  });
+
+  // The two sections never overlap, and the rule holds whichever way the repair
+  // was entered: a caller that names the attempt and a caller that leaves Core
+  // to find it in the run record reach the same attempt, so the same one is left
+  // out of here either way.
+  it("excludes whatever the failure section is built from, named by the caller or found in the record", () => {
+    const named = buildAutomationStudioRuntimeRecoveryContext({ detail: rescuedRunDetail(), failedAttempt: terminalTraceAttempt() });
+    const found = buildAutomationStudioRuntimeRecoveryContext({ detail: rescuedRunDetail() });
+
+    for (const context of [named, found]) {
+      const section = context.sections.recovered_failures as JsonObject;
+      const repaired = (context.sections.failure as JsonObject).attemptId;
+      expect(repaired).toBe("attempt.4");
+      expect((section.entries as JsonObject[]).some((entry) => entry.order === 4)).toBe(false);
+      expect(section).toMatchObject({ totalFailuresSurvived: 2 });
+    }
+  });
+});
+
+/** A run the ladder rescued twice on a timer-driven control, then lost on a starved page. */
+function rescuedRunDetail(): AutomationStudioFlowRunDetail {
+  return {
+    schemaVersion: "0.1",
+    summary: { runId: "run.3", flowId: "flow.1", projectId: "project.1", status: "failed", startedAt: 1_000, updatedAt: 9_000 } as AutomationStudioFlowRunDetail["summary"],
+    routeDecisions: [],
+    subflows: [],
+    actionAttempts: [
+      { attemptId: "attempt.1", nodeId: "node.modal", definitionId: "web.output.dom-click", order: 1, status: "failed", startedAt: 2_000, finishedAt: 2_100, message: "Could not click the dismiss button.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } },
+      { attemptId: "attempt.2", nodeId: "node.modal", definitionId: "web.output.dom-click", order: 2, status: "failed", startedAt: 3_400, finishedAt: 3_500, failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } },
+      { attemptId: "attempt.3", nodeId: "node.modal", definitionId: "web.output.dom-click", order: 3, status: "succeeded", startedAt: 5_400, finishedAt: 5_500 },
+      { attemptId: "attempt.4", nodeId: "node.gone", definitionId: "web.output.dom-click", order: 4, status: "failed", startedAt: 6_000, finishedAt: 6_100, failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "target_resolution" } }
+    ],
+    recoveryAttempts: [
+      { recoveryId: "recovery.1", attemptId: "attempt.1", nodeId: "node.modal", selectedKind: "retry", candidateCount: 6, status: "selected", createdAt: 2_100 },
+      { recoveryId: "recovery.2", attemptId: "attempt.2", nodeId: "node.modal", selectedKind: "retry", candidateCount: 6, status: "selected", createdAt: 3_500 },
+      { recoveryId: "recovery.3", attemptId: "attempt.4", nodeId: "node.gone", candidateCount: 0, status: "exhausted", createdAt: 6_100 }
+    ],
+    interventions: [],
+    adaptationIds: [],
+    changeProposalIds: []
+  };
+}
+
+/** The attempt that ended `run.3`: a starved page with nothing of the same family on it. */
+function terminalTraceAttempt(): AutomationStudioNodeAttemptTrace {
+  return {
+    attemptId: "attempt.4",
+    nodeId: "node.gone",
+    definitionId: "web.output.dom-click",
+    startedAt: 6_000,
+    finishedAt: 6_100,
+    status: "failed",
+    inputs: { sessionToken: "secret-session-token" },
+    outputs: { partial: "ORD-99887" },
+    effects: [],
+    failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "target_resolution" }
+  };
+}
+
 function runDetail(): AutomationStudioFlowRunDetail {
   return {
     schemaVersion: "0.1",

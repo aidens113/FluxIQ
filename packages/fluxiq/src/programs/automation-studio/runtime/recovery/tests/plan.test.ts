@@ -114,6 +114,36 @@ describe("planAutomationStudioRuntimeRecovery", () => {
     expect(plan.patchRequest.request).toBe(false);
   });
 
+  // The model does not get to both make a claim about the page and decide the
+  // page need not be looked at. Thirteen live repair-lane runs on 2026-09-17
+  // answered `explorationNeeded: false` every time, so without this clause the
+  // re-plan added in t114 would fire almost never: the refusal it exists to
+  // check would cancel the look that checks it. The mutation this is written
+  // against: dropping the second clause of `explorationRequested`, which makes
+  // a single model boolean close the door again.
+  it("explores a refusal the page could overturn even when the model said not to look", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "no", explorationNeeded: false }), policy: policy() });
+
+    expect(plan.diagnosis.explorationNeeded).toBe(false);
+    expect(plan.explorationRequested).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
+    expect(plan.patchRequest.code).toBe("llm.runtime_patch_goal_unachievable");
+  });
+
+  // A refusal no page can speak to is still not explored, whatever the model
+  // said, so the clause above buys exactly one look and not a look per dead end.
+  it("does not explore a refusal the policy decided, when the model said not to look", () => {
+    const plan = planAutomationStudioRuntimeRecovery({
+      deterministic: deterministic(),
+      result: diagnosisResult({ patchNeeded: true, explorationNeeded: false }),
+      policy: { ...policy(), allowRuntimeRecovery: false }
+    });
+
+    expect(plan.patchRequest.code).toBe("llm.runtime_patch_policy_allows_no_kind");
+    expect(plan.explorationRequested).toBe(false);
+    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+  });
+
   it("still asks for a patch when the diagnosis cannot tell whether the result is achievable", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "unknown" }), policy: policy() });
 

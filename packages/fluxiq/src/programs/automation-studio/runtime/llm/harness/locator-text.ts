@@ -84,6 +84,14 @@ const LOCATOR_SHAPES: readonly RegExp[] = [
   // does not begin a token.
   /(?<![\w.])\.[A-Za-z_][\w-]*/u,
   /(?<![\w#])#[A-Za-z_][\w-]*/u,
+  // The same sigil in front of an id that does not start with a letter, which
+  // is the id this product actually meets. React's `useId` mints `:r13b8o:`,
+  // and the only way to address that in CSS is `#\:r13b8o\:` -- so the rule
+  // above, which requires a letter or an underscore after the `#`, walked
+  // straight past the one selector shape this repository has a task named after
+  // (t112, a Flow authored against a generated id that changed under the next
+  // seed). A `#` followed by a backslash or a colon is never prose.
+  /(?<![\w#])#(?:\.|:)[\w:.\-]*/u,
   // A tag qualified by an id: `button#confirm`. There is deliberately no rule
   // for a tag qualified by a class. `div.row-selected` and
   // `web.output.dom-click` have the same shape, and this system writes the

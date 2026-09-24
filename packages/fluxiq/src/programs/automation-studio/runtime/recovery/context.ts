@@ -74,6 +74,12 @@ import { automationStudioFlowGraphSection, automationStudioStepParametersSection
  * by the recovery plan and by the adaptation that records it. It is next to
  * last in priority precisely because the packet already says most of it.
  *
+ * `recovered_failures` is its counterpart and ranks far higher, because what a
+ * run survived is evidence about the page and what it walked past is not. It
+ * sits immediately behind `recovery_candidates`: the same kind of fact -- what
+ * the recovery had to work with -- one step wider than the failure being
+ * repaired.
+ *
  * `flow_graph` and `step_parameters` sit *after* the two transition sections
  * and before everything else, and where they sit is the whole of how one fixed
  * list serves two entry points. A failed step is repaired from what the step
@@ -94,6 +100,7 @@ export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS = [
   "state_diff",
   "failed_target",
   "recovery_candidates",
+  "recovered_failures",
   "subflow",
   "route_context",
   "known_adaptations",
@@ -318,6 +325,7 @@ function recoveryContextSections(
     state_diff: boundedDomainSection(metadata?.stateRefs),
     failed_target: targetResolutionSection(metadata?.targetResolution),
     recovery_candidates: recoveryCandidatesSection(input.failedAttempt),
+    recovered_failures: recoveredFailuresSection(input.detail, record),
     subflow: subflowSection(input),
     route_context: routeContextSection(input.detail),
     known_adaptations: adaptations.length ? boundedSection({ adaptations: adaptations.map(compactAdaptation) }) : undefined,
@@ -442,6 +450,76 @@ function routeContextSection(detail: AutomationStudioFlowRunDetail): JsonObject 
       ...(decision.fallbackUsed ? { fallbackUsed: true } : {}),
       ...(decision.rejectedRuleIds?.length ? { rejectedRuleIds: decision.rejectedRuleIds.slice(0, SECTION_ITEM_LIMIT) } : {})
     }))
+  });
+}
+
+/**
+ * The failures this run hit and went on past, and what resolved each one.
+ *
+ * The deterministic ladder is good at its job, and that is precisely how this
+ * evidence went missing. A node that fails, is retried and then succeeds leaves
+ * `recent_nodes` -- which keeps only `succeeded` attempts -- with nothing to
+ * show, and `recoveryAttempts` has been written on every run since it existed
+ * and read by nothing but a counter. So the model repairing the *terminal*
+ * failure was told about that failure alone, as though the run had walked a
+ * clean path up to it.
+ *
+ * Live run `run-muesyox4-930bef98` (2026-09-23) is what that costs. Three clicks
+ * failed on the same control before the fourth worked, each with six controls of
+ * the same family in front of the recovery, and the offsets said why: the
+ * fixture opens a modal about four seconds after load and the first two clicks
+ * fired at roughly 1.0s and 2.4s. Then `s6` failed for good, on an 819-byte page
+ * with no same-family control and no fingerprint candidate on it -- and *that*
+ * starved packet was the entire evidence the repair was given. The run had
+ * already demonstrated that this page mutates on a timer. Nothing carried it.
+ *
+ * So each entry is one failed attempt the run survived, in order, with Core's
+ * failure category, the offset from the run's start that makes a timing pattern
+ * legible, and -- where a recovery record matches it -- how many candidates the
+ * ladder had and which rung resolved it. The attempt under repair is excluded:
+ * it is the `failure` section, and repeating it here would spend the byte budget
+ * saying the same thing twice.
+ *
+ * Names, statuses and Core's own clock only, like every section here. The
+ * ladder's `reason` is free text a domain may have written, so it travels the
+ * same way `recovery_candidates` already carries one: through the locator screen
+ * that every string in this context passes.
+ */
+function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
+  const attempts = detail.actionAttempts ?? [];
+  const survived = attempts.filter((attempt) => attempt.status === "failed" && attempt.attemptId !== record?.attemptId);
+  if (!survived.length) return undefined;
+  // The run's own start, so an offset is a number a reader can compare across
+  // entries rather than a wall-clock instant they have to subtract by hand.
+  const startedAt = detail.summary.startedAt ?? attempts[0]?.startedAt;
+  const recoveries = new Map((detail.recoveryAttempts ?? []).map((recovery) => [recovery.attemptId, recovery]));
+  const entries = survived.slice(-SECTION_ITEM_LIMIT).map((attempt) => {
+    const recovery = recoveries.get(attempt.attemptId);
+    const offsetMs = typeof startedAt === "number" && Number.isSafeInteger(attempt.startedAt) ? attempt.startedAt - startedAt : undefined;
+    // Stored records are parsed again, as everywhere else that reads one, and
+    // only Core's category name travels.
+    const failureCategory = parseAutomationStudioFailureRecord(attempt.failure)?.category;
+    return {
+      nodeId: attempt.nodeId,
+      definitionId: attempt.definitionId,
+      order: attempt.order,
+      ...(failureCategory ? { failureCategory } : {}),
+      ...(offsetMs !== undefined && offsetMs >= 0 && offsetMs <= 86_400_000 ? { offsetMs } : {}),
+      ...(recovery ? {
+        resolution: recovery.status,
+        candidateCount: recovery.candidateCount,
+        ...(recovery.selectedKind ? { resolvedBy: recovery.selectedKind } : {}),
+        ...(recovery.reason ? { reason: recovery.reason } : {})
+      } : {})
+    };
+  });
+  // How many failures the run absorbed in total, beside the ones that fit. A
+  // node that failed nine times and a node that failed twice are different
+  // pages, and the slice alone cannot tell them apart.
+  return boundedSection({
+    entries,
+    totalFailuresSurvived: survived.length,
+    nodesAffected: new Set(survived.map((attempt) => attempt.nodeId)).size
   });
 }
 

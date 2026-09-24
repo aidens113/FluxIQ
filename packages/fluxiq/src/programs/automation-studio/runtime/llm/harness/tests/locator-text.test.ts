@@ -31,7 +31,15 @@ describe("the locator screen", () => {
       ".product-card",
       "#confirm",
       "button#confirm",
-      ".row-selected"
+      ".row-selected",
+      // The id this product actually meets. React's `useId` mints `:r13b8o:`,
+      // which is only addressable with its colons escaped, so the id sigil is
+      // followed by a backslash rather than a letter and the plain `#name` rule
+      // walked past it. Live run `run-muesyox4-930bef98` (2026-09-23) carried
+      // this exact string, and t112 is named after a Flow authored on one.
+      "#\:r13b8o\:",
+      "an element matching selector #\:r13b8o\: was not present yet",
+      "#:r05rcq:"
     ]) {
       expect(automationStudioLocatorShapedText(text), text).toBe(true);
     }
@@ -56,7 +64,12 @@ describe("the locator screen", () => {
       "e.g. the Pay button",
       "Your organization manages these settings; they are read-only.",
       "This item was deleted. Nothing here replaces it.",
-      "refused main scoring -0.29 with nothing the recording named agreeing exactly"
+      "refused main scoring -0.29 with nothing the recording named agreeing exactly",
+      // A `#` in prose still has to survive: it is followed by a digit, a
+      // space, or nothing the new escaped-id rule names.
+      "see #4 in the list",
+      "the heading # Overview was not found",
+      "cost was 20# of pressure"
     ]) {
       expect(automationStudioLocatorShapedText(text), text).toBe(false);
       expect(automationStudioWithoutLocators(text)).toBe(text);
