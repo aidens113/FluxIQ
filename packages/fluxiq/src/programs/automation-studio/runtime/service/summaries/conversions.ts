@@ -261,6 +261,22 @@ function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSessio
   };
 }
 
+/**
+ * Core's code for the ladder's last rung, recorded and not yet answered.
+ *
+ * Every other issue Core writes onto an intervention begins with a code, and a
+ * reader -- the web UI, the Lab's run-detail parser -- takes the code and drops
+ * the sentence. This one issue was a bare sentence, so it reduced to *nothing*:
+ * the Lab's evaluation of run `run-muesyox4-930bef98` (2026-09-23) recorded
+ * `{ validationOk: false, validationCodes: [] }`, which reads as "something
+ * rejected the diagnosis and would not say what". Nothing had rejected
+ * anything. The sentence also claimed no provider was configured, and in that
+ * run one was: the recovery stage called it moments later and its answer
+ * validated. A code, and a sentence that describes the rung rather than
+ * guessing at the deployment.
+ */
+export const AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE = "recovery.ladder_diagnosis_unanswered";
+
 function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): AutomationStudioFlowIntervention[] {
   return recoveryAttempts
     .filter((attempt) => attempt.status === "diagnosis_only")
@@ -277,7 +293,7 @@ function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRunti
         nodeId: attempt.nodeId,
         candidateCount: attempt.candidateCount
       },
-      validation: { ok: false, issues: ["LLM diagnosis provider is not configured in this runtime slice."] },
+      validation: { ok: false, issues: [`${AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE}: The recovery ladder exhausted its deterministic rungs and selected its LLM diagnosis rung. The executor records the selection and calls no provider; the run's recovery stage is what answers it.`] },
       createdAt: attempt.createdAt,
       metadata: { recoveryId: attempt.recoveryId }
     }));
