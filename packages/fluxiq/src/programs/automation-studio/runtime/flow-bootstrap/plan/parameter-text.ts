@@ -24,7 +24,15 @@ export type AutomationStudioFlowBootstrapCatalogEntryForm = "whole" | "condensed
 
 export type AutomationStudioFlowBootstrapParameterText = AutomationStudioFlowBootstrapCatalogEntry["parameters"][number];
 
-const PARAMETER_DESCRIPTION_CHARACTERS = 600;
+// 700 rather than 600, and the sixty-odd characters it buys are an experiment
+// with both answers written down before it ran. A domain's grammar for
+// `extractList` sat at 596 of 600, so the one sentence that could tell a model
+// what a page budget is *for* did not fit, and three fixes aimed elsewhere --
+// the detector's proposal, the worked example, the node's own description --
+// each failed to change what the model wrote. If a directive in the grammar
+// moves it, the budget was the blocker and this stays; if it does not, prompt
+// text is not the lever at all and this goes back with the directive.
+const PARAMETER_DESCRIPTION_CHARACTERS = 700;
 const PARAMETER_EXAMPLE_BYTES = 600;
 
 const STRUCTURED_PARAMETER_TYPES: ReadonlySet<AutomationNodeParameter["valueType"]> = new Set(["object", "json", "array"]);

@@ -91,13 +91,13 @@ describe("a structured parameter in the catalog", () => {
     ]);
   });
 
-  it("bounds the description at 600 characters and leaves out an example too large to send", () => {
+  it("bounds the description at 700 characters and leaves out an example too large to send", () => {
     const large: AutomationNodeParameter = { ...items, description: "d".repeat(2_000), example: { fields: "x".repeat(700) } };
 
     const [entry] = catalogFor([definition("domain.demo.read", { parameters: [large] })]).nodeCatalog;
     const [parameter] = entry?.parameters ?? [];
 
-    expect(parameter?.description?.length).toBe(600);
+    expect(parameter?.description?.length).toBe(700);
     expect(parameter?.description?.endsWith("...")).toBe(true);
     expect(parameter).not.toHaveProperty("example");
   });
