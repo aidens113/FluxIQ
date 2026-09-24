@@ -62,7 +62,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   // (`flow-bootstrap/authoring/`), and the cases below no longer include one.
   it.each([
     ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", "bootstrap.completion_wrapper_invalid", () => ({})],
-    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.invalid_subflows", () => ({ summary: "Candidate.", plan: { subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [], edges: [] }] } })],
+    ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.subflow_has_no_nodes", () => ({ summary: "Candidate.", plan: { subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [], edges: [] }] } })],
     ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", "bootstrap.completion_profile_limit_exceeded", () => ({
       summary: "Candidate.",
       plan: {
