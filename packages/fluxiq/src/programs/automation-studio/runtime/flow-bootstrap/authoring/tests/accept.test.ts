@@ -237,3 +237,41 @@ describe("the nested JSON plan, which still has to work", () => {
     expect(accepted.issues[0]?.path).toBe("plan.subflows.0.nodes.0.parameters.speed");
   });
 });
+
+// A subflow that produced no node used to return nothing at all -- no subflow
+// and no issue -- and the caller then reported "Bootstrap subflows must be an
+// array" to a model that had written an array. There was nothing in that
+// sentence to act on, so the model wrote the same plan again. On 2026-09-24
+// four of the extract lane's eight failures were that loop:
+// `data-table-inventory-empty` spent 24 build steps on it,
+// `admin-console-customer-book-short` 16,
+// `product-catalog-first-page-sparse-cards` 15, and
+// `company-directory-register-page` 12 before dying after 44 provider calls.
+describe("a subflow that produced no node", () => {
+  it("names the keys a node list may be written under, instead of blaming the array", () => {
+    const accepted = accept({ summary: "Scrape it.", subflows: [{ key: "main", operations: [{ node: "web.output.dom-extract_list" }] }] });
+    const codes = accepted.issues.map((issue) => issue.code);
+
+    expect(codes).toContain("bootstrap.subflow_has_no_nodes");
+    expect(codes).not.toContain("bootstrap.invalid_subflows");
+    expect(accepted.issues.find((issue) => issue.code === "bootstrap.subflow_has_no_nodes")?.message).toMatch(/nodes, steps, actions/u);
+  });
+
+  // A subflow whose nodes were all refused already carries the reason on each
+  // node, and those sentences say which node and why. Nothing is added on top.
+  it("leaves the nodes' own issues to speak when every one of them was refused", () => {
+    const accepted = accept({ summary: "Scrape it.", subflows: [{ key: "main", nodes: [{ node: "no.such.node.at.all" }] }] });
+    const codes = accepted.issues.map((issue) => issue.code);
+
+    expect(codes).toContain("bootstrap.definition_unavailable");
+    expect(codes).not.toContain("bootstrap.invalid_subflows");
+  });
+
+  // And the shape complaint is still the shape complaint: a plan that wrote no
+  // subflow list at all has nothing else to be told.
+  it("still says so when no subflow list was written", () => {
+    const accepted = accept({ summary: "Scrape it." });
+
+    expect(accepted.issues.map((issue) => issue.code)).toContain("bootstrap.invalid_subflows");
+  });
+});
