@@ -172,10 +172,13 @@ export function RuntimeRunStory(props: { runDetail: any }) {
 function runtimeResultVerificationLabel(verification: Record<string, unknown>): string {
   if (verification.basis === "model_disagreed") return "Unverified: the two checks disagreed";
   if (verification.basis === "model_unconfirmed") return "Unverified: the two checks did not settle it";
-  if (verification.code === "core.result.no_records") return "Unverified: nothing was stored, so the result was not checked";
+  if (verification.code === "core.result.verification_did_not_finish") return "Unverified: the check did not finish";
+  // Two codes Core stopped producing on 2026-09-24, when an empty result began
+  // to be judged like any other. Runs recorded before then still carry them.
+  if (verification.code === "core.result.no_records") return "Unverified: nothing was stored, and this run was not checked";
   if (verification.status === "confirmed") return "Confirmed";
   if (verification.status === "refuted") return "Refuted";
-  if (verification.status === "no_result") return "No result to check";
+  if (verification.status === "no_result") return "Not checked: this run stored no result";
   return "Unverified";
 }
 

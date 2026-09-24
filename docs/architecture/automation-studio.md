@@ -358,6 +358,51 @@ reaches runtime diagnosis, patch, or proposal tasks.
 [What the shipped app reaches](#what-the-shipped-app-reaches) lists which runtime
 paths each purpose gives a provider.
 
+### Judging a finished run's result, including an empty one
+
+Every run that reports success has its result judged against the request before
+it is returned (`runtime/result-verification/`). Core's own counts answer first
+and cost nothing: a run whose every row was refused by record validation, and a
+run whose stored rows lack a value the Flow's own record schema declares
+required, are refused deterministically, because neither can be excused by any
+reading of any request. Everything else is put to one `loop_verification` call,
+asked twice when the first answer is not `yes`.
+
+**An empty result is judged like any other, as of 2026-09-24.** Until then a run
+that stored no rows was exempt: an empty record set was recorded
+`core.result.no_records` and a run with no record set at all
+`core.result.nothing_to_judge`, and neither was ever put to a model. The
+exemption existed because a verification reached from an empty result had once
+entered provider resolution and never returned (2026-09-20), and it cost the
+product the judgement it most needed — an empty table where the person asked for
+rows was the one answer nothing looked at, and because nothing refuted it,
+nothing repaired it. An empty answer is now judged on the request's own terms: it
+is `confirmed` where the request makes finding nothing the right answer and the
+Flow's steps show it looked, and `refuted` where the steps show it never looked
+or could not have stored what it found. A refutation reaches the same
+wrong-answer route a non-empty one does, so the repair re-enters exploration.
+
+**The whole verification is bounded**
+(`runtime/result-verification/deadline.ts`). Resolving the provider, reading the
+instructions and the run detail, and both calls run inside one deadline —
+`AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS`, 120 s by default, and the
+caller's own cancellation ends it too. The 2026-09-20 hang was never
+root-caused, and nothing on that path carries a timeout of its own: the grant
+service's `resolve` revalidates the session, the key and the Flow's execution
+digest with no bound, and the digest is read through the project database's
+single serialized operation queue. A verification that does not settle is
+therefore recorded `core.result.verification_did_not_finish`, `unverified`, with
+the run keeping the status its steps earned. That is the same treatment a run
+gets when no model is configured, and the reason is the same: nobody judged this
+result.
+
+Two codes and one status are historical. `core.result.no_records` and
+`core.result.nothing_to_judge` are produced by nothing and readable on runs
+recorded before 2026-09-24, and the `no_result` value of a run's
+`result_verification_status` column is likewise only ever written by such a run.
+What a new run can carry is `confirmed`, `refuted` or `unverified`, plus null
+where the schedule did not check it.
+
 ### The standing authorization, for runs nobody is watching
 
 A grant is a person pressing a button, and
@@ -1026,6 +1071,21 @@ set the Flow's build stored as what the person's instruction asks for
 (`metadata.bootstrapInstructedConsequences`), keeping an entry only while its
 instruction is active and its text unchanged. A recovery never asks a model to
 read the instruction again.
+
+**Only a destructive class reaches that gate as something refusable.** The gate
+itself narrowed on 2026-09-24 (`action-permissions/destructive.ts`):
+`move_money`, `delete` and `modify_existing` are the classes a grant or the
+instruction has to authorise, and `create_new` and `send_or_publish` are
+permitted outright. On the repair path that is what makes a live repair possible
+at all. A target override the gate permits carries `sideEffectPermission:
+"permitted"`, which is the authorization both of the policy's side-effect lines
+ask for; before the narrowing, a repair that pressed a control to make or send
+something was refused by the gate, so it carried no such authorization and was
+refused a second time at preflight by `policy.allowExternalSideEffects`, which
+is `false` on every default policy. A repair under `explore_and_adapt` could
+therefore never press anything, and the Lab pinned its created-Flow repairs to
+the proposal-only `diagnose_and_adapt` grant for that reason. A destructive
+repair the person neither granted nor instructed still stops and still asks.
 
 **`policy.allowExternalSideEffects` is no longer read on the recovery
 exploration path.** The exploration is offered the domain's `mutate` options

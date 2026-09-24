@@ -43,8 +43,18 @@ describe("automationStudioResultVerificationStatus", () => {
     expect(automationStudioResultVerificationStatus(skipped(AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noModel))).toBe("unverified");
   });
 
-  it("says a run with no record set had no result, and nothing more", () => {
-    expect(automationStudioResultVerificationStatus(skipped(AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noResult))).toBe("no_result");
+  it("calls a verification that did not finish unverified, never confirmed", () => {
+    // The bound that replaced the empty-result exemption. Mutation: read a
+    // verification that ran out of time as a pass, and this says `confirmed`
+    // for a result nobody judged.
+    expect(automationStudioResultVerificationStatus(skipped(AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.notFinished))).toBe("unverified");
+  });
+
+  it("no longer produces no_result, because a run that stored nothing is judged too", () => {
+    // `no_result` stays in the vocabulary for rows written before 2026-09-24.
+    // Mutation: reintroduce a skip code that maps to it, and a run that stored
+    // no record set stops being checked against the request.
+    expect(Object.values(AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES).map((code) => automationStudioResultVerificationStatus(skipped(code)))).toEqual(["unverified", "unverified"]);
   });
 
   it("treats any other reason for not judging as unverified", () => {

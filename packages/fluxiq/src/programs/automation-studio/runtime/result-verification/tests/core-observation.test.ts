@@ -41,20 +41,17 @@ const recordSet = (fields: Partial<AutomationStudioResultRecordSetSummary> = {})
 });
 
 describe("automationStudioResultCoreObservation", () => {
-  it("refuses a run that stored no records at all", () => {
-    // Mutation: report success when the record count is zero. Returning
-    // `undefined` here -- Core has nothing to say -- makes this fail.
-    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0 }));
-    expect(observation?.verdict).toBe("does_not_answer");
-    expect(observation?.code).toBe("core.result.no_records");
-    expect(observation?.basis).toBe("core_observation");
-    expect(observation?.failure?.category).toBe("output_not_observed");
-    expect(observation?.observation).toContain("0 records stored");
+  it("has nothing to say about an empty result, because only the request can settle it", () => {
+    // It used to refuse one outright. Mutation: refuse a run that stored no rows
+    // and refused none -- an empty table is then wrong even where the request
+    // says it is the right answer, and the model is never asked.
+    expect(automationStudioResultCoreObservation(summary({ totalRecordCount: 0 }))).toBeUndefined();
   });
 
   it("refuses a run whose every row was refused, and says so distinctly", () => {
     // Mutation: ignore validation refusals when every row was refused. Dropping
-    // the `totalRefusedCount` branch answers `no_records` and this fails.
+    // the `totalRefusedCount` branch answers `undefined` -- the run is then put
+    // to a model over a schema mismatch no reading of a request can excuse.
     const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 5 }));
     expect(observation?.verdict).toBe("does_not_answer");
     expect(observation?.code).toBe("core.result.every_record_refused");
@@ -94,9 +91,8 @@ describe("automationStudioResultCoreObservation", () => {
     expect(observation?.observation).toContain("(price, address)");
   });
 
-  it("reports the zero-record findings first, since a run with no rows has no row to lack a value", () => {
-    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRowsMissingRequired: 3 }));
-    expect(observation?.code).toBe("core.result.no_records");
+  it("does not reach the required-value finding on a run with no rows, since there is no row to lack a value", () => {
+    expect(automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRowsMissingRequired: 3 }))).toBeUndefined();
   });
 
   it("has nothing to say about a run that stored no record set at all", () => {
@@ -104,7 +100,7 @@ describe("automationStudioResultCoreObservation", () => {
   });
 
   it("bounds the observation it writes into a failure record", () => {
-    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0 }));
+    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 5 }));
     expect((observation?.failure?.actual ?? "").length).toBeLessThanOrEqual(1_024);
   });
 });

@@ -214,14 +214,16 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with explored packets", ()
 // be refused at preflight whenever the policy withheld external side effects,
 // which every granted run does, and nobody was asked. It now says what pressing
 // its new target would lastingly do, and the recovery's one gate is asked: a
-// class nobody allowed becomes the request the recovery ends on, and a class
-// the person allowed lets the patch run as explicitly authorized.
+// destructive class nobody allowed becomes the request the recovery ends on,
+// and anything else -- a press that makes or sends something the person asked
+// for -- runs as explicitly authorized, whatever the policy's side-effect flags
+// say.
 describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permission gate", () => {
   const RESOLVED: AutomationStudioRuntimeTargetOverrideEvidenceValidation = { status: "resolved", target: { handles: { control: "candidate.2" }, resolvedBy: "domain" }, control: { name: "Add to queue", kind: "button" } };
 
-  it("turns a patch with a class nobody allowed into the recovery's request, and runs nothing", async () => {
+  it("turns a patch with a destructive class nobody allowed into the recovery's request, and runs nothing", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["modify_existing", "delete"], sideEffectsWithheld: true });
 
     expect(outcome.attempts).toEqual([expect.objectContaining({
       kind: "temporary_target_override",
@@ -230,8 +232,8 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
       permissionOutcome: "required",
       permissionRequired: true,
       requestId: "permission-request:repair",
-      consequences: ["send_or_publish", "create_new"],
-      missing: ["send_or_publish", "create_new"],
+      consequences: ["delete", "modify_existing"],
+      missing: ["delete", "modify_existing"],
       verification: { status: "not_executed", reason: "permission_required" },
       traceStatus: "not-run"
     })]);
@@ -241,18 +243,38 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
     expect(request.action).toEqual({ kind: "flow_step", id: "builtin.policy.action", ref: "recorded.press", verb: "press" });
     expect(request.control).toEqual({ name: "Add to queue", kind: "button" });
     expect(request.reason.stage).toBe("recovery");
-    expect(request.sentence).toBe("To repair the step that failed, the Flow would press \"Add to queue\" (button) each time it runs, which would send or publish something that others will receive or see and create something new that stays. Neither its instruction nor a grant allows that, so the repair stopped to ask.");
+    expect(request.sentence).toBe("To repair the step that failed, the Flow would press \"Add to queue\" (button) each time it runs, which would delete or remove something and change something that already exists. Neither its instruction nor a grant allows that, so the repair stopped to ask.");
     expect(outcome.attempts[0]?.issues).toEqual([`Permission required: ${request.sentence}`]);
     // What a person reads is exactly what Core built.
     expect(parseAutomationStudioActionPermissionRequest(JSON.parse(JSON.stringify(request)))).toEqual(request);
   });
 
-  it("runs a patch whose classes the grant allows, as explicitly authorized", async () => {
-    const gate = recoveryGate(["create_new", "send_or_publish"]);
+  // The second door the narrowed gate opens. A live repair is run with the
+  // production defaults -- `allowExternalSideEffects: false`,
+  // `requireApprovalForExternalSideEffects: true`, nothing authorized, nothing
+  // granted -- and this is the shape that used to be refused at preflight as
+  // `runtime_patch.side_effect_not_authorized`, which is why the Lab could
+  // never run a repair live under `explore_and_adapt` at all. Pressing a
+  // control that makes or sends something is not the gate's to refuse, so the
+  // patch is permitted, the policy's two side-effect lines do not apply to a
+  // permitted patch, and the repair actually presses the control.
+  it("runs a repair that only makes or sends something, with no grant and the policy withholding side effects", async () => {
+    const gate = recoveryGate([]);
     const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "permitted", consequences: ["send_or_publish", "create_new"], preflightOk: true });
+    expect(outcome.attempts[0]?.issues).toEqual([]);
+    expect(outcome.attempts[0]?.traceStatus).not.toBe("not-run");
+    expect(outcome.adaptationIds).toHaveLength(1);
+  });
+
+  it("runs a patch whose destructive class the grant allows, as explicitly authorized", async () => {
+    const gate = recoveryGate(["modify_existing"]);
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["modify_existing"], sideEffectsWithheld: true });
+
+    expect(gate.request).toBeUndefined();
+    expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "permitted", consequences: ["modify_existing"], preflightOk: true });
     expect(outcome.attempts[0]?.issues).toEqual([]);
     expect(outcome.adaptationIds).toHaveLength(1);
   });
@@ -286,7 +308,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("withholds a control name the model was never shown", async () => {
     const gate = recoveryGate([], { observed: false });
-    await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new"], sideEffectsWithheld: true });
+    await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["modify_existing"], sideEffectsWithheld: true });
 
     expect(gate.request?.control).toEqual({ name: null, kind: "button" });
     expect(gate.request?.sentence).toContain("a control it cannot name here");
@@ -294,7 +316,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("ends at the first request: no later patch is attempted", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new"], sideEffectsWithheld: true, repeat: 2 });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["modify_existing"], sideEffectsWithheld: true, repeat: 2 });
 
     expect(outcome.attempts).toHaveLength(1);
     expect(outcome.attempts[0]).toMatchObject({ permissionRequired: true });

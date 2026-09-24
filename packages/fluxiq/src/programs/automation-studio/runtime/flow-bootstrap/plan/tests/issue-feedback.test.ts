@@ -108,15 +108,19 @@ describe("the feedback on a refused plan", () => {
     expect(feedback[3]).toEqual({ code: "web.handle.misplaced:notDeclared.0", path: at });
   });
 
-  it("adds nothing to an issue that is not about a parameter, or when there is no plan to read", () => {
+  it("adds no accepted shape to an issue that is not about a parameter, and carries an authored sentence but not an unlisted code's", () => {
     const issues: AutomationStudioFlowBootstrapIssue[] = [
-      { severity: "error", code: "bootstrap.definition_unavailable", message: "withheld", path: "plan.subflows.0.nodes.0.definitionId" },
+      { severity: "error", code: "bootstrap.definition_unavailable", message: "Core's own sentence", path: "plan.subflows.0.nodes.0.definitionId" },
       { severity: "error", code: "bootstrap.primary_count", message: "withheld", path: "plan.subflows" },
       { severity: "error", code: "bootstrap.invalid_plan", message: "withheld" }
     ];
 
+    // `definition_unavailable` is one of Core's own authored refusals, so its
+    // sentence travels with the code: a code and a path say where a plan was
+    // refused and never why, and a model that cannot read why can only send the
+    // same plan back. The other two are not listed, so they stay code and path.
     expect(automationStudioFlowBootstrapIssueFeedback({ issues, plan: planWith({}), registry, resolution })).toEqual([
-      { code: "bootstrap.definition_unavailable", path: "plan.subflows.0.nodes.0.definitionId" },
+      { code: "bootstrap.definition_unavailable", path: "plan.subflows.0.nodes.0.definitionId", message: "Core's own sentence" },
       { code: "bootstrap.primary_count", path: "plan.subflows" },
       { code: "bootstrap.invalid_plan" }
     ]);

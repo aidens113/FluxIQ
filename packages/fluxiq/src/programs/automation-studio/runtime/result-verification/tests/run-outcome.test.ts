@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioRefutedResultReauthored } from "../../recovery/refuted-result/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
@@ -67,6 +67,20 @@ const runDetail = (): AutomationStudioFlowRunDetail => ({
   changeProposalIds: []
 });
 
+/** The request, as a Flow instruction states it: what the empty-result judgement is made against. */
+const instruction = (body: string): AutomationStudioFlowInstruction => ({
+  schemaVersion: "0.1",
+  instructionId: "instruction.flow.goal",
+  title: "Goal",
+  body,
+  scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" },
+  priority: 1,
+  status: "active",
+  requirement: "required",
+  createdAt: 1,
+  updatedAt: 1
+});
+
 const datasetSummary = (fields: Partial<AutomationStudioRunDatasetSummary> = {}): AutomationStudioRunDatasetSummary => ({
   runId: "run-1", datasetId: "members", nodeIds: ["n2"], schemaDigest: "digest",
   recordCount: 240, truncated: false, invalidCount: 0, updatedAt: 3, ...fields
@@ -101,6 +115,8 @@ type Harness = {
   written: AutomationStudioRuntimeSession[];
   saved: AutomationStudioFlowRunDetail[];
   requests: AutomationStudioLlmTaskRequest[];
+  /** Provider resolutions attempted. A result Core settles itself must cost none. */
+  resolutions: { count: number };
 };
 
 function harness(options: {
@@ -113,14 +129,19 @@ function harness(options: {
   datasetsUnavailable?: boolean;
   listThrows?: boolean;
   pageLimits?: unknown[];
+  /** The request, as the Flow's own instructions state it. */
+  instructions?: readonly AutomationStudioFlowInstruction[];
+  /** A provider resolution that never settles: the 2026-09-20 hang, in one line. */
+  resolverHangs?: boolean;
 } = {}): Harness {
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  const resolutions = { count: 0 };
   const datasets = options.datasets ?? [datasetSummary()];
   const page: AutomationStudioRunDatasetPage = { summary: datasets[0] ?? datasetSummary(), schema: options.schema ?? schema, rows: options.rows ?? [{ name: "Hollis Abbott", role: "member" }], nextCursor: null };
   const ports: AutomationStudioResultVerificationPorts = {
-    flowInstructionSet: async () => [],
+    flowInstructionSet: async () => [...(options.instructions ?? [])],
     getFlowRunDetail: async () => runDetail(),
     saveFlowRunDetail: async (detail) => { saved.push(detail); return detail; },
     writeRuntimeSession: async (_projectId, next) => { written.push(next); },
@@ -135,9 +156,13 @@ function harness(options: {
         return { ...page, rows: page.rows.slice(0, typeof request.limit === "number" ? request.limit : page.rows.length) };
       }
     }),
-    ...(options.withProvider === false ? {} : { resolveProvider: async () => ({ provider: provider(options.answer, requests, options.answers) }) })
+    ...(options.withProvider === false ? {} : {
+      resolveProvider: options.resolverHangs
+        ? () => { resolutions.count += 1; return new Promise<never>(() => undefined); }
+        : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers) }; }
+    })
   };
-  return { ports, written, saved, requests };
+  return { ports, written, saved, requests, resolutions };
 }
 
 const verify = async (context: Harness, overrides: Partial<Parameters<typeof verifyAutomationStudioRuntimeSessionResult>[0]> = {}) =>
@@ -260,21 +285,66 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(request?.context.stage).toBeUndefined();
   });
 
-  it("records a run that stored an empty record set as not checked, never as a pass, without spending a call", async () => {
-    // An empty table is sometimes the right answer, so the run keeps the status
-    // its steps earned; but it must never read as nothing having happened.
-    // Mutation: record it as having no result. `code` then says
-    // `nothing_to_judge` and `status` says `no_result`, and this fails.
-    // Mutation: put it to the model. A request is then made, and this fails --
-    // an empty result that reached provider resolution hung on 2026-09-20.
-    const context = harness({ answer: ANSWER.yes, datasets: [datasetSummary({ recordCount: 0 })] });
+  it("fails a run that stored an empty record set when the model says the empty table does not answer the request", async () => {
+    // The single most obviously wrong answer a run can give was, until
+    // 2026-09-24, the one case nothing looked at: it was recorded
+    // `core.result.no_records`, not checked, and no repair could follow because
+    // nothing had refuted it. Mutation: exempt an empty result again -- no
+    // request is made, `performed` is false, and every assertion here fails.
+    const context = harness({ answer: ANSWER.no, datasets: [datasetSummary({ recordCount: 0 })], instructions: [instruction("List every earbud under $50.")] });
+    const next = await verify(context);
+    expect(next.status).toBe("failed");
+    const recorded = next.metadata?.resultVerification as JsonObject;
+    expect(recorded).toMatchObject({ status: "refuted", performed: true, verdict: "does_not_answer", basis: "model" });
+    expect(String(recorded.observation)).toContain("0 records stored");
+    expect(context.requests).toHaveLength(2);
+    expect(context.saved.at(-1)?.summary.status).toBe("failed");
+  });
+
+  it("leaves an empty result succeeded and confirmed where the instruction says an empty table is the right answer", async () => {
+    // "If nothing matches, an empty table is the right answer" is a real
+    // instruction in this corpus, so the judgement has to be able to conclude
+    // satisfied. Mutation: refute an empty result deterministically -- the run
+    // comes back `failed` for having correctly found nothing.
+    const asked = "List the members matching hollis; if nothing matches, an empty table is the right answer.";
+    const context = harness({ answer: ANSWER.yes, datasets: [datasetSummary({ recordCount: 0 })], instructions: [instruction(asked)] });
     const next = await verify(context);
     expect(next.status).toBe("succeeded");
-    const recorded = next.metadata?.resultVerification as JsonObject;
-    expect(recorded).toMatchObject({ status: "unverified", performed: false, code: "core.result.no_records" });
-    expect(String(recorded.reason)).toContain("Nothing was stored, so the result was not checked");
-    expect(context.saved.at(-1)?.metadata?.resultVerification).toMatchObject({ status: "unverified", code: "core.result.no_records" });
-    expect(context.requests).toHaveLength(0);
+    expect(next.metadata?.resultVerification).toMatchObject({ status: "confirmed", performed: true, verdict: "answers", basis: "model", calls: 1 });
+    expect(context.requests).toHaveLength(1);
+    // The request it was judged against, and the steps that ran, both reached
+    // the call: without them nothing could tell "found nothing" from "never
+    // looked".
+    expect(context.requests[0]?.context.instructions.instructions.map((entry) => entry.body)).toEqual([asked]);
+    expect(context.requests[0]?.context.resultSummary?.totalRecordCount).toBe(0);
+    expect(context.requests[0]?.context.resultSummary?.flowShape.map((step) => step.definitionId)).toEqual(["builtin.navigate", "builtin.policy.action", "builtin.end"]);
+    expect(context.resolutions.count).toBe(1);
+  });
+
+  it("hands a refuted empty result to the wrong-answer route exactly as a refuted non-empty one", async () => {
+    // The point of judging it: the repair re-enters exploration. Mutation: keep
+    // the empty result on a provider-free path -- `performed` is false, the run
+    // is not failed, and the repair port is never reached.
+    const repairs: number[] = [];
+    // The extract step that stored nothing still ran and still succeeded, which
+    // is what the repair speaks about: `attempt.ts` takes the last succeeded
+    // attempt as the node the result came out of.
+    const extracted: AutomationStudioFlowRunDetail = {
+      ...runDetail(),
+      actionAttempts: [{ attemptId: "attempt.1", nodeId: "n2", definitionId: "builtin.policy.action", order: 1, status: "succeeded", startedAt: 2, finishedAt: 3, metadata: { recordCount: 0 } }]
+    };
+    const context = harness({ answer: ANSWER.no, datasets: [datasetSummary({ recordCount: 0 })], instructions: [instruction("List every earbud under $50.")] });
+    const next = await verify(context, {
+      ports: {
+        ...context.ports,
+        getFlowRunDetail: async () => extracted,
+        repairRefutedResult: async (request) => { repairs.push(request.resultSummary.totalRecordCount); return undefined; }
+      }
+    });
+    expect(next.status).toBe("failed");
+    // Handed over with the empty result itself, so the repair can see that
+    // nothing was stored rather than being told only that the answer was wrong.
+    expect(repairs).toEqual([0]);
   });
 
   it("fails a run whose every row was refused, without spending a call", async () => {
@@ -285,6 +355,10 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(next.status).toBe("failed");
     expect((next.metadata?.resultVerification as JsonObject).code).toBe("core.result.every_record_refused");
     expect(context.requests).toHaveLength(0);
+    // Not a provider resolution either: a schema that refused every row it found
+    // is wrong under any request, so nothing about it is worth resolving a model
+    // for. Mutation: judge every result through the model, and this fails.
+    expect(context.resolutions.count).toBe(0);
   });
 
   it("records that nothing was judged, rather than a pass, when no model can be asked", async () => {
@@ -297,10 +371,58 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(recorded.code).toBe("core.result.no_model_available");
   });
 
-  it("records that there was nothing to judge when the run stored no record set", async () => {
-    const next = await verify(harness({ datasetsUnavailable: true }));
+  it("judges a run that stored no record set at all on what it did, rather than exempting it", async () => {
+    // An action-only Flow -- it signed in, or pressed something. Mutation:
+    // restore `nothing_to_judge`: no call is made, `performed` is false, and a
+    // run that never did what was asked reports success unchallenged.
+    const context = harness({ answer: ANSWER.no, datasetsUnavailable: true, instructions: [instruction("Cancel the 4pm booking.")] });
+    const next = await verify(context);
+    expect(next.status).toBe("failed");
+    expect(next.metadata?.resultVerification).toMatchObject({ status: "refuted", performed: true, verdict: "does_not_answer" });
+    expect(context.requests).toHaveLength(2);
+    expect(context.requests[0]?.context.resultSummary?.recordSetCount).toBe(0);
+  });
+
+  it("confirms a run that stored no record set when the model judges the request was carried out", async () => {
+    const context = harness({ answer: ANSWER.yes, datasetsUnavailable: true, instructions: [instruction("Cancel the 4pm booking.")] });
+    const next = await verify(context);
     expect(next.status).toBe("succeeded");
-    expect((next.metadata?.resultVerification as JsonObject).code).toBe("core.result.nothing_to_judge");
+    expect(next.metadata?.resultVerification).toMatchObject({ status: "confirmed", performed: true, verdict: "answers", calls: 1 });
+  });
+
+  it("ends a verification whose provider resolution never returns, instead of hanging the run", async () => {
+    // The 2026-09-20 hang (t024), which was never root-caused and was worked
+    // around by never resolving a provider for an empty result. Bounded now:
+    // the run ends, says the check did not finish, and keeps the status its
+    // steps earned. Mutation: drop the deadline, and this test never returns.
+    const context = harness({ resolverHangs: true, datasets: [datasetSummary({ recordCount: 0 })] });
+    const next = await verify(context, { verificationDeadlineMs: 20 });
+    expect(next.status).toBe("succeeded");
+    const recorded = next.metadata?.resultVerification as JsonObject;
+    expect(recorded).toMatchObject({ status: "unverified", performed: false, code: "core.result.verification_did_not_finish" });
+    expect(String(recorded.reason)).toContain("did not finish inside its deadline");
+    expect(context.requests).toHaveLength(0);
+    expect(context.saved.at(-1)?.summary.status).toBe("succeeded");
+  });
+
+  it("ends a verification whose provider resolution throws, naming the error's kind and not its message", async () => {
+    const context = harness({ datasets: [datasetSummary({ recordCount: 0 })] });
+    const next = await verify(context, { ports: { ...context.ports, resolveProvider: async () => { throw new Error("SQLITE_CANTOPEN /projects/project-1/project.sqlite"); } } });
+    expect(next.status).toBe("succeeded");
+    const recorded = next.metadata?.resultVerification as JsonObject;
+    expect(recorded.code).toBe("core.result.verification_did_not_finish");
+    expect(String(recorded.reason)).toContain("(Error)");
+    expect(String(recorded.reason)).not.toContain("SQLITE_CANTOPEN");
+  });
+
+  it("abandons a verification when the run itself is cancelled under it", async () => {
+    const context = harness({ resolverHangs: true, datasets: [datasetSummary({ recordCount: 0 })] });
+    const controller = new AbortController();
+    const running = verify(context, { signal: controller.signal, verificationDeadlineMs: 60_000 });
+    controller.abort();
+    const next = await running;
+    expect(next.status).toBe("succeeded");
+    expect(String((next.metadata?.resultVerification as JsonObject).reason)).toContain("cancelled while it was being judged");
   });
 
   it("fails closed, naming the error's kind and not its message, when the result cannot be read", async () => {
@@ -354,11 +476,15 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect((next.metadata?.resultVerification as JsonObject).status).toBe("unverified");
   });
 
-  it("records a judged result as confirmed or refuted, and a run with nothing to judge as having no result", async () => {
+  it("records a judged result as confirmed or refuted, and a run nobody could judge as unverified", async () => {
+    // `no_result` is gone from the vocabulary a new run can reach: a run that
+    // stored no record set is judged on what it did, and the two remaining ways
+    // of not judging one both read `unverified`.
     expect(((await verify(harness({ answer: ANSWER.yes }))).metadata?.resultVerification as JsonObject).status).toBe("confirmed");
     expect(((await verify(harness({ answer: ANSWER.no }))).metadata?.resultVerification as JsonObject).status).toBe("refuted");
     expect(((await verify(harness({ answer: ANSWER.unknown }))).metadata?.resultVerification as JsonObject).status).toBe("unverified");
-    expect(((await verify(harness({ datasetsUnavailable: true }))).metadata?.resultVerification as JsonObject).status).toBe("no_result");
+    expect(((await verify(harness({ datasetsUnavailable: true, answer: ANSWER.yes }))).metadata?.resultVerification as JsonObject).status).toBe("confirmed");
+    expect(((await verify(harness({ withProvider: false }))).metadata?.resultVerification as JsonObject).status).toBe("unverified");
   });
 
   it("writes the same status onto the run detail a reader of the run sees", async () => {

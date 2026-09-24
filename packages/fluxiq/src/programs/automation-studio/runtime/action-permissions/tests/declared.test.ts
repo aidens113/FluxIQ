@@ -21,6 +21,8 @@ import {
 
 const NOTHING_LASTING: AutomationStudioActionDeclaration = { consequences: [], control: { name: "Schedule post", kind: "button" }, verb: "press" };
 const PUBLISH: AutomationStudioActionDeclaration = { consequences: ["send_or_publish", "create_new"], control: { name: "Schedule post", kind: "button" }, verb: "press" };
+/** Destructive, which is the only kind the gate still refuses. */
+const OVERWRITE: AutomationStudioActionDeclaration = { consequences: ["delete", "modify_existing"], control: { name: "Schedule post", kind: "button" }, verb: "press" };
 const PRESS = { kind: "exploration_step" as const, id: "core.run_node", ref: "call.3" };
 const STEP = { kind: "flow_step" as const, id: "web.output.dom-click", ref: "main.s4" };
 
@@ -70,13 +72,13 @@ describe("what the gate keeps of a declaration", () => {
   it("records a refusal with what was missing and which request carries it", async () => {
     const run = gate();
 
-    expect(await run.checkFor(PRESS)(PUBLISH)).toEqual({ permitted: false, missing: ["send_or_publish", "create_new"], requestId: "permission-request:one" });
+    expect(await run.checkFor(PRESS)(OVERWRITE)).toEqual({ permitted: false, missing: ["delete", "modify_existing"], requestId: "permission-request:one" });
     expect(run.declarations[0]).toEqual({
       action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "press", effect: "mutate" },
       control: { name: "Schedule post", kind: "button" },
-      consequences: ["send_or_publish", "create_new"],
+      consequences: ["delete", "modify_existing"],
       permitted: false,
-      missing: ["send_or_publish", "create_new"],
+      missing: ["delete", "modify_existing"],
       requestId: "permission-request:one"
     });
   });
@@ -104,7 +106,7 @@ describe("what the gate keeps of a declaration", () => {
 
   it("permits an empty declaration even where there is nobody to ask", async () => {
     expect(await automationStudioActionPermissionDenied(NOTHING_LASTING)).toEqual({ permitted: true });
-    expect(await automationStudioActionPermissionDenied(PUBLISH)).toEqual({ permitted: false, missing: ["send_or_publish", "create_new"], requestId: null });
+    expect(await automationStudioActionPermissionDenied(OVERWRITE)).toEqual({ permitted: false, missing: ["delete", "modify_existing"], requestId: null });
   });
 });
 
@@ -175,7 +177,7 @@ describe("an action that only reads", () => {
   it("gates an action whose effect nobody stated, exactly as before", async () => {
     const run = gate();
 
-    expect(await run.checkFor(STEP)(PUBLISH)).toEqual({ permitted: false, missing: ["send_or_publish", "create_new"], requestId: "permission-request:one" });
+    expect(await run.checkFor(STEP)(OVERWRITE)).toEqual({ permitted: false, missing: ["delete", "modify_existing"], requestId: "permission-request:one" });
     expect(run.declarations[0]?.action.effect).toBe("mutate");
   });
 

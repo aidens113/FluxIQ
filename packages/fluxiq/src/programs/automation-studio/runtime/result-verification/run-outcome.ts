@@ -15,11 +15,28 @@
 // A run whose result could not be put to a model at all keeps the status its
 // steps earned and is recorded `unverified`, never `confirmed`
 // (`verification-status.ts` says why it is not failed instead). So does a run
-// whose record set holds no rows (`core.result.no_records`), which is never
-// put to a model; and so does a run the model did not judge to answer and then,
-// asked again with the same evidence, did not twice judge not to
-// (`agreement.ts`): only two agreeing refutations fail a run whose every step
-// succeeded.
+// the model did not judge to answer and then, asked again with the same
+// evidence, did not twice judge not to (`agreement.ts`): only two agreeing
+// refutations fail a run whose every step succeeded.
+//
+// **Every finished run is put to the question, including one that stored
+// nothing.** An empty record set, and a run with no record set at all, were
+// both exempt until 2026-09-24 and are not any more (`verify.ts` says what the
+// exemption cost). The one thing that changes for them here is the order of the
+// reads: the instructions, the provider and the run detail are fetched for them
+// too, because a model asked whether an empty answer is the right one cannot
+// answer without the request and without the steps that ran.
+//
+// **The whole of that is bounded.** Reading the result, resolving the provider
+// and making the calls all run inside one deadline (`deadline.ts`), because the
+// reason the empty result was exempt in the first place is a hang on that path
+// that was never root-caused. Nothing inside the bound writes anything -- every
+// write this module makes happens after the judgement comes back -- so an
+// abandoned verification cannot write over the record its own run is about to
+// get. One that does not finish is recorded as one that did not finish:
+// `core.result.verification_did_not_finish`, `unverified`, the run keeping the
+// status its steps earned. That is what the old exemption produced anyway,
+// except that now it is the failure case rather than the rule.
 //
 // Everything it reaches outside itself is a port, for the reason
 // `recovery/annotation/ports.ts` states: the service is a six-thousand-line
@@ -44,10 +61,11 @@ import {
   type AutomationStudioRefutedResultRepairPort
 } from "../recovery/refuted-result/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
-import { automationStudioResultFailureRecord } from "./core-observation.ts";
+import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
+import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
-import { verifyAutomationStudioRunResult } from "./verify.ts";
+import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 
 /**
  * A resolver's answer, normalized to the one shape the verification reads.
@@ -156,6 +174,12 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
    * caller's behaviour exactly as it was.
    */
   resultCheck?: { checked: boolean; epoch: number; code: string; reason: string } | undefined;
+  /**
+   * How long the whole verification may take, provider resolution included.
+   * Omitted takes `deadline.ts`'s default; zero or less removes the bound, which
+   * only a caller that supplies its own `signal` should do.
+   */
+  verificationDeadlineMs?: number | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -170,7 +194,17 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   input: AutomationStudioRuntimeSessionVerificationInput
 ): Promise<AutomationStudioRuntimeSession> {
   if (input.session.status !== "succeeded") return input.session;
-  const report = await runVerification(input);
+  // The whole verification, under one deadline: nothing it does can leave the
+  // run unfinished, and nothing it does writes, so an abandoned one cannot
+  // write over the record this call is about to write.
+  const bounded = await automationStudioResultVerificationWithinDeadline({
+    ...(input.verificationDeadlineMs !== undefined ? { deadlineMs: input.verificationDeadlineMs } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+    judge: async () => await runVerification(input)
+  });
+  const report: AutomationStudioRuntimeSessionVerificationReport = bounded.settled
+    ? bounded.value
+    : { outcome: verificationDidNotFinish(bounded.reason, bounded.error), interventions: [] };
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
@@ -292,13 +326,21 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;
-  if (summary.totalRecordCount === 0) {
-    return { ...await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] }), summary };
+  const withResult = (report: { outcome: AutomationStudioResultVerificationOutcome; interventions: AutomationStudioRuntimeSessionVerificationReport["interventions"] }): AutomationStudioRuntimeSessionVerificationReport =>
+    ({ ...report, summary, ...(datasetId !== undefined ? { datasetId } : {}) });
+  // Settled by Core's own counts: every row refused, or a stored row with no
+  // value for a field the Flow's schema requires. Neither needs the request
+  // read, so neither is worth a provider resolution or a call.
+  if (automationStudioResultCoreObservation(summary)) {
+    return withResult(await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] }));
   }
+  // From here a model is asked. The request and the steps that ran are read for
+  // an empty result too: without them nothing can tell a Flow that searched and
+  // found nothing from one that never looked.
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  const report = await verifyAutomationStudioRunResult({
+  return withResult(await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
     runId: session.runId,
@@ -313,8 +355,31 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
-  });
-  return { summary, ...report, ...(datasetId !== undefined ? { datasetId } : {}) };
+  }));
+}
+
+/**
+ * A verification that did not come back: its deadline passed, the run was
+ * cancelled under it, or the attempt threw before any verdict.
+ *
+ * `performed: false`, so it is recorded `unverified` and never read as a pass,
+ * and the run keeps the status its steps earned -- the same treatment a run gets
+ * when no model is configured, and for the same reason: nobody judged this
+ * result. The error's kind is named and its message is not, because a message
+ * can carry what the store or the page was holding.
+ */
+function verificationDidNotFinish(reason: "timed_out" | "aborted" | "threw", error: unknown): AutomationStudioResultVerificationOutcome {
+  const why = reason === "timed_out"
+    ? "it did not finish inside its deadline"
+    : reason === "aborted"
+      ? "the run was cancelled while it was being judged"
+      : `it failed before reaching a verdict (${errorName(error)})`;
+  return {
+    schemaVersion: "automation-studio.result-verification.v1",
+    performed: false,
+    code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.notFinished,
+    reason: `Whether this run's result answers the request was never judged: ${why}.`
+  };
 }
 
 /** The narrower of what the caller allows this call and what the resolution allows it. */

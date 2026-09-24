@@ -15,10 +15,21 @@
 //
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
-// before a provider is even resolved. A run that stored a record set with no
-// rows in it is recorded as not checked (`core.result.no_records`), never as
-// a pass, and never reaches provider resolution: judging an empty result
-// against the instruction is not done here (see `nothingToJudge`).
+// before a provider is even resolved.
+//
+// **An empty result is judged like any other, and that is new.** Until
+// 2026-09-24 a run that stored no rows -- an empty record set, or no record set
+// at all -- was exempt: it was recorded as not checked and never put to a
+// model, because a verification reached from an empty result had once entered
+// provider resolution and never returned (2026-09-20, t024). That exemption
+// made the single most obviously wrong answer a run can give -- an empty table
+// where the person asked for rows -- the one case nothing ever looked at, and
+// because nothing refuted it, nothing repaired it either. The hang is now
+// bounded rather than avoided (`deadline.ts`), and an empty result reaches the
+// same question every other result reaches. It can be answered `yes`: "if
+// nothing matches, an empty table is the right answer" is a request a Flow
+// satisfies by finding nothing, and only a reading of the request tells that
+// from an extraction that found nothing because it never looked.
 //
 // **`loop_verification` is the task kind, and it needed no new output shape.**
 // The kind has existed since the loop protocol was written -- described in its
@@ -43,15 +54,28 @@ import {
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
-import { AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES, automationStudioResultCoreObservation } from "./core-observation.ts";
+import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 
-/** Core's codes for a run that was not verified, and why. Never a verdict. */
+/**
+ * Core's codes for a run that was not verified, and why. Never a verdict.
+ *
+ * Two codes used to live here and no longer do, because the cases they named
+ * are now judged rather than skipped: `core.result.nothing_to_judge`, for a run
+ * that stored no record set, and `core.result.no_records`, for a record set
+ * holding no rows. Both are still readable on runs recorded before 2026-09-24,
+ * and `verification-status.ts` still maps the first to the `no_result` status a
+ * stored run may carry; nothing produces either any more.
+ *
+ * What is left is the two ways a question can fail to be put at all: no model
+ * to put it to, and a verification that did not finish inside its deadline
+ * (`deadline.ts`). Both are `performed: false`, both read as `unverified`, and
+ * neither is ever a pass.
+ */
 export const AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES = Object.freeze({
-  noResult: "core.result.nothing_to_judge",
-  /** A record set was stored and holds no rows: an empty result, recorded as not checked. */
-  noRecords: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.noRecords,
-  noModel: "core.result.no_model_available"
+  noModel: "core.result.no_model_available",
+  /** The verification did not settle inside its deadline, or the run was cancelled under it. */
+  notFinished: "core.result.verification_did_not_finish"
 } as const);
 
 export type AutomationStudioResultVerificationRequest = {
@@ -93,8 +117,6 @@ export type AutomationStudioResultVerificationReport = {
 const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
-  const skipped = nothingToJudge(request.summary);
-  if (skipped) return { outcome: skipped, interventions: [] };
   const core = automationStudioResultCoreObservation(request.summary);
   if (core) return { outcome: { ...core, performed: true }, interventions: [] };
   const provider = request.provider;
@@ -165,43 +187,6 @@ async function askOnce(
   // intervention is told here which check it was and who asked.
   const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check } };
   return { verification, intervention };
-}
-
-/**
- * Whether there is a result to judge at all.
- *
- * A Flow that stores no record set has no result in this sense -- it signed in,
- * or pressed something, and its own steps are the only account of whether it
- * worked. Saying so is not the same as passing it: the run records that nothing
- * was judged and why, and `performed: false` is a different fact from a verdict
- * of `answers`.
- *
- * A record set with no rows in it is an empty result, and it is not judged
- * either -- but it is never allowed to read as nothing having happened. It is
- * recorded as `core.result.no_records`, not checked, and the run keeps the
- * status its steps earned. It is not failed outright, because an empty table
- * is sometimes the right answer ("if every product has been delisted, an
- * empty table is the right answer"), and it is not put to the model, because
- * a verification call reached from an empty result revalidated an
- * already-spent grant and never returned (2026-09-20, t024). Judging an empty
- * result against the instruction waits on that hang being fixed.
- */
-function nothingToJudge(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerificationOutcome | undefined {
-  if (summary.totalRecordCount > 0 || summary.totalRefusedCount > 0) return undefined;
-  if (summary.recordSetCount > 0) {
-    return {
-      schemaVersion: "automation-studio.result-verification.v1",
-      performed: false,
-      code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noRecords,
-      reason: "Nothing was stored, so the result was not checked: the run's record set holds no rows, and whether an empty result answers the request was never judged."
-    };
-  }
-  return {
-    schemaVersion: "automation-studio.result-verification.v1",
-    performed: false,
-    code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noResult,
-    reason: "The run stored no record set, so it produced no result for a verification to judge."
-  };
 }
 
 /** The first error code a failed call reported. Codes only: a provider's message never reaches a run record. */

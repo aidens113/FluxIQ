@@ -11,6 +11,18 @@
 // What the model did write is kept. Keys it chose are kept where they are
 // usable, so the edges it wrote still point at the nodes it meant; a key that
 // is not a usable symbol is replaced and every edge naming it is moved with it.
+//
+// The wrapper the model put its nodes in -- a subflow array, a map keyed by
+// subflow name, a bare list of steps, a node list nested a level down -- is
+// `./plan-shapes.ts`'s question, and the refusal a plan holding no nodes gets
+// is written there. This module takes the subflows it found and builds the
+// plan, so the two questions can be answered and tested apart.
+//
+// None of it loosens what a valid plan is. Every node still has to name a
+// definition the registry resolves in this Flow's scope, every parameter still
+// goes through `normaliseAuthoringNodeParameters`, and the plan this returns
+// still faces `parseAutomationStudioFlowBootstrapPlan` and
+// `validateAutomationStudioFlowBootstrapPlan` unchanged.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioNodeDefinition,
@@ -31,6 +43,13 @@ import { authoringError } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
+import {
+  AUTOMATION_STUDIO_AUTHORING_PLAN_SHAPES,
+  authoringNodeList,
+  describeAuthoringShape,
+  readAuthoringPlanSubflows,
+  type AuthoringWrittenSubflow
+} from "./plan-shapes.ts";
 import { AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY, isJsonObject } from "./values.ts";
 
 const NAME_LIMIT = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength;
@@ -44,51 +63,48 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   summary: string;
 }): { plan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
-  if (!isJsonObject(input.value)) {
-    issues.push(authoringError("bootstrap.invalid_plan", "Bootstrap plan must be an object.", "plan"));
+  const read = readAuthoringPlanSubflows(input.value);
+  if ("refusal" in read) {
+    issues.push(authoringError(read.refusal.code, read.refusal.message, read.refusal.path));
     return { issues };
   }
   const definitions = input.registry.list(input.resolution);
-  const written = subflowList(input.value);
-  if (!written.length) {
-    issues.push(authoringError("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
-    return { issues };
-  }
-  const keys = uniqueSymbols(written.map((subflow, index) => symbolOf(subflow, index)));
+  const keys = uniqueSymbols(read.subflows.map((subflow, index) => symbolOf(subflow, index)));
   const subflows: AutomationStudioFlowBootstrapSubflow[] = [];
-  for (const [index, subflow] of written.entries()) {
+  for (const [index, subflow] of read.subflows.entries()) {
     const path = `plan.subflows.${index}`;
-    const built = buildSubflow({ written: subflow, definitions, key: keys[index]!, index, path });
+    const built = buildSubflow({ written: subflow.written, definitions, key: keys[index]!, index, path });
     issues.push(...built.issues);
     if (built.subflow) subflows.push(built.subflow);
   }
   // Only the shape complaint is the shape complaint. A plan that wrote subflows
   // and had them all refused is a different failure, and saying "must be an
-  // array" to a model that wrote one is how the loop above began: the sentence
-  // named nothing the model could change. The subflows' own issues now carry
-  // the reason, so nothing is added on top of them.
+  // array" to a model that wrote one is how the refusal loop began: the
+  // sentence named nothing the model could change. The subflows' own issues now
+  // carry the reason, so nothing is added on top of them.
   if (!subflows.length || issues.some((issue) => issue.severity === "error")) {
     if (!subflows.length && !issues.length) {
-      issues.push(authoringError("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
+      issues.push(authoringError("bootstrap.invalid_subflows", `Bootstrap plan holds no nodes: the plan ${describeAuthoringShape(read.plan)}. ${AUTOMATION_STUDIO_AUTHORING_PLAN_SHAPES}`, "plan.subflows"));
     }
     return { issues };
   }
   if (!subflows.some((subflow) => subflow.role === "primary")) subflows[0]!.role = "primary";
   const primary = subflows.find((subflow) => subflow.role === "primary")!.key;
-  return { plan: { schemaVersion: "0.1", router: router(input.value.router, subflows, input.summary, primary), subflows }, issues };
+  return { plan: { schemaVersion: "0.1", router: router(read.plan.router, subflows, input.summary, primary), subflows }, issues };
 }
 
-function subflowList(plan: JsonObject): JsonObject[] {
-  const written = plan.subflows;
-  if (Array.isArray(written)) return written.filter(isJsonObject);
-  if (isJsonObject(written)) return [written];
-  for (const key of NODE_LIST_KEYS) if (Array.isArray(plan[key])) return [plan];
-  return [];
-}
-
-function symbolOf(subflow: JsonObject, index: number): string {
-  const written = typeof subflow.key === "string" ? subflow.key : typeof subflow.name === "string" ? subflow.name : "";
-  return authoringSymbol(written) ?? (index === 0 ? "main" : `subflow${index}`);
+/**
+ * The key a subflow goes by: the one it wrote, the name the plan's structure
+ * gave it, the name it called itself, or the one Core supplies. A single
+ * primary subflow needs none of them, which is why `main` is the default.
+ */
+function symbolOf(subflow: AuthoringWrittenSubflow, index: number): string {
+  for (const written of [subflow.written.key, subflow.namedBy, subflow.written.name]) {
+    if (typeof written !== "string") continue;
+    const symbol = authoringSymbol(written);
+    if (symbol) return symbol;
+  }
+  return index === 0 ? "main" : `subflow${index}`;
 }
 
 function buildSubflow(input: {
@@ -99,14 +115,23 @@ function buildSubflow(input: {
   path: string;
 }): { subflow?: AutomationStudioFlowBootstrapSubflow; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
-  const writtenNodes = NODE_LIST_KEYS.map((key) => input.written[key]).find(Array.isArray) ?? [];
+  const writtenNodes = authoringNodeList(input.written) ?? [];
   const nodes: AutomationStudioFlowBootstrapNode[] = [];
   const renamed = new Map<string, string>();
   const definitionByKey = new Map<string, AutomationStudioNodeDefinition>();
-  for (const [index, value] of writtenNodes.entries()) {
+  for (const [index, written] of writtenNodes.entries()) {
     const nodePath = `${input.path}.nodes.${index}`;
-    if (!isJsonObject(value)) {
-      issues.push(authoringError("bootstrap.invalid_node", "Bootstrap node must be an object.", nodePath));
+    // A step written as the bare id of the node it runs is that node with no
+    // parameters yet: the definition is still matched against the registry, so
+    // nothing unregistered becomes executable, and a parameter it needs is
+    // refused by name rather than the whole step being refused as malformed.
+    const value = isJsonObject(written)
+      ? written
+      : typeof written === "string" && written.trim()
+        ? ({ definitionId: written } satisfies JsonObject)
+        : undefined;
+    if (!value) {
+      issues.push(authoringError("bootstrap.invalid_node", `Bootstrap node ${describeAuthoringShape(written)}; it must be an object, or the id of the node it runs.`, nodePath));
       continue;
     }
     const found = matchAuthoringDefinition(definitionText(value), input.definitions);
@@ -142,7 +167,7 @@ function buildSubflow(input: {
     definitionByKey.set(key, found.definition);
   }
   // A subflow that produced no node says so, and this is the one return that
-  // used to say nothing at all. `writtenNodes` reads `nodes`, `steps` or
+  // used to say nothing at all. The node list is read under `nodes`, `steps` or
   // `actions` and nothing else, so a model that put its list under any other
   // name reached here with an empty list and no issue raised against it -- the
   // subflow vanished, and the caller then reported "Bootstrap subflows must be
@@ -157,11 +182,12 @@ function buildSubflow(input: {
   //
   // The empty list and the list whose nodes all failed are different problems,
   // so they are different sentences: the first names the keys a node list may
-  // be written under, and the second leaves the nodes' own issues to speak,
-  // because they already say which node and why.
+  // be written under and what the subflow turned out to hold, and the second
+  // leaves the nodes' own issues to speak, because they already say which node
+  // and why.
   if (!nodes.length) {
     if (!writtenNodes.length) {
-      issues.push(authoringError("bootstrap.subflow_has_no_nodes", `Subflow ${input.key} lists no nodes; write them under ${NODE_LIST_KEYS.join(", ")}.`, `${input.path}.nodes`));
+      issues.push(authoringError("bootstrap.subflow_has_no_nodes", `Subflow ${input.key} lists no nodes; write them under ${NODE_LIST_KEYS.join(", ")}. It ${describeAuthoringShape(input.written)}.`, `${input.path}.nodes`));
     } else if (!issues.length) {
       issues.push(authoringError("bootstrap.subflow_has_no_nodes", `Subflow ${input.key} has ${writtenNodes.length} node(s) and none could be built.`, `${input.path}.nodes`));
     }

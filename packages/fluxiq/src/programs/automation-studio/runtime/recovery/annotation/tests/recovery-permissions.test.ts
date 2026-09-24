@@ -109,30 +109,44 @@ describe("a recovery under its permission gate", () => {
   });
 
   // Item 4. The same gate stands over the patch stage: a repair that would
-  // press something lasting each time the Flow runs, and that nobody allowed,
-  // is the request the recovery ends on -- not the preflight refusal it was.
-  it("turns a repair that would lastingly act into the request, and runs nothing", async () => {
-    const run = await recover({ explore: false, repair: { consequences: ["create_new"] } });
+  // destroy or spend something each time the Flow runs, and that nobody
+  // allowed, is the request the recovery ends on -- not the preflight refusal
+  // it was, and not a receipt nobody is shown.
+  it("turns a repair that would destructively act into the request, and runs nothing", async () => {
+    const run = await recover({ explore: false, repair: { consequences: ["delete"] } });
 
     expect(run.taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
     expect(run.detail.metadata?.permissionRequest).toMatchObject({
       action: { kind: "flow_step", id: "builtin.policy.action", ref: "node.action", verb: "press" },
       control: { name: "Pick and pack", kind: "button" },
-      consequences: ["create_new"],
-      missing: ["create_new"],
+      consequences: ["delete"],
+      missing: ["delete"],
       reason: { stage: "recovery" },
       sentence: expect.stringMatching(/^To repair the step that failed, the Flow would press "Pick and pack" \(button\) each time it runs/)
     });
     const gate = run.detail.metadata?.llmGate as JsonObject;
     expect(gate.patchHeldCode).toBe("llm.runtime_patch_permission_required");
     expect(gate).not.toHaveProperty("patchSkippedCode");
-    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionRequired: true, executed: false, missing: ["create_new"] })]);
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionRequired: true, executed: false, missing: ["delete"] })]);
     expect(run.detail.adaptationIds).toEqual([]);
     expect(stage(run.detail, "resolution")).toMatchObject({ status: "failed", providerCalled: true, detail: { failureCode: "llm.runtime_patch_permission_required" } });
   });
 
-  it("runs the repair as authorized when the grant holds its classes, and raises nothing", async () => {
-    const run = await recover({ explore: false, repair: { consequences: ["create_new"] }, permittedConsequences: ["create_new"] });
+  // The repair the Lab could never run live. Nothing is granted, no instructed
+  // set stands, and the repair still presses the control -- because making
+  // something new was never the gate's to refuse, and a patch the gate permits
+  // is not judged by the policy's side-effect flags.
+  it("runs a repair that only makes something new, with nothing granted and nobody asked", async () => {
+    const run = await recover({ explore: false, repair: { consequences: ["create_new"] } });
+
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionOutcome: "permitted", preflightOk: true })]);
+    expect(run.detail.adaptationIds).toHaveLength(1);
+    expect(run.detail.metadata?.llmGate).not.toHaveProperty("patchHeldCode");
+  });
+
+  it("runs the repair as authorized when the grant holds its destructive classes, and raises nothing", async () => {
+    const run = await recover({ explore: false, repair: { consequences: ["delete"] }, permittedConsequences: ["delete"] });
 
     expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ permissionOutcome: "permitted", preflightOk: true })]);

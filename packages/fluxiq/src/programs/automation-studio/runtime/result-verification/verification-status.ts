@@ -18,19 +18,22 @@
 //   * `refuted`    -- judged, and it does not, or nobody could tell, which
 //                     fails closed; the run is `failed`.
 //   * `unverified` -- there is a result, and nobody judged it, because no model
-//                     was available to this run, or because its record set
-//                     holds no rows (`core.result.no_records`); or it was
-//                     judged twice and the two checks did not agree that it
-//                     fails (`model_disagreed`, `model_unconfirmed`). Never
-//                     to be presented as `confirmed`.
-//   * `no_result`  -- the run stored no record set, so there was nothing for a
-//                     verification to judge; its steps are its only account.
+//                     was available to this run or because the verification did
+//                     not finish (`core.result.verification_did_not_finish`);
+//                     or it was judged twice and the two checks did not agree
+//                     that it fails (`model_disagreed`, `model_unconfirmed`).
+//                     Never to be presented as `confirmed`.
+//   * `no_result`  -- historical. Until 2026-09-24 a run that stored no record
+//                     set was not judged at all and was recorded this way. Such
+//                     a run is now judged on what it did, like any other, so
+//                     nothing produces this status any more; it stays in the
+//                     vocabulary because the run store holds it on rows written
+//                     before then and readers must still understand them.
 //
 // Any reason for skipping that this module does not recognise is `unverified`:
 // a new way of not judging a result is still not a judgement.
 
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts.ts";
-import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES } from "./verify.ts";
 
 export type AutomationStudioResultVerificationStatus = "confirmed" | "refuted" | "unverified" | "no_result";
 
@@ -39,5 +42,5 @@ export function automationStudioResultVerificationStatus(outcome: AutomationStud
     if (outcome.verdict === "answers") return "confirmed";
     return automationStudioResultVerificationFailsRun(outcome) ? "refuted" : "unverified";
   }
-  return outcome.code === AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noResult ? "no_result" : "unverified";
+  return "unverified";
 }

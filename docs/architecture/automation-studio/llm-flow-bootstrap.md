@@ -70,6 +70,25 @@ person's own instruction already asks for. An action whose consequences the
 build does not hold raises an
 `automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
 
+**Only a destructive class is ever refused.** `move_money`, `delete` and
+`modify_existing` are what `AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES`
+names (`action-permissions/destructive.ts`): completing a purchase or checkout,
+deleting, and editing or overwriting what already exists. `create_new` and
+`send_or_publish` are not the gate's to refuse at all -- making something that
+was not there, or sending what the instruction said to send, destroys nothing,
+and FluxIQ holds no list of acts it declines on its own judgement. Before
+2026-09-24 all five gated, and builds on realistic sites spent days ending at
+`flow_bootstrap.permission_required` with nobody there to answer, for adding an
+item to a basket, saving a listing for later or confirming a request -- work the
+instruction named in so many words. The derivation in `instructed.ts` was meant
+to cover that and cannot be relied on to: it needs a provider call, the model
+has to name the class, and a claim survives only where its quote is the person's
+own words, so any one of those missing stopped the run. Narrowing what is gated
+removes the failure mode for the classes that never needed a person, and leaves
+the derivation authorising a destructive act the person did ask for. Nothing
+about what is *recorded* narrowed: every class is still declared, still kept in
+the declaration record, and still compared with the instruction below.
+
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask
 (`runtime/conversations/ask.ts`), so the gate and the conversation name the same

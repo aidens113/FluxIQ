@@ -1,17 +1,25 @@
 // The verdicts Core reaches on its own, from arithmetic over the result.
 //
-// Two of the four failures measured on 2026-09-17 need no model to catch, and
+// One of the four failures measured on 2026-09-17 needs no model to catch, and
 // must therefore be caught whether or not one is configured, whether or not the
-// provider answers, and whether or not the run was allowed to spend anything:
+// provider answers, and whether or not the run was allowed to spend anything: a
+// run whose every row was refused by record validation. The Flow did find rows,
+// and the record shape it declared itself threw every one of them away, so the
+// result is wrong under any reading of any request.
 //
-//   * a run that stored no rows at all while a record output ran, and
-//   * a run whose every row was refused by record validation, which is the same
-//     zero arrived at a different way and is worth saying differently, because
-//     the repair is different -- the first is an extraction that found nothing,
-//     the second is a schema that does not fit what was found.
+// **A plain empty result is not one of these, and used to be.** A run that
+// stored no rows and had none refused was refuted here outright, on the
+// reasoning that "zero rows cannot answer a request for rows, and there is no
+// reading of a request under which it could". The corpus refutes that
+// reasoning: "if nothing matches, an empty table is the right answer" is a real
+// instruction, and a Flow that searched and found nothing has answered it,
+// while an extraction that found nothing because it never looked has not. Only
+// a reading of the request tells the two apart, so an empty result goes to the
+// model like any other result (`verify.ts`) instead of being settled by
+// arithmetic that cannot see what was asked.
 //
-// Both are counts Core already holds on the run's dataset summaries. Nothing
-// here reads a row, a column, or the request.
+// The counts are ones Core already holds on the run's dataset summaries.
+// Nothing here reads a row, a column, or the request.
 //
 // A third needs no model either, and was measured live on 2026-09-18: rows
 // stored with a field the Flow's own record schema declares required, and no
@@ -23,9 +31,9 @@
 // no answer key, so Core may only hold a Flow to what the Flow says.
 //
 // A deterministic finding wins outright: it is not a hint to a model call, it
-// is the answer. Zero rows cannot answer a request for rows, and there is no
-// reading of a request under which it could, so spending a call to be told so
-// would be spending a call on a settled question.
+// is the answer, and spending a call to be told so would be spending a call on
+// a settled question. What belongs here is only what is settled without reading
+// the request.
 
 import { AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
@@ -33,7 +41,6 @@ import type { AutomationStudioResultVerdict, AutomationStudioResultVerification,
 /** Core's codes for a verdict it reached itself. */
 export const AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES = Object.freeze({
   everyRecordRefused: "core.result.every_record_refused",
-  noRecords: "core.result.no_records",
   requiredValuesMissing: "core.result.required_values_missing"
 } as const);
 
@@ -47,19 +54,16 @@ export const AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES = Object.freeze({
 export function automationStudioResultCoreObservation(summary: AutomationStudioRunResultSummary): AutomationStudioResultVerification | undefined {
   if (summary.recordSetCount === 0) return undefined;
   if (summary.totalRecordCount > 0) return summary.totalRowsMissingRequired > 0 ? requiredValuesMissing(summary) : undefined;
-  const codes = AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES;
   if (summary.totalRefusedCount > 0) {
     return refused({
-      code: codes.everyRecordRefused,
+      code: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.everyRecordRefused,
       reason: "Every row the run found was refused by record validation, so the run stored nothing and its result cannot answer the request.",
       observation: `${summary.totalRefusedCount} ${rows(summary.totalRefusedCount)} refused, 0 stored, across ${summary.recordSetCount} record ${sets(summary.recordSetCount)}.`
     });
   }
-  return refused({
-    code: codes.noRecords,
-    reason: "The run stored no records, so there is nothing for its result to answer the request with.",
-    observation: `0 records stored across ${summary.recordSetCount} record ${sets(summary.recordSetCount)}, and no row was refused.`
-  });
+  // Stored nothing and refused nothing: an empty result, and whether that
+  // answers the request is not something these counts can tell.
+  return undefined;
 }
 
 /**

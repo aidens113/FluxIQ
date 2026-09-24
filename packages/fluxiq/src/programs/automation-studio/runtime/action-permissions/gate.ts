@@ -6,6 +6,15 @@
 // with every action. The first action whose consequences the run does not hold
 // raises a request, and the gate records it.
 //
+// **What it can refuse is narrow, deliberately.** Only a destructive class --
+// spending money, changing what already exists, deleting -- is ever refused,
+// and only when neither the person's instruction nor a grant asked for it.
+// Making something new and sending what the instruction said to send are not
+// the gate's to refuse at all; see `destructive.ts` for why, and for the days
+// of live builds that ended asking a person for permission to put an item in a
+// basket. Everything is still declared and still recorded: what narrowed is
+// what stops a run, not what the run has to say about itself.
+//
 // **What the caller then does with that request is the caller's, and there are
 // two answers.** A caller that has nowhere to put the question ends the run on
 // it -- `endsOnRequest`, which is the default and aborts `signal` so the run
@@ -40,6 +49,7 @@ import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
 import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
+import { automationStudioDestructiveConsequences } from "./destructive.ts";
 import { AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
 import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionVerdict } from "./declaration.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
@@ -236,8 +246,16 @@ export class AutomationStudioActionPermissionGate {
       // empty answer is the one nobody could see. A read reaches this line the
       // same way, having had nothing lasting to declare in the first place.
       if (!consequences.length) return record({ permitted: true });
+      // The instruction is read whenever an action declares anything lasting,
+      // whether or not this action could be refused: it is stored with the
+      // Flow, and a run that only ever made things would otherwise never derive
+      // it at all.
       const instructed = await this.instructedFor();
-      const missing = automationStudioConsequencesInOrder(consequences.filter((consequence) =>
+      // Only a destructive class can stop anything (`destructive.ts`). Making
+      // something new or sending what the instruction said to send takes
+      // nothing away, so nobody is asked about it -- not because a grant or an
+      // instruction covered it, but because it was never the gate's to refuse.
+      const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) =>
         !this.permitted.has(consequence) && !instructed.some((entry) => entry.consequence === consequence)));
       if (!missing.length) return record({ permitted: true });
       if (this.raised) return record({ permitted: false, missing, requestId: this.raised.requestId });
@@ -306,8 +324,14 @@ export const automationStudioActionPermissionDenied: AutomationStudioActionPermi
   // given, which is the incentive this whole seam exists to remove. An action
   // that only reads is the same case: there is nothing it could have done that
   // outlasts it, so there is nobody who would need to be asked.
-  if (read.effect === "observe" || !read.consequences.length) return { permitted: true };
-  return { permitted: false, missing: automationStudioConsequencesInOrder(read.consequences), requestId: null };
+  if (read.effect === "observe") return { permitted: true };
+  // Nor is there anybody to ask about making or sending something: those are
+  // not gated anywhere (`destructive.ts`), so having no run behind the action
+  // changes nothing about them. What it changes is that a destructive class has
+  // no instruction that could have authorised it, and no request to raise.
+  const missing = automationStudioDestructiveConsequences(read.consequences);
+  if (!missing.length) return { permitted: true };
+  return { permitted: false, missing, requestId: null };
 };
 
 function shownValue(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult | undefined): unknown {
