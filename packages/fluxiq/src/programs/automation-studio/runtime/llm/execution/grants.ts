@@ -1,24 +1,25 @@
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES, AutomationStudioLlmExecutionGrantRefusal } from "./grant-refusal.ts";
 import { randomUUID } from "node:crypto";
-import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../action-permissions/index.ts";
-import type { IdentityAccessService } from "../../../identity-access/index.ts";
-import type { SecretKeysService } from "../../../secret-keys/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { IdentityAccessService } from "../../../../identity-access/index.ts";
+import type { SecretKeysService } from "../../../../secret-keys/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../provider-factories.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   automationStudioDeepSeekModelRefusal,
   isAutomationStudioDeepSeekModel,
   type AutomationStudioDeepSeekModel
-} from "./deepseek/index.ts";
+} from "../deepseek/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTaskRequest,
   type AutomationStudioLlmTokenLimits
-} from "./harness.ts";
-import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, automationStudioLlmSignalTimedOut } from "./provider-contract.ts";
-import { automationStudioLlmProviderErrorSpendsCall } from "./failure-disposition.ts";
-import { automationStudioLlmExecutionGrantMetadata, type AutomationStudioLlmExecutionGrantMetadata } from "./execution-grant-metadata.ts";
+} from "../harness.ts";
+import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, automationStudioLlmSignalTimedOut } from "../provider-contract.ts";
+import { automationStudioLlmProviderErrorSpendsCall } from "../failure-disposition.ts";
+import { automationStudioLlmExecutionGrantMetadata, type AutomationStudioLlmExecutionGrantMetadata } from "./grant-metadata.ts";
 import {
   automationStudioLlmExecutionGrantFixedCalls,
   automationStudioLlmExecutionGrantIterates,
@@ -26,7 +27,7 @@ import {
   parseAutomationStudioLlmExecutionGrantPurpose,
   type AutomationStudioLlmExecutionGrantPurpose,
   type AutomationStudioLlmExecutionGrantResolvePolicy
-} from "./grant-capabilities.ts";
+} from "../grant-capabilities.ts";
 
 // Sized to Core's own per-request ceiling, less room for the reply, rather than
 // to a number nobody chose. At 8000 in and 10000 total, describing a real
@@ -111,6 +112,7 @@ export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = LIMITS.ma
  */
 export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS = 600_000;
 
+
 /** The shortest a Secret Keys reveal authorization may be asked to live. */
 const MIN_REVEAL_AUTHORIZATION_TTL_MS = 1_000;
 
@@ -119,7 +121,7 @@ export type AutomationStudioLlmExecutionBinding = {
   settingsRevision: number;
 };
 
-export type { AutomationStudioLlmExecutionGrantMetadata } from "./execution-grant-metadata.ts";
+export type { AutomationStudioLlmExecutionGrantMetadata } from "./grant-metadata.ts";
 
 type StoredGrant = AutomationStudioLlmExecutionGrantMetadata & {
   actorUserId: string;
@@ -349,7 +351,7 @@ export class AutomationStudioLlmExecutionGrantService {
     const grant = this.grants.get(input.grantId);
     if (!grant || grant.state !== "available" || grant.heldForRun) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     grant.heldForRun = true;
     grant.expiresAtMs = Math.max(grant.expiresAtMs, this.now() + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS);
@@ -363,11 +365,11 @@ export class AutomationStudioLlmExecutionGrantService {
     const grant = this.grants.get(input.grantId);
     if (!grant || grant.state !== "available" || grant.expiresAtMs <= this.now()) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     if (!sameScope(grant, input)) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant scope mismatch.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
     }
     const [session, key, unresolvedBinding] = await Promise.all([
       this.options.identityAccess.validateSession(input.actorSessionId, this.now()),
@@ -377,13 +379,13 @@ export class AutomationStudioLlmExecutionGrantService {
     const binding = executionBinding(unresolvedBinding, grant.purpose);
     if (this.grants.get(grant.grantId) !== grant || grant.state !== "available" || grant.expiresAtMs <= this.now()) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is no longer valid.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
     }
     validateKeyCompatibility(key, grant);
     return automationStudioLlmExecutionGrantMetadata(grant);
@@ -661,7 +663,7 @@ export class AutomationStudioLlmExecutionGrantService {
       return;
     }
     this.finishCall(grant, call, call.worstCaseTokens);
-    await this.validateClaimedGrant(grant, input).catch(() => this.revoke(grant.grantId));
+    await this.validateClaimedGrant(grant, input).catch(/* best-effort: a re-validation that cannot complete is treated exactly as one that failed, and the grant is revoked either way */ () => this.revoke(grant.grantId));
   }
 
   /**

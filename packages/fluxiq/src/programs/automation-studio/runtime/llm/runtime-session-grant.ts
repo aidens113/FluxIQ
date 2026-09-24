@@ -13,7 +13,7 @@
 // provider for; it no longer says how many times. How many times is
 // configuration on the grant, bounded by the guards that are meant to bind --
 // cost, tokens, the recovery deadline and a lack of progress -- and by one high
-// absolute backstop in `execution-grants.ts` that exists only to stop a runaway
+// absolute backstop in `execution/grants.ts` that exists only to stop a runaway
 // loop.
 //
 // Four purposes reach a runtime session, and they are not interchangeable:

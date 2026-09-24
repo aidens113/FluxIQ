@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../../harness.ts";
-import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS, type AutomationStudioLlmExecutionGrantService } from "../../../execution-grants.ts";
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS, type AutomationStudioLlmExecutionGrantService } from "../../../execution/index.ts";
 import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
 // What a failed call does to the grant it was made under.

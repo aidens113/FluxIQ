@@ -3,10 +3,10 @@
 // of `execution-grants.ts`, which keeps the grant's lifecycle, so the public
 // face and the projection that produces it sit together.
 
-import type { AutomationStudioActionConsequence } from "../action-permissions/index.ts";
-import type { AutomationStudioDeepSeekModel } from "./deepseek/index.ts";
-import type { AutomationStudioLlmExecutionGrantPurpose } from "./grant-capabilities.ts";
-import type { AutomationStudioLlmTokenLimits } from "./harness.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { AutomationStudioDeepSeekModel } from "../deepseek/index.ts";
+import type { AutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
+import type { AutomationStudioLlmTokenLimits } from "../harness.ts";
 
 export type AutomationStudioLlmExecutionGrantMetadata = {
   grantId: string;
