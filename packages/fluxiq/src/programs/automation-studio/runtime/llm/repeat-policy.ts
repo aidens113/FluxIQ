@@ -123,7 +123,42 @@ export function automationStudioLlmEvidenceLookNeedsAttempt(tool: AutomationStud
  */
 export function automationStudioLlmEvidenceLookWasRefused(result: { evidence: unknown; effect: "observe" | "mutate"; effectApplied: boolean }): boolean {
   if (result.effect === "mutate" || result.effectApplied) return false;
-  const evidence = result.evidence;
+  return refusedItself(result.evidence);
+}
+
+/**
+ * Whether a call did nothing at all: it applied no effect and answered `ok:
+ * false`.
+ *
+ * This is the *progress* question, and it is not the repeat question above.
+ * The two were one predicate, and because that one answers `false` for every
+ * mutating tool, a refused action cleared the no-progress count. The comment
+ * beside it explains why a refused action is not a refused *look* -- an
+ * identical retry would do the same thing again, and `mutationEpoch` catches
+ * that -- and every word of it stands. What it does not cover is a *different*
+ * attempt each time: a new signature every call, so the repeat cache never
+ * fires, and a cleared count every call, so the guard never fires either.
+ *
+ * Measured on 2026-09-24. `company-directory-register-page` spent 31 of its 45
+ * build steps on `target_unobserved` -- the model naming a handle no packet had
+ * shown -- with two successful calls among them, and ended in
+ * `bootstrap.evidence_unusable_decision` after 44 provider calls
+ * (`run-muf2bs04-f6fea9fe`). Eight other runs that day show the same shape,
+ * rejections outnumbering everything else in the build loop. Nothing bounded
+ * any of it.
+ *
+ * So an attempt that did not happen is not progress, whatever kind of tool it
+ * was. A call that *did* something -- any applied effect -- still clears the
+ * count, and so does a refusal with a look between it and the next, which is
+ * what a model working around a refusal actually does.
+ */
+export function automationStudioLlmEvidenceNothingHappened(result: { evidence: unknown; effectApplied: boolean }): boolean {
+  if (result.effectApplied) return false;
+  return refusedItself(result.evidence);
+}
+
+/** The result's own `ok: false`, read as Core's vocabulary and never as a code. */
+function refusedItself(evidence: unknown): boolean {
   return Boolean(evidence) && typeof evidence === "object" && !Array.isArray(evidence) && (evidence as { ok?: unknown }).ok === false;
 }
 
