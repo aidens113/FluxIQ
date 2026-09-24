@@ -8,7 +8,13 @@ export {
   AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS,
   AUTOMATION_STUDIO_RECORD_VALUE_TYPES,
   AUTOMATION_STUDIO_RECORD_WRITE_MODES,
-  parseAutomationStudioRecordOutput
+  parseAutomationStudioRecordOutput,
+  // A domain that produces rows can check them against the schema it means to
+  // declare, with the function the capture will validate them with rather than
+  // a reading of the rules. Without it, a schema its own rows cannot satisfy is
+  // only discoverable by running a Flow and finding the dataset empty, which is
+  // how `core.result.every_record_refused` was first measured.
+  validateAutomationStudioRecords
 } from "@fluxiq/contracts/automation-studio";
 export type {
   AutomationStudioRecordField,
@@ -17,6 +23,8 @@ export type {
   AutomationStudioRecordOutputParseResult,
   AutomationStudioRecordParseOptions,
   AutomationStudioRecordSchema,
+  AutomationStudioRecordValidationOptions,
+  AutomationStudioRecordValidationResult,
   AutomationStudioRecordValueType,
   AutomationStudioRecordWriteMode
 } from "@fluxiq/contracts/automation-studio";
