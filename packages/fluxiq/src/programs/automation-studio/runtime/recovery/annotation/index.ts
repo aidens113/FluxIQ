@@ -4,4 +4,5 @@ export * from "./patch-reserve.ts";
 export * from "./patches.ts";
 export * from "./permissions.ts";
 export * from "./ports.ts";
+export * from "./replan.ts";
 export * from "./run-budget.ts";

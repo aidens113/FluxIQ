@@ -34,6 +34,28 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
     expect(narrow.explorationBudget).toMatchObject({ maxProviderCalls: 1, maxActions: AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxActions });
   });
 
+  // A recovery that will re-plan after looking makes two calls after the
+  // exploration, not one. Holding one call's share for two is the same defect
+  // this file exists to prevent, one call further along: the exploration would
+  // leave the re-plan affordable and the patch not, so a run that looked,
+  // changed its mind and knew what to repair would propose nothing.
+  it("holds a share for every call that comes after the exploration, not only the patch's", () => {
+    const runBudget = ledger(26);
+    spendOne(runBudget, "request.diagnosis");
+    const tokenLimits = { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 };
+    const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", declaredCallsPerRun: 26, tokenLimits, maxEstimatedCostUsd: 0.01, reservedCalls: 2 });
+
+    // 26 declared, 1 spent on the diagnosis, 2 held for the re-plan and the patch.
+    expect(reserve.explorationBudget).toMatchObject({ maxProviderCalls: 23 });
+    // Two calls' worth of tokens is held, not one: a ledger with room for
+    // 100,000 and 1,400 spent refuses an exploration decision that would leave
+    // less than the two held calls need.
+    const squeezed = runBudget.reserve({ runId: "run.one", requestId: "request.explore", estimatedInputTokens: 78_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 });
+    expect(squeezed.ok).toBe(false);
+    reserve.release();
+    expect(runBudget.reserve({ runId: "run.one", requestId: "request.explore.again", estimatedInputTokens: 78_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 }).ok).toBe(true);
+  });
+
   it("leaves the exploration's defaults alone when no call count was declared", () => {
     const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget: ledger(undefined), runId: "run.one", maxEstimatedCostUsd: 0.01 });
 

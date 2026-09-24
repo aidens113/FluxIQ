@@ -301,15 +301,22 @@ function packRoutingContext(routing: AutomationStudioFlowBootstrapRoutingContext
  *
  * An empty result is no slot at all: a diagnosis that answered nothing would
  * otherwise cost bytes to say so, and the request already says the diagnosis
- * ran. The slot is a runtime patch's; a diagnosis would be shown its own
- * answer, and no other task has one to be shown, so any other task carrying it
- * is refused rather than quietly dropped.
+ * ran.
+ *
+ * Two tasks may carry it, and both are continuations of the call that produced
+ * it. A runtime patch is shown the plan it was told to carry out. A runtime
+ * diagnosis is shown it when the loop re-plans after exploring -- there the
+ * model's own earlier answer is the subject of the call, not background to it:
+ * it said what it said about a page it had not seen, and the point of the
+ * second call is to put that answer and the page in front of it together. Every
+ * other task has no diagnosis of its own to be shown, so one arriving there is
+ * refused rather than quietly dropped.
  */
 function packDiagnosisFields(
   taskKind: AutomationStudioLlmTaskKind,
   diagnosis: AutomationStudioLlmDiagnosisFields
 ): { diagnosis?: AutomationStudioLlmDiagnosisFields } {
-  if (taskKind !== "runtime_patch") throw new Error("The model's diagnosis is carried only to a runtime patch request.");
+  if (taskKind !== "runtime_patch" && taskKind !== "runtime_diagnosis") throw new Error("The model's diagnosis is carried only to a runtime patch or a re-planning runtime diagnosis request.");
   const verdict = (value: unknown): "yes" | "no" | "unknown" | undefined =>
     value === "yes" || value === "no" || value === "unknown" ? value : undefined;
   const text = (value: unknown): string | undefined =>

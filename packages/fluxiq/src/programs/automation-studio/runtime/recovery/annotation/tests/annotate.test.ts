@@ -31,21 +31,103 @@ import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";
 // if the call into `runAutomationStudioRecoveryExploration` is removed, and the
 // second fails if the result is not passed into the trace.
 describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
-  it("does not spend an exploration call when diagnosis requests exploration but no patch", async () => {
+  // The silence of live run `run-muesyox4-930bef98` (2026-09-23), one layer
+  // deeper than the test below it. The model was shown an 819-byte failure
+  // packet with no same-family control on it, said the step could no longer
+  // reach its result, and the gate here read that "no patch" and cancelled the
+  // exploration too -- so the single claim a page could have settled was the
+  // single claim nothing checked. The loop now looks anyway and asks again with
+  // what it found. The refusal may still stand; what may not is that it stands
+  // unexamined. The mutation this is written against: restoring
+  // `plan.patchRequest.request` to the exploration gate, which makes the look
+  // and the re-plan disappear together.
+  it("explores and re-plans when the model says the goal is gone, so the refusal is checked against the page", async () => {
     const executed: string[] = [];
     const taskKinds: string[] = [];
-    const detail = await annotate({ executed, taskKinds, patchNeeded: false, stillAchievable: "no" });
+    const detail = await annotate({ executed, taskKinds, maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no" });
+
+    expect(taskKinds.at(0)).toBe("runtime_diagnosis");
+    expect(taskKinds.at(-1)).toBe("runtime_diagnosis");
+    expect(taskKinds).toContain("evidence_tool_decision");
+    expect(executed).toEqual(["test.inspect"]);
+    // The code is the same code -- the goal is still gone -- and the rung is
+    // what changed: `exploration` is the loop saying it looked first.
+    expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
+      patchSkippedCode: "llm.runtime_patch_goal_unachievable",
+      patchSkippedRung: "exploration",
+      replan: { checked: true, changedDecision: false, before: "llm.runtime_patch_goal_unachievable" }
+    });
+    expect(explorationStage(detail)).toMatchObject({ status: "completed", detail: { requested: true } });
+    expect(planStage(detail)).toMatchObject({ providerCalled: true, detail: { replanned: true, replanChecked: true, replanChangedDecision: false } });
+  });
+
+  // The other half of the same rule. A policy that permits no patch kind is a
+  // person's setting, and no page can speak to it, so looking would spend a
+  // run's calls on an answer that could not change. The mutation: widening the
+  // checkable set in `diagnosis-chain.ts` to every refusal, which turns every
+  // dead end into a paid exploration and a paid second diagnosis.
+  it("leaves a refusal the page cannot overturn unchecked, and spends nothing looking at it", async () => {
+    const executed: string[] = [];
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed, taskKinds, patchNeeded: false, allowRuntimeRecovery: false });
 
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(executed).toEqual([]);
     expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
-      patchSkippedCode: "llm.runtime_patch_goal_unachievable",
+      patchSkippedCode: "llm.runtime_patch_policy_allows_no_kind",
       patchSkippedRung: "plan",
       costAccounting: { calls: 1, explorationCalls: 0 }
     });
+    expect(detail.metadata?.llmGate).not.toHaveProperty("replan");
     expect(explorationStage(detail)).toMatchObject({ status: "skipped", detail: { requested: true } });
-    expect((detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages?.find((stage) => stage.stage === "resolution"))
-      .toMatchObject({ status: "skipped", detail: { outcome: "no_change_produced", skipCode: "llm.runtime_patch_goal_unachievable" } });
+    expect(planStage(detail)).toMatchObject({ providerCalled: false });
+  });
+
+  // What the re-plan is for. The first answer refused; the page said otherwise;
+  // the plan is rebuilt and now asks for a patch. Without this the exploration
+  // would be a look nothing re-plans from, which is why removing the gate alone
+  // was not the fix.
+  it("turns the refusal into a patch request when looking changes the model's mind", async () => {
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed: [], taskKinds, maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no", replan: { patchNeeded: true } });
+
+    expect(taskKinds.filter((kind) => kind === "runtime_diagnosis")).toHaveLength(2);
+    expect(planStage(detail)).toMatchObject({ detail: { patchRequested: true, replanned: true, replanChangedDecision: true } });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({ replan: { checked: true, changedDecision: true } });
+    // `createAdaptations` is off in this harness, so the patch call cannot
+    // follow. The rung says so, and it is no longer `plan`: the plan asked.
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.patchSkippedRung).toBe("resolution");
+  });
+
+  // A re-plan shown none of the explored packets is the first diagnosis asked
+  // again, at the same price, for the same answer. It is also shown its own
+  // earlier answer, because that answer is the subject of the call. The
+  // mutation: dropping either slot from `replan.ts`, which leaves a second call
+  // that cannot disagree with the first.
+  it("makes the re-plan at the plan stage, carrying the explored packets and its own earlier answer", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    await annotate({ executed: [], requests, maxCallsPerRun: 6, captureFailureEvidence: true, patchNeeded: false, stillAchievable: "no" });
+    const replanRequest = requests.find((request) => request.taskKind === "runtime_diagnosis" && request.context.stage === "plan");
+
+    expect(replanRequest).toBeDefined();
+    expect(requests.at(0)?.context.stage).toBe("gather");
+    expect(replanRequest?.context.explorationEvidence?.packets.length).toBeGreaterThan(0);
+    expect(replanRequest?.context.diagnosis).toMatchObject({ stillAchievable: "no" });
+  });
+
+  // A second call that comes back with nothing leaves the first plan standing,
+  // and says so. Inventing a patch request out of a failed call would be worse
+  // than the refusal it replaced; recording it as a checked refusal would be a
+  // claim no call backs up.
+  it("leaves the original refusal standing, marked unchecked, when the re-plan returns no diagnosis", async () => {
+    const detail = await annotate({ executed: [], maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no", replanFails: true });
+
+    expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
+      patchSkippedCode: "llm.runtime_patch_goal_unachievable",
+      patchSkippedRung: "plan",
+      replan: { checked: false, changedDecision: false }
+    });
+    expect(planStage(detail)).toMatchObject({ status: "failed", providerCalled: true, detail: { replanned: true, replanChecked: false } });
   });
 
   // The silence of live run `run-muesyox4-930bef98` (2026-09-23), as a run
@@ -442,6 +524,18 @@ type Options = {
   taskKinds?: string[];
   /** Whether diagnosis requests a patch after exploration. */
   patchNeeded?: boolean;
+  /** The policy's runtime-recovery flag, when the test needs it off. */
+  allowRuntimeRecovery?: boolean;
+  /**
+   * What the second, re-planning diagnosis answers, when it differs from the
+   * first. The stub tells the two apart by the stage the context names, which
+   * also pins that the re-plan is made at `plan` rather than at `gather` again.
+   */
+  replan?: { patchNeeded?: boolean; stillAchievable?: "yes" | "no" | "unknown" };
+  /** Every request the provider was given, in order, for tests about what a call carried. */
+  requests?: AutomationStudioLlmTaskRequest[];
+  /** The re-planning call answers with something that is not a diagnosis. */
+  replanFails?: boolean;
   /** A terminal diagnosis verdict that prevents any patch request. */
   stillAchievable?: "no";
 };
@@ -449,7 +543,8 @@ type Options = {
 async function annotate(options: Options): Promise<AutomationStudioFlowRunDetail> {
   const policy = {
     ...adaptationPolicy(options.allowExternalSideEffects === true),
-    ...(options.maxInterventionsPerRun === undefined ? {} : { maxInterventionsPerRun: options.maxInterventionsPerRun })
+    ...(options.maxInterventionsPerRun === undefined ? {} : { maxInterventionsPerRun: options.maxInterventionsPerRun }),
+    ...(options.allowRuntimeRecovery === false ? { allowRuntimeRecovery: false } : {})
   };
   return await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: ports(options),
@@ -460,8 +555,16 @@ async function annotate(options: Options): Promise<AutomationStudioFlowRunDetail
 }
 
 function explorationStage(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
+  return traceStage(detail, "exploration");
+}
+
+function planStage(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
+  return traceStage(detail, "recovery_plan");
+}
+
+function traceStage(detail: AutomationStudioFlowRunDetail, stage: string): JsonObject | undefined {
   const trace = detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined;
-  return trace?.stages?.find((stage) => stage.stage === "exploration");
+  return trace?.stages?.find((event) => event.stage === stage);
 }
 
 function ports(options: Options): AutomationStudioRuntimeRecoveryPorts {
@@ -487,12 +590,18 @@ function provider(options: Options): AutomationStudioLlmProvider {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
       options.taskKinds?.push(request.taskKind);
+      options.requests?.push(request);
       if (request.expectedOutput === "diagnosis") {
+        // The re-plan is the diagnosis made at the `plan` stage. Where the test
+        // gave it its own answer, that is what looking at the page changed.
+        const replanning = request.context.stage === "plan";
+        if (replanning && options.replanFails) return { response: { kind: "no_repair", summary: "The second call answered with something else.", reason: "several_alike" } };
+        const answer = replanning && options.replan ? options.replan : { patchNeeded: options.patchNeeded !== false, ...(options.stillAchievable ? { stillAchievable: options.stillAchievable } : {}) };
         return {
           response: {
             kind: "diagnosis",
-            summary: "The action could not find its control.",
-            diagnosis: { explorationNeeded: options.explorationNeeded !== false, patchNeeded: options.patchNeeded !== false, ...(options.stillAchievable ? { stillAchievable: options.stillAchievable } : {}) }
+            summary: replanning ? "Looking at the page settles it." : "The action could not find its control.",
+            diagnosis: { explorationNeeded: options.explorationNeeded !== false, patchNeeded: answer.patchNeeded !== false, ...(answer.stillAchievable ? { stillAchievable: answer.stillAchievable } : {}) }
           }
         };
       }
@@ -549,9 +658,12 @@ function harnessOptions(options: Options): AutomationStudioHarnessOptionBundle {
       }
     ],
     implementations: {
+      // Schema-versioned, because that is what makes the exploration record it
+      // as a packet the next call can be shown. Without one the loop looks,
+      // learns something, and has nothing to put in front of a re-plan.
       "test.inspect": async () => {
         options.executed.push("test.inspect");
-        return { kind: "llm_evidence_tool_execution", evidence: { control: "absent" }, effectApplied: false };
+        return { kind: "llm_evidence_tool_execution", evidence: { schemaVersion: "test.page.v1", page: "page.explored", control: "absent" }, effectApplied: false };
       },
       "test.reveal": async () => {
         options.executed.push("test.reveal");

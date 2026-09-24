@@ -73,10 +73,26 @@ function sendableFailureEvidence(request: AutomationStudioLlmTaskRequest, denied
   return resanitized === JSON.stringify(evidence) && credentialFree(evidence);
 }
 
+/**
+ * The tasks whose request may carry the packets an exploration returned.
+ *
+ * This named the patch alone, which made the exploration the patch's errand and
+ * nothing else's. The loop now re-plans after looking -- a second
+ * `runtime_diagnosis`, at the `plan` stage, whose entire purpose is to weigh the
+ * model's earlier claim about the page against the page it has now seen -- and a
+ * re-plan shown none of the explored packets would be the first diagnosis asked
+ * again, at the same price, with the same answer. `explored-evidence.ts` holds
+ * the same set on the way in, and a test pins the two together.
+ */
+const EXPLORATION_EVIDENCE_TASK_KINDS: ReadonlySet<AutomationStudioLlmTaskRequest["taskKind"]> = new Set<AutomationStudioLlmTaskRequest["taskKind"]>([
+  "runtime_patch",
+  "runtime_diagnosis"
+]);
+
 /** A slot the packet builder could have produced under the declaration, free of credentials. */
 function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, deniedKeys: readonly string[] | undefined): boolean {
   const slot = request.context.explorationEvidence;
-  return deniedKeys !== undefined && request.taskKind === "runtime_patch"
+  return deniedKeys !== undefined && EXPLORATION_EVIDENCE_TASK_KINDS.has(request.taskKind)
     && isAutomationStudioLlmExploredEvidenceSlot(slot, deniedKeys) && credentialFree(slot);
 }
 
