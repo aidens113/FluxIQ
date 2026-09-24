@@ -33,6 +33,7 @@
 // rather than an absent record.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioUnattendedRepairRedemption } from "../../result-check-authorization/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
@@ -168,6 +169,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "LLM provider resolution failed." }) as unknown as JsonObject }
     };
   }
+  // Nobody granted this run anything, and the host resolved nothing without a
+  // grant -- which is every unattended run in the shipped host. The Flow's own
+  // standing authorization is the last authority such a run has, so it is read
+  // here: after the person's grant, never instead of it, and only where the
+  // model would otherwise be missing. A refusal is recorded either way, below.
+  let repairAuthority: AutomationStudioUnattendedRepairRedemption | undefined;
+  if (!provider && ports.resolveUnattendedRepairAuthority) {
+    const authority = await ports.resolveUnattendedRepairAuthority();
+    repairAuthority = authority.redemption;
+    if (authority.resolution) {
+      providerResolution = authority.resolution;
+      provider = authority.resolution.provider;
+    }
+  }
   const instructions = await ports.flowInstructionSet({
     projectId: input.context.projectId,
     flowId: input.context.flowId
@@ -242,7 +257,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
           validation: { ok: false, issues: ["llm.failure_evidence_invalid: Sanitized runtime failure evidence was unavailable."] },
           createdAt: input.detail.summary.updatedAt || Date.now()
         }],
-        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "Sanitized runtime failure evidence was unavailable." }) as unknown as JsonObject }
+        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid", ...(repairAuthority ? { repairAuthority: repairAuthority as unknown as JsonObject } : {}) }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "Sanitized runtime failure evidence was unavailable." }) as unknown as JsonObject }
       };
     }
   }
@@ -489,6 +504,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       llmGate: {
         invoked: Boolean(provider),
         providerConfigured: Boolean(provider),
+        // Present on every run that had to reach for the Flow's own standing
+        // authority, funded or refused. This is where a person finds out that
+        // their Flow went unrepaired because its ceiling was spent rather than
+        // because nobody had configured a model.
+        ...(repairAuthority ? { repairAuthority: repairAuthority as unknown as JsonObject } : {}),
         ok: result.ok && (patchResult?.ok ?? true),
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,

@@ -24,6 +24,7 @@ import type {
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
+import type { AutomationStudioUnattendedRepairAuthority } from "../../service/runtime-adaptation/index.ts";
 import type {
   AutomationStudioLlmProviderResolution,
   AutomationStudioLlmProviderResolverInput,
@@ -45,6 +46,27 @@ export type AutomationStudioRuntimeRecoveryPorts = {
     | AutomationStudioLlmProvider
     | undefined
     | Promise<AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined>) | undefined;
+  /**
+   * The Flow's own standing authorization to repair itself with nobody
+   * watching, redeemed.
+   *
+   * Asked **only** when the resolver above produced nothing, which in the
+   * shipped host is every run carrying no execution grant: `_shared/runtime.ts`
+   * resolves nothing without one, and the grant service refuses to issue one
+   * without a live actor session. So a run nobody was watching could obtain no
+   * model to produce a repair with, and a Flow that failed at three in the
+   * morning stayed broken however capable the rest of the loop was.
+   *
+   * It answers with the redemption whether or not a model came of it, because a
+   * refusal has to be recorded: "nobody authorized repairing this Flow", "the
+   * authorization has expired" and "its ceiling is spent" are three different
+   * things for a person to act on, and all three used to look alike -- like a
+   * deployment with no model configured at all.
+   *
+   * Absent means this deployment resolves no standing models, which is a
+   * configuration and not a refusal.
+   */
+  resolveUnattendedRepairAuthority?: (() => Promise<AutomationStudioUnattendedRepairAuthority>) | undefined;
   /** The domain bound to this host: its evidence keys, its options, its refusals. */
   llmEvidenceRuntime?: AutomationStudioLlmEvidenceRuntimeBinding | undefined;
   reusableLlmContextEnabled: boolean;
