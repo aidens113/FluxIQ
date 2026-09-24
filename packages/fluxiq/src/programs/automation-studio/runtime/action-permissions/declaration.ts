@@ -21,8 +21,43 @@
 // short-circuited the empty case and never called the check, so every press in
 // every measured build was invisible here and the Lab had to deduce what a
 // step had declared from the absence of a refusal.
+//
+// **An action that only observes has no lasting consequence, whatever it says
+// it has.** `effect` is the one fact on a declaration that is not a claim about
+// the world: it is what the domain already knows about its own action from the
+// registry it built the action out of -- this node reads the page, that one
+// acts on it. A reading action's consequence classes are therefore not a
+// statement Core can act on, and Core does not: it permits the action, records
+// what was named under `disregarded`, and asks nobody anything (`gate.ts`).
+//
+// This is not a nicety. On 2026-09-23 a build was asked to "collect every
+// product on the first page ... into a table with columns name, price, rating
+// and url", ran the list-reading node, and declared `create_new` for it --
+// reasoning, not unreasonably, that a dataset is something new. Nothing
+// downstream could contradict it: the web domain's own safety table calls
+// `web.dom.extract_list` safe and Core's gate never saw that word, so the
+// build stopped and asked a person for permission to read a page
+// (`run-mueozmp8-348a2057`, 21 provider calls, no Flow). The person's
+// instruction is the authority, and reading the list *is* the instruction.
+// A run-scoped dataset holding what the page already showed is the product's
+// own output, not a lasting change to anything the person owns.
+//
+// Absent means `mutate`, so a caller that says nothing is gated exactly as it
+// was: this widens nothing by default, and only an action whose domain states
+// it reads is taken out of the gate's reach.
 
 import { isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
+
+/**
+ * Whether taking the action changes anything, in the same two words the node
+ * registry, the harness options and the evidence loop already use.
+ *
+ * `observe` is a promise the domain makes about its own action -- it reads,
+ * waits or asserts, and the page and everything behind it is as it was
+ * afterwards. `mutate` is everything else, and is what an unstated effect
+ * means.
+ */
+export type AutomationStudioActionEffect = "observe" | "mutate";
 
 /**
  * One action, as the domain describes it before taking it.
@@ -34,11 +69,16 @@ import { isAutomationStudioActionConsequence, type AutomationStudioActionConsequ
  * withheld rather than carried (see `gate.ts`). `control.kind` is one plain
  * word or two for what sort of thing it is, in the domain's own vocabulary.
  * `verb` is what the action does to it, as plainly: "press", "submit".
+ *
+ * `effect` is what the domain knows about the action itself rather than about
+ * this page: `observe` for one that reads, waits or asserts, `mutate` for one
+ * that acts. Absent is `mutate`, which gates as before.
  */
 export type AutomationStudioActionDeclaration = {
   consequences: readonly AutomationStudioActionConsequence[];
   control: { name: string; kind?: string };
   verb: string;
+  effect?: AutomationStudioActionEffect;
 };
 
 /**
@@ -79,6 +119,8 @@ export type AutomationStudioReadActionDeclaration = {
   controlName: string;
   controlKind: string | null;
   verb: string;
+  /** Stated or, where the domain said nothing, `mutate`. */
+  effect: AutomationStudioActionEffect;
 };
 
 const VERB = /^[a-z]{2,20}(?: [a-z]{2,20})?$/;
@@ -91,7 +133,7 @@ const MAX_NAME_INPUT = 2_000;
  * only the gate knows what has already been shown.
  */
 export function readAutomationStudioActionDeclaration(value: unknown): AutomationStudioReadActionDeclaration {
-  if (!isRecord(value) || !hasOnlyFields(value, ["consequences", "control", "verb"])) throw new AutomationStudioActionDeclarationError("declaration_shape");
+  if (!isRecord(value) || !hasOnlyFields(value, ["consequences", "control", "verb", "effect"])) throw new AutomationStudioActionDeclarationError("declaration_shape");
   const consequences = value.consequences;
   if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
@@ -100,11 +142,16 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
   if (typeof control.name !== "string" || !control.name.trim() || control.name.length > MAX_NAME_INPUT) throw new AutomationStudioActionDeclarationError("control_name_invalid");
   if (control.kind !== undefined && (typeof control.kind !== "string" || !KIND.test(control.kind))) throw new AutomationStudioActionDeclarationError("control_kind_invalid");
   if (typeof value.verb !== "string" || !VERB.test(value.verb)) throw new AutomationStudioActionDeclarationError("verb_invalid");
+  // Fail closed on a word Core does not know rather than reading it as
+  // `mutate`: a domain that meant to say something about its action and
+  // misspelled it must not be answered as though it had said nothing.
+  if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") throw new AutomationStudioActionDeclarationError("effect_invalid");
   return {
     consequences: [...new Set(consequences as AutomationStudioActionConsequence[])],
     controlName: control.name.replace(/\s+/gu, " ").trim(),
     controlKind: typeof control.kind === "string" ? control.kind : null,
-    verb: value.verb
+    verb: value.verb,
+    effect: value.effect ?? "mutate"
   };
 }
 

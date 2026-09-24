@@ -201,7 +201,15 @@ export class AutomationStudioActionPermissionGate {
   checkFor(action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck {
     return async (declaration) => {
       const read = readAutomationStudioActionDeclaration(declaration);
-      const consequences = automationStudioConsequencesInOrder(read.consequences);
+      const named = automationStudioConsequencesInOrder(read.consequences);
+      // An action that only reads leaves nothing behind to permit, so what it
+      // named cannot be a lasting consequence and is not treated as one. The
+      // words are kept as `disregarded` rather than thrown away, because a
+      // model calling a page read `create_new` is a fact about the guidance
+      // worth being able to count.
+      const observes = read.effect === "observe";
+      const consequences = observes ? [] : named;
+      const disregarded = observes ? named : [];
       const controlName = this.carriedName(read.controlName);
       const record = (verdict: AutomationStudioActionPermissionVerdict): AutomationStudioActionPermissionVerdict => {
         if (this.records.length < AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX) {
@@ -209,13 +217,14 @@ export class AutomationStudioActionPermissionGate {
           // in: this record travels to a person and to a stored proposal, so a
           // renamed field must be a compile error here.
           const entry: AutomationStudioActionDeclarationRecord = {
-            action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb },
+            action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb, effect: read.effect },
             control: { name: controlName, kind: read.controlKind },
             consequences: [...consequences],
             permitted: verdict.permitted
           };
           if (!verdict.permitted) entry.missing = [...verdict.missing];
           if (!verdict.permitted && verdict.requestId !== null) entry.requestId = verdict.requestId;
+          if (disregarded.length) entry.disregarded = [...disregarded];
           this.records.push(entry);
         }
         return verdict;
@@ -224,7 +233,8 @@ export class AutomationStudioActionPermissionGate {
       // reading the instruction: there is nothing to permit, and a run whose
       // every action answers this way must not be charged for a derivation it
       // has no use for. It is still recorded, which is the whole point -- the
-      // empty answer is the one nobody could see.
+      // empty answer is the one nobody could see. A read reaches this line the
+      // same way, having had nothing lasting to declare in the first place.
       if (!consequences.length) return record({ permitted: true });
       const instructed = await this.instructedFor();
       const missing = automationStudioConsequencesInOrder(consequences.filter((consequence) =>
@@ -293,8 +303,10 @@ export const automationStudioActionPermissionDenied: AutomationStudioActionPermi
   const read = readAutomationStudioActionDeclaration(declaration);
   // Nothing declared is nothing to refuse. Refusing it here would make an
   // action that honestly says it causes nothing the one answer that cannot be
-  // given, which is the incentive this whole seam exists to remove.
-  if (!read.consequences.length) return { permitted: true };
+  // given, which is the incentive this whole seam exists to remove. An action
+  // that only reads is the same case: there is nothing it could have done that
+  // outlasts it, so there is nobody who would need to be asked.
+  if (read.effect === "observe" || !read.consequences.length) return { permitted: true };
   return { permitted: false, missing: automationStudioConsequencesInOrder(read.consequences), requestId: null };
 };
 

@@ -50,7 +50,7 @@ describe("what the gate keeps of a declaration", () => {
 
     expect(await run.checkFor(PRESS)(NOTHING_LASTING)).toEqual({ permitted: true });
     expect(run.declarations).toEqual([{
-      action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "press" },
+      action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "press", effect: "mutate" },
       control: { name: "Schedule post", kind: "button" },
       consequences: [],
       permitted: true
@@ -64,7 +64,7 @@ describe("what the gate keeps of a declaration", () => {
     expect(await run.checkFor(STEP)(PUBLISH)).toEqual({ permitted: true });
     expect(run.declarations[0]?.consequences).toEqual(["send_or_publish", "create_new"]);
     expect(run.declarations[0]?.permitted).toBe(true);
-    expect(run.declarations[0]?.action).toEqual({ kind: "flow_step", id: "web.output.dom-click", ref: "main.s4", verb: "press" });
+    expect(run.declarations[0]?.action).toEqual({ kind: "flow_step", id: "web.output.dom-click", ref: "main.s4", verb: "press", effect: "mutate" });
   });
 
   it("records a refusal with what was missing and which request carries it", async () => {
@@ -72,7 +72,7 @@ describe("what the gate keeps of a declaration", () => {
 
     expect(await run.checkFor(PRESS)(PUBLISH)).toEqual({ permitted: false, missing: ["send_or_publish", "create_new"], requestId: "permission-request:one" });
     expect(run.declarations[0]).toEqual({
-      action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "press" },
+      action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "press", effect: "mutate" },
       control: { name: "Schedule post", kind: "button" },
       consequences: ["send_or_publish", "create_new"],
       permitted: false,
@@ -108,12 +108,91 @@ describe("what the gate keeps of a declaration", () => {
   });
 });
 
+// The instruction is the authority: where the person's own words say to read
+// the list, reading the list is the work being carried out and not a thing to
+// be permitted. On 2026-09-23 a build told to collect a page of products into a
+// table declared `create_new` for the node that reads the list -- a dataset
+// felt like something new -- and FluxIQ stopped and asked a person for
+// permission to read the page (`run-mueozmp8-348a2057`: 21 provider calls, no
+// Flow, and `beyond_instruction` for the very act the instruction asked for).
+// What an act means on this page is the model's word to give; whether the act
+// touches anything at all is the domain's, and these rows hold the second above
+// the first -- in one direction only, which the last two prove.
+describe("an action that only reads", () => {
+  const READS: AutomationStudioActionDeclaration = { consequences: ["create_new"], control: { name: "Schedule post", kind: "step" }, verb: "extract list", effect: "observe" };
+
+  it("is permitted without a request, whatever classes it named", async () => {
+    const run = gate();
+
+    expect(await run.checkFor(PRESS)(READS)).toEqual({ permitted: true });
+    expect(run.request).toBeUndefined();
+  });
+
+  it("keeps what it named as disregarded rather than as a consequence", async () => {
+    const run = gate();
+    await run.checkFor(PRESS)(READS);
+
+    expect(run.declarations[0]).toEqual({
+      action: { kind: "exploration_step", id: "core.run_node", ref: "call.3", verb: "extract list", effect: "observe" },
+      control: { name: "Schedule post", kind: "step" },
+      consequences: [],
+      permitted: true,
+      disregarded: ["create_new"]
+    });
+    expect(automationStudioDeclaredConsequences(run.declarations)).toEqual([]);
+  });
+
+  it("never reads the instruction, and is not held against it afterwards", async () => {
+    let derived = 0;
+    const run = new AutomationStudioActionPermissionGate({ stage: "authoring", deriveInstructed: async () => { derived += 1; return [SCHEDULE]; } });
+
+    await run.checkFor(PRESS)(READS);
+    expect(derived).toBe(0);
+
+    const check = automationStudioActionDeclarationCrossCheck({ declarations: run.declarations, instructed: [] });
+    expect(check.verdict).toBe("agreed");
+    expect(check.beyondInstruction).toEqual([]);
+    // It did not act, so it is not one of the actions that acted and said they
+    // would cause nothing.
+    expect(check.declaredNothing).toBe(0);
+  });
+
+  it("is permitted even where there is nobody at all to ask", async () => {
+    expect(await automationStudioActionPermissionDenied(READS)).toEqual({ permitted: true });
+  });
+
+  it("does not let an act through: only the action's own effect decides", async () => {
+    const run = gate();
+    const purchase: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Schedule post", kind: "button" }, verb: "press", effect: "mutate" };
+
+    expect(await run.checkFor(PRESS)(purchase)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:one" });
+    expect(run.request?.missing).toEqual(["move_money"]);
+    expect(run.declarations[0]?.consequences).toEqual(["move_money"]);
+    expect(run.declarations[0]?.disregarded).toBeUndefined();
+    expect(await automationStudioActionPermissionDenied(purchase)).toEqual({ permitted: false, missing: ["move_money"], requestId: null });
+  });
+
+  it("gates an action whose effect nobody stated, exactly as before", async () => {
+    const run = gate();
+
+    expect(await run.checkFor(STEP)(PUBLISH)).toEqual({ permitted: false, missing: ["send_or_publish", "create_new"], requestId: "permission-request:one" });
+    expect(run.declarations[0]?.action.effect).toBe("mutate");
+  });
+
+  it("refuses a declaration whose effect is a word Core does not know", async () => {
+    const run = gate();
+
+    await expect(run.checkFor(PRESS)({ ...NOTHING_LASTING, effect: "observes" } as unknown as AutomationStudioActionDeclaration))
+      .rejects.toThrow(/effect_invalid/u);
+  });
+});
+
 describe("holding what was declared against what was instructed", () => {
   it("names the contradiction when the instruction asks and no action said so", () => {
     const check = automationStudioActionDeclarationCrossCheck({
       declarations: [
-        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.1", verb: "press" }, control: { name: "Schedule post", kind: "button" }, consequences: [], permitted: true },
-        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s4", verb: "press" }, control: { name: null, kind: "button" }, consequences: [], permitted: true }
+        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.1", verb: "press", effect: "mutate" }, control: { name: "Schedule post", kind: "button" }, consequences: [], permitted: true },
+        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s4", verb: "press", effect: "mutate" }, control: { name: null, kind: "button" }, consequences: [], permitted: true }
       ],
       instructed: [SCHEDULE]
     });
@@ -128,8 +207,8 @@ describe("holding what was declared against what was instructed", () => {
   it("agrees when one action declared what the instruction asks for", () => {
     const check = automationStudioActionDeclarationCrossCheck({
       declarations: [
-        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.1", verb: "press" }, control: { name: null, kind: "button" }, consequences: [], permitted: true },
-        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.2", verb: "press" }, control: { name: "Schedule post", kind: "button" }, consequences: ["send_or_publish"], permitted: true }
+        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.1", verb: "press", effect: "mutate" }, control: { name: null, kind: "button" }, consequences: [], permitted: true },
+        { action: { kind: "exploration_step", id: "core.run_node", ref: "call.2", verb: "press", effect: "mutate" }, control: { name: "Schedule post", kind: "button" }, consequences: ["send_or_publish"], permitted: true }
       ],
       instructed: [SCHEDULE]
     });
@@ -142,7 +221,7 @@ describe("holding what was declared against what was instructed", () => {
   it("says so when an action declared something the instruction does not ask for", () => {
     const check = automationStudioActionDeclarationCrossCheck({
       declarations: [
-        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s1", verb: "press" }, control: { name: "Delete", kind: "button" }, consequences: ["delete", "send_or_publish"], permitted: true }
+        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s1", verb: "press", effect: "mutate" }, control: { name: "Delete", kind: "button" }, consequences: ["delete", "send_or_publish"], permitted: true }
       ],
       instructed: [SCHEDULE]
     });
@@ -155,7 +234,7 @@ describe("holding what was declared against what was instructed", () => {
   it("reports the contradiction first when both directions disagree", () => {
     const check = automationStudioActionDeclarationCrossCheck({
       declarations: [
-        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s1", verb: "press" }, control: { name: "Delete", kind: "button" }, consequences: ["delete"], permitted: true }
+        { action: { kind: "flow_step", id: "web.output.dom-click", ref: "main.s1", verb: "press", effect: "mutate" }, control: { name: "Delete", kind: "button" }, consequences: ["delete"], permitted: true }
       ],
       instructed: [SCHEDULE]
     });

@@ -63,7 +63,15 @@ const DESCRIPTION = [
   "A node that runs and succeeds becomes a step of the Flow you are building, with the parameters it ran with, and you never write it down again.",
   "A node that fails comes back with what went wrong and the state as it now is: read it, change something, and run again. A failure ends nothing.",
   "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are; run one that acts to make the page do what the instruction needs.",
-  `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] only when it leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
+  // "only reads" earns its eight characters: a build that had to collect a
+  // page of products into a table read "leaves nothing behind" as a question
+  // about the dataset it would produce, answered `create_new` for the node that
+  // reads the list, and stopped to ask permission to read
+  // (`run-mueozmp8-348a2057`). The gate now disregards that answer; this is so
+  // it is not reached for. There was no room for a sentence: the description is
+  // 1,990 of the 2,000 characters a provider accepts, and a build whose first
+  // request is refused runs nothing at all (`tests/run-node.test.ts`).
+  `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] when it only reads or leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
   `Judge this node, not the Flow: in one Flow the press that applies a filter is [] and the press that submits the post is ${PUBLISHING}.`,
   "Correct a step you have already run with an amend_draft decision rather than by running it again: rerun replaces it, drop removes it, reorder moves it."
 ].join(" ");
