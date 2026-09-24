@@ -111,4 +111,39 @@ describe("looking again after being refused", () => {
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
     expect(result.accounting.toolCalls).toBe(3);
   });
+
+  // The hole the signature bound never covered. A refused *action* used to
+  // clear the no-progress count, on the grounds that an identical retry is
+  // caught by its own signature -- but a model that names a different target
+  // each time writes a new signature every call, so nothing caught it and
+  // nothing counted it. `company-directory-register-page` spent 31 of its 45
+  // build steps on `target_unobserved` and ended in
+  // `bootstrap.evidence_unusable_decision` after 44 provider calls
+  // (`run-muf2bs04-f6fea9fe`, 2026-09-24); eight other runs that day show the
+  // same shape. The mutation this is written against: scoring progress on
+  // `lookRefused` again, which answers `false` for every mutating tool.
+  it("counts a refused action against the guard, even when each one names a new target", async () => {
+    let index = 0;
+    const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 16, maxToolCalls: 16, maxStepsWithoutProgress: 3, executeTool: refusing
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result.accounting.toolCalls).toBe(3);
+  });
+
+  // And a call that did something still clears it, so a model working around a
+  // refusal keeps its room: the press applies, and the count starts again.
+  it("lets an action that applied something clear the count", async () => {
+    let index = 0;
+    const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
+    const applying = async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 5, maxToolCalls: 5, maxStepsWithoutProgress: 3, executeTool: applying
+    });
+
+    expect(result).not.toMatchObject({ code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result.accounting.toolCalls).toBe(5);
+  });
 });

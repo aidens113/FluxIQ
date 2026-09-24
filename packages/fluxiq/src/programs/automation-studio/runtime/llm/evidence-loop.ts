@@ -19,7 +19,7 @@ import {
   automationStudioLlmEvidenceValidTools,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
-import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
+import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceNothingHappened, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
 // What a loop may be configured with, and how those numbers resolve
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
@@ -723,10 +723,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // of 24 steps a build genuinely working around a refusal has room, and one
     // that is only asking again stops.
     //
-    // A refused *action* keeps clearing the count, as it always did: it is
-    // bounded by its own signature instead, since nothing it changed means the
-    // retry is answered rather than run.
-    if (!lookRefused) progressed();
+    // A refused *action* used to keep clearing the count, bounded by its own
+    // signature instead. That bound only catches an identical retry, and a
+    // model naming a different target each time escapes it: a new signature
+    // every call, a cleared count every call, and nothing stopping either.
+    // `company-directory-register-page` spent 31 of its 45 build steps that way
+    // and ended in `bootstrap.evidence_unusable_decision` after 44 provider
+    // calls (`run-muf2bs04-f6fea9fe`, 2026-09-24). So the count now asks
+    // whether anything happened -- no applied effect and an `ok: false` answer
+    // -- and a call that did something still clears it, action or look.
+    if (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied })) progressed();
     else if ((stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
       return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     }
