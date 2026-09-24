@@ -62,8 +62,15 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
     issues.push(...built.issues);
     if (built.subflow) subflows.push(built.subflow);
   }
+  // Only the shape complaint is the shape complaint. A plan that wrote subflows
+  // and had them all refused is a different failure, and saying "must be an
+  // array" to a model that wrote one is how the loop above began: the sentence
+  // named nothing the model could change. The subflows' own issues now carry
+  // the reason, so nothing is added on top of them.
   if (!subflows.length || issues.some((issue) => issue.severity === "error")) {
-    if (!subflows.length) issues.push(authoringError("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
+    if (!subflows.length && !issues.length) {
+      issues.push(authoringError("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
+    }
     return { issues };
   }
   if (!subflows.some((subflow) => subflow.role === "primary")) subflows[0]!.role = "primary";
@@ -134,7 +141,32 @@ function buildSubflow(input: {
     });
     definitionByKey.set(key, found.definition);
   }
-  if (!nodes.length) return { issues };
+  // A subflow that produced no node says so, and this is the one return that
+  // used to say nothing at all. `writtenNodes` reads `nodes`, `steps` or
+  // `actions` and nothing else, so a model that put its list under any other
+  // name reached here with an empty list and no issue raised against it -- the
+  // subflow vanished, and the caller then reported "Bootstrap subflows must be
+  // an array" to a model that had written an array. It could not act on that,
+  // so it wrote the same plan again.
+  //
+  // Measured on 2026-09-24: `data-table-inventory-empty` spent 24 of its build
+  // steps on `bootstrap.invalid_subflows`, `admin-console-customer-book-short`
+  // 16, `product-catalog-first-page-sparse-cards` 15, and
+  // `company-directory-register-page` 12 before dying after 44 provider calls.
+  // Four of the extract lane's eight failures, one silent return.
+  //
+  // The empty list and the list whose nodes all failed are different problems,
+  // so they are different sentences: the first names the keys a node list may
+  // be written under, and the second leaves the nodes' own issues to speak,
+  // because they already say which node and why.
+  if (!nodes.length) {
+    if (!writtenNodes.length) {
+      issues.push(authoringError("bootstrap.subflow_has_no_nodes", `Subflow ${input.key} lists no nodes; write them under ${NODE_LIST_KEYS.join(", ")}.`, `${input.path}.nodes`));
+    } else if (!issues.length) {
+      issues.push(authoringError("bootstrap.subflow_has_no_nodes", `Subflow ${input.key} has ${writtenNodes.length} node(s) and none could be built.`, `${input.path}.nodes`));
+    }
+    return { issues };
+  }
   const edges = buildEdges(input.written.edges, nodes, renamed, definitionByKey);
   return {
     subflow: {
