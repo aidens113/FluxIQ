@@ -150,7 +150,8 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
     if (patch.kind !== "insert_deterministic_path") continue;
     const path = `patch.${index}`;
     if (!patch.targetId?.trim()) addIssue(issues, "error", "adaptation.path_missing_target", "A deterministic path patch must name the node whose failure it recovers.", `${path}.targetId`);
-    if (!parseAutomationStudioDeterministicPath(patch.after)) {
+    const parsed = parseAutomationStudioDeterministicPath(patch.after);
+    if (!parsed) {
       addIssue(issues, "error", "adaptation.path_invalid", "A deterministic path patch must list the nodes to insert, each with a node id and a definition id.", `${path}.after`);
     }
   }

@@ -46,7 +46,7 @@ function validateRuntimePatches(patches: AutomationStudioRuntimePatch[], diagnos
   for (const [index, patch] of patches.entries()) {
     if (!patch.reason.trim()) diagnostics.push({ severity: "error", code: "llm_output.patch_missing_reason", message: "Runtime patch must include a reason.", path: `patches.${index}.reason` });
     if ("targetNodeId" in patch && !patch.targetNodeId.trim()) diagnostics.push({ severity: "error", code: "llm_output.patch_missing_target", message: "Runtime patch targetNodeId cannot be empty.", path: `patches.${index}.targetNodeId` });
-    if (patch.kind === "temporary_action_sequence" && !patch.actionDefinitionIds.length) diagnostics.push({ severity: "error", code: "llm_output.empty_action_sequence", message: "Temporary action sequence must include action definitions.", path: `patches.${index}.actionDefinitionIds` });
+    if (patch.kind === "temporary_action_sequence" && (!patch.steps.length || patch.steps.some((step) => !step.definitionId.trim()))) diagnostics.push({ severity: "error", code: "llm_output.empty_action_sequence", message: "Temporary action sequence must include steps, each naming the definition it runs.", path: `patches.${index}.steps` });
     if (patch.kind === "temporary_recovery_subflow_call" && !patch.subflowId.trim()) diagnostics.push({ severity: "error", code: "llm_output.patch_missing_subflow", message: "Recovery subflow call must include a subflowId.", path: `patches.${index}.subflowId` });
     if (patch.kind === "temporary_reroute" && (!patch.fromNodeId.trim() || !patch.toNodeId.trim())) diagnostics.push({ severity: "error", code: "llm_output.patch_missing_reroute", message: "Temporary reroute must include fromNodeId and toNodeId.", path: `patches.${index}` });
   }

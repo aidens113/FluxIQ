@@ -1,4 +1,8 @@
-// One provider call, as a run's receipt itemizes it.
+// One provider call, as a run's receipt itemizes it -- and, at the foot of this
+// module, as a *build's* receipt itemizes the same thing. A build holds no
+// budget lease, so nothing counted its calls one at a time and a reader
+// downstream published an empty per-call list beside a total it could not break
+// down. One record shape, two ways of arriving at it.
 //
 // The run ledger's snapshot says what a run spent in total. That was enough
 // while a run made two calls, each of which left an intervention behind. It
@@ -69,7 +73,13 @@ export type AutomationStudioLlmRunCallCharge = {
 export type AutomationStudioLlmRunCallRecord = {
   /** 1-based position in the order the ledger counted the run's calls. */
   sequence: number;
-  requestId: string;
+  /**
+   * The provider request this record is of. `null` only for a build's call: a
+   * build keeps no reservation, so its records are read back afterwards from
+   * the evidence loop's own trace, which records the call the model made and
+   * not the request id the harness sent it under. Every run record has one.
+   */
+  requestId: string | null;
   taskKind: AutomationStudioLlmTaskKind | null;
   stage: AutomationStudioLoopStage | null;
   allowance: AutomationStudioLlmRunBudgetAllowance;
@@ -93,7 +103,8 @@ const ISSUE_CODE = /^[a-z][a-z0-9_.-]{0,127}$/u;
 /** One call's record, built from what the ledger knows when it counts the call. */
 export function automationStudioLlmRunCallRecord(input: {
   sequence: number;
-  requestId: string;
+  /** `null` only where the caller genuinely has none, which is a build and never a run. */
+  requestId: string | null;
   allowance: AutomationStudioLlmRunBudgetAllowance;
   description?: AutomationStudioLlmRunCallDescription | undefined;
   outcome?: AutomationStudioLlmRunCallOutcome | undefined;
@@ -140,4 +151,67 @@ function tokenCount(value: unknown): number | null {
 
 function cost(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * What a build knows about one of its own provider calls.
+ *
+ * A build is not a run: it holds no budget lease, so nothing reserves, counts
+ * or charges its calls one by one, and the per-call ledger above never saw
+ * them. What it does keep is the evidence loop's trace, which already records
+ * one row per decision with the usage the provider reported for it -- so a
+ * build's calls can be itemized after the fact from the record it already
+ * wrote, without changing anything about how a build runs.
+ */
+export type AutomationStudioLlmBuildCall = {
+  /** 1-based position among the build's provider calls, in the order it made them. */
+  sequence: number;
+  requestId?: string | undefined;
+  /** Whatever of the call's description the build can say. A build knows its provider and model; it may not know the rest per call. */
+  description?: Partial<AutomationStudioLlmRunCallDescription> | undefined;
+  outcome?: AutomationStudioLlmRunCallOutcome | undefined;
+  usage?: AutomationStudioLlmUsageSummary | undefined;
+};
+
+/**
+ * One of a build's calls, in the same record a run's calls are itemized in, so
+ * one reader reads both. A downstream consumer had no per-call lines for a
+ * build at all and published an empty list beside a total it could not break
+ * down.
+ *
+ * `charged` is the build's own arithmetic rather than a ledger's: a build has
+ * no reservation to fall back on, and its accounting adds up exactly what the
+ * provider reported, treating an unreported figure as zero. So `charged`
+ * reproduces the build's totals, and the `tokens` and `cost` flags still say
+ * which figures were measured -- `reserved` on a build means the provider
+ * reported none and zero was carried, never that something was reserved.
+ */
+export function automationStudioLlmBuildCallRecord(input: AutomationStudioLlmBuildCall): AutomationStudioLlmRunCallRecord {
+  const reportedInput = tokenCount(input.usage?.inputTokens);
+  const reportedOutput = tokenCount(input.usage?.outputTokens);
+  const reportedTotal = tokenCount(input.usage?.totalTokens);
+  const reportedCost = cost(input.usage?.estimatedCostUsd);
+  const measuredTokens = reportedInput !== null || reportedOutput !== null || reportedTotal !== null;
+  const inputTokens = reportedInput ?? 0;
+  const outputTokens = reportedOutput ?? 0;
+  return automationStudioLlmRunCallRecord({
+    sequence: input.sequence,
+    // A build that has no request id says so rather than inventing one.
+    requestId: identifier(input.requestId),
+    // Every call a build makes is an exploration decision. It is a label on
+    // the receipt, not a budget of its own.
+    allowance: "exploration",
+    ...(input.description ? { description: input.description as AutomationStudioLlmRunCallDescription } : {}),
+    ...(input.outcome ? { outcome: input.outcome } : {}),
+    ...(input.usage ? { usage: input.usage } : {}),
+    charged: {
+      inputTokens,
+      outputTokens,
+      totalTokens: reportedTotal ?? inputTokens + outputTokens,
+      estimatedCostUsd: reportedCost ?? 0,
+      tokens: measuredTokens ? "reported" : "reserved",
+      cost: reportedCost !== null ? "reported" : "reserved"
+    },
+    budgetBreach: false
+  });
 }

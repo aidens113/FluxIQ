@@ -19,6 +19,7 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES
@@ -39,6 +40,30 @@ const CONSEQUENCES_SCHEMA = {
 function boundedStringSchema(): JsonSchema {
   return { type: "string", minLength: 1, maxLength: 20_000 };
 }
+
+/**
+ * The steps a repair inserts before a node: whole nodes, not definition names.
+ *
+ * `parameters` is deliberately an open object. It is the definition's own
+ * declared parameters -- the text a step types, the URL it opens, the control it
+ * acts on -- in the vocabulary of the domain that owns the definition, which
+ * Core does not know and must not pretend to. It is the same value the
+ * authoring path writes when it creates a node, and the registry the executor
+ * dispatches through is what refuses a parameter the definition never declared.
+ * The boundary's job here is the bound: `provider-result.ts` holds each step to
+ * a serialized ceiling so a page cannot arrive inside one.
+ */
+const INSERTED_STEPS_SCHEMA = {
+  type: "array",
+  minItems: 1,
+  maxItems: AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["definitionId"],
+    properties: { definitionId: boundedStringSchema(), label: boundedStringSchema(), parameters: { type: "object" } }
+  }
+} as const;
 
 function runtimePatchVariant(kind: string, requiredFields: string[], properties: JsonSchema): JsonSchema {
   return {
@@ -90,8 +115,8 @@ function targetOverridePatchSchema(executes: boolean): JsonSchema {
 /** Any patch kind a recovery may run, each acting kind saying what it would lastingly do. */
 const GENERIC_RUNTIME_PATCH_ITEM_SCHEMA = {
   oneOf: [
-    runtimePatchVariant("temporary_action_sequence", ["targetNodeId", "actionDefinitionIds", "consequences"], {
-      targetNodeId: boundedStringSchema(), actionDefinitionIds: { type: "array", maxItems: 100, items: boundedStringSchema() }, consequences: CONSEQUENCES_SCHEMA
+    runtimePatchVariant("temporary_action_sequence", ["targetNodeId", "steps", "consequences"], {
+      targetNodeId: boundedStringSchema(), steps: INSERTED_STEPS_SCHEMA, consequences: CONSEQUENCES_SCHEMA
     }),
     runtimePatchVariant("temporary_wait_retry", ["targetNodeId"], {
       targetNodeId: boundedStringSchema(), timeoutMs: { type: "integer", minimum: 0 }, retryCount: { type: "integer", minimum: 0 }

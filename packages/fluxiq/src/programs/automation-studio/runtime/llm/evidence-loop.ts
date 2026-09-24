@@ -23,7 +23,7 @@ import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenc
 // What a loop may be configured with, and how those numbers resolve
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
-import { resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
+import { automationStudioLlmEvidenceLoopSeedSteps, resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
@@ -271,7 +271,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The draft (`runtime/flow-draft/`): every action appended as it happens, so
   // a result is written from what the loop did rather than from what is still
   // in front of the model. Kept whether or not it is shown.
-  const draftSteps: AutomationStudioFlowDraftStep[] = [];
+  const draftSteps: AutomationStudioFlowDraftStep[] = automationStudioLlmEvidenceLoopSeedSteps(input.draft);
   const drafting = input.draft !== false;
   let draftAmendments = 0;
   // Steps appended so far, ever, including any since withdrawn: the source of

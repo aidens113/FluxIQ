@@ -142,6 +142,43 @@ export type AutomationStudioRuntimeTargetOverrideTarget = JsonObject & {
 };
 
 /**
+ * One step a repair inserts into a Flow, as a model writes it.
+ *
+ * `temporary_action_sequence` carried `actionDefinitionIds: string[]` --
+ * definition ids and nothing else. No applier could build a node from that, so
+ * the kind had no application at all (`live-patch.ts` refused it as
+ * `unapplied_patch_kind`) and the change-proposal kind it mapped to,
+ * `edit_recovery`, is refused outright as having no durable form
+ * (`adaptation-store.ts`). The one shape of failure the loop meets most often
+ * -- a Flow that ran cleanly and answered wrongly because a step is missing --
+ * therefore had no patch kind that could express its repair. Live run
+ * `run-mufvlasz-c83071f7` (2026-09-24) is the case: a catalog search Flow that
+ * navigated and extracted, never typed the query, and returned 23 records where
+ * 4 were expected.
+ *
+ * A step is therefore a whole node: what to run, and what to run it with. Its
+ * `parameters` are the node's parameter values, written exactly as the
+ * authoring path writes them for a node it creates, and validated by the same
+ * registry the executor dispatches through. Nothing here is a locator Core
+ * reads: a parameter is the definition's own declared parameter, and a
+ * definition the registry does not know refuses before any node is inserted.
+ */
+export type AutomationStudioRuntimePatchStep = {
+  /** The node definition to run, named as the catalog the Flow was built from names it. */
+  definitionId: string;
+  /** What the inserted node is called. Its definition id when absent. */
+  label?: string;
+  /** The node's parameter values, as the authoring path writes a node's. */
+  parameters?: JsonObject;
+};
+
+/** How many steps one repair may insert. A repair is a missing step or two, never a second Flow. */
+export const AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS = 8;
+
+/** The bound on one step's serialized size, so a page cannot ride into a graph write inside a parameter. */
+export const AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH = 8_000;
+
+/**
  * A runtime patch as a model writes it.
  *
  * `consequences` is what an acting patch says it would lastingly do each time
@@ -153,7 +190,7 @@ export type AutomationStudioRuntimeTargetOverrideTarget = JsonObject & {
  * refused, and a proposal-only patch never carries it.
  */
 export type AutomationStudioRuntimePatch =
-  | { kind: "temporary_action_sequence"; targetNodeId: string; actionDefinitionIds: string[]; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
+  | { kind: "temporary_action_sequence"; targetNodeId: string; steps: AutomationStudioRuntimePatchStep[]; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_wait_retry"; targetNodeId: string; timeoutMs?: number; retryCount?: number; reason: string; metadata?: JsonObject }
   | { kind: "temporary_target_override"; targetNodeId: string; target: AutomationStudioRuntimeTargetOverrideTarget; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_recovery_subflow_call"; subflowId: string; reason: string; metadata?: JsonObject }

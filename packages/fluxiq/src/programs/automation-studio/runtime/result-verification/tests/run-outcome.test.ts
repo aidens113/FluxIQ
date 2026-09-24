@@ -3,6 +3,7 @@ import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetPage, Auto
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
+import { automationStudioRefutedResultReauthored } from "../../recovery/refuted-result/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
 
 // The whole path, driven end to end: a run that finished without a failed step,
@@ -411,5 +412,93 @@ describe("the checking schedule's decision on the run record", () => {
     const next = await verify(context);
     expect(next.metadata?.resultCheck).toBeUndefined();
     expect(context.saved.at(-1)?.summary.metadata?.resultCheck).toBeUndefined();
+  });
+});
+
+// The loop closing: a wrong answer is repaired, the corrected Flow runs again,
+// and the run that produces is judged in its turn.
+//
+// A repair that edits the Flow and stops has left a corrected Flow nobody has
+// run. What was asked for is the corrected Flow *answering the question*, so
+// these pin the three things that make that true and safe: the re-run happens,
+// it happens only when the edit actually reached the Flow, and it happens once.
+describe("the re-run a repair earns", () => {
+  /** A repair that routed, edited the Flow, and says so on the run. */
+  const repaired = (applied: true | undefined) => async (request: { detail: AutomationStudioFlowRunDetail }) =>
+    automationStudioRefutedResultReauthored({
+      detail: request.detail,
+      decision: { route: true, projectId: "project-1", flowId: "flow-1" },
+      adaptationId: "adaptation.bootstrap.1",
+      ...(applied ? { applied } : {})
+    });
+
+  /**
+   * A harness whose run store behaves like one: what a pass saved is what the
+   * next pass reads. Without that the marker a repair writes would not survive
+   * into the second verification, which is exactly what bounds the loop.
+   */
+  /** A run detail with the step the result came out of, which is what the refuted attempt is attributed to. */
+  const producedDetail = (): AutomationStudioFlowRunDetail => ({
+    ...runDetail(),
+    actionAttempts: [{ attemptId: "attempt.1", nodeId: "n2", definitionId: "builtin.policy.action", order: 1, status: "succeeded", startedAt: 2, finishedAt: 3, metadata: { recordCount: 240 } }]
+  });
+
+  function looping(answers: readonly ScriptedAnswer[], options: { applied?: true; rerunStatus?: "succeeded" | "failed" } = {}) {
+    const context = harness({ answers });
+    const reruns: AutomationStudioFlowRunDetail[] = [];
+    const repairs: AutomationStudioFlowRunDetail[] = [];
+    const ports: AutomationStudioResultVerificationPorts = {
+      ...context.ports,
+      getFlowRunDetail: async () => context.saved.at(-1) ?? producedDetail(),
+      repairRefutedResult: async (request) => { repairs.push(request.detail); return await repaired(options.applied)(request); },
+      rerunRepairedFlow: async (request) => {
+        reruns.push(request.detail);
+        return { session: session({ status: options.rerunStatus ?? "succeeded", runId: "run-1" }) };
+      }
+    };
+    return { ...context, ports, reruns, repairs };
+  }
+
+  it("runs the corrected Flow again and judges what it produced", async () => {
+    // Refuted, repaired, re-run, and the second answer is right.
+    const context = looping([ANSWER.no, ANSWER.no, ANSWER.yes, ANSWER.yes], { applied: true });
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+
+    expect(context.repairs).toHaveLength(1);
+    expect(context.reruns).toHaveLength(1);
+    // The run the caller is handed is the re-run's, and it passed: the corrected
+    // Flow answered the question, which is the whole point of the loop.
+    expect(next.status).toBe("succeeded");
+    expect((next.metadata?.resultVerification as JsonObject).status).toBe("confirmed");
+  });
+
+  it("does not re-run when the repair changed nothing", async () => {
+    // An edit that was built and could not be applied has left the same Flow in
+    // place; running it again would buy a second verdict on the first one.
+    const context = looping([ANSWER.no, ANSWER.no], {});
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+    expect(context.repairs).toHaveLength(1);
+    expect(context.reruns).toHaveLength(0);
+    expect(next.status).toBe("failed");
+  });
+
+  it("repairs once: a re-run that answers wrongly again is reported, not repaired again", async () => {
+    const context = looping([ANSWER.no, ANSWER.no, ANSWER.no, ANSWER.no], { applied: true });
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+
+    // One repair and one re-run, and then it stops: the marker the first repair
+    // wrote survives into the second pass, so the entry point answers nothing.
+    expect(context.repairs).toHaveLength(1);
+    expect(context.reruns).toHaveLength(1);
+    expect(next.status).toBe("failed");
+  });
+
+  it("judges a re-run that failed a step as the failed run it is", async () => {
+    const context = looping([ANSWER.no, ANSWER.no], { applied: true, rerunStatus: "failed" });
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+    expect(context.reruns).toHaveLength(1);
+    // Nothing is verified about a run that did not finish, and nothing loops.
+    expect(next.status).toBe("failed");
+    expect(context.repairs).toHaveLength(1);
   });
 });

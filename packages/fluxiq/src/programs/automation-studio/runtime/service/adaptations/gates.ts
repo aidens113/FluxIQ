@@ -44,6 +44,9 @@ export const AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES: Record<AutomationStudioCh
   // is at least as consequential as any kind above it. It was gated by none of
   // the three until 2026-09-17.
   insert_deterministic_path: GATED,
+  // Inserts executable action nodes onto the path a run already takes, so every
+  // later run executes them rather than only a run whose step failed. Strictly
+  // more consequential than the recovery path above, so it is gated the same.
   // Not proposal-gated: promotion acts on an adaptation that already carries
   // its own review, so requiring a second proposal would gate the review itself.
   promote_adaptation: { requiresProposal: false, major: true, structural: true },

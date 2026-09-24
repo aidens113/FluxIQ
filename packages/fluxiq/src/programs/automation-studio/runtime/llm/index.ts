@@ -45,7 +45,9 @@ export * from "./harness-options/index.ts";
 export * from "./node-tools/index.ts";
 export * from "./stages/index.ts";
 export * from "./run-budget.ts";
+export { automationStudioLlmBuildCallRecord } from "./run-call-record.ts";
 export type {
+  AutomationStudioLlmBuildCall,
   AutomationStudioLlmRunCallCharge,
   AutomationStudioLlmRunCallChargeBasis,
   AutomationStudioLlmRunCallDescription,

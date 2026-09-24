@@ -20,6 +20,7 @@ import type {
   AutomationStudioInstructedConsequence
 } from "../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
+import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 
 /**
@@ -97,6 +98,12 @@ export type AutomationStudioBootstrapAdaptation = {
   mode?: AutomationStudioBootstrapAdaptationMode;
   /** Absent on records written before origins existed; `upgradeAutomationStudioBootstrapAdaptation` derives it. */
   origin?: AutomationStudioBootstrapAdaptationOrigin;
+  /**
+   * The ids an `extend` kept, so apply's re-normalisation reaches the same
+   * topology this record was proposed with (`./extend.ts`). Absent on a
+   * `create`, which mints every id from the adaptation.
+   */
+  existingIds?: AutomationStudioBootstrapExistingTopology;
   /** Trials of the proposed topology and replays of the applied one. */
   validationResults?: AutomationStudioFlowAdaptationValidationResult[];
   summary: string;
@@ -153,16 +160,27 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
   buildPlan: AutomationStudioFlowBuildPlan;
   sourceInstructionIds: string[];
   now: number;
+  /**
+   * The ids this Flow already has, when the plan extends it rather than
+   * creating it (`./extend.ts`). Each one given is kept, so the Subflow, its
+   * graph Flow, the Router and every node the build did not add stay the same
+   * thing they were and an edit is an edit. Absent -- every creation -- each id
+   * is minted from the adaptation, exactly as before.
+   */
+  existing?: AutomationStudioBootstrapExistingTopology | undefined;
 }): AutomationStudioBootstrapTopology {
   const namespace = createHash("sha256").update(input.adaptationId).digest("hex").slice(0, 16);
+  // Only the primary Subflow is reused: a plan assembled from a draft has one,
+  // and pairing any other with the Flow's own would be a guess.
+  const reuse = (entry: { key: string; role: string }) => entry.role === "primary" ? input.existing : undefined;
   const subflowIds = new Map(input.buildPlan.subflows.map((entry) => [
     entry.key,
-    `subflow.bootstrap.${namespace}.${entry.key}`
+    reuse(entry)?.subflowId ?? `subflow.bootstrap.${namespace}.${entry.key}`
   ]));
-  const routerId = `router.bootstrap.${namespace}`;
+  const routerId = input.existing?.routerId ?? `router.bootstrap.${namespace}`;
   const subflows = input.buildPlan.subflows.map((entry) => {
     const subflowId = subflowIds.get(entry.key)!;
-    const graphFlowId = `${input.parentFlow.flowId}.bootstrap.${namespace}.${entry.key}.graph`;
+    const graphFlowId = reuse(entry)?.graphFlowId ?? `${input.parentFlow.flowId}.bootstrap.${namespace}.${entry.key}.graph`;
     const primary = entry.role === "primary";
     const graphFlow = createBlankAutomationStudioFlowArtifact({
       flowId: graphFlowId,
@@ -182,7 +200,7 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
     });
     const nodeIds = new Map(entry.nodes.map((node) => [
       node.key,
-      `node.bootstrap.${namespace}.${entry.key}.${node.key}`
+      reuse(entry)?.nodeIdByKey?.[node.key] ?? `node.bootstrap.${namespace}.${entry.key}.${node.key}`
     ]));
     const materializedGraph: AutomationStudioFlowArtifact = {
       ...graphFlow,

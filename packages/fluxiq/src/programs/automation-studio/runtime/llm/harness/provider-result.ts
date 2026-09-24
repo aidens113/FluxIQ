@@ -6,6 +6,8 @@ import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 import {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
   isAutomationStudioNoRepairReason,
   stripAutomationStudioLlmResponseMetadata,
@@ -177,7 +179,7 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
   }
   const kind = value.kind;
   const common = ["kind", "reason", "metadata"];
-  const fields = kind === "temporary_action_sequence" ? [...common, "targetNodeId", "actionDefinitionIds", "consequences"]
+  const fields = kind === "temporary_action_sequence" ? [...common, "targetNodeId", "steps", "consequences"]
     : kind === "temporary_wait_retry" ? [...common, "targetNodeId", "timeoutMs", "retryCount"]
       : kind === "temporary_target_override" ? [...common, "targetNodeId", "target", "consequences"]
         : kind === "temporary_recovery_subflow_call" ? [...common, "subflowId"]
@@ -195,7 +197,9 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
     diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_consequences", message: "Runtime patch consequences must be a list of Core's consequence classes.", path: `${path}.consequences` });
   }
   if (kind === "temporary_action_sequence") {
-    if (!isBoundedString(value.targetNodeId) || !Array.isArray(value.actionDefinitionIds) || value.actionDefinitionIds.length > 100 || !value.actionDefinitionIds.every(isBoundedString)) diagnostics.push({ severity: "error", code: "llm_output.invalid_action_sequence", message: "Temporary action sequence requires a target and bounded action definition IDs.", path });
+    if (!isBoundedString(value.targetNodeId) || !Array.isArray(value.steps) || !value.steps.length || value.steps.length > AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS || !value.steps.every(isRuntimePatchStep)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_action_sequence", message: "Temporary action sequence requires the node to insert before and between one and eight steps, each naming a definition and carrying only bounded parameters.", path });
+    }
   } else if (kind === "temporary_wait_retry") {
     if (!isBoundedString(value.targetNodeId) || !isOptionalNonNegativeInteger(value.timeoutMs) || !isOptionalNonNegativeInteger(value.retryCount)) diagnostics.push({ severity: "error", code: "llm_output.invalid_wait_retry", message: "Temporary wait/retry fields are invalid.", path });
   } else if (kind === "temporary_target_override") {
@@ -305,6 +309,27 @@ function boundedProviderResult(root: unknown): boolean {
 
 function isOptionalNonNegativeInteger(value: unknown): boolean {
   return value === undefined || (Number.isInteger(value) && (value as number) >= 0);
+}
+
+/**
+ * One inserted step, checked at the boundary: a definition id, an optional
+ * label, and parameters that are JSON and small.
+ *
+ * The parameters are not read here and must not be. They are the node
+ * definition's own declared parameters, in the vocabulary of whichever domain
+ * owns the definition, and Core has never known what any of them mean -- the
+ * authoring path writes the same values for a node it creates. What Core owes
+ * them is a bound, so a page's text cannot arrive inside one and become a graph
+ * write; the registry the executor dispatches through refuses a definition or a
+ * parameter it does not know, long before the step runs.
+ */
+function isRuntimePatchStep(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  for (const key of Object.keys(value)) if (!["definitionId", "label", "parameters"].includes(key)) return false;
+  if (!isBoundedString(value.definitionId)) return false;
+  if (value.label !== undefined && !isBoundedString(value.label)) return false;
+  if (value.parameters !== undefined && !isJsonObject(value.parameters)) return false;
+  return JSON.stringify(value).length <= AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH;
 }
 
 function isRiskLevel(value: unknown): value is "low" | "medium" | "high" | "destructive" {

@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioFlowBootstrapEvidenceSteps } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../llm/index.ts";
+import { automationStudioFlowBootstrapEvidenceSteps, type AutomationStudioFlowBootstrapEvidenceTraceRow } from "../../flow-bootstrap/index.ts";
+import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
@@ -17,6 +17,20 @@ import { requiredBootstrapCommandId } from "./field-readings.ts";
 // while only a refused build kept them through a different path. Both are kept
 // now, and the detail carries the same ordered steps the refusal path
 // publishes.
+//
+// Two further things the trace had all along and nobody could read. The rows
+// it keeps carry `iteration`, `callId`, `evidenceBytes` and the provider's
+// `usage`, and the published steps threw all four away -- so a failed build's
+// 32 decisions arrived as a tool id and a code each, twenty of them the same
+// code, with nothing to order them by and no tokens against any of them. Three
+// of the four now travel; the call id stays in this stored trace and is not
+// published as a step, because the model writes it and a published step carries
+// codes and identifiers only (`flow-bootstrap/evidence-loop-steps.ts`). And a
+// build's provider calls were never itemized at all: a build holds no budget
+// lease, so the per-call ledger a run gets never saw them, and a reader
+// downstream published an empty list beside a total it could not break down.
+// `providerCalls` below is that ledger, read back from the rows the loop had
+// already written.
 
 /** The shape a result code must have to be kept: no whitespace, so no sentence. */
 const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
@@ -35,11 +49,13 @@ const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  */
 const MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
 
-export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
+export function sanitizeEvidenceLoopTrace(
+  trace: readonly AutomationStudioFlowBootstrapEvidenceTraceRow[]
+): AutomationStudioFlowBootstrapEvidenceTraceRow[] {
   if (!Array.isArray(trace) || trace.length > MAX_TRACE_ROWS) throw new Error("Flow Bootstrap evidence trace is invalid.");
   return trace.map((item) => {
     if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations || !["tool_call", "complete", "unusable", "amend_draft"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
-    const clean: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
+    const clean: AutomationStudioFlowBootstrapEvidenceTraceRow = { iteration: item.iteration, decision: item.decision };
     if (item.callId !== undefined) clean.callId = requiredBootstrapCommandId(item.callId, "evidence call");
     if (item.toolId !== undefined) clean.toolId = requiredBootstrapCommandId(item.toolId, "evidence tool");
     if (item.evidenceBytes !== undefined) {
@@ -58,6 +74,11 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
     // same time, and the other one threw on a bad code, which would discard
     // the whole record of a build that had completed.
     if (item.resultCode !== undefined && typeof item.resultCode === "string" && EVIDENCE_RESULT_CODE.test(item.resultCode)) clean.resultCode = item.resultCode;
+    // The moment the row was recorded, which is what lets a reader locate a
+    // stall in time instead of inferring it from one undivided gap. Left
+    // behind rather than thrown on, for the same reason as the code above: a
+    // build that finished must not be discarded over a reader's detail.
+    if (Number.isSafeInteger(item.at) && (item.at as number) >= 0) clean.at = item.at;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
@@ -86,7 +107,7 @@ export function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoop
  * only one of the four that a decision editing the draft and re-running a step
  * moves by two.
  */
-export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[], additionalProviderCalls = 0): JsonObject {
+export function evidenceTraceAuditDetail(trace: readonly AutomationStudioFlowBootstrapEvidenceTraceRow[], additionalProviderCalls = 0): JsonObject {
   const clean = sanitizeEvidenceLoopTrace(trace);
   // **A provider call is an iteration, not a row.** One decision is one paid
   // call, and the loop writes one row for most of them -- but an `amend_draft`
@@ -116,10 +137,35 @@ export function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopT
     toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
     evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
     toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort(),
-    // Every decision in order, the same three fields a refused build's
-    // diagnostic carries. `toolIds` above is a sorted set and says nothing
-    // about sequence, so it can never show what the build did, only what it
-    // used.
-    steps: automationStudioFlowBootstrapEvidenceSteps(clean)
+    // Every decision in order, the same fields a refused build's diagnostic
+    // carries. `toolIds` above is a sorted set and says nothing about
+    // sequence, so it can never show what the build did, only what it used.
+    steps: automationStudioFlowBootstrapEvidenceSteps(clean),
+    // The loop's calls one at a time, in the record a run's calls are itemized
+    // in, so one reader reads both. `sequence` is the iteration that paid for
+    // the call, which is what `steps[].iteration` says too, so a line and the
+    // decisions it paid for join on it.
+    providerCalls: evidenceTraceProviderCalls(clean),
+    // Calls counted above that these lines do not itemize: the build's calls
+    // outside the loop, which leave no trace row to read back.
+    providerCallsOmitted: extra
   };
+}
+
+/**
+ * One line per provider call the loop made. A decision that edited the draft
+ * and re-ran a step wrote two rows under one iteration and cost one call, so
+ * the rows are folded by iteration and the call is read from the one carrying
+ * the provider's usage.
+ */
+function evidenceTraceProviderCalls(clean: readonly AutomationStudioFlowBootstrapEvidenceTraceRow[]): AutomationStudioLlmRunCallRecord[] {
+  const paid = new Map<number, AutomationStudioFlowBootstrapEvidenceTraceRow>();
+  for (const item of clean) {
+    if (item.iteration <= 0) continue;
+    const held = paid.get(item.iteration);
+    if (!held || (!held.usage && item.usage)) paid.set(item.iteration, item);
+  }
+  return [...paid.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([iteration, row]) => automationStudioLlmBuildCallRecord({ sequence: iteration, ...(row.usage ? { usage: row.usage } : {}) }));
 }

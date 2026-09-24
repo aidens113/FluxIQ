@@ -196,7 +196,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_action_sequence" as const, targetNodeId: "constant", actionDefinitionIds: ["builtin.constant"], reason: "Press the renamed control." },
+      patch: { kind: "temporary_action_sequence" as const, targetNodeId: "constant", steps: [{ definitionId: "builtin.data.constant" }], reason: "Press the renamed control." },
       policy: withheld,
       authorizedExternalSideEffects: false
     };
@@ -441,32 +441,59 @@ describe("Automation Studio live patch testing", () => {
     expect(proposed.adaptation?.metadata?.failureSignature).toBe(executed.adaptation?.metadata?.failureSignature);
   });
 
-  // Fix 3: these two kinds had no application branch, so the rerun executed the
-  // ORIGINAL flow and its success was recorded against a patch that was never
-  // applied. An unapplied kind must now never reach the graph at all.
-  it("never runs the graph for a temporary action sequence, which has no application branch", async () => {
-    const nativeNodeExecutor = vi.fn();
+  // A wrong answer's repair is a step the Flow never had, and until 2026-09-24
+  // this kind had no application branch at all: the trial was refused as
+  // `unapplied_patch_kind`, nothing was ever attempted, and the whole failure
+  // class was unrepairable (run-mufvlasz-c83071f7). The insert now runs, ahead
+  // of the node it was asked to run before, and the canonical Flow is untouched.
+  it("inserts a step ahead of the node it runs before, and leaves the canonical Flow alone", async () => {
     const flow = flowFixture();
+    const original = structuredClone(flow);
     const result = await executeAutomationStudioRuntimePatch({
       projectId: "project.patch",
       flowId: "flow.patch",
       runId: "run.failed",
       flow,
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_action_sequence", targetNodeId: "constant", actionDefinitionIds: ["builtin.action.click"], reason: "Insert the missing confirmation click." },
+      patch: { kind: "temporary_action_sequence", targetNodeId: "end", steps: [{ definitionId: "builtin.data.constant", label: "Search first", parameters: { value: "lamp" } }], reason: "Search before reading the results." },
       expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedOutputs: { value: "ok" } } },
+      policy: repairPolicy({ allowExternalSideEffects: true, requireApprovalForExternalSideEffects: false }),
+      now: () => 24
+    });
+
+    expect(result.preflight.ok).toBe(true);
+    // The inserted node ran: the trial starts there, so it is named in the trace
+    // rather than the node the patch was aimed in front of.
+    expect(result.verification).not.toEqual({ status: "not_executed", reason: "unapplied_patch_kind:temporary_action_sequence" });
+    expect(result.trace?.attempts.map((attempt) => attempt.nodeId)).toContain("node.runtime-patch.run.failed.step-1");
+    // The insert is a trial-only band-aid: keeping a step is the extend-mode
+    // build plan's job, so the durable form is `edit_recovery`, which no durable
+    // applier applies. Nothing here mints a Flow edit.
+    expect(result.adaptation?.patch).toEqual([
+      { kind: "edit_recovery", targetId: "end", summary: "Search before reading the results." }
+    ]);
+    // The original action is not retried: the inserted step is what runs now.
+    expect(result.retryOriginalAction).toBe(false);
+    expect(flow).toEqual(original);
+  });
+
+  it("refuses an insert whose node is not in this Flow", async () => {
+    const nativeNodeExecutor = vi.fn();
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_action_sequence", targetNodeId: "absent", steps: [{ definitionId: "builtin.data.constant" }], reason: "Insert the missing search." },
       policy: repairPolicy({ allowExternalSideEffects: true, requireApprovalForExternalSideEffects: false }),
       options: { nativeNodeExecutor },
       now: () => 24
     });
 
-    expect(result.preflight.ok).toBe(true);
-    expect(result.verification).toEqual({ status: "not_executed", reason: "unapplied_patch_kind:temporary_action_sequence" });
-    expect(result.restoredExpectedState).toBe(false);
-    expect(result.retryOriginalAction).toBe(false);
-    expect(result).not.toHaveProperty("trace");
+    expect(result.preflight.ok).toBe(false);
+    expect(result.preflight.issues).toContain("Runtime patch points at a node or subflow that is not present in this Flow.");
     expect(result).not.toHaveProperty("adaptation");
-    expect(result).not.toHaveProperty("changeProposal");
     expect(nativeNodeExecutor).not.toHaveBeenCalled();
   });
 
@@ -494,15 +521,15 @@ describe("Automation Studio live patch testing", () => {
     expect(nativeNodeExecutor).not.toHaveBeenCalled();
   });
 
-  // The two runtime patch kinds refused above are exactly the two that become an
-  // `edit_recovery` change patch, and `edit_recovery` has no durable application
-  // either: both durable appliers now refuse it (runtime/service/adaptations and
-  // storage/project/adaptation-store). This pins the pair together, so giving one
-  // of them an application branch here without also giving `edit_recovery` a
-  // durable form — which would mint adaptations that can never be applied — fails.
+  // Both kinds below become an `edit_recovery` change patch, and `edit_recovery`
+  // has no durable application: both durable appliers refuse it
+  // (runtime/service/adaptations and storage/project/adaptation-store). This
+  // pins the pair together, so giving either an application branch without also
+  // giving `edit_recovery` a durable form — which would mint adaptations that
+  // can never be applied — fails. Durably inserting a step is the extend-mode
+  // build plan's, not a patch kind's.
   it("mints no executed adaptation for a patch kind whose change patch cannot be applied durably", async () => {
     const patches: AutomationStudioRuntimePatch[] = [
-      { kind: "temporary_action_sequence", targetNodeId: "constant", actionDefinitionIds: ["builtin.action.click"], reason: "Insert the missing confirmation click." },
       { kind: "temporary_recovery_subflow_call", subflowId: "subflow.recovery", reason: "Hand the failure to the recovery subflow." }
     ];
 
