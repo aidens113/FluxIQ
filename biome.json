@@ -7,17 +7,16 @@
       "apps/web/src/app/api/auth/login/route.ts",
       "apps/web/src/app/api/programs/\\[programId\\]/\\[endpoint\\]/route.ts",
       "apps/web/src/lib/login-attempts.ts",
-      "apps/web/src/lib/login-attempts.test.ts",
+      "apps/web/src/lib/tests/login-attempts.test.ts",
       "apps/web/src/lib/program-route.ts",
-      "apps/web/src/lib/program-route.test.ts",
+      "apps/web/src/lib/tests/program-route.test.ts",
       "apps/web/src/features/programs/shared-ui.tsx",
-      "apps/web/src/features/programs/shared-ui.test.tsx",
       "apps/web/src/features/automation-studio/model/project-artifacts.ts",
-      "apps/web/src/features/automation-studio/model/project-artifacts.test.ts",
+      "apps/web/src/features/automation-studio/model/tests/project-artifacts.test.ts",
       "packages/fluxiq/src/programs/_shared/api.ts",
       "packages/fluxiq/src/programs/_shared/storage.ts",
-      "packages/fluxiq/src/programs/_shared/storage.test.ts",
-      "packages/fluxiq/src/programs/permission-matrix.test.ts"
+      "packages/fluxiq/src/programs/_shared/tests/storage.test.ts",
+      "packages/fluxiq/src/programs/tests/permission-matrix.test.ts"
     ]
   },
   "formatter": {

@@ -52,18 +52,14 @@ describe("login attempt tracking", () => {
 
   it.each([
     ["an empty file", ""],
-    ["malformed JSON", "{\schemaVersion\:1,\attempts\:"],
-    ["an invalid state shape", "{\schemaVersion\:1,\attempts\:{\client:user\:{\count\:\many\}}}"]
+    ["malformed JSON", '{"schemaVersion":1,"attempts":'],
+    ["an invalid state shape", '{"schemaVersion":1,"attempts":{"client:user":{"count":"many"}}}'],
   ])("repairs %s instead of breaking all logins", async (_label, contents) => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-login-attempts-"));
     tempRoots.push(root);
     const filePath = path.join(root, "attempts.json");
     writeFileSync(filePath, contents, "utf8");
-    const tracker = new DurableLoginAttemptTracker(
-      filePath,
-      { windowMs: 10_000, lockoutMs: 5_000, maxAttempts: 3 },
-      () => 1_000
-    );
+    const tracker = new DurableLoginAttemptTracker(filePath, { windowMs: 10_000, lockoutMs: 5_000, maxAttempts: 3 }, () => 1_000);
 
     await expect(tracker.remainingLockout("client:user")).resolves.toBe(0);
     expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual({ schemaVersion: 1, attempts: {} });
@@ -240,7 +236,10 @@ describe("poisoned login attempt stores", () => {
     ["a negative count", poisoned({ ...lockingEntry, count: -1 })],
     ["a negative timestamp", poisoned({ ...lockingEntry, windowStartedAtMs: -1 })],
     ["a timestamp carried as a string", poisoned({ ...lockingEntry, updatedAtMs: "1000" })],
-    ["a lockout that overflows to infinity", '{"schemaVersion":1,"attempts":{"client:user":{"count":9,"windowStartedAtMs":1000,"lockedUntilMs":1e999,"updatedAtMs":1000}}}']
+    [
+      "a lockout that overflows to infinity",
+      '{"schemaVersion":1,"attempts":{"client:user":{"count":9,"windowStartedAtMs":1000,"lockedUntilMs":1e999,"updatedAtMs":1000}}}',
+    ],
   ])("refuses to lock anyone out from %s", async (_label, contents) => {
     const filePath = storePath();
     writeFileSync(filePath, contents, "utf8");
@@ -269,7 +268,7 @@ describe("login client address", () => {
   it.each([
     ["no forwarding headers at all", {}],
     ["a blank forwarded list and no real-ip", { "x-forwarded-for": "  ,  " }],
-    ["a blank real-ip", { "x-real-ip": "   " }]
+    ["a blank real-ip", { "x-real-ip": "   " }],
   ])("buckets %s under one unknown proxy client", (_label, headers) => {
     expect(address(headers)).toBe("proxy-unknown");
   });
