@@ -51,11 +51,20 @@ describe("carrying the diagnosis into the patch request", () => {
     expect(packAutomationStudioLlmContext(patchInput({ diagnosis: { expected: "   " } })).diagnosis).toBeUndefined();
   });
 
-  it("refuses the slot on any task that is not a runtime patch", () => {
-    for (const taskKind of ["runtime_diagnosis", "flow_bootstrap", "change_proposal_generation", "router_patch"] as const) {
+  it("refuses the slot on any task with no diagnosis of its own to be shown", () => {
+    for (const taskKind of ["flow_bootstrap", "change_proposal_generation", "router_patch"] as const) {
       expect(() => packAutomationStudioLlmContext({ ...patchInput({ diagnosis: { ...DIAGNOSIS } }), taskKind }))
         .toThrow(/runtime patch/i);
     }
+  });
+
+  // A re-planning diagnosis is the other continuation of the call that produced
+  // it. There the earlier answer is the subject of the call, not background:
+  // the model said what it said about a page it had not seen, and the second
+  // call puts that answer and the page in front of it together.
+  it("carries the slot into a runtime diagnosis, which is what re-planning after a look is", () => {
+    expect(packAutomationStudioLlmContext({ ...patchInput({ diagnosis: { ...DIAGNOSIS } }), taskKind: "runtime_diagnosis", stage: "plan" }).diagnosis)
+      .toMatchObject({ stillAchievable: DIAGNOSIS.stillAchievable });
   });
 });
 

@@ -44,23 +44,35 @@ export function holdAutomationStudioRecoveryPatchReserve(input: {
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
   /** What the patch request will reserve against the purse. */
   maxEstimatedCostUsd: number;
+  /**
+   * How many calls come after the exploration, when more than the patch's one.
+   *
+   * A recovery that will re-plan after looking makes two: the re-plan, then the
+   * patch it may ask for. Holding one call's share for two calls is the same
+   * defect this file exists to prevent, one call further along -- an exploration
+   * that kept learning would leave the re-plan affordable and the patch not, so
+   * a run that looked, changed its mind, and knew what to repair would propose
+   * nothing. Absent means one.
+   */
+  reservedCalls?: number | undefined;
 }): AutomationStudioRecoveryPatchReserve {
+  const reservedCalls = Math.max(1, Math.floor(input.reservedCalls ?? 1));
   const limits = resolveAutomationStudioLlmTokenLimits(input.tokenLimits).limits;
   const hold = input.runBudget.reserve({
     runId: input.runId,
     requestId: "recovery.patch-reserve",
-    estimatedInputTokens: limits.maxInputTokens,
-    maxOutputTokens: limits.maxOutputTokens,
-    maxEstimatedCostUsd: input.maxEstimatedCostUsd
+    estimatedInputTokens: limits.maxInputTokens * reservedCalls,
+    maxOutputTokens: limits.maxOutputTokens * reservedCalls,
+    maxEstimatedCostUsd: input.maxEstimatedCostUsd * reservedCalls
   });
   // A hold the run cannot afford is not taken: the run cannot pay for the
   // patch either, and the exploration will be refused on the same numbers.
   const release = hold.ok ? () => hold.lease.release() : () => undefined;
   if (input.declaredCallsPerRun === undefined) return { release };
-  // Declared calls minus those already made minus the patch's. Clamped to at
+  // Declared calls minus those already made minus the ones held back. Clamped to at
   // least one by the resolver; a hold that leaves no call makes the ledger
   // refuse that one, so the exploration still ends on a named limit.
-  const remaining = input.declaredCallsPerRun - input.runBudget.snapshot(input.runId).calls - 1;
+  const remaining = input.declaredCallsPerRun - input.runBudget.snapshot(input.runId).calls - reservedCalls;
   return {
     release,
     explorationBudget: resolveAutomationStudioExplorationBudget({

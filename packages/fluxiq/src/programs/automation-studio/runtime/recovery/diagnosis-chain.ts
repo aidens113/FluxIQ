@@ -80,3 +80,42 @@ export function decideAutomationStudioRuntimePatchRequest(diagnosis: AutomationS
   }
   return { request: true, reason: "The diagnosis succeeded and calls for a runtime patch." };
 }
+
+/**
+ * The refusals a look at the page could overturn.
+ *
+ * One, and it is the one that matters. `goal_unachievable` is the model's claim
+ * *about the page* -- that the step's result can no longer be reached -- given
+ * before it had seen one. Live run `run-muesyox4-930bef98` (2026-09-23) is the
+ * case: the model was shown an 819-byte packet with no same-family control and
+ * no fingerprint candidate on it, said the goal was gone, and the loop cancelled
+ * the exploration on the strength of that answer, so the single claim a page
+ * could have settled was the single claim nothing checked. `plan.ts` has always
+ * said a refusal must stay checkable; the gate in `annotate.ts` did not, and
+ * this set is what reconciles them.
+ *
+ * The other six are out, each for its own reason. A diagnosis that was never
+ * requested, that failed, or that answered with something else leaves no claim
+ * to check and nothing to re-plan from. A failure Stage A resolved without the
+ * model was decided by Core's classifier rather than by a reading of the page. A
+ * policy that permits no patch kind is a person's setting, which a page cannot
+ * speak to, so looking would spend a run's calls on an answer that could not
+ * change. And `diagnosis_asked_for_none` cannot reach here at all: it is decided
+ * by `!patchNeeded && !explorationNeeded`, and `explorationNeeded` false is
+ * exactly what stops an exploration running, so there is never a look to
+ * re-plan from. It is left out rather than included harmlessly, because a set
+ * that lists an unreachable member reads as a rule nobody has checked.
+ */
+export const AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES_CHECKABLE_BY_EXPLORATION: ReadonlySet<AutomationStudioRuntimePatchSkipCode> = Object.freeze(new Set<AutomationStudioRuntimePatchSkipCode>([
+  AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.goal_unachievable
+]));
+
+/**
+ * Whether this refusal is worth exploring and re-planning, rather than final.
+ *
+ * A decision that asked for a patch is not a refusal and answers `false`: the
+ * exploration it gets is the patch's errand, which the caller already runs.
+ */
+export function automationStudioRuntimePatchRefusalIsCheckableByExploration(decision: AutomationStudioRuntimePatchRequestDecision): boolean {
+  return !decision.request && decision.code !== undefined && AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES_CHECKABLE_BY_EXPLORATION.has(decision.code);
+}

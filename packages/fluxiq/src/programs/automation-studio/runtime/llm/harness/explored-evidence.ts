@@ -38,7 +38,8 @@ const RUNTIME_PATCH_REQUEST_OVERHEAD_BYTES = 6_000;
 const EXPLORED_EVIDENCE_TOOL_ID = /^[a-z0-9_.:-]{1,200}$/iu;
 
 /**
- * The explored packets a runtime patch may be shown, bounded twice.
+ * The explored packets a runtime patch or a re-planning diagnosis may be shown,
+ * bounded twice.
  *
  * By count, at the loop's own ceiling on the evidence one exploration can
  * gather. By bytes, at the smaller of the caller's allowance and the room the
@@ -47,6 +48,13 @@ const EXPLORED_EVIDENCE_TOOL_ID = /^[a-z0-9_.:-]{1,200}$/iu;
  * budget and get it refused. Newest first, because the newest page is the one
  * the repair runs against; a packet that does not fit, or that is not a
  * bounded packet free of the domain's denied keys, is withheld and counted.
+ *
+ * Two tasks may be shown them, and both are calls the exploration was run for.
+ * A runtime patch names a control the look revealed. A runtime diagnosis made at
+ * the `plan` stage is the loop weighing its own earlier refusal against the page
+ * it has now seen (`recovery/annotation/replan.ts`), and shown none of these
+ * packets it would be the first diagnosis asked again, at the same price, for
+ * the same answer.
  *
  * A caller defect -- the wrong task, no allowance, labels that are missing,
  * repeated or not Core's -- is refused outright.
@@ -57,7 +65,7 @@ export function packAutomationStudioLlmExploredEvidence(
   deniedKeys: readonly string[],
   packedBytes: number
 ): AutomationStudioLlmExploredEvidenceSlot {
-  if (input.taskKind !== "runtime_patch") throw new Error("Exploration evidence is available only to runtime patch tasks.");
+  if (input.taskKind !== "runtime_patch" && input.taskKind !== "runtime_diagnosis") throw new Error("Exploration evidence is available only to runtime patch and runtime diagnosis tasks.");
   if (!Number.isSafeInteger(exploration.maxBytes) || exploration.maxBytes < 1) throw new Error("Exploration evidence requires a positive byte allowance.");
   if (!Array.isArray(exploration.packets)) throw new Error("Exploration evidence requires a list of packets.");
   const labels = new Set<string>();

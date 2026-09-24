@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
-import { decideAutomationStudioRuntimePatchRequest } from "../diagnosis-chain.ts";
+import {
+  AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES,
+  automationStudioRuntimePatchRefusalIsCheckableByExploration,
+  decideAutomationStudioRuntimePatchRequest
+} from "../diagnosis-chain.ts";
 
 // Fix 4, second half: diagnosis and patch were two independent calls, so a
 // failed or malformed diagnosis still billed a second `runtime_patch` call.
@@ -17,6 +21,31 @@ describe("decideAutomationStudioRuntimePatchRequest", () => {
     expect(decideAutomationStudioRuntimePatchRequest(diagnosis({ ok: true, kind: "instruction_suggestion" }))).toMatchObject({ request: false });
     expect(decideAutomationStudioRuntimePatchRequest(diagnosis({ ok: true }))).toMatchObject({ request: false });
     expect(decideAutomationStudioRuntimePatchRequest(undefined)).toMatchObject({ request: false });
+  });
+});
+
+// Which refusals the loop pays to look at, and which it lets stand. The cost of
+// getting this wrong runs both ways: too narrow and a claim about a page is
+// never checked against the page, which is live run `run-muesyox4-930bef98`;
+// too wide and every dead end buys an exploration and a second diagnosis that
+// could not change the answer.
+describe("automationStudioRuntimePatchRefusalIsCheckableByExploration", () => {
+  it("checks a goal the model said was gone, because only the page can settle that", () => {
+    expect(automationStudioRuntimePatchRefusalIsCheckableByExploration({
+      request: false, reason: "gone", code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.goal_unachievable, rung: "plan"
+    })).toBe(true);
+  });
+
+  it("lets every other refusal stand, because no page speaks to any of them", () => {
+    const others = Object.values(AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES)
+      .filter((code) => code !== AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.goal_unachievable);
+    for (const code of others) {
+      expect(automationStudioRuntimePatchRefusalIsCheckableByExploration({ request: false, reason: "no", code, rung: "plan" }), code).toBe(false);
+    }
+  });
+
+  it("is not a refusal at all when a patch was asked for, so nothing is re-planned", () => {
+    expect(automationStudioRuntimePatchRefusalIsCheckableByExploration({ request: true, reason: "yes" })).toBe(false);
   });
 });
 

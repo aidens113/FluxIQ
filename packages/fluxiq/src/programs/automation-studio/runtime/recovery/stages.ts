@@ -39,6 +39,13 @@ export type AutomationStudioRuntimeRecoveryTraceInput = {
   diagnosisOk?: boolean;
   /** The exploration that ran, when one did. Absent means none was run. */
   exploration?: AutomationStudioRuntimeExploration;
+  /**
+   * The second plan, when the loop re-planned after looking. Absent means the
+   * plan stage cost no provider call, which was true of every recovery until
+   * `replan.ts`: a refusal recorded without this was one the model gave before
+   * it had seen the page.
+   */
+  replan?: { checked: boolean; changedDecision: boolean };
   /** Whether a patch call was made. The receipt for the `implement` stage. */
   patchRequested?: boolean;
   /** Core's categorical reason when that call returned no usable response. */
@@ -84,7 +91,7 @@ export function automationStudioRuntimeRecoveryTrace(input: AutomationStudioRunt
   const plan = input.plan ?? planAutomationStudioRuntimeRecovery({ ...(deterministic ? { deterministic } : {}), policy: input.policy });
   return buildAutomationStudioRecoveryTrace([
     diagnosisEvent(input, plan),
-    recoveryPlanEvent(plan),
+    recoveryPlanEvent(plan, input.replan),
     automationStudioExplorationTraceEvent({ requested: plan.explorationRequested, ...(input.exploration ? { exploration: input.exploration } : {}) }),
     resolutionEvent(input, plan)
   ]);
@@ -128,20 +135,34 @@ function diagnosisEvent(input: AutomationStudioRuntimeRecoveryTraceInput, plan: 
   };
 }
 
-function recoveryPlanEvent(plan: AutomationStudioRuntimeRecoveryPlan): AutomationStudioRecoveryTraceEvent {
+/**
+ * The plan stage, and whether a provider was ever asked to make it.
+ *
+ * The plan is deterministic and for most recoveries no call is made, which is
+ * what `providerCalled: false` has always said. A refusal a look could overturn
+ * is the exception: there the loop explores and asks again, so the stage did
+ * cost a call, and saying it did not would put the run's most expensive honesty
+ * -- "this refusal was checked against the page" -- outside the record.
+ */
+function recoveryPlanEvent(plan: AutomationStudioRuntimeRecoveryPlan, replan: AutomationStudioRuntimeRecoveryTraceInput["replan"]): AutomationStudioRecoveryTraceEvent {
   return {
     stage: "recovery_plan",
-    status: "completed",
-    providerCalled: false,
+    status: replan && !replan.checked ? "failed" : "completed",
+    providerCalled: replan !== undefined,
     loopStage: AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES.recovery_plan,
-    reason: plan.steps.map((step) => step.reason).join(" "),
+    reason: replan && !replan.checked
+      ? `The plan was made again after exploring and the second call returned no diagnosis, so the first plan stands unchecked. ${plan.steps.map((step) => step.reason).join(" ")}`
+      : replan
+        ? `The plan was made again after exploring, and ${replan.changedDecision ? "looking changed it" : "looking did not change it"}. ${plan.steps.map((step) => step.reason).join(" ")}`
+        : plan.steps.map((step) => step.reason).join(" "),
     detail: {
       steps: plan.steps.map((step) => step.action),
       allowedPatchKinds: [...plan.allowedPatchKinds],
       policyRefusalCount: plan.policyRefusals.length,
       explorationRequested: plan.explorationRequested,
       patchRequested: plan.patchRequest.request,
-      ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason })
+      ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+      ...(replan ? { replanned: true, replanChecked: replan.checked, replanChangedDecision: replan.changedDecision } : {})
     }
   };
 }

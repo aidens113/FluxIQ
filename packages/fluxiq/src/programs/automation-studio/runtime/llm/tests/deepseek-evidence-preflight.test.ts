@@ -55,7 +55,10 @@ describe("the DeepSeek adapter's pre-send check of explored evidence", () => {
     const cases: Array<[string, AutomationStudioLlmTaskRequest]> = [
       ["no declared keys", undeclared(patchRequest(clean))],
       ["declared keys that are not a list of names", patchRequest(clean, { deniedEvidenceKeys: [1] as never })],
-      ["another task", { ...patchRequest(clean), taskKind: "runtime_diagnosis", expectedOutput: "diagnosis", context: { ...patchRequest(clean).context, taskKind: "runtime_diagnosis" } }],
+      // A runtime diagnosis may carry the slot -- that is the loop re-planning
+      // after a look -- so the task that may not is one with no exploration
+      // behind it at all.
+      ["another task", { ...patchRequest(clean), taskKind: "evidence_tool_decision", expectedOutput: "evidence_tool_decision", context: { ...patchRequest(clean).context, taskKind: "evidence_tool_decision" } }],
       ["a label with a colon", patchRequest({ ...clean, packets: [{ ...clean.packets[0]!, evidenceId: "explored:1" }] })],
       ["a label Core never writes", patchRequest({ ...clean, packets: [{ ...clean.packets[0]!, evidenceId: "page.1" }] })],
       ["a repeated label", patchRequest({ ...clean, packets: [clean.packets[0]!, clean.packets[0]!] })],

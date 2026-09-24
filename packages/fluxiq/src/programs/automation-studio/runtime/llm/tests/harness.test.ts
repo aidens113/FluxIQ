@@ -571,9 +571,13 @@ describe("Automation Studio LLM harness, explored evidence", () => {
 
   it("refuses explored evidence on any other task, without a declaration, without an allowance, or with labels that could be misread", () => {
     const explorationEvidence = { maxBytes: 8_000, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") }] };
-    for (const taskKind of ["runtime_diagnosis", "evidence_tool_decision", "flow_bootstrap"] as const) {
-      expect(() => packAutomationStudioLlmContext({ ...base, taskKind, explorationEvidence }), taskKind).toThrow(/only to runtime patch/);
+    for (const taskKind of ["evidence_tool_decision", "flow_bootstrap"] as const) {
+      expect(() => packAutomationStudioLlmContext({ ...base, taskKind, explorationEvidence }), taskKind).toThrow(/only to runtime patch and runtime diagnosis/);
     }
+    // A runtime diagnosis carries them when it is the loop re-planning after a
+    // look: a second call shown none of what the look found is the first call
+    // asked again, at the same price, for the same answer.
+    expect(packAutomationStudioLlmContext({ ...base, taskKind: "runtime_diagnosis", stage: "plan", explorationEvidence }).explorationEvidence?.packets).toHaveLength(1);
     const undeclared = { projectId: base.projectId, flowId: base.flowId, instructions: base.instructions };
     expect(() => packAutomationStudioLlmContext({ ...undeclared, taskKind: "runtime_patch", explorationEvidence })).toThrow(/declared deniedEvidenceKeys/);
     expect(() => packAutomationStudioLlmContext({ ...base, taskKind: "runtime_patch", explorationEvidence: { ...explorationEvidence, maxBytes: 0 } })).toThrow(/positive byte allowance/);

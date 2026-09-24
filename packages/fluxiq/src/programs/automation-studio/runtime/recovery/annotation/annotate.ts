@@ -54,7 +54,7 @@ import type {
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
-import type { AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
+import { automationStudioRuntimePatchRefusalIsCheckableByExploration, type AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
@@ -67,6 +67,7 @@ import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRe
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, type AutomationStudioPermissionAsk } from "../../parking/index.ts";
 import { automationStudioRecoveryPermissionGate } from "./permissions.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
+import { replanAutomationStudioRecoveryAfterExploration } from "./replan.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "./run-budget.ts";
 
 export type AutomationStudioRuntimeRecoveryAnnotationInput = {
@@ -343,42 +344,37 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     metadata: { source: "runRuntimeSession", expectedOutput: "diagnosis", ...executionPurpose }
   });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
-  const plan = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
+  const plannedBeforeLooking = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
   const explicitProposalGrant = input.executionGrant?.purpose === "diagnose_and_adapt";
-  // A `diagnose_and_adapt` grant buys one target override and nothing else, and
-  // its schema makes the model name one. Where the plan allows none for this
-  // failure, the call could only return a substitute, so it is not made, and
-  // the exploration that would have served it is not run either.
-  const grantSkip = explicitProposalGrant && plan.patchRequest.request ? grantSkipReason(plan) : undefined;
-  const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
-  // Why no patch call follows, and which rung decided it. The code was one word
-  // -- `llm.runtime_patch_not_requested` -- for every clause of the plan's
-  // refusal, so a reader that keeps codes and drops sentences could not tell a
-  // model that said the goal was gone from a policy that permitted no patch
-  // kind. The plan now carries its own code and rung, and both are recorded.
-  const plannedPatchSkippedCode = grantSkip
-    ? "llm.runtime_patch_grant_scope_refused"
-    : !plan.patchRequest.request
-      ? plan.patchRequest.code ?? "llm.runtime_patch_not_requested"
-      : !patchWillFollow
-        ? "llm.runtime_patch_unavailable"
-        : undefined;
-  const plannedPatchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = grantSkip
-    ? "plan"
-    : !plan.patchRequest.request
-      ? plan.patchRequest.rung ?? "plan"
-      : !patchWillFollow
-        ? "resolution"
-        : undefined;
+  // A refusal the page could overturn is not the end of the plan stage. The
+  // model said the step's result can no longer be reached, about a page it had
+  // not seen; the exploration runs anyway, and the plan is built again from what
+  // it found (`replan.ts`). Without this the one claim a look could settle was
+  // the one claim that cancelled the look.
+  const refusalIsCheckable = automationStudioRuntimePatchRefusalIsCheckableByExploration(plannedBeforeLooking.patchRequest);
+  // A `diagnose_and_adapt` grant buys one target override and nothing else, so a
+  // failure it could not serve is neither explored nor asked about. It is
+  // decided once, here, from the plan's allowed kinds and the failure class --
+  // both of which come from Core's own classification, so no look can change
+  // either, and re-deciding it after the exploration would only spend the
+  // grant's purse to reach the same answer.
+  const grantRefusal = explicitProposalGrant ? grantSkipReason(plannedBeforeLooking) : undefined;
+  // What a patch would still need after the exploration, whichever plan is
+  // standing by then. It bounds the reserve, so the share held back is held for
+  // a patch that could actually be made.
+  const patchCouldFollow = Boolean(provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations);
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
-  if (plan.explorationRequested && plan.patchRequest.request && !grantSkip && provider && ports.llmEvidenceRuntime) {
+  if (plannedBeforeLooking.explorationRequested && (plannedBeforeLooking.patchRequest.request || refusalIsCheckable) && !grantRefusal && provider && ports.llmEvidenceRuntime) {
     const scope = recoveryFlow?.scope;
-    // The patch's call, tokens and money are set aside before the exploration
-    // may spend anything, and handed back the moment it ends.
-    const patchReserve = scope && patchWillFollow
-      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall })
+    // Every call that comes after the exploration has its call, its tokens and
+    // its money set aside before the exploration may spend anything, and handed
+    // back the moment it ends. A checkable refusal adds one for the re-plan; a
+    // patch that could follow adds one for itself.
+    const reservedCalls = (refusalIsCheckable ? 1 : 0) + (patchCouldFollow ? 1 : 0);
+    const patchReserve = scope && reservedCalls > 0
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall, reservedCalls })
       : undefined;
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
@@ -419,16 +415,82 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // made: a repair built without the step the person has not yet allowed would
   // be a guess, and the person's answer is what the next run needs.
   const permissionRequest = permissions?.gate.request;
-  const heldForPermission = Boolean(permissionRequest && patchWillFollow);
-  const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : plannedPatchSkippedCode;
-  const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission ? "exploration" : plannedPatchSkippedRung;
-  // Stage D sees what the exploration saw. Without this the patch was shown
-  // the failure packet alone, and a control only the exploration revealed
-  // could not be named in the repair. No packets, no slot: the request is the
-  // one it always was.
+  // What the exploration saw, for whatever call comes next. Without this the
+  // patch was shown the failure packet alone, and a control only the exploration
+  // revealed could not be named in the repair. No packets, no slot: the request
+  // is the one it always was.
   const explorationEvidence = explorationResult && explorationResult.explored.length > 0
     ? { packets: explorationResult.explored, maxBytes: Math.max(1, Math.floor(resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens * 3 * EXPLORATION_EVIDENCE_INPUT_SHARE)) }
     : undefined;
+  // Stage B again, now that there is a page to weigh the refusal against. Only
+  // on a refusal a look could overturn, only when the look actually returned
+  // something, and never over a raised permission request, which ends the
+  // recovery on its own. A re-plan that comes back with nothing leaves the
+  // original refusal standing, and the record then says the refusal was never
+  // checked rather than that the look confirmed it.
+  const replan = refusalIsCheckable && !permissionRequest && provider && explorationEvidence
+    ? await replanAutomationStudioRecoveryAfterExploration({
+      plan: plannedBeforeLooking,
+      ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}),
+      policy: input.context.policy,
+      explorationEvidence,
+      request: {
+        projectId: input.context.projectId,
+        flowId: input.context.flowId,
+        runId: input.detail.summary.runId,
+        ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+        ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
+        instructions,
+        runDetail: input.detail,
+        ...(failureEvidence ? { failureEvidence } : {}), ...(ports.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: ports.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
+        ...(resultSummary ? { resultSummary } : {}), ...(conversation.length ? { conversation } : {}),
+        // Its own earlier answer, which is the subject of this call rather than
+        // background to it: it said the goal was gone about a page it had not
+        // seen, and the packets beside this are that page.
+        ...(result.response?.kind === "diagnosis" && result.response.diagnosis ? { diagnosis: result.response.diagnosis } : {}),
+        ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
+        policy: input.context.policy,
+        ...(permissions ? { actionPermissions: permissions.summary() } : {}),
+        provider,
+        runBudget,
+        ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
+        ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
+        maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+        ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
+        now
+      },
+      ...(executionPurpose.executionPurpose ? { metadata: executionPurpose } : {})
+    })
+    : undefined;
+  const plan = replan?.plan ?? plannedBeforeLooking;
+  // The grant's refusal is recorded only where the plan would otherwise have
+  // asked, so a plan that declined on its own keeps its own, more specific code.
+  const grantSkip = plan.patchRequest.request ? grantRefusal : undefined;
+  const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && patchCouldFollow);
+  // Why no patch call follows, and which rung decided it. The code was one word
+  // -- `llm.runtime_patch_not_requested` -- for every clause of the plan's
+  // refusal, so a reader that keeps codes and drops sentences could not tell a
+  // model that said the goal was gone from a policy that permitted no patch
+  // kind. The plan now carries its own code and rung, and both are recorded --
+  // and after a re-plan the rung is `exploration`, which is how a reader tells
+  // a refusal given before the look from one that survived it.
+  const plannedPatchSkippedCode = grantSkip
+    ? "llm.runtime_patch_grant_scope_refused"
+    : !plan.patchRequest.request
+      ? plan.patchRequest.code ?? "llm.runtime_patch_not_requested"
+      : !patchWillFollow
+        ? "llm.runtime_patch_unavailable"
+        : undefined;
+  const plannedPatchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = grantSkip
+    ? "plan"
+    : !plan.patchRequest.request
+      ? plan.patchRequest.rung ?? "plan"
+      : !patchWillFollow
+        ? "resolution"
+        : undefined;
+  const heldForPermission = Boolean(permissionRequest && patchWillFollow);
+  const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : plannedPatchSkippedCode;
+  const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission ? "exploration" : plannedPatchSkippedRung;
   const patchResult = patchWillFollow && !heldForPermission && provider && input.runtimeFlow && input.failedTraceAttempt
     ? await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
@@ -510,7 +572,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const providerCalls = runBudget.callRecords(input.detail.summary.runId);
   const withIntervention: AutomationStudioFlowRunDetail = {
     ...input.detail,
-    interventions: [...input.detail.interventions, result.intervention, ...(patchResult ? [patchResult.intervention] : [])],
+    interventions: [...input.detail.interventions, result.intervention, ...(replan ? [replan.result.intervention] : []), ...(patchResult ? [patchResult.intervention] : [])],
     adaptationIds: [...new Set([...input.detail.adaptationIds, ...applied.adaptationIds])],
     changeProposalIds: [...new Set([...input.detail.changeProposalIds, ...applied.changeProposalIds])],
     metadata: {
@@ -523,7 +585,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         // their Flow went unrepaired because its ceiling was spent rather than
         // because nobody had configured a model.
         ...(repairAuthority ? { repairAuthority: repairAuthority as unknown as JsonObject } : {}),
-        ok: result.ok && (patchResult?.ok ?? true),
+        ok: result.ok && (replan?.result.ok ?? true) && (patchResult?.ok ?? true),
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
@@ -532,6 +594,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         // Which rung declined, beside the code for why. A run that repaired
         // nothing and named no rung is the silence this pair exists to end.
         ...(patchSkippedRung ? { patchSkippedRung } : {}),
+        // Whether the loop looked at the page before letting the refusal stand,
+        // and whether looking changed its mind. A reader that sees no `replan`
+        // is reading a decision made without a look.
+        ...(replan ? { replan: { checked: replan.ok, changedDecision: replan.changed, before: plannedBeforeLooking.patchRequest.code ?? "llm.runtime_patch_not_requested" } } : {}),
         ...(patchHeldForPermission ? { patchHeldCode: "llm.runtime_patch_permission_required", patchHeldRung: "resolution" } : {}),
         // Classes only: what the recovery held, and why. The request below says what it lacked.
         ...(permissions ? { permissions: permissions.summary() } : {}),
@@ -539,13 +605,13 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
         ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
         recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
-        diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
+        diagnostics: [...result.diagnostics, ...(replan?.result.diagnostics ?? []), ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
       },
       // The person's question, where the run's reader looks for it: the same
       // `automation-studio.action-permission-request.v1` a build carries, at stage `recovery`.
       ...(raisedRequest ? { permissionRequest: raisedRequest as unknown as JsonObject } : {}),
-      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(resolutionFailureCode ? { patchFailureCode: resolutionFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
+      ...(attempts.length ? { runtimePatchAttempts: attempts } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, ...(replan ? { replan: { checked: replan.ok, changedDecision: replan.changed } } : {}), ...(exploration ? { exploration } : {}), diagnosisOk: result.ok, patchRequested: Boolean(patchResult), ...(resolutionFailureCode ? { patchFailureCode: resolutionFailureCode } : {}), ...(patchSkippedCode ? { patchSkippedCode } : {}), patchAttemptCount: attempts.length, adaptationIds: applied.adaptationIds, changeProposalIds: applied.changeProposalIds }) as unknown as JsonObject
     }
   };
   return {
