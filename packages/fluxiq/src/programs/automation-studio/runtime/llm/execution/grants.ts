@@ -514,17 +514,41 @@ export class AutomationStudioLlmExecutionGrantService {
   close(): void {
     for (const grantId of [...this.grants.keys()]) this.revoke(grantId);
   }
+  /**
+   * The grant this run may spend, claimed if it has not been already.
+   *
+   * A claimed grant used to be refused outright, and that single line stopped
+   * every repair of a wrong answer. The run that verifies a result resolves the
+   * grant to make its `loop_verification` calls, which claims it; the repair
+   * that the refutation then triggers resolves the same grant again, finds it no
+   * longer `available`, and ends at `llm.provider_resolution_failed` -- with its
+   * budget, its purse and its run lease all untouched. Live run
+   * `run-muexhp0k-73172f73` (2026-09-24) is that, and it is structural rather
+   * than unlucky: every refuted-result repair under an adapting grant reached
+   * it, which is the whole of why "a clean run that answers wrongly is a
+   * repairable failure" had never once produced a repair.
+   *
+   * So a second claim by the same scope is the same run continuing, not a second
+   * authorization, and it is allowed. What bounds the spend is what always
+   * bounded it -- the remaining uses, the token ceiling and the purse, each
+   * checked per call -- and what bounds the time is the run lease the first
+   * claim started, which is deliberately NOT restarted here: a run may resolve
+   * twice, and must not thereby buy itself another ten minutes.
+   */
   private claimGrant(input: GrantScope): StoredGrant {
     const grant = this.grants.get(input.grantId);
-    if (!grant || grant.state !== "available") throw new Error("LLM execution grant is unavailable.");
-    if (grant.expiresAtMs <= this.now()) {
+    if (!grant) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
+    // A claimed grant answers to its run lease; an unclaimed one to its claim window.
+    if ((grant.state === "claimed" ? grant.runExpiresAtMs ?? grant.expiresAtMs : grant.expiresAtMs) <= this.now()) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     if (!sameScope(grant, input)) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant scope mismatch.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
     }
+    // Already this run's: hand it back with its lease as it stands.
+    if (grant.state === "claimed") return grant;
     // From here the claim window is spent and the run lease governs. The
     // claim window's timer is replaced rather than left running, so a claimed
     // grant is not revoked mid-run at the instant it stopped being claimable.
@@ -702,19 +726,19 @@ export class AutomationStudioLlmExecutionGrantService {
   }
 
   private async validateClaimedGrant(grant: StoredGrant, input: GrantScope): Promise<void> {
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new Error("LLM execution grant is unavailable.");
-    if (!sameScope(grant, input)) throw new Error("LLM execution grant scope mismatch.");
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
+    if (!sameScope(grant, input)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
     const [session, key, unresolvedBinding] = await Promise.all([
       this.options.identityAccess.validateSession(input.actorSessionId, this.now()),
       this.options.secretKeys.getKeySummary(grant.keyId),
       this.options.resolveExecutionDigest(grant.projectId, grant.flowId)
     ]);
     const binding = executionBinding(unresolvedBinding, grant.purpose);
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new Error("LLM execution grant is unavailable.");
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
-      throw new Error("LLM execution grant is no longer valid.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
     }
     validateKeyCompatibility(key, grant);
   }
