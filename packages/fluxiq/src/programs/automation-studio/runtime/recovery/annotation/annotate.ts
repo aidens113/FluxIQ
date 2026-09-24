@@ -39,6 +39,7 @@ import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
+  automationStudioLlmExecutionGrantRefusalCode,
   AutomationStudioLlmRunBudgetLedger,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
@@ -154,7 +155,21 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     } else {
       provider = resolvedProvider;
     }
-  } catch {
+  } catch (error) {
+    // The cause, where Core owns one. This was a bare `catch {}`, so a run whose
+    // repair could not start recorded the step that failed and not one thing
+    // about why: live run `run-muexhp0k-73172f73` (2026-09-24) built a Flow,
+    // replayed it, extracted every record, had its result correctly refuted, and
+    // then died here with most of its calls and nearly all of its purse unspent
+    // and its run well inside the grant's window -- so none of the obvious
+    // answers fit and nothing on the record could settle it.
+    //
+    // Only Core's own grant codes are kept. A thrown value from further down --
+    // a provider client, a transport -- may carry anything, so its message never
+    // travels; the absence of a cause is itself the finding that the refusal
+    // came from somewhere Core does not yet name.
+    const cause = automationStudioLlmExecutionGrantRefusalCode(error);
+    const reason = "LLM provider resolution failed.";
     return {
       ...input.detail,
       interventions: [...(input.detail.interventions ?? []), {
@@ -164,11 +179,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         flowId: input.context.flowId,
         projectId: input.context.projectId,
         kind: "diagnosis",
-        reason: "LLM provider resolution failed.",
-        validation: { ok: false, issues: ["llm.provider_resolution_failed: LLM provider resolution failed."] },
+        reason,
+        validation: { ok: false, issues: [`llm.provider_resolution_failed: ${reason}`, ...(cause ? [`${cause}: the execution grant would not be claimed.`] : [])] },
         createdAt: input.detail.summary.updatedAt || Date.now()
       }],
-      metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "LLM provider resolution failed." }) as unknown as JsonObject }
+      metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason, code: "llm.provider_resolution_failed", ...(cause ? { cause } : {}) }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: reason }) as unknown as JsonObject }
     };
   }
   // Nobody granted this run anything, and the host resolved nothing without a

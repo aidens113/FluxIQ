@@ -19,6 +19,10 @@ import type {
 } from "../../../training-modes.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES,
+  AutomationStudioLlmExecutionGrantRefusal
+} from "../../../llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";
 
@@ -381,6 +385,49 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
 // `web.target.not_found` -- stops here. It wrote an `llmGate` and nothing else,
 // which read exactly like a recovery that ran and found nothing to change. Each
 // test fails if the trace is dropped from this return again.
+// A repair that cannot start has to say why it could not, and for most of this
+// module's life it could not: the resolution's `catch` took no argument, so the
+// reason was discarded at the moment it was needed. Live run
+// `run-muexhp0k-73172f73` (2026-09-24) reached the repair with most of its calls
+// and nearly all of its purse unspent, and the record said only that provider
+// resolution had failed.
+describe("a repair whose provider will not resolve", () => {
+  it("names Core's own grant refusal as the cause, beside the step that failed", async () => {
+    const detail = await annotateUnresolvable(new AutomationStudioLlmExecutionGrantRefusal(
+      AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid,
+      "LLM execution grant is no longer valid."
+    ));
+
+    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm.provider_resolution_failed", cause: "llm.execution_grant_no_longer_valid" });
+    expect(detail.interventions.at(-1)?.validation?.issues).toEqual([
+      "llm.provider_resolution_failed: LLM provider resolution failed.",
+      "llm.execution_grant_no_longer_valid: the execution grant would not be claimed."
+    ]);
+  });
+
+  // A thrown value from further down may carry anything, so its message never
+  // travels. The absence of a cause is itself the finding: the refusal came from
+  // somewhere Core does not yet name.
+  it("carries no cause, and no provider text, for a refusal Core does not own", async () => {
+    const detail = await annotateUnresolvable(new Error("deepseek says: key sk-PRIVATE rejected"));
+
+    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm.provider_resolution_failed" });
+    expect(detail.metadata?.llmGate).not.toHaveProperty("cause");
+    expect(JSON.stringify(detail)).not.toContain("sk-PRIVATE");
+  });
+});
+
+/** A recovery whose provider resolution throws `thrown`, and nothing else unusual. */
+async function annotateUnresolvable(thrown: unknown): Promise<AutomationStudioFlowRunDetail> {
+  const base: Options = { executed: [] };
+  return await annotateAutomationStudioRunDetailWithRuntimeLlm({
+    ports: { ...ports(base), resolveLlmProvider: () => { throw thrown; } },
+    detail: runDetail(),
+    context: context(base, adaptationPolicy(false)),
+    failedTraceAttempt: failedAttempt()
+  });
+}
+
 describe("a recovery the Flow's settings refuse", () => {
   const TRAINING_REFUSAL = "Current training mode or settings do not allow LLM intervention.";
 

@@ -111,6 +111,60 @@ export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = LIMITS.ma
  */
 export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS = 600_000;
 
+/**
+ * Why a grant would not be claimed, as a code rather than a sentence.
+ *
+ * Every refusal on the claim path was a plain `Error` with a fixed sentence,
+ * and the one caller that matters -- the recovery's provider resolution -- has
+ * a bare `catch {}` that discards it. So a run whose repair could not start
+ * recorded `llm.provider_resolution_failed` and nothing else, which names the
+ * step that failed and not one thing about why.
+ *
+ * Live run `run-muexhp0k-73172f73` (2026-09-24) is the cost. It built a Flow,
+ * replayed it, extracted sixteen of sixteen records, had its result correctly
+ * refuted, and then its repair died here -- with 29 of 48 calls and $0.227 of
+ * its $0.25 unspent, and its 250s well inside the 600s run window, so none of
+ * the obvious answers fit and the artifact could not settle it.
+ *
+ * Four codes, because the four are different problems with different answers: a
+ * grant that is gone or spent, one asked for under the wrong scope, one whose
+ * world changed underneath it -- the session, the key, the Flow's own execution
+ * digest -- and a purpose that is not one of Core's. The third is the one a
+ * Flow-creating run is most likely to meet, because writing the Flow is itself
+ * a change to what the grant was minted against.
+ */
+export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES = Object.freeze({
+  unavailable: "llm.execution_grant_unavailable",
+  scope_mismatch: "llm.execution_grant_scope_mismatch",
+  no_longer_valid: "llm.execution_grant_no_longer_valid",
+  purpose_invalid: "llm.execution_grant_purpose_invalid"
+} as const);
+
+export type AutomationStudioLlmExecutionGrantRefusalCode =
+  (typeof AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES)[keyof typeof AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES];
+
+/**
+ * A refusal from the claim path, carrying Core's code beside Core's sentence.
+ *
+ * It extends `Error` and keeps the sentence each throw already used, so every
+ * existing caller -- and every test that reads a message -- behaves exactly as
+ * it did. What is new is that a caller may now ask what kind of refusal it was
+ * without parsing prose.
+ */
+export class AutomationStudioLlmExecutionGrantRefusal extends Error {
+  readonly code: AutomationStudioLlmExecutionGrantRefusalCode;
+  constructor(code: AutomationStudioLlmExecutionGrantRefusalCode, message: string) {
+    super(message);
+    this.name = "AutomationStudioLlmExecutionGrantRefusal";
+    this.code = code;
+  }
+}
+
+/** This refusal's code, or `undefined` for anything that is not one. */
+export function automationStudioLlmExecutionGrantRefusalCode(error: unknown): AutomationStudioLlmExecutionGrantRefusalCode | undefined {
+  return error instanceof AutomationStudioLlmExecutionGrantRefusal ? error.code : undefined;
+}
+
 /** The shortest a Secret Keys reveal authorization may be asked to live. */
 const MIN_REVEAL_AUTHORIZATION_TTL_MS = 1_000;
 
@@ -349,7 +403,7 @@ export class AutomationStudioLlmExecutionGrantService {
     const grant = this.grants.get(input.grantId);
     if (!grant || grant.state !== "available" || grant.heldForRun) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     grant.heldForRun = true;
     grant.expiresAtMs = Math.max(grant.expiresAtMs, this.now() + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS);
@@ -363,11 +417,11 @@ export class AutomationStudioLlmExecutionGrantService {
     const grant = this.grants.get(input.grantId);
     if (!grant || grant.state !== "available" || grant.expiresAtMs <= this.now()) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     if (!sameScope(grant, input)) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant scope mismatch.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
     }
     const [session, key, unresolvedBinding] = await Promise.all([
       this.options.identityAccess.validateSession(input.actorSessionId, this.now()),
@@ -377,13 +431,13 @@ export class AutomationStudioLlmExecutionGrantService {
     const binding = executionBinding(unresolvedBinding, grant.purpose);
     if (this.grants.get(grant.grantId) !== grant || grant.state !== "available" || grant.expiresAtMs <= this.now()) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
     }
     if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
       this.revoke(input.grantId);
-      throw new Error("LLM execution grant is no longer valid.");
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
     }
     validateKeyCompatibility(key, grant);
     return automationStudioLlmExecutionGrantMetadata(grant);
