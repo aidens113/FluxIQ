@@ -42,13 +42,20 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   // provider at construction: an unattended check is not a grant, so there is
   // nothing to bind afterwards the way an execution grant is.
   const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
-  // What a Flow's standing result-check authorization buys, for a run nobody is
-  // watching. Deliberately not routed through the execution grant service: that
-  // refuses without a live actor session, and widening it would let unattended
-  // work reach `diagnose_and_adapt` and `explore_and_adapt` too. Core has
-  // already decided that this run is checked and that the authorization covers
-  // it; what reaches here is the key, the person's own key unlock, and the
-  // ceiling for this one call.
+  // What a Flow's standing authorization buys, for a run nobody is watching:
+  // the model that judges its result, and -- since the repair clause -- the
+  // model that repairs it when it fails. One resolver serves both, because
+  // obtaining the key is the host's business either way and nothing here knows
+  // or cares what Core will ask the model. The scope, the ceiling and the
+  // expiry all bind in Core before this is reached, and the model Core hands a
+  // recovery refuses any task kind the redemption did not cover.
+  //
+  // Deliberately not routed through the execution grant service: that refuses
+  // without a live actor session, and widening it would let unattended work
+  // reach `explore_and_adapt` and the Flow-building kinds too. Core has already
+  // decided that this run is checked or repaired and that the authorization
+  // covers it; what reaches here is the key, the person's own key unlock, and
+  // the ceiling for this one redemption.
   const resultCheckProviderResolver = (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => createAutomationStudioResultCheckProvider({
     ports: {
       getKeySummary: (id) => secretKeys.getKeySummary(id),

@@ -13,7 +13,7 @@
 // not and never defaults.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization } from "../../result-check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioUnattendedRepairClause } from "../../result-check-authorization/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS,
   automationStudioResultCheckShapeValue,
@@ -64,7 +64,29 @@ export function automationStudioResultCheckAuthorizationFromMetadata(value: unkn
   const expiresAtMs = finiteNumber(stored.expiresAtMs);
   if (!keyId || !authorizedByUserId || !unlockSessionId) return undefined;
   if (maxTotalCostUsd === undefined || maxCostUsdPerCall === undefined || grantedAtMs === undefined || expiresAtMs === undefined) return undefined;
-  return { taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, authorizedByUserId, unlockSessionId, keyId, maxTotalCostUsd, maxCostUsdPerCall, grantedAtMs, expiresAtMs };
+  const repair = repairClause(stored.repair);
+  return { taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, authorizedByUserId, unlockSessionId, keyId, maxTotalCostUsd, maxCostUsdPerCall, grantedAtMs, expiresAtMs, ...(repair ? { repair } : {}) };
+}
+
+/**
+ * The repair clause of a stored authorization, or nothing.
+ *
+ * Off is the answer to every question this cannot settle: a clause that is not
+ * an object, one whose `enabled` is not the boolean `true`, and one whose
+ * ceiling is not a positive amount all read back as no clause at all, and the
+ * Flow is then checked with nobody watching but never repaired with nobody
+ * watching. Only the ceiling defaults, and only once somebody has positively
+ * switched the clause on: the limit is a detail, switching it on is the
+ * permission, and a permission never defaults. The task kinds are not read from
+ * storage at all, for the reason above -- `repair.ts` returns them and takes
+ * none, so a settings document edited by hand to name one changes nothing.
+ */
+function repairClause(value: unknown): AutomationStudioUnattendedRepairClause | undefined {
+  const stored = jsonObjectFromUnknown(value);
+  if (!stored || stored.enabled !== true) return undefined;
+  const ceiling = finiteNumber(stored.maxCostUsdPerRun);
+  const maxCostUsdPerRun = ceiling === undefined ? AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS.repairMaxCostUsdPerRun : ceiling;
+  return maxCostUsdPerRun > 0 ? { enabled: true, maxCostUsdPerRun } : undefined;
 }
 
 function atLeast(value: number | undefined, floor: number, fallback: number): number {
