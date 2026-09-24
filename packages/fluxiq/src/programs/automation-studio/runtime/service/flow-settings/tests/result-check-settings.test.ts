@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS } from "../../../result-check-schedule/index.ts";
 import { resultCheckConfigurationFromMetadata } from "../result-check-settings.ts";
 import { trainingModeSettingsFromMetadata } from "../training-mode-settings.ts";
@@ -47,5 +48,41 @@ describe("result check settings read from Flow metadata", () => {
       expect(resultCheckConfigurationFromMetadata({ resultCheck: { authorization: broken } }).authorization, JSON.stringify(broken)).toBeUndefined();
     }
     expect(resultCheckConfigurationFromMetadata({}).authorization).toBeUndefined();
+  });
+});
+
+describe("the repair clause of a standing authorization", () => {
+  it("reads a clause the person switched on, with the ceiling they set", () => {
+    const configuration = resultCheckConfigurationFromMetadata({
+      resultCheck: {
+        authorization: { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: 10, expiresAtMs: 20, repair: { enabled: true, maxCostUsdPerRun: 0.4 } }
+      }
+    });
+    expect(configuration.authorization?.repair).toEqual({ enabled: true, maxCostUsdPerRun: 0.4 });
+  });
+
+  it("gives a switched-on clause the documented ceiling when the person named no number", () => {
+    const configuration = resultCheckConfigurationFromMetadata({
+      resultCheck: {
+        authorization: { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: 10, expiresAtMs: 20, repair: { enabled: true } }
+      }
+    });
+    expect(configuration.authorization?.repair).toEqual({ enabled: true, maxCostUsdPerRun: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS.repairMaxCostUsdPerRun });
+  });
+
+  it("reads no clause at all from anything it cannot settle, so repairing stays off", () => {
+    // Off is the answer to every one of these. Turning checking on is not
+    // turning repairing on, and a limit that is not a positive amount is not a
+    // limit -- an authorization written before the clause existed is the first
+    // case in this list and is the one every stored Flow is in.
+    for (const repair of [undefined, {}, true, "yes", { enabled: false, maxCostUsdPerRun: 0.25 }, { enabled: "true", maxCostUsdPerRun: 0.25 }, { enabled: true, maxCostUsdPerRun: 0 }, { enabled: true, maxCostUsdPerRun: -1 }]) {
+      const configuration = resultCheckConfigurationFromMetadata({
+        resultCheck: {
+          authorization: { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: 10, expiresAtMs: 20, ...(repair === undefined ? {} : { repair }) }
+        }
+      });
+      expect(configuration.authorization, JSON.stringify(repair)).toBeDefined();
+      expect(configuration.authorization?.repair, JSON.stringify(repair)).toBeUndefined();
+    }
   });
 });

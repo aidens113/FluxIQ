@@ -24,13 +24,55 @@
 //
 // It is deliberately NOT a loosening of the grant service. A grant purpose that
 // could be issued without a session would let unattended work reach
-// `diagnose_and_adapt` and `explore_and_adapt` as well, and the repair a
+// `explore_and_adapt` and the Flow-building kinds as well.
+//
+// **The repair clause.** That paragraph used to end "and the repair a
 // refutation triggers is a separate authorization question with a separate
-// answer. This record can be redeemed for one task kind and there is no field
-// on it that could name another.
+// answer". It is still a separate question; it now has an answer, and the
+// answer is a clause on this same record rather than a second instrument. The
+// user settled it in the same words as the first: "If a user says do this to
+// acheive automation, it should do that." An instruction to automate something
+// carries authority for the bounded, non-destructive means of achieving it,
+// and a run that cannot obtain a model to *produce* a repair cannot repair
+// itself at all -- measured on 2026-09-23 as a failed unattended run reaching
+// `llm.provider_missing` with no diagnosis, no patch and no retry, while the
+// gate after it was already working.
+//
+// One record, because the person gave one permission, and because two purses
+// over one Flow would disagree about what it had spent. A repair therefore
+// draws on the **same** `maxTotalCostUsd` and stops at the **same**
+// `expiresAtMs`; what the clause adds is its own on switch and its own
+// per-repair ceiling. `repair.ts` is as unparameterised about its task kinds
+// as `redeem.ts` is about `loop_verification`: neither takes the kinds as an
+// argument, so no settings field and no caller can widen either.
 
 /** The one task kind a standing check authorization can ever be redeemed for. */
 export const AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND = "loop_verification" as const;
+
+/**
+ * What the person authorized an unattended *repair* to do, when they
+ * authorized one at all.
+ *
+ * Absent means checking only, which is what every authorization written before
+ * this existed meant and what every stored one still reads back as. A
+ * permission to spend never defaults, so this is opt-in exactly as the
+ * authorization itself is.
+ */
+export type AutomationStudioUnattendedRepairClause = {
+  /** Whether a run nobody is watching may obtain a model to repair itself. */
+  enabled: boolean;
+  /**
+   * The most one unattended repair may be estimated to cost, across every call
+   * it makes -- the diagnosis, whatever it explores, and the patch.
+   *
+   * One number rather than a per-call one, because a repair is a run of calls
+   * and "a repair may spend up to this" is what a person can reason about;
+   * `resolveAutomationStudioRecoveryRunBudget` divides it into per-call shares
+   * as it does for every other recovery. It bounds the run *on top of* the
+   * policy's own $0.25 ceiling, never above it.
+   */
+  maxCostUsdPerRun: number;
+};
 
 export type AutomationStudioResultCheckAuthorization = {
   /** Always `loop_verification`. Stored so the record states its own bound rather than relying on the reader. */
@@ -56,8 +98,17 @@ export type AutomationStudioResultCheckAuthorization = {
   /** The most any single verification call may cost. */
   maxCostUsdPerCall: number;
   grantedAtMs: number;
-  /** When checking stops until the person renews. */
+  /** When checking stops until the person renews. Binds a repair exactly as it binds a check. */
   expiresAtMs: number;
+  /**
+   * What an unattended *repair* may do under this same permission, or nothing.
+   *
+   * Absent is the answer for every authorization stored before this clause
+   * existed, and it means what it always meant: this Flow may have its results
+   * judged with nobody watching, and may not repair itself with nobody
+   * watching.
+   */
+  repair?: AutomationStudioUnattendedRepairClause;
 };
 
 /** What redeeming a standing authorization produced: a bounded provider request, or the stated reason there is none. */
@@ -94,7 +145,15 @@ export type AutomationStudioResultCheckRedemption =
 export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.freeze({
   maxTotalCostUsd: 1,
   maxCostUsdPerCall: 0.05,
-  ttlMs: 90 * 24 * 60 * 60 * 1000
+  ttlMs: 90 * 24 * 60 * 60 * 1000,
+  /**
+   * What one unattended repair may spend when the person turning repair on
+   * names no number. $0.25 is Core's own ceiling for a recovery nobody granted
+   * anything for (`run-budget.ts`), so this default authorizes the repair a
+   * granted run would have made and nothing wider. Note it is **not** a default
+   * for `enabled`: repair stays off until somebody turns it on.
+   */
+  repairMaxCostUsdPerRun: 0.25
 });
 
 /** Why a standing authorization was not redeemed. One code per reason, so a reader can act on it. */

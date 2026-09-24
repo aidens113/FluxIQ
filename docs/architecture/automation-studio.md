@@ -351,11 +351,47 @@ and its grant revoked:
   allows.
 - `diagnosis_only` resolves `runtime_diagnosis`.
 
-A request that carries no execution grant resolves no provider.
-`runRuntimeSession` accepts only `diagnosis_only`, `diagnose_and_adapt`, and
-`explore_and_adapt` grants, so a build grant never reaches runtime diagnosis,
-patch, or proposal tasks. [What the shipped app reaches](#what-the-shipped-app-reaches)
-lists which runtime paths each purpose gives a provider.
+A request that carries no execution grant resolves no provider **from the grant
+service**. `runRuntimeSession` accepts only `diagnosis_only`,
+`diagnose_and_adapt`, and `explore_and_adapt` grants, so a build grant never
+reaches runtime diagnosis, patch, or proposal tasks.
+[What the shipped app reaches](#what-the-shipped-app-reaches) lists which runtime
+paths each purpose gives a provider.
+
+### The standing authorization, for runs nobody is watching
+
+A grant is a person pressing a button, and
+`AutomationStudioLlmExecutionGrantService.issue` refuses without a live actor
+session. A Flow replaying on a schedule at three in the morning has none, so
+without a second instrument it could neither have its result judged nor repair
+itself when it failed. That instrument is the Flow-scoped standing
+authorization in `runtime/result-check-authorization/`, stored in the Flow's
+own settings and granted once by a person rather than prompted for per
+occurrence. It is not a grant, it never reaches `input.llmExecution`, and so it
+never implies `manual_approval`.
+
+One record, with one key, one purse (`maxTotalCostUsd`), one expiry, and two
+clauses the person switches on separately:
+
+- **Checking.** Redeemed by `redeem.ts` for `loop_verification` and nothing
+  else, at its own per-call ceiling, when the Flow's schedule says this run is
+  judged — or always, when the run repaired itself (`core.check.after_repair`).
+- **Repairing.** Redeemed by `repair.ts` for `runtime_diagnosis`,
+  `evidence_tool_decision` and `runtime_patch` and nothing else, at its own
+  per-repair ceiling, and only where a grant resolved no provider. The model it
+  buys is wrapped so a call outside those kinds throws rather than spends.
+
+Neither redemption takes its task kinds as an argument, so no settings field and
+no caller can widen either. Both draw on the one purse, both stop at the one
+expiry, and both fail closed with their own code — `core.check.*` and
+`core.repair.*` — recorded on the run (`metadata.resultCheck` and
+`llmGate.repairAuthority`) so an unjudged or unrepaired run says which refusal
+it was rather than looking like a deployment with no model configured.
+
+Paying for the model is not permission to act. Neither resolution carries
+`permittedConsequences`, so a repair that would press something with a lasting
+consequence meets the recovery's permission gate with nothing granted and raises
+a request for the person.
 
 Calls are sequential and atomically claimed; each call consumes a separate opaque,
 one-use Secret Keys authorization and receives a grant-owned abort signal. An
