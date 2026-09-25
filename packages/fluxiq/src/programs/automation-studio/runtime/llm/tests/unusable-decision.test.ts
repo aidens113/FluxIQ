@@ -95,7 +95,7 @@ describe("the evidence loop after an unusable decision", () => {
     // Two in a row, then a usable decision: the streak never reached three.
     expect(result).toMatchObject({ ok: true, result: { done: true }, accounting: { iterations: 5, toolCalls: 1 } });
     expect(result.trace.map((step) => step.decision)).toEqual(["unusable", "tool_call", "unusable", "unusable", "complete"]);
-    expect(result.trace[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" });
+    expect(result.trace[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response", at: expect.any(Number) });
     expect(decide.mock.calls.map(([call]) => call.iteration)).toEqual([1, 2, 3, 4, 5]);
     expect(stalled).not.toHaveBeenCalled();
   });
@@ -193,8 +193,8 @@ describe("the evidence loop after a completed result its caller refuses", () => 
     expect(result).toMatchObject({ ok: true, result: { attempt: 2 }, accounting: { iterations: 2, inputTokens: 20 } });
     expect(result.trace).toEqual([
       expect.objectContaining({ iteration: 0, decision: "tool_call" }),
-      { iteration: 1, decision: "unusable", resultCode: "bootstrap.invalid_parameter_value", usage },
-      { iteration: 2, decision: "complete", usage }
+      { iteration: 1, decision: "unusable", resultCode: "bootstrap.invalid_parameter_value", usage, at: expect.any(Number) },
+      { iteration: 2, decision: "complete", usage, at: expect.any(Number) }
     ]);
     // The second decision was asked with the refusal in its evidence.
     expect(decide.mock.calls[1]![0].evidence).toEqual([
@@ -475,7 +475,7 @@ describe("what the model is told after an unusable reply", () => {
     expect(feedbackBytes).toBeLessThan(1_024);
     expect(result.accounting.evidenceBytes).toBe(feedbackBytes);
     // The trace step is unchanged: it names the first issue and no tool.
-    expect(result.trace[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm_output.kind_mismatch" });
+    expect(result.trace[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm_output.kind_mismatch", at: expect.any(Number) });
   });
 
   it("is not told anything once the loop has stopped", async () => {

@@ -51,20 +51,47 @@ export function automationStudioLlmEvidenceCanonicalJson(value: JsonValue): stri
   return JSON.stringify(value);
 }
 
+/** The shape a closed code or a resolved identifier must have to travel: no whitespace, so no sentence. */
+const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
+
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; nodeId?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "nodeId", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
-      || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(value.resultCode)))) return undefined;
+      || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
     if (value.draft !== undefined && !draft) return undefined;
-    return { evidence: value.evidence, effectApplied: value.effectApplied, ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }), ...(value.resultCode ? { resultCode: value.resultCode } : {}), ...(draft ? { draft } : {}) };
+    // **The key list had to widen before the domain emitted either of these.**
+    // It is exact, so a member a caller learns to report and this check has not
+    // learned is not an execution result arriving with a field too many -- it
+    // is the whole result refused as `llm_evidence_loop.tool_result_invalid`,
+    // and the call is recorded as a failure that never happened.
+    //
+    // Their *values*, unlike `resultCode` above, are dropped rather than fatal.
+    // A reason and a node id are what a reader is told about a call; the call
+    // itself succeeded or failed on its own, and losing the whole result over a
+    // diagnostic that arrived malformed would throw away the very thing the
+    // reader wanted to read.
+    return {
+      evidence: value.evidence,
+      effectApplied: value.effectApplied,
+      ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
+      ...(value.resultCode ? { resultCode: value.resultCode } : {}),
+      ...(closedCode(value.resultReason) ? { resultReason: value.resultReason as string } : {}),
+      ...(closedCode(value.nodeId) ? { nodeId: value.nodeId as string } : {}),
+      ...(draft ? { draft } : {})
+    };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };
+}
+
+/** Whether a value is a code or a resolved identifier, and so may travel onto a row a reader keeps. */
+function closedCode(value: unknown): value is string {
+  return typeof value === "string" && EVIDENCE_CLOSED_CODE.test(value);
 }
 
 /**

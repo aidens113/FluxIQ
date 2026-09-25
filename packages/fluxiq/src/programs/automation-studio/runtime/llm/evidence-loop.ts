@@ -140,6 +140,46 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
   evidenceBytes?: number;
   effectApplied?: boolean;
   resultCode?: string;
+  /**
+   * Why the call came to that code, in the caller's own closed vocabulary.
+   *
+   * A code says which family a refusal belongs to; a reason says which refusal
+   * it was. A live build (`run-mug776kx-0214b287`) spent 38 calls and published
+   * 14 rows reading `web.action.rejected.invalid_input` and 8 reading
+   * `web.action.rejected.target_unobserved` -- three or four separate defects
+   * wearing two words between them: a node that cannot run where it was asked
+   * to, an argument carrying keys the node does not take, a handle that is not
+   * a handle, a handle naming nothing observed yet. The domain computed the
+   * exact reason for every one of those rows and nothing carried it out.
+   *
+   * Carried, never read. Core's only claim about it is its shape: a code, with
+   * no whitespace and so no sentence.
+   */
+  resultReason?: string;
+  /**
+   * The node this call ran, where the caller resolved one against its own
+   * catalog.
+   *
+   * Absent where it resolved none -- which is the answer in its own right when
+   * the reason is that the model named a node that does not exist. It is
+   * deliberately not "the node the model asked for": a row carries identifiers
+   * the caller vouches for, never a string the model invented.
+   */
+  nodeId?: string;
+  /**
+   * When the row was recorded, in epoch milliseconds.
+   *
+   * It belongs on the loop's own row because the loop is the only thing that
+   * knows when a row happened. It was first declared downstream, on the row a
+   * reader sees and the step it publishes
+   * (`../flow-bootstrap/evidence-loop-steps.ts`), on the reasoning that a
+   * timestamp is a diagnostic rather than part of how a build runs -- and the
+   * consequence was a field that parsed, published, and was never written by
+   * anything: 0 of the 41 rows of `run-mug776kx-0214b287` carried one, so its
+   * 695 seconds stayed a single undivided gap. Optional the whole way down, so
+   * a reader without one still orders by `iteration`.
+   */
+  at?: number;
   usage?: AutomationStudioLlmUsageSummary;
 };
 
@@ -151,6 +191,24 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    * the same target afterwards. Consumers may omit it and stay conservative. */
   targetsUnchanged?: boolean;
   resultCode?: string;
+  /**
+   * Why the call came to that code, from the caller's own closed vocabulary.
+   *
+   * The caller computes one reason per outcome and is the only thing that can:
+   * the web domain distinguishes thirty-three of them behind two published
+   * codes. Core carries it and reads it never; a value that is not code-shaped
+   * is dropped rather than refusing the execution result, because a reason is a
+   * diagnostic and the call it describes still happened.
+   */
+  resultReason?: string;
+  /**
+   * The node this call ran, resolved by the caller against its own catalog.
+   *
+   * Only a name the caller resolved may be reported here. A name the model
+   * wrote and the caller could not find is not a node id, and the reason for
+   * the refusal says so on its own.
+   */
+  nodeId?: string;
   /**
    * What this one call did, for the draft the loop is accruing.
    *
@@ -268,6 +326,24 @@ export async function runAutomationStudioLlmEvidenceLoop(
 ): Promise<AutomationStudioLlmEvidenceLoopResult> {
   const limits = resolveLimits(input);
   const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
+  /**
+   * One row of the record, stamped with the moment it was recorded.
+   *
+   * **Every row goes through here, which is the point of it existing.** The
+   * stamp was declared downstream and emitted nowhere, so a build's rows
+   * carried no moment at all and a reader could only see one undivided gap:
+   * `run-mug776kx-0214b287` spent 695 seconds over 41 rows and not one of them
+   * said when it happened, so a step that took ten minutes could not be told
+   * from forty that took seventeen seconds each. Stamping at the push rather
+   * than at each row's construction is what makes "every row has one" a
+   * property of the loop instead of a rule someone has to remember at the next
+   * push site.
+   *
+   * `Date.now()` and not the budget's clock: this is a wall-clock moment for a
+   * person reading the record afterwards, while `input.budget.now` is an
+   * elapsed-time source a caller may drive itself.
+   */
+  const recordRow = (row: AutomationStudioLlmEvidenceLoopTrace): void => { trace.push({ ...row, at: Date.now() }); };
   // The draft (`runtime/flow-draft/`): every action appended as it happens, so
   // a result is written from what the loop did rather than from what is still
   // in front of the model. Kept whether or not it is shown.
@@ -283,6 +359,19 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
     draftSteps.push({ ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: "kept" });
   };
+  /**
+   * What a call said about its own outcome beyond the code it came to: why it
+   * came to it, and which node it ran.
+   *
+   * Both are the caller's, both are closed vocabulary
+   * (`evidence-loop-decision.ts` drops anything that is not), and both are
+   * absent whenever the caller said nothing -- a call that simply worked
+   * usually does.
+   */
+  const callDiagnostic = (execution: { resultReason?: string; nodeId?: string }): { resultReason?: string; nodeId?: string } => ({
+    ...(execution.resultReason ? { resultReason: execution.resultReason } : {}),
+    ...(execution.nodeId ? { nodeId: execution.nodeId } : {})
+  });
   /**
    * What one call did, as the caller reported it, over what its tool declared.
    *
@@ -382,7 +471,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       unusableIssueSets.add(issueSet);
       stepsWithoutProgress = 1;
     }
-    trace.push(step);
+    recordRow(step);
     if (stepsWithoutProgress < limits.maxStepsWithoutProgress && unusableInARow < limits.maxUnusableDecisionsInARow) return undefined;
     return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
   };
@@ -404,12 +493,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (tool.effect === "mutate") { mutationEpoch += 1; attemptEpoch += 1; }
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", callId, toolId: tool.toolId, resultCode: code, ...(usage ? { usage } : {}) };
     if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
-      trace.push(step);
+      recordRow(step);
       return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     }
     const record = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
     const recordBytes = reserveEvidence(record);
-    trace.push(recordBytes === undefined ? step : { ...step, evidenceBytes: recordBytes });
+    recordRow(recordBytes === undefined ? step : { ...step, evidenceBytes: recordBytes });
     if (recordBytes === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     evidence.push({ callId, toolId: tool.toolId, value: record, call: { resultCode: code, changed: tool.effect === "mutate" ? "unknown" : "no" } });
     return undefined;
@@ -428,7 +517,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     else broughtBack.add(answeredByCallId);
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
     if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
-      trace.push({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
+      recordRow({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
       return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     }
     const note: JsonObject = {
@@ -444,13 +533,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, proposes: false, resultCode: code });
     const noteBytes = reserveEvidence(note);
     if (noteBytes === undefined) {
-      trace.push(step);
+      recordRow(step);
       return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     }
     const earlier = evidence.findIndex((entry) => entry.callId === answeredByCallId);
     if (earlier >= 0) evidence.push(...evidence.splice(earlier, 1));
     evidence.push({ callId: `${REQUEST_CHECK_TOOL_ID}.${iteration}`, toolId: REQUEST_CHECK_TOOL_ID, value: note });
-    trace.push({ ...step, evidenceBytes: noteBytes });
+    recordRow({ ...step, evidenceBytes: noteBytes });
     return undefined;
   };
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
@@ -502,7 +591,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         latestObservations.set(initialTool.toolId, callId);
       }
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence, call: { resultCode: execution.resultCode ?? "ok", changed: "no" } });
-      trace.push({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
+      recordRow({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...callDiagnostic(execution) });
       draftRecord({ iteration: 0, callId, ...callRecord(initialTool, initialInput, execution), effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
     }
   }
@@ -596,7 +685,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
           if (input.propagateDecisionErrors) throw stalledReplay.error;
           return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
         }
-        trace.push({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
+        recordRow({ iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) });
         return { ok: true, result: decision.result, trace, steps: draftSteps, accounting };
       }
       if (!check || !input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
@@ -623,7 +712,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const rerun = rerunRequest(decision.amendments, draftSteps, toolIds);
       const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
       if (rerun) applyAutomationStudioFlowDraftAmendments(draftSteps, [{ step: rerun.step, change: "drop" }]);
-      trace.push({ iteration, decision: "amend_draft", resultCode: rerun ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
+      recordRow({ iteration, decision: "amend_draft", resultCode: rerun ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
       // An edit is progress on the draft and never on the evidence, so an edit
       // that landed neither clears the no-progress guard nor is spent by it.
       // Clearing it was the first thing tried, and a live build alternated a
@@ -709,7 +798,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       latestObservations.set(tool.toolId, callId);
     }
     evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no" } });
-    trace.push({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) });
+    recordRow({ iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) });
     draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
     // **A refused look is not progress**, and saying so is the deliberate half
     // of letting it be retried. Deleting its signature takes away the bound
