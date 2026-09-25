@@ -53,6 +53,10 @@ const MAX_ROUTE_MESSAGE_LENGTH = 400;
  * keep. Adding a code here is a promise that its message quotes nothing.
  */
 const AUTHORED_CODES: ReadonlySet<string> = new Set([
+  // Why the Flow could not answer the instruction (`../answerability/`). Its
+  // sentence is fixed and quotes nothing; the person's own words travel beside
+  // the issues, in the feedback the completion check builds.
+  "bootstrap.cannot_answer_instruction",
   "bootstrap.invalid_subflows",
   "bootstrap.subflow_has_no_nodes",
   "bootstrap.invalid_node",

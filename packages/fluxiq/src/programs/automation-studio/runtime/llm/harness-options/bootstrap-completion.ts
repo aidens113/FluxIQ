@@ -10,14 +10,24 @@
 //
 // So every check a completed result must pass runs here, as the evidence
 // loop's completion check: the wrapper, the plan's structure, the evidence
-// profile's limits, the domain's resolution of each node's parameters, and the
-// registry validation. A result that passes is handed back ready to persist. A
+// profile's limits, the domain's resolution of each node's parameters, the
+// registry validation, and last of all whether the Flow could answer the
+// instruction at all. A result that passes is handed back ready to persist. A
 // result that fails comes back with the code creation fails under, the issues
 // that refused it, and the feedback the model sees before it is asked again --
 // issue codes and plan paths, which are the plan's own structure, and the
 // shape each refused parameter accepts, read from its node definition
 // (`automationStudioFlowBootstrapIssueFeedback`) -- never page content and never
 // a validator's prose.
+//
+// **The last check asks what none of the others did.** Every check above holds
+// the plan to the node library: it parses, its parameters resolve, its nodes are
+// registered. None asks whether the Flow does what the person's sentence asked
+// for, and four live builds against one instruction proposed four different
+// Flows as finished, one of which navigated twice, typed three times and read
+// nothing. `flow-bootstrap/answerability/` answers that from the plan and the
+// instruction text alone, with no provider call, and its refusal carries what
+// the instruction asks for beside the issue rather than only a code.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -29,7 +39,9 @@ import {
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
+  type AutomationStudioFlowBootstrapAnswerability,
   automationStudioFlowBootstrapIssueFeedback,
+  checkAutomationStudioFlowBootstrapAnswersInstruction,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
@@ -46,7 +58,8 @@ export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<Automat
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
   | "flow_bootstrap.evidence_completion_plan_invalid"
   | "flow_bootstrap.evidence_completion_profile_limit_exceeded"
-  | "flow_bootstrap.evidence_completion_parameters_unresolved">;
+  | "flow_bootstrap.evidence_completion_parameters_unresolved"
+  | "flow_bootstrap.evidence_completion_cannot_answer">;
 
 export type AutomationStudioFlowBootstrapCompletionVerdict =
   | { ok: true; summary: string; buildPlan: AutomationStudioFlowBuildPlan }
@@ -102,6 +115,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   draftSteps?: readonly AutomationStudioFlowDraftStep[] | undefined;
   /** The build's permission check for each step, handed to the domain as it resolves the step. */
   permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
+  /**
+   * The active instructions' own words, title and body, as the build read them.
+   *
+   * What the last check reads. Absent -- a caller with no instruction text --
+   * leaves the check with nothing to hold the Flow to, and it passes: a plan is
+   * never refused for a request nobody stated.
+   */
+  instructionText?: string | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -157,6 +178,19 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")], undefined, script);
   }
   if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
+  // Last, and only on a plan every other check accepted: could this Flow answer
+  // the instruction at all? Placed here so a build is told one thing at a time --
+  // a plan with a refused parameter hears about the parameter -- and so the
+  // question is asked of the plan that would have been built.
+  const answers = checkAutomationStudioFlowBootstrapAnswersInstruction({
+    plan: validated.validated.plan,
+    registry: input.registry,
+    resolution: input.resolution,
+    instructionText: input.instructionText
+  });
+  if (!answers.ok) {
+    return refused("flow_bootstrap.evidence_completion_cannot_answer", [answers.issue], about(validated.validated.plan), script, answers);
+  }
   return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
 
@@ -220,7 +254,14 @@ function refused(
   code: AutomationStudioFlowBootstrapCompletionFailureCode,
   issues: AutomationStudioFlowBootstrapIssue[],
   about?: RefusalSubject,
-  previousScript?: string
+  previousScript?: string,
+  /**
+   * The answerability refusal, where that is what refused the plan. Its own
+   * account of what the instruction asks for travels beside the issues, and its
+   * own sentence replaces the one about correcting a parameter: nothing about
+   * this refusal is about how a step was written.
+   */
+  cannotAnswer?: Extract<AutomationStudioFlowBootstrapAnswerability, { ok: false }>
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
   const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
@@ -237,7 +278,8 @@ function refused(
         refusal: code,
         issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
         ...previous,
-        instruction: FEEDBACK_INSTRUCTION
+        ...(cannotAnswer ? { cannotAnswer: cannotAnswer.cannotAnswer } : {}),
+        instruction: cannotAnswer?.instruction ?? FEEDBACK_INSTRUCTION
       }
     }
   };

@@ -438,11 +438,38 @@ order, and each refusal has its own code:
 4. The domain's resolution of each node's parameters:
    `flow_bootstrap.evidence_completion_parameters_unresolved`.
 5. Registry validation: `flow_bootstrap.evidence_completion_plan_invalid`.
+6. Whether the Flow could answer the instruction at all:
+   `flow_bootstrap.evidence_completion_cannot_answer`.
+
+Check 6 is the only one that reads the instruction rather than the node library,
+and it is what stops a build proposing a Flow that cannot produce what the
+sentence asked for. Four live builds against one instruction — every pair of
+wireless earbuds matching three conditions across every page of results, as a
+table with four named columns — proposed four different Flows as finished, one
+of which navigated twice, typed three times and read nothing. Checks 1 to 5
+confirmed all four parsed, resolved and validated.
+
+`flow-bootstrap/answerability/` answers it from the plan and the active
+instructions' own text, with no provider call on any path. It reads what the
+instruction asks to be given back from a short list of unambiguous words
+(`records`, `rows`, `columns`, `as a table`, `scrape`, `extract` and a few
+more), and refuses only where the instruction plainly asks for a set of records
+and no step of the Flow produces or saves one — a step whose definition declares
+where its own result keeps rows, or one whose record output names a dataset. It
+judges capability, never a chain: a Flow that reaches a search by URL rather
+than typing into a field is accepted, as is an extraction that may find nothing,
+because whether what it found answers the request is the finished run's
+verification to judge. Two cases are left alone outright: an instruction that
+asks for no records, and a node library that registers nothing returning rows of
+its own, where a refusal would ask for a node that does not exist.
 
 A refused completion is not the end of creation. The loop adds feedback to the
 evidence the model sees next, and asks again. The feedback holds the refusal
 code, at most 16 issue codes with their plan paths, and a fixed instruction to
-correct them and to name observed elements by handle. The refusal counts as an
+correct them and to name observed elements by handle. A refusal under check 6
+carries instead what the instruction asks for, the person's own sentence asking
+for it, the columns they named, and the Flow's own steps, with an instruction to
+run the step that returns rows and finish again. The refusal counts as an
 unusable decision. So does a reply that failed Core's checks, and so does a
 provider failure that only spends the call. Each one spends one of the loop's
 decisions. After three in a row, or fewer when the loop allows fewer decisions,

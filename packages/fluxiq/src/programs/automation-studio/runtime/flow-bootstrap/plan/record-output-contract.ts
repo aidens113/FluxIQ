@@ -65,7 +65,22 @@ const RECORD_WRITERS: ReadonlyMap<string, string> = new Map([["builtin.data.writ
 
 /** The records path this node supplies itself, or `undefined` when its author must write one. */
 export function automationStudioFlowBootstrapSuppliedRecordsPath(definition: AutomationStudioNodeDefinition): string | undefined {
-  return writtenRecordsPath(definition) ?? declaredRecordsPath(definition);
+  return writtenRecordsPath(definition) ?? automationStudioFlowBootstrapDeclaredRecordsPath(definition);
+}
+
+/**
+ * Where this node's *own* result keeps its rows, as its definition declares it,
+ * or `undefined` when it declares none.
+ *
+ * Narrower than the supplied path above, and the difference matters to a reader
+ * asking whether a node library can produce a set of records at all: Core's node
+ * that writes records supplies a path and still has no rows of its own -- it
+ * writes the ones it is handed -- so only a declared path says "rows come out of
+ * this node".
+ */
+export function automationStudioFlowBootstrapDeclaredRecordsPath(definition: AutomationStudioNodeDefinition): string | undefined {
+  const declared = definition.metadata?.recordsPath;
+  return typeof declared === "string" ? declared : undefined;
 }
 
 /**
@@ -118,7 +133,7 @@ function asWritten(value: JsonValue | undefined, path: string): JsonValue {
 
 // As an output's dispatch reads it: the declared path where none was written.
 function asDispatched(definition: AutomationStudioNodeDefinition, value: JsonValue): JsonValue {
-  const declared = declaredRecordsPath(definition);
+  const declared = automationStudioFlowBootstrapDeclaredRecordsPath(definition);
   return declared !== undefined && isPlainObject(value) && !Object.hasOwn(value, "recordsPath") ? { ...value, recordsPath: declared } : value;
 }
 
@@ -126,9 +141,5 @@ function writtenRecordsPath(definition: AutomationStudioNodeDefinition): string 
   return definition.source.kind === "builtin" ? RECORD_WRITERS.get(definition.id) : undefined;
 }
 
-function declaredRecordsPath(definition: AutomationStudioNodeDefinition): string | undefined {
-  const declared = definition.metadata?.recordsPath;
-  return typeof declared === "string" ? declared : undefined;
-}
 
 const isPlainObject = (value: JsonValue | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);

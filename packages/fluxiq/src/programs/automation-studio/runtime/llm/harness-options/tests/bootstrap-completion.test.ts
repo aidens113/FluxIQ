@@ -163,3 +163,61 @@ describe("the handle a built plan carries", () => {
     expect(automationStudioPlanNodeHandleSites(asked[0]!)).toMatchObject({ malformed: false, sites: [{ path: ["target"], handle: "control.7" }] });
   });
 });
+
+// Every check above holds a completed plan to the node library. None of them
+// asked whether the Flow does what the person's sentence asked for, and four
+// live builds against one instruction proposed four different Flows as finished
+// -- one of which navigated twice, typed three times and read nothing. The last
+// check asks that, from the plan and the instruction text alone.
+describe("a completed plan that could not answer the instruction", () => {
+  const readsOneValue: JsonObject = {
+    schemaVersion: "0.1",
+    router: { name: "Read", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+    subflows: [{
+      key: "primary",
+      name: "Primary",
+      role: "primary",
+      nodes: [{ key: "read", definitionId: "web.output.dom-extract", definitionVersion: "1.0.0", outputActionId: "web.dom.extract", parameters: { selector: ".price" } }],
+      edges: []
+    }]
+  };
+
+  it("is refused under its own code, with what the instruction asks for beside the issue", async () => {
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Read the price", plan: readsOneValue },
+      projectId: "project.1", flowId: "flow.1", registry, resolution,
+      instructionText: "Scrape every product the search returns as a table with columns name and price."
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_answer");
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_answer_instruction"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { cannotAnswer: JsonObject };
+    expect(feedback.issues[0]).toEqual({
+      code: "bootstrap.cannot_answer_instruction",
+      path: "plan.subflows",
+      message: "The instruction asks for a set of records and no step of this Flow produces or saves one, so no run of it could answer."
+    });
+    expect(feedback.cannotAnswer).toMatchObject({
+      asks: "a set of records: rows with named fields",
+      quote: "Scrape every product the search returns as a table with columns name and price",
+      columns: ["name", "price"],
+      steps: ["web.output.dom-extract"]
+    });
+    expect(feedback.instruction).toContain("keep it in the draft, and finish again");
+    expect(feedback.instruction).not.toContain("Where an issue carries accepted");
+  });
+
+  it("is not refused when the instruction asks for no records, and never reaches the check without one", async () => {
+    for (const instructionText of ["Read the price of the item on this page and tell me what it is.", undefined]) {
+      const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+        result: { summary: "Read the price", plan: readsOneValue },
+        projectId: "project.1", flowId: "flow.1", registry, resolution,
+        ...(instructionText === undefined ? {} : { instructionText })
+      });
+
+      expect(verdict.ok).toBe(true);
+    }
+  });
+});

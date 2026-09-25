@@ -7,6 +7,7 @@
 // the service reaches it through this barrel.
 export * from "./action-permissions.ts";
 export * from "./adaptation.ts";
+export * from "./answerability/index.ts";
 export * from "./authoring/index.ts";
 export * from "./decision-step-ids.ts";
 export * from "./draft-reduction.ts";
