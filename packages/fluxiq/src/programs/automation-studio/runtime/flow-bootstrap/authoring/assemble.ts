@@ -53,12 +53,34 @@ import type { AutomationStudioFlowScript, AutomationStudioFlowScriptBlock, Autom
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError, authoringWarning } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
+import { automationStudioMatchWrittenParameterName } from "../plan/index.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, isJsonObject } from "./values.ts";
 
 const OUTPUT_ACTION_WORDS = new Set(["outputactionid", "outputaction", "outputid", "output", "runs"]);
 const NAME_LIMIT = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength;
+
+/**
+ * The parameter ids this step already names outright, so a near match cannot
+ * take a name the model wrote correctly on another line of the same step.
+ */
+function claimedParameterIds(
+  entries: readonly { key: string }[],
+  definition: AutomationStudioNodeDefinition
+): ReadonlySet<string> {
+  const declared = new Set(definition.parameters.map((parameter) => parameter.id));
+  const claimed = new Set<string>();
+  for (const entry of entries) {
+    const head = entry.key.split(".").map((segment) => segment.trim()).filter(Boolean)[0] ?? "";
+    if (declared.has(head)) claimed.add(head);
+    else {
+      const named = matchAuthoringParameter(head, definition);
+      if (named) claimed.add(named.id);
+    }
+  }
+  return claimed;
+}
 
 export function assembleAutomationStudioFlowScriptPlan(input: {
   script: AutomationStudioFlowScript;
@@ -269,6 +291,22 @@ function buildNode(input: {
         parameter = inside;
         segments = [inside.id, ...segments];
         head = inside.id;
+      } else {
+        // Nothing knows this key by name or by containment, so resolve it as
+        // the nearest parameter this node declares before refusing it. A name
+        // is a small slip, and a refusal is a paid provider call the evidence
+        // says the model does not act on.
+        //
+        // **This is the second reader that had to learn it.** A Flow script
+        // reaches this one and never `./normalise.ts`, so teaching only that
+        // one left the live creation path refusing exactly as it had.
+        const near = automationStudioMatchWrittenParameterName(head, text, input.definition, claimedParameterIds(input.step.entries, input.definition));
+        const resolved = near && input.definition.parameters.find((candidate) => candidate.id === near.id);
+        if (resolved) {
+          parameter = resolved;
+          segments = segments.length <= 1 ? [resolved.id] : [resolved.id, ...segments.slice(1)];
+          head = resolved.id;
+        }
       }
     }
     if (!parameter) {

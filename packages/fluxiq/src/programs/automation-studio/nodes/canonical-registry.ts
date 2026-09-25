@@ -8,7 +8,14 @@ import {
   type AutomationStudioNodeParameterContract,
   type AutomationStudioNodeRegistryResolution
 } from "./definitions.ts";
+import { automationStudioMatchName, type AutomationStudioNameMatch } from "./name-match/index.ts";
 import { builtinAutomationNodeDefinitions } from "./registry.ts";
+
+/** A definition a written node id resolved to, with how much of it was a guess. */
+export type AutomationStudioNodeDefinitionMatch = {
+  definition: AutomationStudioNodeDefinition;
+  match: AutomationStudioNameMatch;
+};
 
 /**
  * Scope-aware definition registry for new Flow authoring paths.
@@ -52,6 +59,28 @@ export class AutomationStudioNodeRegistry {
 
   list(resolution: AutomationStudioNodeRegistryResolution): AutomationStudioNodeDefinition[] {
     return [...this.definitions.values()].filter((definition) => isAvailable(definition, resolution));
+  }
+
+  /**
+   * Resolves a written node id to the nearest definition available under this
+   * resolution, and reports whether the id was exact, a separator or casing
+   * variant, or a scored guess. `get()` stays exact, for the callers that
+   * depend on exactness.
+   *
+   * A model that writes `web.output.dom-extract-list` for
+   * `web.output.dom-extract_list`, or `filterList` for
+   * `builtin.data.filter-list`, has not named anything unknown, and refusing it
+   * spends a paid provider call on a correction the model may never make. The
+   * candidates are exactly what `list()` already admits, so a correction can
+   * never reach a node this caller could not have run, and `match.how` tells
+   * the caller what to report back.
+   */
+  matchDefinition(nodeId: string, resolution: AutomationStudioNodeRegistryResolution): AutomationStudioNodeDefinitionMatch | undefined {
+    const available = this.list(resolution);
+    const match = automationStudioMatchName(nodeId, available.map((definition) => ({ id: definition.id })));
+    if (!match) return undefined;
+    const definition = available.find((candidate) => candidate.id === match.id);
+    return definition ? { definition, match } : undefined;
   }
 
   /**

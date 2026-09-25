@@ -244,7 +244,11 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     // A bad reply names no tool and carries no content, but it does say what
     // was wrong with it: the stored trace keeps the result code, so a reader of
     // a finished build can tell a malformed reply from a refused step.
-    expect(run.stored?.evidenceTrace?.[0]).toEqual({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" });
+    // `toMatchObject`, not `toEqual`: every row now also carries `at`, the
+    // moment it was recorded, which is a clock reading and so cannot be
+    // asserted exactly. That it is there at all is asserted beside it.
+    expect(run.stored?.evidenceTrace?.[0]).toMatchObject({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response" });
+    expect(run.stored?.evidenceTrace?.[0]?.at).toEqual(expect.any(Number));
     expect(run.stored?.evidenceTrace?.[1]).toMatchObject({ iteration: 2, callId: "call.2", toolId: LOOK_TOOL_ID });
     expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, decisionCount: 3, toolCallCount: 1 });
     // Released when creation ended, not before.
@@ -285,7 +289,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       // One step per decision, each naming the iteration that paid for it --
       // which is the whole point: eleven refusals reading the same code are
       // told apart by nothing else.
-      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response" })) },
+      // `at` rides on every step now, a clock reading rather than a value, so
+      // the steps are matched on what they say and their moment is asserted
+      // as being present at all.
+      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) })) },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(run.adaptationCount).toBe(0);

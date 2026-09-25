@@ -96,3 +96,45 @@ describe("a parameter contract bound on the registry", () => {
     expect(() => registry.bindParameterContract("domain.orders.submit", () => [])).toThrow("already has a parameter contract");
   });
 });
+
+describe("resolving a node id the model wrote slightly wrong", () => {
+  const global = { scope: { kind: "global" } } as const;
+
+  it("reports a verbatim id as exact and a separator or casing variant as normalized", () => {
+    const registry = new AutomationStudioNodeRegistry();
+
+    expect(registry.matchDefinition("builtin.data.filter-list", global)?.match).toEqual({
+      id: "builtin.data.filter-list",
+      how: "exact",
+      score: 1
+    });
+    for (const written of ["builtin.data.filter_list", "builtin/data/filter-list", "Builtin.Data.FilterList"]) {
+      expect(registry.matchDefinition(written, global)?.match, written).toEqual({
+        id: "builtin.data.filter-list",
+        how: "normalized",
+        score: 1
+      });
+    }
+  });
+
+  it("guesses the nearest available node rather than refusing a name it can place", () => {
+    const resolved = new AutomationStudioNodeRegistry().matchDefinition("filterList", global);
+
+    expect(resolved?.definition.id).toBe("builtin.data.filter-list");
+    expect(resolved?.match.how).toBe("nearest");
+    expect(resolved?.match.score).toBeGreaterThan(0.25);
+  });
+
+  it("never corrects into a node this resolution cannot see, and still refuses a name it cannot place", () => {
+    const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, importerNode()]);
+
+    // The importer node's own id, written verbatim: out of scope is still out of scope.
+    expect(registry.matchDefinition("domain.orders.submit", global)).toBeUndefined();
+    expect(registry.matchDefinition("domain.orders.submit", {
+      scope: { kind: "domain", domainId: "orders" },
+      runtimeCapabilities: ["orders.runtime"],
+      permissions: ["runtime.control"]
+    })?.definition.id).toBe("domain.orders.submit");
+    expect(registry.matchDefinition("sendEmail", global)).toBeUndefined();
+  });
+});

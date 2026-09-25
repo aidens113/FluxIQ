@@ -7,6 +7,14 @@
 // A parameter value the runtime would refuse is refused here, so a malformed
 // structured value never reaches dispatch: record outputs, the output a policy
 // action runs, and a domain's bound parameter contract are all checked.
+//
+// A name, by contrast, is resolved before it is checked. A parameter key that
+// is plainly one of the node's own, written with a slip, is corrected in the
+// plan and recorded as an assumption (`./name-correction.ts`); the corrected
+// plan is what is validated, laid out, risked and returned, so the node runs
+// with the name it meant. Nothing below is relaxed by that: a corrected key
+// faces exactly the checks a correctly written one faces, and a key with no
+// plausible candidate reaches `bootstrap.unknown_parameter` untouched.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   AutomationStudioNodeRegistry,
@@ -27,6 +35,8 @@ import type {
 import { error } from "./issues.ts";
 import { layoutNodes } from "./layout.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
+import { correctAutomationStudioFlowBootstrapPlanNames } from "./name-correction.ts";
+import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
 import { automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
@@ -36,10 +46,29 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
   plan: AutomationStudioFlowBootstrapPlan;
   registry?: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
-}): { ok: boolean; issues: AutomationStudioFlowBootstrapIssue[]; validated?: AutomationStudioValidatedFlowBootstrapPlan } {
+}): {
+  ok: boolean;
+  issues: AutomationStudioFlowBootstrapIssue[];
+  /**
+   * The accepted plan, with the names that were resolved rather than written
+   * listed beside it. `assumptions` is absent on a plan that needed none, so a
+   * correctly written plan is handed on exactly as it arrived.
+   */
+  validated?: AutomationStudioValidatedFlowBootstrapPlan & { assumptions?: readonly AutomationStudioFlowBootstrapNameAssumption[] };
+} {
   const structural = parseAutomationStudioFlowBootstrapPlan(input.plan);
   if (!structural.plan) return { ok: false, issues: structural.issues };
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
+  // Names are resolved before anything is checked, so every check below reads
+  // the plan as it will be built and run rather than as it was written, and a
+  // near-miss parameter name is corrected in the plan instead of refusing the
+  // whole build (`./name-correction.ts`). A name with no plausible candidate is
+  // left as written and still refused below.
+  const { plan, assumptions } = correctAutomationStudioFlowBootstrapPlanNames({
+    plan: structural.plan,
+    registry,
+    resolution: input.resolution
+  });
   const issues = [...structural.issues];
   let outputIds: ReadonlySet<string> | undefined;
   const scope: ValidationScope = {
@@ -48,25 +77,25 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
     outputIds: () => outputIds ??= declaredOutputIds(registry, input.resolution)
   };
   const subflowKeys = new Set<string>();
-  const primary = input.plan.subflows.filter((subflow) => subflow.role === "primary");
+  const primary = plan.subflows.filter((subflow) => subflow.role === "primary");
   if (primary.length !== 1) issues.push(error("bootstrap.primary_count", "Bootstrap plan must define exactly one primary Subflow.", "plan.subflows"));
-  for (const [subflowIndex, subflow] of input.plan.subflows.entries()) {
+  for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     if (subflowKeys.has(subflow.key)) issues.push(error("bootstrap.duplicate_subflow_key", "Subflow keys must be unique.", `plan.subflows.${subflowIndex}.key`));
     subflowKeys.add(subflow.key);
     validateSubflow(subflow, subflowIndex, scope, issues);
   }
   const routerRuleKeys = new Set<string>();
-  for (const [index, rule] of input.plan.router.rules.entries()) {
+  for (const [index, rule] of plan.router.rules.entries()) {
     if (routerRuleKeys.has(rule.key)) issues.push(error("bootstrap.duplicate_router_rule_key", "Router rule keys must be unique.", `plan.router.rules.${index}.key`));
     routerRuleKeys.add(rule.key);
     if (!subflowKeys.has(rule.targetSubflowKey)) issues.push(error("bootstrap.unknown_router_target", "Router rule targets an unknown Subflow key.", `plan.router.rules.${index}.targetSubflowKey`));
   }
-  if (input.plan.router.fallback.kind === "subflow" && !subflowKeys.has(input.plan.router.fallback.targetSubflowKey)) {
+  if (plan.router.fallback.kind === "subflow" && !subflowKeys.has(plan.router.fallback.targetSubflowKey)) {
     issues.push(error("bootstrap.unknown_router_fallback", "Router fallback targets an unknown Subflow key.", "plan.router.fallback.targetSubflowKey"));
   }
-  issues.push(...automationStudioFlowBootstrapRouteIssues(input.plan));
+  issues.push(...automationStudioFlowBootstrapRouteIssues(plan));
   if (issues.some((issue) => issue.severity === "error")) return { ok: false, issues };
-  const subflows = input.plan.subflows.map((subflow) => ({
+  const subflows = plan.subflows.map((subflow) => ({
     ...subflow,
     nodes: layoutNodes(subflow)
   }));
@@ -74,9 +103,10 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
     ok: true,
     issues,
     validated: {
-      plan: input.plan,
-      risk: deriveRisk(input.plan, registry, input.resolution),
-      subflows
+      plan,
+      risk: deriveRisk(plan, registry, input.resolution),
+      subflows,
+      ...(assumptions.length ? { assumptions } : {})
     }
   };
 }

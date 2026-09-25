@@ -15,7 +15,7 @@
 // cannot be guessed; the refusal is fed back with the node's parameter ids.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
+import { automationStudioMatchWrittenParameterName, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey } from "./keys.ts";
@@ -35,6 +35,12 @@ export function normaliseAuthoringNodeParameters(input: {
 }): { parameters: JsonObject; issues: AutomationStudioFlowBootstrapIssue[]; consequences?: string[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const parameters: JsonObject = {};
+  // Which declared parameters are already spoken for, so a near match can never
+  // take a name the model wrote correctly somewhere else in the same node.
+  // Seeded with the keys that are declared ids outright, because those are
+  // claimed however late in the object they appear.
+  const declaredIds = new Set(input.definition.parameters.map((parameter) => parameter.id));
+  const claimed = new Set(Object.keys(input.written).filter((key) => declaredIds.has(key)));
   // The step's declaration of what it would lastingly do, when it rode in with
   // the keys: it is not a parameter of any node, so the reader that would
   // otherwise refuse it as unknown takes it out here (`./consequences.ts`).
@@ -52,6 +58,22 @@ export function normaliseAuthoringNodeParameters(input: {
       // having been written inside it, as `./matching.ts` explains.
       const inside = matchAuthoringParameterContaining(key, input.definition);
       if (!inside) {
+        // Nothing here knows this key by name or by containment, so before
+        // refusing it, resolve it as the nearest parameter this node declares.
+        // A name is a small slip and a refusal is a paid provider call the
+        // evidence says the model does not act on: `run-mug776kx-0214b287` was
+        // refused the same way fourteen times and corrected none of them.
+        //
+        // This is the reader that decides, which is why the fallback has to be
+        // here: the plan's own correction runs later, and a key refused on this
+        // path never reaches it.
+        const near = automationStudioMatchWrittenParameterName(key, value, input.definition, claimed);
+        const resolved = near && input.definition.parameters.find((parameter) => parameter.id === near.id);
+        if (resolved) {
+          claimed.add(resolved.id);
+          if (parameters[resolved.id] === undefined) parameters[resolved.id] = coerce(value, resolved);
+          continue;
+        }
         issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${key}`));
         continue;
       }
@@ -61,6 +83,7 @@ export function normaliseAuthoringNodeParameters(input: {
       parameters[inside.id] = base;
       continue;
     }
+    claimed.add(parameter.id);
     if (parameters[parameter.id] === undefined) parameters[parameter.id] = coerce(value, parameter);
   }
   for (const parameter of input.definition.parameters) {

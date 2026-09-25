@@ -61,6 +61,24 @@ describe("a key written beside the parameter that declares it", () => {
     expect(list.minItems).toBe(0);
   });
 
+  it("resolves a parameter name the model misspelled, on the path that actually reads it", () => {
+    // The plan's own correction runs later than this reader, and a key refused
+    // here never reaches it, so the whole feature was inert on the live
+    // creation path until this reader learned to resolve too.
+    const accepted = accept([
+      "flow: Press the filter",
+      "step: press the filter",
+      "  node: web.dom.click",
+      "  targe: target.7"
+    ].join("\n"));
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) return;
+    // Resolved to `target`, and then coerced exactly as a correctly written
+    // key would have been: the handle takes its own shape, so a corrected name
+    // reaches the node as a real parameter rather than as raw text.
+    expect(accepted.plan.subflows[0]?.nodes[0]?.parameters).toMatchObject({ target: { handle: "target.7" } });
+  });
+
   it("does not move a key no parameter's example declares", () => {
     const accepted = accept([
       "flow: Press the filter",

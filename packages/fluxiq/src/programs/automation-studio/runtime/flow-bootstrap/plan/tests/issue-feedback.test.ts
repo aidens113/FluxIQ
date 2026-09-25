@@ -81,14 +81,26 @@ describe("the feedback on a refused plan", () => {
     }]);
   });
 
+  // The key here is one that names nothing this node has, because a key that
+  // is plainly one of its own -- `recordsOutput` for `recordOutput`, which
+  // this row used to be written with -- is no longer refused at all: it is
+  // corrected into the plan and recorded as an assumption
+  // (`../name-correction.ts`). What is left for this feedback to answer is a
+  // key with no plausible candidate, and that is what it is asked here.
   it("lists the parameters a node declares when the plan names one it does not", () => {
-    const { feedback } = feedbackFor({ extractList, recordsOutput: null });
+    const { feedback } = feedbackFor({ extractList, screenshot: null });
 
     expect(feedback).toEqual([{
       code: "bootstrap.unknown_parameter",
-      path: "plan.subflows.0.nodes.0.parameters.recordsOutput",
+      path: "plan.subflows.0.nodes.0.parameters.screenshot",
       accepted: { parameters: ["extractList", "timeoutMs", "recordOutput", "expectedState"] }
     }]);
+  });
+
+  it("does not answer at all for a parameter name it could resolve itself", () => {
+    const { issues } = feedbackFor({ extractList, recordsOutput: null });
+
+    expect(issues).toEqual([]);
   });
 
   it("gives the shape of the parameter a domain's positioned refusal names, once", () => {

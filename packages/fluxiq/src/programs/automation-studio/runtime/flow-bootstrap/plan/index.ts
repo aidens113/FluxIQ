@@ -11,12 +11,21 @@
 // legitimate reader of it -- it fills in a half-written record output against
 // the same contract validation refuses one by -- and a sibling directory may
 // only read this one through its barrel.
+//
+// name-correction-assumption.ts is published for the same kind of reason: an
+// assumption travels out of validation on the accepted plan, so whatever
+// records or reports a run has to read the type. name-correction.ts is
+// published with it because a caller that builds a plan without validating it
+// -- a repair rewriting one node -- should resolve its names through the same
+// pass rather than a second one.
 export * from "./catalog.ts";
 export * from "./contracts.ts";
 export * from "./evidence-schema.ts";
 export * from "./flow-script-format.ts";
 export * from "./issue-feedback.ts";
 export * from "./limits.ts";
+export * from "./name-correction.ts";
+export * from "./name-correction-assumption.ts";
 export * from "./output-schema.ts";
 export * from "./parsing.ts";
 export * from "./record-output-contract.ts";

@@ -3,6 +3,7 @@ export * from "./definitions.ts";
 export * from "./canonical-registry.ts";
 export * from "./importer-sdk.ts";
 export * from "./layout.ts";
+export * from "./name-match/index.ts";
 export * from "./parameter-bindings.ts";
 export * from "./record-output.ts";
 export * from "./registry.ts";
