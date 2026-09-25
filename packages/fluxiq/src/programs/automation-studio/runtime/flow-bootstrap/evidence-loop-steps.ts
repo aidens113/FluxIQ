@@ -28,19 +28,23 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDI
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 
 /**
- * A trace row as a reader of the loop's record sees one: the loop's own row,
- * plus `at` -- the moment the row was recorded, in epoch milliseconds.
+ * A trace row as a reader of the loop's record sees one.
  *
- * `at` is declared here rather than on the loop's trace type because a
- * timestamp is a diagnostic, not part of how a build runs, and the loop's type
- * is the contract its own callers build against. It is optional the whole way
- * down: a row without one publishes no `at`, and a reader that has none falls
- * back to what it could always do -- infer the order from `iteration`.
+ * `at` -- the moment the row was recorded, in epoch milliseconds -- was first
+ * declared here rather than on the loop's trace type, on the reasoning that a
+ * timestamp is a diagnostic and the loop's type is the contract its callers
+ * build against. **That is exactly why nothing ever wrote one.** The loop is
+ * the only thing that knows when a row happened, and a field the loop's own
+ * type does not have is a field the loop cannot push: `run-mug776kx-0214b287`
+ * published 41 rows and 0 of them carried a moment, so its 695 seconds stayed
+ * one undivided gap in which a ten-minute stall and forty seventeen-second
+ * steps look identical.
  *
- * Why it exists at all: a failed build's 32 decisions arrived inside one
- * undivided 99,375 ms gap, so nothing said which decision the time went into.
- * A stall is a step that took most of a minute, and without a per-row moment
- * it cannot be told from thirty-two that each took three seconds.
+ * It now lives on `AutomationStudioLlmEvidenceLoopTrace` and the loop stamps
+ * every row it pushes. The intersection is kept because it is what every
+ * reader of a *stored* row names, and because it still says the true thing: a
+ * row from before the loop stamped them carries none, and a reader without one
+ * falls back to ordering by `iteration`.
  */
 export type AutomationStudioFlowBootstrapEvidenceTraceRow = AutomationStudioLlmEvidenceLoopTrace & { at?: number };
 
@@ -70,6 +74,32 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
   callId?: string;
   effectApplied?: boolean;
   resultCode?: string;
+  /**
+   * Why the call came to that code, in the domain's own closed vocabulary.
+   *
+   * A code names a family and a reason names the member.
+   * `run-mug776kx-0214b287` published 14 rows reading
+   * `web.action.rejected.invalid_input` and 8 reading
+   * `web.action.rejected.target_unobserved`, and that is what a reader had to
+   * diagnose from -- while the domain had computed, and thrown away, which of
+   * thirty-three distinct reasons each one was: a node that cannot run where it
+   * was asked to, an argument carrying keys the node does not take, a handle
+   * that is not a handle, a handle naming nothing observed yet. Four different
+   * defects, two words, and no way to tell how many of the fourteen were the
+   * same bug.
+   *
+   * It is a code and never a sentence, held to the same shape `resultCode` is,
+   * so it rides on this record under the same rule as everything else here.
+   */
+  resultReason?: string;
+  /**
+   * The node the call ran, as the domain resolved it against its own catalog.
+   *
+   * Never a name the model wrote. A model naming a node that does not exist
+   * leaves this absent, and the reason says that is what happened -- which is
+   * the whole distinction that lets this record stay identifiers and codes.
+   */
+  nodeId?: string;
   /** The bytes of evidence this call's result added to the loop's budget. */
   evidenceBytes?: number;
   /** When the row was recorded, in epoch milliseconds. Absent where the loop recorded no moment. */
@@ -100,6 +130,12 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
   const kept = {
     iteration: Number.isSafeInteger(entry.iteration) && entry.iteration >= 0 ? entry.iteration : 0,
     ...(entry.resultCode && EVIDENCE_STEP_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {}),
+    // Each held to its own shape at the moment of publication, and left behind
+    // when it does not fit. The guarantee this record rests on is that nothing
+    // a tool returned and nothing the model wrote travels on it, and these two
+    // arrive from a domain that could always put a sentence in one.
+    ...(entry.resultReason && EVIDENCE_STEP_CODE.test(entry.resultReason) ? { resultReason: entry.resultReason } : {}),
+    ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
     ...(nonNegative(entry.at) ? { at: entry.at as number } : {}),
     ...(usage ? { usage } : {})
@@ -141,7 +177,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "evidenceBytes", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -158,6 +194,8 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.callId !== undefined && (typeof step.callId !== "string" || !EVIDENCE_STEP_ID.test(step.callId)))
       || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
       || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !EVIDENCE_STEP_CODE.test(step.resultCode)))
+      || (step.resultReason !== undefined && (typeof step.resultReason !== "string" || !EVIDENCE_STEP_CODE.test(step.resultReason)))
+      || (step.nodeId !== undefined && (typeof step.nodeId !== "string" || !EVIDENCE_STEP_ID.test(step.nodeId)))
       || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes))
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
@@ -168,6 +206,8 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.callId !== undefined ? { callId: step.callId as string } : {}),
       ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
       ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {}),
+      ...(step.resultReason !== undefined ? { resultReason: step.resultReason } : {}),
+      ...(step.nodeId !== undefined ? { nodeId: step.nodeId } : {}),
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
       ...(step.at !== undefined ? { at: step.at as number } : {}),
       ...(usage ? { usage } : {})

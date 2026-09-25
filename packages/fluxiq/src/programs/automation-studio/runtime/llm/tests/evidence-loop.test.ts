@@ -91,10 +91,12 @@ describe("Automation Studio LLM evidence loop", () => {
         ok: false, code: "llm_evidence_loop.already_observed", toolId: "inspect", answeredByCallId: "call.observe.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
       }) }
     ]);
+    // Every row carries the moment it was recorded, which is what lets a reader
+    // put a stall on a clock instead of inferring it from one undivided gap.
     expect(blocked.trace.slice(1)).toEqual([
-      { iteration: 2, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_observed", evidenceBytes: expect.any(Number) },
-      { iteration: 3, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_observed", evidenceBytes: expect.any(Number) },
-      { iteration: 4, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.rejected.repeat_without_progress" }
+      { iteration: 2, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_observed", evidenceBytes: expect.any(Number), at: expect.any(Number) },
+      { iteration: 3, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_observed", evidenceBytes: expect.any(Number), at: expect.any(Number) },
+      { iteration: 4, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.rejected.repeat_without_progress", at: expect.any(Number) }
     ]);
 
     const progressiveDecide = vi.fn()
@@ -376,7 +378,7 @@ describe("a tool request the loop has already answered", () => {
     expect(result.accounting.evidenceBytes).toBe(Buffer.byteLength(JSON.stringify({ facts: ["ready"] }), "utf8") + noteBytes);
     expect(result.trace[1]).toEqual({
       iteration: 2, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_answered",
-      evidenceBytes: noteBytes, usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 }
+      evidenceBytes: noteBytes, at: expect.any(Number), usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 }
     });
   });
 
