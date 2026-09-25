@@ -22,6 +22,43 @@ const trace: AutomationStudioLlmEvidenceLoopTrace[] = [
 ];
 
 describe("the trace stored on a build", () => {
+  // **The rebuilder test.** Four functions between the loop and a published
+  // record rebuild a decision row member by member, and three times now a
+  // member added to the row has been dropped by one of them without a single
+  // test noticing: a live build published 22 rows carrying neither the reason
+  // a call was refused nor the node it ran, although the loop set both, the
+  // step declared both and its parser accepted both
+  // (`run-muhd1vc7-0ec27a16`).
+  //
+  // So this asserts the property rather than the fields: every member the loop
+  // may put on a row survives to the published step. A member added to the row
+  // and not carried here fails this test instead of going quiet.
+  it("carries every member of a row through to the published step", () => {
+    const full: AutomationStudioLlmEvidenceLoopTrace = {
+      iteration: 1,
+      decision: "tool_call",
+      callId: "call-1",
+      toolId: "core.run_node",
+      evidenceBytes: 649,
+      effectApplied: false,
+      resultCode: "web.action.rejected.invalid_input",
+      resultReason: "node_not_runnable_here",
+      nodeId: "web.output.dom-extract_list",
+      usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 }
+    };
+    const rowMembers = Object.keys(full).filter((member) => member !== "decision");
+    const cleaned = sanitizeEvidenceLoopTrace([{ ...full, at: 1_700_000_000_000 }])[0] as Record<string, unknown>;
+    for (const member of [...rowMembers, "at"]) {
+      expect(cleaned[member], `sanitizeEvidenceLoopTrace dropped \`${member}\``).toBeDefined();
+    }
+    const [published] = evidenceTraceAuditDetail([{ ...full, at: 1_700_000_000_000 }]).steps as Array<Record<string, unknown>>;
+    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "at", "usage"]) {
+      expect(published?.[member], `the published step dropped \`${member}\``).toBeDefined();
+    }
+    expect(published?.resultReason).toBe("node_not_runnable_here");
+    expect(published?.nodeId).toBe("web.output.dom-extract_list");
+  });
+
   it("keeps the code each decision came to and whether its effect was applied", () => {
     expect(sanitizeEvidenceLoopTrace(trace)[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call-1", toolId: "web.dom.type", evidenceBytes: 800, resultCode: "ok", effectApplied: true });
   });

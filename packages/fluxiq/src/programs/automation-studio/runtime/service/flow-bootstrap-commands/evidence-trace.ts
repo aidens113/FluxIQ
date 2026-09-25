@@ -79,6 +79,22 @@ export function sanitizeEvidenceLoopTrace(
     // behind rather than thrown on, for the same reason as the code above: a
     // build that finished must not be discarded over a reader's detail.
     if (Number.isSafeInteger(item.at) && (item.at as number) >= 0) clean.at = item.at;
+    // Why the call came to that code, and which node it ran. Bounded by shape
+    // like the code above, and left behind rather than thrown on for the same
+    // reason.
+    //
+    // **This is the fourth place a row is rebuilt member by member, and the
+    // third time that has silently dropped a new one.** The reason and the node
+    // id were added to the loop's row, to the published step and to its parser,
+    // and every one of those landed -- and a live build still published 22 rows
+    // without either (`run-muhd1vc7-0ec27a16`), because this function stands
+    // between the loop and the step builder and rebuilds what it passes on. A
+    // member added to the row is not carried by being added to the row; it is
+    // carried by every rebuilder on the way out agreeing to carry it, which is
+    // what `tests/evidence-trace.test.ts` now holds shut rather than leaving to
+    // whoever edits the row next.
+    if (item.resultReason !== undefined && typeof item.resultReason === "string" && EVIDENCE_RESULT_CODE.test(item.resultReason)) clean.resultReason = item.resultReason;
+    if (item.nodeId !== undefined && typeof item.nodeId === "string" && EVIDENCE_RESULT_CODE.test(item.nodeId)) clean.nodeId = item.nodeId;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
