@@ -39,6 +39,37 @@ const UNDECLARED_BINDING: AutomationStudioLlmEvidenceRuntimeBinding = {
 void UNDECLARED_BINDING;
 
 describe("Automation Studio harness option binding", () => {
+  it("offers the model only the nodes the domain said it runs", async () => {
+    // The defect this holds shut: the names offered were the whole registry for
+    // the build's resolution, and Core's own built-ins are available in every
+    // scope, so a web build was handed builtin.control.for-each and friends
+    // inside a closed enum and told to copy one exactly. Every call naming one
+    // went to the domain, which runs its own nodes and refuses the rest, so the
+    // model was offered choices whose only possible answer was a refusal — and
+    // a live build spent fourteen of them (`run-mug776kx-0214b287`).
+    const registry = automationStudioHarnessOptionRegistry({
+      binding: { ...slot(), runsNodes: { runnable: ["erp.output.post-entry", "erp.output.read-ledger"] } },
+      nodeIds: ["builtin.control.for-each", "builtin.data.filter-list", "erp.output.post-entry", "erp.output.read-ledger"]
+    });
+    const options = registry.list({ ...SCOPE, allowSideEffectsWithoutPolicy: true });
+    const runNode = options.find((option) => option.toolId === "core.run_node");
+    expect(runNode).toBeDefined();
+    const node = (runNode?.inputSchema as { properties?: { node?: { enum?: string[] } } }).properties?.node;
+    expect(node?.enum).toEqual(["erp.output.post-entry", "erp.output.read-ledger"]);
+  });
+
+  it("offers every registry name to a domain that names no runnable set", async () => {
+    // Absent, the declaration changes nothing: a domain that runs whatever Core
+    // can resolve keeps the behaviour it had.
+    const registry = automationStudioHarnessOptionRegistry({
+      binding: { ...slot(), runsNodes: {} },
+      nodeIds: ["builtin.control.for-each", "erp.output.post-entry"]
+    });
+    const options = registry.list({ ...SCOPE, allowSideEffectsWithoutPolicy: true });
+    const node = (options.find((option) => option.toolId === "core.run_node")?.inputSchema as { properties?: { node?: { enum?: string[] } } }).properties?.node;
+    expect(node?.enum).toEqual(["builtin.control.for-each", "erp.output.post-entry"]);
+  });
+
   it("keeps a host's existing slot working and puts Core's options beside it", async () => {
     const executeTool = vi.fn(async () => ({ observed: true }));
     const registry = automationStudioHarnessOptionRegistry({ host, binding: slot(executeTool) });

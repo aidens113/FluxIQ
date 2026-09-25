@@ -69,7 +69,36 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * asked with the target already in front of it. A domain that offers one is
    * stating that this particular call only looks.
    */
-  runsNodes?: { initial?: JsonObject };
+  runsNodes?: {
+    initial?: JsonObject;
+    /**
+     * The nodes this domain will actually run against its target, by id. Given,
+     * the library offered to the model is narrowed to these.
+     *
+     * **Why it has to be said rather than assumed.** The names offered were the
+     * whole registry for the build's resolution, and Core's own built-ins are
+     * adapted with `availability: { kind: "both" }`
+     * (`nodes/definitions.ts`), so they pass every scope. A web build was
+     * therefore handed `builtin.control.for-each`, `builtin.data.filter-list`,
+     * `builtin.data.write-records` and the rest inside a closed `enum`, told to
+     * name one "exactly as the catalog prints its id", and every call naming
+     * one was sent to the domain -- which runs web nodes and refuses everything
+     * else. The model was being offered nodes whose only possible answer was a
+     * refusal.
+     *
+     * **Why narrowing costs the model nothing.** This option means "run a node
+     * against the live target", and a structural node has no target to run
+     * against. Control flow is not named here at all: the model authors it as a
+     * routing word on steps it has already run -- `repeat`, `only_if`,
+     * `on_failed` (`../../flow-draft/routing.ts`) -- and Core derives the nodes
+     * from that. Filtering and record output are parameters of the extraction
+     * node. So nothing the model needs to express leaves with these names.
+     *
+     * Absent, every name in the registry is offered, which is what a domain
+     * that runs anything Core can resolve would want.
+     */
+    runnable?: readonly string[];
+  };
   /**
    * Options the domain declares in full, rather than as bare tools. Unlike
    * `tools`, these carry their own availability, safety and stages, so a
@@ -255,8 +284,13 @@ export function automationStudioHarnessOptionRegistry(input: {
   startLocation?: string | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
-  const runNode = input.binding?.runsNodes && input.nodeIds?.length
-    ? automationStudioLlmRunNodeTool({ nodeIds: input.nodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
+  // Only the names the domain said it runs. A node it will refuse is not a
+  // choice the model should be given: the enum is closed and the model is told
+  // to copy from it, so every name here that the domain cannot run is a paid
+  // call whose only answer is `node_not_runnable_here`.
+  const offeredNodeIds = runnableNodeIdsFor(input.binding, input.nodeIds);
+  const runNode = input.binding?.runsNodes && offeredNodeIds?.length
+    ? automationStudioLlmRunNodeTool({ nodeIds: offeredNodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
     : undefined;
   if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
     registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation));
@@ -313,6 +347,25 @@ export function automationStudioHarnessOptionBundleFromBinding(
     }
   }
   return { schemaVersion: "0.1", domainId: binding.domainId, options, implementations };
+}
+
+/**
+ * The library as this binding will actually answer for it: the registry's names
+ * where the domain named none, and otherwise their intersection.
+ *
+ * The intersection rather than the domain's list outright, because the
+ * resolution the build was given is what decides availability -- a node the
+ * domain can run but this scope, capability set or permission set excludes is
+ * still not on offer.
+ */
+function runnableNodeIdsFor(
+  binding: AutomationStudioLlmEvidenceRuntimeBinding | undefined,
+  nodeIds: readonly string[] | undefined
+): readonly string[] | undefined {
+  const runnable = binding?.runsNodes?.runnable;
+  if (!runnable || !nodeIds) return nodeIds;
+  const offered = new Set(runnable);
+  return nodeIds.filter((id) => offered.has(id));
 }
 
 function scopedOption(tool: AutomationStudioLlmEvidenceTool, domainId: string): AutomationStudioHarnessOption {
