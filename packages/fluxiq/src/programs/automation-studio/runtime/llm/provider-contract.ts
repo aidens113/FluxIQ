@@ -103,7 +103,23 @@ export class AutomationStudioLlmProviderError extends Error {
     message: string,
     readonly retryable = false,
     readonly status?: number,
-    readonly provenance: AutomationStudioLlmProviderFailureProvenance = defaultProviderFailureProvenance(code)
+    readonly provenance: AutomationStudioLlmProviderFailureProvenance = defaultProviderFailureProvenance(code),
+    /**
+     * What the provider said, for a caller keeping a local diagnostic.
+     *
+     * **It is the provider's own prose and is never published.** Nothing in a
+     * run's bundle may carry it: the published record takes this failure's
+     * `code` and `status` and nothing else, which is the guarantee the
+     * downstream facility's redaction rules rest on. It exists because a 400
+     * is a client error — the request was wrong — and the only thing that says
+     * *how* is the body the provider sends back with it. Two live runs died on
+     * their first call with an unexplained 400 and this was thrown away unread
+     * one line after being in hand.
+     *
+     * Bounded by the caller, so a provider answering with a megabyte of HTML
+     * cannot be held in memory on the strength of being wrong.
+     */
+    readonly responseBody?: string
   ) {
     super(message);
   }

@@ -235,7 +235,26 @@ async function runDeepSeekTask(input: {
     }
     if (response.status === 401 || response.status === 403) throw new AutomationStudioLlmProviderError("llm.provider_auth_failed", "DeepSeek rejected the configured credential.", false, response.status);
     if (response.status === 429) throw new AutomationStudioLlmProviderError("llm.provider_rate_limited", "DeepSeek rate limited the request.", true, response.status);
-    if (!response.ok) throw new AutomationStudioLlmProviderError("llm.provider_http_error", "DeepSeek returned an unsuccessful HTTP status.", response.status >= 500, response.status);
+    if (!response.ok) {
+      // Read what it said before throwing. A 4xx is a client error — the
+      // request was wrong — and the body is the only thing that says how.
+      // Two live runs died on their first call with an unexplained 400
+      // (`run-muhs8hx3-6fd929e6`, `run-muhtuizo-c458e49c`) and this threw one
+      // line after the answer was in hand. Bounded by the same limit the
+      // success path reads under, and best-effort: a body that cannot be read
+      // must not replace the status that is already known.
+      const said = await readBoundedResponse(response, input.maxResponseBytes)
+        .then((bytes) => new TextDecoder("utf-8").decode(bytes))
+        .catch(() => undefined);
+      throw new AutomationStudioLlmProviderError(
+        "llm.provider_http_error",
+        "DeepSeek returned an unsuccessful HTTP status.",
+        response.status >= 500,
+        response.status,
+        undefined,
+        said
+      );
+    }
     if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
       throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek returned a non-JSON media type.");
     }
