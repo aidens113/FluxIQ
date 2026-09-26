@@ -20,14 +20,25 @@
 // (`automationStudioFlowBootstrapIssueFeedback`) -- never page content and never
 // a validator's prose.
 //
-// **The last check asks what none of the others did.** Every check above holds
-// the plan to the node library: it parses, its parameters resolve, its nodes are
-// registered. None asks whether the Flow does what the person's sentence asked
-// for, and four live builds against one instruction proposed four different
-// Flows as finished, one of which navigated twice, typed three times and read
-// nothing. `flow-bootstrap/answerability/` answers that from the plan and the
-// instruction text alone, with no provider call, and its refusal carries what
-// the instruction asks for beside the issue rather than only a code.
+// **The last two checks ask what none of the others did.** Every check above
+// holds the plan to the node library: it parses, its parameters resolve, its
+// nodes are registered. Neither of the two questions a person would ask is
+// among them.
+//
+// *Could this Flow answer?* Four live builds against one instruction proposed
+// four different Flows as finished, one of which navigated twice, typed three
+// times and read nothing. `flow-bootstrap/answerability/` answers that from the
+// plan and the instruction text alone.
+//
+// *Could this Flow run?* `run-muht9lpw-a39aa056` built one node -- a list
+// extraction with no navigation before it -- and replay failed on the blank tab
+// a run starts on, `Cannot access contents of url "about:blank"`. An extraction
+// on its own satisfies answerability; it simply has nowhere to do it.
+// `flow-bootstrap/reachability/` answers that from the plan and the start
+// location the build was given.
+//
+// Neither costs a provider call, and each refusal carries its own account of
+// what is missing beside the issue rather than only a code.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -39,9 +50,9 @@ import {
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
-  type AutomationStudioFlowBootstrapAnswerability,
   automationStudioFlowBootstrapIssueFeedback,
   checkAutomationStudioFlowBootstrapAnswersInstruction,
+  checkAutomationStudioFlowBootstrapReachesStartLocation,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
@@ -59,7 +70,8 @@ export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<Automat
   | "flow_bootstrap.evidence_completion_plan_invalid"
   | "flow_bootstrap.evidence_completion_profile_limit_exceeded"
   | "flow_bootstrap.evidence_completion_parameters_unresolved"
-  | "flow_bootstrap.evidence_completion_cannot_answer">;
+  | "flow_bootstrap.evidence_completion_cannot_answer"
+  | "flow_bootstrap.evidence_completion_cannot_reach_start">;
 
 export type AutomationStudioFlowBootstrapCompletionVerdict =
   | { ok: true; summary: string; buildPlan: AutomationStudioFlowBuildPlan }
@@ -123,6 +135,15 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
    * never refused for a request nobody stated.
    */
   instructionText?: string | undefined;
+  /**
+   * Where the Flow starts, as the build was told it
+   * (`flow-bootstrap/start-location.ts`).
+   *
+   * What the seventh check reads. Absent -- a build handed its target rather
+   * than told where it is -- leaves it with nothing to hold the Flow to, and it
+   * passes: a Flow is never refused for an arrival nobody asked for.
+   */
+  startLocation?: string | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -179,9 +200,10 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   }
   if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
   // Last, and only on a plan every other check accepted: could this Flow answer
-  // the instruction at all? Placed here so a build is told one thing at a time --
-  // a plan with a refused parameter hears about the parameter -- and so the
-  // question is asked of the plan that would have been built.
+  // the instruction at all, and could it run at all? Placed here so a build is
+  // told one thing at a time -- a plan with a refused parameter hears about the
+  // parameter -- and so both questions are asked of the plan that would have
+  // been built.
   const answers = checkAutomationStudioFlowBootstrapAnswersInstruction({
     plan: validated.validated.plan,
     registry: input.registry,
@@ -189,7 +211,21 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     instructionText: input.instructionText
   });
   if (!answers.ok) {
-    return refused("flow_bootstrap.evidence_completion_cannot_answer", [answers.issue], about(validated.validated.plan), script, answers);
+    return refused("flow_bootstrap.evidence_completion_cannot_answer", [answers.issue], about(validated.validated.plan), script,
+      { key: "cannotAnswer", detail: answers.cannotAnswer, instruction: answers.instruction });
+  }
+  // Answering is not running. A Flow that acts on the target it was told to
+  // start at and never goes there fails before its first step, whatever it
+  // would have produced there.
+  const reaches = checkAutomationStudioFlowBootstrapReachesStartLocation({
+    plan: validated.validated.plan,
+    registry: input.registry,
+    resolution: input.resolution,
+    startLocation: input.startLocation
+  });
+  if (!reaches.ok) {
+    return refused("flow_bootstrap.evidence_completion_cannot_reach_start", [reaches.issue], about(validated.validated.plan), script,
+      { key: "cannotReach", detail: reaches.cannotReach, instruction: reaches.instruction });
   }
   return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
 }
@@ -256,12 +292,12 @@ function refused(
   about?: RefusalSubject,
   previousScript?: string,
   /**
-   * The answerability refusal, where that is what refused the plan. Its own
-   * account of what the instruction asks for travels beside the issues, and its
-   * own sentence replaces the one about correcting a parameter: nothing about
-   * this refusal is about how a step was written.
+   * The capability refusal, where one of the last two checks is what refused
+   * the plan. Its own account of what is missing travels beside the issues
+   * under its own key, and its own sentence replaces the one about correcting a
+   * parameter: neither refusal is about how a step was written.
    */
-  cannotAnswer?: Extract<AutomationStudioFlowBootstrapAnswerability, { ok: false }>
+  capability?: { key: "cannotAnswer" | "cannotReach"; detail: JsonObject; instruction: string }
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
   const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
@@ -278,8 +314,8 @@ function refused(
         refusal: code,
         issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
         ...previous,
-        ...(cannotAnswer ? { cannotAnswer: cannotAnswer.cannotAnswer } : {}),
-        instruction: cannotAnswer?.instruction ?? FEEDBACK_INSTRUCTION
+        ...(capability ? { [capability.key]: capability.detail } : {}),
+        instruction: capability?.instruction ?? FEEDBACK_INSTRUCTION
       }
     }
   };

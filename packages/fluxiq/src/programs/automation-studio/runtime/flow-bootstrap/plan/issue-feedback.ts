@@ -57,6 +57,10 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // sentence is fixed and quotes nothing; the person's own words travel beside
   // the issues, in the feedback the completion check builds.
   "bootstrap.cannot_answer_instruction",
+  // Why no run of the Flow could take its first step (`../reachability/`). Its
+  // sentence is fixed and quotes nothing; where the Flow starts travels beside
+  // the issues, in the feedback the completion check builds.
+  "bootstrap.cannot_reach_start_location",
   "bootstrap.invalid_subflows",
   "bootstrap.subflow_has_no_nodes",
   "bootstrap.invalid_node",

@@ -162,6 +162,9 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // or saves one (`./answerability/`). Raised only after the exploration was
     // told what was missing and finished again without it.
     "flow_bootstrap.evidence_completion_cannot_answer",
+    // The Flow could not run at all: it acts on the target it was told to start
+    // at and no step of it goes there (`./reachability/`). Raised the same way.
+    "flow_bootstrap.evidence_completion_cannot_reach_start",
     "flow_bootstrap.provider_response_malformed",
     "flow_bootstrap.provider_response_oversize",
     "flow_bootstrap.provider_output_padding_truncated",
@@ -362,7 +365,8 @@ export function flowBootstrapEvidenceCompletionFailure(
     | "flow_bootstrap.evidence_completion_plan_invalid"
     | "flow_bootstrap.evidence_completion_profile_limit_exceeded"
     | "flow_bootstrap.evidence_completion_parameters_unresolved"
-    | "flow_bootstrap.evidence_completion_cannot_answer">,
+    | "flow_bootstrap.evidence_completion_cannot_answer"
+    | "flow_bootstrap.evidence_completion_cannot_reach_start">,
   /** The codes that refused the plan. Anything that is not a code is dropped. */
   issues: ReadonlyArray<{ code: string }> = []
 ): AutomationStudioFlowBootstrapGenerationError {
@@ -722,6 +726,7 @@ function fixedProviderFailureState(
     case "flow_bootstrap.evidence_completion_profile_limit_exceeded":
     case "flow_bootstrap.evidence_completion_parameters_unresolved":
     case "flow_bootstrap.evidence_completion_cannot_answer":
+    case "flow_bootstrap.evidence_completion_cannot_reach_start":
       return { retryable: false, providerResponse: "received" };
     default: return null;
   }

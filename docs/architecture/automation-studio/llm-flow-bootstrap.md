@@ -440,6 +440,8 @@ order, and each refusal has its own code:
 5. Registry validation: `flow_bootstrap.evidence_completion_plan_invalid`.
 6. Whether the Flow could answer the instruction at all:
    `flow_bootstrap.evidence_completion_cannot_answer`.
+7. Whether the Flow could reach the place it starts:
+   `flow_bootstrap.evidence_completion_cannot_reach_start`.
 
 Check 6 is the only one that reads the instruction rather than the node library,
 and it is what stops a build proposing a Flow that cannot produce what the
@@ -463,13 +465,43 @@ verification to judge. Two cases are left alone outright: an instruction that
 asks for no records, and a node library that registers nothing returning rows of
 its own, where a refusal would ask for a node that does not exist.
 
+Check 7 asks the other question none of checks 1 to 5 asks: not whether the Flow
+could answer, but whether it could run. `run-muht9lpw-a39aa056` built a Flow of
+one node — a single list extraction, with no navigation anywhere in it — and
+replay failed before its first step with `Cannot access contents of url
+"about:blank"`. Its exploration had navigated, dismissed the page's
+interruptions and read the list; the amendments that followed reduced the draft
+to the reading alone. An extraction on its own satisfies answerability, because
+a step that returns rows is present; it simply has nowhere to do it.
+
+`flow-bootstrap/reachability/` answers it from the plan and the start location
+the build was given (`flow-bootstrap/start-location.ts`), with no provider call
+on any path. It refuses only when all three hold: the build was given a start
+location, the plan holds at least one step that acts on the bound domain's own
+target — a node the domain registered, or one of Core's told to dispatch a
+domain output — and no step of the plan carries where the Flow starts. Core
+never parses a start location, so "carries" is a text comparison and a loose
+one: a value counts when it agrees with the start location from the first
+character for twelve characters, or for the whole of it when it is shorter, so
+the site's front page, a deeper page and a neighbouring one all count. This is
+the plan-side statement of the rule the bound domain already enforces while a
+build explores — the node that goes to the start location is also the Flow's own
+first step, because the Flow is built from the steps that ran — so a Flow refused
+here could not have run under the rule its own build ran under. Three cases are
+left alone outright: a build given no start location, which begins already
+there; a Flow of Core nodes, which touches no target; and a node library that
+registers no node which can be told a destination, where a refusal would ask for
+a node that does not exist.
+
 A refused completion is not the end of creation. The loop adds feedback to the
 evidence the model sees next, and asks again. The feedback holds the refusal
 code, at most 16 issue codes with their plan paths, and a fixed instruction to
 correct them and to name observed elements by handle. A refusal under check 6
 carries instead what the instruction asks for, the person's own sentence asking
 for it, the columns they named, and the Flow's own steps, with an instruction to
-run the step that returns rows and finish again. The refusal counts as an
+run the step that returns rows and finish again. A refusal under check 7 carries
+where the Flow starts and the Flow's own steps, with an instruction to run the
+node that goes there and keep it as the first step. The refusal counts as an
 unusable decision. So does a reply that failed Core's checks, and so does a
 provider failure that only spends the call. Each one spends one of the loop's
 decisions. After three in a row, or fewer when the loop allows fewer decisions,

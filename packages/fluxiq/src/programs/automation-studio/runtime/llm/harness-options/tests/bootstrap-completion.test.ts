@@ -221,3 +221,72 @@ describe("a completed plan that could not answer the instruction", () => {
     }
   });
 });
+
+// Answering is not running. `run-muht9lpw-a39aa056` built a Flow of one node --
+// a list extraction with no navigation before it -- and replay failed on the
+// blank tab a run starts on, `Cannot access contents of url "about:blank"`. An
+// extraction on its own satisfies every check above, answerability included; it
+// simply has nowhere to do it. The seventh check asks that, from the plan and
+// the start location the build was given.
+describe("a completed plan that could not reach where the Flow starts", () => {
+  const START_LOCATION = "https://shop.test/collections/audio";
+
+  it("is refused under its own code, with where the Flow starts beside the issue", async () => {
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products", plan: planWith({ extractList }) },
+      projectId: "project.1", flowId: "flow.1", registry, resolution,
+      startLocation: START_LOCATION
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_reach_start");
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_reach_start_location"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { cannotReach: JsonObject };
+    expect(feedback.issues[0]).toEqual({
+      code: "bootstrap.cannot_reach_start_location",
+      path: "plan.subflows",
+      message: "This Flow acts on the target it was told to start at and no step of it goes there, so no run of it could take its first step."
+    });
+    expect(feedback.cannotReach).toEqual({
+      starts: START_LOCATION,
+      lacks: "no step of this Flow goes to where it starts",
+      steps: ["web.output.dom-extract_list"]
+    });
+    expect(feedback.instruction).toContain("keep it in the draft as the first step, and finish again");
+    expect(feedback.instruction).not.toContain("Where an issue carries accepted");
+  });
+
+  it("accepts the same reading once the Flow goes there first", async () => {
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: {
+        flow: [
+          "flow: Scrape the products",
+          "step: open the collection",
+          "  node: web.browser.navigate",
+          `  url: ${START_LOCATION}`,
+          "step: read the product list",
+          "  node: web.dom.extract_list",
+          "  extractList.item: li.product",
+          "  extractList.fields.name: .name"
+        ].join(NEWLINE)
+      },
+      projectId: "project.1", flowId: "flow.1", registry, resolution,
+      startLocation: START_LOCATION
+    });
+
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId))
+      .toEqual(["web.output.browser-navigate", "web.output.dom-extract_list"]);
+  });
+
+  it("never reaches the check for a build that was given no start location", async () => {
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products", plan: planWith({ extractList }) },
+      projectId: "project.1", flowId: "flow.1", registry, resolution
+    });
+
+    expect(verdict.ok).toBe(true);
+  });
+});
