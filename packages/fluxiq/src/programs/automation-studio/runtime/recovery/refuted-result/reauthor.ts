@@ -45,8 +45,28 @@ import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./repair.ts";
  */
 export const AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE: (typeof AUTOMATION_STUDIO_RESULT_VERDICT_CODES)["doesNotAnswer"] = "core.result.does_not_answer_request";
 
-/** The grant purpose that buys exploring, and so buys this route. */
-const EXPLORING_GRANT_PURPOSE = "explore_and_adapt";
+/**
+ * The grant purposes that buy exploring, and so buy this route.
+ *
+ * **It was the single literal `explore_and_adapt`, and that silently closed
+ * this route on the entry point it matters most for.** A Flow built from an
+ * instruction runs under `build_and_adapt` — the create-flow entry point,
+ * which buys building *and* adapting and iterates by definition, since the
+ * build loop is nothing but exploration. Every live run of the language-driven
+ * loop therefore reached this gate, was refused `grant_does_not_buy_exploration`
+ * and stopped, so a wrong answer was never once repaired: `run-muhnh0s5-98a27f42`
+ * stored eight rows where thirteen were expected, was correctly refuted, and
+ * recorded `runtimePatchAttempts: []` with no adaptation and no change proposal.
+ * The capability was wired end to end and unreachable.
+ *
+ * The question the gate is asking is whether the grant the run already holds
+ * buys exploring, so that re-entering the build loop mints nothing new. Asked
+ * that way both purposes answer yes, and the ones that do not — a diagnosis,
+ * a verification — still answer no. Written as a set rather than a string so
+ * that a purpose added to the contract is a decision here rather than a
+ * silent no.
+ */
+const EXPLORING_GRANT_PURPOSES: ReadonlySet<string> = new Set(["explore_and_adapt", "build_and_adapt"]);
 
 /** Where a refuted run's metadata records what became of the route. */
 export const AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY = "resultReauthor";
@@ -84,7 +104,7 @@ export function automationStudioRefutedResultReauthorDecision(input: {
     return { route: false, refusal: "not_a_wrong_answer" };
   }
   if (!input.projectId || !input.flowId) return { route: false, refusal: "flow_unavailable" };
-  if (input.grantPurpose !== EXPLORING_GRANT_PURPOSE) return { route: false, refusal: "grant_does_not_buy_exploration" };
+  if (!input.grantPurpose || !EXPLORING_GRANT_PURPOSES.has(input.grantPurpose)) return { route: false, refusal: "grant_does_not_buy_exploration" };
   if (!input.createAdaptations) return { route: false, refusal: "adaptations_not_permitted" };
   return { route: true, projectId: input.projectId, flowId: input.flowId };
 }

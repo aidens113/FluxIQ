@@ -47,6 +47,21 @@ describe("whether a refuted run re-enters the build loop", () => {
       .toEqual({ route: false, refusal: "grant_does_not_buy_exploration" });
   });
 
+  it("routes a Flow built from an instruction, which runs under build_and_adapt", () => {
+    // **The gate tested one literal and closed this route on the entry point it
+    // matters most for.** A Flow built from an instruction runs under
+    // `build_and_adapt` -- the create-flow entry point, which buys building and
+    // adapting and iterates by definition. Every live run of the
+    // language-driven loop was refused here and stopped, so a wrong answer was
+    // never repaired once: `run-muhnh0s5-98a27f42` stored eight rows where
+    // thirteen were expected, was correctly refuted, and recorded no patch
+    // attempt, no adaptation and no change proposal.
+    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: "build_and_adapt" }))
+      .toEqual({ route: true, projectId: ROUTABLE.projectId, flowId: ROUTABLE.flowId });
+    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: "explore_and_adapt" }))
+      .toEqual({ route: true, projectId: ROUTABLE.projectId, flowId: ROUTABLE.flowId });
+  });
+
   it("does not route a run with no Flow to extend, or one that may propose nothing", () => {
     expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, flowId: undefined }))
       .toEqual({ route: false, refusal: "flow_unavailable" });
