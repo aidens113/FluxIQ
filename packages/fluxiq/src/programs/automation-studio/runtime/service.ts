@@ -336,6 +336,29 @@ const FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES: Record<AutomationStudioLlmExecutionGra
   "llm.execution_grant_purpose_invalid": "flow_bootstrap.execution_grant_purpose_invalid"
 };
 
+/**
+ * What the build's catch caught, when it recognised neither a Flow Bootstrap
+ * failure nor a grant refusal.
+ *
+ * Only for `provider_request`, whose default is the misleading one: the other
+ * stages' defaults already say what happened. A DOMException is how both an
+ * abort and a deadline arrive; a TypeError or RangeError is a defect in Core
+ * rather than a condition of the run; anything else was thrown deliberately by
+ * one of Core's own guards. Which of the three it was travels; the message
+ * never does.
+ */
+function unclassifiedThrowCode(
+  error: unknown,
+  stage: AutomationStudioFlowBootstrapFailureStage,
+  fallback: AutomationStudioFlowBootstrapPhaseFailureCode
+): AutomationStudioFlowBootstrapPhaseFailureCode {
+  if (stage !== "provider_request") return fallback;
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) return "flow_bootstrap.aborted_or_timed_out";
+  if (error instanceof TypeError || error instanceof RangeError) return "flow_bootstrap.internal_error";
+  if (error instanceof Error) return "flow_bootstrap.unexpected_error";
+  return fallback;
+}
+
 export class AutomationStudioService {
   private readonly repositories: CanonicalAutomationStudioRepositories;
   private readonly nodeRootDir?: string;
@@ -1706,7 +1729,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // call, so a refused grant belongs to provider resolution however far the
       // build had otherwise got.
       if (refusal) throw flowBootstrapPhaseFailure("provider_resolution", failureAccounting, FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES[refusal]);
-      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, failureCode);
+      // Which kind of throw it was, where nothing above recognised it. The
+      // stage default says "a request was attempted and its answer is unknown",
+      // which for most of these is true of nothing that happened.
+      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, unclassifiedThrowCode(error, failureStage, failureCode));
     } finally {
       // A grant handed to this entry point is spent by it, refused requests included -- except an exploring recovery's, which belongs to the run that is still using it and which the run revokes when it ends.
       if (grantId && unsafeGrant?.purpose !== "explore_and_adapt") this.revokeLlmExecutionGrant?.(grantId);

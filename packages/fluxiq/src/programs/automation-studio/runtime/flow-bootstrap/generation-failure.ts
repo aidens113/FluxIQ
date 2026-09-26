@@ -124,6 +124,24 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.provider_http_error",
     "flow_bootstrap.provider_network_error",
     "flow_bootstrap.provider_secret_unavailable",
+    // What the catch actually caught, where it recognised nothing else.
+    //
+    // `flow_bootstrap.provider_request_failed` is this stage's default, and the
+    // catch used it for every unrecognised throw — so it read as "a request was
+    // attempted and its answer is unknown" for failures where no request was
+    // ever made. Four consecutive runs of the wrong-answer repair recorded it
+    // with no provider status, and it named nothing: the grant refusals were
+    // ruled out by giving them their own codes and the code did not change.
+    //
+    // These three separate the kinds that remain. `aborted_or_timed_out` is a
+    // DOMException, which is what an abort and a deadline both arrive as;
+    // `internal_error` is a TypeError or a RangeError, which is a defect in
+    // Core rather than a condition of the run; `unexpected_error` is anything
+    // else thrown deliberately with a message, which is most of Core's own
+    // guards. The message never travels — only which of the three it was.
+    "flow_bootstrap.aborted_or_timed_out",
+    "flow_bootstrap.internal_error",
+    "flow_bootstrap.unexpected_error",
     // No longer produced. Kept so a diagnostic stored before the refusals were
     // split still parses.
     "flow_bootstrap.provider_configuration_invalid",
