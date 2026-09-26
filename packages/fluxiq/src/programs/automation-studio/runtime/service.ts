@@ -2608,7 +2608,20 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         generate: async () => { const binding = await this.getLlmExecutionBinding(reauthor.projectId, reauthor.flowId); return (await this.generateFlowBootstrapAdaptation({ projectId: reauthor.projectId, flowId: reauthor.flowId, mode: "extend", evidenceGuided: true, executionGrant: { ...input.llmExecution!, purpose: "explore_and_adapt" as const, executionDigest: binding.executionDigest, settingsRevision: binding.settingsRevision } })).adaptationId; },
         approve: (adaptationId) => this.reviewFlowBootstrapAdaptation({ ...review, adaptationId, action: "approve" }),
         apply: (adaptationId) => this.reviewFlowBootstrapAdaptation({ ...review, adaptationId, action: "apply" }),
-        failureCode: (error) => parseAutomationStudioFlowBootstrapGenerationError(error)?.code ?? "flow_bootstrap.extend_failed"
+        // The whole diagnostic, not just its code: the code alone is the
+        // default for a stage and cannot be acted on (`refuted-result/reauthor.ts`).
+        failureCode: (error) => {
+          const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+          if (!diagnostic) return { code: "flow_bootstrap.extend_failed" };
+          return {
+            code: diagnostic.code,
+            stage: diagnostic.stage,
+            retryable: diagnostic.retryable,
+            providerInvocation: diagnostic.providerInvocation,
+            providerResponse: diagnostic.providerResponse,
+            ...(diagnostic.accounting?.providerStatus === undefined ? {} : { providerStatus: diagnostic.accounting.providerStatus })
+          };
+        }
       });
       return automationStudioRefutedResultReauthored({ detail: refuted.detail, decision: reauthor, ...built });
     } };

@@ -147,14 +147,25 @@ export async function automationStudioReauthorRefutedResult(input: {
   generate(): Promise<string>;
   approve(adaptationId: string): Promise<unknown>;
   apply(adaptationId: string): Promise<unknown>;
-  /** The caller's own reading of a thrown value; codes only, never a message. */
-  failureCode(error: unknown): string;
-}): Promise<{ adaptationId?: string; applied?: true; failureCode?: string }> {
+  /**
+   * The caller's own reading of a thrown value; codes, flags and counts only,
+   * never a message.
+   *
+   * **It returned the code alone, and the code alone could not be acted on.**
+   * `run-muhqop38-997ee8e5` was the first run in which this route opened, and
+   * it recorded `flow_bootstrap.provider_request_failed` — which is the default
+   * code for the whole `provider_request` stage, so it says only that a request
+   * was attempted and its answer is unknown. Whether that was a per-request
+   * timeout, a transport error, a refused grant or a provider status was
+   * computed in the diagnostic the caller already parses, and thrown away here.
+   */
+  failureCode(error: unknown): AutomationStudioRefutedResultFailure;
+}): Promise<{ adaptationId?: string; applied?: true; failure?: AutomationStudioRefutedResultFailure }> {
   let adaptationId: string;
   try {
     adaptationId = await input.generate();
   } catch (error) {
-    return { failureCode: input.failureCode(error) };
+    return { failure: input.failureCode(error) };
   }
   // From here the edit exists, so its id travels whatever happens next: an
   // approval refused for an unanswered permission question has still produced a
@@ -163,7 +174,7 @@ export async function automationStudioReauthorRefutedResult(input: {
     await input.approve(adaptationId);
     await input.apply(adaptationId);
   } catch (error) {
-    return { adaptationId, failureCode: input.failureCode(error) };
+    return { adaptationId, failure: input.failureCode(error) };
   }
   return { adaptationId, applied: true };
 }
@@ -182,18 +193,48 @@ export function automationStudioRefutedResultReauthored(input: {
   decision: AutomationStudioRefutedResultReauthorDecision;
   adaptationId?: string | undefined;
   applied?: true | undefined;
-  failureCode?: string | undefined;
+  failure?: AutomationStudioRefutedResultFailure | undefined;
 }): AutomationStudioFlowRunDetail {
+  const failure = input.failure;
   return {
     ...input.detail,
     metadata: {
       ...(input.detail.metadata ?? {}),
       [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: input.decision.route
-        ? { routed: true, ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}), ...(input.applied ? { applied: true } : {}), ...(input.failureCode ? { code: input.failureCode } : {}) }
+        ? {
+            routed: true,
+            ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}),
+            ...(input.applied ? { applied: true } : {}),
+            ...(failure ? { code: failure.code } : {}),
+            // Everything the diagnostic knew that a reader can act on. Each is
+            // absent when the caller could not read it, so "not recorded" and
+            // "recorded as none" stay different facts.
+            ...(failure?.stage ? { stage: failure.stage } : {}),
+            ...(failure?.retryable === undefined ? {} : { retryable: failure.retryable }),
+            ...(failure?.providerInvocation ? { providerInvocation: failure.providerInvocation } : {}),
+            ...(failure?.providerResponse ? { providerResponse: failure.providerResponse } : {}),
+            ...(failure?.providerStatus === undefined ? {} : { providerStatus: failure.providerStatus })
+          }
         : { routed: false, code: input.decision.refusal }
     }
   };
 }
+
+/**
+ * What a reader is told about a step of this route that failed: the code, and
+ * the closed facts around it that say which kind of failure it was.
+ *
+ * Codes, flags and a status number only, because this is written onto the run
+ * and published from there.
+ */
+export type AutomationStudioRefutedResultFailure = {
+  code: string;
+  stage?: string | undefined;
+  retryable?: boolean | undefined;
+  providerInvocation?: "not_attempted" | "attempted" | undefined;
+  providerResponse?: "not_received" | "received" | "unknown" | undefined;
+  providerStatus?: number | undefined;
+};
 
 /**
  * Whether this run's Flow was actually changed by a re-authoring.

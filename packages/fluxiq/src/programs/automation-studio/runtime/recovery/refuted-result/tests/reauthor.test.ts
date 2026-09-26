@@ -79,7 +79,7 @@ describe("what the run records about it", () => {
 
   it("names the code a routed run failed under, so a route that reached nothing is not a silence", () => {
     const decision = automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE });
-    const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision, failureCode: "flow_bootstrap.evidence_runtime_unavailable" });
+    const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision, failure: { code: "flow_bootstrap.evidence_runtime_unavailable" } });
     expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, code: "flow_bootstrap.evidence_runtime_unavailable" });
   });
 
@@ -102,7 +102,7 @@ describe("building the edit and putting it on the Flow", () => {
       generate: async () => { order.push("generate"); return "adaptation.bootstrap.1"; },
       approve: async (adaptationId: string) => { order.push(`approve:${adaptationId}`); },
       apply: async (adaptationId: string) => { order.push(`apply:${adaptationId}`); },
-      failureCode: () => "flow_bootstrap.extend_failed"
+      failureCode: () => ({ code: "flow_bootstrap.extend_failed" })
     };
   };
 
@@ -114,17 +114,62 @@ describe("building the edit and putting it on the Flow", () => {
 
   it("reports the code a build failed under, and names no adaptation, when nothing was built", async () => {
     const step = steps();
-    await expect(automationStudioReauthorRefutedResult({ ...step, generate: async () => { throw new Error("no provider"); }, failureCode: () => "flow_bootstrap.provider_resolution_failed" }))
-      .resolves.toEqual({ failureCode: "flow_bootstrap.provider_resolution_failed" });
+    await expect(automationStudioReauthorRefutedResult({ ...step, generate: async () => { throw new Error("no provider"); }, failureCode: () => ({ code: "flow_bootstrap.provider_resolution_failed" }) }))
+      .resolves.toEqual({ failure: { code: "flow_bootstrap.provider_resolution_failed" } });
     expect(step.order).toEqual([]);
+  });
+
+  it("records what kind of failure it was, not only the stage's default code", async () => {
+    // run-muhqop38-997ee8e5, the first run in which this route opened, recorded
+    // flow_bootstrap.provider_request_failed — the default code for the whole
+    // provider_request stage, which says a request was attempted and its answer
+    // is unknown and nothing more. A timeout, a transport error, a refused
+    // grant and a provider status are all that one word, and the diagnostic
+    // that told them apart was parsed and discarded.
+    const step = steps();
+    const result = await automationStudioReauthorRefutedResult({
+      ...step,
+      generate: async () => { throw new Error("transport"); },
+      failureCode: () => ({
+        code: "flow_bootstrap.provider_request_failed",
+        stage: "provider_request",
+        retryable: true,
+        providerInvocation: "attempted" as const,
+        providerResponse: "unknown" as const,
+        providerStatus: 504
+      })
+    });
+    const detail = automationStudioRefutedResultReauthored({
+      detail: { summary: { runId: "run.1", flowId: "flow.1", status: "failed" } } as never,
+      decision: { route: true, projectId: "project.1", flowId: "flow.1" },
+      ...result
+    });
+    expect(detail.metadata?.resultReauthor).toEqual({
+      routed: true,
+      code: "flow_bootstrap.provider_request_failed",
+      stage: "provider_request",
+      retryable: true,
+      providerInvocation: "attempted",
+      providerResponse: "unknown",
+      providerStatus: 504
+    });
+  });
+
+  it("publishes no facts the caller could not read, so absent stays absent", () => {
+    const detail = automationStudioRefutedResultReauthored({
+      detail: { summary: { runId: "run.1", flowId: "flow.1", status: "failed" } } as never,
+      decision: { route: true, projectId: "project.1", flowId: "flow.1" },
+      failure: { code: "flow_bootstrap.extend_failed" }
+    });
+    expect(detail.metadata?.resultReauthor).toEqual({ routed: true, code: "flow_bootstrap.extend_failed" });
   });
 
   it("keeps the proposal when approval is refused, and does not say the Flow changed", async () => {
     // What a build that had to ask the person a question does: the edit exists
     // and waits for their answer, and nothing is applied behind them.
     const step = steps();
-    const result = await automationStudioReauthorRefutedResult({ ...step, approve: async () => { throw new Error("permission unanswered"); }, failureCode: () => "flow_bootstrap.permission_unanswered" });
-    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failureCode: "flow_bootstrap.permission_unanswered" });
+    const result = await automationStudioReauthorRefutedResult({ ...step, approve: async () => { throw new Error("permission unanswered"); }, failureCode: () => ({ code: "flow_bootstrap.permission_unanswered" }) });
+    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.permission_unanswered" } });
     expect(step.order).toEqual(["generate"]);
     expect(result.applied).toBeUndefined();
   });
@@ -132,7 +177,7 @@ describe("building the edit and putting it on the Flow", () => {
   it("keeps the proposal when the apply is refused", async () => {
     const step = steps();
     const result = await automationStudioReauthorRefutedResult({ ...step, apply: async () => { throw new Error("stale"); } });
-    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failureCode: "flow_bootstrap.extend_failed" });
+    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.extend_failed" } });
     expect(step.order).toEqual(["generate", "approve:adaptation.bootstrap.1"]);
   });
 });
@@ -147,7 +192,7 @@ describe("whether the Flow was actually changed", () => {
   });
 
   it("is false for an edit that was built and never applied, so nothing re-runs the same Flow", () => {
-    const proposed = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.1", failureCode: "flow_bootstrap.permission_unanswered" });
+    const proposed = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.1", failure: { code: "flow_bootstrap.permission_unanswered" } });
     expect(automationStudioRefutedResultFlowWasReauthored(proposed)).toBe(false);
   });
 
