@@ -53,6 +53,14 @@ import type {
   AutomationStudioFlowRunDetail,
   AutomationStudioRuntimeSession
 } from "../../model/index.ts";
+import {
+  automationStudioFlowInstructionDigest,
+  automationStudioFlowVersionsFromMetadata,
+  automationStudioMetadataWithFlowVersions,
+  type AutomationStudioFlowGraphJudgement,
+  type AutomationStudioFlowGraphVersion,
+  type AutomationStudioJudgedFlowGraphVersion
+} from "../flow-version/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
 import {
@@ -150,6 +158,20 @@ export type AutomationStudioResultVerificationPorts = {
    * answer it originally gave.
    */
   rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined } | undefined>) | undefined;
+  /**
+   * Binds this verdict to the graph versions the run executed.
+   *
+   * Until this existed the two were unjoined: a verdict keyed to a run, a
+   * version chain keyed to a graph, and nothing anywhere saying which revision
+   * the judged run had actually run. A regression could therefore be judged and
+   * never attributed, because "worse than what" had no referent.
+   *
+   * Absent where the deployment has no project database, which is a
+   * configuration and not a failure: the run still records its version set on
+   * its own detail, so a reader can still say which version a result belongs
+   * to; what is missing is only the queryable history across runs.
+   */
+  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => Promise<unknown>) | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -194,6 +216,12 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   input: AutomationStudioRuntimeSessionVerificationInput
 ): Promise<AutomationStudioRuntimeSession> {
   if (input.session.status !== "succeeded") return input.session;
+  // Which graphs this run executed, and at which revision, as the run itself
+  // recorded when its session was written. Read from the session rather than
+  // re-read from storage: a second read could answer with a revision this run
+  // did not execute, and a version set naming a version that never ran is worse
+  // than none at all.
+  const flowVersions = automationStudioFlowVersionsFromMetadata(input.session.metadata);
   // The whole verification, under one deadline: nothing it does can leave the
   // run unfinished, and nothing it does writes, so an abandoned one cannot
   // write over the record this call is about to write.
@@ -213,7 +241,14 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  const recorded = await recordOnRunDetail(input, next, outcome, report.interventions);
+  const recorded = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions);
+  // The join this module exists to make: the verdict, against the versions the
+  // run executed. It is written after the run's own record, so a reader who
+  // finds a judgement row always finds the run behind it, and before the repair
+  // below, so the refutation that sent a Flow to be repaired is on record at the
+  // revision it was about -- which is the revision a later rollback would return
+  // to, and the one thing the repair is about to change.
+  await recordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
   // Only a run that was actually put to the question has anything to say. What
   // to say, and whether to say it at all, belongs to the schedule: this hands
   // over the facts and Core's own words, never the model's prose. It is said
@@ -306,6 +341,14 @@ type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeo
    * that already has permission to show it.
    */
   datasetId?: string;
+  /**
+   * The digest of the request this verdict was reached against, where the
+   * request was read at all. Absent for a verdict Core settled from its own
+   * arithmetic, which asks no model and reads no instruction --
+   * `flow-version/instruction-digest.ts` says why that is recorded as unknown
+   * rather than as the digest of an empty question.
+   */
+  instructionDigest?: string;
 };
 
 /** The verification, plus what the run produced and the first record set it judged. */
@@ -326,8 +369,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;
-  const withResult = (report: { outcome: AutomationStudioResultVerificationOutcome; interventions: AutomationStudioRuntimeSessionVerificationReport["interventions"] }): AutomationStudioRuntimeSessionVerificationReport =>
-    ({ ...report, summary, ...(datasetId !== undefined ? { datasetId } : {}) });
+  const withResult = (report: { outcome: AutomationStudioResultVerificationOutcome; interventions: AutomationStudioRuntimeSessionVerificationReport["interventions"] }, instructionDigest?: string | null): AutomationStudioRuntimeSessionVerificationReport =>
+    ({ ...report, summary, ...(datasetId !== undefined ? { datasetId } : {}), ...(instructionDigest ? { instructionDigest } : {}) });
   // Settled by Core's own counts: every row refused, or a stored row with no
   // value for a field the Flow's schema requires. Neither needs the request
   // read, so neither is worth a provider resolution or a call.
@@ -338,6 +381,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   // an empty result too: without them nothing can tell a Flow that searched and
   // found nothing from one that never looked.
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+  const instructionDigest = automationStudioFlowInstructionDigest(instructions);
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   return withResult(await verifyAutomationStudioRunResult({
@@ -355,7 +399,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
-  }));
+  }), instructionDigest);
 }
 
 /**
@@ -464,11 +508,49 @@ function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): Js
   };
 }
 
+/**
+ * The verdict, written against every version the run executed.
+ *
+ * Only a version with a revision number is offered. A graph Flow with no
+ * revision chain -- one that existed before its graph was ever indexed -- is
+ * carried on the run as `revision: null`, and null is not a version: writing it
+ * as 0 would invent a predecessor nobody ever confirmed, which is exactly the
+ * comparison the whole design refuses to make.
+ *
+ * A deployment with no store for these records nothing and says nothing. The
+ * run's own detail still carries its version set, so which version a result
+ * belongs to is still answerable there; only the history across runs is absent.
+ */
+async function recordFlowGraphJudgements(
+  input: AutomationStudioRuntimeSessionVerificationInput,
+  outcome: AutomationStudioResultVerificationOutcome,
+  flowVersions: readonly AutomationStudioFlowGraphVersion[],
+  instructionDigest: string | null,
+  decidedAtMs: number
+): Promise<void> {
+  const record = input.ports.recordFlowGraphJudgements;
+  if (!record) return;
+  const versions = flowVersions.filter((version): version is AutomationStudioJudgedFlowGraphVersion => typeof version.revision === "number");
+  if (!versions.length) return;
+  await record({
+    projectId: input.projectId,
+    judgement: {
+      runId: input.session.runId,
+      status: automationStudioResultVerificationStatus(outcome),
+      code: outcome.code,
+      instructionDigest,
+      decidedAtMs,
+      versions
+    }
+  });
+}
+
 async function recordOnRunDetail(
   input: AutomationStudioRuntimeSessionVerificationInput,
   session: AutomationStudioRuntimeSession,
   outcome: AutomationStudioResultVerificationOutcome,
-  interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"]
+  interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"],
+  flowVersions: readonly AutomationStudioFlowGraphVersion[]
 ): Promise<AutomationStudioFlowRunDetail | undefined> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   if (!detail) return undefined;
@@ -492,7 +574,13 @@ async function recordOnRunDetail(
     },
     ...(interventions.length ? { interventions: [...detail.interventions, ...interventions] } : {}),
     metadata: {
-      ...(detail.metadata ?? {}),
+      // The version set goes beside the verdict, not somewhere else: a reader
+      // of one run has one place to look for what was judged and what it was
+      // judged about. It is written from the session rather than left to the
+      // detail's own projection, because a run whose detail was rebuilt from
+      // some other source would otherwise carry a verdict about a version it
+      // does not name.
+      ...automationStudioMetadataWithFlowVersions(detail.metadata, flowVersions),
       resultVerification: recordedOutcome(outcome),
       ...(scheduled ? { resultCheck: scheduled } : {}),
       ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})

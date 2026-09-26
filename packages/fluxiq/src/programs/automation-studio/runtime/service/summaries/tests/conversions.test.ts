@@ -122,6 +122,26 @@ function attempt(attemptId: string, outputs: Record<string, JsonValue> | undefin
   return outputs === undefined ? record : { ...record, outputs };
 }
 
+// Every run's detail goes through this projection, routed or direct, succeeded
+// or failed, so it is where the version set the session stamped has to become
+// something a reader of the run can see.
+describe("runtimeSessionToFlowRunDetail flow versions", () => {
+  it("carries the graph versions the session recorded onto the run detail", () => {
+    const versioned = { ...session([]), metadata: { flowVersions: [{ graphFlowId: "flow.conversions", revision: 4 }, { graphFlowId: "flow.conversions.sub.graph", revision: 2, subflowId: "sub.1" }] } };
+    expect(runtimeSessionToFlowRunDetail(versioned, "project.conversions").metadata?.flowVersions)
+      .toEqual([{ graphFlowId: "flow.conversions", revision: 4 }, { graphFlowId: "flow.conversions.sub.graph", revision: 2, subflowId: "sub.1" }]);
+  });
+
+  it("keeps a graph with no revision chain absent rather than at zero", () => {
+    const versioned = { ...session([]), metadata: { flowVersions: [{ graphFlowId: "flow.conversions", revision: null }] } };
+    expect(runtimeSessionToFlowRunDetail(versioned, "project.conversions").metadata?.flowVersions).toEqual([{ graphFlowId: "flow.conversions", revision: null }]);
+  });
+
+  it("writes no key for a run that recorded no version", () => {
+    expect(runtimeSessionToFlowRunDetail(session([]), "project.conversions").metadata).not.toHaveProperty("flowVersions");
+  });
+});
+
 function session(attempts: AutomationStudioNodeAttemptTrace[]): AutomationStudioRuntimeSession {
   return {
     schemaVersion: "0.1",

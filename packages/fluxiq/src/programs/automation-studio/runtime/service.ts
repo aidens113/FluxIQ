@@ -91,6 +91,7 @@ import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, ad
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioLlmExecutionGrantRefusalCode, type AutomationStudioLlmExecutionGrantRefusalCode, automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantMayAct, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
+import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
@@ -204,7 +205,7 @@ import {
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority
+  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
@@ -2639,7 +2640,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const abortController = new AbortController();
     // What this run's result check came to: set once the adaptation context is resolved below, and read lazily by `resolveProvider` after the run finishes, which is when "is *this* run checked" can be answered at all.
     let runResultCheck: AutomationStudioRunResultCheck | null = null;
-    const verificationGrant = input.llmExecution, resultPorts: AutomationStudioResultVerificationPorts = { flowInstructionSet: (request) => this.getFlowInstructionSet(request), getFlowRunDetail: (projectId, runId) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved) => this.saveFlowRunDetail(saved), writeRuntimeSession: (projectId, written) => this.writeRuntimeSession(projectId, written), ...(this.runDatasets.available ? { listRunDatasets: (request) => this.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => this.runDatasets.getRunDatasetPage(request) } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), resolveProvider: async (scope: { projectId: string; flowId: string }) => await resolveAutomationStudioResultCheckProvider({
+    const verificationGrant = input.llmExecution, resultPorts: AutomationStudioResultVerificationPorts = { flowInstructionSet: (request) => this.getFlowInstructionSet(request), getFlowRunDetail: (projectId, runId) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved) => this.saveFlowRunDetail(saved), writeRuntimeSession: (projectId, written) => this.writeRuntimeSession(projectId, written), ...(this.runDatasets.available ? { listRunDatasets: (request) => this.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => this.runDatasets.getRunDatasetPage(request) } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), ...(this.runtimeProjectDatabasePool ? { recordFlowGraphJudgements: async (judged: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => await recordAutomationStudioFlowGraphJudgements({ pool: this.runtimeProjectDatabasePool!, ...judged }) } : {}), resolveProvider: async (scope: { projectId: string; flowId: string }) => await resolveAutomationStudioResultCheckProvider({
       scope,
       check: runResultCheck,
       // A person's grant still wins, and behaves exactly as it did before this existed.
@@ -2713,8 +2714,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
       await this.writeRuntimeSession(input.projectId, {
         ...session,
-        status: "running",
-        startedAt: session.startedAt ?? startedAt,
+        status: "running", startedAt: session.startedAt ?? startedAt,
         metadata: {
           ...(session.metadata ?? {}),
           adaptiveRuntime: Boolean(adaptationContext),
@@ -2764,11 +2764,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               : route.diagnostics.map((diagnostic) => diagnostic.message).join(" ")
           };
         const next: AutomationStudioRuntimeSession = {
-          ...session,
-          status: trace.status,
+          ...session, status: trace.status,
           startedAt: session.startedAt ?? startedAt,
           ...(trace.finishedAt !== undefined ? { finishedAt: trace.finishedAt } : {}),
-          trace
+          // Which graphs this run executed, at the revision it executed them: the orchestration Flow, whose own version is what a router change moves, and the Subflow graph the router entered and the executor actually ran. A Subflow nobody selected was not judged and is not named. The revisions come off the documents the executor was handed, which `materializeCanonicalGraphFlow` already stamped, so nothing is re-read and no version can be named that this run did not run.
+          trace, metadata: automationStudioMetadataWithFlowVersions(session.metadata, automationStudioRunFlowVersions([automationStudioFlowGraphVersion({ flow: runtimeCanonical }), route.selectedSubflow && selectedFlow && selectedFlowIsOwned ? automationStudioFlowGraphVersion({ flow: selectedFlow, subflowId: route.selectedSubflow.subflowId }) : undefined]))
         };
         await this.writeRuntimeSession(input.projectId, next);
         const routedRunDetail = runtimeRunDetailWithAdaptationContext({
@@ -2844,8 +2844,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       status: trace.status,
       startedAt: session.startedAt ?? startedAt,
       ...(trace.finishedAt !== undefined ? { finishedAt: trace.finishedAt } : {}),
-      trace,
-      ...(representationDiagnostic ? { metadata: { ...(session.metadata ?? {}), compatibilityDiagnostics: [representationDiagnostic] } } : {})
+      trace, metadata: { ...automationStudioMetadataWithFlowVersions(session.metadata, automationStudioRunFlowVersions([runtimeCanonical ? automationStudioFlowGraphVersion({ flow: runtimeCanonical }) : undefined])), ...(representationDiagnostic ? { compatibilityDiagnostics: [representationDiagnostic] } : {}) }
     };
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {

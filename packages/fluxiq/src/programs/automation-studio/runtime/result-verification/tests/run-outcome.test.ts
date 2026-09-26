@@ -4,6 +4,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioRefutedResultReauthored } from "../../recovery/refuted-result/index.ts";
+import type { AutomationStudioFlowGraphJudgement } from "../../flow-version/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
 
 // The whole path, driven end to end: a run that finished without a failed step,
@@ -117,6 +118,8 @@ type Harness = {
   requests: AutomationStudioLlmTaskRequest[];
   /** Provider resolutions attempted. A result Core settles itself must cost none. */
   resolutions: { count: number };
+  /** The verdicts written against the versions they judged. */
+  judgements: AutomationStudioFlowGraphJudgement[];
 };
 
 function harness(options: {
@@ -133,11 +136,14 @@ function harness(options: {
   instructions?: readonly AutomationStudioFlowInstruction[];
   /** A provider resolution that never settles: the 2026-09-20 hang, in one line. */
   resolverHangs?: boolean;
+  /** A deployment with no project database: the version set still reaches the run detail, the history does not. */
+  noJudgementStore?: boolean;
 } = {}): Harness {
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const resolutions = { count: 0 };
+  const judgements: AutomationStudioFlowGraphJudgement[] = [];
   const datasets = options.datasets ?? [datasetSummary()];
   const page: AutomationStudioRunDatasetPage = { summary: datasets[0] ?? datasetSummary(), schema: options.schema ?? schema, rows: options.rows ?? [{ name: "Hollis Abbott", role: "member" }], nextCursor: null };
   const ports: AutomationStudioResultVerificationPorts = {
@@ -146,6 +152,7 @@ function harness(options: {
     saveFlowRunDetail: async (detail) => { saved.push(detail); return detail; },
     writeRuntimeSession: async (_projectId, next) => { written.push(next); },
     deniedEvidenceKeys: [],
+    ...(options.noJudgementStore ? {} : { recordFlowGraphJudgements: async ({ judgement }) => { judgements.push(judgement); } }),
     ...(options.datasetsUnavailable ? {} : {
       listRunDatasets: async () => {
         if (options.listThrows) throw new Error("SQLITE_CANTOPEN");
@@ -162,7 +169,7 @@ function harness(options: {
         : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers) }; }
     })
   };
-  return { ports, written, saved, requests, resolutions };
+  return { ports, written, saved, requests, resolutions, judgements };
 }
 
 const verify = async (context: Harness, overrides: Partial<Parameters<typeof verifyAutomationStudioRuntimeSessionResult>[0]> = {}) =>
@@ -626,5 +633,102 @@ describe("the re-run a repair earns", () => {
     // Nothing is verified about a run that did not finish, and nothing loops.
     expect(next.status).toBe("failed");
     expect(context.repairs).toHaveLength(1);
+  });
+});
+
+// The join this module now makes: the verdict, against the versions the run
+// executed. Before it existed a verdict keyed to a run and a version chain
+// keyed to a graph were never joined, so a Flow could be judged worse with
+// nothing anywhere able to say worse than what.
+describe("the version a verdict was about", () => {
+  /** A run that carries the version set its session recorded: the orchestration Flow and the Subflow graph the router entered. */
+  const versioned = (versions: readonly { graphFlowId: string; revision: number | null; subflowId?: string }[]) => session({ metadata: { flowVersions: versions.map((version) => ({ ...version })) } });
+
+  it("binds the verdict to every version the run executed, and says which question it was judged against", async () => {
+    const context = harness({ answer: ANSWER.no, instructions: [instruction("List the admins matching hollis.")] });
+    await verifyAutomationStudioRuntimeSessionResult({
+      ports: context.ports,
+      projectId: "project-1",
+      flow,
+      session: versioned([{ graphFlowId: "flow-1", revision: 4 }, { graphFlowId: "flow-1.sub.graph", revision: 2, subflowId: "sub-1" }])
+    });
+    expect(context.judgements).toHaveLength(1);
+    const judgement = context.judgements[0]!;
+    expect(judgement.runId).toBe("run-1");
+    expect(judgement.status).toBe("refuted");
+    expect(judgement.code).toBeTruthy();
+    expect(judgement.versions).toEqual([{ graphFlowId: "flow-1", revision: 4 }, { graphFlowId: "flow-1.sub.graph", revision: 2, subflowId: "sub-1" }]);
+    expect(judgement.instructionDigest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("carries the version set into the run detail, beside the verdict", async () => {
+    const context = harness({ answer: ANSWER.yes, instructions: [instruction("List the admins.")] });
+    const next = await verifyAutomationStudioRuntimeSessionResult({
+      ports: context.ports,
+      projectId: "project-1",
+      flow,
+      session: versioned([{ graphFlowId: "flow-1", revision: 4 }])
+    });
+    expect(next.status).toBe("succeeded");
+    const metadata = context.saved.at(-1)?.metadata ?? {};
+    expect(metadata.flowVersions).toEqual([{ graphFlowId: "flow-1", revision: 4 }]);
+    expect((metadata.resultVerification as JsonObject).status).toBe("confirmed");
+    expect(context.judgements[0]?.status).toBe("confirmed");
+  });
+
+  // A Flow whose graph was never indexed has no chain. The run still says so --
+  // a reader can see which graph ran and that it has no version -- but nothing
+  // is written to a history keyed on a revision number, because absent is not
+  // zero and a row claiming version 0 would invent a predecessor.
+  it("records a Flow with no revision chain on the run, and writes it no judgement", async () => {
+    const context = harness({ answer: ANSWER.yes, instructions: [instruction("List the admins.")] });
+    await verifyAutomationStudioRuntimeSessionResult({
+      ports: context.ports,
+      projectId: "project-1",
+      flow,
+      session: versioned([{ graphFlowId: "flow-1", revision: null }])
+    });
+    expect(context.saved.at(-1)?.metadata?.flowVersions).toEqual([{ graphFlowId: "flow-1", revision: null }]);
+    expect(context.judgements).toHaveLength(0);
+  });
+
+  it("writes no judgement for a run that recorded no version at all", async () => {
+    const context = harness({ answer: ANSWER.yes, instructions: [instruction("List the admins.")] });
+    await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+    expect(context.judgements).toHaveLength(0);
+    expect(context.saved.at(-1)?.metadata?.flowVersions).toBeUndefined();
+  });
+
+  // A deployment with no project database has nowhere to keep a history. The
+  // run still names the version it ran, so which version a result belongs to
+  // stays answerable; only the comparison across runs is absent.
+  it("still records the version set on the run where there is no store for the history", async () => {
+    const context = harness({ answer: ANSWER.yes, noJudgementStore: true, instructions: [instruction("List the admins.")] });
+    await verifyAutomationStudioRuntimeSessionResult({
+      ports: context.ports,
+      projectId: "project-1",
+      flow,
+      session: versioned([{ graphFlowId: "flow-1", revision: 4 }])
+    });
+    expect(context.saved.at(-1)?.metadata?.flowVersions).toEqual([{ graphFlowId: "flow-1", revision: 4 }]);
+    expect(context.judgements).toHaveLength(0);
+  });
+
+  // Core settled this one from its own arithmetic -- every stored row refused --
+  // so no model was asked and no instruction was read. The question is recorded
+  // as unknown rather than as the digest of an empty one, which would make
+  // every such run look like the same question as every other.
+  it("records an unknown question as null where Core settled the verdict itself", async () => {
+    const context = harness({ datasets: [datasetSummary({ recordCount: 0, invalidCount: 5 })], instructions: [instruction("List the admins.")] });
+    await verifyAutomationStudioRuntimeSessionResult({
+      ports: context.ports,
+      projectId: "project-1",
+      flow,
+      session: versioned([{ graphFlowId: "flow-1", revision: 4 }])
+    });
+    expect(context.resolutions.count).toBe(0);
+    expect(context.judgements).toHaveLength(1);
+    expect(context.judgements[0]?.instructionDigest).toBeNull();
+    expect(context.judgements[0]?.status).toBe("refuted");
   });
 });

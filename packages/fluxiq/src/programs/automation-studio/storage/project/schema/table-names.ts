@@ -50,7 +50,8 @@ export const AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES = [
   "run_dataset_batches",
   "conversations",
   "conversation_turns",
-  "conversation_asks"
+  "conversation_asks",
+  "flow_graph_judgements"
 ] as const;
 
 export const AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES = ["hierarchy_entries_fts", "graph_nodes_fts", "instructions_fts", "graph_node_bounds", "graph_node_bounds_map"] as const;

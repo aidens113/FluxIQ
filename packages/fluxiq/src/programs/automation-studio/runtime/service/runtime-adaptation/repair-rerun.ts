@@ -38,6 +38,7 @@ import type {
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
+import { automationStudioFlowGraphVersion, automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions } from "../../flow-version/index.ts";
 import { canonicalFlowDocument } from "../flows/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
 import { runtimeRunDetailWithAdaptationContext } from "./context.ts";
@@ -119,6 +120,17 @@ export async function rerunAutomationStudioSessionAfterRepair(
     ...input.session,
     status: retryTrace.status,
     finishedAt: retryTrace.finishedAt ?? Date.now(),
+    // The repair moved the graph, so the run's version set has to move with it.
+    // `changedFlow` read the Flow back through `getFlow`, which materializes
+    // from the graph chain, so `updatedFlow` already carries the revision the
+    // re-run actually executed. Restating the one entry leaves every other
+    // graph the run entered exactly as it was -- the orchestration Flow does
+    // not move when a Subflow's graph is rewritten, and claiming it did would
+    // sever the parent from its own history.
+    metadata: automationStudioMetadataWithFlowVersions(input.session.metadata, automationStudioRunFlowVersions([
+      ...automationStudioFlowVersionsFromMetadata(input.session.metadata),
+      automationStudioFlowGraphVersion({ flow: updatedFlow, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
+    ])),
     trace: {
       ...retryTrace,
       attempts: [...(input.session.trace?.attempts ?? []), ...retryTrace.attempts],

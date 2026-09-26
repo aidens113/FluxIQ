@@ -13,6 +13,7 @@ import type {
   AutomationStudioRuntimeSession
 } from "../../../model/index.ts";
 import type { AutomationStudioRuntimeRunSummary } from "../../../storage/index.ts";
+import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions } from "../../flow-version/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
@@ -108,6 +109,11 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
     adaptationIds: [],
     changeProposalIds: [],
     metadata: {
+      // The graph versions this run executed, carried off the session the run
+      // itself stamped. A run detail that cannot name the version it ran cannot
+      // be reasoned about at all, and this projection is the one path every
+      // run's detail goes through -- routed or direct, succeeded or failed.
+      ...automationStudioMetadataWithFlowVersions(undefined, automationStudioFlowVersionsFromMetadata(session.metadata)),
       compatibilitySource: "runtime-session",
       targetKind: session.targetKind,
       targetId: session.targetId,
