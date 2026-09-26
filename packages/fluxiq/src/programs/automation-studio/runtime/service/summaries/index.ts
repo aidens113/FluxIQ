@@ -1,4 +1,5 @@
 export * from "./conversions.ts";
+export * from "./extraction-summary.ts";
 export * from "./host-target-resolution.ts";
 export * from "./ordering.ts";
 export * from "./run-audit.ts";

@@ -17,6 +17,7 @@ import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiv
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
+import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
@@ -158,6 +159,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
     const recordCount = datasetMarkerRecordCount(attempt.outputs);
     const outputShape = attemptOutputShape(attempt.outputs);
     const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
+    const extraction = extractionSummaryFromOutputs(attempt.outputs);
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
@@ -194,6 +196,11 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
         ...(adaptiveFailure ? { adaptiveFailure } : {}),
         ...(recordCount !== undefined ? { recordCount } : {}),
+        // What a list read said about its own read: counts, flags, the field
+        // keys it declared, and whether the list it waited for was ever there.
+        // `recordCount` above says how much was stored and cannot say why that
+        // was the amount; this can. See `extractionSummaryFromOutputs`.
+        ...(extraction ? { extraction } : {}),
         // What the step produced, as names and counts. See `attemptOutputShape`.
         ...(outputShape ? { outputShape } : {})
       }
