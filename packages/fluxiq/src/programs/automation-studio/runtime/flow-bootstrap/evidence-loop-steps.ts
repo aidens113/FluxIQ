@@ -102,6 +102,8 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
   nodeId?: string;
   /** The bytes of evidence this call's result added to the loop's budget. */
   evidenceBytes?: number;
+  /** How many draft steps an `amend_draft` decision edited. One code covers a whole amendment list, so the code alone cannot say. */
+  amended?: number;
   /** When the row was recorded, in epoch milliseconds. Absent where the loop recorded no moment. */
   at?: number;
   /** What the provider reported for the call that made this decision. Absent where it reported nothing. */
@@ -137,6 +139,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     ...(entry.resultReason && EVIDENCE_STEP_CODE.test(entry.resultReason) ? { resultReason: entry.resultReason } : {}),
     ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
+    ...(nonNegative(entry.amended) ? { amended: entry.amended as number } : {}),
     ...(nonNegative(entry.at) ? { at: entry.at as number } : {}),
     ...(usage ? { usage } : {})
   };
@@ -177,7 +180,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -197,6 +200,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.resultReason !== undefined && (typeof step.resultReason !== "string" || !EVIDENCE_STEP_CODE.test(step.resultReason)))
       || (step.nodeId !== undefined && (typeof step.nodeId !== "string" || !EVIDENCE_STEP_ID.test(step.nodeId)))
       || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes))
+      || (step.amended !== undefined && !boundedInteger(step.amended, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations))
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
     if (step.usage !== undefined && !usage) return null;
@@ -209,6 +213,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.resultReason !== undefined ? { resultReason: step.resultReason } : {}),
       ...(step.nodeId !== undefined ? { nodeId: step.nodeId } : {}),
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
+      ...(step.amended !== undefined ? { amended: step.amended as number } : {}),
       ...(step.at !== undefined ? { at: step.at as number } : {}),
       ...(usage ? { usage } : {})
     });

@@ -167,6 +167,16 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
    */
   nodeId?: string;
   /**
+   * How many draft steps this decision's amendments actually edited.
+   *
+   * One decision may carry sixteen amendments and `resultCode` records one word
+   * for all of them, `rerun` beating everything applied beside it. So the code
+   * is equally consistent with one edit and with sixteen, and a Flow that came
+   * out nine steps short read exactly like one that corrected a single
+   * argument.
+   */
+  amended?: number;
+  /**
    * When the row was recorded, in epoch milliseconds.
    *
    * It belongs on the loop's own row because the loop is the only thing that
@@ -712,7 +722,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const rerun = rerunRequest(decision.amendments, draftSteps, toolIds);
       const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
       if (rerun) applyAutomationStudioFlowDraftAmendments(draftSteps, [{ step: rerun.step, change: "drop" }]);
-      recordRow({ iteration, decision: "amend_draft", resultCode: rerun ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", ...(decision.usage ? { usage: decision.usage } : {}) });
+      // **How many steps the decision edited, beside which kind of edit it was.**
+      // One decision may carry sixteen amendments and the code records one
+      // word for all of them, with `rerun` beating everything applied beside
+      // it -- so `draft_rerun` is equally consistent with one amendment and
+      // with sixteen. On `run-muht9lpw-a39aa056` two amend rows both read
+      // `draft_rerun`, nine action steps were withdrawn alongside them, and a
+      // reader had to establish that by eliminating three files and counting
+      // output tokens. A count cannot say which steps went, and it says at
+      // once that steps went at all.
+      recordRow({ iteration, decision: "amend_draft", resultCode: rerun ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", amended: amended.applied, ...(decision.usage ? { usage: decision.usage } : {}) });
       // An edit is progress on the draft and never on the evidence, so an edit
       // that landed neither clears the no-progress guard nor is spent by it.
       // Clearing it was the first thing tried, and a live build alternated a

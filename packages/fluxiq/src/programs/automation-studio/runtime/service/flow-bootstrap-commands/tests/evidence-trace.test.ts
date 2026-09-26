@@ -44,6 +44,7 @@ describe("the trace stored on a build", () => {
       resultCode: "web.action.rejected.invalid_input",
       resultReason: "node_not_runnable_here",
       nodeId: "web.output.dom-extract_list",
+      amended: 9,
       usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 }
     };
     const rowMembers = Object.keys(full).filter((member) => member !== "decision");
@@ -52,7 +53,7 @@ describe("the trace stored on a build", () => {
       expect(cleaned[member], `sanitizeEvidenceLoopTrace dropped \`${member}\``).toBeDefined();
     }
     const [published] = evidenceTraceAuditDetail([{ ...full, at: 1_700_000_000_000 }]).steps as Array<Record<string, unknown>>;
-    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "at", "usage"]) {
+    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "at", "usage"]) {
       expect(published?.[member], `the published step dropped \`${member}\``).toBeDefined();
     }
     expect(published?.resultReason).toBe("node_not_runnable_here");

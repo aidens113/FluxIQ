@@ -95,6 +95,9 @@ export function sanitizeEvidenceLoopTrace(
     // whoever edits the row next.
     if (item.resultReason !== undefined && typeof item.resultReason === "string" && EVIDENCE_RESULT_CODE.test(item.resultReason)) clean.resultReason = item.resultReason;
     if (item.nodeId !== undefined && typeof item.nodeId === "string" && EVIDENCE_RESULT_CODE.test(item.nodeId)) clean.nodeId = item.nodeId;
+    // How many steps an amendment decision edited. The fourth rebuilder learns
+    // a member as the others do; the test below holds every one of them.
+    if (Number.isSafeInteger(item.amended) && (item.amended as number) >= 0) clean.amended = item.amended;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
