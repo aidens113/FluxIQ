@@ -89,7 +89,7 @@ import {
 export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, automationStudioReauthorRefutedResult, automationStudioRefutedResultReauthorDecision, automationStudioRefutedResultReauthored, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantMayAct, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
+import { automationStudioLlmExecutionGrantRefusalCode, type AutomationStudioLlmExecutionGrantRefusalCode, automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForGrant, automationStudioRuntimeSessionGrantMayAct, automationStudioRuntimeSessionGrantRefusal, automationStudioRuntimeSessionGrantTaskKinds, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
@@ -322,6 +322,18 @@ export type UpdateFlowSubflowInput = {
   proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"] | null;
   interventionModeOverride?: AutomationStudioFlowSubflow["interventionModeOverride"] | null;
   graphFlowId?: string;
+};
+
+/**
+ * Core's four grant refusals as this entry point's own codes, so a refused
+ * grant is named rather than falling into whichever stage default the build had
+ * reached (`flow-bootstrap/generation-failure.ts`).
+ */
+const FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES: Record<AutomationStudioLlmExecutionGrantRefusalCode, AutomationStudioFlowBootstrapPhaseFailureCode> = {
+  "llm.execution_grant_unavailable": "flow_bootstrap.execution_grant_unavailable",
+  "llm.execution_grant_scope_mismatch": "flow_bootstrap.execution_grant_scope_mismatch",
+  "llm.execution_grant_no_longer_valid": "flow_bootstrap.execution_grant_no_longer_valid",
+  "llm.execution_grant_purpose_invalid": "flow_bootstrap.execution_grant_purpose_invalid"
 };
 
 export class AutomationStudioService {
@@ -1680,6 +1692,20 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     } catch (error) {
       const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
       if (diagnostic) throw new AutomationStudioFlowBootstrapGenerationError(diagnostic);
+      // A refused grant is a known failure with its own word, not an
+      // unclassified throw. `failureCode` is a running default for whichever
+      // stage the build had reached, so without this a grant refusal read as
+      // `flow_bootstrap.provider_request_failed` -- the default for the whole
+      // provider_request region -- which says a request was attempted and its
+      // answer is unknown, and is true of nothing that happened. Measured on
+      // `run-muhrf6c4-9714939f` and `run-muhqop38-997ee8e5`, the first two runs
+      // in which the wrong-answer repair ever reached a build: each recorded
+      // that code with no provider status, because no request was ever made.
+      const refusal = automationStudioLlmExecutionGrantRefusalCode(error);
+      // Its own stage as well as its own code: the grant is what authorises the
+      // call, so a refused grant belongs to provider resolution however far the
+      // build had otherwise got.
+      if (refusal) throw flowBootstrapPhaseFailure("provider_resolution", failureAccounting, FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES[refusal]);
       throw flowBootstrapPhaseFailure(failureStage, failureAccounting, failureCode);
     } finally {
       // A grant handed to this entry point is spent by it, refused requests included -- except an exploring recovery's, which belongs to the run that is still using it and which the run revokes when it ends.

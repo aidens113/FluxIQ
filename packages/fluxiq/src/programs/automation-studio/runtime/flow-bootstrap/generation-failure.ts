@@ -95,7 +95,24 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
   provider_resolution: [
     "flow_bootstrap.provider_resolution_failed",
     "flow_bootstrap.provider_resolver_unavailable",
-    "flow_bootstrap.provider_resolution_invalid"
+    "flow_bootstrap.provider_resolution_invalid",
+    // The grant that authorises the call, refused. One code per refusal Core
+    // distinguishes, because the four are different problems with different
+    // answers: gone or spent, asked under the wrong scope, minted against a
+    // world that has since changed, or a purpose that is not one of Core's.
+    //
+    // Without them a refused grant fell out of the catch as whatever stage the
+    // build had reached, which for a build that got as far as its loop is
+    // `flow_bootstrap.provider_request_failed` — a code saying a request was
+    // attempted and its answer unknown, true of nothing that happened, since
+    // no request was ever made. The first two runs in which the wrong-answer
+    // repair reached a build, `run-muhqop38-997ee8e5` and
+    // `run-muhrf6c4-9714939f`, both recorded exactly that, with no provider
+    // status because there was no response to have one.
+    "flow_bootstrap.execution_grant_unavailable",
+    "flow_bootstrap.execution_grant_scope_mismatch",
+    "flow_bootstrap.execution_grant_no_longer_valid",
+    "flow_bootstrap.execution_grant_purpose_invalid"
   ],
   provider_request: [
     "flow_bootstrap.provider_request_failed",
