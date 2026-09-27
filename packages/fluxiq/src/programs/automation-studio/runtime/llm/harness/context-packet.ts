@@ -68,8 +68,10 @@ export type AutomationStudioLlmContextPacket = {
    * columns they carry, and the steps the Flow had to produce them with. */
   resultSummary?: AutomationStudioRunResultSummary;
   /** The thread the person and the automation have been talking in, newest
-   * turns, oldest first. Runtime tasks only: it is the channel the person says
-   * what they meant in, and a repair that cannot read it repairs blind. */
+   * turns, oldest first. Carried to every call that is looking at a finished
+   * run -- the verification and the two repair stages: it is the channel the
+   * person says what they meant in, and neither a repair nor a judgement that
+   * cannot read it can tell a wrong answer from an unexpected one. */
   conversation?: AutomationStudioLlmConversationContext;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
@@ -116,14 +118,21 @@ export const AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS = 12;
 
 /**
  * The calls that are looking at a finished run, and so may be shown what it
- * produced.
+ * produced and what the person said about it.
  *
  * `loop_verification` judges the result; `runtime_diagnosis` and
  * `runtime_patch` repair a run whose result was judged wrong, and repairing
  * that without being told what it produced is the shape of the defect this set
  * widened to close: the repair was shown the failure and never the answer.
+ *
+ * **One set, because the two slots it gates answer the same question.** The
+ * conversation had its own inline pair of task kinds and left the verification
+ * out, so the one call that decides *whether the person got what they meant*
+ * was the one call that could not read where they said what they meant. A second
+ * list is a second thing to forget to widen; this is the first one's own words
+ * applied to both.
  */
-const AUTOMATION_STUDIO_RESULT_SUMMARY_TASK_KINDS: ReadonlySet<AutomationStudioLlmTaskKind> = new Set<AutomationStudioLlmTaskKind>([
+const AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS: ReadonlySet<AutomationStudioLlmTaskKind> = new Set<AutomationStudioLlmTaskKind>([
   "loop_verification",
   "runtime_diagnosis",
   "runtime_patch"
@@ -143,6 +152,23 @@ export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRu
   comparisonStatus?: string;
   /** Core's category from the attempt's failure record, when the record parses. Its code and texts are not sent. */
   failureCategory?: AutomationStudioAdaptiveFailureClass;
+  /**
+   * How many records the step stored, when it stored any.
+   *
+   * A count, and nothing about what was in them: an integer carries nothing off
+   * the page, so it needs no screening, and nothing travels beside it.
+   *
+   * **Why the judge needs it.** The wrong answer this loop keeps producing has
+   * one shape -- a step that was supposed to narrow a result stored the same rows
+   * as the step before it. Live runs stored 43 records where 13 were expected,
+   * and 55 where fewer were. Shown two consecutive steps holding an identical
+   * count, a judge can name the step that failed to narrow; without it the count
+   * has to be inferred from a result summary's totals, which cannot say which
+   * step produced them. The repair has read it from the same place since
+   * `runtime/recovery/repair-context/step-parameters.ts` was written; this is the
+   * judge being given the same fact.
+   */
+  recordCount?: number;
 };
 
 /**
@@ -162,7 +188,8 @@ const RECENT_ACTION_FIELDS = {
   route: true,
   durationMs: true,
   comparisonStatus: true,
-  failureCategory: true
+  failureCategory: true,
+  recordCount: true
 } as const satisfies Record<keyof AutomationStudioLlmRecentActionContext, true>;
 const RECENT_ACTION_FIELD_NAMES: ReadonlySet<string> = new Set(Object.keys(RECENT_ACTION_FIELDS));
 
@@ -180,6 +207,9 @@ export function isAutomationStudioLlmRecentActionContext(value: unknown): value 
   if ([action.attemptId, action.nodeId, action.definitionId, action.status, action.route, action.comparisonStatus]
     .some((text) => text !== undefined && (typeof text !== "string" || text.length < 1 || text.length > 200))) return false;
   if (action.failureCategory !== undefined && !isAutomationStudioAdaptiveFailureClass(action.failureCategory)) return false;
+  // A count is an integer or it is not carried. A float, a negative or a string
+  // would be a number the projection did not produce.
+  if (action.recordCount !== undefined && (!Number.isSafeInteger(action.recordCount) || (action.recordCount as number) < 0)) return false;
   return action.durationMs === undefined
     || (Number.isSafeInteger(action.durationMs) && (action.durationMs as number) >= 0 && (action.durationMs as number) <= 86_400_000);
 }
@@ -246,10 +276,12 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // that judges its result, and the runtime diagnosis and patch that repair
     // it. A build has produced nothing yet, and an evidence-loop decision is
     // mid-run, so neither carries one.
-    ...(input.resultSummary && AUTOMATION_STUDIO_RESULT_SUMMARY_TASK_KINDS.has(input.taskKind) ? { resultSummary: input.resultSummary } : {}),
-    // Same rule, same reason: a Flow that has never run has no thread about a
-    // run, and the request that repairs one does.
-    ...(input.conversation?.length && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch")
+    ...(input.resultSummary && AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS.has(input.taskKind) ? { resultSummary: input.resultSummary } : {}),
+    // The same set, and now the same three calls: a Flow that has never run has
+    // no thread about a run; the request that repairs one has; and so has the
+    // request that judges whether the answer was the one asked for, which is the
+    // one question the thread is the evidence for.
+    ...(input.conversation?.length && AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS.has(input.taskKind)
       ? conversationSlot(input.conversation)
       : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
@@ -442,7 +474,13 @@ function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptR
     ...(action.route ? { route: action.route } : {}),
     ...(Number.isSafeInteger(action.durationMs) && action.durationMs! >= 0 && action.durationMs! <= 86_400_000 ? { durationMs: action.durationMs } : {}),
     ...(action.comparisonStatus ? { comparisonStatus: action.comparisonStatus } : {}),
-    ...(failureCategory ? { failureCategory } : {})
+    ...(failureCategory ? { failureCategory } : {}),
+    // The step's own record count, read where the repair context already reads
+    // it (`runtime/recovery/repair-context/step-parameters.ts`). An integer only:
+    // a metadata bag is host-written, so anything else there is not a count.
+    ...(Number.isSafeInteger(action.metadata?.recordCount) && (action.metadata!.recordCount as number) >= 0
+      ? { recordCount: action.metadata!.recordCount as number }
+      : {})
   };
 }
 

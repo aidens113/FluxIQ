@@ -6,7 +6,6 @@ import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from
 import { automationStudioRefutedResultReauthored } from "../../recovery/refuted-result/index.ts";
 import type { AutomationStudioFlowGraphJudgement } from "../../flow-version/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
-
 // The whole path, driven end to end: a run that finished without a failed step,
 // its stored records read, one question asked, and the run's own record written
 // back.
@@ -16,9 +15,7 @@ import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResult
 // navigate, extract, end -- no step that narrows anything -- and returned all
 // 240 members. Every step succeeded, the run reported `passed`, and the only
 // reason anyone noticed is that the test facility held a written answer key.
-
 const ANSWER = { yes: "yes", no: "no", unknown: "unknown" } as const;
-
 const schema: AutomationStudioRecordSchema = {
   schemaVersion: "0.1",
   fields: [{ id: "name", label: "Name", valueType: "string" }, { id: "role", label: "Role", valueType: "string" }]
@@ -95,7 +92,13 @@ type ScriptedAnswer = string | undefined | typeof UNAVAILABLE;
  * A provider that answers the one field a verification asks for: `answer` on
  * every call, or `answers` in order when a test scripts each call.
  */
-function provider(answer: string | undefined, seen: AutomationStudioLlmTaskRequest[], answers?: readonly ScriptedAnswer[]): AutomationStudioLlmProvider {
+function provider(
+  answer: string | undefined,
+  seen: AutomationStudioLlmTaskRequest[],
+  answers?: readonly ScriptedAnswer[],
+  /** The rest of what the judgement said, where a test is about the reading rather than the verdict. */
+  said?: Record<string, string>
+): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
@@ -104,7 +107,7 @@ function provider(answer: string | undefined, seen: AutomationStudioLlmTaskReque
       if (scripted === UNAVAILABLE) throw new Error("provider down");
       const answer_ = scripted;
       return {
-        response: { kind: "diagnosis", summary: "Judged.", ...(answer_ ? { diagnosis: { answersRequest: answer_ } } : {}) },
+        response: { kind: "diagnosis", summary: "Judged.", ...(answer_ ? { diagnosis: { answersRequest: answer_, ...(said ?? {}) } } : {}) },
         usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 }
       };
     }
@@ -138,6 +141,8 @@ function harness(options: {
   resolverHangs?: boolean;
   /** A deployment with no project database: the version set still reaches the run detail, the history does not. */
   noJudgementStore?: boolean;
+  /** What the judgement said beyond its verdict, for the tests about the reading it hands on. */
+  said?: Record<string, string>;
 } = {}): Harness {
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
@@ -166,7 +171,7 @@ function harness(options: {
     ...(options.withProvider === false ? {} : {
       resolveProvider: options.resolverHangs
         ? () => { resolutions.count += 1; return new Promise<never>(() => undefined); }
-        : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers) }; }
+        : async () => { resolutions.count += 1; return { provider: provider(options.answer, requests, options.answers, options.said) }; }
     })
   };
   return { ports, written, saved, requests, resolutions, judgements };
@@ -354,6 +359,67 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(repairs).toEqual([0]);
   });
 
+  it("records Core's fix on the run and hands the judgement's own reading to the wrong-answer route", async () => {
+    // Two halves of one rule: Core's findings and fix lines go on the run, and the
+    // judgement's prose does not -- it reaches the repair through the failure
+    // record, of which the recovery context sends `expected` and `actual` alone.
+    const extracted: AutomationStudioFlowRunDetail = {
+      ...runDetail(),
+      actionAttempts: [{ attemptId: "attempt.1", nodeId: "n2", definitionId: "builtin.policy.action", order: 1, status: "succeeded", startedAt: 2, finishedAt: 3, metadata: { recordCount: 0 } }]
+    };
+    const entered: (string | undefined)[] = [];
+    let structuredAdvice: unknown;
+    const advice = `type the search term before extracting ${"specific ".repeat(45)}END-OF-ADVICE`;
+    const context = harness({
+      answer: ANSWER.no,
+      datasets: [datasetSummary({ recordCount: 0 })],
+      said: { expected: "the two matching members " + "precisely ".repeat(45), observed: "an empty table", changed: advice }
+    });
+    const next = await verify(context, {
+      ports: {
+        ...context.ports,
+        getFlowRunDetail: async () => extracted,
+        repairRefutedResult: async (request) => {
+          entered.push(request.failedTraceAttempt.failure?.expected, request.failedTraceAttempt.failure?.actual);
+          const directive = request.failedTraceAttempt.inputs.resultRepair as JsonObject | undefined;
+          structuredAdvice = (directive?.judgement as JsonObject | undefined)?.advice;
+          return undefined;
+        }
+      }
+    });
+    const recorded = (next.metadata?.resultVerification as JsonObject).repair as JsonObject;
+    expect((recorded.findings as JsonObject[]).map((finding) => finding.code)).toContain("result.no_records_stored");
+    expect(String((recorded.fix as string[])[0])).toContain("loosen every condition");
+    expect(recorded.judgement).toBeUndefined();
+    expect(JSON.stringify(next.metadata)).not.toContain("the two matching members");
+    expect(entered[0]).toContain("the two matching members");
+    expect(entered[0]).toContain("To fix:");
+    expect(entered[0]).not.toContain("END-OF-ADVICE");
+    expect(structuredAdvice).toBe(advice);
+    expect(entered[1]).toContain("0 records stored");
+    expect(entered[1]).toContain("an empty table");
+  });
+
+  it("carries each step's authored parameters to the judgement, screened", async () => {
+    // The parity gap: the repair has been shown this projection since t139.
+    const withParameters: AutomationStudioFlowDocument = {
+      ...flow,
+      nodes: [
+        { id: "n1", definitionId: "builtin.navigate", label: "Open the directory", parameterValues: { url: "https://members.test/list?team=ops" } },
+        { id: "n2", definitionId: "builtin.policy.action", parameterValues: { maxRows: 25, secret: "hunter2" } }
+      ]
+    };
+    const context = harness({ answer: ANSWER.yes });
+    await verify(context, { flow: withParameters, session: session({ flow: withParameters }) });
+    const shape = context.requests[0]?.context.resultSummary?.flowShape ?? [];
+    expect(shape[0]?.label).toBe("Open the directory");
+    expect(shape[0]?.parameters).toEqual({ url: "https://members.test" });
+    expect(shape[1]?.parameters).toEqual({ maxRows: 25, secret: null });
+    expect(shape[1]?.parametersWithheld).toEqual(["secret"]);
+    expect(JSON.stringify(context.requests[0]?.context)).not.toContain("hunter2");
+    expect(JSON.stringify(context.requests[0]?.context)).not.toContain("team=ops");
+  });
+
   it("fails a run whose every row was refused, without spending a call", async () => {
     // Mutation: ignore validation refusals when every row was refused. The code
     // becomes `no_records` and this fails.
@@ -510,8 +576,8 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
   });
 });
 
-// What the checking schedule leaves on a run, and why the run store keys its
-// `result_verification_status` column on it rather than on the verdict alone.
+// What the checking schedule leaves on a run and why the run store keys its
+// `result_verification_status` column on it.
 describe("the checking schedule's decision on the run record", () => {
   const scheduled = (checked: boolean, code: string) => ({ resultCheck: { checked, epoch: 4, code, reason: "Run 8 is the next one this Flow's schedule checks." } });
 
@@ -548,9 +614,7 @@ describe("the checking schedule's decision on the run record", () => {
   });
 });
 
-// The loop closing: a wrong answer is repaired, the corrected Flow runs again,
-// and the run that produces is judged in its turn.
-//
+// The loop closing: a wrong answer is repaired, the corrected Flow runs again, and its result is judged.
 // A repair that edits the Flow and stops has left a corrected Flow nobody has
 // run. What was asked for is the corrected Flow *answering the question*, so
 // these pin the three things that make that true and safe: the re-run happens,
@@ -578,14 +642,14 @@ describe("the re-run a repair earns", () => {
 
   function looping(answers: readonly ScriptedAnswer[], options: { applied?: true; rerunStatus?: "succeeded" | "failed" } = {}) {
     const context = harness({ answers });
-    const reruns: AutomationStudioFlowRunDetail[] = [];
+    const reruns: Array<{ detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }> = [];
     const repairs: AutomationStudioFlowRunDetail[] = [];
     const ports: AutomationStudioResultVerificationPorts = {
       ...context.ports,
       getFlowRunDetail: async () => context.saved.at(-1) ?? producedDetail(),
       repairRefutedResult: async (request) => { repairs.push(request.detail); return await repaired(options.applied)(request); },
       rerunRepairedFlow: async (request) => {
-        reruns.push(request.detail);
+        reruns.push(request);
         return { session: session({ status: options.rerunStatus ?? "succeeded", runId: "run-1" }) };
       }
     };
@@ -595,10 +659,11 @@ describe("the re-run a repair earns", () => {
   it("runs the corrected Flow again and judges what it produced", async () => {
     // Refuted, repaired, re-run, and the second answer is right.
     const context = looping([ANSWER.no, ANSWER.no, ANSWER.yes, ANSWER.yes], { applied: true });
-    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow });
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow, subflowId: "sub-1" });
 
     expect(context.repairs).toHaveLength(1);
     expect(context.reruns).toHaveLength(1);
+    expect(context.reruns[0]).toMatchObject({ subflowId: "sub-1" });
     // The run the caller is handed is the re-run's, and it passed: the corrected
     // Flow answered the question, which is the whole point of the loop.
     expect(next.status).toBe("succeeded");
@@ -623,6 +688,7 @@ describe("the re-run a repair earns", () => {
     // wrote survives into the second pass, so the entry point answers nothing.
     expect(context.repairs).toHaveLength(1);
     expect(context.reruns).toHaveLength(1);
+    expect(context.reruns[0]).not.toHaveProperty("subflowId");
     expect(next.status).toBe("failed");
   });
 

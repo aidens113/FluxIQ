@@ -2,17 +2,17 @@
 //
 // The property these rows protect is the one the product was losing for days:
 // a run told to add something to a basket, save a listing for later or send a
-// message must do it, with no grant, without asking anybody, and without
-// needing a provider call to have gone well first. The counter-property is in
-// the same file so neither can be relaxed without the other being read: a
-// destructive act nobody asked for still stops the run, and the question that
-// reaches the person still carries everything they need to answer it.
+// message must do it without a second grant. The counter-property is in the
+// same file so neither can be relaxed without the other being read: a high-risk
+// act nobody asked for still stops the run, and the question that reaches the
+// person still carries everything they need to answer it.
 
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_ACTION_CONSEQUENCES,
   AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES,
   AutomationStudioActionPermissionGate,
+  automationStudioActionDeclarationCrossCheck,
   automationStudioActionPermissionDenied,
   automationStudioDestructiveConsequences,
   isAutomationStudioDestructiveActionConsequence,
@@ -32,6 +32,8 @@ const ADD_TO_BASKET: AutomationStudioActionDeclaration = { consequences: ["creat
 const SEND_MESSAGE: AutomationStudioActionDeclaration = { consequences: ["send_or_publish", "create_new"], control: { name: "Send message", kind: "button" }, verb: "press" };
 const CHECK_OUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
 const SAVE_ADDRESS: AutomationStudioActionDeclaration = { consequences: ["modify_existing", "create_new"], control: { name: "Save address", kind: "button" }, verb: "press" };
+/** Destructive and editing at once, which is what tells the two apart in a request. */
+const EMPTY_BASKET: AutomationStudioActionDeclaration = { consequences: ["delete", "modify_existing"], control: { name: "Empty basket", kind: "button" }, verb: "press" };
 
 const PRESS = { kind: "exploration_step" as const, id: "core.run_node", ref: "call.3" };
 const STEP = { kind: "flow_step" as const, id: "web.output.dom-click", ref: "main.s4" };
@@ -60,25 +62,32 @@ function gate(input: { permitted?: readonly string[]; derive?: () => Promise<rea
   });
   built.observe({
     kind: "llm_evidence_tool_execution",
-    evidence: { controls: ["Add to basket", "Send message", "Place order", "Save address"] },
+    evidence: { controls: ["Add to basket", "Send message", "Place order", "Save address", "Empty basket"] },
     effectApplied: false
   });
   return built;
 }
 
 describe("which classes a person is still asked about", () => {
-  it("is the three that take something away, and no others", () => {
-    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete", "modify_existing"]);
+  // Both rows here name the list in full rather than probing one class, so a
+  // change to `DESTROYS` is a failing test and never a surprise on a live run.
+  // `modify_existing` left the list on 2026-09-26: it is the broadest of the
+  // five, so gating it asked a person about ordinary editing -- which is the
+  // automation doing the job it was asked to do.
+  it("is the three high-risk real-world classes, and no others", () => {
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete", "send_or_publish"]);
     expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => !isAutomationStudioDestructiveActionConsequence(consequence)))
-      .toEqual(["send_or_publish", "create_new"]);
+      .toEqual(["modify_existing", "create_new"]);
+    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(true);
+    expect(isAutomationStudioDestructiveActionConsequence("modify_existing")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence("purchase")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence(undefined)).toBe(false);
   });
 
-  it("keeps Core's order, drops repeats, and drops what takes nothing away", () => {
-    expect(automationStudioDestructiveConsequences(["create_new", "modify_existing", "move_money", "modify_existing", "send_or_publish"]))
-      .toEqual(["move_money", "modify_existing"]);
-    expect(automationStudioDestructiveConsequences(["create_new", "send_or_publish"])).toEqual([]);
+  it("keeps Core's order, drops repeats, and drops ordinary creation and editing", () => {
+    expect(automationStudioDestructiveConsequences(["create_new", "delete", "move_money", "delete", "send_or_publish"]))
+      .toEqual(["move_money", "delete", "send_or_publish"]);
+    expect(automationStudioDestructiveConsequences(["create_new", "send_or_publish", "modify_existing"])).toEqual(["send_or_publish"]);
   });
 });
 
@@ -104,27 +113,21 @@ describe("an act the person's instruction plainly asks for", () => {
     });
   });
 
-  // The live failure this removes. Reading the instruction needs a provider
-  // call, the model has to name the class, and Core keeps a claim only where
-  // its quote is the person's own words -- so a run that plainly asked to add
-  // something to a basket used to stop at a question nobody was there to
-  // answer whenever any one of those three missed. It cannot now: making
-  // something was never the gate's to refuse.
-  it("goes ahead even when reading the instruction claimed nothing at all", async () => {
+  it("keeps ordinary creation free but refuses sending when instruction authority cannot be derived", async () => {
     const claimedNothing = gate({ derive: async () => readAutomationStudioInstructedConsequences({ instructions: [BASKET], result: { instructed: [] } }) });
     const providerDown = gate({ derive: async () => { throw new Error("provider down"); } });
     const noDerivation = gate();
 
     for (const run of [claimedNothing, providerDown, noDerivation]) {
       expect(await run.checkFor(PRESS)(ADD_TO_BASKET)).toEqual({ permitted: true });
-      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
-      expect(run.request).toBeUndefined();
+      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: "permission-request:one" });
+      expect(run.request?.missing).toEqual(["send_or_publish"]);
     }
   });
 
-  it("is permitted even where there is no run behind it and nobody to ask", async () => {
+  it("keeps creation permitted with no run, but refuses sending when nobody can ask", async () => {
     expect(await automationStudioActionPermissionDenied(ADD_TO_BASKET)).toEqual({ permitted: true });
-    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: true });
+    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: null });
   });
 });
 
@@ -168,10 +171,10 @@ describe("a destructive act the instruction did not ask for", () => {
   it("asks only about the destructive part, and still says what the whole action declared", async () => {
     const run = gate({ derive: async () => readWell() });
 
-    expect(await run.checkFor(PRESS)(SAVE_ADDRESS)).toEqual({ permitted: false, missing: ["modify_existing"], requestId: "permission-request:one" });
-    expect(run.request?.consequences).toEqual(["modify_existing", "create_new"]);
-    expect(run.declarations[0]?.consequences).toEqual(["modify_existing", "create_new"]);
-    expect(run.declarations[0]?.missing).toEqual(["modify_existing"]);
+    expect(await run.checkFor(PRESS)(EMPTY_BASKET)).toEqual({ permitted: false, missing: ["delete"], requestId: "permission-request:one" });
+    expect(run.request?.consequences).toEqual(["delete", "modify_existing"]);
+    expect(run.declarations[0]?.consequences).toEqual(["delete", "modify_existing"]);
+    expect(run.declarations[0]?.missing).toEqual(["delete"]);
   });
 
   it("goes ahead once a grant, or the instruction itself, covers it", async () => {
@@ -187,10 +190,49 @@ describe("a destructive act the instruction did not ask for", () => {
     });
     expect(await asked.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: true });
     expect(asked.request).toBeUndefined();
+
+    const sendGranted = gate({ permitted: ["send_or_publish"], derive: async () => [] });
+    expect(await sendGranted.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
+    expect(sendGranted.request).toBeUndefined();
   });
 
   it("is refused where there is no run behind it, since no instruction could have asked", async () => {
     expect(await automationStudioActionPermissionDenied(CHECK_OUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: null });
-    expect(await automationStudioActionPermissionDenied(SAVE_ADDRESS)).toEqual({ permitted: false, missing: ["modify_existing"], requestId: null });
+    expect(await automationStudioActionPermissionDenied(EMPTY_BASKET)).toEqual({ permitted: false, missing: ["delete"], requestId: null });
+    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: null });
+  });
+});
+
+// The class that came off the gate on 2026-09-26, and the thing that catches it
+// instead. `BASKET` says "leave my saved address alone", so this press is an
+// edit its instruction did not ask for -- and it now proceeds, because a
+// standing gate on every edit asked a person about ordinary work. What sees it
+// is the cross-check, which reads all five classes whatever is gated: narrowing
+// what stops a run narrows nothing about what is known.
+describe("an edit the gate no longer stops", () => {
+  it("goes ahead, and is still recorded with the class it declared", async () => {
+    const run = gate({ derive: async () => readWell() });
+
+    expect(await run.checkFor(PRESS)(SAVE_ADDRESS)).toEqual({ permitted: true });
+    expect(run.request).toBeUndefined();
+    expect(run.signal.aborted).toBe(false);
+    expect(run.declarations[0]?.consequences).toEqual(["modify_existing", "create_new"]);
+  });
+
+  it("is named by the cross-check against the instruction, which is where it belongs now", async () => {
+    const run = gate({ derive: async () => readWell() });
+    await run.checkFor(PRESS)(SAVE_ADDRESS);
+
+    const check = automationStudioActionDeclarationCrossCheck({
+      declarations: run.declarations,
+      instructed: readWell().filter((entry) => entry.consequence === "create_new")
+    });
+
+    expect(check.verdict).toBe("beyond_instruction");
+    expect(check.beyondInstruction).toEqual(["modify_existing"]);
+  });
+
+  it("is permitted where there is no run behind it either", async () => {
+    expect(await automationStudioActionPermissionDenied(SAVE_ADDRESS)).toEqual({ permitted: true });
   });
 });

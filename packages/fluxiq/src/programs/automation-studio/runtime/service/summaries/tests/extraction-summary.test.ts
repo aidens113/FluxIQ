@@ -19,6 +19,14 @@ import { extractionSummaryFromOutputs } from "../extraction-summary.ts";
 
 const READ = { recordCount: 8, pagesRead: 1, truncated: false, fieldNames: ["name", "price"], missingFields: [] };
 
+/**
+ * The 2026-09-25 regression's own shape, as the read now states it: a wait that
+ * gave up on a still page after ~2 s. t143 had to reconstruct exactly this by
+ * arithmetic on `durationMs` across fourteen attempts, because nothing published
+ * what a read waited for or why it stopped.
+ */
+const WAIT = { stoppedOn: "page_settled", waitedMs: 2089, waitedFor: 1 };
+
 describe("a list read's summary on a saved attempt", () => {
   it("reaches the run detail, so a read that found rows says how many over how many pages", async () => {
     const detail = await runDetailFor({
@@ -49,6 +57,33 @@ describe("a list read's summary on a saved attempt", () => {
     expect(detail.actionAttempts?.[0]?.metadata?.extraction).toMatchObject({ recordCount: 0, listPresence: "never_appeared" });
   });
 
+  // The three members t143's diagnosis needed and had to time by hand instead.
+  // A zero read that reaches the run detail with these on it says which of four
+  // things happened without anyone comparing durations: the selector named
+  // nothing (`itemsSeen: 0`), the fields were read off the wrong element
+  // (`emptyRecords` equal to `recordCount`), or the wait gave up on a still page
+  // (`stoppedOn: "page_settled"`).
+  it("carries what the read waited for, why the wait stopped, how many items it saw and how many came back empty", async () => {
+    const detail = await runDetailFor({
+      commandId: "command.runtime",
+      actionType: "web.dom.extract_list",
+      status: "succeeded",
+      extraction: { ...READ, recordCount: 0, itemsSeen: 0, emptyRecords: 0, listPresence: "never_appeared", listWait: WAIT }
+    });
+
+    expect(detail.actionAttempts?.[0]?.metadata?.extraction).toEqual({
+      recordCount: 0,
+      pagesRead: 1,
+      truncated: false,
+      fieldNames: ["name", "price"],
+      missingFields: [],
+      itemsSeen: 0,
+      emptyRecords: 0,
+      listPresence: "never_appeared",
+      listWait: { stoppedOn: "page_settled", waitedMs: 2089, waitedFor: 1 }
+    });
+  });
+
   it("carries nothing for an attempt whose host reported no summary, rather than an empty record", async () => {
     const detail = await runDetailFor({ commandId: "command.runtime", status: "succeeded", url: "https://example.test/" });
 
@@ -66,6 +101,46 @@ describe("what the projection admits", () => {
 
   it("refuses a presence word this Core does not know, so a word the domain adds stays behind until it is named", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listPresence: "perhaps" } } })).toBeUndefined();
+  });
+
+  it("keeps all four stop words, and the two counts a zero read is diagnosed by", () => {
+    for (const stoppedOn of ["list_present", "page_settled", "window_elapsed", "deadline_passed"]) {
+      expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, stoppedOn } } } }))
+        .toEqual({ ...READ, listWait: { stoppedOn, waitedMs: 2089, waitedFor: 1 } });
+    }
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, itemsSeen: 12, emptyRecords: 4 } } }))
+      .toEqual({ ...READ, itemsSeen: 12, emptyRecords: 4 });
+    // `itemsSeen: 0` beside records is not cross-checked away: the pairings that
+    // look wrong are the diagnosis, and refusing them costs the account.
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, itemsSeen: 0, emptyRecords: 8 } } }))
+      .toEqual({ ...READ, itemsSeen: 0, emptyRecords: 8 });
+  });
+
+  // Unlike the presence word above, and for the reason the module header gives:
+  // a fifth mechanism for ending a wait is a thing the domain can ship first,
+  // and refusing it would cost every read in every run the account t143 had to
+  // rebuild from durations.
+  it("renames a stop word it does not know rather than dropping the read that reported it", () => {
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, stoppedOn: "items_stopped_growing" } } } }))
+      .toEqual({ ...READ, listWait: { stoppedOn: "unknown", waitedMs: 2089, waitedFor: 1 } });
+  });
+
+  it("publishes the unknown word rather than the one the producer sent, so nothing unredacted rides out on it", () => {
+    const projected = extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, stoppedOn: "#private-selector had 0 items" } } } });
+    expect(projected?.listWait).toEqual({ stoppedOn: "unknown", waitedMs: 2089, waitedFor: 1 });
+    expect(JSON.stringify(projected)).not.toContain("#private-selector");
+  });
+
+  // Absence of `listWait` means one thing -- this read waited for no list of its
+  // own -- so an account that is malformed rather than merely newer must not
+  // quietly become that.
+  it("refuses an account whose durations are not counts, or whose stop is not even a word", () => {
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, waitedMs: "2089" } } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, waitedFor: -1 } } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, stoppedOn: 4 } } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: "page_settled after 2089ms" } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, itemsSeen: "twelve" } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, emptyRecords: -1 } } })).toBeUndefined();
   });
 
   it("refuses a count that is not a count", () => {

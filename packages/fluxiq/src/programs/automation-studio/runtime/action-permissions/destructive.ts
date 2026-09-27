@@ -6,21 +6,22 @@
 // sounds serious. What is left to ask about is the narrow case where doing the
 // thing cannot be taken back and the instruction did not ask for it.
 //
-// **Only what is genuinely destructive.** Three classes are destructive in that
-// sense, and they are named by what they take away:
+// **Only what has a genuinely high-risk real-world consequence.** Three classes
+// need authority beyond an unrelated instruction:
 //
 // - `move_money` -- completing a purchase or a checkout, a charge, a refund, a
 //   transfer. The money has gone.
-// - `modify_existing` -- editing or overwriting something that already exists.
-//   What was there is not there any more.
 // - `delete` -- removing something so that it is gone.
+// - `send_or_publish` -- communicating or publishing on the person's behalf.
 //
-// The other two are not. `create_new` adds something that was not there, and
-// `send_or_publish` sends what the instruction said to send: neither destroys
-// anything, and a person who asked for a thing to be made or sent has said all
-// that needs saying. Note this is the class, not the act: placing an order is
-// `move_money` and is asked about; putting the same item in a basket is
-// `create_new` and is not.
+// The other two are not asked about. `create_new` adds something that was not
+// there, and `modify_existing` is the broadest of the five, so gating either
+// asks a person about ordinary work. Note this is the class, not the act:
+// placing an order is `move_money` and is asked about; putting the same item in
+// a basket is `create_new` and is not. Sending exactly what the instruction
+// asked to send is authorised by that instruction; an unrelated instruction or
+// a run with no instruction is not authority to communicate on the person's
+// behalf.
 //
 // **Why this exists as its own file.** Until 2026-09-24 every one of the five
 // gated, so a build told to add an item to a cart, save a listing for later or
@@ -51,12 +52,23 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, automationStudioConsequencesInOr
  * `AUTOMATION_STUDIO_ACTION_CONSEQUENCES` is a compile error here until
  * somebody decides whether a person has to be asked about it. Defaulting a new
  * class either way silently would be the mistake this shape exists to prevent.
+ *
+ * **Only a very high risk is asked about, as of 2026-09-26.** The user's rule is
+ * that their instruction is itself the grant, and that a question reaches them
+ * for genuinely risky real-world consequences and nothing else -- a delete, a
+ * checkout, money, sending or publishing. `modify_existing` came off this list
+ * on that instruction: it is the broadest of the five classes, so gating it
+ * asked a person about ordinary editing, which is the automation doing the job
+ * it was asked to do. An
+ * irreversible overwrite that the instruction did not ask for is caught where it
+ * belongs, by the consequence cross-check comparing what a step declared against
+ * what the instruction called for, rather than by a standing gate on every edit.
  */
 const DESTROYS: Readonly<Record<AutomationStudioActionConsequence, boolean>> = Object.freeze({
   move_money: true,
   delete: true,
-  modify_existing: true,
-  send_or_publish: false,
+  modify_existing: false,
+  send_or_publish: true,
   create_new: false
 });
 
@@ -71,7 +83,7 @@ export function isAutomationStudioDestructiveActionConsequence(value: unknown): 
 
 /**
  * Of what an action declared, the part anyone could still be asked about:
- * deduplicated, in Core's order, and empty when the action only makes or sends
+ * deduplicated, in Core's order, and empty when the action only creates or edits
  * something.
  */
 export function automationStudioDestructiveConsequences(

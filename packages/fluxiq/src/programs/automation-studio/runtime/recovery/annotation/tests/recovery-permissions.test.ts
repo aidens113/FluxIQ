@@ -1,7 +1,12 @@
 // A recovery is capable by default: it is offered the domain's acting options
-// whatever the policy's side-effect flag says, and a press with a lasting
-// consequence nobody allowed ends the recovery with a request a person can
+// whatever the policy's side-effect flag says, and a press that would destroy
+// something nobody allowed ends the recovery with a request a person can
 // answer -- never a silent refusal, and never a patch call made without it.
+//
+// The press declares `delete`, which the gate still asks about. It declared
+// `modify_existing` until 2026-09-26, and that class is no longer gated: on it,
+// every row here that presses "when the grant holds the consequence" would have
+// pressed with no grant at all and proved nothing.
 //
 // Driven through `annotateAutomationStudioRunDetailWithRuntimeLlm` with a
 // stand-in domain whose press asks Core first, as a domain is meant to, and a
@@ -24,7 +29,7 @@ import { resolveAutomationStudioResultCheckSchedule } from "../../../result-chec
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 
-const FAILURE_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.failed", controls: ["Pick and pack"] };
+const FAILURE_PAGE: JsonObject = { schemaVersion: "test.page.v1", page: "page.failed", controls: ["Pick and pack", "Cancel unfilled lines"] };
 
 type Recovery = {
   detail: AutomationStudioFlowRunDetail;
@@ -47,7 +52,7 @@ type Setup = {
 
 describe("a recovery under its permission gate", () => {
   it("offers the acting option while the policy forbids external side effects, and never a destructive one", async () => {
-    const run = await recover({ permittedConsequences: ["modify_existing"] });
+    const run = await recover({ permittedConsequences: ["delete"] });
 
     expect(run.offered[0]).toEqual(["test.look", "test.press"]);
   });
@@ -60,9 +65,9 @@ describe("a recovery under its permission gate", () => {
     expect(run.detail.metadata?.permissionRequest).toMatchObject({
       schemaVersion: "automation-studio.action-permission-request.v1",
       action: { kind: "exploration_step", id: "test.press", ref: "call.press", verb: "press" },
-      control: { name: "Pick and pack", kind: "button" },
-      consequences: ["modify_existing"],
-      missing: ["modify_existing"],
+      control: { name: "Cancel unfilled lines", kind: "button" },
+      consequences: ["delete"],
+      missing: ["delete"],
       reason: { stage: "recovery" },
       authority: { granted: [], instructed: [] }
     });
@@ -78,15 +83,15 @@ describe("a recovery under its permission gate", () => {
   });
 
   it("presses when the grant holds the consequence, raises nothing, and goes on to the patch", async () => {
-    const run = await recover({ permittedConsequences: ["modify_existing"] });
+    const run = await recover({ permittedConsequences: ["delete"] });
 
-    expect(run.pressed).toEqual(["Pick and pack"]);
+    expect(run.pressed).toEqual(["Cancel unfilled lines"]);
     expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
-    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: ["modify_existing"], instructed: [], lapsed: [] });
+    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: ["delete"], instructed: [], lapsed: [] });
     expect((run.detail.metadata?.llmGate as JsonObject).patchSkippedCode).toBeUndefined();
     // The diagnosis was told what the gate permits, not the policy's "no external side effects".
-    expect(run.diagnosisGates).toMatchObject({ actionPermissions: { permitted: ["modify_existing"], granted: ["modify_existing"], instructed: [] } });
+    expect(run.diagnosisGates).toMatchObject({ actionPermissions: { permitted: ["delete"], granted: ["delete"], instructed: [] } });
     expect(run.diagnosisGates).not.toHaveProperty("allowExternalSideEffects");
   });
 
@@ -94,9 +99,9 @@ describe("a recovery under its permission gate", () => {
     const current = instruction();
     const run = await recover({ instructions: [current], storedInstructed: [stored(current)] });
 
-    expect(run.pressed).toEqual(["Pick and pack"]);
+    expect(run.pressed).toEqual(["Cancel unfilled lines"]);
     expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
-    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: ["modify_existing"], lapsed: [] });
+    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: ["delete"], lapsed: [] });
   });
 
   it("asks again once the instruction that gave that authority has been edited", async () => {
@@ -104,8 +109,8 @@ describe("a recovery under its permission gate", () => {
     const run = await recover({ instructions: [{ ...original, body: "Pick and pack only the urgent orders in the dispatch batch." }], storedInstructed: [stored(original)] });
 
     expect(run.pressed).toEqual([]);
-    expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["modify_existing"], authority: { instructed: [] } });
-    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: [], lapsed: ["modify_existing"] });
+    expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["delete"], authority: { instructed: [] } });
+    expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: [], lapsed: ["delete"] });
   });
 
   // Item 4. The same gate stands over the patch stage: a repair that would
@@ -225,9 +230,9 @@ function options(run: Recovery): AutomationStudioHarnessOptionBundle {
     implementations: {
       "test.look": async () => ({ kind: "llm_evidence_tool_execution", evidence: FAILURE_PAGE, effectApplied: false }),
       "test.press": async (input) => {
-        const verdict = await input.permission({ consequences: ["modify_existing"], control: { name: "Pick and pack", kind: "button" }, verb: "press" });
+        const verdict = await input.permission({ consequences: ["delete"], control: { name: "Cancel unfilled lines", kind: "button" }, verb: "press" });
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { pressed: false }, effectApplied: false, resultCode: "test.permission_required" };
-        run.pressed.push("Pick and pack");
+        run.pressed.push("Cancel unfilled lines");
         return { kind: "llm_evidence_tool_execution", evidence: { page: "page.picking", status: "Picking" }, effectApplied: true };
       },
       "test.clear": async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true })
@@ -244,7 +249,7 @@ function instruction(): AutomationStudioFlowInstruction {
     schemaVersion: "0.1",
     instructionId: "instruction.dispatch",
     title: "Dispatch the batch",
-    body: "Pick and pack the dispatch batch.",
+    body: "Pick and pack the dispatch batch, cancelling any line the warehouse cannot fill.",
     scope: { kind: "flow", projectId: "project.recovery", flowId: "flow.recovery" },
     priority: 1,
     status: "active",
@@ -255,7 +260,7 @@ function instruction(): AutomationStudioFlowInstruction {
 }
 
 function stored(source: AutomationStudioFlowInstruction): JsonObject {
-  return { consequence: "modify_existing", instructionId: source.instructionId, instructionDigest: automationStudioInstructionDigest(source), quote: "Pick and pack the dispatch batch" };
+  return { consequence: "delete", instructionId: source.instructionId, instructionDigest: automationStudioInstructionDigest(source), quote: "cancelling any line the warehouse cannot fill" };
 }
 
 function context(): AutomationStudioRuntimeAdaptationContext {

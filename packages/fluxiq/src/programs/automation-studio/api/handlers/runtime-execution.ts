@@ -32,13 +32,13 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       const runIntent = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((purpose) => purpose === payload.runIntent);
       const llmExecution = runIntent && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: runIntent } : undefined;
       if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A supported explicit LLM intent and grant are required together." };
-      // `newRunId` is not this: it names the session the run is about to create,
-      // so the caller can read the run back if its own request is cut short
-      // (`runtime/service/runtime-session/requested-run-id.ts`).
-      if (llmExecution && payload.runId !== undefined) {
-        llmExecutionGrants?.revoke(llmExecution.grantId);
-        return { ok: false, error: "An explicit LLM run must create a fresh runtime session." };
-      }
+      // A granted run may name the run it is continuing (t166). It used to be
+      // refused, with the grant revoked, so the caller could not even retry: a
+      // repair that must resume the run that failed had no way to say which run
+      // that was, and re-running is not an act anybody needs permission for.
+      // `newRunId` is a different field: it names the session the run is about
+      // to create, so the caller can read the run back if its own request is cut
+      // short (`runtime/service/runtime-session/requested-run-id.ts`).
       // The run starts now, so the grant is held for it: its claim window runs
       // to the run's own lease rather than the issue TTL, because its recovery
       // claims the grant only once a step fails, which may be minutes from now.

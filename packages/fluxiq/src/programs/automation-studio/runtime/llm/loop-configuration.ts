@@ -257,6 +257,36 @@ export type EvidenceLoopLimits = {
   maxDraftAmendments: number;
 };
 
+/**
+ * The fewest bytes in which the draft entry can do its least useful job: list
+ * one step with the argument it ran with, and say in full how to correct it
+ * (`../flow-draft/entry.ts`).
+ *
+ * Measured rather than chosen. One step told in full costs 1,221 bytes and one
+ * carrying a realistic argument 1,256, so a budget under this cannot hold the
+ * guidance and the record at once; this is the round number just above it.
+ *
+ * Below it the entry still comes back -- a shrinking draft is still a draft --
+ * but it comes back with the 154-character telling in place of the
+ * 1,047-character one, and until 2026-09-26 that trade was made in silence.
+ * `maxEvidenceContextBytes` is admitted from 1,024 up and the draft's share is a
+ * quarter of it, so any context under 5,120 derives a budget beneath this floor
+ * and nothing said a word about it; before t157 the same arithmetic returned no
+ * draft at all, which the caller reads as "this build has taken no action yet".
+ *
+ * The two ways of arriving under the floor are answered differently, and
+ * deliberately. A caller that *names* `draft.maxBytes` under it is refused
+ * (`llm_evidence_loop.invalid_configuration`): it wrote a number for the draft
+ * itself, so there is nothing to derive and nothing to trade off, and a build
+ * whose amendments are guesses is worse than a build that does not start. A
+ * budget *derived* from a small context is admitted, because refusing a run
+ * outright over a tunable is its own harm -- and every row the run records says
+ * what the draft cost and that its budget was under the floor
+ * (`./evidence-loop/draft-shown.ts`), so the degradation is named where a reader
+ * of the run looks rather than guessed at afterwards.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES = 1_280;
+
 export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
   const maxEvidenceBytes = input.maxEvidenceBytes ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes;
   const maxEvidenceContextBytes = input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes);
@@ -297,6 +327,11 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
   if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
   if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
   if (!Number.isInteger(limits.draftBytes) || limits.draftBytes < 0 || limits.draftBytes >= limits.maxEvidenceContextBytes) return undefined;
+  // A named draft budget too small to show a draft properly is a mistake only a
+  // person can have written, so it is caught at the door rather than paid for a
+  // provider call at a time. The derived budget is left alone; see the floor's
+  // own note above for why the two are answered differently.
+  if (draft?.maxBytes !== undefined && draft.maxBytes < AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES) return undefined;
   if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
   return limits;
 }

@@ -1,3 +1,5 @@
+import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
+
 /**
  * Every way a provider refuses a request before sending it, one code per check.
  *
@@ -107,19 +109,35 @@ export class AutomationStudioLlmProviderError extends Error {
     /**
      * What the provider said, for a caller keeping a local diagnostic.
      *
-     * **It is the provider's own prose and is never published.** Nothing in a
-     * run's bundle may carry it: the published record takes this failure's
-     * `code` and `status` and nothing else, which is the guarantee the
-     * downstream facility's redaction rules rest on. It exists because a 400
-     * is a client error — the request was wrong — and the only thing that says
-     * *how* is the body the provider sends back with it. Two live runs died on
-     * their first call with an unexplained 400 and this was thrown away unread
-     * one line after being in hand.
+     * **It is whatever the adapter put here, and by itself it is never
+     * published.** It exists because a 400 is a client error — the request was
+     * wrong — and the only thing that says *how* is the body the provider sends
+     * back with it. Two live runs died on their first call with an unexplained
+     * 400 and this was thrown away unread one line after being in hand.
+     *
+     * An adapter that has screened its answer into a refusal record encodes it
+     * here as JSON, which is how Core's DeepSeek adapter carries one today
+     * (`deepseek/refusal.ts`). `normalizedAutomationStudioLlmProviderFailure`
+     * reads exactly that and nothing else: a string that is not a record
+     * satisfying `refusal-record.ts`'s bounds yields no `refusal`, so raw prose
+     * left here stays on the throw and reaches no reader. A new adapter should
+     * pass `refusal` instead and leave this alone.
      *
      * Bounded by the caller, so a provider answering with a megabyte of HTML
      * cannot be held in memory on the strength of being wrong.
      */
-    readonly responseBody?: string
+    readonly responseBody?: string,
+    /**
+     * The same answer, typed: what the provider refused with, screened by the
+     * adapter and bounded by `refusal-record.ts`.
+     *
+     * This is the field a refusal should arrive on. It is provider-neutral on
+     * purpose — a refusal is a status, what the provider said about it, the
+     * shape of the request it refused, and what was deliberately left out — so
+     * no reader downstream has to know which adapter produced it, and no reader
+     * has to re-parse a string of unknown shape to find out.
+     */
+    readonly refusal?: AutomationStudioLlmProviderRefusal
   ) {
     super(message);
   }
@@ -142,15 +160,18 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   retryable: boolean;
   status?: number;
   provenance: AutomationStudioLlmProviderFailureProvenance;
+  refusal?: AutomationStudioLlmProviderRefusal;
 } {
   const typed = structurallyTypedProviderError(error);
   if (typed) {
+    const refusal = refusalFromProviderError(error);
     return {
       code: typed.code,
       message: safeProviderFailureMessage(typed.code),
       retryable: typed.retryable,
       ...(typed.status !== undefined ? { status: typed.status } : {}),
-      provenance: error instanceof AutomationStudioLlmProviderError ? error.provenance : defaultProviderFailureProvenance(typed.code)
+      provenance: error instanceof AutomationStudioLlmProviderError ? error.provenance : defaultProviderFailureProvenance(typed.code),
+      ...(refusal ? { refusal } : {})
     };
   }
   return {
@@ -159,6 +180,25 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
     retryable: false,
     provenance: { providerInvocation: "unknown", providerResponse: "unknown" }
   };
+}
+
+/**
+ * The refusal an adapter in this process screened, and only that one.
+ *
+ * Read from a real `AutomationStudioLlmProviderError` and never from a
+ * structurally typed clone, for the same reason `provenance` is: a clone comes
+ * from outside this module's guarantees — another bundle, a provider's own
+ * object, a test double — and its `code`, `retryable` and `status` are read
+ * because each is checked against Core's own vocabulary and ranges. A refusal
+ * record cannot be checked that way. It carries the provider's sentence, and
+ * the one thing that makes that sentence publishable is that the adapter which
+ * built the record ran it through Core's credential and locator screens. A
+ * clone claiming a record makes the claim without the screen, so the claim is
+ * not read.
+ */
+function refusalFromProviderError(error: unknown): AutomationStudioLlmProviderRefusal | undefined {
+  if (!(error instanceof AutomationStudioLlmProviderError)) return undefined;
+  return error.refusal ?? parseAutomationStudioLlmProviderRefusal(error.responseBody);
 }
 
 function structurallyTypedProviderError(error: unknown): {

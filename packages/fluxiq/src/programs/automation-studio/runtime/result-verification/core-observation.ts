@@ -36,7 +36,13 @@
 // the request.
 
 import { AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "./contracts.ts";
+import type {
+  AutomationStudioResultRepairDirective,
+  AutomationStudioResultVerdict,
+  AutomationStudioResultVerification,
+  AutomationStudioRunResultSummary
+} from "./contracts.ts";
+import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 
 /** Core's codes for a verdict it reached itself. */
 export const AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES = Object.freeze({
@@ -56,6 +62,7 @@ export function automationStudioResultCoreObservation(summary: AutomationStudioR
   if (summary.totalRecordCount > 0) return summary.totalRowsMissingRequired > 0 ? requiredValuesMissing(summary) : undefined;
   if (summary.totalRefusedCount > 0) {
     return refused({
+      summary,
       code: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.everyRecordRefused,
       reason: "Every row the run found was refused by record validation, so the run stored nothing and its result cannot answer the request.",
       observation: `${summary.totalRefusedCount} ${rows(summary.totalRefusedCount)} refused, 0 stored, across ${summary.recordSetCount} record ${sets(summary.recordSetCount)}.`
@@ -66,6 +73,9 @@ export function automationStudioResultCoreObservation(summary: AutomationStudioR
   return undefined;
 }
 
+/** What `expected` says when there is no directive to say anything more. */
+const EXPECTED_BASELINE = "A result that answers the request the Flow was built for.";
+
 /**
  * The failure a run reports when its result does not answer the request.
  *
@@ -74,8 +84,27 @@ export function automationStudioResultCoreObservation(summary: AutomationStudioR
  * situation one level up: the run reported success and what it was for never
  * arrived. No new failure category is introduced, so every consumer that
  * already reads the category list keeps working.
+ *
+ * **`expected` and `actual` are how the directive reaches the repair, and they
+ * are the only way it can.** The ladder is entered with this record
+ * (`recovery/refuted-result/attempt.ts`), and of everything the record carries
+ * the recovery context sends the model exactly two fields: `expected` and
+ * `actual`. Its own comment says why the third is not sent -- "`message` is
+ * deliberately not carried: the record's own `expected` and `actual` are
+ * contractually short, and the prose is not". So a refutation that wants to
+ * instruct a repair has to instruct it here. `expected` therefore says what was
+ * wanted *and what would produce it*, which is the one reading of "expected" a
+ * repair can act on, and `actual` says what was seen. Both are bounded by the
+ * record's own limit before the record is built, so a long directive is cut
+ * rather than dropping the record whole.
  */
-export function automationStudioResultFailureRecord(input: { verdict: AutomationStudioResultVerdict; code: string; observation: string }): AutomationStudioFailureRecord {
+export function automationStudioResultFailureRecord(input: {
+  verdict: AutomationStudioResultVerdict;
+  code: string;
+  observation: string;
+  /** What to fix, when the verdict is a refutation. A verdict nobody reached carries none. */
+  repair?: AutomationStudioResultRepairDirective | undefined;
+}): AutomationStudioFailureRecord {
   return {
     // `does_not_answer` is a result that was judged wrong; `unsure` is one
     // nobody could judge, which is Core's existing "the producer could not
@@ -86,9 +115,25 @@ export function automationStudioResultFailureRecord(input: { verdict: Automation
     code: input.code,
     retryable: false,
     stage: "verification",
-    expected: "A result that answers the request the Flow was built for.",
-    actual: boundedObservation(input.observation)
+    expected: boundedObservation(expectedText(input.repair)),
+    actual: boundedObservation(actualText(input.observation, input.repair))
   };
+}
+
+/** What was wanted, and what would produce it. */
+function expectedText(repair: AutomationStudioResultRepairDirective | undefined): string {
+  if (!repair) return EXPECTED_BASELINE;
+  const asked = repair.judgement?.expected;
+  const wanted = asked ? `A result that answers the request: ${asked}` : EXPECTED_BASELINE;
+  const advice = repair.judgement?.advice ? [`The check's own advice: ${repair.judgement.advice}`] : [];
+  const lines = [...repair.fix, ...advice];
+  return lines.length ? `${wanted} To fix: ${lines.join(" ")}` : wanted;
+}
+
+/** What was seen: Core's counts, and what the check says it compared them against. */
+function actualText(observation: string, repair: AutomationStudioResultRepairDirective | undefined): string {
+  const observed = repair?.judgement?.observed;
+  return observed ? `${observation} The check observed: ${observed}` : observation;
 }
 
 /** The failure record's own bound on a description, applied before the record is built rather than dropping it whole. */
@@ -108,13 +153,24 @@ function requiredValuesMissing(summary: AutomationStudioRunResultSummary): Autom
   const fields = [...new Set(summary.recordSets.flatMap((set) => set.missingRequiredColumns))];
   const missing = summary.totalRowsMissingRequired;
   return refused({
+    summary,
     code: AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES.requiredValuesMissing,
     reason: "Rows the run stored carry no value for fields the Flow's own record schema declares required, so its result cannot answer the request.",
     observation: `${missing} of ${checked} ${checked === 1 ? "row" : "rows"} checked, of ${summary.totalRecordCount} stored, ${missing === 1 ? "has" : "have"} no value for a required field${fields.length ? ` (${fields.join(", ")})` : ""}.`
   });
 }
 
-function refused(input: { code: string; reason: string; observation: string }): AutomationStudioResultVerification {
+/**
+ * A refutation Core reached itself, with what to do about it.
+ *
+ * These two refutations are settled before a provider is resolved, so no model
+ * ever sees them -- and until now they were the ones that said least, because
+ * they were the ones nobody was asked about. The directive is built from the same
+ * summary the verdict was reached from, so a refutation that costs nothing now
+ * also instructs the repair for nothing.
+ */
+function refused(input: { summary: AutomationStudioRunResultSummary; code: string; reason: string; observation: string }): AutomationStudioResultVerification {
+  const repair = automationStudioResultRepairDirective({ summary: input.summary });
   return {
     schemaVersion: "automation-studio.result-verification.v1",
     verdict: "does_not_answer",
@@ -122,7 +178,8 @@ function refused(input: { code: string; reason: string; observation: string }): 
     code: input.code,
     reason: input.reason,
     observation: input.observation,
-    failure: automationStudioResultFailureRecord({ verdict: "does_not_answer", code: input.code, observation: input.observation })
+    repair,
+    failure: automationStudioResultFailureRecord({ verdict: "does_not_answer", code: input.code, observation: input.observation, repair })
   };
 }
 

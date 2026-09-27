@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { automationStudioRuntimeSessionGrantTaskKinds, AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -105,18 +105,21 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({ identityAccess, secretKeys, resolveExecutionDigest: async (projectId, flowId) => automationStudio.getLlmExecutionBinding(projectId, flowId) });
   automationStudio.bindLlmExecutionProvider(
     (input) => input.executionGrant
-      ? llmExecutionGrants.resolve(
-        { ...input.executionGrant, projectId: input.projectId, flowId: input.flowId },
-        // What each entry point may spend its grant on. Narrower than the grant
-        // itself: Flow bootstrap gathers and builds, a runtime recovery
-        // diagnoses, gathers and repairs, and neither reaches the other's kinds.
-        { allowedTaskKinds: input.executionGrant.purpose === "build_and_adapt"
-          ? ["flow_bootstrap", "evidence_tool_decision"]
-          : automationStudioRuntimeSessionGrantTaskKinds(input.executionGrant.purpose) }
-      )
+      // No per-entry-point narrowing (t166). This used to say what each entry
+      // point may spend its grant on -- a build only bootstraps and gathers, a
+      // runtime recovery only diagnoses, gathers and repairs -- and the effect
+      // was that arriving through one door made a capability unreachable
+      // however the work went: a build could not judge its own answer, and a
+      // failed run could not re-author. Flow creation, runtime failure and an
+      // edge case in an existing Flow are three entry points into one loop, not
+      // three systems, and none of the kinds involved is a risky act. What the
+      // grant itself authorizes still applies, and a lasting consequence is
+      // still gated action by action.
+      ? llmExecutionGrants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId })
       : undefined,
     (grantId) => llmExecutionGrants.revoke(grantId),
-    () => llmExecutionGrants.close()
+    () => llmExecutionGrants.close(),
+    (input) => llmExecutionGrants.continueAfterAppliedFlowAdaptation(input)
   );
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});

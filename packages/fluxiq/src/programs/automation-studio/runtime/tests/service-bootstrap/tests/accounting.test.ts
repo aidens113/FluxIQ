@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -71,6 +72,19 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
   });
 
+  it("does not let a direct explore-and-adapt caller retain the generation grant", async () => {
+    const revoke = vi.fn();
+    const instance = createService({ revoke });
+    const project = await instance.createProject({ name: "Direct explore generation" });
+    const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.direct-explore", name: "Blank" });
+    const executionGrant = { ...(await grant(instance, project.id, flow.flowId)), purpose: "explore_and_adapt" as const };
+
+    await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant }))
+      .rejects.toThrow(/generation failed/);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
+  });
+
   it("attributes pre-provider and resolver failures without claiming a provider call", async () => {
     const preRevoke = vi.fn();
     const preResolver = vi.fn();
@@ -118,12 +132,122 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(resolutionRevoke).toHaveBeenCalledWith(resolutionGrant.grantId);
   });
 
-  it("attributes an unexpected harness throw conservatively without fabricated accounting", async () => {
+  it("does not claim a provider request when post-resolution build setup throws", async () => {
+    const resolver = vi.fn(() => ({
+      provider: mockProvider(),
+      tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+      maxCallsPerRun: 2,
+      maxEstimatedCostUsd: 0.1,
+      timeoutMs: 20_000
+    }));
+    let failSetup = false;
+    const evidenceRuntime = {
+      domainId: "example",
+      deniedEvidenceKeys: [],
+      tools: [],
+      executeTool: async () => ({ observed: true })
+    } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>;
+    Object.defineProperty(evidenceRuntime, "tools", {
+      configurable: true,
+      get: () => {
+        if (failSetup) throw new Error("private setup detail");
+        return [];
+      }
+    });
+    const revoke = vi.fn();
+    const instance = createService({ resolver, evidenceRuntime, revoke });
+    const { project, flow } = await blankFixture(instance);
+    const executionGrant = await grant(instance, project.id, flow.flowId);
+    const harness = vi.spyOn(instance as any, "runFlowBootstrapLlmHarness");
+    failSetup = true;
+
+    const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
+      projectId: project.id,
+      flowId: flow.flowId,
+      executionGrant,
+      evidenceGuided: true
+    }));
+
+    expect(diagnostic).toEqual({
+      code: "flow_bootstrap.pre_provider_validation_failed",
+      stage: "pre_provider_validation",
+      retryable: false,
+      providerInvocation: "not_attempted",
+      providerResponse: "not_received"
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("private setup detail");
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(harness).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
+  });
+
+  // Entering the top-level harness proves neither that the provider was invoked
+  // nor that it was not: request packing precedes the lower call seam, while
+  // response work follows it. A raw escape therefore records unknown provenance.
+  it.each([
+    ["an Error one of Core's own guards threw", () => new Error("raw harness failure"), false, "flow_bootstrap.unexpected_error"],
+    ["a defect in Core", () => new TypeError("raw harness failure"), false, "flow_bootstrap.internal_error"],
+    ["an abort or a deadline", () => new DOMException("raw harness failure", "AbortError"), false, "flow_bootstrap.aborted_or_timed_out"],
+    ["an evidence-decision escape", () => new Error("raw harness failure"), true, "flow_bootstrap.unexpected_error"]
+  ] as const)("records unknown invocation for %s at the unobserved harness boundary", async (_kind, thrown, evidenceGuided, code) => {
+    const revoke = vi.fn();
+    const evidenceRuntime = {
+      domainId: "test.domain",
+      deniedEvidenceKeys: [],
+      tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+      executeTool: async () => ({ factCount: 1 })
+    } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>;
+    const evidenceProvider = mockProvider();
+    const instance = createService({
+      revoke,
+      ...(evidenceGuided ? {
+        evidenceRuntime,
+        provider: evidenceProvider,
+        resolver: () => ({ provider: evidenceProvider, maxCallsPerRun: 3 })
+      } : {})
+    });
+    const { project, flow } = await blankFixture(instance);
+    const executionGrant = await grant(instance, project.id, flow.flowId);
+    const harness = vi.fn().mockRejectedValue(thrown());
+    (instance as any).runFlowBootstrapLlmHarness = harness;
+
+    const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
+      projectId: project.id,
+      flowId: flow.flowId,
+      executionGrant,
+      ...(evidenceGuided ? { evidenceGuided: true } : {})
+    }));
+
+    expect(diagnostic).toEqual({
+      code,
+      stage: "provider_request",
+      retryable: false,
+      providerInvocation: "unknown",
+      providerResponse: "unknown"
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("raw harness");
+    expect(harness).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
+    await expectNoTopology(instance, project.id, flow.flowId);
+  });
+
+  it("preserves a structured harness failure across the scoped request boundary", async () => {
     const revoke = vi.fn();
     const instance = createService({ revoke });
     const { project, flow } = await blankFixture(instance);
     const executionGrant = await grant(instance, project.id, flow.flowId);
-    (instance as any).runFlowBootstrapLlmHarness = vi.fn().mockRejectedValue(new Error("raw harness failure"));
+    const expected = {
+      code: "flow_bootstrap.provider_timeout" as const,
+      stage: "provider_request" as const,
+      retryable: true,
+      providerInvocation: "unknown" as const,
+      providerResponse: "not_received" as const,
+      accounting: { requestId: "request.structured", estimatedInputTokens: 12 }
+    };
+    (instance as any).runFlowBootstrapLlmHarness = vi.fn().mockRejectedValue(
+      new AutomationStudioFlowBootstrapGenerationError(expected)
+    );
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
@@ -131,15 +255,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       executionGrant
     }));
 
-    expect(diagnostic).toEqual({
-      code: "flow_bootstrap.provider_request_failed",
-      stage: "provider_request",
-      retryable: false,
-      providerInvocation: "attempted",
-      providerResponse: "unknown"
-    });
-    expect(JSON.stringify(diagnostic)).not.toContain("raw harness");
-    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(diagnostic).toEqual(expected);
     expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
     await expectNoTopology(instance, project.id, flow.flowId);
   });

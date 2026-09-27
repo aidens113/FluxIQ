@@ -62,6 +62,12 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
   const verdicts: AutomationStudioResultVerdict[] = [first.verdict, second.verdict];
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
+    // The first call's `repair` stands, and the second call's is not merged in.
+    // One question asked twice with the same evidence reaches identical Core
+    // findings by construction; only the model's prose can differ, and two
+    // readings of one result spliced together would be a directive neither call
+    // gave. The failure record the repair is entered with is the first call's for
+    // the same reason.
     return {
       ...first,
       reason: "The result was judged not to answer the request the Flow was built for, twice and with the same evidence, although every step of the run succeeded.",

@@ -33,12 +33,8 @@
 //   flags instead of being handed a target-override exemption.
 
 import type { AutomationStudioRuntimeAdaptationContext } from "../service.ts";
-import { automationStudioLlmExecutionGrantTaskKinds } from "./grant-capabilities.ts";
-import type { AutomationStudioLlmTaskKind } from "./harness.ts";
-
-/** The grant purposes a runtime session will run under. `build_and_adapt` is
- * absent on purpose: creating a Flow from nothing is a different entry point. */
-export const AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES = ["diagnosis_only", "diagnose_and_adapt", "explore_and_adapt", "verify_result"] as const;
+/** The grant purposes a runtime session will run under. */
+export const AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES = ["diagnosis_only", "diagnose_and_adapt", "explore_and_adapt", "build_and_adapt", "verify_result"] as const;
 
 export type AutomationStudioRuntimeSessionGrantPurpose = (typeof AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES)[number];
 
@@ -49,89 +45,6 @@ export type AutomationStudioRuntimeSessionGrant = {
   purpose: AutomationStudioRuntimeSessionGrantPurpose;
 };
 
-/** The run flags an explicit LLM run may not carry, whatever its purpose. */
-export type AutomationStudioRuntimeSessionGrantFlags = {
-  adaptiveMode?: string | undefined;
-  dryRunLlm?: boolean | undefined;
-  authorizedExternalSideEffects?: boolean | undefined;
-  authorizedDomainIds?: readonly string[] | undefined;
-  runId?: string | undefined;
-};
-
-/**
- * Whether this grant's purpose may change anything, rather than only describe
- * what happened. The two that act are the two a person pressed a button to get
- * a repair from; the other two are a question and a verdict.
- */
-export function automationStudioRuntimeSessionGrantMayAct(purpose: AutomationStudioRuntimeSessionGrantPurpose): boolean {
-  return purpose === "diagnose_and_adapt" || purpose === "explore_and_adapt";
-}
-
-/**
- * Why this session may not run under this grant, or `undefined` when it may.
- *
- * This list used to refuse a granted run that carried *any* of the run flags,
- * and that is what made escalation unreachable: a repair that may not take a
- * side effect cannot repair anything a page does, and a run that may not name
- * its own run id cannot resume the run that failed. Both were refused with the
- * grant revoked, so the caller could not even retry without asking a person for
- * a new one. What remains are the two that are genuinely contradictory, plus
- * the one narrowing that still holds:
- *
- *   - An unsupported purpose. Creating a Flow from nothing is a different entry
- *     point and does not run a session.
- *   - An LLM dry run. A dry run makes no provider call, so a grant spent on it
- *     is a grant spent on nothing.
- *   - Side-effect authorization, or an existing session, under a purpose that
- *     changes nothing. `diagnosis_only` and `verify_result` ask a question;
- *     handing either the authority to act would widen what the person granted,
- *     and a session staged by somebody else carries authorizations the grant
- *     never saw. A purpose that *does* act may name its run id, because the run
- *     it is repairing is the run that failed.
- *
- * `adaptiveMode` is no longer refused, because the caller's answer is
- * normalized to `manual_approval` anyway: refusing it only threw away a grant
- * over a field that was about to be overwritten.
- */
-export function automationStudioRuntimeSessionGrantRefusal(
-  grant: { purpose: string },
-  flags: AutomationStudioRuntimeSessionGrantFlags
-): string | undefined {
-  if (!(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES as readonly string[]).includes(grant.purpose)) {
-    return "Explicit LLM execution purpose is not one a runtime session runs under.";
-  }
-  if (flags.dryRunLlm === true) return "Explicit LLM execution cannot be an LLM dry run.";
-  if (automationStudioRuntimeSessionGrantMayAct(grant.purpose as AutomationStudioRuntimeSessionGrantPurpose)) return undefined;
-  if (flags.authorizedExternalSideEffects === true || (flags.authorizedDomainIds?.length ?? 0) > 0) {
-    return "Explicit LLM execution under a purpose that changes nothing cannot carry side-effect authorization.";
-  }
-  if (flags.runId !== undefined) {
-    return "Explicit LLM execution under a purpose that changes nothing cannot attach to a session it did not create.";
-  }
-  return undefined;
-}
-
-/** What the recovery entry point may ask a provider for under this grant.
- *
- * Narrower than the grant itself by design. The grant says what a person
- * authorized; this says what *this* path is allowed to spend it on, so an
- * `explore_and_adapt` grant cannot reach instruction suggestions or change
- * proposals merely by arriving through a failed run. `evidence_tool_decision`
- * is here because gathering evidence is the first thing a real model asks for,
- * and forbidding it is what left diagnoses unvalidated. */
-export function automationStudioRuntimeSessionGrantTaskKinds(purpose: AutomationStudioRuntimeSessionGrantPurpose): readonly AutomationStudioLlmTaskKind[] {
-  const granted = automationStudioLlmExecutionGrantTaskKinds(purpose);
-  return AUTOMATION_STUDIO_RUNTIME_SESSION_TASK_KINDS.filter((taskKind) => granted.includes(taskKind));
-}
-
-const AUTOMATION_STUDIO_RUNTIME_SESSION_TASK_KINDS: readonly AutomationStudioLlmTaskKind[] = Object.freeze([
-  "runtime_diagnosis",
-  "evidence_tool_decision",
-  "runtime_patch",
-  "loop_plan",
-  "loop_verification"
-]);
-
 /** The adaptation context this run actually executes under, given its grant.
  *
  * An explicit grant is a person pressing a button, so the run invokes the model
@@ -141,43 +54,9 @@ export function automationStudioRuntimeAdaptationContextForGrant(
   context: AutomationStudioRuntimeAdaptationContext,
   purpose: AutomationStudioRuntimeSessionGrantPurpose
 ): AutomationStudioRuntimeAdaptationContext {
-  if (purpose === "diagnosis_only") return context;
-  if (purpose === "verify_result") {
-    // The grant authorizes no diagnosis, so the run may not ask for one: with
-    // `invokeLlm` off the recovery is never offered the model and records why,
-    // rather than resolving a provider only to have the grant refuse the call.
-    // Deterministic recovery stays as configured, exactly as for a run with no
-    // grant at all.
-    return {
-      ...context,
-      behavior: { ...context.behavior, invokeLlm: false, createAdaptations: false, promoteAdaptations: false },
-      diagnostics: [...context.diagnostics, "Explicit verify_result run executes without LLM intervention; its one call judges the finished run's result."]
-    };
-  }
-  if (purpose === "diagnose_and_adapt") {
-    return {
-      ...context,
-      behavior: { ...context.behavior, invokeLlm: true, runRecovery: false, createAdaptations: true, promoteAdaptations: true },
-      policy: {
-        ...context.policy,
-        proposalMode: "manual",
-        // The narrow grant is schema-bound to one target-override proposal.
-        // Permit only that mutation class; preflight still forbids execution and
-        // the ordinary PIN-gated review path remains required for application.
-        allowModifyActionTargets: true
-      },
-      diagnostics: [...context.diagnostics, "Explicit diagnose_and_adapt run permits one target-override proposal with manual review only."]
-    };
-  }
   return {
     ...context,
-    // `runRecovery` stays as configured: a known deterministic recovery is the
-    // cheaper answer and must still run before the model is asked.
     behavior: { ...context.behavior, invokeLlm: true, createAdaptations: true, promoteAdaptations: true },
-    // No mutation exemption. An exploring run is held to the policy flags a
-    // person actually set, and is bounded by cost, tokens and the recovery
-    // deadline rather than by a call count.
-    policy: { ...context.policy, proposalMode: "manual" },
-    diagnostics: [...context.diagnostics, "Explicit explore_and_adapt run iterates under the configured cost, token and deadline budgets, with manual review only."]
+    diagnostics: [...context.diagnostics, `Explicit ${purpose} run iterates under the configured cost, token and deadline budgets.`]
   };
 }

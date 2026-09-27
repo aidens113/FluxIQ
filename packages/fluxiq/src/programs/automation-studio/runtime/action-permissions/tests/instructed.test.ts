@@ -12,6 +12,13 @@ import {
 
 const REFUND_INSTRUCTION = { instructionId: "instruction.refund", title: "Partial refund", body: "Find the order placed by Ada Lovelace, open it, refund the value of the first line on it." };
 const REFUND: AutomationStudioActionDeclaration = { consequences: ["move_money", "modify_existing"], control: { name: "Refund line 1", kind: "button" }, verb: "press" };
+/**
+ * The refund the instruction asks for, and a deletion it says nothing about.
+ * `modify_existing` cannot play that part since 2026-09-26: the instruction
+ * covers the money, and an edit is no longer a class anybody is asked about, so
+ * a class beyond the instruction has to be one that still is.
+ */
+const REFUND_AND_REMOVE: AutomationStudioActionDeclaration = { consequences: ["move_money", "delete"], control: { name: "Remove line 1", kind: "button" }, verb: "press" };
 const STEP = { kind: "flow_step" as const, id: "demo.orders.press", ref: "main.s3" };
 
 describe("reading what an instruction asks for", () => {
@@ -64,7 +71,8 @@ describe("a gate that reads the instruction", () => {
       deriveInstructed: async () => readAutomationStudioInstructedConsequences({ instructions: [REFUND_INSTRUCTION], result: { instructed: [{ consequence: "move_money", quote: "refund the value of the first line" }] } })
     });
 
-    expect(await gate.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["modify_existing"] });
+    expect(await gate.checkFor(STEP)(REFUND_AND_REMOVE)).toMatchObject({ permitted: false, missing: ["delete"] });
+    expect(gate.request?.consequences).toEqual(["move_money", "delete"]);
     expect(gate.request?.authority).toEqual({
       granted: ["create_new"],
       instructed: [{ consequence: "move_money", instructionId: "instruction.refund", quote: "refund the value of the first line" }]
@@ -74,7 +82,7 @@ describe("a gate that reads the instruction", () => {
   it("asks when reading the instruction failed, rather than acting", async () => {
     const gate = new AutomationStudioActionPermissionGate({ stage: "authoring", deriveInstructed: async () => { throw new Error("provider down"); } });
 
-    expect(await gate.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["move_money", "modify_existing"] });
+    expect(await gate.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["move_money"] });
   });
 
   it("still reads the instruction once when a grant covers the action, so what it asks for is kept with the Flow", async () => {

@@ -244,8 +244,11 @@ The adapter has one fixed HTTPS chat-completions URL and a configured set of
 DeepSeek models (`AUTOMATION_STUDIO_DEEPSEEK_MODELS`: `deepseek-flash`, the
 default, and `deepseek-v4-pro`); a model outside that set is refused by name,
 with what replaced it where DeepSeek withdrew it, before a request is built.
-User/Flow endpoint overrides, redirects, hidden retries,
-and unbounded response reads are not supported. Requests use a concrete output
+User/Flow endpoint overrides, redirects, and unbounded response reads are not
+supported. Every provider call passes through Core's default provider-retry
+seam. A typed temporary provider fault may be attempted at most three times in
+total; deterministic refusals and Core's own per-call deadline timeout are not
+retried there. Requests use a concrete output
 allowance, a bounded timeout and abort signal, request/idempotency identifiers,
 and an opaque scoped secret resolver. A per-run reservation ledger is shared by
 every call a recovery makes (the diagnosis, each evidence decision, and the
@@ -283,7 +286,12 @@ a grant before and after a run claims it. Core never reads a
 provider key from the environment. Flow Settings exposes only DeepSeek and
 the configured model set, selects only enabled Secret Keys metadata in global or current
 Flow scope, and persists per-request input/output/total token limits, a call
-limit, timeout, estimated-cost cap, and zero-retry policy. The settings API
+limit, timeout, estimated-cost cap, and a zero-retry Flow-setting policy. That
+persisted setting is not the execution grant's provider retry allowance. An
+execution grant carries `providerRetryCount` from zero through two, default two;
+resolution clamps it to the grant's remaining uses minus the current call, and
+each attempt consumes and settles a real grant use. The last remaining use can
+therefore fund no retry. The settings API
 rejects totals above 50,000, input-plus-output reservations above the total,
 call limits outside one through 64, retries other than zero, timeouts above 25
 seconds, and cost caps above USD 0.25. Runtime Debug exposes separate **LLM
@@ -328,28 +336,16 @@ canonical persisted Flow settings revision, bind the enabled key revision, and
 become invalid when any of those revisions or the authorized user session
 changes. The purpose is runtime-enum validated.
 
-The grant module's own request check lets each purpose match only its own task
-kinds. A purpose says what may be asked for, never how many times:
-- `diagnosis_only` matches runtime diagnosis.
-- `diagnose_and_adapt` matches runtime diagnosis, evidence tool decision,
-  runtime patch, loop plan, and loop verification requests.
-- `explore_and_adapt` matches those, plus instruction suggestion and router,
-  subflow, expectation/action-target, and change proposal requests.
-- `build_and_adapt` matches all of those, plus flow bootstrap.
-
-The production provider resolver, bound in `createGlobalProgramRuntime`
-(`programs/_shared/runtime.ts`), narrows each purpose further to the entry point
-it arrived through, and a call whose task kind is outside that list is refused
-and its grant revoked:
-- `build_and_adapt` resolves `flow_bootstrap` and `evidence_tool_decision`, the
-  two task kinds Flow bootstrap generation sends; the second is sent only when
-  generation is evidence-guided.
-- `diagnose_and_adapt` and `explore_and_adapt` resolve `runtime_diagnosis`,
-  `evidence_tool_decision`, `runtime_patch`, `loop_plan`, and
-  `loop_verification`, the task kinds a runtime recovery sends. A failed run
-  never reaches instruction suggestions or change proposals, whatever its grant
-  allows.
-- `diagnosis_only` resolves `runtime_diagnosis`.
+Grant purpose remains part of issuance, API/runtime-lane compatibility,
+accounting, and audit metadata. It no longer authorizes model work by task kind,
+dry-run, side-effect, or risk flags, and the production resolver does not carry
+a second purpose-to-task allowlist. The runtime endpoint still accepts only its
+runtime-session purposes, while the generation endpoint accepts
+`build_and_adapt`; those entry-point compatibility checks keep a build grant out
+of runtime diagnosis without making purpose a task authorization mechanism.
+Provider retry is bounded again by the attempt, wait, per-call, per-run, and
+process ledgers. These are locally tested bounds; no live-provider success is
+claimed here.
 
 A request that carries no execution grant resolves no provider **from the grant
 service**. `runRuntimeSession` accepts only `diagnosis_only`,
@@ -402,6 +398,22 @@ recorded before 2026-09-24, and the `no_result` value of a run's
 `result_verification_status` column is likewise only ever written by such a run.
 What a new run can carry is `confirmed`, `refuted` or `unverified`, plus null
 where the schedule did not check it.
+
+The verification request's `flowShape` now gives each step its bounded label
+and the same screened authored parameters the repair context receives.
+`parametersWithheld` names dotted paths whose original value was removed or
+transformed; `flowParametersWithheld` distinguishes a flow-wide byte-budget
+omission from a step that simply had no parameters. `loop_verification` also
+receives the conversation and per-step record counts, while result data remains
+the bounded summary rather than unrestricted stored rows.
+
+A `does_not_answer` verdict carries
+`automation-studio.result-repair-directive.v1`: Core-authored coded findings and
+fix lines, plus optional screened judgement fields `expected`, `observed`, and
+`advice`, with a `withheld` flag. The structured directive reaches the synthetic
+failed attempt and recovery context independently of the 1,024-character
+failure prose. Persisted result records keep Core's bounded facts; arbitrary
+provider prose is not persisted as repair authority.
 
 ### The standing authorization, for runs nobody is watching
 
@@ -578,21 +590,31 @@ metadata instead of looping. An LLM attempt is one recovery, not one provider
 call: the calls inside it are bounded as described in
 [Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
 
-**Retries are on by default, and each rung is consumed as it runs.** A node that
-fails is attempted again without anyone opting in: three attempts at 250 ms,
-1 s and 2 s (`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`), overridable by a
-node's `parameterValues.retry` or `metadata.retry`, by a `builtin.timing.retry`
-node guarding the branch, by a Flow's `metadata.retry`, or by the run's own
-`retryPolicy`, and capped by `maxRetriesPerAction` — which is now the attempt
-allowance its name claims, rather than a gate that withdrew the Flow's own
-authored failed route. A node is dispatched again only when its structured
-failure says `retryable` and its `stage` is neither `verification` nor
-`confirmation`: an action demoted by the check that followed it already took
-effect, and dispatching it again is how a double submit happens. Each of the
-four deterministic rungs leaves the candidate list once it has run, because any
-non-`llm_diagnosis` candidate still on offer tells
-`classifyAutomationStudioAdaptiveFailure` that a deterministic answer exists and
-suppresses escalation to the model entirely.
+**Defensive dispatch is on by default, and each rung is consumed as it runs.**
+`executeAutomationStudioNode` is the single dispatch seam for built-in,
+output-dispatch, native, and composite nodes. A thrown value is classified into
+a failed attempt instead of escaping the graph run. The policy reads structured
+producer failures, classified throws, and bounded legacy result messages;
+honours bounded retry hints; and records every absorbed or refused assessment in
+the run's defence ledger. Waits are capped per attempt, per arrival at a node,
+and per run.
+
+A node that fails may still be attempted again without anyone opting in: three
+attempts at 250 ms, 1 s and 2 s
+(`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`), overridable by a node's
+`parameterValues.retry` or `metadata.retry`, by a `builtin.timing.retry` node
+guarding the branch, by a Flow's `metadata.retry`, or by the run's own
+`retryPolicy`, and capped by `maxRetriesPerAction`. Retryability and failure
+stage are evidence, not sufficient authority to repeat an action.
+`verification` and `confirmation` no longer prohibit retry by stage alone:
+Core asks whether the node could act twice. Read-only or positively non-acting
+work may repeat; an ambiguous mutating or destructive action is refused unless
+the node positively declares repetition safe. A terminal non-fatal failure may
+also be continued past when the Flow or node policy says so. The defence ledger
+records whether Core retried, continued, or stopped; it does not claim that
+every failure is swallowed. Each deterministic ladder rung leaves the candidate
+list once it has run, so an already-consumed deterministic answer does not
+suppress escalation forever.
 
 **The recorded state is read while the Flow runs.** Every node a recording
 proposal produces carries `stateLink`, `stateSnapshotId`, `stateRef` and
@@ -833,8 +855,9 @@ In the shipped app, no training window reaches a provider; see
 The service can run every path above for a host whose provider resolver returns
 a provider. The shipped app's framework host builds its programs with
 `createGlobalProgramRuntime`. That resolver returns a provider only for a request
-that carries an explicit execution grant, and only for that grant purpose's task
-kinds. Each path reaches a model as follows:
+that carries an explicit execution grant. The grant purpose selects the API
+lane and remains accounting and audit metadata; it does not authorize or filter
+task kinds. Each path reaches a model as follows:
 
 - **Flow bootstrap generation:** a `build_and_adapt` grant.
 - **Runtime diagnosis:** a `diagnosis_only`, `diagnose_and_adapt`, or
@@ -1072,15 +1095,18 @@ set the Flow's build stored as what the person's instruction asks for
 instruction is active and its text unchanged. A recovery never asks a model to
 read the instruction again.
 
-**Only a destructive class reaches that gate as something refusable.** The gate
-itself narrowed on 2026-09-24 (`action-permissions/destructive.ts`):
-`move_money`, `delete` and `modify_existing` are the classes a grant or the
-instruction has to authorise, and `create_new` and `send_or_publish` are
-permitted outright. On the repair path that is what makes a live repair possible
-at all. A target override the gate permits carries `sideEffectPermission:
-"permitted"`, which is the authorization both of the policy's side-effect lines
-ask for; before the narrowing, a repair that pressed a control to make or send
-something was refused by the gate, so it carried no such authorization and was
+**Only a high-risk real-world consequence reaches that gate as something
+refusable.** The gate is defined in `action-permissions/destructive.ts`:
+`move_money`, `delete`, and `send_or_publish` are the classes a grant or the
+instruction has to authorise. `modify_existing` and `create_new` do not prompt
+merely because of their class. All five classes remain on declarations and in the
+instruction/consequence cross-check, so narrowing the prompt gate does not erase
+an under- or over-declaration. On the repair path the narrow gate is what makes
+a live repair possible at all. A target override the gate permits carries
+`sideEffectPermission: "permitted"`, which is the authorization both of the
+policy's side-effect lines ask for; before the narrowing, a repair that pressed
+a control to make or send something was refused by the gate, so it carried no
+such authorization and was
 refused a second time at preflight by `policy.allowExternalSideEffects`, which
 is `false` on every default policy. A repair under `explore_and_adapt` could
 therefore never press anything, and the Lab pinned its created-Flow repairs to

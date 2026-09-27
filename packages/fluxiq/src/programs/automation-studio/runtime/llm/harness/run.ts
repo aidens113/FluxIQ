@@ -2,18 +2,15 @@ import { randomUUID } from "node:crypto";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
-  automationStudioLlmSignalTimedOut,
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
-  AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
-  AutomationStudioLlmProviderError,
-  normalizedAutomationStudioLlmProviderFailure
+  AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
 } from "../provider-contract.ts";
+import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
 import { validRequestIdentity } from "./json-bounds.ts";
-import type { AutomationStudioLlmProvider } from "./provider.ts";
 import { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 import { expectedOutputForTask } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, AutomationStudioLlmTaskResult } from "./task-request.ts";
@@ -108,6 +105,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     return {
       ok: false,
       request,
+      providerInvocation: "not_attempted",
       diagnostics,
       intervention: interventionFromLlmResult(input, request, diagnostics, now())
     };
@@ -120,6 +118,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     return {
       ok: input.dryRun === true,
       request,
+      providerInvocation: "not_attempted",
       diagnostics,
       intervention: interventionFromLlmResult(input, request, diagnostics, now())
     };
@@ -142,6 +141,16 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       }
     })
     : null;
+  // A reservation the run's budget refused ends the call here, before the
+  // provider is invoked. Nothing about a provider may be claimed from here on:
+  // this return used to carry `provider: input.provider.metadata` -- the
+  // provider it *would* have called -- and the projection that builds a stored
+  // failure reads the presence of that metadata as the request having been made.
+  // Two live runs ended on this branch and were recorded as an attempted
+  // provider request whose answer was unknown, with the provider and model
+  // named, no usage and no status; they were then read for a day as DeepSeek
+  // rejecting our request. No request was ever made. Saying so is one word, and
+  // it is the caller's word to say -- a reader cannot infer it from an absence.
   if (reservation && !reservation.ok) {
     const diagnostics = [
       ...context.instructions.diagnostics,
@@ -150,16 +159,35 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     return {
       ok: false,
       request,
-      provider: input.provider.metadata,
+      providerInvocation: "not_attempted",
       diagnostics,
-      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata)
+      intervention: interventionFromLlmResult(input, request, diagnostics, now())
     };
   }
-  let untrustedProviderResult: unknown;
-  try {
-    untrustedProviderResult = await runProviderWithEnforcedDeadline(input.provider, request, input.signal);
-  } catch (error) {
-    const failure = normalizedAutomationStudioLlmProviderFailure(error);
+  // One reservation, however many attempts the call takes. A fault the adapter
+  // called temporary -- a 429, a 5xx, a request timeout, a network failure -- is
+  // asked again with backoff inside this call, because the flag it already set
+  // was read by nothing and a rate limit ended a whole build
+  // (`../provider-retry/call.ts`).
+  const call = await automationStudioLlmProviderCall({
+    provider: input.provider,
+    request,
+    now,
+    ...(input.signal ? { signal: input.signal } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.providerRetry?.maxAttempts !== undefined ? { maxAttempts: input.providerRetry.maxAttempts } : {}),
+    ...(input.providerRetry?.ledger ? { ledger: input.providerRetry.ledger } : {}),
+    ...(input.providerRetry?.wait ? { wait: input.providerRetry.wait } : {})
+  });
+  // One predicate for both channels: the field on the result and the code on the
+  // receipt say the same thing or neither says anything. An ordinary
+  // single-attempt failure -- the 400 that ended two live builds -- is not a
+  // retry account, and publishing an empty one would make every failed call look
+  // like a retried one.
+  const retryDiagnostics = providerRetryDiagnostics(call.retry);
+  const retryStated = retryDiagnostics.length > 0 ? { providerRetry: call.retry } : {};
+  if (!call.ok) {
+    const failure = call.failure;
     const diagnostics = [
       ...context.instructions.diagnostics,
       {
@@ -170,27 +198,40 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
           retryable: failure.retryable,
           ...(failure.status !== undefined ? { providerStatus: failure.status } : {})
         }
-      }
+      },
+      // After the failure, never before it, and never as an error. The projection
+      // that stores a failed build takes the *newest* error diagnostic
+      // (`flow-bootstrap/generation-failure/harness-failure.ts`), so an error
+      // here would replace the provider's own code with an unrecognized one and
+      // the build would be recorded as `provider_transport_unknown` -- the very
+      // misreading this work exists to stop.
+      ...retryDiagnostics
     ];
     if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
     return {
       ok: false,
       request,
       provider: input.provider.metadata,
+      // The failure's own account of how far the call got, not this function's
+      // guess: a pre-flight refusal inside the adapter never sent anything, a
+      // transport error did, and a deadline cannot say.
+      providerInvocation: failure.provenance.providerInvocation,
+      ...(failure.refusal ? { providerRefusal: failure.refusal } : {}),
+      ...retryStated,
       diagnostics,
       intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata)
     };
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
   try {
-    providerResult = parseAutomationStudioLlmProviderResult(untrustedProviderResult, expectedOutput, input.flowBootstrap);
+    providerResult = parseAutomationStudioLlmProviderResult(call.result, expectedOutput, input.flowBootstrap);
   } catch {
-    const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }];
+    const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
-    return { ok: false, request, provider: input.provider.metadata, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
+    return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
-  const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics];
+  const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics, ...retryDiagnostics];
   const ok = diagnostics.every((diagnostic) => diagnostic.severity !== "error");
   // The provider's report goes to the ledger as it was given, over the
   // request's limits or not. Withholding an overage made the ledger charge the
@@ -202,7 +243,9 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     request,
     ...(providerResult.response ? { response: providerResult.response } : {}),
     provider: input.provider.metadata,
+    providerInvocation: "attempted",
     ...(providerResult.usage ? { usage: providerResult.usage } : {}),
+    ...retryStated,
     diagnostics,
     intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, input.provider.metadata, providerResult.usage)
   };
@@ -216,28 +259,44 @@ function callOutcome(diagnostics: readonly AutomationStudioLlmDiagnostic[]): Aut
   };
 }
 
-async function runProviderWithEnforcedDeadline(provider: AutomationStudioLlmProvider, request: AutomationStudioLlmTaskRequest, parentSignal?: AbortSignal): Promise<unknown> {
-  const controller = new AbortController();
-  const parentAbort = () => controller.abort(parentSignal?.reason);
-  if (parentSignal?.aborted) parentAbort();
-  else parentSignal?.addEventListener("abort", parentAbort, { once: true });
-  // The deadline aborts as a timeout, not as a bare abort. A provider that
-  // holds an authorization reads the difference: a call that ran out of time is
-  // a spent call, and a cancellation ends the authorization with it.
-  const timer = setTimeout(() => controller.abort(new DOMException("LLM provider call reached its deadline.", "TimeoutError")), request.timeoutMs);
-  try {
-    if (controller.signal.aborted) throw providerAbortFailure(parentSignal);
-    return await Promise.race([
-      provider.runTask(request, { signal: controller.signal }),
-      new Promise<never>((_resolve, reject) => controller.signal.addEventListener("abort", () => reject(providerAbortFailure(parentSignal)), { once: true }))
-    ]);
-  } finally {
-    clearTimeout(timer);
-    parentSignal?.removeEventListener("abort", parentAbort);
-  }
-}
-
-function providerAbortFailure(parentSignal?: AbortSignal): AutomationStudioLlmProviderError {
-  const timedOut = !parentSignal?.aborted || automationStudioLlmSignalTimedOut(parentSignal);
-  return new AutomationStudioLlmProviderError(timedOut ? "llm.provider_timeout" : "llm.provider_aborted", "Provider request ended.", timedOut);
+/**
+ * What the retrying did, as a line on the run's receipt.
+ *
+ * **Why it is recorded even when nothing was retried in the end.** A fault the
+ * adapter called temporary that was *not* asked again is the more interesting
+ * half: it means a bound stopped it -- the attempt count, this call's wall clock,
+ * or the run's whole retry allowance -- and a bound that stops a run silently is
+ * indistinguishable from a bound that is not there. `stop` names which one, so an
+ * exhausted allowance reads as an exhausted allowance and never as the provider
+ * having simply failed.
+ *
+ * `info` when the call went on to answer, `warning` when it did not; never
+ * `error`, because the error is the provider's fault and this is the account of
+ * what Core did about it.
+ */
+function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount): AutomationStudioLlmDiagnostic[] {
+  const nothingToSay = retry.attempts.length === 0 || (retry.retries === 0 && (retry.stop === "not_retryable" || retry.stop === "answered"));
+  if (nothingToSay) return [];
+  return [{
+    severity: retry.stop === "answered" ? "info" : "warning",
+    code: "llm.provider_retried",
+    message: retry.stop === "answered"
+      ? `The LLM provider answered after ${retry.retries} further ${retry.retries === 1 ? "attempt" : "attempts"}.`
+      : `The LLM provider was asked ${retry.attempts.length} ${retry.attempts.length === 1 ? "time" : "times"} and no further attempt was made (${retry.stop}).`,
+    metadata: {
+      stop: retry.stop,
+      retries: retry.retries,
+      waitedMs: retry.waitedMs,
+      addedMs: retry.addedMs,
+      attempts: retry.attempts.map((attempt) => ({
+        attempt: attempt.attempt,
+        code: attempt.code,
+        ...(attempt.status !== undefined ? { status: attempt.status } : {}),
+        retryable: attempt.retryable,
+        elapsedMs: attempt.elapsedMs,
+        waitedMs: attempt.waitedMs,
+        ...(attempt.waitSource !== undefined ? { waitSource: attempt.waitSource } : {})
+      }))
+    }
+  }];
 }

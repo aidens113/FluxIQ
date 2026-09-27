@@ -9,7 +9,7 @@ export function deriveRisk(plan: AutomationStudioFlowBootstrapPlan, registry: Au
     const definition = registry.get(node.definitionId, resolution);
     if (!definition) continue;
     const runtime = definition.safety?.runtime;
-    if (definition.safety?.privileged || definition.safety?.requiresOperatorApproval || runtime?.process || runtime?.childProcess || runtime?.filesystemRoots?.length) return "high";
+    if (runtime?.process || runtime?.childProcess || runtime?.filesystemRoots?.length) return "high";
     if (definition.outputAction || definition.requiredRuntimeCapabilities?.length || definition.safety?.requiredPermissions?.length || runtime?.networkDestinations?.length || runtime?.secretHandles?.length) risk = "medium";
   }
   return risk;

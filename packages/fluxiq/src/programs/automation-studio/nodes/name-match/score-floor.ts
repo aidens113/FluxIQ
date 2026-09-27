@@ -23,5 +23,17 @@
  * not act on — run `run-mug776kx-0214b287` was refused the same way fourteen
  * times and never corrected itself. So the floor sits inside the measured gap,
  * nearer the absent band, admitting the 0.34 guess and rejecting the 0.083 one.
+ *
+ * Why it has not moved, and why it is not the answer to a name that misses.
+ * Names that plainly should resolve have twice been measured falling below it —
+ * short column words against long detected names, `url` at 0.042 and `prce` at
+ * 0.077 — and both times the *measure* was answering the wrong question rather
+ * than the bar being set too high. Lowering the floor far enough to admit them
+ * would have admitted `banana` (0.042) and `sponsored` (0.068) in the same
+ * movement, which is the opposite of resolving a name: it makes every refusal
+ * arbitrary. They were fixed where the score is computed
+ * (`./token-credit.ts`) and now land at 0.497 and 0.597, inside the band this
+ * floor was measured to accept. That they land there is the evidence that the
+ * measure and not the bar was at fault.
  */
 export const AUTOMATION_STUDIO_NAME_MATCH_SCORE_FLOOR = 0.25;

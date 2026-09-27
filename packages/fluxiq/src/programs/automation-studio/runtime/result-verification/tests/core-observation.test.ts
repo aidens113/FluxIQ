@@ -103,4 +103,41 @@ describe("automationStudioResultCoreObservation", () => {
     const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 5 }));
     expect((observation?.failure?.actual ?? "").length).toBeLessThanOrEqual(1_024);
   });
+
+  it("says what to fix on a refutation it reached for nothing, which is the one that used to say least", () => {
+    // These two are settled before a provider is resolved, so no model ever sees
+    // them -- and they were therefore the refutations that instructed the repair
+    // least. The directive is built from the same counts the verdict was reached
+    // from, so it costs nothing extra.
+    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 5 }));
+    expect(observation?.repair?.findings.map((finding) => finding.code)).toEqual(["result.every_row_refused"]);
+    expect(observation?.repair?.fix[0]).toContain("thrown away by validation");
+    expect(observation?.repair?.judgement).toBeUndefined();
+    expect(observation?.failure?.expected).toContain("To fix:");
+  });
+
+  it("names the required columns in the fix, and no value from any row", () => {
+    const observation = automationStudioResultCoreObservation(summary({
+      totalRecordCount: 57,
+      totalRowsMissingRequired: 4,
+      recordSets: [recordSet({ recordCount: 57, rowsChecked: 57, rowsMissingRequired: 4, missingRequiredColumns: ["price", "address"], sampleRows: [{ address: "4 Kelford Row", price: "" }] })]
+    }));
+    const finding = observation?.repair?.findings.find((item) => item.code === "result.required_values_missing");
+    expect(finding?.columns).toEqual(["price", "address"]);
+    expect(observation?.repair?.fix.some((line) => line.includes("price, address"))).toBe(true);
+    expect(JSON.stringify(observation)).not.toContain("4 Kelford Row");
+  });
+
+  it("bounds the expected text a long directive would otherwise overrun", () => {
+    const wide = Array.from({ length: 4 }, (_set, index) => recordSet({
+      datasetId: `set${index}`,
+      recordCount: 0,
+      refusedCount: 3,
+      truncated: true,
+      sampleRows: [{ address: "" }, { address: "" }],
+      missingRequiredColumns: [`field${index}`.repeat(20)]
+    }));
+    const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 12, recordSetCount: 4, recordSets: wide, withheld: true }));
+    expect((observation?.failure?.expected ?? "").length).toBeLessThanOrEqual(1_024);
+  });
 });

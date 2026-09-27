@@ -222,7 +222,7 @@ describe("a failed call that ends the grant", () => {
   it("ends the grant on a claim, exchange, reveal or endpoint integrity failure", async () => {
     let fixture = setup();
     let { provider } = await adapting(fixture);
-    await expect(provider.runTask(next({ taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" }))).rejects.toThrow("request mismatch");
+    await expect(provider.runTask(next({ taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" }))).rejects.toThrow("task kind and expected output disagree");
     expect(fixture.service.activeGrantCount()).toBe(0);
 
     // The scope a grant was claimed for, changed underneath it.

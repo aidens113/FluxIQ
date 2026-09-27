@@ -21,6 +21,7 @@ import {
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, automationStudioLlmSignalTimedOut } from "../provider-contract.ts";
 import { automationStudioLlmProviderErrorSpendsCall } from "../failure-disposition.ts";
 import { automationStudioLlmExecutionGrantMetadata, type AutomationStudioLlmExecutionGrantMetadata } from "./grant-metadata.ts";
+import type { AutomationStudioLlmExecutionBinding } from "./grant-binding.ts";
 import {
   automationStudioLlmExecutionGrantFixedCalls,
   automationStudioLlmExecutionGrantIterates,
@@ -43,6 +44,7 @@ const LIMITS: AutomationStudioLlmTokenLimits = { maxInputTokens: 48_000, maxOutp
 const TIMEOUT_MS = 20_000;
 const COST_USD = 0.25;
 const MAX_TTL_MS = 300_000;
+const PROVIDER_ATTEMPT_LIMIT = Symbol.for("fluxiq.automation-studio.llm.provider-attempt-limit");
 /**
  * The absolute backstop on a grant's provider calls.
  *
@@ -116,11 +118,6 @@ export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS = 600_000;
 
 /** The shortest a Secret Keys reveal authorization may be asked to live. */
 const MIN_REVEAL_AUTHORIZATION_TTL_MS = 1_000;
-
-export type AutomationStudioLlmExecutionBinding = {
-  executionDigest: string;
-  settingsRevision: number;
-};
 
 export type { AutomationStudioLlmExecutionGrantMetadata } from "./grant-metadata.ts";
 
@@ -206,7 +203,8 @@ export class AutomationStudioLlmExecutionGrantService {
       throw new Error(fixedCalls === 1 ? `${purpose} permits exactly one LLM call.` : `${purpose} permits one LLM call or ${fixedCalls}.`);
     }
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
-    if ((input.providerRetryCount ?? 0) !== 0) throw new Error("LLM execution grants do not permit provider retries.");
+    const providerRetryCount = input.providerRetryCount ?? 2;
+    if (!Number.isInteger(providerRetryCount) || providerRetryCount < 0 || providerRetryCount > 2) throw new Error("LLM execution provider retry count is invalid.");
     const tokenResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits ?? LIMITS);
     if (tokenResolution.diagnostics.length) throw new Error("LLM token limits are invalid.");
     // The run's token budget is its own number, not calls times the per-call
@@ -244,7 +242,7 @@ export class AutomationStudioLlmExecutionGrantService {
       maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd,
       timeoutMs,
-      providerRetryCount: 0,
+      providerRetryCount,
       permittedConsequences
     };
   }
@@ -392,6 +390,39 @@ export class AutomationStudioLlmExecutionGrantService {
     return automationStudioLlmExecutionGrantMetadata(grant);
   }
 
+  /** Continue one held run across the exact Flow adaptation it just applied. */
+  async continueAfterAppliedFlowAdaptation(input: GrantScope & { expectedPreviousBinding: AutomationStudioLlmExecutionBinding; appliedBinding: AutomationStudioLlmExecutionBinding }): Promise<AutomationStudioLlmExecutionGrantMetadata> {
+    const grant = this.grants.get(input.grantId);
+    try {
+      parseAutomationStudioLlmExecutionGrantPurpose(input.purpose);
+      if (!grant || grant.state !== "claimed" || !grant.heldForRun || grant.callInFlight || grant.remainingUses <= 0 || this.expired(grant)) {
+        throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
+      }
+      if (!sameScope(grant, input)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
+      const previous = executionBinding(input.expectedPreviousBinding, grant.purpose);
+      const applied = executionBinding(input.appliedBinding, grant.purpose);
+      const [session, key, unresolvedCurrent] = await Promise.all([this.options.identityAccess.validateSession(input.actorSessionId, this.now()), this.options.secretKeys.getKeySummary(grant.keyId), this.options.resolveExecutionDigest(grant.projectId, grant.flowId)]);
+      const current = executionBinding(unresolvedCurrent, grant.purpose);
+      if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || !grant.heldForRun || grant.callInFlight || grant.remainingUses <= 0 || this.expired(grant)) {
+        throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
+      }
+      if (!sameScope(grant, input)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
+      if (!session || session.user.id !== grant.actorUserId || !key || key.id !== grant.keyId || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
+        || grant.executionDigest !== previous.executionDigest || grant.settingsRevision !== previous.settingsRevision
+        || current.executionDigest !== applied.executionDigest || current.settingsRevision !== applied.settingsRevision) {
+        throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
+      }
+      validateKeyCompatibility(key, grant);
+      grant.executionDigest = applied.executionDigest;
+      grant.settingsRevision = input.appliedBinding.settingsRevision;
+      return automationStudioLlmExecutionGrantMetadata(grant);
+    } catch (error) {
+      this.revoke(input.grantId);
+      if (error instanceof AutomationStudioLlmExecutionGrantRefusal) throw error;
+      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
+    }
+  }
+
   async resolve(input: GrantScope, policy: AutomationStudioLlmExecutionGrantResolvePolicy = {}): Promise<{
     provider: AutomationStudioLlmProvider;
     tokenLimits: AutomationStudioLlmTokenLimits;
@@ -400,7 +431,7 @@ export class AutomationStudioLlmExecutionGrantService {
     maxEstimatedCostUsd: number;
     maxTotalEstimatedCostUsd: number;
     timeoutMs: number;
-    providerRetryCount: 0;
+    providerRetryCount: number;
     /** What the person allowed this run's actions to do: a copy, so the grant's own set is never handed out. */
     permittedConsequences: AutomationStudioActionConsequence[];
   }> {
@@ -474,6 +505,8 @@ export class AutomationStudioLlmExecutionGrantService {
         }
       }
     };
+    const providerRetryCount = Math.min(grant.providerRetryCount, Math.max(0, grant.remainingUses - 1));
+    Reflect.set(provider, PROVIDER_ATTEMPT_LIMIT, providerRetryCount + 1);
     return {
       provider,
       tokenLimits: grant.tokenLimits,
@@ -482,7 +515,7 @@ export class AutomationStudioLlmExecutionGrantService {
       maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
       timeoutMs: grant.timeoutMs,
-      providerRetryCount: 0,
+      providerRetryCount,
       permittedConsequences: [...grant.permittedConsequences]
     };
   }

@@ -91,15 +91,26 @@ describe("a structured parameter in the catalog", () => {
     ]);
   });
 
-  it("bounds the description at 700 characters and leaves out an example too large to send", () => {
+  it("bounds the description at 900 characters and leaves out an example too large to send", () => {
     const large: AutomationNodeParameter = { ...items, description: "d".repeat(2_000), example: { fields: "x".repeat(700) } };
 
-    const [entry] = catalogFor([definition("domain.demo.read", { parameters: [large] })]).nodeCatalog;
+    const context = catalogFor([definition("domain.demo.read", { parameters: [large] })]);
+    const [entry] = context.nodeCatalog;
     const [parameter] = entry?.parameters ?? [];
 
-    expect(parameter?.description?.length).toBe(700);
+    expect(parameter?.description?.length).toBe(900);
     expect(parameter?.description?.endsWith("...")).toBe(true);
     expect(parameter).not.toHaveProperty("example");
+    // Neither loss is silent: the catalog names what it could not carry whole,
+    // so a domain that outgrows the bound learns it from the request rather than
+    // from a model writing a value out of a vocabulary it never saw.
+    expect(context.catalogSelection.withheldParameterText).toEqual(["domain.demo.read.items"]);
+  });
+
+  it("says nothing about a parameter it carried in full", () => {
+    const context = catalogFor([definition("domain.demo.read", { parameters: [items] })]);
+
+    expect(context.catalogSelection.withheldParameterText).toBeUndefined();
   });
 });
 

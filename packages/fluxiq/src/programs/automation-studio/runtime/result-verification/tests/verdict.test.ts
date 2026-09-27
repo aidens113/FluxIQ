@@ -73,14 +73,109 @@ describe("automationStudioResultVerdict", () => {
     expect(verification.failure).toBeDefined();
   });
 
-  it("never records the model's own prose", () => {
+  // This assertion is the inverse of the one it replaces, and the flip is
+  // deliberate. It used to read "never records the model's own prose" over the
+  // whole verification object, which was the right rule while a refutation was a
+  // verdict and a code. The user's instruction of 2026-09-26 is that the
+  // judgement give explicit instructions on what to fix, and the repair is
+  // entered with this object's failure record -- of which the recovery context
+  // sends the model `expected` and `actual` and nothing else. So the reading
+  // survives where a repair can act on it, and the rule it came from survives
+  // where it was actually about: what a *run* records
+  // (`tests/run-outcome.test.ts` holds that half).
+  it("carries the judgement's reading into the refutation and into the failure the repair is entered with", () => {
     const verification = automationStudioResultVerdict({
       summary,
-      diagnosis: { answersRequest: "no", observed: "the table listed every member of the directory", expected: "two members" },
+      diagnosis: { answersRequest: "no", observed: "the table listed every member of the directory", expected: "two members", changed: "add a step that types the search term" },
       basis: "model"
     });
+    expect(verification.repair?.judgement).toEqual({
+      expected: "two members",
+      observed: "the table listed every member of the directory",
+      advice: "add a step that types the search term"
+    });
+    expect(verification.failure?.expected).toContain("two members");
+    expect(verification.failure?.expected).toContain("add a step that types the search term");
+    expect(verification.failure?.actual).toContain("the table listed every member of the directory");
+  });
+
+  it("keeps the judgement's prose out of a verdict that is not a refutation", () => {
+    // Mutation: build the directive for an `unsure` too. Nobody judged the
+    // result wrong, so there is nothing to instruct a repair to change, and
+    // `recovery/refuted-result/attempt.ts` refuses to build one from an `unsure`
+    // for the same reason.
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: { answersRequest: "unknown", observed: "the table listed every member of the directory", expected: "two members" },
+      basis: "model"
+    });
+    expect(verification.repair).toBeUndefined();
     const recorded = JSON.stringify(verification);
     expect(recorded).not.toContain("the table listed every member");
     expect(recorded).not.toContain("two members");
+  });
+
+  it("stands on Core's own findings when the judgement says nothing beyond no", () => {
+    const verification = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no" }, basis: "model" });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.repair?.judgement).toBeUndefined();
+    expect(verification.repair?.findings.map((finding) => finding.code)).toEqual(["result.counts_look_right"]);
+    expect(verification.repair?.fix[0]).toContain("n2 (extract)");
+    expect(verification.failure?.expected).toContain("To fix:");
+  });
+
+  it("takes the reply's own summary as the advice where the diagnosis gave none", () => {
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: { answersRequest: "no" },
+      summaryText: "the Flow never narrowed the list",
+      basis: "model"
+    });
+    expect(verification.repair?.judgement?.advice).toBe("the Flow never narrowed the list");
+  });
+
+  it("does not let a malformed suggestion cost the verdict", () => {
+    // Every one of these is a shape the model could produce and none of them may
+    // refuse a refutation: a wrong type, whitespace, an oversized field, and a
+    // sentence with a credential in it.
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: {
+        answersRequest: "no",
+        expected: 7 as unknown as string,
+        observed: "   ",
+        changed: `every row was kept ${"x".repeat(900)}`
+      },
+      basis: "model"
+    });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.code).toBe("core.result.does_not_answer_request");
+    expect(verification.repair?.judgement?.expected).toBeUndefined();
+    expect(verification.repair?.judgement?.observed).toBeUndefined();
+    expect(verification.repair?.judgement?.advice?.length).toBe(500);
+    expect(verification.repair?.findings.length).toBeGreaterThan(0);
+  });
+
+  it("drops a credential-shaped suggestion, keeps the verdict, and says something was withheld", () => {
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: { answersRequest: "no", changed: "sign in with Bearer abcd1234efgh5678ijkl9012 first" },
+      basis: "model"
+    });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.repair?.judgement?.advice).toBeUndefined();
+    expect(verification.repair?.withheld).toBe(true);
+    expect(JSON.stringify(verification)).not.toContain("abcd1234efgh5678ijkl9012");
+  });
+
+  it("redacts a locator out of the judgement's sentence rather than dropping the sentence", () => {
+    const verification = automationStudioResultVerdict({
+      summary,
+      diagnosis: { answersRequest: "no", observed: "every row under [data-testid=\"row\"] was kept" },
+      basis: "model"
+    });
+    expect(verification.repair?.judgement?.observed).toBe("every row under [locator withheld] was kept");
+    expect(verification.repair?.withheld).toBe(true);
+    expect(JSON.stringify(verification)).not.toContain("data-testid");
   });
 });

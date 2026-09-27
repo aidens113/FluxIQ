@@ -32,9 +32,17 @@
 //    has already been corrected on once. The build does not wait for the
 //    answer: it has a Flow, and the question is about applying it.
 //
-// **Which direction matters.** A class declared that the instruction does not
-// ask for is already handled -- the gate refuses it and raises a request, and a
-// person answers. The direction nothing else catches is the other one: the
+// **Which direction matters, and this changed on 2026-09-26.** It used to be that
+// a class declared where the instruction did not ask for it was already handled,
+// because the gate refused it and raised a person's question. That is now true of
+// `delete` and `move_money` only: the rule is that the person's instruction is
+// itself the grant, and a question reaches them for a genuinely risky real-world
+// consequence rather than for the automation doing its job, so `modify_existing`
+// came off the gated list (`./destructive.ts`). **For an unasked-for edit this
+// check is now the only thing that catches it**, which raises rather than lowers
+// what it is for.
+//
+// The direction nothing else has ever caught is still the other one: the
 // instruction plainly asks for something lasting, actions that commit ran, and
 // every one of them said it would cause nothing.
 

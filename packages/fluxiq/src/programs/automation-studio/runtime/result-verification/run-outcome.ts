@@ -62,7 +62,7 @@ import {
   type AutomationStudioJudgedFlowGraphVersion
 } from "../flow-version/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
+
 import {
   automationStudioRefutedResultFlowWasReauthored,
   repairAutomationStudioRefutedRunResult,
@@ -71,7 +71,8 @@ import {
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
-import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
+import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
+import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 
@@ -157,7 +158,7 @@ export type AutomationStudioResultVerificationPorts = {
    * Absent leaves the older behaviour: the edit lands and the run reports the
    * answer it originally gave.
    */
-  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined } | undefined>) | undefined;
+  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined } | undefined>) | undefined;
   /**
    * Binds this verdict to the graph versions the run executed.
    *
@@ -295,8 +296,11 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     // makes `repairAutomationStudioRefutedRunResult` answer nothing at its
     // first line, so the recursion cannot reach this point a second time --
     // a Flow that answers wrongly again is reported wrong, not repaired again.
-    if (repaired && automationStudioRefutedResultFlowWasReauthored(repaired) && input.ports.rerunRepairedFlow) {
-      const rerun = await input.ports.rerunRepairedFlow({ detail: repaired });
+    const reauthor = repaired?.metadata?.resultReauthor;
+    const replayReady = !(reauthor && typeof reauthor === "object" && !Array.isArray(reauthor)
+      && (reauthor as { replayReady?: unknown }).replayReady === false);
+    if (repaired && replayReady && automationStudioRefutedResultFlowWasReauthored(repaired) && input.ports.rerunRepairedFlow) {
+      const rerun = await input.ports.rerunRepairedFlow({ detail: repaired, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
       if (rerun) {
         return await verifyAutomationStudioRuntimeSessionResult({
           ...input,
@@ -491,6 +495,17 @@ function errorName(error: unknown): string {
  * `verdicts` and `calls` say what each model call answered and how many were
  * made, so a result judged twice reads as such; they are absent when no model
  * was asked.
+ *
+ * **A refutation's directive is recorded, and only Core's half of it.**
+ * `findings` and `fix` are Core's arithmetic and Core's sentences, so they belong
+ * on a run like the observation beside them -- and a person or a later agent
+ * reading a failed run is now told what to fix rather than only that something
+ * was wrong. `judgement` is the model's reading of a medium whose contents Core
+ * does not store, so it is deliberately not here; it reaches the repair inside
+ * the failure record, which is where a sentence written outside Core travels
+ * (`core-observation.ts` says why that is the only route). `withheld` is recorded
+ * because it is a fact about the directive rather than a quotation: it says
+ * something the check offered was screened out.
  */
 function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
   const status = automationStudioResultVerificationStatus(outcome);
@@ -504,7 +519,8 @@ function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): Js
     reason: outcome.reason,
     observation: outcome.observation,
     ...(outcome.verdicts ? { verdicts: [...outcome.verdicts] } : {}),
-    ...(outcome.calls !== undefined ? { calls: outcome.calls } : {})
+    ...(outcome.calls !== undefined ? { calls: outcome.calls } : {}),
+    ...(outcome.repair ? { repair: automationStudioRecordedResultRepair(outcome.repair) } : {})
   };
 }
 

@@ -2,8 +2,13 @@
 //
 // The route exists because the patch ladder could never have helped a Flow
 // missing a step, so the assertion that matters most is the negative one: a run
-// that failed for anything else, or whose grant does not buy exploring, still
-// goes exactly where it went before, and says so on the record.
+// that failed for anything else still goes exactly where it went before, and
+// says so on the record.
+//
+// What used to be asserted here, and is now asserted the other way round, is
+// that a grant's purpose and a training setting could close the route. Both
+// were permission questions asked about repairing a Flow, which is not a risky
+// act, and both are gone (t166).
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
@@ -24,10 +29,10 @@ function detail(code?: string): AutomationStudioFlowRunDetail {
   } as unknown as AutomationStudioFlowRunDetail;
 }
 
-const ROUTABLE = { projectId: "project.demo", flowId: "flow.catalog", grantPurpose: "explore_and_adapt", createAdaptations: true };
+const ROUTABLE = { projectId: "project.demo", flowId: "flow.catalog" };
 
 describe("whether a refuted run re-enters the build loop", () => {
-  it("routes a run refuted for its answer under a grant that buys exploring", () => {
+  it("routes a run refuted for its answer", () => {
     expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE }))
       .toEqual({ route: true, projectId: "project.demo", flowId: "flow.catalog" });
   });
@@ -39,34 +44,29 @@ describe("whether a refuted run re-enters the build loop", () => {
       .toEqual({ route: false, refusal: "not_a_wrong_answer" });
   });
 
-  it("does not route a grant that buys one target override rather than exploring", () => {
-    // The widening reverted earlier in this task, refused at the other door too.
-    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: "diagnose_and_adapt" }))
-      .toEqual({ route: false, refusal: "grant_does_not_buy_exploration" });
-    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: undefined }))
-      .toEqual({ route: false, refusal: "grant_does_not_buy_exploration" });
-  });
-
-  it("routes a Flow built from an instruction, which runs under build_and_adapt", () => {
-    // **The gate tested one literal and closed this route on the entry point it
-    // matters most for.** A Flow built from an instruction runs under
-    // `build_and_adapt` -- the create-flow entry point, which buys building and
-    // adapting and iterates by definition. Every live run of the
-    // language-driven loop was refused here and stopped, so a wrong answer was
-    // never repaired once: `run-muhnh0s5-98a27f42` stored eight rows where
-    // thirteen were expected, was correctly refuted, and recorded no patch
-    // attempt, no adaptation and no change proposal.
-    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: "build_and_adapt" }))
-      .toEqual({ route: true, projectId: ROUTABLE.projectId, flowId: ROUTABLE.flowId });
-    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, grantPurpose: "explore_and_adapt" }))
+  it("routes a wrong answer whatever grant the run happens to hold", () => {
+    // **The old assertion was the bug.** The route tested the grant's purpose
+    // against a set, so a Flow built from an instruction -- which runs under
+    // `build_and_adapt` -- and a run holding a narrower grant were both refused
+    // `grant_does_not_buy_exploration` and stopped. Across five live runs the
+    // wrong-answer repair therefore never executed once: `run-muhnh0s5-98a27f42`
+    // stored eight rows where thirteen were expected, was correctly refuted, and
+    // recorded no patch attempt, no adaptation and no change proposal. Nothing
+    // about repairing a Flow is a risky act, so no purpose closes this door.
+    // The decision no longer has a field to read a purpose from, which is what
+    // makes this assertion hold for every one of them at once.
+    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE }))
       .toEqual({ route: true, projectId: ROUTABLE.projectId, flowId: ROUTABLE.flowId });
   });
 
-  it("does not route a run with no Flow to extend, or one that may propose nothing", () => {
+  it("does not route a run with no Flow to extend", () => {
+    // The one remaining refusal is an inability rather than a permission: there
+    // is no draft to start from. A training setting that forbids creating
+    // adaptations no longer closes the route either -- it described the patch
+    // ladder's proposals, and this route builds through the Flow Bootstrap entry
+    // point, so refusing here only stopped the repair the person asked for.
     expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, flowId: undefined }))
       .toEqual({ route: false, refusal: "flow_unavailable" });
-    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE, createAdaptations: false }))
-      .toEqual({ route: false, refusal: "adaptations_not_permitted" });
   });
 });
 
@@ -134,7 +134,7 @@ describe("building the edit and putting it on the Flow", () => {
         code: "flow_bootstrap.provider_request_failed",
         stage: "provider_request",
         retryable: true,
-        providerInvocation: "attempted" as const,
+        providerInvocation: "unknown" as const,
         providerResponse: "unknown" as const,
         providerStatus: 504
       })
@@ -149,7 +149,7 @@ describe("building the edit and putting it on the Flow", () => {
       code: "flow_bootstrap.provider_request_failed",
       stage: "provider_request",
       retryable: true,
-      providerInvocation: "attempted",
+      providerInvocation: "unknown",
       providerResponse: "unknown",
       providerStatus: 504
     });

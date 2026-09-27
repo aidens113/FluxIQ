@@ -105,7 +105,8 @@ export type AutomationStudioLlmExecutionPreflight = {
   maxEstimatedCostUsd: number;
   maxTotalEstimatedCostUsd: number;
   timeoutMs: number;
-  providerRetryCount: 0;
+  /** Extra attempts a transient provider fault may spend from the grant's remaining uses. */
+  providerRetryCount: number;
   /** What the run's actions are permitted to do, in Core's order. Empty permits nothing lasting. */
   permittedConsequences: AutomationStudioActionConsequence[];
 };

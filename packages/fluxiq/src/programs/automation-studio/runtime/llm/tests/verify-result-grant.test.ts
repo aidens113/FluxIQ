@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../service.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { automationStudioLlmExecutionGrantFixedCalls, automationStudioLlmExecutionGrantIterates, automationStudioLlmExecutionGrantTaskKinds, parseAutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
+import { automationStudioLlmExecutionGrantIterates, automationStudioLlmExecutionGrantTaskKinds, parseAutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES,
-  automationStudioRuntimeAdaptationContextForGrant,
-  automationStudioRuntimeSessionGrantTaskKinds
+  automationStudioRuntimeAdaptationContextForGrant
 } from "../runtime-session-grant.ts";
 import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant/tests/execution-grant-fixture.ts";
 
@@ -25,32 +24,32 @@ function verificationRequest(): AutomationStudioLlmTaskRequest {
 }
 
 describe("the verify_result grant", () => {
-  it("is a purpose a runtime session accepts, authorizing only the verification call", () => {
+  it("is a purpose a runtime session accepts without narrowing the work that may follow", () => {
     expect(parseAutomationStudioLlmExecutionGrantPurpose("verify_result")).toBe("verify_result");
     expect(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES).toContain("verify_result");
-    expect(automationStudioLlmExecutionGrantTaskKinds("verify_result")).toEqual(["loop_verification"]);
-    expect(automationStudioRuntimeSessionGrantTaskKinds("verify_result")).toEqual(["loop_verification"]);
+    expect(automationStudioLlmExecutionGrantTaskKinds("verify_result")).toContain("loop_verification");
+    expect(automationStudioLlmExecutionGrantTaskKinds("verify_result")).toContain("runtime_patch");
+    expect(automationStudioLlmExecutionGrantTaskKinds("verify_result")).toContain("flow_bootstrap");
   });
 
-  it("makes at most two calls, never a loop, and may be asked for one", async () => {
-    expect(automationStudioLlmExecutionGrantIterates("verify_result")).toBe(false);
-    expect(automationStudioLlmExecutionGrantFixedCalls("verify_result")).toBe(2);
+  it("iterates under the configured call budget like every other purpose", async () => {
+    expect(automationStudioLlmExecutionGrantIterates("verify_result")).toBe(true);
     const fixture = setup();
     fixture.exactBinding = true;
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 3 })).rejects.toThrow("verify_result permits one LLM call or 2.");
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 26 })).rejects.toThrow("verify_result permits one LLM call or 2.");
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 3 })).resolves.toMatchObject({ maxCalls: 3 });
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 26 })).resolves.toMatchObject({ maxCalls: 26 });
     const grant = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
-    expect(grant).toMatchObject({ purpose: "verify_result", maxCalls: 2, remainingUses: 2 });
+    expect(grant).toMatchObject({ purpose: "verify_result", maxCalls: 26, remainingUses: 26 });
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 1 })).resolves.toMatchObject({ maxCalls: 1 });
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "verify_result", maxCalls: 2 })).resolves.toMatchObject({ maxCalls: 2 });
   });
 
-  it("leaves diagnosis_only at exactly one call", async () => {
-    expect(automationStudioLlmExecutionGrantFixedCalls("diagnosis_only")).toBe(1);
+  it("lets diagnosis_only iterate too", async () => {
+    expect(automationStudioLlmExecutionGrantIterates("diagnosis_only")).toBe(true);
     const fixture = setup();
     fixture.exactBinding = true;
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only", maxCalls: 2 })).rejects.toThrow("diagnosis_only permits exactly one LLM call.");
-    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only" })).resolves.toMatchObject({ maxCalls: 1 });
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only", maxCalls: 2 })).resolves.toMatchObject({ maxCalls: 2 });
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "diagnosis_only" })).resolves.toMatchObject({ maxCalls: 26 });
   });
 
   it("answers a refutation's repeat under the same grant, and nothing after it", async () => {
@@ -59,34 +58,34 @@ describe("the verify_result grant", () => {
     fixture.script.push({ kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no" } });
     fixture.script.push({ kind: "diagnosis", summary: "Judged again.", diagnosis: { answersRequest: "yes" } });
     const grant = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
-    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "verify_result" }, { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("verify_result") });
-    expect(resolved.maxCallsPerRun).toBe(2);
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "verify_result" });
+    expect(resolved.maxCallsPerRun).toBe(26);
     await expect(resolved.provider.runTask(verificationRequest())).resolves.toMatchObject({ response: { diagnosis: { answersRequest: "no" } } });
     await expect(resolved.provider.runTask({ ...verificationRequest(), requestId: "request.verify.2", idempotencyKey: "request.verify.2" })).resolves.toMatchObject({ response: { diagnosis: { answersRequest: "yes" } } });
-    await expect(resolved.provider.runTask({ ...verificationRequest(), requestId: "request.verify.3", idempotencyKey: "request.verify.3" })).rejects.toThrow();
+    await expect(resolved.provider.runTask({ ...verificationRequest(), requestId: "request.verify.3", idempotencyKey: "request.verify.3" })).resolves.toBeDefined();
   });
 
-  it("answers the verification call, and refuses a diagnosis under the same grant", async () => {
+  it("answers verification and diagnosis under the same grant", async () => {
     const fixture = setup();
     fixture.exactBinding = true;
     fixture.script.push({ kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no" } });
     const grant = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
-    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "verify_result" }, { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("verify_result") });
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "verify_result" });
     await expect(resolved.provider.runTask(verificationRequest())).resolves.toMatchObject({ response: { kind: "diagnosis", diagnosis: { answersRequest: "no" } } });
 
     const other = await fixture.service.issue({ ...issueInput(), purpose: "verify_result" });
-    const refused = await fixture.service.resolve({ ...resolveInput(other.grantId), purpose: "verify_result" }, { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("verify_result") });
-    await expect(refused.provider.runTask(request())).rejects.toThrow("mismatch");
+    const diagnosis = await fixture.service.resolve({ ...resolveInput(other.grantId), purpose: "verify_result" });
+    await expect(diagnosis.provider.runTask(request())).resolves.toBeDefined();
   });
 
-  it("leaves the run itself deterministic: no diagnosis, no adaptation, recovery as configured", () => {
+  it("lets the run diagnose and adapt while preserving configured recovery and policy", () => {
     const context = {
       behavior: { invokeLlm: true, runRecovery: true, createAdaptations: true, promoteAdaptations: true },
       policy: { proposalMode: "auto" },
       diagnostics: []
     } as unknown as AutomationStudioRuntimeAdaptationContext;
     const granted = automationStudioRuntimeAdaptationContextForGrant(context, "verify_result");
-    expect(granted.behavior).toEqual({ invokeLlm: false, runRecovery: true, createAdaptations: false, promoteAdaptations: false });
+    expect(granted.behavior).toEqual({ invokeLlm: true, runRecovery: true, createAdaptations: true, promoteAdaptations: true });
     expect(granted.policy).toBe(context.policy);
   });
 });

@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import { AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, automationStudioAttemptFaultIsAbsorbed } from "./defensive/index.ts";
 
 /**
  * How many times one node may be attempted, and how long the run waits between
@@ -64,30 +65,39 @@ export function automationStudioNodeRetryPolicy(
   return capped >= declared.maxAttempts ? declared : { maxAttempts: capped, backoffMs: declared.backoffMs };
 }
 
-/** The wait before `attemptNumber`, which is 1 for the first attempt and needs no wait. */
+/**
+ * The wait before `attemptNumber`, which is 1 for the first attempt and needs no
+ * wait.
+ *
+ * Bounded by `AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS`, because a document decides
+ * this number and a document asking for an hour between attempts is asking for a
+ * hang. The whole-node and whole-run bounds are applied where the wait is taken,
+ * by `automationStudioBoundedRetryWaitMs`, which also honours a delay the failing
+ * source asked for.
+ */
 export function automationStudioRetryBackoffMs(policy: AutomationStudioNodeRetryPolicy, attemptNumber: number): number {
   if (attemptNumber <= 1 || !policy.backoffMs.length) return 0;
   const index = Math.min(attemptNumber - 2, policy.backoffMs.length - 1);
-  return Math.max(0, policy.backoffMs[index] ?? 0);
+  return Math.min(AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, Math.max(0, policy.backoffMs[index] ?? 0));
 }
 
 /**
  * Whether this node may be dispatched again.
  *
- * `retryable` on a structured failure record is exactly this question, and
- * until now no runtime decision asked it. An attempt without a structured
- * record is not retried: Core would be guessing, and the producers that matter
- * -- every web action -- always emit one.
+ * The question is answered by the default defensive policy, not here: see
+ * `automationStudioAssessAttemptFault`. It reads a fault classified where it
+ * happened, then the producer's own record, then -- for every node that reports a
+ * failure without one -- what the node said, and it refuses a retry that would
+ * repeat an act on the world.
  *
- * The stage narrows it. A failure at `verification` or `confirmation` happened
- * *after* the action ran, so the action already took effect and dispatching it
- * again is how a double submit happens. Those failures are the recorded state
- * checker's to answer -- skip the node whose state already holds, or report the
- * divergence -- not the retry loop's.
+ * This used to demand a structured failure record and answer no without one,
+ * which meant a node that threw, and every node that knows nothing about Core's
+ * failure taxonomy, could not be retried at all. `node` is optional only so an
+ * existing caller keeps working; pass it, or a mutating node loses its protection
+ * against being acted twice.
  */
-export function automationStudioAttemptIsRetryable(attempt: AutomationStudioNodeAttemptTrace): boolean {
-  if (attempt.failure?.retryable !== true) return false;
-  return attempt.failure.stage !== "verification" && attempt.failure.stage !== "confirmation";
+export function automationStudioAttemptIsRetryable(attempt: AutomationStudioNodeAttemptTrace, node?: AutomationStudioFlowNode): boolean {
+  return automationStudioAttemptFaultIsAbsorbed(attempt, node);
 }
 
 /**

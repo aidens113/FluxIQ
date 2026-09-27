@@ -55,12 +55,35 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonOb
  * fail at the last step: an unknown key, a handle it invented, a parameter
  * written one level from where it belonged, a script whose steps did not match
  * what it had done.
+ *
+ * **A step that ran is not settled, and this used to say the opposite.** The
+ * description said the Flow was already written and told the model to correct
+ * *the list* -- which is about a step being present or absent, and says nothing
+ * about a step being present with less in it than the instruction asked for. On
+ * `run-muhubegx-9469de5e` a build explored well, ran the list extraction once
+ * with one filter condition and no pagination, got 43 rows back, and finished:
+ * the read had succeeded, the list of steps was right, and every word here
+ * agreed it was done. The instruction carried six qualifying clauses and 13 rows
+ * were wanted. The vocabulary for five of the six was in front of the model the
+ * whole time, in that node's own catalog entry (`./parameter-text.ts`), so
+ * nothing was missing but the question.
+ *
+ * **It asks the question in the direction the loop converges from.** An earlier
+ * campaign over-corrected at exactly this point -- with the same vocabulary
+ * available, a build wrote conditions that rejected every row and returned 0
+ * where 13 were wanted -- so the clause says plainly that too wide an answer
+ * still finishes and an empty one does not. A wide answer is visible to the
+ * run's own judgement and repairable; an empty one looks like a working Flow.
+ * Nothing here is a requirement: a step with one condition still finishes, and
+ * the repair is what improves it.
  */
 export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA: JsonObject = {
   type: "object",
   additionalProperties: false,
   required: ["summary"],
-  description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs.",
+  description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs."
+    + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
+    + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later.",
   properties: {
     summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." }
   }

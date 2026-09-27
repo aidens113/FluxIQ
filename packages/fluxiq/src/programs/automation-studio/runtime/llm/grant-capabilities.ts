@@ -72,58 +72,32 @@ type GrantTaskAllowance = { taskKind: AutomationStudioLlmTaskKind; expectedOutpu
  * For a purpose that iterates, the number of calls is configuration and this
  * says nothing about it. A purpose that does not iterate has a fixed
  * allowance, `calls`, by arity rather than by budget: absent is one. */
-type GrantCapability = { iterates: boolean; calls?: number; taskKinds: readonly GrantTaskAllowance[] };
+type GrantCapability = { iterates: boolean; taskKinds: readonly GrantTaskAllowance[] };
 
-const DIAGNOSIS_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
-  { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" }
-]);
-
-// The two stages that ask the model for a judgement rather than for a change.
-// Deliberately not extended to `diagnosis_only`, whose one call is a diagnosis.
-const LOOP_PROTOCOL_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
-  { taskKind: "loop_plan", expectedOutput: "diagnosis" },
-  { taskKind: "loop_verification", expectedOutput: "diagnosis" }
-]);
-
-/** Judging a finished run's result, and only that: the one verification call. */
-const VERIFICATION_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
-  { taskKind: "loop_verification", expectedOutput: "diagnosis" }
-]);
-
-/** Diagnosing a failure, for real: look, ask for more, decide, repair. The
- * `evidence_tool_decision` call is what turns a staged guess into something the
- * run actually checked, so every adapting purpose has it. */
-const RECOVERY_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
-  ...DIAGNOSIS_TASK_KINDS,
+/** Every kind any grant may ask for. A purpose no longer narrows this: none of
+ * these is a risky act, and what a grant gates is a lasting real-world
+ * consequence, which `permittedConsequences` and the action permission gate
+ * still gate action by action. */
+const ALL_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
+  { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis" },
   { taskKind: "evidence_tool_decision", expectedOutput: "evidence_tool_decision" },
   { taskKind: "runtime_patch", expectedOutput: "runtime_patch" },
-  ...LOOP_PROTOCOL_TASK_KINDS
-]);
-
-/** Everything `build_and_adapt` may do except create a Flow from nothing. */
-const EXPLORE_TASK_KINDS: readonly GrantTaskAllowance[] = Object.freeze([
-  ...RECOVERY_TASK_KINDS,
+  { taskKind: "loop_plan", expectedOutput: "diagnosis" },
+  { taskKind: "loop_verification", expectedOutput: "diagnosis" },
   { taskKind: "instruction_suggestion", expectedOutput: "instruction_suggestion" },
   { taskKind: "router_patch", expectedOutput: "change_proposal" },
   { taskKind: "subflow_patch", expectedOutput: "change_proposal" },
   { taskKind: "expectation_action_target_patch", expectedOutput: "change_proposal" },
-  { taskKind: "change_proposal_generation", expectedOutput: "change_proposal" }
+  { taskKind: "change_proposal_generation", expectedOutput: "change_proposal" },
+  { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" }
 ]);
 
 const GRANT_CAPABILITIES: Readonly<Record<AutomationStudioLlmExecutionGrantPurpose, GrantCapability>> = Object.freeze({
-  diagnosis_only: { iterates: false, taskKinds: DIAGNOSIS_TASK_KINDS },
-  // Iterating now, and able to gather. What it may *change* is unchanged: the
-  // patch stage still holds it to one target override, as a proposal.
-  diagnose_and_adapt: { iterates: true, taskKinds: RECOVERY_TASK_KINDS },
-  explore_and_adapt: { iterates: true, taskKinds: EXPLORE_TASK_KINDS },
-  build_and_adapt: { iterates: true, taskKinds: Object.freeze([...EXPLORE_TASK_KINDS, { taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" } as GrantTaskAllowance]) },
-  // Two calls, never a loop. Any answer but `yes` -- a `no` or an `unknown`
-  // -- is asked once more with the same evidence, because either fails a run
-  // whose every step succeeded, and at temperature 0 both were measured to flip
-  // on identical rows (2026-09-18; 2026-09-21, when the same 14 rows came back
-  // `unknown` two times in ten). Asking again does not buy the same answer
-  // twice. The two answers are combined in `result-verification/agreement.ts`.
-  verify_result: { iterates: false, calls: 2, taskKinds: VERIFICATION_TASK_KINDS }
+  diagnosis_only: { iterates: true, taskKinds: ALL_TASK_KINDS },
+  diagnose_and_adapt: { iterates: true, taskKinds: ALL_TASK_KINDS },
+  explore_and_adapt: { iterates: true, taskKinds: ALL_TASK_KINDS },
+  build_and_adapt: { iterates: true, taskKinds: ALL_TASK_KINDS },
+  verify_result: { iterates: true, taskKinds: ALL_TASK_KINDS }
 });
 
 /** Whether a purpose may make more than one call. Never how many. */
@@ -133,7 +107,8 @@ export function automationStudioLlmExecutionGrantIterates(purpose: AutomationStu
 
 /** The fixed call allowance of a purpose that does not iterate: one, or two for `verify_result`. */
 export function automationStudioLlmExecutionGrantFixedCalls(purpose: AutomationStudioLlmExecutionGrantPurpose): number {
-  return GRANT_CAPABILITIES[purpose].calls ?? 1;
+  parseAutomationStudioLlmExecutionGrantPurpose(purpose);
+  return 1;
 }
 
 /** The task kinds this purpose authorizes, for a caller that has to narrow them

@@ -19,6 +19,12 @@ const SHAPE_TIE_BREAK = 0.02;
  * above `AUTOMATION_STUDIO_NAME_MATCH_SCORE_FLOOR`. `undefined` means nothing
  * plausible was written — not that matching is unavailable.
  *
+ * A name that resolves because one of its words stands for another — `url`
+ * where the candidate is called `link` — comes back `nearest` and never
+ * `normalized`: a synonym is a guess, while `normalized` promises the caller
+ * the same name spelled differently. `./synonyms.ts` holds that vocabulary and
+ * the argument for keeping it small.
+ *
  * `options.valueShape` is what the caller is about to put in this slot. Where
  * two candidates are otherwise equally close, the one that accepts that shape
  * wins; where one name is clearly better, the shape does not move it. Scores

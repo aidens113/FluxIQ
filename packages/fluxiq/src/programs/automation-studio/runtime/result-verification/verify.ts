@@ -180,6 +180,10 @@ async function askOnce(
   const verification = automationStudioResultVerdict({
     summary: request.summary,
     ...(response?.diagnosis ? { diagnosis: response.diagnosis } : {}),
+    // The reply's own prose, carried only as the judgement's advice where the
+    // diagnosis channel's `changed` gave none. The verdict reader screens and
+    // bounds it; nothing here is required of the model.
+    ...(response?.summary ? { summaryText: response.summary } : {}),
     basis: response ? "model" : "model_unavailable",
     ...(response ? {} : { failureCode: firstErrorCode(result.diagnostics) })
   });

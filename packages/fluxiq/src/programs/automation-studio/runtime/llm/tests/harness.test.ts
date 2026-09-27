@@ -447,7 +447,12 @@ describe("Automation Studio LLM harness", () => {
       provider: {
         metadata: { provider: "mock", model: "rate-limit" },
         runTask: async () => { throw new AutomationStudioLlmProviderError("llm.provider_rate_limited", "secret-bearing provider detail", true, 429); }
-      }
+      },
+      // A rate limit is now asked again with backoff
+      // (`../provider-retry/call.ts`). What this test is about is the diagnostic
+      // the harness writes, so the waiting is made free; the policy's own
+      // arithmetic is proved in `provider-retry/tests/`.
+      providerRetry: { wait: async () => {} }
     });
     expect(typedFailure.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "llm.provider_rate_limited", message: "The LLM provider rate limited the request.", metadata: { retryable: true, providerStatus: 429 } })
@@ -462,7 +467,8 @@ describe("Automation Studio LLM harness", () => {
       provider: {
         metadata: { provider: "mock", model: "cross-bundle" },
         runTask: async () => { throw { name: "AutomationStudioLlmProviderError", code: "llm.provider_http_error", retryable: true, status: 503, message: "private upstream body" }; }
-      }
+      },
+      providerRetry: { wait: async () => {} }
     });
     expect(crossBundleFailure.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "llm.provider_http_error", message: "The LLM provider returned an unsuccessful HTTP status.", metadata: { retryable: true, providerStatus: 503 } })

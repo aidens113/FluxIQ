@@ -453,17 +453,16 @@ describe("a person's own grant", () => {
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
   });
 
-  it("still forces manual approval and still does not retry, and the repair authority is never consulted", { timeout: 180_000 }, async () => {
+  it("keeps the configured automatic mode without consulting standing authority", { timeout: 180_000 }, async () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...grant, grantId: "llm-grant:adapt", purpose: "diagnose_and_adapt" } });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    // Exactly today's behaviour. A granted run resolves its model from the
-    // grant, so the standing path is never even asked -- which is what makes
-    // "a person's grant behaves as it did" structural rather than incidental.
+    // The instruction's grant no longer forces the run into manual review.
+    // This fixture's unsupported patch still does not produce a retry.
     expect(run.status).toBe("failed");
     expect(detail?.metadata?.adaptiveRetry).toBeUndefined();
-    expect((detail?.metadata?.runtimeAdaptationContext as { approvalMode?: string } | undefined)?.approvalMode).toBe("manual");
+    expect((detail?.metadata?.runtimeAdaptationContext as { approvalMode?: string } | undefined)?.approvalMode).toBe("auto");
     expect(found.grantedCalls.every((call) => call.hasGrant === true)).toBe(true);
     expect(found.standingRequests).toEqual([]);
     expect((detail?.metadata?.llmGate as { repairAuthority?: unknown } | undefined)?.repairAuthority).toBeUndefined();

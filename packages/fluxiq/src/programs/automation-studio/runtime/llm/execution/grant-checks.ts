@@ -13,7 +13,7 @@ import {
   type AutomationStudioDeepSeekModel
 } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL } from "../deepseek/index.ts";
-import type { AutomationStudioLlmExecutionBinding } from "./grants.ts";
+import type { AutomationStudioLlmExecutionBinding } from "./grant-binding.ts";
 import type { AutomationStudioLlmExecutionGrantPurpose } from "../grant-capabilities.ts";
 
 export function validateKeyCompatibility(key: { provider?: string | undefined; scope: string; scopeRef?: string | undefined; metadata?: Record<string, unknown> | undefined }, input: { provider?: string; model?: string; flowId: string }): AutomationStudioDeepSeekModel {

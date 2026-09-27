@@ -22,7 +22,13 @@ import type {
   AutomationStudioFlowRunActionAttemptRecord,
   AutomationStudioFlowRunDetail
 } from "../../../../model/index.ts";
-import { automationStudioLlmRequestEvidenceRefusal, packAutomationStudioLlmContext, type AutomationStudioLlmHarnessInput } from "../../../llm/index.ts";
+import {
+  AUTOMATION_STUDIO_WITHHELD_LOCATOR,
+  automationStudioLlmRequestEvidenceRefusal,
+  automationStudioLocatorShapedText,
+  packAutomationStudioLlmContext,
+  type AutomationStudioLlmHarnessInput
+} from "../../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../../recovery/index.ts";
 import { automationStudioRefutedResultAttempt, repairAutomationStudioRefutedRunResult } from "../../../recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
@@ -126,6 +132,11 @@ describe("the request a wrong answer is repaired from", () => {
     // A navigation says where it went, as an origin: the path and the query are
     // where a search term and a session token live.
     expect(steps[0]).toMatchObject({ definitionId: "web.browser.navigate", parameters: { url: "https://shop.example.com" } });
+    // And it says that the origin is all it says. The authored URL carried a
+    // path and a query, so the path is named: an empty omission list beside a
+    // reduced URL told every reader of every run bundle that the step had
+    // navigated to the site's root.
+    expect(steps[0]?.parametersWithheld).toEqual(expect.arrayContaining(["url"]));
     // A click says which control, by the name a person would recognise, and
     // never by the selector beside it -- which is a key this domain denies.
     expect(steps[1]).toMatchObject({ parameters: { element: { accessibleName: "Sort by: Featured", role: "button" } } });
@@ -151,6 +162,31 @@ describe("the request a wrong answer is repaired from", () => {
     // What was screened out is named, never silently dropped: a parameter that
     // was withheld and a parameter the step never had must not read alike.
     expect(steps[3]?.parametersWithheld).toEqual(expect.arrayContaining(["extractList.handle", "apiKey"]));
+  });
+
+  // 1c. And a name only counts as a name if it arrives as one.
+  it("names a withheld parameter inside a list as a parameter, not as a withheld locator", () => {
+    const steps = (packet.recoveryContext?.sections.step_parameters as { steps: Array<{ nodeId?: string; parametersWithheld?: string[] }> } | undefined)?.steps ?? [];
+    // The extraction's filter compares a regex against one column. The pattern
+    // escapes a dot, so it is refused as locator-shaped and its *name* is the only
+    // thing the repair is given about it -- and until t160 that name did not
+    // arrive: `extractList.where[0].matches[0]` is locator-shaped itself, because
+    // a `.` after a `]` satisfies the class-selector shape the whole-context
+    // screen applies to every section, so what a repair read was
+    // `extractList.where[0][locator withheld][0]`. That names no parameter, and it
+    // reads as though a selector had been withheld rather than a comparand.
+    expect(steps[3]?.parametersWithheld).toEqual(expect.arrayContaining(["extractList.where.0.matches.0"]));
+    // The column the condition read is carried beside it, so the pair reads as
+    // one condition with its comparand missing rather than as a mystery.
+    expect(steps[3]).toMatchObject({ parameters: { extractList: { where: { count: 1, items: [{ read: "price", matches: { count: 1 } }] } } } });
+    // Asserted over every name in the section rather than over the one path,
+    // because the next notation mistake will be somewhere else.
+    for (const step of steps) {
+      for (const path of step.parametersWithheld ?? []) {
+        expect(path, `${step.nodeId}: ${path}`).not.toContain(AUTOMATION_STUDIO_WITHHELD_LOCATOR);
+        expect(automationStudioLocatorShapedText(path), `${step.nodeId}: ${path}`).toBe(false);
+      }
+    }
   });
 
   // 2. The conversation so far.
@@ -386,6 +422,11 @@ function flowDocument(): AutomationStudioFlowDocument {
           extractList: {
             handle: "listings-abc123",
             fields: { name: "productTitle", price: "priceText", rating: "ratingText" },
+            // The filter live run `run-muhubegx-9469de5e` authored: a regex over
+            // one read column. It sits here because a withheld name inside a list
+            // is the shape that was being destroyed on its way out, and this
+            // fixture is the only one that asserts what a run bundle reads.
+            where: [{ read: "price", matches: ["\\.price-text"] }],
             minItems: 0,
             paginate: false
           },

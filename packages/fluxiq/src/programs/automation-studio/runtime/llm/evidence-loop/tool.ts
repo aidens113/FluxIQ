@@ -1,0 +1,40 @@
+// A tool the loop may offer a decision: what it does, what it takes, and what
+// running it may change.
+//
+// Declared here rather than in `../evidence-loop.ts` because the coordinator
+// beside it had grown to hold both the loop's whole contract and the loop
+// itself, past the point where anybody could edit the second without reading
+// the first. This directory is that contract, one noun per file, and the
+// coordinator imports it.
+
+import type { JsonObject } from "../../../../../core/index.ts";
+
+export type AutomationStudioLlmEvidenceTool = {
+  toolId: string;
+  description: string;
+  inputSchema: JsonObject;
+  effect?: "observe" | "mutate";
+  repeatPolicy?: "after_mutation";
+  /**
+   * Whether each call of this tool says for itself what it did, rather than the
+   * tool saying once for all of them.
+   *
+   * One tool that runs whichever of a library's things the call names cannot
+   * declare an effect up front: the same tool reads a page on one call and
+   * changes it on the next, and which it was is known only once it has run. So
+   * its result carries `draft` (`./tool-execution.ts`) and the loop reads the
+   * effect, the name and whether the result should contain it from there.
+   * `effect` still says what the *worst* such a call may do, which is what the
+   * offering gate reads.
+   *
+   * Two consequences. Repeats are keyed on the looser of the two epochs, since
+   * the loop cannot know before the call which one applies. And the tool may
+   * carry an `initialObservation` although it is declared `mutate`, because the
+   * caller -- not the model -- writes that one call's argument and is
+   * responsible for it being a look.
+   */
+  perCallEffect?: boolean;
+  /** Optional domain-declared observation that is safe to run before the first
+   * provider decision. The coordinator executes at most one such declaration. */
+  initialObservation?: { input: JsonObject };
+};

@@ -7,14 +7,12 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS } from "../../../execution/index.ts";
-import { automationStudioRuntimeSessionGrantTaskKinds } from "../../../runtime-session-grant.ts";
 import { issueInput, request, resolveInput, setupExecutionGrantFixture as setup } from "./execution-grant-fixture.ts";
 
 afterEach(() => vi.useRealTimers());
 
 const PURPOSE = "diagnose_and_adapt" as const;
 const scope = (grantId: string) => ({ ...resolveInput(grantId), purpose: PURPOSE });
-const policy = { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds(PURPOSE) };
 
 describe("holding a runtime grant for its run", () => {
   it("lets the recovery claim a held grant long after the issue TTL, and make its call", async () => {
@@ -26,7 +24,7 @@ describe("holding a runtime grant for its run", () => {
     await fixture.service.holdForRun(scope(grant.grantId));
     // The step fails 87 s after the run started, well past the issue TTL.
     fixture.now = 92_000;
-    const resolved = await fixture.service.resolve(scope(grant.grantId), policy);
+    const resolved = await fixture.service.resolve(scope(grant.grantId));
     await expect(resolved.provider.runTask(request())).resolves.toBeDefined();
     // The authorization minted at issue had lapsed; the call exchanged it for one of its own.
     expect(fixture.revealCount).toBe(1);
@@ -48,10 +46,10 @@ describe("holding a runtime grant for its run", () => {
 
     fixture.now = 5_000;
     await fixture.service.holdForRun(scope(grant.grantId));
-    const verification = await fixture.service.resolve(scope(grant.grantId), policy);
+    const verification = await fixture.service.resolve(scope(grant.grantId));
     await expect(verification.provider.runTask(request())).resolves.toBeDefined();
     // The refutation lands, and the repair reaches for the same grant.
-    const repair = await fixture.service.resolve(scope(grant.grantId), policy);
+    const repair = await fixture.service.resolve(scope(grant.grantId));
     await expect(repair.provider.runTask(request())).resolves.toBeDefined();
     // Two calls off one grant's allowance: re-resolving buys nothing extra.
     expect(repair.maxCallsPerRun).toBe(verification.maxCallsPerRun);
@@ -72,13 +70,13 @@ describe("holding a runtime grant for its run", () => {
     const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
 
     fixture.now = 5_000;
-    await fixture.service.resolve(scope(grant.grantId), policy);
+    await fixture.service.resolve(scope(grant.grantId));
     // Almost the whole lease later, a second resolve still works ...
     fixture.now = 5_000 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS - 1_000;
-    await expect(fixture.service.resolve(scope(grant.grantId), policy)).resolves.toBeDefined();
+    await expect(fixture.service.resolve(scope(grant.grantId))).resolves.toBeDefined();
     // ... and past the lease the first claim started, it does not.
     fixture.now = 5_000 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS + 1;
-    await expect(fixture.service.resolve(scope(grant.grantId), policy)).rejects.toThrow(/unavailable/);
+    await expect(fixture.service.resolve(scope(grant.grantId))).rejects.toThrow(/unavailable/);
   });
 
   // A grant belonging to another actor, session, project, Flow or purpose is a
@@ -90,8 +88,8 @@ describe("holding a runtime grant for its run", () => {
     const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
 
     fixture.now = 5_000;
-    await fixture.service.resolve(scope(grant.grantId), policy);
-    await expect(fixture.service.resolve({ ...scope(grant.grantId), actorSessionId: "session.other" }, policy))
+    await fixture.service.resolve(scope(grant.grantId));
+    await expect(fixture.service.resolve({ ...scope(grant.grantId), actorSessionId: "session.other" }))
       .rejects.toThrow(/scope mismatch/);
   });
 
@@ -101,7 +99,7 @@ describe("holding a runtime grant for its run", () => {
     const grant = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE, ttlMs: 60_000 });
 
     fixture.now = 92_000;
-    await expect(fixture.service.resolve(scope(grant.grantId), policy)).rejects.toThrow("unavailable");
+    await expect(fixture.service.resolve(scope(grant.grantId))).rejects.toThrow("unavailable");
   });
 
   it("holds the claim window to the run's lease, not forever", async () => {
@@ -112,7 +110,7 @@ describe("holding a runtime grant for its run", () => {
     fixture.now = 5_000;
     await fixture.service.holdForRun(scope(grant.grantId));
     fixture.now = 5_000 + AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS;
-    await expect(fixture.service.resolve(scope(grant.grantId), policy)).rejects.toThrow("unavailable");
+    await expect(fixture.service.resolve(scope(grant.grantId))).rejects.toThrow("unavailable");
   });
 
   it("does not revoke a held grant when the issue TTL's timer fires", async () => {
@@ -144,7 +142,7 @@ describe("holding a runtime grant for its run", () => {
     await expect(fixture.service.holdForRun(scope(lapsed.grantId))).rejects.toThrow("unavailable");
 
     const claimed = await fixture.service.issue({ ...issueInput(), purpose: PURPOSE });
-    await fixture.service.resolve(scope(claimed.grantId), policy);
+    await fixture.service.resolve(scope(claimed.grantId));
     await expect(fixture.service.holdForRun(scope(claimed.grantId))).rejects.toThrow("unavailable");
   });
 });

@@ -39,13 +39,20 @@ describe("Automation Studio LLM execution API", () => {
     expect(run.ok).toBe(true);
     expect(runRuntimeSession).toHaveBeenCalledWith(expect.objectContaining({ llmExecution: { grantId: "llm-grant:one", actorUserId: "user.one", actorSessionId: "session.one", purpose: "diagnosis_only" } }));
     expect(runRuntimeSession).toHaveBeenCalledWith(expect.not.objectContaining({ runId: expect.anything() }));
+    // **A granted run may name the run it is continuing (t166).** This used to
+    // assert the opposite -- refused, with the grant revoked -- and that
+    // assertion was the bug: a repair has to resume the run that failed, and
+    // re-running is not an act anybody needs permission for. The refusal also
+    // revoked the grant, so the caller could not even retry without asking a
+    // person for a new one.
     const staged = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runId: "run.staged", runIntent: "diagnosis_only", llmExecutionGrantId: "llm-grant:staged" } });
-    expect(staged).toMatchObject({ ok: false, error: expect.stringContaining("fresh runtime session") });
-    expect(grants.revoke).toHaveBeenCalledWith("llm-grant:staged");
+    expect(staged.ok).toBe(true);
+    expect(runRuntimeSession).toHaveBeenCalledWith(expect.objectContaining({ runId: "run.staged", llmExecution: { grantId: "llm-grant:staged", actorUserId: "user.one", actorSessionId: "session.one", purpose: "diagnosis_only" } }));
+    expect(grants.revoke).not.toHaveBeenCalledWith("llm-grant:staged");
     const emptyRunId = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runId: "", runIntent: "diagnosis_only", llmExecutionGrantId: "llm-grant:empty-run-id" } });
-    expect(emptyRunId).toMatchObject({ ok: false, error: expect.stringContaining("fresh runtime session") });
-    expect(grants.revoke).toHaveBeenCalledWith("llm-grant:empty-run-id");
-    expect(runRuntimeSession).toHaveBeenCalledTimes(1);
+    expect(emptyRunId.ok).toBe(true);
+    expect(grants.revoke).not.toHaveBeenCalledWith("llm-grant:empty-run-id");
+    expect(runRuntimeSession).toHaveBeenCalledTimes(3);
     expect(JSON.stringify(issued)).not.toContain("password");
   });
 
@@ -158,16 +165,23 @@ describe("Automation Studio LLM execution API", () => {
     }
   });
 
-  it("rejects build grants carrying existing-runtime flags before grant issue", async () => {
-    const grants = { preflight: vi.fn(), issue: vi.fn(), revoke: vi.fn() };
+  it("issues a build grant although the request also mentions runtime flags", async () => {
+    // **This asserted a refusal, and the refusal was the bug (t166).** A build
+    // grant was refused outright when the payload so much as mentioned `runId`,
+    // `adaptiveMode`, `dryRunLlm`, `idempotencyKey`, `runIntent` or
+    // `authorizedExternalSideEffects` -- none of which is a risky act, and one of
+    // which (side-effect authorization) is what a build that has to press
+    // anything actually needs. The flags a grant does not use are simply not read
+    // by the grant path; refusing on their presence protected nobody.
+    const grants = { preflight: vi.fn().mockResolvedValue({ provider: "deepseek", model: "deepseek-flash", keyId: "secret:key" }), issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:build" }), revoke: vi.fn() };
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({}) as any, undefined, undefined, undefined, grants as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
     const base = { purpose: "build_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one" };
-    await expect(registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { ...base, runId: "run.stale" } })).resolves.toMatchObject({ ok: false, error: expect.stringContaining("fresh execution session") });
-    await expect(registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...base, authSessionId: "session.one", authorizationPassword: "private-password", authorizationPin: "654321", authorizedExternalSideEffects: true } })).resolves.toMatchObject({ ok: false, error: expect.stringContaining("fresh execution session") });
-    expect(grants.preflight).not.toHaveBeenCalled();
-    expect(grants.issue).not.toHaveBeenCalled();
+    await expect(registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { ...base, runId: "run.stale" } })).resolves.toMatchObject({ ok: true });
+    await expect(registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...base, authSessionId: "session.one", authorizationPassword: "private-password", authorizationPin: "654321", authorizedExternalSideEffects: true } })).resolves.toMatchObject({ ok: true, payload: { grant: { grantId: "llm-grant:build" } } });
+    expect(grants.preflight).toHaveBeenCalledTimes(1);
+    expect(grants.issue).toHaveBeenCalledTimes(1);
   });
 
   it("returns sanitized failures for unknown purpose and stale dependency/settings binding", async () => {

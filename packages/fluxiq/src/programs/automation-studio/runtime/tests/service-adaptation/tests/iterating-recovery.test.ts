@@ -18,7 +18,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import {
   AutomationStudioLlmExecutionGrantService,
-  automationStudioRuntimeSessionGrantTaskKinds,
   type AutomationStudioLlmRunCallRecord,
   type AutomationStudioRuntimeSessionGrantPurpose
 } from "../../../llm/index.ts";
@@ -105,7 +104,18 @@ describe("AutomationStudioService iterating recovery", () => {
     expect(run.status).toBe("failed");
   }, 60_000);
 
-  it("refuses a runtime session purpose that is not a recovery, and incompatible flags on one that is", async () => {
+  it("runs a granted session whatever its purpose, its dry-run flag or its side-effect authorization", async () => {
+    // **All three of these were refusals, and all three were the t166 bug.** A
+    // grant's purpose is not a statement about how a run may execute: what a
+    // grant exists to gate is a lasting real-world consequence, and those are
+    // gated one action at a time by `permittedConsequences` and the action
+    // permission gate, neither of which this ever touched. What it did instead
+    // was throw the grant away -- every refusal revoked it -- so the caller could
+    // not retry without asking a person for a new one. A build's purpose was
+    // refused outright, which is the entry point a Flow built from an
+    // instruction actually runs under; and a purpose that "changes nothing" was
+    // refused for carrying side-effect authorization, so having a run's answer
+    // judged cost the run its ability to act on a page.
     const service = track(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
     const project = await service.createProject({ name: "Unsupported purpose" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.unsupported-purpose", metadata: adaptiveTrainingMetadata() });
@@ -113,20 +123,19 @@ describe("AutomationStudioService iterating recovery", () => {
       projectId: project.id,
       flowId: flow.flowId,
       llmExecution: { grantId: "grant.build", actorUserId: "user.one", actorSessionId: "session.one", purpose: "build_and_adapt" as never }
-    })).rejects.toThrow("not one a runtime session runs under");
+    })).resolves.toMatchObject({ flowId: flow.flowId });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
       dryRunLlm: true,
       llmExecution: { grantId: "grant.explore", actorUserId: "user.one", actorSessionId: "session.one", purpose: "explore_and_adapt" }
-    })).rejects.toThrow("cannot be an LLM dry run");
-    // A purpose that only asks a question may not be handed the authority to act.
+    })).resolves.toMatchObject({ flowId: flow.flowId });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
       authorizedExternalSideEffects: true,
       llmExecution: { grantId: "grant.diagnose", actorUserId: "user.one", actorSessionId: "session.one", purpose: "diagnosis_only" }
-    })).rejects.toThrow("cannot carry side-effect authorization");
+    })).resolves.toMatchObject({ flowId: flow.flowId });
   });
 });
 
@@ -186,13 +195,10 @@ async function recoveryFixture(purpose: AutomationStudioRuntimeSessionGrantPurpo
   service = track(new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    // The host's own composition: the grant resolves the provider, and a
-    // runtime recovery may spend it only on diagnosing, gathering and repairing.
-    llmProviderResolver: (input) => input.executionGrant && input.executionGrant.purpose !== "build_and_adapt"
-      ? grants.resolve(
-        { ...input.executionGrant, projectId: input.projectId, flowId: input.flowId },
-        { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds(input.executionGrant.purpose) }
-      )
+    // The host's own composition: one grant resolves the provider for the whole
+    // diagnosis, evidence, repair and verification loop, whatever its purpose.
+    llmProviderResolver: (input) => input.executionGrant
+      ? grants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId })
       : undefined,
     revokeLlmExecutionGrant: (grantId) => grants.revoke(grantId),
     closeLlmExecutionGrants: () => grants.close(),

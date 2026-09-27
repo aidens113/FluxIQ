@@ -1,0 +1,49 @@
+// What one call did, as the record the draft and the row are written from.
+//
+// Two readings of the same call, and both are the caller's rather than the
+// tool's. A tool that runs whichever of a library's things the call names is the
+// reason: the effect, the name and whether a result should contain it are
+// properties of the call, not of the tool, so a declaration made once for all
+// calls cannot answer for any of them.
+
+import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowDraftStepReplay } from "../../flow-draft/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
+
+/**
+ * What a call said about its own outcome beyond the code it came to: why it
+ * came to it, and which node it ran.
+ *
+ * Both are the caller's, both are closed vocabulary
+ * (`../evidence-loop-decision.ts` drops anything that is not), and both are
+ * absent whenever the caller said nothing -- a call that simply worked usually
+ * does.
+ */
+export function automationStudioLlmEvidenceCallDiagnostic(execution: { resultReason?: string; nodeId?: string }): { resultReason?: string; nodeId?: string } {
+  return {
+    ...(execution.resultReason ? { resultReason: execution.resultReason } : {}),
+    ...(execution.nodeId ? { nodeId: execution.nodeId } : {})
+  };
+}
+
+/**
+ * What one call did, as the caller reported it, over what its tool declared.
+ */
+export function automationStudioLlmEvidenceCallRecord(
+  tool: AutomationStudioLlmEvidenceTool,
+  input: JsonObject,
+  execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay } {
+  const declared = execution?.draft;
+  const actionId = declared?.actionId ?? tool.toolId;
+  return {
+    actionId,
+    ...(actionId === tool.toolId ? {} : { toolId: tool.toolId }),
+    input: declared?.input ?? input,
+    ...(declared?.ranWith === undefined ? {} : { ranWith: declared.ranWith }),
+    effect: declared?.effect ?? tool.effect ?? "observe",
+    ...(declared?.proposes === undefined ? {} : { proposes: declared.proposes }),
+    ...(declared?.replay === undefined ? {} : { replay: declared.replay })
+  };
+}

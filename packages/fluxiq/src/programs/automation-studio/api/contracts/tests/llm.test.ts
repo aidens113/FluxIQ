@@ -44,7 +44,7 @@ type ServiceLimits = Omit<ServicePreflightInput, "keyId" | "projectId" | "flowId
 type ActorFields = "actorUserId" | "actorSessionId";
 
 const purposesMatch: Equal<AutomationStudioLlmExecutionPurpose, AutomationStudioLlmExecutionGrantPurpose> = true;
-const runtimeIntentsMatch: Equal<AutomationStudioRuntimeSessionLlmIntent, AutomationStudioRuntimeSessionGrantPurpose> = true;
+const runtimeIntentsMatch: Equal<AutomationStudioRuntimeSessionLlmIntent, Exclude<AutomationStudioRuntimeSessionGrantPurpose, "build_and_adapt">> = true;
 const limitsMatch: SameShape<AutomationStudioLlmExecutionLimitRequest, ServiceLimits> = true;
 const everyPreflightFieldIsInTheContract: Equal<Exclude<keyof ServicePreflightInput, keyof AutomationStudioLlmExecutionPreflightRequest>, never> = true;
 const everyIssueFieldIsInTheContract: Equal<Exclude<Exclude<keyof ServiceIssueInput, ActorFields>, keyof AutomationStudioLlmExecutionGrantRequest>, never> = true;
@@ -56,10 +56,9 @@ describe("Automation Studio LLM execution API contract", () => {
     expect([purposesMatch, runtimeIntentsMatch, limitsMatch, everyPreflightFieldIsInTheContract, everyIssueFieldIsInTheContract, grantMatches, preflightMatches]).toEqual([true, true, true, true, true, true, true]);
   });
 
-  it("lists every runtime-session purpose Core accepts, and not build_and_adapt", () => {
-    const intents: readonly AutomationStudioRuntimeSessionLlmIntent[] = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES;
-    expect([...intents].sort()).toEqual(["diagnose_and_adapt", "diagnosis_only", "explore_and_adapt", "verify_result"]);
-    expect(intents).not.toContain("build_and_adapt");
+  it("lists every runtime-session purpose Core accepts, including build_and_adapt", () => {
+    const intents: readonly AutomationStudioRuntimeSessionGrantPurpose[] = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES;
+    expect([...intents].sort()).toEqual(["build_and_adapt", "diagnose_and_adapt", "diagnosis_only", "explore_and_adapt", "verify_result"]);
   });
 
   // 60,000 rather than a round 40,000: a run budget may never be below one
@@ -70,7 +69,7 @@ describe("Automation Studio LLM execution API contract", () => {
     const service = contractGrantService();
     const request: AutomationStudioLlmExecutionPreflightRequest = { projectId: "project.one", flowId: "flow.one", keyId: "secret:key", purpose: "explore_and_adapt", maxTotalTokensPerRun: 60_000 };
     const preflight: AutomationStudioLlmExecutionPreflight = await service.preflight(request);
-    expect(preflight).toMatchObject({ purpose: "explore_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS, maxTotalTokensPerRun: 60_000, providerRetryCount: 0 });
+    expect(preflight).toMatchObject({ purpose: "explore_and_adapt", maxCalls: AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_DEFAULT_MAX_CALLS, maxTotalTokensPerRun: 60_000, providerRetryCount: 2 });
   });
 
   it("describes the defaults the grant service applies when a request names no count or budget", async () => {
@@ -87,7 +86,7 @@ describe("Automation Studio LLM execution API contract", () => {
     expect(preflight.tokenLimits).toEqual({ maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 });
     expect(AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD).toBe(preflight.tokenLimits.maxTotalTokens * 10);
     expect(preflight).toMatchObject({ maxCalls: 26, maxTotalTokensPerRun: AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD });
-    await expect(service.preflight({ ...request, purpose: "diagnosis_only", maxCalls: 2 })).rejects.toThrow("exactly one");
+    await expect(service.preflight({ ...request, purpose: "diagnosis_only", maxCalls: 2 })).resolves.toMatchObject({ maxCalls: 2 });
     await expect(service.preflight({ ...request, maxCalls: 65 })).rejects.toThrow("call limit");
     await expect(service.preflight({ ...request, maxTotalTokensPerRun: 9_999 })).rejects.toThrow("total token limit");
   });
