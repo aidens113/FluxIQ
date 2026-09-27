@@ -31,12 +31,44 @@
 // that is not a count, a missing field that is not one of the read's own
 // fields, a presence word this Core does not know -- leaves the attempt with no
 // extraction record, exactly as an attempt that dispatched no read has.
+//
+// **The one exception, and the rule behind it: a stop word this Core does not
+// know is renamed, not refused.** `listWait.stoppedOn` enumerates the
+// *mechanisms* that can end a wait for the list, and mechanisms get added; the
+// downstream domain and this Core ship separately and nothing sequences them,
+// so a domain that names a fifth way a wait can end would, under the rule
+// above, cost every run every read's account of itself -- which is exactly what
+// t143 had to reconstruct by hand from `durationMs` arithmetic. So an
+// unrecognised `stoppedOn` is published as `"unknown"` and the two durations
+// beside it travel untouched. Nothing about redaction is relaxed by that: the
+// foreign string is discarded rather than republished, so what lands in the run
+// record is still a word from a closed set.
+//
+// Tolerance goes to the closed word sets and no further, because version skew
+// adds words and members -- it does not turn a count into a string. A count
+// that is not a count, or a `stoppedOn` that is not even a string, is a
+// producer defect rather than a newer producer, and still drops the summary.
+// `listPresence` stays strict for a different reason: its two words answer a
+// yes/no question about whether the selector ever named an element, so that set
+// is closed by what it means and has nowhere to grow.
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 
 /** The two words the read uses for whether its `item` selector ever named an element (contract C2). */
 const LIST_PRESENCE = new Set(["appeared", "never_appeared"]);
+
+/**
+ * The four things that can end a read's wait for its list (contract C2):
+ * `list_present` the items arriving, `page_settled` the document holding still
+ * with some of the list drawn and the rest missing, `window_elapsed` the read's
+ * own render window running out, and `deadline_passed` the command's
+ * `timeoutMs`.
+ */
+const WAIT_STOPS = new Set(["list_present", "page_settled", "window_elapsed", "deadline_passed"]);
+
+/** What a stop word outside the set above is published as, so a fifth mechanism costs the word and not the account. */
+const WAIT_STOP_UNKNOWN = "unknown";
 
 /**
  * How many `where` conditions a read may report rejections for. A read carries
@@ -50,7 +82,9 @@ const MAXIMUM_CONDITIONS = 64;
  * The read's summary, rebuilt member by member, or `undefined` when the attempt
  * dispatched no read, the host reported no summary, the result payload was
  * withheld (a dispatch that saves records keeps a marker in its place), or any
- * member is not one this contract knows.
+ * member is not one this contract knows -- with the single exception the header
+ * states, an unrecognised `listWait.stoppedOn`, which is published as
+ * `"unknown"` rather than costing the summary.
  *
  * It is looked for at two depths for the reason its neighbour is: a
  * *runtime*-dispatched output puts the client's action-result payload straight
@@ -78,15 +112,50 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   if (listPresence !== undefined && !(typeof listPresence === "string" && LIST_PRESENCE.has(listPresence))) return undefined;
   const conditions = summary.conditions === undefined ? undefined : conditionReport(summary.conditions);
   if (summary.conditions !== undefined && conditions === undefined) return undefined;
+  // The two counts a zero read is diagnosed by, absent from a producer that did
+  // not count them and held to the same rule as every other count when sent.
+  // They are deliberately not cross-checked against `recordCount` or against
+  // each other: `itemsSeen` is the whole read's while a condition report is one
+  // document's, and the surprising pairings are the diagnosis rather than a
+  // malformed report -- `itemsSeen: 0` names the selector, `emptyRecords` equal
+  // to `recordCount` names fields read off the wrong element.
+  const itemsSeen = count(summary.itemsSeen);
+  const emptyRecords = count(summary.emptyRecords);
+  if (summary.itemsSeen !== undefined && itemsSeen === undefined) return undefined;
+  if (summary.emptyRecords !== undefined && emptyRecords === undefined) return undefined;
+  const listWait = summary.listWait === undefined ? undefined : waitReport(summary.listWait);
+  if (summary.listWait !== undefined && listWait === undefined) return undefined;
   return {
     recordCount,
     pagesRead,
     truncated: summary.truncated,
     fieldNames,
     missingFields,
+    ...(itemsSeen !== undefined ? { itemsSeen } : {}),
+    ...(emptyRecords !== undefined ? { emptyRecords } : {}),
     ...(typeof listPresence === "string" ? { listPresence } : {}),
+    ...(listWait ? { listWait } : {}),
     ...(conditions ? { conditions } : {})
   };
+}
+
+/**
+ * What the wait for the list did: how long it waited, how many items it was
+ * waiting for, and which of the four mechanisms ended it -- or `"unknown"` for a
+ * fifth this Core has not been told about, which is the header's one exception.
+ *
+ * `undefined` only for an account that is not well formed: a duration that is
+ * not a count, or a `stoppedOn` that is not even a string. That keeps the
+ * *absence* of this member meaning one thing, which is what the read's producer
+ * relies on -- absent is "this read waited for no list of its own", a continued
+ * read resuming on the page its predecessor's control reached.
+ */
+function waitReport(value: unknown): JsonObject | undefined {
+  if (!isJsonRecord(value)) return undefined;
+  const waitedMs = count(value.waitedMs);
+  const waitedFor = count(value.waitedFor);
+  if (waitedMs === undefined || waitedFor === undefined || typeof value.stoppedOn !== "string") return undefined;
+  return { stoppedOn: WAIT_STOPS.has(value.stoppedOn) ? value.stoppedOn : WAIT_STOP_UNKNOWN, waitedMs, waitedFor };
 }
 
 /**

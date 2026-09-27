@@ -8,22 +8,35 @@
 // verdict draws the same line for a change: `unverifiable` is not `verified`,
 // and the change is not promoted on the strength of nothing.
 //
-// What is recorded is Core's own words. The model's prose is its reading of a
-// medium whose contents Core deliberately does not store, so a run record that
-// quoted it back would be a copy of that medium in storage under another name
-// -- the rule `structured-diagnosis.ts` states and follows. So the reason and
-// the observation written onto a run here are composed from Core's counts and
-// the verdict word, and the model's `expected`, `observed` and `changed` stay
-// where every other diagnosis leaves them: unrecorded.
+// What is recorded on a run is Core's own words. The model's prose is its reading
+// of a medium whose contents Core deliberately does not store, so a run record
+// that quoted it back would be a copy of that medium in storage under another
+// name -- the rule `structured-diagnosis.ts` states and follows. So the reason
+// and the observation written onto a run here are composed from Core's counts and
+// the verdict word.
+//
+// **A refutation now also carries what to fix, and the rule above survives it.**
+// The user's instruction of 2026-09-26 is that the judgement give explicit
+// instructions on what to fix and suggest how, because a verdict and a code sent
+// the repair back to rediscover the defect from scratch. So a refutation carries
+// `repair`: Core's findings and Core's fix lines, and the model's reading of the
+// request screened by the two screens every request passes. The split the rule
+// asks for is kept -- `run-outcome.ts` records the Core half onto the run, and
+// the model's half travels only into the failure record's `expected` and
+// `actual`, which is the field a domain's own sentences have always travelled in
+// (`llm/harness/locator-text.ts`). What stays unrecorded is prose in a run's
+// metadata; what a failure record says about its own failure is not that.
 
 import type { AutomationStudioLlmDiagnosisFields } from "../llm/index.ts";
 import {
+  type AutomationStudioResultRepairDirective,
   type AutomationStudioResultVerdict,
   type AutomationStudioResultVerdictBasis,
   type AutomationStudioResultVerification,
   type AutomationStudioRunResultSummary
 } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
+import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 
 /**
  * Steps named in the one-line observation. The whole shape goes to the model;
@@ -59,6 +72,16 @@ export type AutomationStudioResultVerdictInput = {
   summary: AutomationStudioRunResultSummary;
   /** The diagnosis fields the verification call returned, when it returned any. */
   diagnosis?: AutomationStudioLlmDiagnosisFields | undefined;
+  /**
+   * The reply's own prose summary, read only as the judgement's advice and only
+   * where `diagnosis.changed` gave none.
+   *
+   * It is the field a model fills without being told which of them to fill, so a
+   * judgement that put its whole reading in the summary is not thrown away for
+   * having chosen the wrong box. Nothing is required of it: absent, empty or
+   * unusable, the refutation stands on Core's own findings.
+   */
+  summaryText?: string | undefined;
   /** How the verdict was reached: `model` when a reply arrived, otherwise why not. */
   basis: Exclude<AutomationStudioResultVerdictBasis, "core_observation" | "model_disagreed" | "model_unconfirmed">;
   /** The diagnostic code of a call that did not come back usable. Codes only, never a message. */
@@ -90,12 +113,28 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     };
   }
   if (verdict === "does_not_answer") {
-    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for, although every step of the run succeeded.", observation);
+    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for, although every step of the run succeeded.", observation, automationStudioResultRepairDirective({
+      summary: input.summary,
+      judgement: {
+        ...(input.diagnosis?.expected !== undefined ? { expected: input.diagnosis.expected } : {}),
+        ...(input.diagnosis?.observed !== undefined ? { observed: input.diagnosis.observed } : {}),
+        // `changed` is the field the diagnosis channel already asks a model to
+        // fill with its reading, and the reply's summary stands in where it left
+        // it empty. Neither is required and neither is asked for twice.
+        ...(advice(input) !== undefined ? { advice: advice(input) } : {})
+      }
+    }));
   }
   const silent = input.basis === "model_silent" || input.diagnosis?.answersRequest === undefined;
   return silent
     ? failed(verdict, "model_silent", codes.silent, "The verification call answered without saying whether the result answers the request, so nothing confirmed it.", observation)
     : failed(verdict, "model", codes.unsure, "The verification call could not tell whether the result answers the request, so nothing confirmed it.", observation);
+}
+
+/** The judgement's advice: what it said changed, or failing that what its reply said at all. */
+function advice(input: AutomationStudioResultVerdictInput): string | undefined {
+  const changed = typeof input.diagnosis?.changed === "string" && input.diagnosis.changed.trim() ? input.diagnosis.changed : undefined;
+  return changed ?? (typeof input.summaryText === "string" && input.summaryText.trim() ? input.summaryText : undefined);
 }
 
 /**
@@ -116,12 +155,22 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   return `${stored}${refused}${sets}${shape}${cut}.`;
 }
 
+/**
+ * A verification that fails the run.
+ *
+ * `repair` reaches only a `does_not_answer`. An `unsure` is a result nobody could
+ * judge, so there is nothing to instruct a repair to change, and
+ * `recovery/refuted-result/attempt.ts` already refuses to build a repair from one
+ * for the same reason -- "a repair planned from it would be a change to a Flow on
+ * evidence that nothing was wrong with it".
+ */
 function failed(
   verdict: AutomationStudioResultVerdict,
   basis: AutomationStudioResultVerdictBasis,
   code: string,
   reason: string,
-  observation: string
+  observation: string,
+  repair?: AutomationStudioResultRepairDirective
 ): AutomationStudioResultVerification {
   return {
     schemaVersion: "automation-studio.result-verification.v1",
@@ -130,6 +179,7 @@ function failed(
     code,
     reason,
     observation,
-    failure: automationStudioResultFailureRecord({ verdict, code, observation })
+    ...(repair ? { repair } : {}),
+    failure: automationStudioResultFailureRecord({ verdict, code, observation, ...(repair ? { repair } : {}) })
   };
 }

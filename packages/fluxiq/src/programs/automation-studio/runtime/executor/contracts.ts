@@ -11,6 +11,7 @@ import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
+import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -162,6 +163,16 @@ export type AutomationStudioNodeAttemptTrace = {
   message?: string;
   /** Structured failure from the node result; comparison and classification read it before `message`. */
   failure?: AutomationStudioFailureRecord;
+  /**
+   * How the default defensive policy read this attempt's failure: what the fault
+   * was, whether the run absorbs it, and why either way.
+   *
+   * Stamped where the fault was seen -- at the dispatch seam, with the thrown
+   * value still in hand -- because that is the richest evidence there will ever
+   * be, and a classification re-derived later from a message is a guess at what
+   * was already known.
+   */
+  fault?: AutomationStudioFaultAssessment;
   childTrace?: AutomationStudioGraphExecutionTrace;
   compositeTarget?: { flowId: string; version: string; flowDigest: string };
   regionId?: string;
@@ -256,6 +267,16 @@ export type AutomationStudioGraphExecutionTrace = {
    * neither.
    */
   parked?: AutomationStudioParkedRun;
+  /**
+   * What this run survived: every fault the default defensive policy assessed,
+   * absorbed or refused, with what absorbing it cost in waiting.
+   *
+   * Absent when the run met no fault at all. It is here rather than only on the
+   * attempts because a person reading a run needs to see at a glance that it was
+   * attempted three times and waited four seconds, without reconstructing that
+   * from a list of attempt records.
+   */
+  defence?: AutomationStudioDefenceSummary;
   message?: string;
 };
 

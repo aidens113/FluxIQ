@@ -1,5 +1,13 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioFlowBootstrapEvidenceSteps, type AutomationStudioFlowBootstrapEvidenceTraceRow } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
+import {
+  automationStudioFlowBootstrapEvidenceSteps,
+  evidenceStepAnswerability,
+  evidenceStepDraft,
+  evidenceStepDraftChange,
+  evidenceStepProgress,
+  type AutomationStudioFlowBootstrapEvidenceTraceRow
+} from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
@@ -98,10 +106,59 @@ export function sanitizeEvidenceLoopTrace(
     // How many steps an amendment decision edited. The fourth rebuilder learns
     // a member as the others do; the test below holds every one of them.
     if (Number.isSafeInteger(item.amended) && (item.amended as number) >= 0) clean.amended = item.amended;
+    // Which of the same decision's amendments changed nothing, and why. Without
+    // it the reasons the draft computed reach the model during the build and
+    // then vanish: `amended` says how many landed, and a run's stored record
+    // said nothing at all about the rest -- so the seven silent amendments of
+    // `run-muhubegx-9469de5e` would still have been seven identical words to
+    // anybody reading the artifacts afterwards.
+    const refused = amendmentRefusals(item.amendmentsRefused);
+    if (refused) clean.amendmentsRefused = refused;
+    const progress = evidenceStepProgress(item.progress);
+    if (progress) clean.progress = progress;
+    const draftChange = evidenceStepDraftChange(item.draftChange);
+    if (draftChange) clean.draftChange = draftChange;
+    const draft = evidenceStepDraft(item.draft);
+    if (draft) clean.draft = draft;
+    const answerability = evidenceStepAnswerability(item.answerability);
+    if (answerability) clean.answerability = answerability;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });
 }
+/**
+ * The most refusals one row keeps: the most amendments one decision may carry
+ * (`../../llm/evidence-loop-decision.ts`), so nothing a real decision produced
+ * is dropped and the bound is this file's own property rather than the loop's.
+ */
+const MAX_ROW_AMENDMENT_REFUSALS = 16;
+
+/**
+ * The refused amendments of one row, kept entry by entry, or nothing when the
+ * row carried none that is one.
+ *
+ * Bounded by shape and not by an allow-list of reasons, for the reason the
+ * result code above is: the vocabulary is the draft's
+ * (`../../flow-draft/amendment.ts`), a closed copy here would silently drop a
+ * reason added there, and this is a reader's detail -- so an entry that is not
+ * shaped like a refusal is left behind rather than failing a build that
+ * finished. A reason that passes the shape is carried as the draft's own word
+ * for it, which is what the cast says: Core reads it never and only vouches for
+ * it being a code.
+ */
+function amendmentRefusals(value: AutomationStudioFlowBootstrapEvidenceTraceRow["amendmentsRefused"]): AutomationStudioFlowDraftAmendmentRefusal[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const kept: AutomationStudioFlowDraftAmendmentRefusal[] = [];
+  for (const entry of value.slice(0, MAX_ROW_AMENDMENT_REFUSALS)) {
+    if (!entry || typeof entry !== "object") continue;
+    const { step, reason } = entry as { step?: unknown; reason?: unknown };
+    if (!Number.isSafeInteger(step) || (step as number) < 0) continue;
+    if (typeof reason !== "string" || !EVIDENCE_RESULT_CODE.test(reason)) continue;
+    kept.push({ step: step as number, reason: reason as AutomationStudioFlowDraftAmendmentRefusal["reason"] });
+  }
+  return kept.length ? kept : undefined;
+}
+
 /**
  * `additionalProviderCalls` are the build's provider calls that are not the
  * loop's own -- today, reading the person's instruction for what it asks for.

@@ -19,6 +19,12 @@ import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, grant, mockProvider, plan } from "./fixtures.ts";
 
 const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_existing"];
+/**
+ * Of what the press declares, the part a person is asked about. Since
+ * 2026-09-26 that is the money alone: an edit is not gated, and the request
+ * still carries both classes while asking only about this one.
+ */
+const ASKED_ABOUT: AutomationStudioActionConsequence[] = ["move_money"];
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -50,7 +56,7 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
       kind: "permission",
       parks: true,
       status: "pending",
-      missing: REFUND,
+      missing: ASKED_ABOUT,
       permissionRequest: { requestId, action: { kind: "exploration_step" } }
     });
     // The turn the question hangs on says it in Core's own words.
@@ -129,7 +135,7 @@ describe("a build that never explored", () => {
     // And the question reached the thread, where before there was none to reach.
     const [conversation] = await instance.conversations.listConversations({ projectId: project.id, subject: { kind: "flow", id: flow.flowId } });
     const thread = await instance.conversations.getConversation({ projectId: project.id, conversationId: conversation!.conversationId });
-    expect(thread!.turns.find((turn) => turn.ask)?.ask).toMatchObject({ kind: "permission", missing: REFUND, permissionRequest: { action: { kind: "flow_step" } } });
+    expect(thread!.turns.find((turn) => turn.ask)?.ask).toMatchObject({ kind: "permission", missing: ASKED_ABOUT, permissionRequest: { action: { kind: "flow_step" } } });
   });
 });
 

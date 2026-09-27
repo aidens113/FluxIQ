@@ -30,7 +30,8 @@ export type AutomationStudioLlmExecutionGrantMetadata = {
   maxEstimatedCostUsd: number;
   maxTotalEstimatedCostUsd: number;
   timeoutMs: number;
-  providerRetryCount: 0;
+  /** Extra attempts one provider question may spend, each consuming one remaining grant use. */
+  providerRetryCount: number;
   /** The end of the window in which the grant may be claimed: its issue TTL,
    * or, once the run it was issued for has started and holds it, that run's
    * own deadline. A claimed grant runs on its own lease,
@@ -60,7 +61,7 @@ export function automationStudioLlmExecutionGrantMetadata(grant: AutomationStudi
     maxEstimatedCostUsd: grant.maxEstimatedCostUsd,
     maxTotalEstimatedCostUsd: grant.maxTotalEstimatedCostUsd,
     timeoutMs: grant.timeoutMs,
-    providerRetryCount: 0,
+    providerRetryCount: grant.providerRetryCount,
     expiresAtMs: grant.expiresAtMs,
     remainingUses: grant.remainingUses,
     permittedConsequences: [...grant.permittedConsequences]

@@ -233,7 +233,6 @@ function isOffered(option: AutomationStudioHarnessOption, resolution: Automation
   if (option.safety?.requiredPermissions?.some((permission) => !permissions.has(permission))) return false;
   if (!stageAllows(option, resolution.stage)) return false;
   if (!sideEffectAllows(option, resolution)) return false;
-  if (option.safety?.requiresOperatorApproval === true && !new Set(resolution.approvedOptionIds ?? []).has(option.toolId)) return false;
   return true;
 }
 

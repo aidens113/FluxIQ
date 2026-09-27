@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../contracts.ts";
-import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult } from "../result-summary.ts";
 
 // What leaves the process for a verification, and what may not.
 //
@@ -55,6 +54,73 @@ describe("summarizeAutomationStudioRunResult", () => {
       deniedEvidenceKeys: []
     });
     expect(summary.flowShape.map((step) => step.definitionId)).toEqual(["builtin.navigate", "builtin.policy.action", "builtin.end"]);
+  });
+
+  it("says what each step runs with, screened, which is what a definition id alone cannot", () => {
+    // Mutation: carry the node ids alone. The judgement is asked whether the Flow
+    // had a step that could narrow what the request asked to narrow, and two
+    // definition ids answer that identically whether the condition is right or
+    // wrong. This is the parity gap with the repair, which has been shown the
+    // same projection since t139.
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ recordCount: 2 }), schema: schema(["name"]), rows: rows(2) }],
+      flowNodes: [
+        { id: "n1", definitionId: "builtin.navigate", label: "Open the directory", parameterValues: { url: "https://members.test/list?team=ops", newTab: false } },
+        { id: "n2", definitionId: "web.extract.list", parameterValues: { maxRows: 25, where: [{ field: "role", matches: "admin" }] } }
+      ],
+      deniedEvidenceKeys: []
+    });
+    const [navigate, extract] = summary.flowShape;
+    expect(navigate?.label).toBe("Open the directory");
+    // The origin travels and the query does not, and the dropped path is named
+    // with dotted segments rather than brackets so it survives the locator screen.
+    expect(navigate?.parameters).toEqual({ url: "https://members.test", newTab: false });
+    expect(navigate?.parametersWithheld).toEqual(["url"]);
+    expect(extract?.parameters?.maxRows).toBe(25);
+    expect(extract?.parameters?.where).toEqual({ count: 1, items: [{ field: "role", matches: "admin" }] });
+    expect(summary.flowParametersWithheld).toBeUndefined();
+  });
+
+  it("carries no step parameters at all when no denied-key declaration was made", () => {
+    // The same rule the row sample follows: absent means nobody said what this
+    // medium's raw payload is called, never "deny nothing".
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ recordCount: 2 }) }],
+      flowNodes: [{ id: "n1", definitionId: "builtin.navigate", parameterValues: { url: "https://members.test" } }]
+    });
+    expect(summary.flowShape[0]?.parameters).toBeUndefined();
+    expect(summary.flowParametersWithheld).toBeUndefined();
+  });
+
+  it("leaves a step bare when its parameters are not what the Flow authored, and names the paths", () => {
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ recordCount: 1 }) }],
+      flowNodes: [{ id: "n1", definitionId: "web.output.type", parameterValues: { text: "Hollis", selector: "#name", timeoutMs: 5000 } }],
+      deniedEvidenceKeys: ["selector"]
+    });
+    expect(summary.flowShape[0]?.parameters).toEqual({ timeoutMs: 5000, text: null });
+    expect(summary.flowShape[0]?.parametersWithheld).toEqual(["text", "selector"]);
+    expect(JSON.stringify(summary)).not.toContain("Hollis");
+    expect(JSON.stringify(summary)).not.toContain("#name");
+  });
+
+  it("keeps the row sample and gives the parameters what is left, saying when a step went without", () => {
+    // Parameters are spent out of the remainder on purpose: the sample is the
+    // data the judgement is about. A step left bare for want of room must not
+    // read like a step that runs on its defaults.
+    const wide = schema(Array.from({ length: 4 }, (_field, index) => `field${index}`));
+    const heavyRow: JsonObject = Object.fromEntries(wide.fields.map((field) => [field.id, "y".repeat(110)]));
+    const heavyParameters = Object.fromEntries(Array.from({ length: 12 }, (_value, index) => [`name${index}`, index]));
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ recordCount: 4 }), schema: wide, rows: [heavyRow, heavyRow, heavyRow, heavyRow] }],
+      flowNodes: Array.from({ length: 20 }, (_node, index) => ({ id: `n${index}`, definitionId: "web.extract.list", parameterValues: heavyParameters })),
+      deniedEvidenceKeys: []
+    });
+    expect(Buffer.byteLength(JSON.stringify(summary), "utf8")).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes);
+    expect(summary.recordSets[0]?.sampleRows?.length).toBeGreaterThan(0);
+    expect(summary.flowShape.some((step) => step.parameters === undefined)).toBe(true);
+    expect(summary.flowParametersWithheld).toBe(true);
+    expect(summary.withheld).toBe(true);
   });
 
   it("samples no row at all when no denied-key declaration was made", () => {

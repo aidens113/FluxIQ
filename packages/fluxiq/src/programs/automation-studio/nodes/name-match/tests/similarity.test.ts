@@ -52,6 +52,36 @@ describe("automationStudioNameTokenOverlap", () => {
     expect(automationStudioNameTokenOverlap("send email", "web output dom click")).toEqual({ dice: 0, containment: 0 });
     expect(automationStudioNameTokenOverlap("", "web output dom click")).toEqual({ dice: 0, containment: 0 });
   });
+
+  it("counts a near token and a synonym at a discount, not as nothing", () => {
+    // This is the measurement the whole fix turns on. `name` is a token of
+    // `product name`, so it was already credited 1. `prce` and `url` were
+    // credited 0 -- exactly as much as a word with no relation to the candidate
+    // at all -- which left three quarters of the blend dead and the score at the
+    // mercy of how long the candidate happened to be.
+    expect(automationStudioNameTokenOverlap("name", "product name")).toEqual({ dice: 2 / 3, containment: 1 });
+
+    const near = automationStudioNameTokenOverlap("prce", "product price");
+    expect(near.containment).toBe(0.8);
+    expect(near.dice).toBeCloseTo(0.533, 3);
+
+    const synonym = automationStudioNameTokenOverlap("url", "product link");
+    expect(synonym.containment).toBeCloseTo(0.7, 6);
+    expect(synonym.dice).toBeCloseTo(0.467, 3);
+  });
+
+  it("lets one candidate token answer for only one written token", () => {
+    // Without a one-to-one pairing `rating` would be claimed twice, and a name
+    // sharing one column would look like a match on two.
+    expect(automationStudioNameTokenOverlap("rating ratings", "product rating")).toEqual({ dice: 0.5, containment: 0.5 });
+  });
+
+  it("credits nothing for two tokens that are merely two edits apart", () => {
+    // `file` reaches `filter` in two edits. Crediting that would resolve
+    // `upload-file` to `builtin.data.filter-list`, which this matcher is
+    // measured refusing -- see `./match-name.test.ts`.
+    expect(automationStudioNameTokenOverlap("upload file", "builtin data filter list")).toEqual({ dice: 0, containment: 0 });
+  });
 });
 
 describe("automationStudioNameSimilarity", () => {

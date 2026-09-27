@@ -23,9 +23,18 @@
 // Codes, identifiers, counts and numbers only. Nothing a tool returned and
 // nothing the model wrote passes through here, which is what lets a step ride
 // on an audit detail that no redaction rule covers.
-import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmUsageSummary } from "../llm/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
+import type {
+  AutomationStudioLlmEvidenceLoopAnswerability,
+  AutomationStudioLlmEvidenceLoopDraftChange,
+  AutomationStudioLlmEvidenceLoopDraftShown,
+  AutomationStudioLlmEvidenceLoopProgress,
+  AutomationStudioLlmEvidenceLoopTrace,
+  AutomationStudioLlmUsageSummary
+} from "../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./plan/index.ts";
 
 /**
  * A trace row as a reader of the loop's record sees one.
@@ -104,6 +113,31 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
   evidenceBytes?: number;
   /** How many draft steps an `amend_draft` decision edited. One code covers a whole amendment list, so the code alone cannot say. */
   amended?: number;
+  /**
+   * Which of this decision's amendments changed nothing, and why.
+   *
+   * `amended` says how many landed; this says what became of the rest, which is
+   * the difference between a model editing a step that does not exist and one
+   * restating what the draft already said. `run-muhubegx-9469de5e` made nine
+   * amend decisions, seven of which applied nothing and five of those in a row,
+   * and the published record kept one word -- `llm_evidence_loop.draft_unchanged`
+   * -- for all seven.
+   *
+   * The loop's trace has carried this since t140; a step is what a reader of a
+   * *stored* record sees, so without it here the refusals reach nothing anybody
+   * reads. A step number the model wrote and a reason from the draft's own
+   * closed set, which is a count and a code -- the only two kinds of thing this
+   * record ever carries.
+   */
+  amendmentsRefused?: AutomationStudioFlowDraftAmendmentRefusal[];
+  /** Content-free measurement of the draft, page, and answerability transition. */
+  progress?: AutomationStudioLlmEvidenceLoopProgress;
+  /** Stable ids and bounded counts for one draft-amendment decision. */
+  draftChange?: AutomationStudioLlmEvidenceLoopDraftChange;
+  /** What the provider was shown of its draft, expressed only as bounded counts. */
+  draft?: AutomationStudioLlmEvidenceLoopDraftShown;
+  /** Content-free capability facts observed by the completion check. */
+  answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
   /** When the row was recorded, in epoch milliseconds. Absent where the loop recorded no moment. */
   at?: number;
   /** What the provider reported for the call that made this decision. Absent where it reported nothing. */
@@ -114,6 +148,36 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
 const EVIDENCE_STEP_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 /** The usage figures a step carries, each a non-negative finite number and nothing else. */
 const USAGE_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens", "estimatedCostUsd"] as const;
+/**
+ * Why an amendment changed nothing, in the draft's own closed vocabulary.
+ *
+ * Keyed by that type, so a reason added in `../flow-draft/amendment.ts` fails
+ * this file's type check until it is named here -- the same rule the shape and
+ * its allow-list below are held to, for the same reason.
+ */
+const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
+  readonly [Reason in AutomationStudioFlowDraftAmendmentRefusal["reason"]]: true
+} = Object.freeze({
+  no_such_step: true,
+  already_so: true,
+  no_such_position: true,
+  run_by_the_loop: true,
+  no_step_before_it: true,
+  not_a_kept_step: true
+});
+/**
+ * The most refusals one step may report: the most amendments one decision may
+ * carry (`llm/evidence-loop-decision.ts`'s `MAX_AMENDMENTS_PER_DECISION`).
+ * Written out rather than read from there, like every other bound here.
+ */
+const MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS = 16;
+/**
+ * The largest draft position a refusal may name. The number is the model's own
+ * -- a refusal reading `no_such_step` is precisely the case where it named one
+ * that is not there -- so it is bounded rather than trusted. No draft comes near
+ * this, and a refusal naming something past it is left behind.
+ */
+const EVIDENCE_STEP_MAX_AMENDED_POSITION = 9_999;
 
 /**
  * The trace as steps, in the loop's own order. A `tool_call` that named no
@@ -129,6 +193,11 @@ export function automationStudioFlowBootstrapEvidenceSteps(
 
 function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBootstrapEvidenceTraceRow): AutomationStudioFlowBootstrapEvidenceStep[] {
   const usage = stepUsage(entry.usage);
+  const amendmentsRefused = stepAmendmentRefusals(entry.amendmentsRefused);
+  const progress = evidenceStepProgress(entry.progress);
+  const draftChange = evidenceStepDraftChange(entry.draftChange);
+  const draft = evidenceStepDraft(entry.draft);
+  const answerability = evidenceStepAnswerability(entry.answerability);
   const kept = {
     iteration: Number.isSafeInteger(entry.iteration) && entry.iteration >= 0 ? entry.iteration : 0,
     ...(entry.resultCode && EVIDENCE_STEP_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {}),
@@ -140,6 +209,11 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
     ...(nonNegative(entry.amended) ? { amended: entry.amended as number } : {}),
+    ...(amendmentsRefused ? { amendmentsRefused } : {}),
+    ...(progress ? { progress } : {}),
+    ...(draftChange ? { draftChange } : {}),
+    ...(draft ? { draft } : {}),
+    ...(answerability ? { answerability } : {}),
     ...(nonNegative(entry.at) ? { at: entry.at as number } : {}),
     ...(usage ? { usage } : {})
   };
@@ -158,6 +232,27 @@ function stepUsage(usage: AutomationStudioLlmUsageSummary | undefined): Automati
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) kept[field] = value;
   }
   return Object.keys(kept).length ? kept : undefined;
+}
+
+/**
+ * The decision's refused amendments, each held to its own shape at the moment
+ * of publication and left behind when it does not fit -- a step number inside
+ * the bound and a reason the draft actually has. Absent when the decision
+ * refused nothing, so a step that landed every amendment carries no field.
+ */
+function stepAmendmentRefusals(
+  refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[] | undefined
+): AutomationStudioFlowDraftAmendmentRefusal[] | undefined {
+  if (!refusals?.length) return undefined;
+  const kept = refusals
+    .filter((refusal) => isAmendmentRefusalStep(refusal.step) && Object.hasOwn(EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS, refusal.reason))
+    .slice(0, MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS)
+    .map((refusal) => ({ step: refusal.step, reason: refusal.reason }));
+  return kept.length ? kept : undefined;
+}
+
+function isAmendmentRefusalStep(value: unknown): boolean {
+  return boundedInteger(value, EVIDENCE_STEP_MAX_AMENDED_POSITION);
 }
 
 function nonNegative(value: number | undefined): boolean {
@@ -180,7 +275,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -204,6 +299,16 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
     if (step.usage !== undefined && !usage) return null;
+    const amendmentsRefused = parseStepAmendmentRefusals(step.amendmentsRefused);
+    if (step.amendmentsRefused !== undefined && !amendmentsRefused) return null;
+    const progress = evidenceStepProgress(step.progress);
+    if (step.progress !== undefined && !progress) return null;
+    const draftChange = evidenceStepDraftChange(step.draftChange);
+    if (step.draftChange !== undefined && !draftChange) return null;
+    const draft = evidenceStepDraft(step.draft);
+    if (step.draft !== undefined && !draft) return null;
+    const answerability = evidenceStepAnswerability(step.answerability);
+    if (step.answerability !== undefined && !answerability) return null;
     steps.push({
       toolId: step.toolId,
       ...(step.iteration !== undefined ? { iteration: step.iteration as number } : {}),
@@ -214,11 +319,110 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.nodeId !== undefined ? { nodeId: step.nodeId } : {}),
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
       ...(step.amended !== undefined ? { amended: step.amended as number } : {}),
+      ...(amendmentsRefused ? { amendmentsRefused } : {}),
+      ...(progress ? { progress } : {}),
+      ...(draftChange ? { draftChange } : {}),
+      ...(draft ? { draft } : {}),
+      ...(answerability ? { answerability } : {}),
       ...(step.at !== undefined ? { at: step.at as number } : {}),
       ...(usage ? { usage } : {})
     });
   }
   return steps;
+}
+
+const PROGRESS_FIELDS = ["draftRevisionBefore", "draftRevisionAfter", "pageState", "draftState", "answerabilityState"] as const;
+const DRAFT_CHANGE_FIELDS = ["targetedStepIds", "appliedCount", "refusedCount", "keptStepCount", "rerunStepId"] as const;
+const DRAFT_FIELDS = ["bytes", "budget", "steps", "instructionBytes", "unlisted", "withoutInput", "inputTooLarge", "overBudget", "budgetBelowFloor"] as const;
+const ANSWERABILITY_FIELDS = ["recordsRequested", "recordProducerPresent", "recordStorePresent", "issueCode"] as const;
+const MAX_DRAFT_CHANGE_TARGETS = 16;
+// One decision may withdraw a rerun target and then append its replacement,
+// producing two legitimate draft revisions inside one iteration.
+const MAX_DRAFT_REVISIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2;
+// A seeded extend build may retain the full supported Flow, append one action
+// in every loop iteration, and also carry the deterministic iteration-zero
+// observation. This bounds represented draft positions, not revisions or the
+// amendments allowed in one decision.
+const MAX_REPRESENTED_DRAFT_STEPS = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes
+  + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
+  + 1;
+
+/**
+ * Optional progress instrumentation is all-or-nothing. A malformed member is
+ * left behind by trace sanitization and publication; the stored-step parser
+ * uses the same function and rejects the claimed Core record instead.
+ */
+export function evidenceStepProgress(value: unknown): AutomationStudioLlmEvidenceLoopProgress | undefined {
+  if (!isStepRecord(value) || !hasExactFields(value, PROGRESS_FIELDS)
+    || !boundedInteger(value.draftRevisionBefore, MAX_DRAFT_REVISIONS)
+    || !boundedInteger(value.draftRevisionAfter, MAX_DRAFT_REVISIONS)
+    || !["changed", "unchanged", "unobserved"].includes(value.pageState as string)
+    || !["changed", "unchanged"].includes(value.draftState as string)
+    || !["first_observed", "changed", "unchanged", "unobserved"].includes(value.answerabilityState as string)) return undefined;
+  return {
+    draftRevisionBefore: value.draftRevisionBefore as number,
+    draftRevisionAfter: value.draftRevisionAfter as number,
+    pageState: value.pageState as AutomationStudioLlmEvidenceLoopProgress["pageState"],
+    draftState: value.draftState as AutomationStudioLlmEvidenceLoopProgress["draftState"],
+    answerabilityState: value.answerabilityState as AutomationStudioLlmEvidenceLoopProgress["answerabilityState"]
+  };
+}
+
+export function evidenceStepDraftChange(value: unknown): AutomationStudioLlmEvidenceLoopDraftChange | undefined {
+  if (!isStepRecord(value) || !hasExactFields(value, DRAFT_CHANGE_FIELDS)
+    || !Array.isArray(value.targetedStepIds) || value.targetedStepIds.length > MAX_DRAFT_CHANGE_TARGETS
+    || !value.targetedStepIds.every((id) => typeof id === "string" && EVIDENCE_STEP_ID.test(id))
+    || new Set(value.targetedStepIds).size !== value.targetedStepIds.length
+    || !boundedInteger(value.appliedCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations)
+    || !boundedInteger(value.refusedCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations)
+    || !boundedInteger(value.keptStepCount, MAX_REPRESENTED_DRAFT_STEPS)
+    || (value.rerunStepId !== undefined && (typeof value.rerunStepId !== "string" || !EVIDENCE_STEP_ID.test(value.rerunStepId)))) return undefined;
+  return {
+    targetedStepIds: [...value.targetedStepIds] as string[],
+    appliedCount: value.appliedCount as number,
+    refusedCount: value.refusedCount as number,
+    keptStepCount: value.keptStepCount as number,
+    ...(value.rerunStepId !== undefined ? { rerunStepId: value.rerunStepId } : {})
+  };
+}
+
+export function evidenceStepDraft(value: unknown): AutomationStudioLlmEvidenceLoopDraftShown | undefined {
+  if (!isStepRecord(value) || !hasExactFields(value, DRAFT_FIELDS)
+    || !boundedInteger(value.bytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.budget, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.steps, MAX_REPRESENTED_DRAFT_STEPS)
+    || !boundedInteger(value.instructionBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || (value.unlisted !== undefined && !boundedInteger(value.unlisted, MAX_REPRESENTED_DRAFT_STEPS))
+    || (value.withoutInput !== undefined && !boundedInteger(value.withoutInput, value.steps as number))
+    || (value.inputTooLarge !== undefined && !boundedInteger(value.inputTooLarge, value.steps as number))
+    || (value.steps as number) + (value.unlisted as number | undefined ?? 0) > MAX_REPRESENTED_DRAFT_STEPS
+    || (value.overBudget !== undefined && value.overBudget !== true)
+    || (value.budgetBelowFloor !== undefined && value.budgetBelowFloor !== true)) return undefined;
+  return {
+    bytes: value.bytes as number,
+    budget: value.budget as number,
+    steps: value.steps as number,
+    instructionBytes: value.instructionBytes as number,
+    ...(value.unlisted !== undefined ? { unlisted: value.unlisted as number } : {}),
+    ...(value.withoutInput !== undefined ? { withoutInput: value.withoutInput as number } : {}),
+    ...(value.inputTooLarge !== undefined ? { inputTooLarge: value.inputTooLarge as number } : {}),
+    ...(value.overBudget === true ? { overBudget: true as const } : {}),
+    ...(value.budgetBelowFloor === true ? { budgetBelowFloor: true as const } : {})
+  };
+}
+
+export function evidenceStepAnswerability(value: unknown): AutomationStudioLlmEvidenceLoopAnswerability | undefined {
+  if (!isStepRecord(value) || !hasExactFields(value, ANSWERABILITY_FIELDS)
+    || typeof value.recordsRequested !== "boolean"
+    || typeof value.recordProducerPresent !== "boolean"
+    || typeof value.recordStorePresent !== "boolean"
+    || (value.issueCode !== undefined && value.issueCode !== "bootstrap.cannot_answer_instruction")) return undefined;
+  return {
+    recordsRequested: value.recordsRequested,
+    recordProducerPresent: value.recordProducerPresent,
+    recordStorePresent: value.recordStorePresent,
+    ...(value.issueCode !== undefined ? { issueCode: value.issueCode } : {})
+  };
 }
 
 /**
@@ -239,6 +443,24 @@ function parseStepUsage(value: unknown): AutomationStudioLlmUsageSummary | null 
   }
   if (value.estimatedCostUsd !== undefined) usage.estimatedCostUsd = value.estimatedCostUsd;
   return usage;
+}
+
+/**
+ * A step's refused amendments, read back: a non-empty list of `{ step, reason }`
+ * and nothing else, each step inside the bound and each reason one the draft
+ * actually has. `null` for anything else -- an unknown reason is a record Core
+ * did not write, and a list this long or this shaped is not one it published.
+ */
+function parseStepAmendmentRefusals(value: unknown): AutomationStudioFlowDraftAmendmentRefusal[] | null {
+  if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS) return null;
+  const refusals: AutomationStudioFlowDraftAmendmentRefusal[] = [];
+  for (const refusal of value) {
+    if (!isStepRecord(refusal) || !hasExactFields(refusal, ["step", "reason"])
+      || !isAmendmentRefusalStep(refusal.step)
+      || typeof refusal.reason !== "string" || !Object.hasOwn(EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS, refusal.reason)) return null;
+    refusals.push({ step: refusal.step as number, reason: refusal.reason as AutomationStudioFlowDraftAmendmentRefusal["reason"] });
+  }
+  return refusals;
 }
 
 function isStepRecord(value: unknown): value is Record<string, unknown> {

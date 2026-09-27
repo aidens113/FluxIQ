@@ -17,16 +17,23 @@
 // record of it; the call itself belongs to the service, which is the only thing
 // holding a provider resolver, a grant and a node registry.
 //
-// **Two things it will not do.**
+// **What it will not do, which is now only one thing: route a failure that is
+// not a wrong answer, or one whose Flow it has not got.** Both are statements
+// about what is in hand rather than permissions -- there is nothing to
+// re-author, so there is nothing to allow.
 //
-//   - It will not route a run whose grant does not buy exploring. A
-//     `diagnose_and_adapt` grant buys one target override under manual review;
-//     an exploring loop is not what the person authorised, and reaching it by
-//     this door rather than by widening the grant's scope would be the same
-//     widening wearing a different hat. Such a run is recorded as needing a
-//     grant that buys exploring, which is the escalation the person answers.
-//   - It will not route a run whose training context forbids creating
-//     adaptations. There would be nothing to propose at the end of it.
+// **It used to ask two permission questions here, and both were the t166 bug.**
+// The route was closed unless the run's grant purpose was one that "buys
+// exploring", and closed again unless the run's training context permitted
+// creating adaptations. Repairing a Flow that gave the wrong answer is not a
+// risky act: it edits a Flow, and a Flow is versioned and rolls back. A grant
+// exists to gate a lasting real-world consequence -- money, a deletion, a
+// publication -- and every one of those is still gated, action by action, by
+// the permission gate this route runs under, which holds no permitted
+// consequence at all. Gating the *repair* on the grant's name protected nobody
+// and disabled the feature outright: five live runs reached
+// `grant_does_not_buy_exploration` and stopped, and the wrong-answer repair had
+// never once executed.
 //
 // Every refusal is recorded on the run under one key with one code, so "this
 // was not re-authored" is always a stated reason rather than a silence.
@@ -45,28 +52,6 @@ import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./repair.ts";
  */
 export const AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE: (typeof AUTOMATION_STUDIO_RESULT_VERDICT_CODES)["doesNotAnswer"] = "core.result.does_not_answer_request";
 
-/**
- * The grant purposes that buy exploring, and so buy this route.
- *
- * **It was the single literal `explore_and_adapt`, and that silently closed
- * this route on the entry point it matters most for.** A Flow built from an
- * instruction runs under `build_and_adapt` — the create-flow entry point,
- * which buys building *and* adapting and iterates by definition, since the
- * build loop is nothing but exploration. Every live run of the language-driven
- * loop therefore reached this gate, was refused `grant_does_not_buy_exploration`
- * and stopped, so a wrong answer was never once repaired: `run-muhnh0s5-98a27f42`
- * stored eight rows where thirteen were expected, was correctly refuted, and
- * recorded `runtimePatchAttempts: []` with no adaptation and no change proposal.
- * The capability was wired end to end and unreachable.
- *
- * The question the gate is asking is whether the grant the run already holds
- * buys exploring, so that re-entering the build loop mints nothing new. Asked
- * that way both purposes answer yes, and the ones that do not — a diagnosis,
- * a verification — still answer no. Written as a set rather than a string so
- * that a purpose added to the contract is a decision here rather than a
- * silent no.
- */
-const EXPLORING_GRANT_PURPOSES: ReadonlySet<string> = new Set(["explore_and_adapt", "build_and_adapt"]);
 
 /** Where a refuted run's metadata records what became of the route. */
 export const AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY = "resultReauthor";
@@ -76,11 +61,7 @@ export type AutomationStudioRefutedResultReauthorRefusal =
   /** The run failed for something other than its answer: the ladder's business. */
   | "not_a_wrong_answer"
   /** No Flow to extend was in hand, so there is no draft to start from. */
-  | "flow_unavailable"
-  /** The run's grant does not buy exploring. The person answers this one. */
-  | "grant_does_not_buy_exploration"
-  /** Training settings forbid creating an adaptation, so there is nothing to propose. */
-  | "adaptations_not_permitted";
+  | "flow_unavailable";
 
 export type AutomationStudioRefutedResultReauthorDecision =
   | { route: true; projectId: string; flowId: string }
@@ -89,23 +70,20 @@ export type AutomationStudioRefutedResultReauthorDecision =
 /**
  * Whether this refuted run re-enters the build loop, and with what.
  *
- * Every condition is read off the run and its context rather than asked of a
- * model: which verdict refuted it, whether the Flow is in hand, what the grant
- * buys, and whether anything may be proposed at the end.
+ * Every condition is read off the run rather than asked of a model, and there
+ * are only two: which verdict refuted it, and whether the Flow it would extend
+ * is in hand. Nothing about the grant is consulted, because nothing about
+ * repairing a Flow needs permission.
  */
 export function automationStudioRefutedResultReauthorDecision(input: {
   detail: AutomationStudioFlowRunDetail;
   projectId?: string | undefined;
   flowId?: string | undefined;
-  grantPurpose?: string | undefined;
-  createAdaptations: boolean;
 }): AutomationStudioRefutedResultReauthorDecision {
   if (automationStudioRefutedResultCode(input.detail) !== AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE) {
     return { route: false, refusal: "not_a_wrong_answer" };
   }
   if (!input.projectId || !input.flowId) return { route: false, refusal: "flow_unavailable" };
-  if (!input.grantPurpose || !EXPLORING_GRANT_PURPOSES.has(input.grantPurpose)) return { route: false, refusal: "grant_does_not_buy_exploration" };
-  if (!input.createAdaptations) return { route: false, refusal: "adaptations_not_permitted" };
   return { route: true, projectId: input.projectId, flowId: input.flowId };
 }
 
@@ -128,11 +106,11 @@ function automationStudioRefutedResultCode(detail: AutomationStudioFlowRunDetail
  * answer, and the bounded, non-destructive means of getting it are authorised
  * by that ask rather than by a second, per-occurrence press.
  *
- * **Nothing is widened to make that true, and three gates still stand.** The
- * route is only taken under a grant that already buys exploring, and that grant
- * carries no permitted consequence, so an action with a lasting effect is
- * refused and put to the person exactly as before. The cost, token and deadline
- * ledger bounds the build. And `approve` itself refuses a record whose
+ * **Nothing is widened to make that true, and the gates that matter still
+ * stand.** The grant the route runs under carries no permitted consequence, so
+ * an action with a lasting effect is refused and put to the person exactly as
+ * before. The cost, token and deadline ledger bounds the build. And `approve`
+ * itself refuses a record whose
  * permission request nobody has answered
  * (`assertAutomationStudioBootstrapPermissionAnswered`), so a build that had to
  * ask a question stops here with the question outstanding instead of applying
@@ -231,7 +209,7 @@ export type AutomationStudioRefutedResultFailure = {
   code: string;
   stage?: string | undefined;
   retryable?: boolean | undefined;
-  providerInvocation?: "not_attempted" | "attempted" | undefined;
+  providerInvocation?: "not_attempted" | "attempted" | "unknown" | undefined;
   providerResponse?: "not_received" | "received" | "unknown" | undefined;
   providerStatus?: number | undefined;
 };

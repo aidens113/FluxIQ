@@ -27,7 +27,11 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
 
     expect(result).toMatchObject({ ok: true, result: { plan: "close the prompt first" }, accounting: { iterations: 2, toolCalls: 2 } });
-    expect(result.trace[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call.press.1", toolId: "press", resultCode: "llm_evidence_loop.tool_failed", evidenceBytes: expect.any(Number), at: expect.any(Number) });
+    expect(result.trace[1]).toEqual({
+      iteration: 1, decision: "tool_call", callId: "call.press.1", toolId: "press", resultCode: "llm_evidence_loop.tool_failed", evidenceBytes: expect.any(Number),
+      progress: { draftRevisionBefore: 0, draftRevisionAfter: 1, pageState: "unobserved", draftState: "changed", answerabilityState: "unobserved" },
+      at: expect.any(Number)
+    });
     const shown = decide.mock.calls[1]?.[0].evidence;
     // The draft sits after the window, so the failed call's own result is the
     // entry before it. The failure is in the draft too: an action that was

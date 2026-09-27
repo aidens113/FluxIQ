@@ -108,6 +108,27 @@ describe("an evidence loop given a budget", () => {
     expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["plan.handle_ambiguous"] }));
   });
 
+  it("ends as the refused answer on the literal final iteration", async () => {
+    const stopped = new Error("stopped on final refusal");
+    const stalled = vi.fn(() => stopped);
+    const decide = vi.fn()
+      .mockResolvedValueOnce(look(1, 10_000))
+      .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 10_000 } });
+    const run = runAutomationStudioLlmEvidenceLoop({
+      tools, decide, maxIterations: 2, maxToolCalls: 2, propagateDecisionErrors: true,
+      unusableDecisions: { stalled },
+      checkCompletion: () => ({ ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } }),
+      // Keep tokens far from binding: maxIterations is the bound reached.
+      budget: { maxTotalTokens: 1_000_000, maxTokensPerDecision: 20_000 },
+      executeTool: async () => ({ facts: ["ready"] })
+    });
+
+    await expect(run).rejects.toBe(stopped);
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(decide.mock.calls[1]![0].tools).toEqual([]);
+    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["plan.cannot_answer"], accounting: expect.objectContaining({ iterations: 2 }) }));
+  });
+
   it("counts down to its deadline on its own clock", async () => {
     let now = 0;
     const decide = vi.fn(async ({ tools: offered }: { tools: unknown[]; evidence: readonly unknown[] }) => {

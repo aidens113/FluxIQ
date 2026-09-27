@@ -4,6 +4,15 @@ import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } fro
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
+import {
+  automationStudioAssessAttemptFault,
+  automationStudioBoundedRetryWaitMs,
+  automationStudioContinuationAfterFailure,
+  automationStudioFaultFromThrownError,
+  automationStudioRunMayStillAbsorb,
+  automationStudioThrownErrorText,
+  type AutomationStudioFaultAssessment
+} from "./defensive/index.ts";
 import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { automationStudioRecordedState } from "./recorded-state.ts";
@@ -98,7 +107,41 @@ export async function resumeAutomationStudioGraphRun(
   return await runGraphFromSeed(flow, options, seed, onExecutedTrace);
 }
 
+/**
+ * Runs a graph and returns a trace, whatever happens.
+ *
+ * **It never rejects.** A throw from anywhere in the run -- the step loop, the
+ * question port, the record hook, the withholding rewrite, a host callback -- comes
+ * back as a failed trace naming the fault, because a rejection here reaches the
+ * run service, ends the session and rethrows: no trace to persist, no attempt row
+ * for the node that did it, nothing for a repair to read and nothing for a person
+ * to be shown. A run that failed and said why is the worst outcome this function
+ * is allowed to have.
+ */
 async function runGraphFromSeed(
+  flow: AutomationStudioFlowDocument,
+  options: AutomationStudioGraphExecutionOptions,
+  seed: AutomationStudioGraphRunSeed | undefined,
+  onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
+): Promise<AutomationStudioGraphExecutionTrace> {
+  const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
+  try {
+    return await runGraphToTrace(flow, options, seed, onExecutedTrace);
+  } catch (error) {
+    const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
+    return {
+      status: "failed",
+      startedAt,
+      finishedAt: options.now?.() ?? Date.now(),
+      attempts: seed ? [...seed.attempts] : [],
+      values: {},
+      effects: [],
+      message: `The run stopped on an unhandled fault (${fault.code}): ${automationStudioThrownErrorText(error) || "no reason was reported"}.`
+    };
+  }
+}
+
+async function runGraphToTrace(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
   seed: AutomationStudioGraphRunSeed | undefined,
@@ -118,10 +161,15 @@ async function runGraphFromSeed(
   // Rows are replaced first, while the trace still holds the very arrays and
   // objects capture produced: the rewrites after this one copy what they change,
   // and a copy can no longer be found by identity.
-  const saved = withholding.apply(withholdRunInputs(runState.records.apply(executed), options.inputs ?? {}));
+  // What the run survived rides on the trace, so a host that persists a run
+  // persists the faults it absorbed without a store of its own. A fault computed
+  // and discarded is the shape of bug this repository keeps meeting.
+  const defence = runState.defence.summary();
+  const defended = defence ? { ...executed, defence } : executed;
+  const saved = withholding.apply(withholdRunInputs(runState.records.apply(defended), options.inputs ?? {}));
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
-  onExecutedTrace?.(executed, saved);
+  onExecutedTrace?.(defended, saved);
   return saved;
 }
 
@@ -208,6 +256,58 @@ async function automationStudioRetryDelay(options: AutomationStudioGraphExecutio
     const timer: ReturnType<typeof setTimeout> = setTimeout(resolve, backoffMs);
     (timer as { unref?: () => void }).unref?.();
   });
+}
+
+/**
+ * Puts one assessed fault on the run's defence ledger.
+ *
+ * Every fault goes on it, absorbed or not. A fault the run survived and left no
+ * mark of is indistinguishable afterwards from a run that met nothing, and a
+ * person debugging cannot tell a first-attempt success from a third.
+ */
+function recordDefendedFault(
+  runState: AutomationStudioRunState,
+  nodeId: string,
+  attempt: AutomationStudioNodeAttemptTrace,
+  attemptNumber: number,
+  fault: AutomationStudioFaultAssessment | undefined,
+  outcome: "retried" | "continued" | "stopped",
+  waitedMs: number
+): void {
+  if (!fault) return;
+  runState.defence.record({
+    nodeId,
+    attemptId: attempt.attemptId,
+    attemptNumber,
+    outcome,
+    category: fault.category,
+    code: fault.code,
+    source: fault.source,
+    effect: fault.effect,
+    reason: fault.reason,
+    waitedMs,
+    ...(fault.hintedWaitMs === undefined ? {} : { hintedWaitMs: fault.hintedWaitMs }),
+    ...(fault.httpStatus === undefined ? {} : { httpStatus: fault.httpStatus })
+  });
+}
+
+/**
+ * The ledger entry for a failure the policy could not classify at all -- a node
+ * that failed with no record, no throw and nothing readable in its message.
+ *
+ * It still has to be recorded. Whether the Flow went on past it or stopped there
+ * is a decision somebody will have to understand, and "no fault was recorded"
+ * would leave that decision with no reason attached to it.
+ */
+function continuationFault(reason: string): AutomationStudioFaultAssessment {
+  return {
+    disposition: "refuse",
+    category: "ambiguous_or_unknown",
+    code: "executor.fault.unclassified",
+    source: "result_message",
+    effect: "ambiguous",
+    reason
+  };
 }
 
 /** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
@@ -322,7 +422,12 @@ async function executeAutomationStudioGraph(
       const elapsed = region?.timeoutMs === undefined ? 0 : now() - (regionStartedAt.get(regionId!) ?? now());
       if (region?.timeoutMs !== undefined && elapsed >= region.timeoutMs) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} exceeded its ${region.timeoutMs}ms timeout.` };
       const remainingMs = region?.timeoutMs === undefined ? undefined : region.timeoutMs - elapsed;
-      if (arrival.nodeId !== currentNode.id) arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
+      if (arrival.nodeId !== currentNode.id) {
+        arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
+        // A fresh arrival gets a fresh waiting allowance, the same way it gets the
+        // whole ladder again. The whole-run allowance is not reset by anything.
+        runState.defence.leaveNode();
+      }
       arrival.attempts += 1;
       const retryPolicy = automationStudioNodeRetryPolicy(flow, currentNode, options);
       const recordedState = automationStudioRecordedState(currentNode);
@@ -340,7 +445,7 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })
+          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } })
         );
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
@@ -426,6 +531,12 @@ async function executeAutomationStudioGraph(
       if (routeOverride === undefined && attempt.status === "failed") {
         const failedEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "failed");
         const failedNode = currentNode;
+        // Classified before the ladder is consulted, because the ladder asks
+        // whether this failure may be attempted again and the answer is this
+        // assessment. Every fault lands on the run's defence ledger below,
+        // whichever way the ladder goes.
+        const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
+        const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
         const ladder = await runAutomationStudioRecoveryLadder({
           flow,
           node: failedNode,
@@ -436,6 +547,7 @@ async function executeAutomationStudioGraph(
           policy: retryPolicy,
           attemptsForNode: arrival.attempts,
           consumed: arrival.consumed,
+          mayAbsorb,
           executeNode: async (interference) => {
             const cleared = await executeAutomationStudioNode(flow, interference, values, options, attempts.length + 1, withholding, runState);
             attempts.push(regionId ? { ...cleared, regionId } : cleared);
@@ -453,8 +565,18 @@ async function executeAutomationStudioGraph(
           recoveryDecision
         };
         if (ladder.kind === "retry") {
-          pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: ladder.backoffMs, rung: ladder.rung, previousAttemptId: attempt.attemptId };
-          await automationStudioRetryDelay(options, ladder.backoffMs);
+          // The wait, bounded: the longer of the backoff table and whatever the
+          // failing source itself asked for, held to one wait, to this arrival's
+          // allowance, and to the run's.
+          const wait = automationStudioBoundedRetryWaitMs({
+            backoffMs: ladder.backoffMs,
+            ...(fault?.hintedWaitMs === undefined ? {} : { hintedWaitMs: fault.hintedWaitMs }),
+            nodeWaitedMs: runState.defence.nodeWaitedMs(failedNode.id),
+            runWaitedMs: runState.defence.runWaitedMs()
+          });
+          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "retried", wait.waitMs);
+          pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId };
+          await automationStudioRetryDelay(options, wait.waitMs);
           if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: failedNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
           continue;
         }
@@ -463,10 +585,31 @@ async function executeAutomationStudioGraph(
           // carries on down the success route rather than repeating an action
           // that has already happened. The attempt keeps its own failed status:
           // what happened and what the ladder made of it are two facts, not one.
+          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
           routeOverride = "success";
         } else {
           const executableFailedEdge = recoveryDecision.selected?.kind === "deterministic_path" && recoveryDecision.selected.edgeId === failedEdge?.id ? failedEdge : null;
           if (!executableFailedEdge) {
+            // The ladder is spent and the Flow has no failed route of its own.
+            // Before this, that ended the run -- every time, for every node,
+            // whatever the node was for. A Flow does not stop for a node whose
+            // failure is not fatal to what the Flow is for, and the continuation
+            // rule says which those are and why.
+            const continuation = automationStudioContinuationAfterFailure(flow, failedNode, fault);
+            if (continuation.continues) {
+              runState.defence.continuePast(failedNode.id);
+              recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "continued", 0);
+              route = "success";
+              const onwardEdge = chooseAutomationStudioEdge(flow, failedNode.id, route, failedNode.definitionId);
+              if (onwardEdge) {
+                const leftRegionId = regionId;
+                currentNode = nodesById.get(onwardEdge.targetNodeId);
+                if (!currentNode) return missingTargetTrace(startedAt, now(), onwardEdge, attempts, values, effects);
+                recordRegionTransition(onwardEdge, leftRegionId, options, regionTransitions, now());
+                continue;
+              }
+            }
+            recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "stopped", 0);
             const recoveryStopMessage = failureMessageForRecoveryStop(recoveryDecision, attempt);
             return {
               status: "failed",
@@ -479,6 +622,7 @@ async function executeAutomationStudioGraph(
               ...(recoveryStopMessage ? { message: recoveryStopMessage } : {})
             };
           }
+          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
           currentNode = nodesById.get(executableFailedEdge.targetNodeId);
           if (!currentNode) return missingTargetTrace(startedAt, now(), executableFailedEdge, attempts, values, effects);
           recordRegionTransition(executableFailedEdge, regionId, options, regionTransitions, now());

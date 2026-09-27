@@ -1,0 +1,120 @@
+// An amendment that changed nothing, and what the model is told about it.
+//
+// The model edits the draft with amendments: one step number and one word
+// (`../flow-draft/amendment.ts`). The module that applies them already computes
+// a precise refusal for every amendment that changed nothing -- there is no
+// step at that number, the step already says that, there is no position to move
+// it to, a routing word named a step the Flow does not contain -- and until
+// 2026-09-26 the loop read only how many had landed and dropped every reason on
+// the floor.
+//
+// What that cost. `run-muhubegx-9469de5e` made nine `amend_draft` decisions.
+// Seven of them changed nothing at all, five of those consecutively, and each
+// time the model was asked again with no word about why its edit had not taken.
+// It went on to complete with a Flow whose extraction carried one filter
+// condition for a four-clause instruction and no pagination follow-through.
+// Seven paid decisions were spent on edits the model had no way of knowing had
+// failed, and the reason for every one of them had been computed and discarded.
+//
+// So a refused amendment is now told to the model before it is asked again, the
+// same way a refused completion is (`./evidence-loop.ts`): one evidence entry,
+// under this module's own tool id, naming each refused amendment by the step
+// number the model wrote and a reason from a closed set. Codes, sentences Core
+// wrote, and integers -- never a value from a page. There is nothing else in a
+// refusal: it is Core's own bookkeeping about a number.
+//
+// **It does not guess.** A refusal names the step the model named, and nothing
+// here proposes the step it might have meant instead. A step leaves a Flow
+// because the model decided it should, and an amendment the loop reinterpreted
+// would be an edit -- perhaps a removal -- that nobody decided.
+
+import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
+
+/** The evidence entry a refused amendment's feedback arrives under. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID = "core.amendment_check";
+
+/** What the entry is recorded and shown under. */
+const AMENDMENTS_REFUSED_CODE = "llm_evidence_loop.draft_amendments_refused";
+
+/**
+ * What each reason means, in Core's words.
+ *
+ * A code alone says which refusal it was to a reader who already knows the
+ * grammar; the model is being asked to correct the edit, so it is told what the
+ * word means as well. Only the reasons a decision actually met are sent, so the
+ * commonest entry carries one sentence. Exhaustive by type, which is what makes
+ * a reason added to the draft's set fail to compile until it is explained here.
+ */
+const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], string> = {
+  no_such_step: "There is no step at that number. Step numbers are the ones the draft entry shows, and they are renumbered whenever a step moves.",
+  already_so: "The step already says that, and the amendment carried nothing else to change.",
+  no_such_position: "There is no position to move a step to at that number.",
+  run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs the whole argument to run with, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",
+  no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
+  not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs."
+};
+
+/**
+ * The most refusals one entry lists.
+ *
+ * One decision may carry at most sixteen amendments
+ * (`./evidence-loop-decision.ts`), so nothing is dropped in practice; the bound
+ * is here so the entry's size is this module's property rather than the
+ * caller's.
+ */
+const MAX_REFUSALS_LISTED = 16;
+
+/** The most existing positions one entry lists, newest first when there are more. */
+const MAX_POSITIONS_LISTED = 32;
+
+const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, for the reason beside each one, and the draft is as it was for them. "
+  + "The step numbers an amendment takes are the ones the draft entry shows, and they are renumbered whenever a step moves or is withdrawn. "
+  + "Amend a step that exists, do something else, or complete. A decision whose amendments all change nothing counts toward stopping this exploration.";
+
+/**
+ * What the model reads after an amendment decision the draft refused, before it
+ * is asked again: which amendments changed nothing and why, how far the draft
+ * reaches, and how close the loop is to stopping. Bounded to well under two
+ * kilobytes.
+ *
+ * `steps` is the draft as it now stands, read for the positions it has and
+ * nothing else, so the positions reported are the ones an amendment would
+ * actually be looked up against rather than a range assumed from a count.
+ */
+export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
+  refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[];
+  /** How many of the same decision's amendments did land. */
+  applied: number;
+  steps: readonly { position: number }[];
+  stepsWithoutProgress: number;
+  maxStepsWithoutProgress: number;
+}): JsonObject {
+  const refused = input.refusals.slice(0, MAX_REFUSALS_LISTED).map((refusal) => ({ step: refusal.step, reason: refusal.reason }));
+  const met = [...new Set(refused.map((refusal) => refusal.reason))];
+  const reasons: JsonObject = {};
+  for (const reason of met) reasons[reason] = REFUSAL_REASONS[reason];
+  return {
+    ok: false,
+    code: AMENDMENTS_REFUSED_CODE,
+    refused,
+    applied: input.applied,
+    steps: input.steps.length,
+    // Only when the model named a step that is not there: the numbers that are.
+    ...(met.includes("no_such_step") ? { positions: existingPositions(input.steps) } : {}),
+    reasons,
+    stepsWithoutProgress: input.stepsWithoutProgress,
+    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    instruction: AMENDMENT_FEEDBACK_INSTRUCTION
+  };
+}
+
+/**
+ * The positions the draft has, ascending, and the highest of them when there
+ * are more than fit: the newest steps are the ones an edit is usually about,
+ * and `steps` beside them says how many there are in total.
+ */
+function existingPositions(steps: readonly { position: number }[]): number[] {
+  const positions = steps.map((step) => step.position).filter((position) => Number.isSafeInteger(position));
+  return positions.length <= MAX_POSITIONS_LISTED ? positions : positions.slice(-MAX_POSITIONS_LISTED);
+}

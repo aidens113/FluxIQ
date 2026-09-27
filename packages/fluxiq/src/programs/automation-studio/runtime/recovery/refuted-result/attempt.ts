@@ -32,9 +32,10 @@
 // record that nothing observed.
 
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor.ts";
-import type { AutomationStudioResultVerificationOutcome } from "../../result-verification/index.ts";
+import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerificationOutcome } from "../../result-verification/index.ts";
 
 /** The attempt id prefix, so a reader can tell this attempt from one the graph executed. */
 export const AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX = "result-verification";
@@ -94,7 +95,11 @@ export function automationStudioRefutedResultAttempt(input: AutomationStudioRefu
       startedAt,
       finishedAt: input.now,
       status: "failed",
-      inputs: {},
+      // The failure prose is capped at 1,024 characters and can spend that
+      // entire bound on Core's fix lines before the judge's advice. Keep the
+      // already-screened directive structured on the live synthetic attempt;
+      // it reaches recovery context but is not copied into the persisted run.
+      inputs: outcome.repair ? { resultRepair: resultRepairInput(outcome.repair) } : {},
       outputs: {},
       effects: [],
       message: outcome.reason,
@@ -117,6 +122,21 @@ export function automationStudioRefutedResultAttempt(input: AutomationStudioRefu
       // own `actual` already carries what was seen, under the contract's bound.
       metadata: { resultVerification: { verdict: outcome.verdict, basis: outcome.basis, code: outcome.code } }
     }
+  };
+}
+
+function resultRepairInput(repair: AutomationStudioResultRepairDirective): JsonObject {
+  return {
+    schemaVersion: repair.schemaVersion,
+    findings: repair.findings.map((finding) => ({
+      code: finding.code,
+      detail: finding.detail,
+      ...(finding.datasetId ? { datasetId: finding.datasetId } : {}),
+      ...(finding.columns?.length ? { columns: [...finding.columns] } : {})
+    })),
+    fix: [...repair.fix],
+    ...(repair.judgement ? { judgement: { ...repair.judgement } } : {}),
+    ...(repair.withheld ? { withheld: true } : {})
   };
 }
 

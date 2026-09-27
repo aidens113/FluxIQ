@@ -19,9 +19,19 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../core/index.ts";
 // The bounds live in `runtime/loop-limits/`, which neither this directory nor
-// the harness owns, and are re-exported here so a reader of the contract has
-// them in hand. See that module for why they are not declared here.
-export { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
+// the harness owns. This file used to re-export them so a reader of the contract
+// had them in hand, and no longer does: `result-summary.ts`, the module that
+// applies every one of them, re-exports them instead, and the directory barrel
+// publishes them from there, so nothing outside changes.
+//
+// It was moved because the re-export made a *contract* file reach a value out of
+// another directory, and that directory's barrel also carries the evidence-loop
+// budgets, which import values out of `runtime/llm/harness/`. So reading a byte
+// bound pulled the whole LLM harness into the evaluation of every module that
+// reads this contract -- and on 2026-09-26, with `runtime/llm` mid-rewrite, that
+// made five of this directory's seven test suites fail to load at all on a
+// `runtime/llm` module cycle none of them touch. A contract should cost its
+// readers nothing to read.
 
 /**
  * The verdict on whether a finished run's result answers the request.
@@ -88,6 +98,39 @@ export type AutomationStudioResultRecordSetSummary = {
 };
 
 /**
+ * One step of the Flow that produced the result, as the judgement reads it.
+ *
+ * It carried a node id and a definition id and nothing else, and that is not
+ * enough to answer the question the judgement is asked. The instruction tells
+ * the judge to answer `no` for "a Flow with no step that could have narrowed or
+ * filtered what the request asked to narrow" -- and two definition ids apart, a
+ * Flow that filters on the right field and a Flow that filters on the wrong one
+ * are the same list of names. Five consecutive live runs were refuted with that
+ * list in front of the judge, correctly, and with nothing in the refutation that
+ * said which step was wrong.
+ *
+ * So the step now carries what the Flow authored it with, screened by
+ * `repair-context/parameter-screen.ts` -- the same projection, the same screens
+ * and the same dotted-path notation the *repair* has been shown since t139. A
+ * judgement poorer than the repair that follows it is the parity gap this closes.
+ */
+export type AutomationStudioResultFlowStepSummary = {
+  nodeId: string;
+  definitionId: string;
+  /** What the Flow calls this step, when it named one. Bounded. */
+  label?: string;
+  /**
+   * The parameters the Flow authored this step with, screened: shapes and
+   * names, never the person's data. Absent when the step has none, when no
+   * declared-keys list was supplied, or when the summary's byte budget was
+   * spent before this step was reached.
+   */
+  parameters?: JsonObject;
+  /** The dotted paths whose authored value is not in `parameters` as the Flow wrote it. Never the values. */
+  parametersWithheld?: string[];
+};
+
+/**
  * The bounded account of what a run produced, and of the shape of the Flow that
  * produced it.
  *
@@ -109,9 +152,83 @@ export type AutomationStudioRunResultSummary = {
   recordSetCount: number;
   recordSets: AutomationStudioResultRecordSetSummary[];
   /** The steps the Flow is built from, in authored order: what it can do at all. */
-  flowShape: Array<{ nodeId: string; definitionId: string }>;
+  flowShape: AutomationStudioResultFlowStepSummary[];
+  /**
+   * True when a step's parameters were left out for want of room rather than
+   * because the step had none.
+   *
+   * Stated separately from `withheld` because they answer different questions. A
+   * reader of a step with no `parameters` has to be able to tell "this step runs
+   * on its defaults" from "there was no room left to say", and the general
+   * `withheld` flag -- which a cut column list or an unsampled row also sets --
+   * cannot tell them apart.
+   */
+  flowParametersWithheld?: boolean;
   /** True when a record set, a row sample, a column list or the Flow shape was cut to fit. */
   withheld: boolean;
+};
+
+/**
+ * One thing wrong with what a run produced, as Core's own arithmetic found it.
+ *
+ * Coded, so a repair can act on it without reading prose, and ids only -- a
+ * column id, a record set id -- because a value belongs to the person and a
+ * count belongs to Core. `detail` is Core's sentence for a reader, never a
+ * model's.
+ */
+export type AutomationStudioResultRepairFinding = {
+  /** Core's stable code for this finding. */
+  code: string;
+  /** What was found, in Core's own words, bounded. */
+  detail: string;
+  /** The record set it is about, when it is about one. */
+  datasetId?: string;
+  /** The column ids it is about, bounded. Ids, never values. */
+  columns?: string[];
+};
+
+/**
+ * What to fix, and what the check itself said about it.
+ *
+ * The user's instruction of 2026-09-26: "judging answers: it should give
+ * explicit instructions on what to fix regarding the data + possible
+ * suggestions." Before this, a refutation was a verdict and a code. Five
+ * consecutive live runs were refuted as `core.result.does_not_answer_request`,
+ * correctly, and that string was the whole of what the repair was told -- so the
+ * repair had to rediscover the defect from scratch, at the cost of a second full
+ * exploration, and on the one run where it reached the model it produced no
+ * correction at all.
+ *
+ * **The two halves are kept apart because their provenance differs.**
+ * `findings` and `fix` are Core's: arithmetic over the summary it already holds,
+ * and a sentence per finding that Core wrote. `judgement` is the model's own
+ * reading, screened. A run record carries only the first two
+ * (`run-outcome.ts`); the second reaches the repair through the failure record's
+ * `expected` and `actual`, which is where a sentence written outside Core has
+ * always travelled (`llm/harness/locator-text.ts`).
+ *
+ * **Nothing here is demanded of the model.** No new response field, no new
+ * schema key, nothing a malformed answer can fail: `judgement` is read off the
+ * `expected`, `observed` and `changed` the diagnosis channel already carries, and
+ * a field that is missing, oversized, wrongly typed or refused by a screen is
+ * simply absent from the directive. A judgement that says nothing beyond `no`
+ * still produces a valid refutation with Core's own findings in it.
+ */
+export type AutomationStudioResultRepairDirective = {
+  schemaVersion: "automation-studio.result-repair-directive.v1";
+  /** What Core found wrong with the data, in the order found. */
+  findings: AutomationStudioResultRepairFinding[];
+  /** What to do about it, in reading order. Core's own words, one line per finding. */
+  fix: string[];
+  /**
+   * What the check itself said, screened and bounded: what it took the request
+   * to ask for, what it saw instead, and what it advised. Every part optional --
+   * absent advice is still a valid refutation, and a run must never fail because
+   * the judgement was terse.
+   */
+  judgement?: { expected?: string; observed?: string; advice?: string };
+  /** True when something the judgement said was dropped by a screen rather than carried. */
+  withheld?: boolean;
 };
 
 /** The verdict, the reason a person reads, and the observation behind it. */
@@ -133,6 +250,15 @@ export type AutomationStudioResultVerification = {
   verdicts?: AutomationStudioResultVerdict[];
   /** The verification calls made or attempted: 1 or 2. Absent when no model was asked. */
   calls?: number;
+  /**
+   * What to fix, present exactly when the verdict is `does_not_answer`.
+   *
+   * A verdict of `unsure` deliberately carries none: nobody judged the result
+   * wrong, so there is nothing to instruct a repair to change, and
+   * `recovery/refuted-result/attempt.ts` refuses to build a repair from an
+   * `unsure` for the same reason.
+   */
+  repair?: AutomationStudioResultRepairDirective;
   /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.

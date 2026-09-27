@@ -19,6 +19,18 @@ export type AutomationStudioLadderState = {
   maxAttempts: number;
   /** Whether the failure record says the same attempt, unchanged, could succeed. */
   retryable: boolean;
+  /**
+   * Whether the node may be dispatched again at all, setting aside whether this
+   * particular fault is worth repeating unchanged.
+   *
+   * False only for a node that acts on the world and does not state that
+   * repeating it is safe. It gates the rungs that *change something* before
+   * attempting again, which `retryable` must not: waiting for a state, or
+   * clearing a dialog, then attempting is not a repeat of the failed action, and
+   * gating those on the failed action being repeatable switched off the rung for
+   * dialogs using the dialog code itself.
+   */
+  mayRepeat: boolean;
   /** Whether the host confirmed the state this node was to produce despite the failure. */
   expectationSatisfied: boolean;
   /** Whether there is a state the host could be asked to wait for before attempting again. */
@@ -116,6 +128,16 @@ export function chooseAutomationStudioRecovery(
  * The deterministic rungs still on offer: cheapest first, each dropped once it
  * has been run or once the evidence for it is gone.
  *
+ * **Only the last rung asks `retryable`.** Rungs 2 and 3 wait for a state or
+ * clear an obstruction *and then* attempt, so what they offer is not the failed
+ * action repeated unchanged -- the page is different by the time the node runs
+ * again. They used to be gated on `retryable` all the same, which switched the
+ * interference rung off for the one thing it was built for: a dialog over the
+ * page reports `blocked_by_dialog`, which is not retryable, so the rung for
+ * dialogs was disabled by the dialog code. They are gated on `mayRepeat` now,
+ * which asks only whether dispatching this node again could act on the world
+ * twice.
+ *
  * Re-resolving the target -- fingerprint, then equivalence anchors, then
  * accessible name, then selector, then visible text -- is not a rung here
  * because it has already happened, inside the host's own target resolution,
@@ -134,7 +156,7 @@ function ladderCandidates(node: AutomationStudioFlowNode, ladder: AutomationStud
       reason: `The state ${node.id} was recorded to produce already holds, so the action it would repeat has already happened.`
     });
   }
-  if (ladder.readinessAvailable && ladder.retryable && attemptsLeft && !ladder.consumed.has("await_recorded_state")) {
+  if (ladder.readinessAvailable && ladder.mayRepeat && attemptsLeft && !ladder.consumed.has("await_recorded_state")) {
     candidates.push({
       kind: "await_recorded_state",
       priority: LADDER_PRIORITY.await_recorded_state,
@@ -143,7 +165,7 @@ function ladderCandidates(node: AutomationStudioFlowNode, ladder: AutomationStud
       reason: `${node.id} carries a recorded state to wait for, and most failures on a site nobody controls are timing.`
     });
   }
-  if (ladder.interferenceNodeId && ladder.retryable && attemptsLeft && !ladder.consumed.has("clear_interference")) {
+  if (ladder.interferenceNodeId && ladder.mayRepeat && attemptsLeft && !ladder.consumed.has("clear_interference")) {
     candidates.push({
       kind: "clear_interference",
       priority: LADDER_PRIORITY.clear_interference,

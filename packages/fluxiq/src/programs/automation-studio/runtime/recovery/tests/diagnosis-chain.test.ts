@@ -59,6 +59,7 @@ function diagnosis(input: { ok: boolean; kind?: "diagnosis" | "instruction_sugge
     ok: input.ok,
     request: {} as AutomationStudioLlmTaskResult["request"],
     ...(response ? { response } : {}),
+    providerInvocation: "attempted",
     diagnostics: [],
     intervention: {} as AutomationStudioLlmTaskResult["intervention"]
   };

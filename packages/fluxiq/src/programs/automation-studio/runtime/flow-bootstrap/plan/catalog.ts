@@ -15,7 +15,7 @@ import type { AutomationStudioFlowBootstrapCatalogEntry, AutomationStudioFlowBoo
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "./output-schema.ts";
 import {
-  automationStudioFlowBootstrapParameterText,
+  automationStudioFlowBootstrapParameterTextAccount,
   boundedCatalogText,
   type AutomationStudioFlowBootstrapCatalogEntryForm
 } from "./parameter-text.ts";
@@ -44,17 +44,24 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   // Keyed by definition id. The catalog's JSON is "[", the entries joined by
   // ",", then "]", which is what usedBytes counts.
   const selected = new Map<string, AutomationStudioFlowBootstrapCatalogEntry>();
+  // Keyed by definition id, in step with `selected`: the parameters whose
+  // authoring text the form that was actually kept does not carry in full.
+  const withheld = new Map<string, string[]>();
   const missingRequiredTerms: string[] = [];
   let usedBytes = 2;
   const append = (definition: AutomationStudioNodeDefinition, form: AutomationStudioFlowBootstrapCatalogEntryForm): boolean => {
     if (selected.has(definition.id)) return true;
-    const entry = compactDefinition(definition, form);
-    const addedBytes = catalogEntryBytes(entry) + (selected.size ? 1 : 0);
+    const compacted = compactDefinition(definition, form);
+    const addedBytes = catalogEntryBytes(compacted.entry) + (selected.size ? 1 : 0);
     if (selected.size >= maxCatalogEntries
       || usedBytes + addedBytes > byteBudget) return false;
-    selected.set(definition.id, entry);
+    keep(definition.id, compacted);
     usedBytes += addedBytes;
     return true;
+  };
+  const keep = (id: string, compacted: CompactedDefinition): void => {
+    selected.set(id, compacted.entry);
+    withheld.set(id, compacted.withheld);
   };
   const reserved: AutomationStudioNodeDefinition[] = [];
   for (const required of selection.required) {
@@ -66,9 +73,9 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   // condensed, and a later, smaller one may still grow.
   for (const definition of reserved) {
     const whole = compactDefinition(definition, "whole");
-    const growth = catalogEntryBytes(whole) - catalogEntryBytes(selected.get(definition.id)!);
+    const growth = catalogEntryBytes(whole.entry) - catalogEntryBytes(selected.get(definition.id)!);
     if (usedBytes + growth > byteBudget) continue;
-    selected.set(definition.id, whole);
+    keep(definition.id, whole);
     usedBytes += growth;
   }
   // Preferred for a declared tag the instruction used: placed before the rest,
@@ -81,6 +88,7 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   }
   for (const definition of selection.ranked) append(definition, "whole");
   const nodeCatalog = [...selected.values()].sort((left, right) => left.id.localeCompare(right.id));
+  const withheldParameterText = withheldParameterTextOf(nodeCatalog, withheld);
   return {
     outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
     nodeCatalog,
@@ -93,9 +101,35 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
       byteBudget,
       usedBytes,
       requiredTerms: selection.required.map((item) => item.term),
-      missingRequiredTerms
+      missingRequiredTerms,
+      ...(withheldParameterText.length ? { withheldParameterText } : {})
     }
   };
+}
+
+/** How many parameters a catalog names as incompletely described before it stops naming them. */
+const MAX_WITHHELD_PARAMETER_TEXT = 12;
+
+/**
+ * The parameters this catalog does not describe in full, `<node id>.<parameter
+ * id>` each, in catalog order.
+ *
+ * Absent when there are none, which is the answer a catalog with room should
+ * give. It is said rather than left to be inferred because the three ways text
+ * goes missing are all silent: the character bound cuts a description and marks
+ * it only with "...", a condensed entry sends no parameter text at all, and an
+ * example past its byte bound is simply not there. A model writing a value for
+ * a parameter named here is writing from a vocabulary it was not shown, and
+ * ought to be able to tell that from something other than the value being
+ * refused.
+ */
+function withheldParameterTextOf(
+  nodeCatalog: readonly AutomationStudioFlowBootstrapCatalogEntry[],
+  withheld: ReadonlyMap<string, string[]>
+): string[] {
+  return nodeCatalog
+    .flatMap((entry) => (withheld.get(entry.id) ?? []).map((parameterId) => `${entry.id}.${parameterId}`))
+    .slice(0, MAX_WITHHELD_PARAMETER_TEXT);
 }
 
 /**
@@ -124,11 +158,15 @@ function catalogEntryBytes(entry: AutomationStudioFlowBootstrapCatalogEntry): nu
   return Buffer.byteLength(JSON.stringify(entry), "utf8");
 }
 
-function compactDefinition(definition: AutomationStudioNodeDefinition, form: AutomationStudioFlowBootstrapCatalogEntryForm): AutomationStudioFlowBootstrapCatalogEntry {
+/** One entry, with the parameters whose authoring text its form leaves incomplete. */
+type CompactedDefinition = { entry: AutomationStudioFlowBootstrapCatalogEntry; withheld: string[] };
+
+function compactDefinition(definition: AutomationStudioNodeDefinition, form: AutomationStudioFlowBootstrapCatalogEntryForm): CompactedDefinition {
   const descriptionCharacters = form === "whole"
     ? CATALOG_TEXT_LIMITS.descriptionCharacters
     : CATALOG_TEXT_LIMITS.condensedDescriptionCharacters;
-  return {
+  const parameters = definition.parameters.map((parameter) => automationStudioFlowBootstrapParameterTextAccount(definition, parameter, form));
+  const entry: AutomationStudioFlowBootstrapCatalogEntry = {
     id: definition.id,
     version: definition.version,
     label: definition.label.slice(0, CATALOG_TEXT_LIMITS.labelCharacters),
@@ -137,11 +175,15 @@ function compactDefinition(definition: AutomationStudioNodeDefinition, form: Aut
     capabilities: Object.entries(definition.capabilities).filter(([, enabled]) => enabled === true).map(([key]) => key).sort(),
     inputs: definition.inputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.required === true ? { required: true as const } : {}), ...(port.multiple === true ? { multiple: true as const } : {}) })),
     outputs: definition.outputs.map((port) => ({ id: port.id, type: port.valueType, ...(port.multiple === true ? { multiple: true as const } : {}) })),
-    parameters: definition.parameters.map((parameter) => automationStudioFlowBootstrapParameterText(definition, parameter, form)),
+    parameters: parameters.map((account) => account.parameter),
     ...(definition.outputAction ? { outputAction: {
       required: true as const,
       ...(definition.outputAction.fixedOutputId ? { fixed: definition.outputAction.fixedOutputId } : {}),
       ...(definition.outputAction.allowedOutputIds ? { allowed: definition.outputAction.allowedOutputIds } : {})
     } } : {})
+  };
+  return {
+    entry,
+    withheld: parameters.filter((account) => account.withheld).map((account) => account.parameter.id)
   };
 }

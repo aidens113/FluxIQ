@@ -21,9 +21,10 @@ import { RunPermissionRequest } from "../RunPermissionRequest";
 
 /**
  * A request built by Core's own gate, the way a recovery raises one, and then
- * sent through JSON as it reaches the panel. The grant allowed
+ * sent through JSON as it reaches the panel. The grant carried
  * `modify_existing`; the exploration was about to press a control that would
- * also publish something and create something new.
+ * also publish something and create something new. Only publishing is missing:
+ * creation and ordinary modification are not separately gated.
  */
 async function coreRequest(options: { stage?: "recovery" | "authoring"; granted?: string[] } = {}) {
   const gate = new AutomationStudioActionPermissionGate({
@@ -115,6 +116,9 @@ async function runExploreAndAdapt(renderer: ReactTestRenderer) {
 describe("RunPermissionRequest", () => {
   it("shows the request Core built: its sentence, what is missing, and what was already allowed", async () => {
     const request = await coreRequest();
+    expect(request.consequences).toEqual(["send_or_publish", "modify_existing", "create_new"]);
+    expect(request.missing).toEqual(["send_or_publish"]);
+    expect(request.authority.granted).toEqual(["modify_existing"]);
     const onAllow = vi.fn();
     const onDismiss = vi.fn();
     let renderer!: ReactTestRenderer;
@@ -123,13 +127,13 @@ describe("RunPermissionRequest", () => {
     expect(rendered).toContain(JSON.stringify(request.sentence).slice(1, -1));
     expect(request.sentence).toContain("\"Add to queue\"");
     expect(rendered).toContain("send or publish something that others will receive or see");
-    expect(rendered).toContain("create something new that stays");
-    expect(renderer.root.findByProps({ "aria-label": "Consequences requiring approval" }).findAllByType("li")).toHaveLength(2);
+    expect(rendered).not.toContain("create something new that stays");
+    expect(renderer.root.findByProps({ "aria-label": "Consequences requiring approval" }).findAllByType("li")).toHaveLength(1);
     expect(rendered).toContain("Already allowed for this run: change something that already exists.");
 
     await act(async () => button(renderer, "Allow and run again")!.props.onClick());
     expect(onAllow).toHaveBeenCalledTimes(1);
-    expect(onAllow.mock.calls[0]?.[0].missing).toEqual(["send_or_publish", "create_new"]);
+    expect(onAllow.mock.calls[0]?.[0].missing).toEqual(["send_or_publish"]);
     await act(async () => button(renderer, "Don't allow")!.props.onClick());
     expect(onDismiss).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
@@ -197,11 +201,12 @@ describe("Runtime Debug permission request from a run", () => {
 
     expect(runtimeCommands.preflightLlm).toHaveBeenCalledTimes(2);
     expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.preflightLlm.mock.calls[1]?.[0]).toMatchObject({ purpose: "explore_and_adapt", permittedConsequences: ["send_or_publish", "create_new"] });
+    expect(runtimeCommands.preflightLlm.mock.calls[1]?.[0]).toMatchObject({ purpose: "explore_and_adapt", permittedConsequences: ["send_or_publish"] });
     const grant = runtimeCommands.issueLlmGrant.mock.calls[1]?.[0];
     expect(grant).toMatchObject({ projectId: "project.one", flowId: flow.flowId, keyId: "key.deepseek", purpose: "explore_and_adapt" });
-    expect(grant.permittedConsequences).toEqual(["send_or_publish", "create_new"]);
+    expect(grant.permittedConsequences).toEqual(["send_or_publish"]);
     expect(grant.permittedConsequences).not.toContain("modify_existing");
+    expect(grant.permittedConsequences).not.toContain("create_new");
     expect(grant).not.toHaveProperty("maxCalls");
     expect(grant).not.toHaveProperty("authorizedExternalSideEffects");
     expect(runtimeCommands.execute).toHaveBeenCalledTimes(2);
@@ -257,7 +262,7 @@ describe("Runtime Debug permission request from a run", () => {
 
     await act(async () => button(renderer, "Continue high-token execution")!.props.onClick());
     expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0]).toMatchObject({ highTokenConfirmation: true, purpose: "explore_and_adapt", permittedConsequences: ["send_or_publish", "create_new"] });
+    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0]).toMatchObject({ highTokenConfirmation: true, purpose: "explore_and_adapt", permittedConsequences: ["send_or_publish"] });
     expect(runtimeCommands.execute).toHaveBeenLastCalledWith(expect.objectContaining({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.2" }));
     await act(async () => renderer.unmount());
   });
@@ -301,7 +306,7 @@ describe("Runtime Debug run whose request was cut short", () => {
     expect(rendered).not.toContain("could not be completed");
 
     await act(async () => button(renderer, "Allow and run again")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0].permittedConsequences).toEqual(["send_or_publish", "create_new"]);
+    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0].permittedConsequences).toEqual(["send_or_publish"]);
     expect(runtimeCommands.execute.mock.calls[1]?.[0]).toMatchObject({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.2" });
     expect(runtimeCommands.execute.mock.calls[1]?.[0].newRunId).not.toBe(newRunId);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2_300)); });

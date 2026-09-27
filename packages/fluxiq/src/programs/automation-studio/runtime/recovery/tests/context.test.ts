@@ -34,6 +34,29 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     expect(JSON.stringify(context.sections.failure)).not.toContain("Could not click");
   });
 
+  it("carries a refuted result's screened repair directive structurally beyond the failure prose bound", () => {
+    const failedAttempt = traceAttempt();
+    const advice = `${"specific ".repeat(45)}END-OF-ADVICE`;
+    failedAttempt.inputs = {
+      resultRepair: {
+        schemaVersion: "automation-studio.result-repair-directive.v1",
+        findings: [{ code: "result.no_records_stored", detail: "The run stored no records." }],
+        fix: ["Loosen the extraction condition before narrowing it again."],
+        judgement: { expected: "two matching members", observed: "an empty table", advice }
+      }
+    };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt });
+    expect(context.sections.failure).toMatchObject({
+      failure: {
+        repair: {
+          schemaVersion: "automation-studio.result-repair-directive.v1",
+          findings: [{ code: "result.no_records_stored" }],
+          judgement: { advice }
+        }
+      }
+    });
+  });
+
   it("carries expected and actual transitions as ids and types, never as resolved values", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
     expect(context.sections.expected_transition).toMatchObject({ expectedRoute: "success", expectedOutputIds: ["orderId"], expectedState: { conditions: [{ kind: "url_contains" }] } });

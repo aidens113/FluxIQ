@@ -378,17 +378,17 @@ describe("a person's own grant", () => {
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
   });
 
-  it("still forces manual approval, so a granted run still does not retry", { timeout: 180_000 }, async () => {
+  it("keeps the configured automatic mode on a granted run", { timeout: 180_000 }, async () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...grant, grantId: "llm-grant:adapt", purpose: "diagnose_and_adapt" } });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    // Exactly today's behaviour, pinned so the standing path cannot be mistaken
-    // for a licence to widen what a person's grant does.
+    // The grant no longer forces manual review. This fixture's unsupported
+    // patch still does not produce a retry, and standing authority stays out.
     expect(run.status).toBe("failed");
     expect(detail?.metadata?.adaptiveRetry).toBeUndefined();
     const context = detail?.metadata?.runtimeAdaptationContext as { approvalMode?: string } | undefined;
-    expect(context?.approvalMode).toBe("manual");
+    expect(context?.approvalMode).toBe("auto");
     expect(found.standingRequests).toEqual([]);
   });
 });

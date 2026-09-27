@@ -151,7 +151,12 @@ describe("the host expectation evaluator", () => {
       failure: { category: "expected_state_missing", code: "core.policy.expectation_rejected", retryable: true, stage: "verification" }
     });
     expect(trace.attempts[0]?.transitionComparison?.status).toBe("missing_expected_state");
-    expect(asked).toEqual([[conditions, "all", 250, { source: "policy_node", nodeId: "check", attemptId: "check.attempt.1" }]]);
+    // An expectation node reads; re-asking cannot act on anything twice, so the
+    // default policy attempts it again rather than ending the run on one look at
+    // a page that may simply have been a moment late.
+    expect(trace.attempts).toHaveLength(3);
+    expect(asked[0]).toEqual([conditions, "all", 250, { source: "policy_node", nodeId: "check", attemptId: "check.attempt.1" }]);
+    expect(asked).toHaveLength(3);
   });
 
   it("leaves a host that binds no evaluator exactly as it was", async () => {
@@ -249,7 +254,19 @@ describe("a rejected expected state fails the attempt", () => {
     expect(trace.attempts[0]).toMatchObject({ status: "failed", route: "failed", message: "The host reported that the expected state does not hold." });
     expect(trace.attempts[0]?.failure).toEqual(coreRejection);
     expect(trace.attempts[0]?.transitionComparison?.status).toBe("missing_expected_state");
+    // Dispatched once. The record says retryable, but the failure was found after
+    // the action ran and this output says nothing about whether running it again
+    // could act a second time, so Core does not guess. An output that carries rows,
+    // or one marked `effect: "observe"`, is looked at again.
     expect(dispatched).toEqual(["activate-element"]);
+    expect(trace.defence?.entries[0]).toMatchObject({ outcome: "stopped", code: "core.policy.expectation_rejected" });
+  });
+
+  it("looks again when the rejected node carries rows out, which is the dominant live failure", async () => {
+    const { trace, dispatched } = await runExpectedState({ verdict: { passed: false, checkedConditionCount: 3 }, parameters: { recordOutput: { datasetId: "rows", recordsPath: "items", writeMode: "append", schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] } } as never } });
+
+    expect(dispatched).toEqual(["activate-element", "activate-element", "activate-element"]);
+    expect(trace.defence).toMatchObject({ absorbedCount: 2, refusedCount: 1 });
   });
 
   it("gives Core's record, and its comparison status, in place of a host record that does not parse", async () => {

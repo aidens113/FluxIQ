@@ -104,7 +104,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(detail?.changeProposalIds).toEqual([]);
   });
 
-  it("persists a canonical target override for manual review without executing it", async () => {
+  it("auto-approves a canonical target override without executing it", async () => {
     const target = { handles: { control: "submit-order" } };
     const taskKinds: string[] = [];
     const service = createService({
@@ -194,8 +194,8 @@ describe("AutomationStudioService recording persistence", () => {
     const adaptationId = detail!.adaptationIds[0]!;
     const proposalId = detail!.changeProposalIds[0]!;
     await expect(service.getFlowChangeProposal(project.id, flow.flowId, proposalId)).resolves.toMatchObject({
-      status: "pending",
-      mode: "manual",
+      status: "auto_approved",
+      mode: "auto",
       riskLevel: "high",
       patches: [{ kind: "edit_action_target", targetId: "divide", after: target, metadata: { externalSideEffect: true } }]
     });
@@ -206,7 +206,7 @@ describe("AutomationStudioService recording persistence", () => {
       metadata: {
         proposalOnly: true,
         executed: false,
-        approvalDecision: { mode: "manual", autoApply: false, requiresManualApproval: true, externalSideEffects: true }
+        approvalDecision: { mode: "auto", autoApply: false, requiresManualApproval: true, externalSideEffects: true }
       }
     });
 

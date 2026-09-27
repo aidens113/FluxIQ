@@ -84,7 +84,7 @@
       "packages/fluxiq/src/programs/identity-access/runtime/service.ts::classes": 2
     },
     "failure-as-empty": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 18,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 16,
       "packages/fluxiq/src/programs/deployment-sync/runtime/service.ts": 6,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/recordings/store.ts": 5,
       "apps/web/src/features/automation-studio/project/request-coordinator.ts": 4,
@@ -132,7 +132,6 @@
       "packages/fluxiq/src/framework/index.ts": 1,
       "packages/fluxiq/src/programs/_shared/storage.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/host-state.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/annotate.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/adaptations/patches.ts": 1,
@@ -151,7 +150,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4584,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4558,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {
@@ -356,7 +355,6 @@
       "apps/web/src/features/programs/live-views/docs.tsx": 1,
       "apps/web/src/features/programs/live-views/secret-keys.tsx": 1,
       "packages/fluxiq/src/programs/_shared/storage.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/llm/execution-grants.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/datasets/run-datasets.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/projects/artifacts.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/recordings/store.ts": 1,

@@ -2,8 +2,13 @@
 // a request may carry out to a person.
 //
 // Two properties are load-bearing and each is a mutation this file must catch:
-// an absent grant never permits a lasting consequence, and an action the run
-// does not hold never proceeds without a request being raised.
+// an absent grant never permits a consequence that cannot be taken back, and an
+// action the run does not hold never proceeds without a request being raised.
+//
+// `REFUND` declares money and an edit, and since 2026-09-26 only the first is
+// asked about. That is deliberate here: a request carries every class the action
+// declared and asks about only the classes a person must answer for, and holding
+// the two apart is most of what these rows check.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -32,11 +37,11 @@ function gate(permittedConsequences?: readonly string[]) {
 }
 
 describe("the action permission gate", () => {
-  it("permits nothing lasting when the grant says nothing, and asks instead", async () => {
+  it("permits nothing it cannot take back when the grant says nothing, and asks instead", async () => {
     const run = gate(undefined);
     const verdict = await run.checkFor(STEP)(REFUND);
 
-    expect(verdict).toEqual({ permitted: false, missing: ["move_money", "modify_existing"], requestId: "permission-request:one" });
+    expect(verdict).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:one" });
     expect(run.request).toEqual({
       schemaVersion: "automation-studio.action-permission-request.v1",
       requestId: "permission-request:one",
@@ -44,17 +49,25 @@ describe("the action permission gate", () => {
       action: { kind: "exploration_step", id: "demo.press", ref: "call.7", verb: "press" },
       control: { name: "Refund line 1", kind: "button" },
       consequences: ["move_money", "modify_existing"],
-      missing: ["move_money", "modify_existing"],
+      missing: ["move_money"],
       reason: { stage: "authoring", instructionIds: ["instruction.refund"] },
       authority: { granted: [], instructed: [] },
-      sentence: "To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money and change something that already exists. Neither its instruction nor a grant allows that, so it stopped to ask."
+      sentence: "To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money. Neither its instruction nor a grant allows that, so it stopped to ask."
     });
     expect(run.raisedDuring("call.7")).toBe(true);
     expect(run.signal.aborted).toBe(true);
   });
 
-  it("permits nothing lasting on an empty grant either", async () => {
+  it("permits nothing it cannot take back on an empty grant either", async () => {
     expect((await gate([]).checkFor(STEP)(REFUND)).permitted).toBe(false);
+  });
+
+  it("names every missing class in one sentence, in Core's order", async () => {
+    const run = gate([]);
+    await run.checkFor(STEP)({ consequences: ["delete", "move_money"], control: { name: "Refund line 1", kind: "button" }, verb: "press" });
+
+    expect(run.request?.missing).toEqual(["move_money", "delete"]);
+    expect(run.request?.sentence).toBe("To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money and delete or remove something. Neither its instruction nor a grant allows that, so it stopped to ask.");
   });
 
   it("permits an action whose every consequence the grant holds, and raises nothing", async () => {
@@ -65,12 +78,16 @@ describe("the action permission gate", () => {
     expect(run.signal.aborted).toBe(false);
   });
 
+  // Three classes, and three different reasons not to ask about one: the grant
+  // holds `delete`, nobody is asked about `modify_existing` any more, and
+  // `move_money` is neither -- so it is the only thing the request carries.
   it("asks for exactly what the grant lacks, never what it already holds", async () => {
-    const run = gate(["modify_existing"]);
+    const run = gate(["delete"]);
+    const voidLine: AutomationStudioActionDeclaration = { consequences: ["move_money", "delete", "modify_existing"], control: { name: "Refund line 1", kind: "button" }, verb: "press" };
 
-    expect(await run.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["move_money"] });
+    expect(await run.checkFor(STEP)(voidLine)).toMatchObject({ permitted: false, missing: ["move_money"] });
     expect(run.request?.missing).toEqual(["move_money"]);
-    expect(run.request?.consequences).toEqual(["move_money", "modify_existing"]);
+    expect(run.request?.consequences).toEqual(["move_money", "delete", "modify_existing"]);
   });
 
   it("never reads a class it does not recognise as a grant", async () => {
@@ -94,7 +111,7 @@ describe("the action permission gate", () => {
     await run.checkFor({ kind: "flow_step", id: "demo.orders.press", ref: "main.s3" })(REFUND);
 
     expect(run.request?.action).toEqual({ kind: "flow_step", id: "demo.orders.press", ref: "main.s3", verb: "press" });
-    expect(run.request?.sentence).toBe("The Flow its instruction describes would press \"Refund line 1\" (button) each time it runs, which would spend, refund or move money and change something that already exists. Neither its instruction nor a grant allows that, so the build stopped to ask.");
+    expect(run.request?.sentence).toBe("The Flow its instruction describes would press \"Refund line 1\" (button) each time it runs, which would spend, refund or move money. Neither its instruction nor a grant allows that, so the build stopped to ask.");
   });
 
   it("refuses a declaration it cannot read, and the action with it", async () => {
@@ -164,8 +181,8 @@ describe("what a request may carry out to a person", () => {
 });
 
 describe("the check an action gets with no run behind it", () => {
-  it("permits nothing lasting and names no request", async () => {
-    expect(await automationStudioActionPermissionDenied(REFUND)).toEqual({ permitted: false, missing: ["move_money", "modify_existing"], requestId: null });
+  it("permits nothing it cannot take back and names no request", async () => {
+    expect(await automationStudioActionPermissionDenied(REFUND)).toEqual({ permitted: false, missing: ["move_money"], requestId: null });
     await expect(automationStudioActionPermissionDenied({} as AutomationStudioActionDeclaration)).rejects.toThrow(AutomationStudioActionDeclarationError);
   });
 });

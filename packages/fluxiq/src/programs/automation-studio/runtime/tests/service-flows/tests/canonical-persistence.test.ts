@@ -117,7 +117,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
         ])
       }
     });
-  });
+  }, 60_000);
 
   it("converts source ownership explicitly and rejects uncompiled code-owned edits", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });

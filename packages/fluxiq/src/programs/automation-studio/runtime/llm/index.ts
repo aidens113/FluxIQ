@@ -5,6 +5,17 @@
 export * from "./harness.ts";
 export * from "./provider-contract.ts";
 export * from "./provider-factories.ts";
+// The retry policy every provider call runs under, and the record of what it did
+// (`provider-retry/`). Public because the record travels out of a run: a caller
+// reading a failed build has to be able to name the type it is holding, and a
+// host accounting for a run's wall clock has to be able to say how much of it
+// went on waiting for a provider that was rate limiting us.
+export * from "./provider-retry/index.ts";
+// What a provider said when it refused a request, typed by the runtime-owned
+// provider-refusal seam shared with Flow Bootstrap diagnostics.
+// Public because the stored failure a build writes is meant to carry it: a
+// reader outside runtime/llm has to be able to name the type it is holding.
+export * from "../provider-refusal/index.ts";
 export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek/index.ts";
 // Which models Core will send to (`deepseek/models.ts`). The set and its
 // default are public because every layer between Flow settings and the provider
@@ -39,6 +50,14 @@ export {
 } from "./grant-capabilities.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
+// What the model is told when the draft refuses one of its amendments, and the
+// entry it arrives under. Published beside the loop for the same reason the
+// decision and completion feedback are: a caller reading a run's evidence has
+// to be able to name the entry.
+export {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID,
+  automationStudioLlmEvidenceDraftAmendmentFeedback
+} from "./draft-amendment-feedback.ts";
 export * from "./harness-options/index.ts";
 // The library as one thing a build may do: the verb that runs a node of the
 // registry against the live target, and how such a step is written down.

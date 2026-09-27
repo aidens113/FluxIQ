@@ -239,7 +239,7 @@ describe("Automation Studio harness option registry", () => {
     expect(destructive.list({ ...governed, policy: permissivePolicy() })).toEqual([]);
   });
 
-  it("gates on scope, runtime capability, permission, stage and operator approval", () => {
+  it("gates on scope, runtime capability, permission and stage, never a non-risk approval flag", () => {
     const registry = new AutomationStudioHarnessOptionRegistry({ host: fullHost() });
     registry.register(ledgerBundle());
 
@@ -266,12 +266,12 @@ describe("Automation Studio harness option registry", () => {
       }],
       implementations: { "erp.payroll_register": async () => ({}) }
     }));
-    const permitted = { ...LEDGER_SCOPE, permissions: ["ledger.payroll.read"], approvedOptionIds: ["erp.payroll_register"] };
+    const permitted = { ...LEDGER_SCOPE, permissions: ["ledger.payroll.read"] };
     expect(gated.list({ ...permitted, stage: "gather" }).map((option) => option.toolId)).toEqual(["erp.payroll_register"]);
     expect(gated.list({ ...permitted, stage: "verify" })).toEqual([]);
     expect(gated.list(permitted)).toEqual([]);
     expect(gated.list({ ...LEDGER_SCOPE, stage: "gather", approvedOptionIds: ["erp.payroll_register"] })).toEqual([]);
-    expect(gated.list({ ...LEDGER_SCOPE, stage: "gather", permissions: ["ledger.payroll.read"] })).toEqual([]);
+    expect(gated.list({ ...LEDGER_SCOPE, stage: "gather", permissions: ["ledger.payroll.read"] }).map((option) => option.toolId)).toEqual(["erp.payroll_register"]);
   });
 
   it("re-checks the resolution at dispatch, because the model chooses the id", async () => {

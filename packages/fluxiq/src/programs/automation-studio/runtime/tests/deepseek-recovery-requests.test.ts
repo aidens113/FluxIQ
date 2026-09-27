@@ -30,7 +30,6 @@ import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import {
   AutomationStudioLlmExecutionGrantService,
   automationStudioRuntimeAdaptationContextForGrant,
-  automationStudioRuntimeSessionGrantTaskKinds,
   createAutomationStudioDeepSeekProvider,
   type AutomationStudioHarnessOptionBundle,
   type AutomationStudioLlmEvidenceRuntimeBinding,
@@ -185,12 +184,11 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
     maxTotalEstimatedCostUsd: 2
   });
   const executionGrant = { grantId: grant.grantId, ...ACTOR, purpose: "diagnose_and_adapt" as const };
-  // As `programs/_shared/runtime.ts` binds it: the grant, narrowed to the kinds
-  // a runtime session may spend it on.
+  // As `programs/_shared/runtime.ts` binds it: the grant is not narrowed by
+  // entry point, because diagnosis, evidence, repair and verification are one loop.
   const ports: AutomationStudioRuntimeRecoveryPorts = {
     resolveLlmProvider: (input) => grants.resolve(
-      { ...executionGrant, projectId: input.projectId, flowId: input.flowId },
-      { allowedTaskKinds: automationStudioRuntimeSessionGrantTaskKinds("diagnose_and_adapt") }
+      { ...executionGrant, projectId: input.projectId, flowId: input.flowId }
     ),
     llmEvidenceRuntime: webBinding(),
     reusableLlmContextEnabled: false,
@@ -479,7 +477,9 @@ function adaptationPolicy(): AutomationStudioAdaptationPolicy {
     allowCreateSubflows: false,
     allowModifyRouter: false,
     allowModifyExpectations: false,
-    allowModifyActionTargets: false,
+    // The person's own policy permits the target repair this fixture expects.
+    // A grant no longer widens this flag on the person's behalf.
+    allowModifyActionTargets: true,
     allowDeleteOrDisableBehavior: false,
     allowExternalSideEffects: false,
     requireApprovalForDestructiveChanges: true,

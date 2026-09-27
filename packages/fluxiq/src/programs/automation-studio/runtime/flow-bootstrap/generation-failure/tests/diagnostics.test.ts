@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../decision-step-ids.ts";
+import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../../decision-step-ids.ts";
 import {
   flowBootstrapEvidenceLoopFailure,
   flowBootstrapEvidenceUnusableDecisionFailure,
@@ -10,7 +10,7 @@ import {
   flowBootstrapPhaseFailure,
   parseAutomationStudioFlowBootstrapFailureDiagnostic,
   parseAutomationStudioFlowBootstrapGenerationError
-} from "../generation-failure.ts";
+} from "../index.ts";
 
 describe("Flow Bootstrap generation failure diagnostics", () => {
   it.each([
@@ -45,6 +45,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
 
   it("projects provider failures into a bounded, sanitized public diagnostic", () => {
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm.provider_http_error", message: "must not escape", metadata: { retryable: false, providerStatus: 400, privateBody: "must not escape" } }],
       request: {
         requestId: "request.one",
@@ -228,7 +229,15 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
           callId: "initial.web.dom.click",
           effectApplied: true,
           resultCode: "web.action.rejected.target_unobserved",
+          resultReason: "column_not_in_detected_list",
+          nodeId: "web.output.dom-click",
           evidenceBytes: 640,
+          amended: 1,
+          amendmentsRefused: [{ step: 2, reason: "already_so" }],
+          progress: { draftRevisionBefore: 1, draftRevisionAfter: 2, pageState: "unchanged", draftState: "changed", answerabilityState: "first_observed" },
+          draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 1, keptStepCount: 2 },
+          draft: { bytes: 640, budget: 4_096, steps: 2, instructionBytes: 128, unlisted: 1 },
+          answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false, issueCode: "bootstrap.cannot_answer_instruction" },
           at: 1_758_672_000_000,
           usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, cacheHitInputTokens: 700, cacheMissInputTokens: 200, estimatedCostUsd: 0.0004 }
         }]
@@ -246,6 +255,8 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     });
 
     it("refuses a widened field whose value is out of bounds, so a number cannot arrive as anything it likes", () => {
+      const widenedStep = widened.evidenceLoop.steps[0];
+      if (!widenedStep) throw new Error("The widened diagnostic fixture must contain its representative step.");
       const bad: Array<Record<string, unknown>> = [
         { iteration: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 },
         { iteration: -1 },
@@ -254,6 +265,10 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         { at: 4_102_444_800_001 },
         { at: 1.5 },
         { callId: "an id with spaces in it" },
+        { progress: { ...widenedStep.progress, draftRevisionAfter: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1 } },
+        { draftChange: { ...widenedStep.draftChange, targetedStepIds: ["private id"] } },
+        { draft: { ...widenedStep.draft, unlisted: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 } },
+        { answerability: { ...widenedStep.answerability, issueCode: "private prose" } },
         { usage: { inputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } },
         { usage: { estimatedCostUsd: 11 } },
         { usage: { promptText: "what the model was shown" } }
@@ -321,6 +336,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("reports provider call and response state truthfully for harness failures", () => {
     const request = { requestId: "request.truth", estimatedInputTokens: 100 } as any;
     expect(flowBootstrapHarnessFailure({
+      providerInvocation: "not_attempted",
       diagnostics: [{ severity: "error", code: "llm_budget.input_limit_exceeded", message: "private budget detail" }],
       request
     }).diagnostic).toMatchObject({
@@ -331,6 +347,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       accounting: { requestId: "request.truth", estimatedInputTokens: 100 }
     });
     expect(flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm_output.invalid_provider_result", message: "private output detail" }],
       request,
       provider: { provider: "mock-production", model: "mock-bootstrap" }
@@ -339,6 +356,24 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       providerInvocation: "attempted",
       providerResponse: "received"
     });
+  });
+
+  it("forwards ambiguous harness provenance instead of inferring an attempt from provider metadata", () => {
+    const diagnostic = flowBootstrapHarnessFailure({
+      providerInvocation: "unknown",
+      diagnostics: [{ severity: "error", code: "llm.provider_timeout", message: "private timeout detail" }],
+      request: { requestId: "request.timeout", estimatedInputTokens: 100 } as any,
+      provider: { provider: "mock-production", model: "mock-bootstrap" }
+    }).diagnostic;
+
+    expect(diagnostic).toMatchObject({
+      code: "flow_bootstrap.provider_timeout",
+      stage: "provider_request",
+      providerInvocation: "unknown",
+      providerResponse: "not_received"
+    });
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(diagnostic)).toEqual(diagnostic);
+    expect(JSON.stringify(diagnostic)).not.toContain("private timeout detail");
   });
 
   it("parses back every pre-provider failure Core produces, with accounting only where the harness keeps it", () => {
@@ -356,7 +391,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ["bootstrap.catalog_empty", "flow_bootstrap.pre_provider_context_invalid"],
       ["llm.private_unrecognised", "flow_bootstrap.harness_preflight_failed"]
     ] as const) {
-      const harness = flowBootstrapHarnessFailure({ diagnostics: [{ severity: "error", code, message: "private" }], request }).diagnostic;
+      const harness = flowBootstrapHarnessFailure({ diagnostics: [{ severity: "error", code, message: "private" }], request, providerInvocation: "not_attempted" }).diagnostic;
       expect(harness.code).toBe(expectedCode);
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(harness)).toEqual(harness);
       const { accounting: _accounting, ...withoutAccounting } = harness;
@@ -367,6 +402,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("projects length-limited provider output to the exact sanitized output-validation diagnostic", () => {
     const partialContent = '{"kind":"flow_bootstrap","private":"must not escape"';
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm.provider_output_truncated", message: partialContent, metadata: { rawResponse: partialContent } }],
       request: { requestId: "request.truncated", estimatedInputTokens: 1_996 } as any,
       provider: { provider: "deepseek", model: "deepseek-flash" },
@@ -387,6 +423,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("projects structurally invalid provider output without exposing provider content or issue paths", () => {
     const privateDetail = "plan.subflows[0].nodes[0].private";
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm.provider_output_invalid", message: privateDetail, metadata: { rawResponse: privateDetail } }],
       request: { requestId: "request.invalid-output", estimatedInputTokens: 1_000 } as any,
       provider: { provider: "deepseek", model: "deepseek-flash" }
@@ -405,6 +442,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
 
   it("does not let an earlier instruction diagnostic mask the appended provider failure", () => {
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "not_attempted",
       diagnostics: [
         { severity: "error", code: "instruction.invalid_scope", message: "private instruction detail" },
         { severity: "error", code: "llm.provider_request_limits_invalid", message: "private provider detail", metadata: { retryable: false } }
@@ -415,6 +453,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     expect(failure.diagnostic).toMatchObject({
       code: "flow_bootstrap.provider_request_limits_invalid",
       stage: "provider_request",
+      providerInvocation: "not_attempted",
       providerResponse: "not_received"
     });
     expect(JSON.stringify(failure)).not.toMatch(/private instruction|private provider/);
@@ -424,6 +463,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   // request was sent could not say which check refused it.
   it.each(AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES)("keeps the provider's pre-flight refusal %s as its own parseable code", (code) => {
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "not_attempted",
       diagnostics: [{ severity: "error", code, message: "private provider detail", metadata: { retryable: false } }],
       request: { requestId: "request.refused", estimatedInputTokens: 1_000 } as any,
       provider: { provider: "deepseek", model: "deepseek-flash" }
@@ -445,6 +485,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("projects valid but over-limit provider usage without exposing raw counts", () => {
     const privateUsage = "prompt=2001 completion=512 total=2513";
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm.provider_usage_limit_exceeded", message: privateUsage, metadata: { rawUsage: privateUsage } }],
       request: { requestId: "request.usage-limit", estimatedInputTokens: 1_000 } as any,
       provider: { provider: "deepseek", model: "deepseek-flash" }
@@ -464,6 +505,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
   it("projects padding-only truncation without exposing provider content", () => {
     const providerContent = " \n\t ";
     const failure = flowBootstrapHarnessFailure({
+      providerInvocation: "attempted",
       diagnostics: [{ severity: "error", code: "llm.provider_output_padding_truncated", message: providerContent, metadata: { rawResponse: providerContent } }],
       request: { requestId: "request.padding", estimatedInputTokens: 1_996 } as any,
       provider: { provider: "deepseek", model: "deepseek-flash" },

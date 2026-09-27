@@ -80,7 +80,7 @@ import {
 } from "../action-permissions/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
-import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure.ts";
+import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.

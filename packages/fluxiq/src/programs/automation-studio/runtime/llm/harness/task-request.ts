@@ -11,6 +11,9 @@ import type { AutomationStudioConversationTurn } from "../../conversations/index
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
+import type { AutomationStudioLlmProviderInvocationState } from "../provider-contract.ts";
+import type { AutomationStudioLlmProviderRetryAccount, AutomationStudioLlmProviderRetryLedger } from "../provider-retry/index.ts";
+import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import type { AutomationStudioLlmRunBudgetAllowance, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
 import type { AutomationStudioLlmActionPermissions, AutomationStudioLlmContextPacket } from "./context-packet.ts";
@@ -47,7 +50,57 @@ export type AutomationStudioLlmTaskResult = {
   ok: boolean;
   request: AutomationStudioLlmTaskRequest;
   response?: AutomationStudioLlmStructuredResponse;
+  /**
+   * The provider a request was actually sent to.
+   *
+   * Absent when none was: no provider configured, a dry run, a refusal made
+   * before the call, or a run budget that would not authorize it. It used to
+   * describe the provider a refused reservation *would* have used, and the
+   * reader downstream took its presence for the request having happened -- which
+   * is how two live runs came to be recorded as an attempted provider request
+   * with an unknown answer when no request was ever made
+   * (`run-muhs8hx3-6fd929e6`, `run-muhtuizo-c458e49c`).
+   * `providerInvocation` is the fact to route on; this field says which provider
+   * the answer came from.
+   */
   provider?: AutomationStudioLlmProviderMetadata;
+  /**
+   * Whether a request reached the provider, as the one caller that can know
+   * says so.
+   *
+   * Stated on every path, because a reader cannot infer it: the absence of a
+   * provider, a usage figure or a response is equally consistent with a call
+   * that was never made and a call that failed. `not_attempted` is every return
+   * before the provider is invoked, a refused run-budget reservation among them.
+   * `attempted` is a call that was made. `unknown` is a call whose fate cannot
+   * honestly be decided -- a deadline or a cancellation, where the request may
+   * have been in flight -- and it comes from the failure's own provenance rather
+   * than from a guess here.
+   */
+  providerInvocation: AutomationStudioLlmProviderInvocationState;
+  /**
+   * What the provider said when it refused the request, screened by the adapter
+   * that read it and bounded by `refusal-record.ts`.
+   *
+   * Present for a non-2xx from an adapter that reads its refusals -- every one
+   * of them in Core's DeepSeek adapter. A status says a request was wrong and
+   * not how; this is the provider's own account of how, and the only thing in a
+   * failed build that can name the field the provider objected to.
+   */
+  providerRefusal?: AutomationStudioLlmProviderRefusal;
+  /**
+   * Every provider request this call made beyond the one that answered, and why
+   * it stopped asking (`../provider-retry/account.ts`).
+   *
+   * Absent when the first attempt settled the call, which is every call in a
+   * working run. Present means a fault the adapter called temporary was met: a
+   * rate limit, a 5xx, a request timeout, a dropped connection. It is stated as
+   * a field and not left to be inferred from a diagnostic, because a host
+   * accounting for a run's wall clock has to be able to say how much of it went
+   * on waiting -- the alternative is an unexplained gap, which is how a 167- and
+   * a 194-second run came to be read as something they were not.
+   */
+  providerRetry?: AutomationStudioLlmProviderRetryAccount;
   usage?: AutomationStudioLlmUsageSummary;
   diagnostics: AutomationStudioLlmDiagnostic[];
   intervention: AutomationStudioFlowIntervention;
@@ -130,7 +183,8 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   resultSummary?: AutomationStudioRunResultSummary;
   /** The thread the person and the automation have been talking in, in reading
    * order. The packet keeps the turns nearest the failure, bounded, and counts
-   * the rest. Runtime diagnosis and patch only. */
+   * the rest. Carried by the calls that are looking at a finished run: the
+   * result verification, and the runtime diagnosis and patch. */
   conversation?: readonly AutomationStudioConversationTurn[];
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
@@ -171,6 +225,21 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * is a label only -- every call draws on the same backstop, token budget
    * and cost ceiling. */
   runBudgetAllowance?: AutomationStudioLlmRunBudgetAllowance;
+  /**
+   * How this call retries a temporary provider fault. Absent means Core's own
+   * policy, which is on for every call and needs no configuration
+   * (`../provider-retry/limits.ts`).
+   *
+   * Nothing here can widen a bound: fewer attempts, never more, and the ledger
+   * and the waiter exist so a caller can account for a run separately or drive
+   * the clock in a test. A caller that wants no retrying at all says
+   * `maxAttempts: 1` and gets exactly the behaviour this runtime had before.
+   */
+  providerRetry?: {
+    maxAttempts?: number;
+    ledger?: AutomationStudioLlmProviderRetryLedger;
+    wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+  };
   now?: () => number;
   metadata?: JsonObject;
 };

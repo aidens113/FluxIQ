@@ -1,4 +1,8 @@
 export * from "./contracts.ts";
+// The default defensive policy every node executes under. Exported whole because
+// a host, a domain and a test all need to read the same numbers the runtime
+// enforces rather than restate them.
+export * from "./defensive/index.ts";
 export { runAutomationStudioGraph, resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
 export { resumeAutomationStudioGraph, type AutomationStudioResumeOutcome, type AutomationStudioRunResumption } from "./resume.ts";
 export { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder, type AutomationStudioLadderOutcome, type AutomationStudioReadinessOutcome } from "./ladder-run.ts";

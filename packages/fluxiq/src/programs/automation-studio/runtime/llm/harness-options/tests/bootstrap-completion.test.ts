@@ -50,6 +50,10 @@ describe("the feedback on a completed plan that was refused", () => {
 
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
+    expect(verdict.check).toEqual({
+      ok: true,
+      answerability: { recordsRequested: false, recordProducerPresent: true, recordStorePresent: true }
+    });
     expect(verdict.buildPlan.plan.subflows[0]?.nodes[0]?.parameters?.recordOutput).toMatchObject({
       datasetId: "Product-Catalogue",
       writeMode: "append",
@@ -193,6 +197,12 @@ describe("a completed plan that could not answer the instruction", () => {
     if (verdict.ok) return;
     expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_answer");
     expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_answer_instruction"]);
+    expect(verdict.check.answerability).toEqual({
+      recordsRequested: true,
+      recordProducerPresent: false,
+      recordStorePresent: false,
+      issueCode: "bootstrap.cannot_answer_instruction"
+    });
     const feedback = verdict.check.feedback as unknown as Feedback & { cannotAnswer: JsonObject };
     expect(feedback.issues[0]).toEqual({
       code: "bootstrap.cannot_answer_instruction",
@@ -242,6 +252,11 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     if (verdict.ok) return;
     expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_reach_start");
     expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_reach_start_location"]);
+    expect(verdict.check.answerability).toEqual({
+      recordsRequested: false,
+      recordProducerPresent: true,
+      recordStorePresent: false
+    });
     const feedback = verdict.check.feedback as unknown as Feedback & { cannotReach: JsonObject };
     expect(feedback.issues[0]).toEqual({
       code: "bootstrap.cannot_reach_start_location",

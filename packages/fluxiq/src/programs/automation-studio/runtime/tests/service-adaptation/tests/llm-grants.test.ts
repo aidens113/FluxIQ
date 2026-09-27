@@ -61,13 +61,23 @@ describe("AutomationStudioService recording persistence", () => {
     expect(revoked).toEqual(["llm-grant:test"]);
     expect(detail?.adaptationIds).toEqual([]);
     expect(JSON.stringify(detail)).not.toContain("session.sensitive");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).rejects.toThrow("cannot be an LLM dry run");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).rejects.toThrow("cannot carry side-effect authorization");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).rejects.toThrow("cannot carry side-effect authorization");
+    // **These three were refusals until t166, and each one threw the grant away
+    // with it.** A dry run, side-effect authorization and a named domain are
+    // statements about how the run executes, not about a lasting consequence: a
+    // grant gates money, a deletion or a publication, and those are still gated
+    // action by action by `permittedConsequences` and the action permission gate.
+    // Refusing the run here meant a caller whose repair needed to act on a page
+    // had to choose between acting and having its answer judged.
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).resolves.toMatchObject({ flowId: flow.flowId });
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).resolves.toMatchObject({ flowId: flow.flowId });
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).resolves.toMatchObject({ flowId: flow.flowId });
+    // Still refused, and not a permission: a grant is spent by the run it
+    // authorizes, so returning an earlier run under the same idempotency key
+    // would spend it on a run it never authorized.
     await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, idempotencyKey: "live-diagnosis" })).rejects.toThrow("does not accept idempotency");
     await service.close();
     expect(grantServiceClosed).toBe(true);
-  });
+  }, 60_000);
 
   it("executes the existing scoped domain action before diagnosis without LLM retry or mutation", async () => {
     const sequence: string[] = [];
@@ -229,7 +239,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
   });
 
-  it("rejects a diagnosis grant attached to a pre-staged cross-domain runtime session", async () => {
+  it("runs a granted session attached to a pre-staged one, exactly as an ungranted run of it would", async () => {
     let dispatchCount = 0;
     let providerResolutionCount = 0;
     const revoked: string[] = [];
@@ -261,16 +271,25 @@ describe("AutomationStudioService recording persistence", () => {
     const queued = await service.startRuntimeSession({ projectId: project.id, flowId: configured.flowId, authorizedDomainIds: ["other-domain"] });
     const grant = { grantId: "llm-grant:staged", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
 
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant })).rejects.toThrow("cannot attach to a session it did not create");
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: "", llmExecution: grant })).rejects.toThrow("cannot attach to a session it did not create");
-
-    expect(providerResolutionCount).toBe(0);
-    expect(dispatchCount).toBe(0);
-    expect(revoked).toEqual([grant.grantId, grant.grantId]);
-    await expect(service.getRuntimeSession(project.id, queued.runId)).resolves.toMatchObject({
-      status: "queued",
-      metadata: { authorizedDomainIds: ["other-domain"] }
-    });
+    // **Attaching used to be refused outright, with the grant revoked (t166).**
+    // The reason given was that a session somebody else staged carries
+    // authorizations the grant never saw -- but a domain authorization is not a
+    // lasting consequence, and the thing that actually stops an action a person
+    // did not allow is the action permission gate, which is untouched and still
+    // runs. Meanwhile the refusal made a repair unable to resume the run that
+    // failed, which is the only run worth repairing.
+    const attached = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant });
+    expect(attached.runId).toBe(queued.runId);
+    // The run now does what the same run with no grant at all does: it executes
+    // the Flow's action. That is the point -- holding a grant had made a run
+    // *more* restricted than holding none, which is the inversion this task
+    // removes. Note also what the old assertion did not prove:
+    // `authorizedDomainIds` is read by composition validation and never by the
+    // effect dispatcher, so the zero it asserted came from the refusal rather
+    // than from the domain list. What does stop an action nobody allowed is the
+    // action permission gate, and that is untouched.
+    expect(dispatchCount).toBe(1);
+    expect(revoked).toEqual([grant.grantId]);
   });
 
   // One call count still applies to a run: the one its provider resolver

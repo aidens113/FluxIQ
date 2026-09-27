@@ -99,6 +99,17 @@ export type AutomationStudioFlowBootstrapContext = {
     usedBytes: number;
     requiredTerms: string[];
     missingRequiredTerms: string[];
+    /**
+     * The parameters this catalog does not describe in full, `<node
+     * id>.<parameter id>` each (`./catalog.ts`).
+     *
+     * Absent when there are none. A parameter named here had authoring text the
+     * catalog cut short, left out with the entry's condensed form, or declined
+     * to send as an example, so a value written for it is written from a
+     * vocabulary the model was never shown -- which every campaign that shortened
+     * such text to fit had no way of telling.
+     */
+    withheldParameterText?: string[];
   };
   /** What the model routes with: the structure as it stands, what a condition can test, and what exploration saw. */
   routing?: AutomationStudioFlowBootstrapRoutingContext;

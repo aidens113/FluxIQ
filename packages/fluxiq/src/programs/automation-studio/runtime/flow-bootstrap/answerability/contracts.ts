@@ -41,6 +41,15 @@ export type AutomationStudioFlowBootstrapPlanRecordSets = {
   steps: string[];
 };
 
+/** Content-free capability facts observed when a completed plan is checked. */
+export type AutomationStudioFlowBootstrapAnswerabilitySnapshot = {
+  recordsRequested: boolean;
+  recordProducerPresent: boolean;
+  recordStorePresent: boolean;
+  /** Present only when the current check issued the correctable refusal. */
+  issueCode?: "bootstrap.cannot_answer_instruction";
+};
+
 /**
  * Whether the plan may be proposed, or what the model is told instead.
  *
@@ -49,9 +58,10 @@ export type AutomationStudioFlowBootstrapPlanRecordSets = {
  * no-progress guards -- so nothing here can spin.
  */
 export type AutomationStudioFlowBootstrapAnswerability =
-  | { ok: true }
+  | { ok: true; answerability: AutomationStudioFlowBootstrapAnswerabilitySnapshot }
   | {
     ok: false;
+    answerability: AutomationStudioFlowBootstrapAnswerabilitySnapshot;
     /** The issue that refuses the completed plan. */
     issue: AutomationStudioFlowBootstrapIssue;
     /** What the instruction asks for and what the Flow lacks, as the model is shown it. */

@@ -23,6 +23,8 @@ import {
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type {
+  AutomationStudioLlmEvidenceCompletionCheck,
+  AutomationStudioLlmEvidenceLoopAnswerability,
   AutomationStudioLlmEvidenceLoopDecision,
   AutomationStudioLlmEvidenceTool,
   AutomationStudioLlmEvidenceToolExecutionResult
@@ -293,12 +295,26 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * A check's answer, or `undefined` when it is not one. Issue codes are kept
  * only when they are codes; feedback only when it is bounded JSON.
  */
-export function automationStudioLlmEvidenceParseCompletionCheck(value: unknown): { ok: true } | { ok: false; issueCodes: string[]; feedback: JsonObject } | undefined {
+export function automationStudioLlmEvidenceParseCompletionCheck(value: unknown): AutomationStudioLlmEvidenceCompletionCheck | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.ok === true && exactKeys(value, ["ok"])) return { ok: true };
-  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
+  const answerability = readAnswerability(value.answerability);
+  if (value.answerability !== undefined && !answerability) return undefined;
+  if (value.ok === true && exactKeys(value, ["ok", "answerability"])) return { ok: true, ...(answerability ? { answerability } : {}) };
+  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback", "answerability"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
   const issueCodes = value.issueCodes.filter((code): code is string => typeof code === "string" && /^[a-z0-9_.:-]{1,100}$/i.test(code));
-  return { ok: false, issueCodes, feedback: structuredClone(value.feedback) };
+  return { ok: false, issueCodes, feedback: structuredClone(value.feedback), ...(answerability ? { answerability } : {}) };
+}
+
+function readAnswerability(value: unknown): AutomationStudioLlmEvidenceLoopAnswerability | undefined {
+  if (!isRecord(value) || !exactKeys(value, ["recordsRequested", "recordProducerPresent", "recordStorePresent", "issueCode"])) return undefined;
+  if (typeof value.recordsRequested !== "boolean" || typeof value.recordProducerPresent !== "boolean" || typeof value.recordStorePresent !== "boolean") return undefined;
+  if (value.issueCode !== undefined && value.issueCode !== "bootstrap.cannot_answer_instruction") return undefined;
+  return {
+    recordsRequested: value.recordsRequested,
+    recordProducerPresent: value.recordProducerPresent,
+    recordStorePresent: value.recordStorePresent,
+    ...(value.issueCode ? { issueCode: value.issueCode } : {})
+  };
 }
 
 export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlmEvidenceTool[]): boolean {

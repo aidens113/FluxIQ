@@ -131,6 +131,84 @@ describe("automationStudioMatchName", () => {
     }
   });
 
+  it("scores every node id exactly as it did before the token measures learned to see a near token", () => {
+    // These are the figures `../score-floor.ts` argues 0.25 from, and they are
+    // pinned here because the fix for a short name against a long one had to
+    // leave them alone. Every one of these written names shares whole tokens
+    // with the id it resolves to, so nothing about it is a near token or a
+    // synonym, and the score is the same arithmetic it always was.
+    const scoreOf = (written: string) => automationStudioMatchName(written, webNodes)?.score;
+    expect(scoreOf("dom-extract-list")).toBe(0.823);
+    expect(scoreOf("filterList")).toBe(0.765);
+    expect(scoreOf("for_each")).toBe(0.733);
+    expect(scoreOf("navigate")).toBe(0.644);
+    expect(scoreOf("compare")).toBe(0.683);
+    expect(scoreOf("web.output.dom_extract_lst")).toBe(0.963);
+    // The one case measured between the two bands, which the floor admits.
+    expect(automationStudioMatchName("click-element", webNodes)).toEqual({ id: "web.output.dom-click", how: "nearest", score: 0.338 });
+  });
+
+  it("resolves a short name against a long one, which is what an instruction's own words are", () => {
+    // The names a real catalog's page detection offers, against the words a
+    // person asks for: "with columns name, price, rating and url". Two of those
+    // four used to be refused, and the reason was never how close they were.
+    // `name` was credited a whole shared token and reached 0.733; `url` shares
+    // no token with `product-link`, so the only signal left was an edit distance
+    // over the candidate's entire string, and it scored 0.042 -- below `banana`.
+    // Lengthen the candidate and it would fall further while being no less right.
+    const detected: AutomationStudioNameCandidate[] = [
+      { id: "product-name" },
+      { id: "product-price" },
+      { id: "product-rating" },
+      { id: "product-link" },
+      { id: "stock-badge" },
+      { id: "product-image_src" },
+      { id: "product-image_alt" }
+    ];
+    const resolved = (written: string) => {
+      const match = automationStudioMatchName(written, detected);
+      return match ? [match.id, match.score] : undefined;
+    };
+
+    // Unmoved: a written word that is a whole token of the name it means.
+    expect(resolved("name")).toEqual(["product-name", 0.733]);
+    expect(resolved("price")).toEqual(["product-price", 0.746]);
+    expect(resolved("rating")).toEqual(["product-rating", 0.757]);
+    expect(resolved("stock")).toEqual(["stock-badge", 0.764]);
+    expect(resolved("link")).toEqual(["product-link", 0.733]);
+
+    // A different word for the same thing, which no comparison of characters
+    // can reach. `url` is the fourth column of the instruction this was
+    // measured against.
+    expect(resolved("url")).toEqual(["product-link", 0.497]);
+    expect(resolved("title")).toEqual(["product-name", 0.497]);
+    expect(resolved("heading")).toEqual(["product-name", 0.497]);
+    expect(resolved("cost")).toEqual(["product-price", 0.493]);
+
+    // A typo of a short word inside a long candidate: the family that scored as
+    // if it shared nothing with the candidate at all.
+    expect(resolved("prce")).toEqual(["product-price", 0.597]);
+    expect(resolved("ratng")).toEqual(["product-rating", 0.631]);
+    expect(resolved("ratings")).toEqual(["product-rating", 0.646]);
+
+    // A word with no plausible answer is still an honest failure. Two of these
+    // scored 0.042 and 0.068 before, the same band `url` was in -- which is why
+    // moving the floor could never have been the fix.
+    for (const written of ["banana", "sponsored", "description", "quantity"]) {
+      expect(automationStudioMatchName(written, detected), written).toBeUndefined();
+    }
+  });
+
+  it("prefers a real near match to a synonym, and a synonym to nothing", () => {
+    // The vocabulary answers only where nothing closer does.
+    expect(automationStudioMatchName("url", [{ id: "product-link" }, { id: "product-url-slug" }])?.id).toBe("product-url-slug");
+    expect(automationStudioMatchName("price", [{ id: "product-cost" }, { id: "product-prices" }])?.id).toBe("product-prices");
+    // Spelled exactly, it is not a guess at all.
+    expect(automationStudioMatchName("name", [{ id: "title" }, { id: "name" }])).toEqual({ id: "name", how: "exact", score: 1 });
+    // And a synonym is reported as the guess it is, never as a spelling variant.
+    expect(automationStudioMatchName("heading", [{ id: "label" }, { id: "mode" }])).toEqual({ id: "label", how: "nearest", score: 0.561 });
+  });
+
   it("is safe with no candidates and with a blank name", () => {
     expect(automationStudioMatchName("web.output.dom-click", [])).toBeUndefined();
     expect(automationStudioMatchName("", [])).toBeUndefined();

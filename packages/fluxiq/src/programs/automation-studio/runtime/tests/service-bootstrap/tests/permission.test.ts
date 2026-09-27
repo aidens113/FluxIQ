@@ -52,7 +52,9 @@ describe("building a Flow that needs an action a person has not allowed", () => 
       action: { kind: "exploration_step", id: "example.press", verb: "press" },
       control: { name: REFUND.name, kind: "button" },
       consequences: ["move_money", "modify_existing"],
-      missing: ["move_money", "modify_existing"],
+      // The request carries both classes the press declared and asks about the
+      // money alone: an edit stopped being gated on 2026-09-26.
+      missing: ["move_money"],
       reason: { stage: "authoring", instructionIds: ["instruction.build"] },
       authority: { granted: [], instructed: [] }
     });
@@ -76,7 +78,7 @@ describe("building a Flow that needs an action a person has not allowed", () => 
       permissionRequest: {
         action: { kind: "flow_step", id: PRESS_ID, ref: "primary.press", verb: "press" },
         control: { name: REFUND.name, kind: "button" },
-        missing: ["move_money", "modify_existing"]
+        missing: ["move_money"]
       },
       evidenceLoop: { toolCallCount: 1 }
     });
@@ -115,10 +117,10 @@ describe("the same build, when the instruction itself asks for it", () => {
   });
 
   it("still asks for a consequence the instruction did not ask for", async () => {
-    const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "move_money", quote: "Refund the first line" }]);
+    const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["modify_existing"], authority: { granted: [], instructed: [{ consequence: "move_money", quote: "Refund the first line" }] } });
+    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money"], authority: { granted: [], instructed: [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }] } });
     expect(run.pressed).toEqual([]);
   });
 
@@ -126,7 +128,7 @@ describe("the same build, when the instruction itself asks for it", () => {
     const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "move_money", quote: "refund every order in the book" }, { consequence: "modify_existing", quote: "edit anything" }]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money", "modify_existing"], authority: { instructed: [] } });
+    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money"], authority: { instructed: [] } });
   });
 
   it("never reads the instruction for a build with no lasting consequence", async () => {
@@ -148,7 +150,7 @@ describe("the same build, carrying what the person allowed", () => {
     expect(stored!.buildPlan.plan.subflows[0]!.nodes.find((node) => node.key === "press")?.parameters).toEqual({ control: REFUND.name });
   });
 
-  it("still asks for what the grant does not cover", async () => {
+  it("still asks for the money when the grant names only a class nobody is asked about", async () => {
     const run = await build([pressDecision(REFUND.handle)], ["modify_existing"]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 

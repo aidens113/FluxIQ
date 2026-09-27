@@ -1,11 +1,11 @@
-// The two 10,000-item cases carry their own 60s budget rather than the suite's
-// 15s. They do real work - one measured 8.6s alone - and after the runtime
-// tests were split across more files, contention pushed them past a limit that
-// exists to catch HANGS, not to size heavy fixtures. Raising the global timeout
-// would blunt it for 700-odd tests to accommodate two, and capping workers
-// would cost the whole suite its wall time. Nothing is weakened: the speed
-// guarantee here is asserted explicitly (pageElapsedMs/searchElapsedMs under
-// 500ms), so the timeout was never what held performance honest.
+// The three fixture-heavy cases carry their own 60s budget rather than the
+// suite's 15s. They do real work - one measured 8.6s alone - and after the
+// runtime tests were split across more files, full-suite contention left too
+// little headroom under a limit that exists to catch HANGS, not to size heavy
+// fixtures. Raising the global timeout would blunt it for 700-odd tests, and
+// capping workers would cost the whole suite its wall time. Nothing is weakened:
+// the speed guarantee here is asserted explicitly (pageElapsedMs/searchElapsedMs
+// under 500ms), so the timeout was never what held performance honest.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -126,7 +126,7 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({ total: 2 });
     await expect(service.getFlowInstructionSet({ projectId: project.id, flowId: flow.flowId })).resolves.toHaveLength(1);
     await expect(service.getFlowChangeProposal(project.id, flow.flowId, fixture.changeProposal.proposalId)).resolves.toMatchObject({ proposalId: fixture.changeProposal.proposalId });
-  });
+  }, 60_000);
 
   it("keeps large project summary pages free of hydrated detail payloads", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });

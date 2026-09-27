@@ -22,6 +22,10 @@ const EARBUDS = "Find every pair of wireless earbuds under $50 with noise cancel
   + "Give me the answer as a table with columns name, price, rating and link.";
 const LAMP = "Search the catalog for 'lamp' and scrape every product the search returns.";
 
+function snapshot(recordsRequested: boolean, recordProducerPresent: boolean, recordStorePresent: boolean) {
+  return { recordsRequested, recordProducerPresent, recordStorePresent };
+}
+
 function planOf(...steps: Array<string | { definitionId: string; parameters: JsonObject }>): AutomationStudioFlowBootstrapPlan {
   return {
     schemaVersion: "0.1",
@@ -58,6 +62,10 @@ describe("a build may not propose a Flow that cannot answer the instruction", ()
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.issue).toMatchObject({ severity: "error", code: "bootstrap.cannot_answer_instruction", path: "plan.subflows" });
+    expect(verdict.answerability).toEqual({
+      ...snapshot(true, false, false),
+      issueCode: "bootstrap.cannot_answer_instruction"
+    });
   });
 
   it("says what the instruction asks for, in the person's own words, and what the draft has", () => {
@@ -84,32 +92,32 @@ describe("a build may not propose a Flow that cannot answer the instruction", ()
     ), LAMP);
     const byUrl = check(planOf("web.output.browser-navigate", "web.output.dom-extract_list"), LAMP);
 
-    expect(typed).toEqual({ ok: true });
-    expect(byUrl).toEqual({ ok: true });
+    expect(typed).toEqual({ ok: true, answerability: snapshot(true, true, false) });
+    expect(byUrl).toEqual({ ok: true, answerability: snapshot(true, true, false) });
   });
 
   it("leaves an instruction that asks for no records alone, whatever the Flow does", () => {
     const form = planOf("web.output.browser-navigate", "web.output.dom-type", "web.output.dom-click");
 
-    expect(check(form, "Apply for the Senior Platform Engineer role: fill in the application form with my details and submit it.")).toEqual({ ok: true });
+    expect(check(form, "Apply for the Senior Platform Engineer role: fill in the application form with my details and submit it.")).toEqual({ ok: true, answerability: snapshot(false, false, false) });
     // `table`, `list` and `record` on their own are not a request for rows, and
     // each of these is one of the sites under test.
-    expect(check(form, "Book a table for two at the Harbour Room on Friday evening.")).toEqual({ ok: true });
-    expect(check(form, "List the mountain bike for sale at $240 in the local classifieds.")).toEqual({ ok: true });
-    expect(check(form, "Delete the record for order 1042.")).toEqual({ ok: true });
-    expect(check(form, "")).toEqual({ ok: true });
+    expect(check(form, "Book a table for two at the Harbour Room on Friday evening.")).toEqual({ ok: true, answerability: snapshot(false, false, false) });
+    expect(check(form, "List the mountain bike for sale at $240 in the local classifieds.")).toEqual({ ok: true, answerability: snapshot(false, false, false) });
+    expect(check(form, "Delete the record for order 1042.")).toEqual({ ok: true, answerability: snapshot(false, false, false) });
+    expect(check(form, "")).toEqual({ ok: true, answerability: snapshot(false, false, false) });
   });
 
   it("counts a step told where to save its rows, and not one told to save none", () => {
     const saving = { definitionId: "builtin.policy.action", parameters: { outputId: "web.dom.extract_list", recordOutput: { datasetId: "earbuds", schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] }, writeMode: "append", recordsPath: "result.extracted" } } };
     const savingNone = { definitionId: "builtin.policy.action", parameters: { outputId: "web.dom.click", recordOutput: null } };
 
-    expect(check(planOf("web.output.browser-navigate", saving), EARBUDS)).toEqual({ ok: true });
+    expect(check(planOf("web.output.browser-navigate", saving), EARBUDS)).toEqual({ ok: true, answerability: snapshot(true, false, true) });
     expect(check(planOf("web.output.browser-navigate", savingNone), EARBUDS).ok).toBe(false);
   });
 
   it("holds a Flow to capability and never to an outcome: an extraction that may find nothing is still proposed", () => {
-    expect(check(planOf("web.output.browser-navigate", "web.output.dom-extract_list"), EARBUDS)).toEqual({ ok: true });
+    expect(check(planOf("web.output.browser-navigate", "web.output.dom-extract_list"), EARBUDS)).toEqual({ ok: true, answerability: snapshot(true, true, false) });
   });
 
   // A refusal the build cannot act on is a rewrite loop, not a correction. A
@@ -125,6 +133,6 @@ describe("a build may not propose a Flow that cannot answer the instruction", ()
       instructionText: EARBUDS
     });
 
-    expect(verdict).toEqual({ ok: true });
+    expect(verdict).toEqual({ ok: true, answerability: snapshot(true, true, false) });
   });
 });

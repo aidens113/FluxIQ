@@ -29,6 +29,26 @@ export {
   type AutomationStudioInstructionResolutionInput,
   type AutomationStudioResolvedInstruction
 } from "./instruction.ts";
+// **This export precedes `context-packet.ts`, and the order is load-bearing.**
+// `context-packet.ts` imports `runtime/flow-bootstrap/`, whose stored-failure
+// parse imports this package's barrel, which imports the DeepSeek adapter, whose
+// system prompt builds one of its instruction strings from
+// `automationStudioExploredEvidenceLabel` while its own module body runs. That is
+// a cycle back into this barrel, and a cycle only breaks when the value is read
+// before the module that declares it has been evaluated -- exactly the failure
+// `scripts/structure-audit/config.mjs` describes for `runtime/llm` and
+// `runtime/recovery`. Declared here, the label exists by the time the cycle
+// closes; declared after `context-packet.ts` it does not, and twenty-two test
+// files fail to load with "automationStudioExploredEvidenceLabel is not a
+// function". The durable fix is for the adapter to build that string inside a
+// function, or for the parse to stop importing the barrel at module scope;
+// neither module is this one's to change.
+export {
+  AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
+  automationStudioExploredEvidenceHandle,
+  automationStudioExploredEvidenceLabel,
+  isAutomationStudioExploredEvidenceLabel
+} from "./explored-evidence-label.ts";
 export {
   AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   isAutomationStudioLlmRecentActionContext,
@@ -37,12 +57,6 @@ export {
   type AutomationStudioLlmContextPacket,
   type AutomationStudioLlmRecentActionContext
 } from "./context-packet.ts";
-export {
-  AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
-  automationStudioExploredEvidenceHandle,
-  automationStudioExploredEvidenceLabel,
-  isAutomationStudioExploredEvidenceLabel
-} from "./explored-evidence-label.ts";
 export type { AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 export {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,

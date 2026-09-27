@@ -7,6 +7,7 @@ import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStud
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../parking/index.ts";
 import { nodeAttemptFromResult, nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
+import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "./defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
 import { collectNodeInputs } from "./node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
@@ -19,6 +20,22 @@ import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts
  * node carries. Every path below returns through here, so an attempt of an
  * adapted node names its adaptations whether it succeeded or failed, and
  * however it failed.
+ *
+ * **It never rejects.** Whatever the node was -- a built-in, a domain output
+ * behind an effect dispatcher, a host-executed one, a composite Flow -- and
+ * whatever threw, from the dispatch itself or from capturing host state around
+ * it, the throw comes back as a classified failed attempt and the run goes on to
+ * decide what to do about it. That is what makes this the one seam: the default
+ * defensive policy cannot be bypassed by a dispatch path that throws instead of
+ * returning, and a path added tomorrow is covered by having been added inside
+ * here.
+ *
+ * It was bypassable. `nativeNodeExecutor` and `compositeExecutor` were both
+ * awaited outside the inner `try`, so a host-executed node or a Call Flow child
+ * that threw rejected the whole graph run -- no attempt, no trace, no retry, no
+ * recovery ladder, nothing for a person to read. The inner catch stays because it
+ * can enrich the attempt with the host state captured before the action; this one
+ * is the guarantee.
  */
 export async function executeAutomationStudioNode(
   flow: AutomationStudioFlowDocument,
@@ -29,8 +46,47 @@ export async function executeAutomationStudioNode(
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const attempt = await executeNodeAttempt(flow, node, values, options, attemptNumber, withholding, runState);
-  return nodeAttemptWithAdaptationIds(node, attempt);
+  try {
+    const attempt = await executeNodeAttempt(flow, node, values, options, attemptNumber, withholding, runState);
+    return nodeAttemptWithAdaptationIds(node, attempt);
+  } catch (error) {
+    const startedAt = options.now?.() ?? Date.now();
+    return nodeAttemptWithAdaptationIds(node, failedAttemptFromThrow(node, error, options, attemptNumber, startedAt, collectNodeInputs(flow, node, values)));
+  }
+}
+/**
+ * One thrown value as a failed attempt, classified by the default defensive
+ * policy.
+ *
+ * Both catches build their attempt here, so the fault reading, the failure record
+ * and the message come out the same whichever of them caught it.
+ */
+function failedAttemptFromThrow(
+  node: AutomationStudioFlowNode,
+  error: unknown,
+  options: AutomationStudioGraphExecutionOptions,
+  attemptNumber: number,
+  startedAt: number,
+  inputs: Record<string, JsonValue>
+): AutomationStudioNodeAttemptTrace {
+  const finishedAt = options.now?.() ?? Date.now();
+  const fault = automationStudioFaultFromThrownError(error, { now: finishedAt, aborted: options.signal?.aborted === true });
+  const thrownText = automationStudioThrownErrorText(error);
+  return {
+    attemptId: `${node.id}.attempt.${attemptNumber}`,
+    nodeId: node.id,
+    definitionId: node.definitionId,
+    startedAt,
+    finishedAt,
+    status: "failed",
+    route: "failed",
+    inputs,
+    outputs: {},
+    effects: [],
+    message: thrownText || "Node execution failed.",
+    failure: { category: fault.category, code: fault.code, retryable: fault.disposition === "retry", stage: "execution" },
+    fault
+  };
 }
 
 async function executeNodeAttempt(
@@ -76,12 +132,17 @@ async function executeNodeAttempt(
       inputs,
       outputs: {},
       effects: [],
-      message: `State-bound parameter path${resolvedParameters.missingPaths.length === 1 ? "" : "s"} could not be resolved: ${resolvedParameters.missingPaths.join(", ")}.`
+      message: `State-bound parameter path${resolvedParameters.missingPaths.length === 1 ? "" : "s"} could not be resolved: ${resolvedParameters.missingPaths.join(", ")}.`,
+      // Named as a refusal rather than left blank. A binding onto a value nothing
+      // produced is a Flow defect, and a defect answers the same way however many
+      // times it is asked, so the retry loop must be told so explicitly instead of
+      // inferring it from a missing record.
+      failure: { category: "graph_validation_or_unknown_node", code: "executor.parameter.unresolved_state_path", retryable: false, stage: "dispatch" }
     };
   }
   const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" });
   if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-    return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` }, options, beforeAction, hostCapabilities);
+    return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch" } }, options, beforeAction, hostCapabilities);
   }
   if (!definition?.execute) {
     const native = await options.nativeNodeExecutor?.({
@@ -90,7 +151,7 @@ async function executeNodeAttempt(
       ...(options.signal ? { signal: options.signal } : {}),
       hostContext: {
         capabilityIds: hostCapabilities,
-        sideEffectClass: sideEffectClassForNode(executionNode),
+        sideEffectClass: automationStudioNodeSideEffectClass(executionNode),
         ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
         ...(executionNode.parameterValues?.target !== undefined ? { target: executionNode.parameterValues.target } : {})
       }
@@ -114,7 +175,8 @@ async function executeNodeAttempt(
       inputs,
       outputs: {},
       effects: [],
-      message: `Node definition is not executable: ${node.definitionId}.`
+      message: `Node definition is not executable: ${node.definitionId}.`,
+      failure: { category: "graph_validation_or_unknown_node", code: "executor.node.not_executable", retryable: false, stage: "dispatch" }
     }, options, beforeAction, hostCapabilities);
   }
   // The node asks the host whether expected state holds; Core names which node
@@ -139,19 +201,14 @@ async function executeNodeAttempt(
     result = await dispatchAutomationStudioEffects(result, options, withholding, { runState, nodeId: node.id, attemptId });
     return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
-    return await enrichAttemptWithHostState(executionNode, {
-      attemptId,
-      nodeId: node.id,
-      definitionId: node.definitionId,
-      startedAt,
-      finishedAt: options.now?.() ?? Date.now(),
-      status: "failed",
-      route: "failed",
-      inputs,
-      outputs: {},
-      effects: [],
-      message: error instanceof Error ? error.message : "Node execution failed."
-    }, options, beforeAction, hostCapabilities);
+    // The one place a node's throw becomes an attempt, and therefore the one
+    // place a throw is classified. Before this, a throw produced a failed
+    // attempt with no structured failure at all, and the retry loop -- which
+    // asks the failure record whether the attempt may be repeated -- answered
+    // no to every one of them. A provider that answered 503, a connection that
+    // dropped, an answer that arrived truncated: each ended the run, and that
+    // is what this catch exists to stop.
+    return await enrichAttemptWithHostState(executionNode, failedAttemptFromThrow(node, error, options, attemptNumber, startedAt, inputs), options, beforeAction, hostCapabilities);
   }
 }
 
@@ -301,12 +358,4 @@ function effectDispatchContext(options: AutomationStudioGraphExecutionOptions, w
   const withholds = withheldValues.texts.length > 0 || withheldValues.numbers.length > 0;
   if (!options.signal && !withholds) return undefined;
   return { ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
-}
-
-function sideEffectClassForNode(node: AutomationStudioFlowNode): "none" | "internal" | "external" | "destructive" {
-  if (node.metadata?.destructive === true) return "destructive";
-  if (node.metadata?.externalSideEffect === true) return "external";
-  if (node.definitionId === "builtin.policy.action") return "external";
-  if (node.definitionId.startsWith("builtin.database.")) return node.parameterValues?.dryRun === true ? "internal" : "external";
-  return "none";
 }

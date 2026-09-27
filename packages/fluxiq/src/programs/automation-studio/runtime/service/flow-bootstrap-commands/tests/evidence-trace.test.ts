@@ -45,6 +45,11 @@ describe("the trace stored on a build", () => {
       resultReason: "node_not_runnable_here",
       nodeId: "web.output.dom-extract_list",
       amended: 9,
+      amendmentsRefused: [{ step: 4, reason: "no_such_step" }],
+      progress: { draftRevisionBefore: 2, draftRevisionAfter: 3, pageState: "unchanged", draftState: "changed", answerabilityState: "unobserved" },
+      draftChange: { targetedStepIds: ["d2"], appliedCount: 1, refusedCount: 0, keptStepCount: 3, rerunStepId: "d2" },
+      draft: { bytes: 649, budget: 4_096, steps: 3, instructionBytes: 120, unlisted: 1, withoutInput: 1 },
+      answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false, issueCode: "bootstrap.cannot_answer_instruction" },
       usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 }
     };
     const rowMembers = Object.keys(full).filter((member) => member !== "decision");
@@ -53,7 +58,7 @@ describe("the trace stored on a build", () => {
       expect(cleaned[member], `sanitizeEvidenceLoopTrace dropped \`${member}\``).toBeDefined();
     }
     const [published] = evidenceTraceAuditDetail([{ ...full, at: 1_700_000_000_000 }]).steps as Array<Record<string, unknown>>;
-    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "at", "usage"]) {
+    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "at", "usage"]) {
       expect(published?.[member], `the published step dropped \`${member}\``).toBeDefined();
     }
     expect(published?.resultReason).toBe("node_not_runnable_here");
@@ -64,10 +69,67 @@ describe("the trace stored on a build", () => {
     expect(sanitizeEvidenceLoopTrace(trace)[1]).toEqual({ iteration: 1, decision: "tool_call", callId: "call-1", toolId: "web.dom.type", evidenceBytes: 800, resultCode: "ok", effectApplied: true });
   });
 
+  // A refused amendment reaches the model during the build
+  // (`../../../llm/draft-amendment-feedback.ts`) and reached nothing afterwards:
+  // this function re-parses the row that is stored, so a reason dropped here is
+  // a reason no run's artifacts ever show.
+  it("keeps which of a decision's amendments changed nothing and why, so a run's record says more than one word about seven of them", () => {
+    const [row] = sanitizeEvidenceLoopTrace([{
+      iteration: 3,
+      decision: "amend_draft",
+      resultCode: "llm_evidence_loop.draft_unchanged",
+      amended: 0,
+      amendmentsRefused: [{ step: 12, reason: "no_such_step" }, { step: 3, reason: "already_so" }]
+    }]);
+
+    expect(row?.amendmentsRefused).toEqual([{ step: 12, reason: "no_such_step" }, { step: 3, reason: "already_so" }]);
+  });
+
+  it("leaves behind a refusal that is not one, and the field itself when none of them is, rather than failing a build that finished", () => {
+    const [row] = sanitizeEvidenceLoopTrace([{
+      iteration: 3,
+      decision: "amend_draft",
+      amendmentsRefused: [
+        { step: 1.5, reason: "already_so" },
+        { step: 2, reason: "the step already said that" as unknown as "already_so" },
+        { step: 3, reason: 7 as unknown as "already_so" },
+        "no_such_step" as unknown as { step: number; reason: "no_such_step" },
+        { step: 4, reason: "not_a_kept_step" }
+      ]
+    }]);
+    const [none] = sanitizeEvidenceLoopTrace([{ iteration: 4, decision: "amend_draft", amendmentsRefused: [{ step: -1, reason: "already_so" }] }]);
+    const notAList = sanitizeEvidenceLoopTrace([{ iteration: 5, decision: "amend_draft", amendmentsRefused: "none" as unknown as [] }]);
+
+    expect(row?.amendmentsRefused).toEqual([{ step: 4, reason: "not_a_kept_step" }]);
+    expect(none).toEqual({ iteration: 4, decision: "amend_draft" });
+    expect(notAList[0]).toEqual({ iteration: 5, decision: "amend_draft" });
+  });
+
+  it("keeps the sixteen refusals one decision may carry and no more", () => {
+    const refusals = Array.from({ length: 20 }, (_item, index) => ({ step: index + 1, reason: "no_such_step" as const }));
+    const [row] = sanitizeEvidenceLoopTrace([{ iteration: 3, decision: "amend_draft", amendmentsRefused: refusals }]);
+
+    expect(row?.amendmentsRefused).toHaveLength(16);
+    expect(row?.amendmentsRefused?.[15]).toEqual({ step: 16, reason: "no_such_step" });
+  });
+
   it("leaves behind a result code that is not code-shaped, rather than failing the build over a reader's detail", () => {
     const sentence = sanitizeEvidenceLoopTrace([{ iteration: 0, decision: "unusable", resultCode: "The model replied with prose about the page." }]);
 
     expect(sentence[0]).toEqual({ iteration: 0, decision: "unusable" });
+  });
+
+  it("leaves malformed optional progress instrumentation behind member by member", () => {
+    const [row] = sanitizeEvidenceLoopTrace([{
+      iteration: 2,
+      decision: "complete",
+      progress: { draftRevisionBefore: 0, draftRevisionAfter: 0, pageState: "private prose", draftState: "unchanged", answerabilityState: "unobserved" } as never,
+      draftChange: { targetedStepIds: ["an id with spaces"], appliedCount: 0, refusedCount: 1, keptStepCount: 1 } as never,
+      draft: { bytes: 20, budget: 100, steps: 2, instructionBytes: 10, withoutInput: 3 } as never,
+      answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false, issueCode: "private prose" } as never
+    }]);
+
+    expect(row).toEqual({ iteration: 2, decision: "complete" });
   });
 
   it("refuses an effect flag that is not a flag, because a trace Core did not write is not one to publish", () => {

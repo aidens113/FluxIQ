@@ -2,8 +2,13 @@
 // there, carrying the request a person grants or refuses from.
 //
 // Driven through the real evidence loop and the real harness-option registry,
-// with a stand-in domain that asks before a press that would move money --
-// what a domain is meant to do -- and a scripted provider.
+// with a stand-in domain that asks before a press that would move money and
+// void the line -- what a domain is meant to do -- and a scripted provider.
+//
+// The press declares two classes the gate still asks about. It declared
+// `move_money` and `modify_existing` until 2026-09-26, and an edit is no longer
+// gated: on that pair the row below that grants "only part of it" would have
+// granted a class needing no grant, and proved nothing about a partial grant.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -56,9 +61,9 @@ async function explore(options: Options = {}) {
       tools: TOOLS,
       executeTool: async (input) => {
         if (input.toolId === "shop.look") {
-          return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", controls: [{ handle: "c4", name: "Refund line 1" }] }, effectApplied: false };
+          return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", controls: [{ handle: "c4", name: "Refund and void line 1" }] }, effectApplied: false };
         }
-        const verdict = await input.permission({ consequences: ["move_money", "modify_existing"], control: { name: "Refund line 1", kind: "button" }, verb: "press" });
+        const verdict = await input.permission({ consequences: ["move_money", "delete"], control: { name: "Refund and void line 1", kind: "button" }, verb: "press" });
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, resultCode: "shop.permission_required" };
         pressed.push(String(input.value.handle));
         return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", status: "Partially refunded" }, effectApplied: true };
@@ -94,9 +99,9 @@ describe("a recovery exploration that needs permission", () => {
     expect(run.exploration.result).toBeUndefined();
     expect(run.exploration.permissionRequest).toMatchObject({
       action: { kind: "exploration_step", id: "shop.press", ref: "call.refund", verb: "press" },
-      control: { name: "Refund line 1", kind: "button" },
-      consequences: ["move_money", "modify_existing"],
-      missing: ["move_money", "modify_existing"],
+      control: { name: "Refund and void line 1", kind: "button" },
+      consequences: ["move_money", "delete"],
+      missing: ["move_money", "delete"],
       reason: { stage: "recovery", instructionIds: ["instruction.refund"] }
     });
     expect(run.exploration.reason).toBe(run.exploration.permissionRequest!.sentence);
@@ -113,7 +118,7 @@ describe("a recovery exploration that needs permission", () => {
   });
 
   it("takes the action when the run's grant holds every consequence it has", async () => {
-    const run = await explore({ permittedConsequences: ["move_money", "modify_existing"] satisfies AutomationStudioActionConsequence[] });
+    const run = await explore({ permittedConsequences: ["move_money", "delete"] satisfies AutomationStudioActionConsequence[] });
 
     expect(run.pressed).toEqual(["c4"]);
     expect(run.exploration.outcome).toBe("evidence_gathered");
@@ -121,7 +126,7 @@ describe("a recovery exploration that needs permission", () => {
   });
 
   it("asks for what is still missing when the grant holds only part of it", async () => {
-    const run = await explore({ permittedConsequences: ["modify_existing"] });
+    const run = await explore({ permittedConsequences: ["delete"] });
 
     expect(run.pressed).toEqual([]);
     expect(run.exploration.permissionRequest?.missing).toEqual(["move_money"]);
@@ -139,16 +144,16 @@ describe("a recovery exploration that needs permission", () => {
   // it is: its grant, its instructed set and what it has already been shown.
   it("checks every action against a gate the caller handed it, and leaves the request on that gate", async () => {
     const refusing = new AutomationStudioActionPermissionGate({ stage: "recovery", instructionIds: ["instruction.dispatch"] });
-    refusing.observe({ controls: ["Refund line 1"] });
+    refusing.observe({ controls: ["Refund and void line 1"] });
     const refused = await explore({ gate: refusing });
 
     expect(refused.pressed).toEqual([]);
     expect(refused.exploration.permissionRequest).toBe(refusing.request);
-    expect(refusing.request).toMatchObject({ reason: { stage: "recovery", instructionIds: ["instruction.dispatch"] }, control: { name: "Refund line 1" } });
+    expect(refusing.request).toMatchObject({ reason: { stage: "recovery", instructionIds: ["instruction.dispatch"] }, control: { name: "Refund and void line 1" } });
 
     const permitting = new AutomationStudioActionPermissionGate({ stage: "recovery", instructed: [
       { consequence: "move_money", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" },
-      { consequence: "modify_existing", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" }
+      { consequence: "delete", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" }
     ] });
     const permitted = await explore({ gate: permitting });
 
@@ -199,8 +204,8 @@ describe("a repair that can put its question to a person", () => {
     expect(run.opened[0]).toMatchObject({
       kind: "permission",
       parks: true,
-      missing: ["move_money", "modify_existing"],
-      control: { name: "Refund line 1", kind: "button" },
+      missing: ["move_money", "delete"],
+      control: { name: "Refund and void line 1", kind: "button" },
       raisedBy: { stage: "recovery", definitionId: "shop.press" }
     });
     // The ask is keyed by the gate's own request id: one question, one key.

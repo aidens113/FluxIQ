@@ -60,7 +60,7 @@ import {
   type AutomationStudioFlowBootstrapPhaseFailureCode,
   type AutomationStudioFlowBuildPlan
 } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck } from "../evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
@@ -74,13 +74,22 @@ export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<Automat
   | "flow_bootstrap.evidence_completion_cannot_reach_start">;
 
 export type AutomationStudioFlowBootstrapCompletionVerdict =
-  | { ok: true; summary: string; buildPlan: AutomationStudioFlowBuildPlan }
+  | {
+    ok: true;
+    summary: string;
+    buildPlan: AutomationStudioFlowBuildPlan;
+    check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: true }> & {
+      answerability: AutomationStudioLlmEvidenceLoopAnswerability;
+    };
+  }
   | {
     ok: false;
     code: AutomationStudioFlowBootstrapCompletionFailureCode;
     issues: AutomationStudioFlowBootstrapIssue[];
     /** What the evidence loop is told: the codes, and the model's feedback. */
-    check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }>;
+    check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> & {
+      answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
+    };
   };
 
 /** Issues the model is shown at once; the rest are dropped, not summarised. */
@@ -212,7 +221,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   });
   if (!answers.ok) {
     return refused("flow_bootstrap.evidence_completion_cannot_answer", [answers.issue], about(validated.validated.plan), script,
-      { key: "cannotAnswer", detail: answers.cannotAnswer, instruction: answers.instruction });
+      { key: "cannotAnswer", detail: answers.cannotAnswer, instruction: answers.instruction }, answers.answerability);
   }
   // Answering is not running. A Flow that acts on the target it was told to
   // start at and never goes there fails before its first step, whatever it
@@ -225,9 +234,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   });
   if (!reaches.ok) {
     return refused("flow_bootstrap.evidence_completion_cannot_reach_start", [reaches.issue], about(validated.validated.plan), script,
-      { key: "cannotReach", detail: reaches.cannotReach, instruction: reaches.instruction });
+      { key: "cannotReach", detail: reaches.cannotReach, instruction: reaches.instruction }, answers.answerability);
   }
-  return { ok: true, summary: accepted.summary, buildPlan: validated.validated };
+  return { ok: true, summary: accepted.summary, buildPlan: validated.validated, check: { ok: true, answerability: answers.answerability } };
 }
 
 /**
@@ -297,27 +306,32 @@ function refused(
    * under its own key, and its own sentence replaces the one about correcting a
    * parameter: neither refusal is about how a step was written.
    */
-  capability?: { key: "cannotAnswer" | "cannotReach"; detail: JsonObject; instruction: string }
+  capability?: { key: "cannotAnswer" | "cannotReach"; detail: JsonObject; instruction: string },
+  answerability?: AutomationStudioLlmEvidenceLoopAnswerability
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
   const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
+  const baseCheck: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> = {
+    ok: false,
+    issueCodes: [...new Set(shown.map((item) => item.code))],
+    feedback: {
+      ok: false,
+      code: "flow_bootstrap.completion_refused",
+      refusal: code,
+      issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
+      ...previous,
+      ...(capability ? { [capability.key]: capability.detail } : {}),
+      instruction: capability?.instruction ?? FEEDBACK_INSTRUCTION
+    }
+  };
+  const check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] = answerability === undefined
+    ? baseCheck
+    : { ...baseCheck, answerability };
   return {
     ok: false,
     code,
     issues,
-    check: {
-      ok: false,
-      issueCodes: [...new Set(shown.map((item) => item.code))],
-      feedback: {
-        ok: false,
-        code: "flow_bootstrap.completion_refused",
-        refusal: code,
-        issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
-        ...previous,
-        ...(capability ? { [capability.key]: capability.detail } : {}),
-        instruction: capability?.instruction ?? FEEDBACK_INSTRUCTION
-      }
-    }
+    check
   };
 }
 

@@ -62,12 +62,18 @@ export function checkAutomationStudioFlowBootstrapAnswersInstruction(input: {
   instructionText?: string | undefined;
 }): AutomationStudioFlowBootstrapAnswerability {
   const ask = automationStudioFlowBootstrapInstructionAsk(input.instructionText ?? "");
-  if (!ask.records) return { ok: true };
-  if (!automationStudioFlowBootstrapLibraryReturnsRecords(input)) return { ok: true };
   const found = automationStudioFlowBootstrapPlanRecordSets(input);
-  if (found.returning.length > 0 || found.storing.length > 0) return { ok: true };
+  const answerability = {
+    recordsRequested: ask.records,
+    recordProducerPresent: found.returning.length > 0,
+    recordStorePresent: found.storing.length > 0
+  };
+  if (!ask.records) return { ok: true, answerability };
+  if (!automationStudioFlowBootstrapLibraryReturnsRecords(input)) return { ok: true, answerability };
+  if (answerability.recordProducerPresent || answerability.recordStorePresent) return { ok: true, answerability };
   return {
     ok: false,
+    answerability: { ...answerability, issueCode: "bootstrap.cannot_answer_instruction" },
     issue: {
       severity: "error",
       code: "bootstrap.cannot_answer_instruction",

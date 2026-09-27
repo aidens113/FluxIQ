@@ -9,7 +9,7 @@
 // model at all. So the model was asked to repair an automation while being told
 // almost nothing about what actually happened.
 //
-// Four decisions shape this module.
+// These are the decisions that shape this module.
 //
 // **Shapes and names, never values.** Every section carries identity --
 // statuses, routes, output *ids*, effect *types*, node ids, adaptation ids --
@@ -21,6 +21,46 @@
 // which is authored Flow-document data: the user wrote it, it is already in the
 // document the model is reasoning about, and without it "expected state" is not
 // in the context at all.
+//
+// **Authored data is carried, and it passes the same guards in every section
+// that carries it.** Carrying `expectedState` is not the concession it looks
+// like -- a repair told what failed and never what was supposed to happen is
+// being asked to work blind -- but what it may not be is carried *more loosely*
+// here than three sections down. `repair-context/parameter-screen.ts` screens
+// the very same object out of the very same node's authored parameters:
+// `runtime/executor/expected-transition.ts` reads
+// `node.parameterValues.expectedState`, and this section carried what it read,
+// verbatim. So one request could name `expectedState.conditions[0].expected` as
+// withheld under `step_parameters` and print it under `expected_transition`,
+// unscreened for credentials and unbounded in length -- and a refusal the same
+// request contradicts is not a refusal. The tightened screen was never the
+// exposure; the loose one beside it was. The authored state is therefore walked
+// here too, and **the two screens on one request now agree** on the three things
+// that matter: no credential-shaped string travels, no unbounded string travels
+// whole, and whatever does not travel is named, at the same position the other
+// screen names it at.
+//
+// Where the two still differ is deliberate and one-directional. The parameter
+// screen additionally demands that a string's *key* be one of Core's own words,
+// which is right for a typing step's payload and would gut an expectation --
+// `signalPath`, a condition's own subject, is not in that vocabulary. So this
+// screen is the looser of the two on vocabulary and identical to it on safety,
+// which is the only direction an asymmetry between them may run.
+//
+// The one thing they do *not* share is the notation, and that is a finding
+// rather than a preference. A bracketed index does not survive the locator
+// screen below: `.assert` after a `]` satisfies the class-selector shape's
+// lookbehind, so `expectedState.conditions[1].assert.expected` leaves here as
+// the literal string `[locator withheld]`. Nothing caught it because every path
+// a run bundle has been observed to carry descends through keys rather than
+// indices -- `url`, `selector`, `extractList.handle` -- and a dot after a word
+// character is not a selector. This screen writes
+// `expectedState.conditions.1.assert.expected` instead, which survives intact,
+// while a path through an author's own locator-shaped key (`expectedState.#confirm`)
+// is still redacted, which is the screen doing its job on a path rather than
+// mangling one. `step_parameters`'s notation is minted in `parameter-screen.ts`,
+// which this task may not touch, so its indexed paths still arrive destroyed and
+// a test here pins that rather than leaving it to be rediscovered.
 //
 // **A key rule cannot see inside a sentence.** Everything above works on keys,
 // and two of the most useful fields here are free text a domain wrote. Every
@@ -59,8 +99,8 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
-import { automationStudioWithoutLocators } from "../llm/harness/index.ts";
-import { automationStudioFlowGraphSection, automationStudioStepParametersSection } from "./repair-context/index.ts";
+import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
+import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**
  * Every section, most important first. The order is the contract: it is the
@@ -240,6 +280,23 @@ export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStu
       context.omitted.push({ section, reason: value === WITHHELD_SECTION ? "withheld" : "absent", byteCount: 0 });
       continue;
     }
+    // The backstop for the finding this file's authored-state paragraph
+    // describes, applied where the locator screen already is: in the loop,
+    // rather than in a builder, so it covers every section at once and a
+    // section added later cannot forget it. It is all-or-nothing because
+    // `screenAutomationStudioLlmEvidence` answers a question rather than
+    // rewriting a value, so a section that trips it is refused whole and
+    // recorded `withheld` -- exactly the reading that reason exists for. Only
+    // the credential half is asked: the domain's denied *keys* are not, because
+    // `selector` is one of them and a condition names one, and refusing
+    // `expected_transition` over that would withdraw the evidence this section
+    // exists to carry. The authored screen below has already removed a
+    // credential from the one section an author can write into, which is what
+    // keeps this backstop free for the sections Core writes itself.
+    if (screenAutomationStudioLlmEvidence(value, []).secretShaped) {
+      context.omitted.push({ section, reason: "withheld", byteCount: 0 });
+      continue;
+    }
     // Screened here rather than inside each builder, so the rule covers every
     // section at once and a section added later cannot forget it. Redaction
     // changes sizes, so it happens before anything is measured or trimmed.
@@ -293,7 +350,7 @@ function recoveryContextSections(
   const metadata = record?.metadata;
   const adaptations = matchingAdaptations(input.adaptations, record);
   return withoutEmptySections({
-    failure: failureSection(record),
+    failure: failureSection(record, input.failedAttempt),
     expected_transition: comparison ? boundedSection({
       nodeId: comparison.expected.nodeId,
       definitionId: comparison.expected.definitionId,
@@ -302,8 +359,13 @@ function recoveryContextSections(
       expectedOutputIds: Object.keys(comparison.expected.expectedOutputs ?? {}).slice(0, SECTION_ITEM_LIMIT),
       expectedEffectTypes: (comparison.expected.expectedEffects ?? []).map((effect) => effect.type).slice(0, SECTION_ITEM_LIMIT),
       // Authored document data, not a resolved value. Without it the model is
-      // told what failed and never what was supposed to happen.
-      expectedState: comparison.expected.expectedState,
+      // told what failed and never what was supposed to happen -- so it is
+      // carried, screened rather than refused, with every path it could not
+      // carry named beside it.
+      ...authoredStateFields(comparison.expected.expectedState),
+      // Core's own, derived from the node's `definitionId` in
+      // `executor/expected-transition.ts` and never authored, so the authored
+      // screen has nothing to say about it.
       tolerance: comparison.expected.tolerance as JsonValue | undefined
     }) : undefined,
     actual_transition: comparison ? boundedSection({
@@ -359,7 +421,7 @@ function failedActionRecord(detail: AutomationStudioFlowRunDetail): AutomationSt
   return [...(detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
 }
 
-function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
+function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined): JsonObject | undefined {
   if (!record) return undefined;
   // Stored records are parsed again before use, as everywhere else that reads
   // one. `message` is deliberately not carried: the record's own `expected`
@@ -387,8 +449,23 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
       retryable: failure.retryable,
       stage: failure.stage,
       expected: failure.expected,
-      actual: failure.actual
+      actual: failure.actual,
+      // A refuted result's synthetic live attempt carries the full screened
+      // directive here. Unlike the 1,024-character prose fields, this keeps
+      // the judge's bounded advice structurally intact for the repair.
+      repair: resultRepairSection(failedAttempt?.inputs.resultRepair)
     }) : undefined
+  });
+}
+
+function resultRepairSection(value: JsonValue | undefined): JsonObject | undefined {
+  if (!isJsonRecordValue(value) || value.schemaVersion !== "automation-studio.result-repair-directive.v1") return undefined;
+  return boundedSection({
+    schemaVersion: value.schemaVersion,
+    findings: Array.isArray(value.findings) ? value.findings : undefined,
+    fix: Array.isArray(value.fix) ? value.fix : undefined,
+    judgement: isJsonRecordValue(value.judgement) ? value.judgement : undefined,
+    withheld: value.withheld === true ? true : undefined
   });
 }
 
@@ -589,6 +666,33 @@ function boundedDomainValue(value: JsonValue, depth: number): boolean {
   if (entries.length > 64) return false;
   return entries.every(([key, item]) =>
     key.length <= 100 && !FORBIDDEN_DOMAIN_SECTION_KEYS.has(key.replace(/[_-]/gu, "").toLowerCase()) && boundedDomainValue(item, depth + 1));
+}
+
+/**
+ * `expectedState` as the repair is shown it, and the paths that did not survive
+ * named beside it under `expectedStateWithheld`.
+ *
+ * The screen itself and the argument for its bound are in
+ * `repair-context/authored-state-screen.ts`, beside the parameter screen it now
+ * agrees with. What belongs here is why the record takes the shape it does.
+ *
+ * **A field in the section, not an `omitted` entry.** The omission list is
+ * section-granular by contract -- `included` and `omitted` together name every
+ * section exactly once, and a test holds that -- so a path cannot go in it. The
+ * section-level `withheld` reason is the wrong instrument anyway: it would
+ * withdraw the node id, the expected route and the expected status along with the
+ * one string that failed, which is the opposite of the point. What the omission
+ * list establishes is the *rule* -- a thing screened out and a thing never
+ * present must not read alike -- and at field granularity the form that rule
+ * already takes in this request is `step_parameters`'s `parametersWithheld`.
+ * This is that form, applied to the object both sections carry; because the list
+ * sits inside the section it reaches a run bundle with the section, needing no
+ * file but this one.
+ */
+function authoredStateFields(expectedState: JsonObject | undefined): Record<string, JsonValue | undefined> {
+  if (!expectedState) return {};
+  const screened = automationStudioScreenedAuthoredState(expectedState, "expectedState");
+  return { expectedState: screened.value, expectedStateWithheld: screened.withheld.length ? screened.withheld : undefined };
 }
 
 /** Drops the keys a section did not have, so an absent field is absent rather than `null`. */

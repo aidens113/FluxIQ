@@ -5,5 +5,7 @@ export * from "./match-name.ts";
 export * from "./normalize.ts";
 export * from "./score-floor.ts";
 export * from "./similarity.ts";
+export * from "./synonyms.ts";
+export * from "./token-credit.ts";
 export * from "./token-overlap.ts";
 export * from "./value-shape.ts";

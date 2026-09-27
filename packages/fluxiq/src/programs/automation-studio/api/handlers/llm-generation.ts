@@ -34,7 +34,6 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       }
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
-      if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
       return { ok: true, payload: { preflight: await llmExecutionGrants.preflight({ keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["preflight"]>[0]) } };
     }
   });
@@ -52,7 +51,6 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       }
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
-      if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
       try {
         return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
       } catch (error) {
@@ -249,21 +247,6 @@ function boundedAccountingInteger(value: unknown, label: string): number {
 function boundedAccountingCost(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10) throw new Error("Flow bootstrap generation cost accounting is invalid.");
   return value;
-}
-
-const BUILD_GRANT_INCOMPATIBLE_FLAGS = [
-  "runId",
-  "runtimeSessionId",
-  "idempotencyKey",
-  "runIntent",
-  "llmExecutionGrantId",
-  "adaptiveMode",
-  "dryRunLlm",
-  "authorizedExternalSideEffects"
-] as const;
-
-function hasIncompatibleBuildGrantFlags(payload: Record<string, unknown>): boolean {
-  return BUILD_GRANT_INCOMPATIBLE_FLAGS.some((key) => Object.prototype.hasOwnProperty.call(payload, key));
 }
 
 function llmExecutionGrantIssueCode(error: unknown): string {

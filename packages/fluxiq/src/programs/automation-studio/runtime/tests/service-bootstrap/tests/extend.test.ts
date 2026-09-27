@@ -11,11 +11,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { mockProvider } from "./fixtures.ts";
 
@@ -117,23 +118,28 @@ function firstBuildPlan(runtime: AutomationStudioNativeNodeRuntime, scope: Param
   return result.validated;
 }
 
-async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioLlmTaskRequest): Promise<unknown> }) {
+async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioLlmTaskRequest): Promise<unknown>; revoke?: (grantId: string) => void }) {
   const runtime = nativeRuntime();
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
   const provider = mockProvider(async (request) => {
     requests.push(request);
     return await input.decide(request);
   });
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({
-      provider,
-      tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
-      maxCallsPerRun: 4,
-      maxEstimatedCostUsd: 0.1,
-      timeoutMs: 20_000
-    })) as never,
-    llmEvidenceRuntime: binding()
+    llmProviderResolver: ((resolverInput: AutomationStudioLlmProviderResolverInput) => {
+      resolutions.push(resolverInput);
+      return {
+        provider,
+        tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+        maxCallsPerRun: 4,
+        maxEstimatedCostUsd: 0.1,
+        timeoutMs: 20_000
+      };
+    }) as never,
+    llmEvidenceRuntime: binding(),
+    ...(input.revoke ? { revokeLlmExecutionGrant: input.revoke } : {})
   });
   instance.bindNativeNodeRuntime(runtime);
   services.add(instance);
@@ -165,7 +171,7 @@ async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioL
   const review = { projectId: project.id, flowId: flow.flowId, adaptationId: created.adaptationId, actorId: "reviewer" };
   await instance.reviewFlowBootstrapAdaptation({ ...review, action: "approve" });
   const applied = await instance.reviewFlowBootstrapAdaptation({ ...review, action: "apply" });
-  return { instance, project, flow, applied, requests, runtime };
+  return { instance, project, flow, applied, requests, resolutions, runtime };
 }
 
 /** The grant a refuted run is holding: the exploring recovery's, not a build grant. */
@@ -176,7 +182,9 @@ async function exploringGrant(instance: AutomationStudioService, projectId: stri
 
 describe("extending a Flow that already exists", () => {
   it("opens for a non-blank Flow, starts from its steps, and keeps its ids", async () => {
+    const revoke = vi.fn();
     const { instance, project, flow, applied, requests } = await serviceWithAppliedFlow({
+      revoke,
       decide: async () => ({
         response: { kind: "evidence_tool_decision", summary: "Search first, then read.", decision: { kind: "complete", result: { summary: "Search the catalog, then read the rows." } } },
         usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
@@ -209,6 +217,8 @@ describe("extending a Flow that already exists", () => {
     expect(record.existingIds).toMatchObject({ routerId: applied.topology.router.routerId, subflowId: before.subflow.subflowId, graphFlowId: before.graphFlow.flowId });
     // The model was asked, and the loop it was asked through is the build's own.
     expect(requests.some((request) => request.taskKind === "evidence_tool_decision")).toBe(true);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith("llm-grant:run");
   }, 60_000);
 
   it("runs the step the Flow was missing and adds it, keeping the ids of the ones it kept", async () => {
@@ -241,6 +251,26 @@ describe("extending a Flow that already exists", () => {
     expect(after.graphFlow.nodes.slice(0, 2).map((node) => node.id)).toEqual(kept);
     expect(kept).not.toContain(after.graphFlow.nodes[2]!.id);
     expect(record.existingIds?.nodeIdByKey).toEqual({ s1: kept[0], s2: kept[1] });
+  }, 60_000);
+
+  it("presents an extend grant to the resolver under its exact issued purpose", async () => {
+    const { instance, project, flow, resolutions } = await serviceWithAppliedFlow({
+      decide: async () => ({
+        response: { kind: "evidence_tool_decision", summary: "Keep the current steps.", decision: { kind: "complete", result: { summary: "Keep the current steps." } } },
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 }
+      })
+    });
+    const issued = await exploringGrant(instance, project.id, flow.flowId);
+    await instance.generateFlowBootstrapAdaptation({
+      projectId: project.id,
+      flowId: flow.flowId,
+      mode: "extend",
+      evidenceGuided: true,
+      executionGrant: { ...issued, purpose: "build_and_adapt" }
+    });
+
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]?.executionGrant?.purpose).toBe("build_and_adapt");
   }, 60_000);
 
   it("refuses to build a second Flow beside the first, which is what create would have done", async () => {
