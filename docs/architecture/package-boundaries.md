@@ -90,7 +90,7 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.6.0`;
+`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.7.0`;
 `@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
@@ -107,6 +107,58 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.7.0: node execution is defensive, provider retry is grant-accounted, and result repair is structured (`fluxiq`)
+
+No export was removed. Public Automation Studio contracts gain optional fields
+and new exports, while several existing behaviors change without host opt-in.
+Read the whole entry if a host writes an LLM provider or resolver, issues or
+displays execution grants, calls the node executor directly, reads result
+verification or recovery records, or displays or exhaustively matches action
+consequences.
+
+**Provider retry is grant-accounted, and purpose is not task authorization.**
+- LLM preflight and issue inputs may carry `providerRetryCount`. Preflight,
+  grant, resolution, and public metadata expose a bounded number from zero
+  through two, default two, rather than the former literal zero. Resolution may
+  report less when the grant's remaining uses cannot fund the retries.
+- A provider or resolver must expect several separately authorized attempts for
+  one harness request and preserve typed retryability, HTTP status, and refusal
+  provenance. Every attempt consumes and settles a real grant use; the last
+  remaining use permits no retry.
+- Grant purpose remains part of issuance, runtime-endpoint compatibility,
+  accounting, and audit metadata. It no longer restricts model work by task
+  kind, dry-run, side-effect, or risk flags. An exhaustive purpose/task mapping
+  must not recreate that removed gate. The runtime session endpoint still
+  accepts only its runtime purposes, and Flow Bootstrap still requires
+  `build_and_adapt`.
+
+**Result verification exposes screened flow shape and a repair directive.**
+- `AutomationStudioResultFlowStepSummary` carries a bounded label, screened
+  `parameters`, and optional dotted `parametersWithheld` paths.
+  `flowParametersWithheld` on the result summary distinguishes a flow-wide
+  byte-budget omission from a step with no parameters.
+- A `does_not_answer` `AutomationStudioResultVerification` may carry the
+  structured `automation-studio.result-repair-directive.v1`: Core-authored
+  findings and fix lines plus optional screened judgement fields and a
+  `withheld` flag. Hosts must not treat it as unrestricted provider prose.
+
+**Default node execution is defensive without host opt-in.**
+`executeAutomationStudioNode` now classifies structured failures, thrown values,
+and bounded legacy result messages for every built-in, output-dispatch, native,
+and composite node. It applies node side-effect safety before repeating work,
+honours bounded retry hints and wait budgets, and may continue past a terminal
+non-fatal failure when the Flow declares that policy. A host that relied on a
+throw escaping the graph run, or on `verification`/`confirmation` always
+forbidding retry by stage alone, must instead inspect the recorded attempt and
+defence ledger.
+
+**The exported high-risk consequence list changes membership.**
+`AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES` contains exactly
+`move_money`, `delete`, and `send_or_publish`. Consumers that display or
+exhaustively match the list must not assume `modify_existing` or `create_new`
+is permission-gated, and must retain `send_or_publish` when filtering an
+action's declared consequences.
 
 ### 0.6.0: adaptations iterate under guards instead of call counts, endpoints declare what they destroy, and repair targets are opaque (`fluxiq`)
 

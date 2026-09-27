@@ -70,24 +70,27 @@ person's own instruction already asks for. An action whose consequences the
 build does not hold raises an
 `automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
 
-**Only a destructive class is ever refused.** `move_money`, `delete` and
-`modify_existing` are what `AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES`
-names (`action-permissions/destructive.ts`): completing a purchase or checkout,
-deleting, and editing or overwriting what already exists. `create_new` and
-`send_or_publish` are not the gate's to refuse at all -- making something that
-was not there, or sending what the instruction said to send, destroys nothing,
-and FluxIQ holds no list of acts it declines on its own judgement. Before
-2026-09-24 all five gated, and builds on realistic sites spent days ending at
-`flow_bootstrap.permission_required` with nobody there to answer, for adding an
-item to a basket, saving a listing for later or confirming a request -- work the
-instruction named in so many words. The derivation in `instructed.ts` was meant
+**Only a high-risk real-world consequence is ever refused.**
+`AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES` is exactly `move_money`,
+`delete`, and `send_or_publish` (`action-permissions/destructive.ts`): completing
+a purchase or checkout, moving money, deleting, and sending or publishing on the
+person's behalf. `modify_existing` and `create_new` do not cause an authoring
+permission question solely from their class. Before 2026-09-24 all five gated,
+and builds on realistic sites spent
+days ending at `flow_bootstrap.permission_required` with nobody there to
+answer, for adding an item to a basket, saving a listing for later or
+confirming a request -- work the instruction named in so many words. The
+derivation in `instructed.ts` was meant
 to cover that and cannot be relied on to: it needs a provider call, the model
 has to name the class, and a claim survives only where its quote is the person's
 own words, so any one of those missing stopped the run. Narrowing what is gated
 removes the failure mode for the classes that never needed a person, and leaves
-the derivation authorising a destructive act the person did ask for. Nothing
+the derivation authorising a high-risk act the person did ask for. Nothing
 about what is *recorded* narrowed: every class is still declared, still kept in
-the declaration record, and still compared with the instruction below.
+the declaration record, and still compared with the instruction below. Only an
+uncovered high-risk subset produces an
+`automation-studio.action-permission-request.v1`; the parked-question and
+apply-refusal lifecycle below is unchanged.
 
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask
@@ -509,9 +512,40 @@ creation fails as `flow_bootstrap.evidence_unusable_decision`. A usable
 decision resets the count. A completion the check accepts is persisted as it
 was checked.
 
+Once drafting has begun and at least one actionable step exists, a provider
+decision also receives a bounded Flow-draft beside entry. Its
+live reservation remains 4,000 UTF-8 bytes: one quarter of the configured
+evidence-context window, capped at 4,000. A complete draft that fits keeps the
+existing object-per-step representation byte-for-byte. When that representation
+would otherwise omit an eligible bounded input, Core may encode the same values
+as the self-describing `step_rows_v1` projection. Its exact columns are `step`,
+`actionId`, `input`, `resultCode`, `changed`, `disposition`, `inResult`,
+`replayed`, `runs`, and `settings`; each row has the seven required cells and
+only the trailing optional cells it needs. The candidate order preserves all
+listed steps and all eligible inputs before trading instruction detail for
+content, then withholds oldest inputs and finally unlists oldest steps only when
+no lossless candidate fits. An input rejected by the existing 512-byte input
+bound remains in object form as `inputTooLarge: true`, distinct from budget
+withholding.
+
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
 trace holds tool IDs, byte counts, effect state, and categorical result codes.
+A trace row also carries bounded, content-free convergence facts: the measured
+draft shape shown to the decision; build-local draft revisions and stable step
+ids; applied/refused/kept amendment counts; page-state changed/unchanged/
+unobserved state derived from paired digests; and answerability booleans plus
+the closed cannot-answer code. The record never carries the digests themselves,
+step inputs, prompt/provider text, page values, selectors, instruction quotes,
+or content-derived hashes. These members are observational and do not change
+budgets, completion acceptance, amendment behavior, or retry policy.
+Draft-shape measurement accepts either the legacy object steps or the exact
+`step_rows_v1` format and ten-column declaration. Packed rows must contain seven
+through ten cells; a `null` input cell is measured as withheld. An unknown
+format, a missing or reordered field declaration, or a malformed row fails
+closed instead of being reported as zero omissions. The trace retains only the
+existing counts, booleans, and serialized-byte measurement; it does not retain
+the draft entry or its step inputs.
 A decision that called no tool appears in it as `core.decision_unusable` or
 `core.decision_complete`, with the first code that refused it as its result
 code, so a build stopped on refused plans says what refused each one. The
@@ -642,9 +676,16 @@ The coordinator distinguishes cumulative audit evidence from model-visible
 context. It preserves cumulative byte/call totals while selecting only the
 newest complete evidence records that fit a configured context-byte window.
 Each tool invocation receives the maximum serialized evidence bytes it may
-return. The production Bootstrap lane uses an 8,000-byte context window and a
-64,000-byte cumulative ceiling; domain adapters may impose a smaller result
-cap. Evidence is never split into malformed partial JSON to fit the window.
+return. The production Bootstrap lane uses a 24,000-byte context window and a
+1,048,576-byte cumulative evidence ceiling; domain adapters may impose a
+smaller result cap. The draft is a beside entry inside that context, so its
+serialized bytes reduce the room available to ordinary evidence records for
+that decision; packing changes neither that allocation rule nor the 4,000-byte
+draft cap. The packing correction does not change provider-call, token, cost,
+timeout, decision, or retry ceilings. Provider-free deterministic fixtures
+establish exact measurement and input retention under those limits; they do not
+establish provider convergence or a live product outcome. Evidence is never
+split into malformed partial JSON to fit the window.
 The coordinator canonicalizes each tool ID and JSON input and terminates with
 a closed `evidence_duplicate_tool_request` diagnostic before executing the
 same effective request twice, even when a provider changes only the call ID.
