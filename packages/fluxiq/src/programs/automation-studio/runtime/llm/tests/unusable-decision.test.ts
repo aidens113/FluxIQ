@@ -131,19 +131,47 @@ describe("the evidence loop after an unusable decision", () => {
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision", accounting: { iterations: 2 } });
   });
 
-  it("preserves the final unusable decision when the loop's iterations are spent", async () => {
+  // **The conflation this loop was published with, held shut.** An exhausted
+  // loop whose last decision happened to be refused used to end as that refusal
+  // -- `stalled` was called, and Flow Bootstrap built it as
+  // `flow_bootstrap.evidence_unusable_decision`, `retryable: false`. Neither
+  // guard had fired; the loop had simply used its last call. Had the third
+  // decision been a tool call the identical run would have said
+  // `iteration_limit`, which is how `run-mulryg6h-ff241a12` sent a debug of a
+  // real build down the wrong path for hours.
+  it("ends as the iteration limit when its iterations are spent, never as the last refusal", async () => {
     const decide = vi.fn()
       .mockRejectedValueOnce(unusable())
       .mockResolvedValueOnce(look("call.1"))
       .mockRejectedValueOnce(unusable());
-    const stopped = new Error("stopped on final unusable decision");
-    const stalled = vi.fn(() => stopped);
+    const stalled = vi.fn(() => new Error("stalled"));
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 3,
       unusableDecisions: { maxConsecutive: 3, stalled }
-    })).rejects.toBe(stopped);
+    })).resolves.toMatchObject({
+      ok: false,
+      code: "llm_evidence_loop.iteration_limit",
+      accounting: { iterations: 3 },
+      // The refusal is not lost. It travels as context for the ending, with the
+      // numbers that say the ending was an allowance running out.
+      exhaustion: { bound: "iterations", maxIterations: 3, iterations: 3, completionAttempts: 0, lastIssueCodes: ["llm.provider_malformed_response"] }
+    });
     expect(decide).toHaveBeenCalledTimes(3);
-    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["llm.provider_malformed_response"], accounting: expect.objectContaining({ iterations: 3 }) }));
+    // Neither guard fired, so the stall callback must not have been reached.
+    expect(stalled).not.toHaveBeenCalled();
+  });
+
+  // The other half of the same rule: a loop that really did stall still ends on
+  // the stall, so the fix above cannot be read as "exhaustion swallows
+  // everything".
+  it("still ends on the stall when a guard fires before the iterations run out", async () => {
+    const stopped = new Error("stopped on the streak");
+    const stalled = vi.fn(() => stopped);
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools, decide: async () => { throw unusable(); }, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 6,
+      unusableDecisions: { maxConsecutive: 2, stalled }
+    })).rejects.toBe(stopped);
+    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["llm.provider_malformed_response"], accounting: expect.objectContaining({ iterations: 2 }) }));
   });
 
   it("treats every other decision error as before, and the unusable error too when not configured", async () => {

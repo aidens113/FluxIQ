@@ -8,6 +8,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting } from "./accounting.ts";
+import type { AutomationStudioLlmEvidenceLoopExhaustion } from "./exhaustion.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "./trace.ts";
 
 export type AutomationStudioLlmEvidenceLoopFailureCode =
@@ -25,6 +26,12 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.tool_failed"
   /** What was gathered in total reached the far backstop, `maxEvidenceBytes`. */
   | "llm_evidence_loop.evidence_limit"
+  /**
+   * The loop ran out of turns: iterations, the run's decision budget, or tool
+   * calls. **Nothing about what the model produced is being reported here**, and
+   * a result carrying this code always carries `exhaustion` saying which
+   * allowance ran out and how far the draft had got (`./exhaustion.ts`).
+   */
   | "llm_evidence_loop.iteration_limit"
   | "llm_evidence_loop.cancelled";
 
@@ -44,6 +51,15 @@ export type AutomationStudioLlmEvidenceLoopResult =
     /** The same, for a loop that ended without a result: a failed build still did things. */
     steps: AutomationStudioFlowDraftStep[];
     accounting: AutomationStudioLlmEvidenceLoopAccounting;
+    /**
+     * Present exactly when the code is `llm_evidence_loop.iteration_limit`:
+     * which allowance ran out, and what the draft held when it did.
+     *
+     * It is the difference between "the loop ran out of turns" and "what the
+     * loop produced was wrong", which one live build's diagnostic could not
+     * express at all (`./exhaustion.ts`).
+     */
+    exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
   };
 
 /** A loop that ended without a result, with everything it did up to then. */
@@ -51,7 +67,9 @@ export function automationStudioLlmEvidenceLoopFailure(
   steps: AutomationStudioFlowDraftStep[],
   code: AutomationStudioLlmEvidenceLoopFailureCode,
   trace: AutomationStudioLlmEvidenceLoopTrace[],
-  accounting: AutomationStudioLlmEvidenceLoopAccounting
+  accounting: AutomationStudioLlmEvidenceLoopAccounting,
+  /** What ran out, for the one code that says something ran out. */
+  exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion
 ): AutomationStudioLlmEvidenceLoopResult {
-  return { ok: false, code, trace, steps, accounting };
+  return { ok: false, code, trace, steps, accounting, ...(exhaustion ? { exhaustion } : {}) };
 }

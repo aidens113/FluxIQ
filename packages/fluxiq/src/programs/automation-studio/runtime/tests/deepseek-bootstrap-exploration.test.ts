@@ -534,9 +534,19 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.sentIterations).toEqual(Array.from({ length: 11 }, (_, index) => index + 1));
     expect(run.revealed).toHaveLength(11);
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.evidence_unusable_decision",
+      // **What ended this is the grant's call count, and that is what it says.**
+      // Neither guard could have fired first: both the no-progress guard and the
+      // unusable backstop are held to the loop's own iterations, so on a
+      // twelve-call run there is no room beneath the budget for either. It used
+      // to be published as `evidence_unusable_decision` at `retryable: false`
+      // because the last decision was a refusal -- true of the decision, false
+      // of the ending, and the mistake that cost a live debug hours
+      // (`runtime/llm/evidence-loop/exhaustion.ts`). The eleven identical
+      // refusals travel as issue codes instead, which is where the rest of this
+      // record's issue codes already live.
+      code: "flow_bootstrap.evidence_iteration_limit",
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       // Every malformed reply was paid for nothing, so the record says so.
@@ -547,7 +557,13 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       // `at` rides on every step now, a clock reading rather than a value, so
       // the steps are matched on what they say and their moment is asserted
       // as being present at all.
-      evidenceLoop: { iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number), steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) })) },
+      evidenceLoop: {
+        iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number),
+        // Never a completion attempt, and never a draft step: this build asked
+        // for nothing the loop could act on, which the counts now say outright.
+        exhausted: { bound: "budget", maxIterations: 12, iterations: 12, draftSteps: 0, proposableSteps: 0, completionAttempts: 0 },
+        steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) }))
+      },
       issueCodes: ["llm.provider_malformed_response"]
     });
     expect(run.adaptationCount).toBe(0);
@@ -661,16 +677,32 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       expect(observation.draft.bytes).toBeLessThanOrEqual(observation.draft.budget);
     }
 
+    // **This is `run-mulryg6h-ff241a12`'s ending, reproduced.** It used to read
+    // `flow_bootstrap.evidence_unusable_decision` / `retryable: false` -- the
+    // model's answers blamed for a build that had simply used its twenty-sixth
+    // of twenty-six calls. The refusal is still reported, as the issue code it
+    // is; the ending is reported as the allowance that ran out, and marked as
+    // something a larger budget can retry.
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.evidence_unusable_decision",
+      code: "flow_bootstrap.evidence_iteration_limit",
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       issueCodes: ["bootstrap.cannot_answer_instruction"],
       accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 31_200, outputTokens: 3_900, totalTokens: 35_100 },
-      evidenceLoop: { iterationCount: 26, decisionCount: 26, toolCallCount: 22, evidenceBytes: expect.any(Number) }
+      evidenceLoop: {
+        iterationCount: 26, decisionCount: 26, toolCallCount: 22, evidenceBytes: expect.any(Number),
+        // How close it came, which is the question the old ending could not be
+        // asked: a draft that had grown real steps, and three attempts to finish.
+        // `iterations`, and that is the live run's own path: the twenty-sixth
+        // decision was made and acted on, so the loop reached the end of its
+        // `for` rather than refusing a twenty-seventh it could not pay for.
+        exhausted: { bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: expect.any(Number), proposableSteps: expect.any(Number), completionAttempts: expect.any(Number) }
+      }
     });
+    expect(run.failure?.evidenceLoop?.exhausted?.completionAttempts).toBeGreaterThan(0);
+    expect(run.failure?.evidenceLoop?.exhausted?.draftSteps).toBeGreaterThan(0);
     expect(run.failure?.evidenceLoop?.evidenceBytes).toBeGreaterThan(0);
     const steps = run.failure?.evidenceLoop?.steps ?? [];
     expect(steps.filter((step) => step.iteration === 7)).toHaveLength(2);

@@ -6,6 +6,7 @@
 // what says how much of the build's cost bought what.
 import type {
   AutomationStudioLlmEvidenceLoopAccounting,
+  AutomationStudioLlmEvidenceLoopExhaustion,
   AutomationStudioLlmEvidenceLoopFailureCode,
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace
@@ -15,6 +16,7 @@ import { automationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-ste
 import type { AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
+import { automationStudioFlowBootstrapFailureState } from "./failure-state.ts";
 
 type EvidenceAccounting = NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>;
 
@@ -31,19 +33,35 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
   "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled"
 };
 
+/**
+ * The loop's own endings, each published under its own code.
+ *
+ * **An ending that ran out of turns is published as that, and as retryable.**
+ * It arrives here as `llm_evidence_loop.iteration_limit` carrying the loop's
+ * exhaustion record, and both travel: the record says which allowance ran out
+ * and how far the draft had got, and the last refusal's codes -- context for the
+ * ending, never its cause -- travel as `issueCodes`. That refusal used to *be*
+ * the ending (`runtime/llm/evidence-loop/exhaustion.ts` says what that cost).
+ *
+ * `retryable` is read from the one table this and the parser share, so a
+ * producer cannot write a state a reader will refuse.
+ */
 export function flowBootstrapEvidenceLoopFailure(
   result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>,
   /** What the loop spent before it ended, when the caller can say. */
   accounting?: EvidenceAccounting
 ): AutomationStudioFlowBootstrapGenerationError {
+  const code = EVIDENCE_LOOP_FAILURE_CODES[result.code];
+  const issueCodes = flowBootstrapDiagnosticIssueCodes(result.exhaustion?.lastIssueCodes ?? []);
   return new AutomationStudioFlowBootstrapGenerationError({
-    code: EVIDENCE_LOOP_FAILURE_CODES[result.code],
+    code,
     stage: "provider_output_validation",
-    retryable: false,
+    retryable: automationStudioFlowBootstrapFailureState(code, "provider_output_validation", undefined).retryable,
     providerInvocation: "attempted",
     providerResponse: "received",
     ...(accounting ? { accounting } : {}),
-    evidenceLoop: evidenceLoopDiagnostic(result)
+    evidenceLoop: evidenceLoopDiagnostic(result, result.exhaustion),
+    ...(issueCodes.length ? { issueCodes } : {})
   });
 }
 
@@ -131,8 +149,30 @@ type EvidenceLoopProgress = {
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
 };
 
+/**
+ * What an exhausted loop publishes about the allowance it ran out of.
+ *
+ * The last refusal's codes are left behind here on purpose: they travel as the
+ * diagnostic's `issueCodes`, so a reader has one place to look for issue codes
+ * rather than two that can disagree.
+ */
+function evidenceLoopExhausted(
+  exhaustion: AutomationStudioLlmEvidenceLoopExhaustion
+): NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]> {
+  return {
+    bound: exhaustion.bound,
+    maxIterations: exhaustion.maxIterations,
+    iterations: exhaustion.iterations,
+    draftSteps: exhaustion.draftSteps,
+    proposableSteps: exhaustion.proposableSteps,
+    completionAttempts: exhaustion.completionAttempts
+  };
+}
+
 function evidenceLoopDiagnostic(
-  result: EvidenceLoopProgress
+  result: EvidenceLoopProgress,
+  /** Present only for the one ending that ran out of something. */
+  exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion
 ): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
   const steps = automationStudioFlowBootstrapEvidenceSteps(result.trace);
   return {
@@ -146,6 +186,7 @@ function evidenceLoopDiagnostic(
     decisionCount: new Set(result.trace.flatMap((item) => item.iteration > 0 ? [item.iteration] : [])).size,
     toolCallCount: result.accounting.toolCalls,
     evidenceBytes: result.accounting.evidenceBytes,
-    ...(steps.length ? { steps } : {})
+    ...(steps.length ? { steps } : {}),
+    ...(exhaustion ? { exhausted: evidenceLoopExhausted(exhaustion) } : {})
   };
 }

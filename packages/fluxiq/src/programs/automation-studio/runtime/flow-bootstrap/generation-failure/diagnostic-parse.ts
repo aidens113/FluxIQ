@@ -13,6 +13,7 @@ import { parseAutomationStudioActionPermissionRequest } from "../../action-permi
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
@@ -141,9 +142,50 @@ const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS
 /** The published steps are one per trace row, and one decision may write two of them. */
 const EVIDENCE_LOOP_MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
 
+type EvidenceLoopExhausted = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]>;
+/**
+ * Which allowance an exhausted loop ran out of, in the loop's own closed set
+ * (`runtime/llm/evidence-loop/exhaustion.ts`). Written out here like every other
+ * bound in this file: a reader must be able to decide whether a stored record is
+ * Core's without the producer's value in hand.
+ */
+const EVIDENCE_LOOP_EXHAUSTED_BOUNDS: readonly string[] = ["iterations", "budget", "tool_calls"];
+const EVIDENCE_LOOP_EXHAUSTED_FIELDS = ["bound", "maxIterations", "iterations", "draftSteps", "proposableSteps", "completionAttempts"];
+/**
+ * The most draft steps an exhausted record may claim: a seeded extend build
+ * keeps a whole supported Flow and may append one step in every iteration.
+ */
+const EVIDENCE_LOOP_MAX_DRAFT_STEPS = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+
+/**
+ * What the loop ran out of, read back, or `null` for anything that is not that.
+ *
+ * All-or-nothing, like every other member of this record: a malformed exhaustion
+ * refuses the diagnostic rather than arriving short. "The loop ran out of turns,
+ * and here is how close it got" is precisely the claim this field exists to make
+ * checkable, and a half-read one would be a worse account than none.
+ */
+function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | null {
+  if (!isRecord(value) || !hasExactFields(value, EVIDENCE_LOOP_EXHAUSTED_FIELDS)
+    || typeof value.bound !== "string" || !EVIDENCE_LOOP_EXHAUSTED_BOUNDS.includes(value.bound)
+    || !boundedInteger(value.maxIterations, EVIDENCE_LOOP_MAX_ITERATIONS)
+    || !boundedInteger(value.iterations, EVIDENCE_LOOP_MAX_ITERATIONS)
+    || !boundedInteger(value.draftSteps, EVIDENCE_LOOP_MAX_DRAFT_STEPS)
+    || !boundedInteger(value.proposableSteps, value.draftSteps as number)
+    || !boundedInteger(value.completionAttempts, EVIDENCE_LOOP_MAX_ITERATIONS)) return null;
+  return {
+    bound: value.bound as EvidenceLoopExhausted["bound"],
+    maxIterations: value.maxIterations as number,
+    iterations: value.iterations as number,
+    draftSteps: value.draftSteps as number,
+    proposableSteps: value.proposableSteps as number,
+    completionAttempts: value.completionAttempts as number
+  };
+}
+
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps", "exhausted"])) return null;
   if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
     || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
@@ -159,12 +201,15 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
     if (!parsed) return null;
     steps = parsed;
   }
+  const exhausted = value.exhausted === undefined ? undefined : parseEvidenceLoopExhausted(value.exhausted);
+  if (exhausted === null) return null;
   return {
     iterationCount: value.iterationCount as number,
     decisionCount: value.decisionCount as number,
     toolCallCount: value.toolCallCount as number,
     evidenceBytes: value.evidenceBytes as number,
-    ...(steps ? { steps } : {})
+    ...(steps ? { steps } : {}),
+    ...(exhausted ? { exhausted } : {})
   };
 }
 

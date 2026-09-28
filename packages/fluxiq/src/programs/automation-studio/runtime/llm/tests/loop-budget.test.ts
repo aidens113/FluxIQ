@@ -89,9 +89,12 @@ describe("an evidence loop given a budget", () => {
   });
 
   // A live build's last, complete-only decision wrote a plan that was refused,
-  // and the budget was then spent (`run-mubt57qz-9227b125`). The refusal is why
-  // there is no result, so the loop ends as it rather than as a call count.
-  it("ends as the refused answer when the budget is spent straight after one", async () => {
+  // and the budget was then spent (`run-mubt57qz-9227b125`). That refusal used
+  // to *become* the ending -- `stalled`, and so Flow Bootstrap's
+  // `evidence_unusable_decision` at `retryable: false`. What ran out was the
+  // budget, which a retry can be given more of, so the ending says that and the
+  // refusal travels beside it as context.
+  it("ends as the spent budget when it is spent straight after a refusal, and carries that refusal", async () => {
     const stalled = vi.fn(() => new Error("stalled"));
     const decide = vi.fn()
       .mockResolvedValueOnce(look(1, 30_000))
@@ -103,18 +106,21 @@ describe("an evidence loop given a budget", () => {
       executeTool: async () => ({ facts: ["ready"] })
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision" });
+    expect(result).toMatchObject({
+      ok: false,
+      code: "llm_evidence_loop.iteration_limit",
+      exhaustion: { bound: "budget", completionAttempts: 1, lastIssueCodes: ["plan.handle_ambiguous"] }
+    });
     expect(decide).toHaveBeenCalledTimes(2);
-    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["plan.handle_ambiguous"] }));
+    expect(stalled).not.toHaveBeenCalled();
   });
 
-  it("ends as the refused answer on the literal final iteration", async () => {
-    const stopped = new Error("stopped on final refusal");
-    const stalled = vi.fn(() => stopped);
+  it("ends as the spent allowance on the literal final iteration, saying how far the draft got", async () => {
+    const stalled = vi.fn(() => new Error("stopped on final refusal"));
     const decide = vi.fn()
       .mockResolvedValueOnce(look(1, 10_000))
       .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 10_000 } });
-    const run = runAutomationStudioLlmEvidenceLoop({
+    const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 2, maxToolCalls: 2, propagateDecisionErrors: true,
       unusableDecisions: { stalled },
       checkCompletion: () => ({ ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } }),
@@ -123,10 +129,14 @@ describe("an evidence loop given a budget", () => {
       executeTool: async () => ({ facts: ["ready"] })
     });
 
-    await expect(run).rejects.toBe(stopped);
+    expect(result).toMatchObject({
+      ok: false,
+      code: "llm_evidence_loop.iteration_limit",
+      exhaustion: { maxIterations: 2, iterations: 2, draftSteps: 1, completionAttempts: 1, lastIssueCodes: ["plan.cannot_answer"] }
+    });
     expect(decide).toHaveBeenCalledTimes(2);
     expect(decide.mock.calls[1]![0].tools).toEqual([]);
-    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["plan.cannot_answer"], accounting: expect.objectContaining({ iterations: 2 }) }));
+    expect(stalled).not.toHaveBeenCalled();
   });
 
   it("counts down to its deadline on its own clock", async () => {

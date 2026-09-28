@@ -35,6 +35,7 @@ import {
   automationStudioLlmEvidenceUnusedCallId,
   type AutomationStudioLlmEvidenceAnsweredRequestCode,
   type AutomationStudioLlmEvidenceLoopDecision,
+  type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopAnswerability,
   type AutomationStudioLlmEvidenceLoopDraftChange,
   type AutomationStudioLlmEvidenceLoopDraftShown,
@@ -143,6 +144,8 @@ export type {
   AutomationStudioLlmEvidenceLoopDecision,
   AutomationStudioLlmEvidenceLoopDraftChange,
   AutomationStudioLlmEvidenceLoopDraftShown,
+  AutomationStudioLlmEvidenceLoopExhaustedBound,
+  AutomationStudioLlmEvidenceLoopExhaustion,
   AutomationStudioLlmEvidenceLoopFailureCode,
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace,
@@ -291,6 +294,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The far backstop: unusable decisions in a row, however they differ, and the latest one's issues.
   let unusableInARow = 0;
   let lastIssueCodes: readonly string[] = [];
+  // Times the model asked to finish, refused or not. A loop that ran out of
+  // turns having never tried to finish and one that tried three times and was
+  // refused are different builds, and the ending alone cannot tell them apart.
+  let completionAttempts = 0;
   // What the last decision was shown, and what was brought back into view since
   // the last tool result: asking once for a result that had left the window is
   // how the model sees it again, so only a second ask, or one for a result it
@@ -330,16 +337,35 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (stepsWithoutProgress < limits.maxStepsWithoutProgress && unusableInARow < limits.maxUnusableDecisionsInARow) return undefined;
     return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
   };
-  // An exhausted loop whose last paid decision was unusable ends as that
-  // refusal, not as a generic iteration count. This is shared by budget
-  // exhaustion at the top of an iteration and the literal max-iteration exit:
-  // the latter has no next iteration on which to preserve the refusal.
-  const exhausted = (): AutomationStudioLlmEvidenceLoopResult => {
-    if (!unusableInARow || !input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
-    const spent = input.unusableDecisions.stalled({ issueCodes: lastIssueCodes, trace: [...trace], accounting: { ...accounting } });
-    if (input.propagateDecisionErrors) throw spent;
-    return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-  };
+  // **A loop that ran out of turns ends as that, whatever its last decision
+  // was.** This used to divert to `unusableDecisions.stalled` whenever the last
+  // paid decision had been refused, on the reasoning that the refusal was why
+  // there was no result -- so an exhausted build was published as
+  // "the model kept answering with something the exploration could not use",
+  // not retryable, at a stage that validates provider output. Nothing had been
+  // validated and the provider's output was never the problem: the loop used
+  // its last call. `./evidence-loop/exhaustion.ts` records what that cost and
+  // which live run it was. The last refusal is not lost -- it travels as
+  // `lastIssueCodes` -- but it is carried as context, never as the ending.
+  //
+  // Shared by every allowance that can run out: the budget's at the top of an
+  // iteration, the tool-call ceiling, and the literal max-iteration exit.
+  const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound): AutomationStudioLlmEvidenceLoopResult =>
+    failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, {
+      bound,
+      maxIterations: limits.maxIterations,
+      iterations: accounting.iterations,
+      draftSteps: draftSteps.length,
+      // Counted exactly as an amendment's `keptStepCount` is, so the last row
+      // of the trace and the ending cannot disagree about how much plan there
+      // was: kept, and proposable.
+      proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
+      completionAttempts,
+      // Only while the run of refusals is unbroken. A loop that ran out after a
+      // decision it could use has no last refusal, and reporting the one before
+      // it would be the same conflation in a smaller field.
+      lastIssueCodes: unusableInARow ? [...lastIssueCodes] : []
+    });
   // A call that threw or returned what is not a result: recorded and shown to
   // the model under its own call id when failures are observed. Returns the
   // result that ends the loop, or nothing when it should ask again.
@@ -479,11 +505,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const remaining = input.budget && automationStudioLlmEvidenceLoopRemaining(input.budget, {
       decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs
     }, limits.maxIterations - iteration + 1);
-    if (remaining && remaining.decisionsLeft === 0) {
-      // Spent straight after an answer that could not be used: that refusal is
-      // why there is no result, so the loop ends as it, with its issue codes.
-      return exhausted();
-    }
+    // Nothing left to pay for a decision with. The run's budget is what ran
+    // out, which a retry raises; what the last decision happened to be is
+    // recorded beside it and is not the ending.
+    if (remaining && remaining.decisionsLeft === 0) return exhausted("budget");
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     const offered = finalDecision ? [] : eligibleTools;
     try {
@@ -533,6 +558,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     automationStudioLlmEvidenceLoopAddUsage(accounting, decision.usage);
     if (decision.usage) reportedDecisions += 1;
     if (decision.kind === "complete") {
+      completionAttempts += 1;
       if (accounting.toolCalls - failedToolCalls < limits.minToolCalls) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
       let check: ReturnType<typeof automationStudioLlmEvidenceParseCompletionCheck> = { ok: true };
       if (input.checkCompletion) {
@@ -664,8 +690,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
       decision = { kind: "tool_call", callId: rerun.request.callId, toolId: rerun.request.toolId, input: rerun.request.input };
     }
     unusableInARow = 0;
-    // The last decision the budget allowed was offered only completion.
-    if (finalDecision) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
+    // The last decision the budget allowed was offered only completion, and was
+    // spent on something else. The budget is still what ran out.
+    if (finalDecision) return exhausted("budget");
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
@@ -686,7 +713,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // loop gives it one of its own rather than ending: the ids are the model's
     // bookkeeping, and the evidence only needs them to be distinct.
     const callId = automationStudioLlmEvidenceUnusedCallId(callIds, decision.callId);
-    if (accounting.toolCalls >= limits.maxToolCalls) return failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting);
+    // Turns left, but no allowance to run anything with them. This reported
+    // `iteration_limit` with nothing to say which of the two ceilings it was --
+    // the same borrowing, one file down, that made an exhausted loop read as a
+    // refused one. Same code, because both are an allowance running out; the
+    // record now names which.
+    if (accounting.toolCalls >= limits.maxToolCalls) return exhausted("tool_calls");
     callIds.add(callId);
     answeredRequests.set(toolRequestSignature, callId);
     let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
@@ -761,5 +793,5 @@ export async function runAutomationStudioLlmEvidenceLoop(
       return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     }
   }
-  return exhausted();
+  return exhausted("iterations");
 }

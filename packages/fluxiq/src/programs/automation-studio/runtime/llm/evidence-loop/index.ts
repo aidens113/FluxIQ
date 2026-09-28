@@ -17,6 +17,7 @@ export * from "./completion-check.ts";
 export * from "./decision.ts";
 export * from "./draft-shown.ts";
 export * from "./draft-change.ts";
+export * from "./exhaustion.ts";
 export * from "./progress.ts";
 export * from "./rerun-request.ts";
 export * from "./result.ts";

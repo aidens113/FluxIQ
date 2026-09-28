@@ -13,6 +13,10 @@ import {
 } from "../index.ts";
 
 describe("Flow Bootstrap generation failure diagnostics", () => {
+  // `retryable` is per code, not per stage. Every ending here is one a retry
+  // could not get past -- a loop that repeated itself or ran its evidence out
+  // will do it again -- except the one that ran out of turns, which has its own
+  // block below and is the whole point of the distinction.
   it.each([
     ["llm_evidence_loop.invalid_decision", "flow_bootstrap.evidence_invalid_decision"],
     ["llm_evidence_loop.unknown_tool", "flow_bootstrap.evidence_unknown_tool"],
@@ -21,7 +25,6 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     ["llm_evidence_loop.repeat_without_progress", "flow_bootstrap.evidence_repeat_without_progress"],
     ["llm_evidence_loop.tool_failed", "flow_bootstrap.evidence_tool_failed"],
     ["llm_evidence_loop.evidence_limit", "flow_bootstrap.evidence_limit"],
-    ["llm_evidence_loop.iteration_limit", "flow_bootstrap.evidence_iteration_limit"],
     ["llm_evidence_loop.cancelled", "flow_bootstrap.evidence_cancelled"]
   ] as const)("preserves closed evidence coordinator failure %s", (code, expectedCode) => {
     const failure = flowBootstrapEvidenceLoopFailure({
@@ -41,6 +44,92 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     });
     expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
     expect(JSON.stringify(failure)).not.toContain("private.call");
+  });
+
+  /**
+   * **A loop that ran out of turns is published as that, and as retryable.**
+   *
+   * The defect these rows hold shut: `run-mulryg6h-ff241a12` explored a site
+   * competently for thirteen decisions, spent its remaining calls on one
+   * extraction that kept failing, and used the twenty-sixth of its twenty-six.
+   * It was published as `flow_bootstrap.evidence_unusable_decision` --
+   * "the model kept answering with something the exploration could not use" --
+   * at `retryable: false`, because the loop's last paid decision happened to be
+   * a refused completion. Nothing was validated, the provider's output was never
+   * the problem, and a larger budget was exactly what the run needed. A debug of
+   * that build spent hours inside the completion checks before reaching the
+   * loop's fall-through.
+   *
+   * Conflating the two again fails here: the code, the retryability and the
+   * exhaustion record are each asserted, and the unusable-decision ending is
+   * asserted alongside to prove the two are still told apart.
+   */
+  describe("an exploration that ran out of turns", () => {
+    const exhausted = (bound: "iterations" | "budget" | "tool_calls", lastIssueCodes: readonly string[] = []) => flowBootstrapEvidenceLoopFailure({
+      ok: false,
+      code: "llm_evidence_loop.iteration_limit",
+      trace: [{ iteration: 26, decision: "unusable", resultCode: "bootstrap.cannot_answer_instruction" }],
+      steps: [],
+      accounting: { iterations: 26, toolCalls: 22, evidenceBytes: 4_096, inputTokens: 400_000, cacheHitInputTokens: 0, outputTokens: 2_600, totalTokens: 402_600, estimatedCostUsd: 0.047 },
+      exhaustion: { bound, maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3, lastIssueCodes }
+    });
+
+    it("is named as itself and marked retryable, never as an unusable decision", () => {
+      const failure = exhausted("iterations", ["bootstrap.cannot_answer_instruction"]);
+      expect(failure.diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+      expect(failure.diagnostic.code).not.toBe("flow_bootstrap.evidence_unusable_decision");
+      // The field an operator acts on. `false` here is what sent the debug of
+      // `run-mulryg6h-ff241a12` looking for a model defect that was not there.
+      expect(failure.diagnostic.retryable).toBe(true);
+      // And the ending it was mistaken for is still not retryable, so the two
+      // cannot be made to agree by flattening one of them.
+      expect(flowBootstrapEvidenceUnusableDecisionFailure({
+        trace: [{ iteration: 1, decision: "unusable" }],
+        accounting: { iterations: 1, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+        issueCodes: ["bootstrap.cannot_answer_instruction"]
+      }).diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", retryable: false });
+    });
+
+    it("carries what it was allowed, what it used, and how close the draft came", () => {
+      const failure = exhausted("iterations", ["bootstrap.cannot_answer_instruction"]);
+      expect(failure.diagnostic.evidenceLoop).toMatchObject({
+        iterationCount: 26,
+        exhausted: { bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3 }
+      });
+      // The last refusal is context for the ending, and travels where every
+      // other issue code does rather than in a second place of its own.
+      expect(failure.diagnostic.issueCodes).toEqual(["bootstrap.cannot_answer_instruction"]);
+      expect(failure.diagnostic.evidenceLoop?.exhausted).not.toHaveProperty("lastIssueCodes");
+    });
+
+    it.each(["iterations", "budget", "tool_calls"] as const)("round-trips through the reader for the %s allowance", (bound) => {
+      const failure = exhausted(bound);
+      expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
+    });
+
+    // The producer and the reader share one table, so a record claiming the
+    // ending without its retryability is not Core's and does not read back.
+    it("refuses a stored record that claims the ending but not its retryability", () => {
+      const stored = { ...JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)), retryable: false };
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
+    });
+
+    // All-or-nothing, like every other member of this record. "It ran out of
+    // turns and got this far" with unreadable numbers behind it is a worse
+    // account than none, so it refuses the diagnostic rather than arriving short.
+    it.each([
+      ["an allowance it does not have", { bound: "tokens" }],
+      ["more iterations than the loop may have", { maxIterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 }],
+      ["more proposable steps than steps", { draftSteps: 2, proposableSteps: 3 }],
+      ["a fractional count", { completionAttempts: 1.5 }],
+      ["a negative count", { draftSteps: -1 }],
+      ["a field nothing declares", { lastIssueCodes: ["bootstrap.cannot_answer_instruction"] }]
+    ])("refuses a stored exhaustion naming %s", (_name, override) => {
+      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
+      stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, ...override };
+
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
+    });
   });
 
   it("projects provider failures into a bounded, sanitized public diagnostic", () => {
@@ -215,7 +304,9 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     const widened = {
       code: "flow_bootstrap.evidence_iteration_limit",
       stage: "provider_output_validation",
-      retryable: false,
+      // An ending that ran out of turns is retryable, and the reader computes
+      // that from the same table the producer writes it from.
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       evidenceLoop: {
@@ -223,6 +314,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         decisionCount: 2,
         toolCallCount: 1,
         evidenceBytes: 640,
+        exhausted: { bound: "iterations", maxIterations: 2, iterations: 2, draftSteps: 2, proposableSteps: 1, completionAttempts: 0 },
         steps: [{
           toolId: "web.dom.click",
           iteration: 1,

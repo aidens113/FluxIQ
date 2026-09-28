@@ -25,7 +25,8 @@ import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnosti
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES,
   FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET,
-  type AutomationStudioFlowBootstrapFailureStage
+  type AutomationStudioFlowBootstrapFailureStage,
+  type AutomationStudioFlowBootstrapPhaseFailureCode
 } from "./codes.ts";
 import { FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST, FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_SET } from "./harness-vocabulary.ts";
 
@@ -56,6 +57,25 @@ export type AutomationStudioFlowBootstrapFailureState = {
 };
 
 const PERMISSION_REQUIRED_CODE = "flow_bootstrap.permission_required";
+
+/**
+ * The endings after the request that another attempt could actually get past.
+ *
+ * Everything at a stage past `provider_request` was not retryable, on the
+ * reasoning that a build refused for what it produced would produce the same
+ * thing again. That is true of a plan which cannot answer its instruction and
+ * false of a build that ran out of turns: what ran out was calls, and a retry
+ * with a larger budget is precisely the answer. `run-mulryg6h-ff241a12` spent
+ * its whole allowance exploring competently and published `retryable: false` --
+ * the one field an operator acts on, saying the opposite of the truth.
+ *
+ * A named set rather than exceptions written inline, so the next ending worth
+ * retrying is added in one place and the parser reads the same list the
+ * producers write from.
+ */
+const FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES: ReadonlySet<string> = new Set([
+  "flow_bootstrap.evidence_iteration_limit"
+] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 type ProviderRequestCode = typeof AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES["provider_request"][number];
 type ProviderPreflightCode = typeof FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST[number];
@@ -144,7 +164,13 @@ function providerState(
     };
   }
   if (stage !== "provider_request") {
-    return { retryable: false, providerInvocation: "attempted", acceptedProviderInvocations: ["attempted"], providerResponse: "received", accounting: "optional" };
+    return {
+      retryable: FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES.has(code),
+      providerInvocation: "attempted",
+      acceptedProviderInvocations: ["attempted"],
+      providerResponse: "received",
+      accounting: "optional"
+    };
   }
   const rule = providerRequestRule(code);
   return {

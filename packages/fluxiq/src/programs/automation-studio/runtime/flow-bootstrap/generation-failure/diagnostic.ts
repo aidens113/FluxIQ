@@ -11,6 +11,7 @@
 // one that can say which field it objected to.
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
+import type { AutomationStudioLlmEvidenceLoopExhaustion } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
 
@@ -75,6 +76,26 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
      * diagnostic down with it. One type, one allow-list, checked by a test.
      */
     steps?: AutomationStudioFlowBootstrapEvidenceStep[];
+    /**
+     * Present exactly when the code is `flow_bootstrap.evidence_iteration_limit`:
+     * the build stopped because it ran out of turns, not because anything it
+     * produced was wrong.
+     *
+     * `iterationCount` above says how many decisions were spent. This says how
+     * many were allowed, which allowance ran out, and how far the draft had got
+     * -- the facts that separate "this build needed a bigger budget" from "this
+     * build was going nowhere". Before it the two read identically, and for
+     * `run-mulryg6h-ff241a12` they read as
+     * `flow_bootstrap.evidence_unusable_decision`
+     * (`runtime/llm/evidence-loop/exhaustion.ts` records what that cost).
+     *
+     * Counts and one closed word, like everything else this record carries.
+     * The loop's own record is reused rather than copied -- a copy is how this
+     * diagnostic came to publish three of the eight fields the trace kept -- less
+     * the last refusal's codes, which travel in `issueCodes` below so that a
+     * reader has one place to look for them.
+     */
+    exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes">;
   };
   /**
    * The codes behind this failure that its own code does not already say.
