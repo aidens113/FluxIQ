@@ -37,17 +37,17 @@ describe("flowHierarchyNodes", () => {
       proposals: [{ proposalId: "proposal.recording", recordingId: "recording.checkout" }]
     });
     const flow = nodes.find((node) => node.kind === "flow");
-    const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Subflows");
+    const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Reusable parts");
     const subflows = nodes.filter((node) => node.kind === "subflow");
 
     expect(flow).toMatchObject({ label: "Checkout", parentId: null, viewId: "flow-subflows", sourceId: "flow.checkout" });
     expect(nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "flow-object", label: "Instructions", parentId: flow?.id, viewId: "flow-instructions", flowId: "flow.checkout" }),
-      expect.objectContaining({ kind: "folder", label: "Recordings", parentId: flow?.id, viewId: "timeline-recording", flowId: "flow.checkout" }),
-      expect.objectContaining({ kind: "folder", label: "Adaptations", parentId: flow?.id, viewId: "adaptations", flowId: "flow.checkout" }),
+      expect.objectContaining({ kind: "flow-object", label: "Guidance for the assistant", parentId: flow?.id, viewId: "flow-instructions", flowId: "flow.checkout" }),
+      expect.objectContaining({ kind: "folder", label: "Recorded steps", parentId: flow?.id, viewId: "timeline-recording", flowId: "flow.checkout" }),
+      expect.objectContaining({ kind: "folder", label: "Suggested changes", parentId: flow?.id, viewId: "adaptations", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "flow-object", label: "Settings", parentId: flow?.id, viewId: "flow-settings", flowId: "flow.checkout" })
     ]));
-    expect(nodes).toContainEqual(expect.objectContaining({ label: "Router", viewId: "flow-router", kind: "flow-object" }));
+    expect(nodes).toContainEqual(expect.objectContaining({ label: "Choose a path", viewId: "flow-router", kind: "flow-object" }));
     expect(nodes.some((node) => node.label === "Runs" || node.viewId === "runs-history")).toBe(false);
     expect(nodes.some((node) => node.label === "Change Proposals")).toBe(false);
     expect(nodes.some((node) => node.label === "Proposals")).toBe(false);
@@ -61,7 +61,7 @@ describe("flowHierarchyNodes", () => {
       expect.objectContaining({ sourceId: "proposal.recording", viewId: "adaptations", flowId: "flow.checkout" }),
       expect.objectContaining({ sourceId: "proposal.route", viewId: "adaptations", flowId: "flow.checkout" })
     ]));
-    expect(nodes.filter((node) => node.kind === "adaptation").every((node) => node.parentId === nodes.find((candidate) => candidate.kind === "folder" && candidate.label === "Adaptations" && candidate.flowId === "flow.checkout")?.id)).toBe(true);
+    expect(nodes.filter((node) => node.kind === "adaptation").every((node) => node.parentId === nodes.find((candidate) => candidate.kind === "folder" && candidate.label === "Suggested changes" && candidate.flowId === "flow.checkout")?.id)).toBe(true);
     expect(subflowsFolder).toMatchObject({ parentId: flow?.id, viewId: "flow-subflows", flowId: "flow.checkout" });
     expect(subflows).toHaveLength(2);
     expect(subflows.map((node) => node.label)).toContain("Primary checkout");
@@ -120,12 +120,12 @@ describe("flowHierarchyNodes", () => {
     expect(nodes.some((node) => node.kind === "flow" && node.sourceId === "flow.checkout.custom-subflow-graph")).toBe(false);
     expect(subflow?.metadata).toMatchObject({ hierarchyContainer: true, defaultCollapsed: true });
     expect(nodes.filter((node) => node.viewId === "flow-router")).toEqual([
-      expect.objectContaining({ label: "Router", parentId: nodes.find((node) => node.kind === "flow")?.id, flowId: "flow.checkout" })
+      expect.objectContaining({ label: "Choose a path", parentId: nodes.find((node) => node.kind === "flow")?.id, flowId: "flow.checkout" })
     ]);
     expect(nodes.some((node) => node.viewId === "flow-router" && node.parentId === subflow?.id)).toBe(false);
     expect(nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        label: "Nodes",
+        label: "Steps",
         parentId: subflow?.id,
         viewId: "flow-nodes",
         sourceId: "flow.checkout.custom-subflow-graph",
@@ -157,7 +157,7 @@ describe("flowHierarchyNodes", () => {
       }
     }]);
 
-    const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Subflows");
+    const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Reusable parts");
     const parentCategory = nodes.find((node) => node.kind === "folder" && node.sourceId === "subflow-category.checkout");
     const nestedCategory = nodes.find((node) => node.kind === "folder" && node.sourceId === "subflow-category.checkout.errors");
 
@@ -183,7 +183,7 @@ describe("flowHierarchyNodes", () => {
     }]);
 
     const settings = nodes.find((node) => node.label === "Settings");
-    const subflowsFolder = nodes.find((node) => node.label === "Subflows");
+    const subflowsFolder = nodes.find((node) => node.label === "Reusable parts");
     const subflow = nodes.find((node) => node.kind === "subflow");
     const run = nodes.find((node) => node.kind === "run");
 

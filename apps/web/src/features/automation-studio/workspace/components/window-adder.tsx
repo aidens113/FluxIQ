@@ -2,7 +2,7 @@
 
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { AutomationViewAdderOption } from "../view-adder";
+import { automationViewGroupLabel, type AutomationViewAdderOption } from "../view-adder";
 import type { AutomationWindowAdderState, AutomationWorkspaceArea } from "../layout/contracts";
 import { automationWindowDescription, viewTitle } from "./view-metadata";
 
@@ -23,6 +23,7 @@ export function AutomationWindowAdderPalette(props: {
     viewTitle(option.view),
     option.view.label,
     automationWindowDescription(option.view),
+    option.groupLabel,
     option.scope,
     option.placement
   ].join(" ").toLocaleLowerCase().includes(normalizedQuery));
@@ -47,21 +48,21 @@ export function AutomationWindowAdderPalette(props: {
   }, []);
 
   return (
-    <section aria-label="Add workspace tab" className="automation-window-adder-panel" ref={panelRef} role="dialog" style={automationWindowAdderPanelStyle(props.area, props.anchor)}>
+    <section aria-label="Open a panel" className="automation-window-adder-panel" ref={panelRef} role="dialog" style={automationWindowAdderPanelStyle(props.area, props.anchor)}>
       <header>
-        <div><strong>Add Tab</strong><span>{props.area === "right" ? "Inspector" : "Main editor"}</span></div>
-        <button aria-label="Close tab picker" className="icon-button" onClick={props.onClose} title="Close" type="button"><X size={14} aria-hidden /></button>
+        <div><strong>Open a panel</strong><span>{props.area === "right" ? "Details panel" : "Main area"}</span></div>
+        <button aria-label="Close the panel picker" className="icon-button" onClick={props.onClose} title="Close" type="button"><X size={14} aria-hidden /></button>
       </header>
       <label className="automation-window-adder-search">
         <Search size={14} aria-hidden />
-        <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Find a view" type="search" value={query} />
+        <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Find a panel" type="search" value={query} />
       </label>
       {groups.map((group) => {
         const options = filtered.filter((option) => option.group === group);
         if (!options.length) return null;
         return (
           <section key={group}>
-            <strong>{group}</strong>
+            <strong>{automationViewGroupLabel(group)}</strong>
             <div>
               {options.map((option) => {
                 const Icon = option.view.icon;
@@ -87,7 +88,7 @@ export function AutomationWindowAdderPalette(props: {
           </section>
         );
       })}
-      {!filtered.length ? <p className="automation-window-adder-empty">No matching views.</p> : null}
+      {!filtered.length ? <p className="automation-window-adder-empty">No panel matches that.</p> : null}
     </section>
   );
 }

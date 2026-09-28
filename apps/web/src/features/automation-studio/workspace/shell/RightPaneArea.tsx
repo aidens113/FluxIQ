@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { memo } from "react";
+import { AutomationCollapseToggle } from "../../shared/CollapseToggle";
 import { AutomationViewContainer } from "../components/view-container";
 import { viewTitle } from "../components/view-metadata";
 import type { AutomationWorkspaceCommandPort, AutomationWorkspaceCommands } from "../commands/contracts";
@@ -71,15 +72,14 @@ export const AutomationRightPaneArea = memo(function AutomationRightPaneArea(pro
       />
       <header className="automation-workspace-section-header">
         <div className="automation-workspace-section-actions">
-          <button
-            aria-controls="automation-right-utilities"
-            aria-expanded={!state.collapsed}
-            aria-label={state.collapsed ? "Expand right area" : "Collapse right area"}
-            className="icon-button"
-            onClick={props.commands.toggleRightSidebar}
-            title={state.collapsed ? "Expand right area" : "Collapse right area"}
-            type="button"
-          >{state.collapsed ? <ChevronLeft aria-hidden size={13} /> : <ChevronRight aria-hidden size={13} />}</button>
+          <AutomationCollapseToggle
+            collapsed={state.collapsed}
+            controls="automation-right-utilities"
+            edge="right"
+            onToggle={props.commands.toggleRightSidebar}
+            size={13}
+            subject="details panel"
+          />
           <button
             aria-label="Add sidebar tab"
             className="icon-button"

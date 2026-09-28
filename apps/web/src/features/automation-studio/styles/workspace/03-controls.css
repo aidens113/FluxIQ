@@ -1,3 +1,12 @@
+/* One collapse control, wherever it is. Four regions used to draw their own
+   chevron with their own icon pair and their own wording; the shared control in
+   `shared/CollapseToggle.tsx` is the only one now, and this is what it looks
+   like. A region that positions its own chrome adds a class of its own and
+   keeps everything else. */
+.automation-collapse-toggle {
+  flex: 0 0 auto;
+}
+
 .automation-layout-presets {
   display: inline-flex;
   align-items: center;

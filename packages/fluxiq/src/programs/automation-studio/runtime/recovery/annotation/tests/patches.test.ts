@@ -249,32 +249,29 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
     expect(parseAutomationStudioActionPermissionRequest(JSON.parse(JSON.stringify(request)))).toEqual(request);
   });
 
-  it("holds an uninstructed send repair even when it also creates something", async () => {
+  // `send_or_publish` came off the gated list on 2026-09-28: a run that sends is
+  // a run whose instruction asked for the sending, so a standing gate on it
+  // asked permission for the request itself. A repair that would send therefore
+  // runs, with no grant and nothing derived from the instruction -- and what it
+  // declared is still recorded, so the cross-check against the instruction still
+  // sees it.
+  it("runs a send repair with no grant, and still records what it declared", async () => {
     const gate = recoveryGate([]);
     const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
 
-    expect(gate.request).toMatchObject({
-      requestId: "permission-request:repair",
-      action: { kind: "flow_step", id: "builtin.policy.action", ref: "recorded.press", verb: "press" },
-      control: { name: "Add to queue", kind: "button" },
-      consequences: ["send_or_publish", "create_new"],
-      missing: ["send_or_publish"],
-      reason: { stage: "recovery", instructionIds: [] },
-      authority: { granted: [], instructed: [] }
-    });
+    expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({
-      permissionOutcome: "required",
-      permissionRequired: true,
-      requestId: "permission-request:repair",
+      permissionOutcome: "permitted",
       consequences: ["send_or_publish", "create_new"],
-      missing: ["send_or_publish"],
-      executed: false,
-      preflightOk: false,
-      verification: { status: "not_executed", reason: "permission_required" },
-      traceStatus: "not-run"
+      preflightOk: true
     });
-    expect(outcome.adaptationIds).toEqual([]);
-    expect(outcome.changeProposalIds).toEqual([]);
+    expect(outcome.attempts[0]?.issues).toEqual([]);
+    expect(outcome.attempts[0]?.traceStatus).not.toBe("not-run");
+    expect(gate.declarations[0]).toMatchObject({
+      consequences: ["send_or_publish", "create_new"],
+      permitted: true
+    });
+    expect(outcome.adaptationIds).toHaveLength(1);
   });
 
   // The second door the narrowed gate opens. A live repair is run with the

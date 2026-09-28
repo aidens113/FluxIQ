@@ -53,7 +53,9 @@ export const AutomationWorkspaceShell = memo(function AutomationWorkspaceShell(p
   );
   const activeRightView = useAutomationWorkspaceView(props.source, activeRightViewId);
   const { isNarrowWorkspace, narrowWorkspacePanel } = useAutomationNarrowWorkspace(props.studioUiStore);
-  const inspectorLabel = activeRightView?.view.label ?? "Inspector";
+  // The registry calls this panel "Details"; the fallback has to say the same,
+  // or the narrow-screen button reads one name and the tab it opens another.
+  const inspectorLabel = activeRightView?.view.label ?? "Details";
   const hierarchy = useMemo(() => (
     <AutomationRegionBoundary label="Hierarchy" resetKey={props.projectKey}>
       <AutomationHierarchyRegion content={props.surfaces.hierarchy} port={props.port} store={props.store} />

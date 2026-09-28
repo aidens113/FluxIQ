@@ -12,9 +12,9 @@ test("tabs, menus, modals, drawers, comboboxes, resize, and focus return work as
   const tabPicker = page.locator(".automation-window-adder-panel");
   await expect(tabPicker).toBeVisible();
   await tabPicker.getByRole("searchbox").fill("connected");
-  await tabPicker.getByRole("button", { name: /^Connected Clients/u }).click();
+  await tabPicker.getByRole("button", { name: /^Connected browsers/u }).click();
   const mainEditor = page.getByRole("region", { name: "Main editor" });
-  const clientsTab = mainEditor.getByRole("tab", { name: /Connected Clients/u });
+  const clientsTab = mainEditor.getByRole("tab", { name: /Connected browsers/u });
   await expect(clientsTab).toHaveAttribute("aria-selected", "true");
   const firstTab = mainEditor.getByRole("tab").first();
   await firstTab.click();
@@ -70,7 +70,7 @@ test("dirty tab close requires an explicit save, discard, or cancel decision", a
   const project = requirePhase8Project(manifest, "ordinary");
   await openFixtureProject(page, project);
   await selectFixtureFlow(page, project);
-  await openStudioView(page, "Instructions");
+  await openStudioView(page, "Guidance for the assistant");
   await page.getByRole("button", { name: "New Instruction", exact: true }).click();
   const editable = page.locator("textarea").first();
   await expect(editable).toBeVisible();

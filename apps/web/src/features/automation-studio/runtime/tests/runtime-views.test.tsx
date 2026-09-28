@@ -84,7 +84,7 @@ describe("Automation Runtime workspace", () => {
     }));
 
     expect(html).toContain("Previous Runs");
-    expect(html).toContain("Runtime Debug");
+    expect(html).toContain("Run and test");
     expect(html).toContain("Start a controlled run");
     expect(html).toContain('role="tablist"');
     expect(html).toContain("Recently updated");
@@ -394,7 +394,7 @@ describe("Automation Runtime workspace", () => {
     expect(source).not.toContain("setInterval");
   });
 
-  it("maps saved diagnosis limits and uses authenticated-session authorization in Runtime Debug", () => {
+  it("maps saved diagnosis limits and uses authenticated-session authorization in Run and test", () => {
     expect(runtimeLlmExecutionRequestFromFlow("project.one", {
       flowId: "flow.one",
       metadata: {

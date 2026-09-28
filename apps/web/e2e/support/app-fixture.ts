@@ -34,19 +34,25 @@ export type FixtureProject = {
   storage?: { problems: string; docs: string };
 };
 
+/**
+ * The twelve canonical view labels exactly as the panel renders them, renamed on
+ * 2026-09-28 from the implementation words they used to carry. Every selector in
+ * this suite resolves a view by its visible name, so this union is the one place
+ * a rename has to land.
+ */
 export type StudioViewTitle =
-  | "Connected Clients"
-  | "Timeline"
-  | "Nodes"
-  | "Router"
-  | "Subflows"
-  | "Instructions"
-  | "Adaptations"
+  | "Connected browsers"
+  | "Recorded steps"
+  | "Steps"
+  | "Choose a path"
+  | "Reusable parts"
+  | "Guidance for the assistant"
+  | "Suggested changes"
   | "Settings"
-  | "State View"
-  | "Runtime Debug"
+  | "What the page looked like"
+  | "Run and test"
   | "Problems"
-  | "Inspector";
+  | "Details";
 
 export function requirePhase8Project(manifest: UiFixtureManifest, profile: "empty" | "ordinary" | "scale"): FixtureProject {
   const project = profile === "empty"
@@ -177,7 +183,7 @@ export async function selectFixtureRecording(page: Page, project: FixtureProject
 }
 
 export function studioViewRegion(page: Page, title: StudioViewTitle): Locator {
-  const region = title === "Problems" || title === "Inspector" ? "inspector" : "main";
+  const region = title === "Problems" || title === "Details" ? "inspector" : "main";
   return page.locator(`[data-workspace-region="${region}"]`);
 }
 
@@ -188,9 +194,9 @@ export function studioViewTab(page: Page, title: StudioViewTitle): Locator {
 export async function openStudioView(page: Page, title: StudioViewTitle): Promise<Locator> {
   const region = studioViewRegion(page, title);
   const tab = studioViewTab(page, title);
-  const rightRegion = title === "Problems" || title === "Inspector";
+  const rightRegion = title === "Problems" || title === "Details";
   if (rightRegion && await isStudioNarrowWorkspace(page) && !await region.isVisible().catch(() => false)) {
-    const inspectorButton = page.locator(".automation-narrow-workspace-actions > button").filter({ hasText: "Inspector" });
+    const inspectorButton = page.locator(".automation-narrow-workspace-actions > button").filter({ hasText: "Details" });
     await expect(inspectorButton).toBeVisible();
     await inspectorButton.click();
     await expect(region).toBeVisible();
@@ -202,7 +208,7 @@ export async function openStudioView(page: Page, title: StudioViewTitle): Promis
   }
 
   const addTab = region.getByRole("button", { name: /^Add (?:sidebar )?tab$/u }).first();
-  await expect(addTab, `${title} must be opened from its ${title === "Problems" || title === "Inspector" ? "inspector" : "main"} region`).toBeVisible();
+  await expect(addTab, `${title} must be opened from its ${title === "Problems" || title === "Details" ? "inspector" : "main"} region`).toBeVisible();
   await waitForReactOwnership(addTab, `${title} tab adder`);
   await addTab.click();
   const picker = page.locator(".automation-window-adder-panel:visible");
@@ -229,7 +235,7 @@ async function selectHierarchyObject(page: Page, label: string, kind: "flow" | "
   if (narrow) {
     await expect(page.getByRole("dialog", { name: "Project Hierarchy", exact: true })).toBeHidden();
   }
-  await expect(studioViewTab(page, kind === "flow" ? "Router" : "Timeline")).toHaveAttribute("aria-selected", "true");
+  await expect(studioViewTab(page, kind === "flow" ? "Choose a path" : "Recorded steps")).toHaveAttribute("aria-selected", "true");
   if (narrow) {
     if (kind === "recording") {
       await ensureStudioProjectHierarchyVisible(page);
@@ -238,7 +244,7 @@ async function selectHierarchyObject(page: Page, label: string, kind: "flow" | "
       await expect(reopenedItem).toHaveAttribute("aria-selected", "true");
       await reopenedSearch.fill("");
       await page.getByRole("dialog", { name: "Project Hierarchy", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
-      await expect(studioViewTab(page, "Timeline")).toHaveAttribute("aria-selected", "true");
+      await expect(studioViewTab(page, "Recorded steps")).toHaveAttribute("aria-selected", "true");
     }
   } else {
     if (kind === "recording") await expect(item).toHaveAttribute("aria-selected", "true");

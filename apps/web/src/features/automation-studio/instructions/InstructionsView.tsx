@@ -1,6 +1,6 @@
 "use client";
 
-import { Combobox, Field, Modal, StatusText } from "../../programs/shared-ui";
+import { Combobox, Modal, StatusText } from "../../programs/shared-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ArrowDown, ArrowUp, Plus, Search, Workflow } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
@@ -48,9 +48,6 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
   const [effectiveLoading, setEffectiveLoading] = useState(false);
   const [effectiveError, setEffectiveError] = useState("");
   const [saveState, setSaveState] = useState<InstructionSaveState>("saved");
-  const [saveAuthorizationOpen, setSaveAuthorizationOpen] = useState(false);
-  const [saveAuthorizationPin, setSaveAuthorizationPin] = useState("");
-  const [saveAuthorizationError, setSaveAuthorizationError] = useState("");
   const requestRef = useRef(0);
   const detailRequestRef = useRef(0);
   const scopeRequestRef = useRef(0);
@@ -174,11 +171,11 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     else if (target?.kind === "new") openNewInstruction();
     else if (target?.kind === "view" && target.view) setInstructionView(target.view);
   };
-  const requestSaveInstruction = () => {
-    setSaveAuthorizationPin("");
-    setSaveAuthorizationError("");
-    setSaveAuthorizationOpen(true);
-  };
+  // Saving an instruction draft is the person writing down what they want
+  // automated - the product's primary job, not a privileged act. Core registers
+  // `saveFlowInstruction` as `authoring` and never PIN-checks it, so the dialog
+  // that stood in front of this button protected nothing.
+  const requestSaveInstruction = () => { void saveInstruction(); };
   const discardInstructionChanges = () => {
     if (draftKey) removeStoredInstructionDraft(draftKey);
     setDraftInstruction(baseInstructionDraft);
@@ -190,24 +187,20 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     viewId: automationStudioViewId.instructions,
     label: selectedInstruction?.title ? `Instruction: ${selectedInstruction.title}` : "New instruction",
     dirty: draftDirty,
-    save: async (authorizationPin) => {
-      if (authorizationPin) await saveInstruction(authorizationPin, true);
-      else requestSaveInstruction();
-    },
+    save: async () => { await saveInstruction(true); },
     discard: discardInstructionChanges
   });
-  const saveInstruction = async (authorizationPin: string, propagateError = false) => {
-    if (!props.projectId || !flowId || authorizationPin.trim().length < 4) {
+  const saveInstruction = async (propagateError = false) => {
+    if (!props.projectId || !flowId) {
       if (propagateError) throw new Error("The Instruction is not ready to save.");
       return false;
     }
     setError("");
-    setSaveAuthorizationError("");
     setSaveState("saving");
     const result = await props.commands.saveInstruction({
       projectId: props.projectId,
       flowId,
-      authorizationPin: authorizationPin.trim(),
+      authorizationPin: "",
       ...(draftInstruction.instructionId ? { instructionId: draftInstruction.instructionId } : {}),
       title: draftInstruction.title,
       body: draftInstruction.body,
@@ -222,7 +215,6 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     if (!result.ok || !result.payload?.instruction) {
       const message = result.error ?? "Instruction could not be saved.";
       setError(message);
-      setSaveAuthorizationError(message);
       setSaveState("failed");
       if (propagateError) throw new Error(message);
       return false;
@@ -234,8 +226,6 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     setBaseInstructionDraft(savedDraft);
     setDraftInstruction(savedDraft);
     setRecoveryDraft(null);
-    setSaveAuthorizationOpen(false);
-    setSaveAuthorizationPin("");
     setSaveState("saved");
     setEffectiveInstructions([]);
     commitAutomationStudioMutation({
@@ -305,6 +295,5 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
       </div>
     </section>
     {pendingEditorTarget ? <Modal title="Unsaved Instruction Changes" onClose={() => setPendingEditorTarget(null)}><div className="automation-modal-form"><p className="automation-router-modal-intro">This instruction has local changes that have not been saved.</p><div className="modal-actions"><button className="button" onClick={() => setPendingEditorTarget(null)} type="button">Keep Editing</button><button className="button danger" onClick={discardAndContinue} type="button">Discard and Continue</button></div></div></Modal> : null}
-    {saveAuthorizationOpen ? <Modal title="Authorize Instruction Save" onClose={() => saveState === "saving" ? undefined : setSaveAuthorizationOpen(false)}><div className="automation-modal-form"><p className="automation-router-modal-intro">Confirm this write with your security PIN. Your instruction draft stays in this editor if authorization fails.</p><Field label="Security PIN" {...(saveAuthorizationError ? { error: saveAuthorizationError } : {})}><input autoFocus inputMode="numeric" maxLength={12} onChange={(event) => { setSaveAuthorizationPin(event.target.value.replace(/\D/g, "")); setSaveAuthorizationError(""); }} type="password" value={saveAuthorizationPin} /></Field><div className="modal-actions"><button className="button" disabled={saveState === "saving"} onClick={() => setSaveAuthorizationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={saveAuthorizationPin.length < 4 || saveState === "saving"} onClick={() => void saveInstruction(saveAuthorizationPin)} type="button">{saveState === "saving" ? "Saving..." : "Authorize and Save"}</button></div></div></Modal> : null}
   </>);
 }

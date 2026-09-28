@@ -353,6 +353,23 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  /* Every in-view layout reflows against the pane it is in, not against the
+     window. The window was the wrong thing to ask: the shell spends 280px on
+     the sidebar and 320px on the details panel before a view gets anything, so
+     between about 821px and 1100px the editor pane is 221-500px wide while
+     every viewport-keyed rule still reads "desktop" and holds a two-column grid
+     inside it. `styles/router-subflows/03-router-subflow-details.css` proved
+     the shape; this makes it available to every view rather than one. */
+  container: automation-pane / inline-size;
+}
+
+/* The bottom dock and the collapse controls that live along the bottom edge of
+   the workspace are where the conversation launcher floats. It moves above
+   them rather than over them: the collapsed step-preview dock is a single
+   36px header row whose own collapse control sits at its right-hand end,
+   which is exactly the corner the launcher occupied. */
+body:has(.automation-studio-shell) {
+  --automation-conversation-dock-bottom: calc(var(--space-lg) + 44px);
 }
 
 .automation-mounted-view-stack,

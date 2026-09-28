@@ -34,28 +34,28 @@ describe("AutomationStudioService recording persistence", () => {
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
+    // The creation defaults changed on 2026-09-28: a Flow nobody configured
+    // repairs and re-authors itself rather than waiting to be switched on, so
+    // the context this run records is the adaptive one and carries no
+    // "disabled by" diagnostics. The rule is pinned in
+    // `programs/automation-studio/tests/permission-defaults.test.ts`.
     expect(detail?.metadata).toMatchObject({
-      trainingMode: "normal",
+      trainingMode: "continuous_adaptive",
       trainingBehavior: {
-        invokeLlm: false,
+        invokeLlm: true,
         runRecovery: true,
-        createAdaptations: false,
-        promoteAdaptations: false
+        createAdaptations: true,
+        promoteAdaptations: true
       },
       runtimeAdaptationContext: {
         flowId: flow.flowId,
-        mode: "normal",
+        mode: "continuous_adaptive",
         policyId: "policy.default",
-        policyPreset: "locked",
-        approvalMode: "manual",
+        policyPreset: "adaptive",
+        approvalMode: "auto",
         runsCompleted: 0,
         budget: { ok: true },
-        diagnostics: expect.arrayContaining([
-          "LLM intervention is disabled by training mode or settings.",
-          "Adaptation creation is disabled by training mode or settings.",
-          "Runtime recovery is disabled by adaptation policy.",
-          "Normal mode records adaptive context without invoking LLM."
-        ])
+        diagnostics: []
       }
     });
   });

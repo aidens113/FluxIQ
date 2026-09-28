@@ -5,7 +5,7 @@ export function inspectorIdentity(selection: AutomationSelection | null, context
   if (!selection) return null;
   const flowLabel = context.flow?.name ?? context.flow?.flowId;
   const labels: Partial<Record<AutomationSelection["kind"], string>> = {
-    workspace: selection.id === "clients" ? "Connected Clients" : "Runs",
+    workspace: selection.id === "clients" ? "Connected browsers" : "Past runs",
     flow: context.flow?.name ?? selection.id,
     policy: context.flow?.name ?? selection.id,
     node: context.node?.label ?? selection.id,
@@ -31,7 +31,7 @@ export function inspectorIdentity(selection: AutomationSelection | null, context
 
   const label = String(labels[selection.kind] ?? selection.id);
   return {
-    title: String(titles[selection.kind] ?? "Inspector"),
+    title: String(titles[selection.kind] ?? "Details"),
     label,
     id: selection.id,
     breadcrumb: [flowLabel, label].filter((value, index, values): value is string => typeof value === "string" && Boolean(value) && values.indexOf(value) === index)

@@ -36,8 +36,12 @@ export function useRecordingActionController(input: {
 
   const submit = async () => {
     if (busyRef.current || !kind || !input.selectedRecording) return;
-    if (pin.length < 4) {
-      setError("Enter your security PIN.");
+    // Renaming a recording, annotating it and finalizing it are ordinary work,
+    // and Core registers all three endpoints `authoring`, which its API registry
+    // never PIN-checks. Deleting is the one irreversible act here and the one
+    // Core does check, so it is the only one that asks.
+    if (kind === "delete" && pin.length < 4) {
+      setError("Enter your security PIN to delete this recording.");
       return;
     }
     if (["rename", "note", "marker"].includes(kind) && !value.trim()) {
@@ -49,21 +53,21 @@ export function useRecordingActionController(input: {
     setError("");
     const recordingId = input.selectedRecording.recordingId;
     try {
-      if (kind === "rename") await input.onUpdateRecording(recordingId, { name: value.trim() }, pin);
+      if (kind === "rename") await input.onUpdateRecording(recordingId, { name: value.trim() }, "");
       if (kind === "note") await appendRecordingNote(input.onAppendRecordingNote, {
         recordingId,
         ...(input.selectedEntry?.id ? { linkedEntryId: input.selectedEntry.id } : {}),
         text: value,
-        authorizationPin: pin
+        authorizationPin: ""
       });
       if (kind === "marker") await appendRecordingMarker(input.onAppendRecordingMarker, {
         recordingId,
         ...(input.selectedEntry?.id ? { linkedEntryId: input.selectedEntry.id } : {}),
         ...(input.selectedEntry?.monotonicOffsetMs !== undefined ? { monotonicOffsetMs: input.selectedEntry.monotonicOffsetMs } : {}),
         label: value,
-        authorizationPin: pin
+        authorizationPin: ""
       });
-      if (kind === "finalize") await input.onFinalizeRecording(recordingId, pin);
+      if (kind === "finalize") await input.onFinalizeRecording(recordingId, "");
       if (kind === "delete") await input.onDeleteRecording(recordingId, pin);
       await input.onRefreshRecordings();
       setKind(null);

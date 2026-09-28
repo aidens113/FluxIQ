@@ -50,7 +50,7 @@ test("hierarchy disclosure buttons preserve selection and focus ownership", asyn
   const navigation = studioProjectNavigation(page);
   const search = studioProjectHierarchy(page).getByRole("searchbox", { name: "Search project hierarchy" });
   const tree = studioFlowTree(page);
-  await search.fill("Router");
+  await search.fill("Choose a path");
   const selectedBefore = tree.locator('[aria-selected="true"]');
   await expect(selectedBefore).toHaveCount(1);
   const selectedLabel = await selectedBefore.getAttribute("aria-label");
@@ -63,7 +63,7 @@ test("hierarchy disclosure buttons preserve selection and focus ownership", asyn
   await expect(disclosure).toBeFocused();
   await disclosure.click();
   await expect(disclosure).toBeFocused();
-  await search.fill("Router");
+  await search.fill("Choose a path");
   const selectedAfter = tree.locator('[aria-selected="true"]');
   await expect(selectedAfter).toHaveCount(1);
   await expect(selectedAfter).toHaveAttribute("aria-label", selectedLabel!);

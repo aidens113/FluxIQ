@@ -14,7 +14,7 @@ function runtimeModeGridRule(): string {
   return match!.groups!.body!;
 }
 
-describe("Runtime Debug layout contract", () => {
+describe("Run and test layout contract", () => {
   it("wraps execution modes from the available pane width without clipping them", () => {
     const rule = runtimeModeGridRule();
 

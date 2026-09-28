@@ -9,6 +9,7 @@ type Command = (...args: any[]) => any;
 export type AutomationConnectorCommandHandlers = {
   appendRecordingMarker: Command;
   appendRecordingNote: Command;
+  createFlow: Command;
   createSubflow: Command;
   deleteRecording: Command;
   discardGraphDraft: Command;
@@ -38,6 +39,7 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
   const stable = {
     appendRecordingMarker: useStableAutomationEvent(handlers.appendRecordingMarker),
     appendRecordingNote: useStableAutomationEvent(handlers.appendRecordingNote),
+    createFlow: useStableAutomationEvent(handlers.createFlow),
     createSubflow: useStableAutomationEvent(handlers.createSubflow),
     deleteRecording: useStableAutomationEvent(handlers.deleteRecording),
     discardGraphDraft: useStableAutomationEvent(handlers.discardGraphDraft),
@@ -65,6 +67,9 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
   return useMemo(() => ({
     [automationStudioViewId.clients]: {},
     [automationStudioViewId.flowEditor]: {
+      // The pane a project opens on hosts the ask, so its call to action has to
+      // be able to make the thing it is asking about.
+      onCreateFlow: stable.createFlow,
       onSaveGraph: stable.saveGraph,
       onGraphDraftChange: stable.updateGraphDraft,
       onDirtyChange: stable.setGraphDirty,

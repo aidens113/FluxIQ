@@ -123,12 +123,15 @@ describe("Automation Instructions workspace", () => {
     expect(editorSource).toContain("Estimated instruction tokens");
     expect(effectiveSource).toContain("Instruction context");
   });
-  it("uses in-product authorization, explicit save state, and readiness actions", () => {
+  it("saves an instruction draft without asking, with explicit save state and readiness actions", () => {
     const viewSource = InstructionsViewContent.toString();
     const editorSource = InstructionEditorPanel.toString();
     expect(viewSource).not.toContain("window.prompt");
-    expect(viewSource).toContain("Authorize Instruction Save");
-    expect(viewSource).toContain("Security PIN");
+    // Writing down what you want automated is the product's primary job, so it
+    // never stops for a PIN. Core registers save-flow-instruction `authoring`
+    // and never checks one.
+    expect(viewSource).not.toContain("Authorize Instruction Save");
+    expect(viewSource).not.toContain("Security PIN");
     expect(editorSource).toContain("Save Instruction");
     expect(editorSource).toContain("Discard Changes");
     expect(viewSource).toContain("commitAutomationStudioMutation");

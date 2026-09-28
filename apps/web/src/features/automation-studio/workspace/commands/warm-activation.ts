@@ -3,8 +3,21 @@ import { trackAutomationSubscription } from "../../testing/resource-telemetry";
 
 export type AutomationViewActivityRef = { current: boolean };
 
-export const AUTOMATION_WARM_VIEW_DESKTOP_CAP = 6;
-export const AUTOMATION_WARM_VIEW_CONSTRAINED_CAP = 3;
+// How many inactive views stay mounted. Everything a view holds in `useState`
+// dies with its mount, and these views hold a great deal: the State view keeps
+// its mode, source, phase and selected evidence; Problems keeps six filters and
+// its page cursor; the Router keeps an in-progress route draft. At six on a
+// desktop and three on a narrow screen, opening a fourth tab silently threw
+// away the first one's filters, and the person had set those filters two
+// seconds earlier.
+//
+// Eviction already refuses to drop an active view or a dirty one, so the cap is
+// only a bound on memory, never a correctness rule. Raising it costs mounted
+// React trees, which is why it is a cap at all and not simply removed; twelve
+// covers every tab a pane can realistically hold now that a preview tab
+// replaces rather than appends, and six still bounds a phone.
+export const AUTOMATION_WARM_VIEW_DESKTOP_CAP = 12;
+export const AUTOMATION_WARM_VIEW_CONSTRAINED_CAP = 6;
 
 export type AutomationWarmViewRegistry = {
   activity(paneId: string, viewId: string): AutomationViewActivityRef;

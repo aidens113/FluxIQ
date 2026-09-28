@@ -91,9 +91,12 @@ export type FlowSettingsDraft = {
 export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInterventionsPerRun" | "maxTokensPerRun" | "maxCostUsdPerTrainingWindow" | "maxAdaptationInterventionsPerRun" | "maxAdaptationCostUsdPerRun" | "maxRetriesPerAction" | "maxRecoveryAttemptsPerSubflow" | "maxReroutesPerRun" | "interfaceInputs" | "interfaceOutputs">): string[] {
   const errors: string[] = [];
   const wholeNumberFields: Array<[string, string, number]> = [["LLM interventions per run", draft.maxInterventionsPerRun, 100], ["Adaptation interventions per run", draft.maxAdaptationInterventionsPerRun, 100], ["Retries per action", draft.maxRetriesPerAction, 20], ["Recovery attempts per subflow", draft.maxRecoveryAttemptsPerSubflow, 20], ["Reroutes per run", draft.maxReroutesPerRun, 20]];
-  for (const [label, value, maximum] of wholeNumberFields) if (!Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > maximum) errors.push(`${label} must be a whole number from 0 to ${maximum}.`);
-  if (!Number.isInteger(Number(draft.maxTokensPerRun)) || Number(draft.maxTokensPerRun) < 128 || Number(draft.maxTokensPerRun) > 1_000_000) errors.push("LLM tokens per run must be a whole number from 128 to 1,000,000.");
-  for (const [label, value] of [["Training-window cost", draft.maxCostUsdPerTrainingWindow], ["Adaptation cost per run", draft.maxAdaptationCostUsdPerRun]] as const) if (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100_000) errors.push(`${label} must be from 0 to 100,000 USD.`);
+  // A blank box is refused rather than read as zero. `Number("")` is 0, which
+  // passes every range below, so an empty limit used to save silently as "no
+  // interventions at all" -- a Flow turned off by a field nobody typed in.
+  for (const [label, value, maximum] of wholeNumberFields) if (!value.trim() || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > maximum) errors.push(`${label} must be a whole number from 0 to ${maximum}.`);
+  if (!draft.maxTokensPerRun.trim() || !Number.isInteger(Number(draft.maxTokensPerRun)) || Number(draft.maxTokensPerRun) < 128 || Number(draft.maxTokensPerRun) > 1_000_000) errors.push("LLM tokens per run must be a whole number from 128 to 1,000,000.");
+  for (const [label, value] of [["Training-window cost", draft.maxCostUsdPerTrainingWindow], ["Adaptation cost per run", draft.maxAdaptationCostUsdPerRun]] as const) if (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100_000) errors.push(`${label} must be from 0 to 100,000 USD.`);
   for (const [kind, ports] of [["Input", draft.interfaceInputs], ["Output", draft.interfaceOutputs]] as const) {
     const names = ports.map((port) => port.name.trim().toLowerCase()).filter(Boolean);
     if (ports.some((port) => !port.name.trim())) errors.push(`${kind} names cannot be empty.`);
@@ -126,7 +129,10 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     { key: "timeoutSeconds", group: "Runtime", label: "Flow timeout", value: draft.timeoutSeconds + " seconds", overridden: Number(draft.timeoutSeconds) !== 30 },
     { key: "maxConcurrency", group: "Runtime", label: "Maximum concurrent runs", value: draft.maxConcurrency, overridden: Number(draft.maxConcurrency) !== 1 },
     { key: "llmProvider", group: "LLM", label: "Provider", value: flowLlmProvider(draft.llmProvider).label, overridden: false },
-    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, overridden: false },
+    // Reported as an override when it is one, so the Effective Values list
+    // stops calling a deliberately chosen model a framework default and offers
+    // the reset every other overridden setting offers.
+    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, overridden: Boolean(draft.llmModel) && draft.llmModel !== AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL },
     { key: "adaptationPreset", group: "Adaptation", label: "Behavior", value: draft.adaptationPreset === "adaptive" ? "Fully adaptive" : draft.adaptationPreset === "observe" ? "Observe only" : draft.adaptationPreset === "locked" ? "Locked" : "Broad autonomy", overridden: draft.adaptationPreset !== "adaptive" },
     { key: "adaptationProposalMode", group: "Adaptation", label: "Approval", value: describeApproval(draft.adaptationProposalMode), overridden: draft.adaptationProposalMode !== "auto" },
     { key: "maxInterventionsPerRun", group: "Limits", label: "LLM interventions per run", value: draft.maxInterventionsPerRun, overridden: Number(draft.maxInterventionsPerRun) !== 2 },
@@ -310,8 +316,11 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     allowModifyRouter: booleanSetting(adaptationSettings.allowModifyRouter, true),
     allowModifyExpectations: booleanSetting(adaptationSettings.allowModifyExpectations, true),
     allowModifyActionTargets: booleanSetting(adaptationSettings.allowModifyActionTargets, true),
-    allowDeleteOrDisableBehavior: booleanSetting(adaptationSettings.allowDeleteOrDisableBehavior, false),
-    requireApprovalForDestructiveChanges: booleanSetting(adaptationSettings.requireApprovalForDestructiveChanges, true),
+    // Core's defaults, not this form's own: a Flow that stored neither setting
+    // is run by Core with deleting permitted and no standing approval gate, so
+    // showing the reverse described a Flow that does not exist.
+    allowDeleteOrDisableBehavior: booleanSetting(adaptationSettings.allowDeleteOrDisableBehavior, FLOW_ADAPTATION_POLICY_DEFAULTS.allowDeleteOrDisableBehavior),
+    requireApprovalForDestructiveChanges: booleanSetting(adaptationSettings.requireApprovalForDestructiveChanges, FLOW_ADAPTATION_POLICY_DEFAULTS.requireApprovalForDestructiveChanges),
     maxRetriesPerAction: numberInputValue(trainingSettings.recoveryBudget?.maxRetriesPerAction ?? 1),
     maxRecoveryAttemptsPerSubflow: numberInputValue(trainingSettings.recoveryBudget?.maxRecoveryAttemptsPerSubflow ?? 2),
     maxReroutesPerRun: numberInputValue(trainingSettings.recoveryBudget?.maxReroutesPerRun ?? 2),
@@ -322,11 +331,23 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     maxInterventionsPerRun: numberInputValue(budgets.maxInterventionsPerRun ?? metadata.maxInterventionsPerRun),
     maxTokensPerRun: numberInputValue(budgets.maxTokensPerRun ?? metadata.maxTokensPerRun),
     maxCostUsdPerTrainingWindow: numberInputValue(budgets.maxCostUsdPerTrainingWindow ?? metadata.maxCostUsdPerTrainingWindow),
-    maxAdaptationInterventionsPerRun: numberInputValue(adaptationSettings.maxInterventionsPerRun),
-    maxAdaptationCostUsdPerRun: numberInputValue(adaptationSettings.maxEstimatedCostUsdPerRun),
+    // The framework default is named here as well as in the metadata merge
+    // because the save omits a value equal to it: a read that fell back to
+    // `undefined` produced a blank box, and the next save wrote the blank as 0.
+    maxAdaptationInterventionsPerRun: numberInputValue(adaptationSettings.maxInterventionsPerRun ?? FLOW_ADAPTATION_POLICY_DEFAULTS.maxInterventionsPerRun),
+    maxAdaptationCostUsdPerRun: numberInputValue(adaptationSettings.maxEstimatedCostUsdPerRun ?? FLOW_ADAPTATION_POLICY_DEFAULTS.maxEstimatedCostUsdPerRun),
     budgetExhaustedBehavior: budgets.exhaustedBehavior === "stop" || metadata.budgetExhaustedBehavior === "stop" ? "stop" : "ask",
-    llmProvider: "deepseek",
-    llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+    // Read back what is stored, not what the framework defaults to. These two
+    // were pinned to the default here while the save payload wrote the chosen
+    // value, so choosing the non-default model saved and then snapped straight
+    // back on the read -- the change appeared never to have happened.
+    llmProvider: flowLlmProvider(String(metadata.llmProvider ?? "")).id,
+    // An id Core no longer configures resolves to Core's default rather than
+    // being shown: a model DeepSeek has withdrawn must never appear in this
+    // form, and every id Core lists as retired is replaced by that same
+    // default. Both the membership test and the default are Core's, so a change
+    // to either reaches this form without being restated here.
+    llmModel: isAutomationStudioDeepSeekModel(metadata.llmModel) ? metadata.llmModel : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
     llmSecretKeyId: String(metadata.llmSecretKeyId ?? ""),
     llmMaxInputTokens: numberInputValue(llmTokenLimits.maxInputTokens ?? 8000),
     llmMaxOutputTokens: numberInputValue(llmTokenLimits.maxOutputTokens ?? 2000),
@@ -384,21 +405,37 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     ...(Object.keys(budgets).length ? { budgets } : {}),
     resultCheck: { ...(retainedTrainingSettings.resultCheck ?? {}), schedule: flowResultCheckSchedule(draft) }
   };
+  // Every adaptation setting this form owns is written on every save, and the
+  // key is never omitted.
+  //
+  // Core's `update-flow-settings` merges the patch over the stored metadata
+  // (`api/handlers/flows.ts`), so at this level an absent key means "keep what
+  // is there" rather than "use the default". Writing only the settings that
+  // differed from their defaults therefore made turning one *back* to its
+  // default impossible: the key vanished from the patch, the merge kept the old
+  // override, and the form redrew from the response showing the value the
+  // person had just cleared. Nothing failed, so nothing was reported.
+  //
+  // Stored fields this form does not offer -- the external-side-effect pair --
+  // are carried through rather than dropped, the same way the standing
+  // result-check authorization is.
+  const retainedAdaptationSettings: any = _oldAdaptationSettings && typeof _oldAdaptationSettings === "object" ? _oldAdaptationSettings : {};
   const adaptationPolicySettings = {
-    ...(draft.adaptationPreset !== "adaptive" ? { preset: draft.adaptationPreset } : {}),
-    ...(draft.adaptationProposalMode !== "auto" ? { proposalMode: draft.adaptationProposalMode } : {}),
-    ...(draft.manualReviewForStructuralChanges !== true ? { manualReviewForStructuralChanges: draft.manualReviewForStructuralChanges } : {}),
-    ...(draft.allowRuntimeRecovery !== true ? { allowRuntimeRecovery: draft.allowRuntimeRecovery } : {}),
-    ...(draft.allowCreateRecoveryPaths !== true ? { allowCreateRecoveryPaths: draft.allowCreateRecoveryPaths } : {}),
-    ...(draft.allowModifySubflows !== true ? { allowModifySubflows: draft.allowModifySubflows } : {}),
-    ...(draft.allowCreateSubflows !== true ? { allowCreateSubflows: draft.allowCreateSubflows } : {}),
-    ...(draft.allowModifyRouter !== true ? { allowModifyRouter: draft.allowModifyRouter } : {}),
-    ...(draft.allowModifyExpectations !== true ? { allowModifyExpectations: draft.allowModifyExpectations } : {}),
-    ...(draft.allowModifyActionTargets !== true ? { allowModifyActionTargets: draft.allowModifyActionTargets } : {}),
-    ...(draft.allowDeleteOrDisableBehavior ? { allowDeleteOrDisableBehavior: true } : {}),
-    ...(draft.requireApprovalForDestructiveChanges !== true ? { requireApprovalForDestructiveChanges: false } : {}),
-    ...(Number(draft.maxAdaptationInterventionsPerRun) !== 3 ? { maxInterventionsPerRun: Number(draft.maxAdaptationInterventionsPerRun) } : {}),
-    ...(Number(draft.maxAdaptationCostUsdPerRun) !== 1 ? { maxEstimatedCostUsdPerRun: Number(draft.maxAdaptationCostUsdPerRun) } : {})
+    ...retainedAdaptationSettings,
+    preset: draft.adaptationPreset,
+    proposalMode: draft.adaptationProposalMode,
+    manualReviewForStructuralChanges: draft.manualReviewForStructuralChanges,
+    allowRuntimeRecovery: draft.allowRuntimeRecovery,
+    allowCreateRecoveryPaths: draft.allowCreateRecoveryPaths,
+    allowModifySubflows: draft.allowModifySubflows,
+    allowCreateSubflows: draft.allowCreateSubflows,
+    allowModifyRouter: draft.allowModifyRouter,
+    allowModifyExpectations: draft.allowModifyExpectations,
+    allowModifyActionTargets: draft.allowModifyActionTargets,
+    allowDeleteOrDisableBehavior: draft.allowDeleteOrDisableBehavior,
+    requireApprovalForDestructiveChanges: draft.requireApprovalForDestructiveChanges,
+    maxInterventionsPerRun: Number(draft.maxAdaptationInterventionsPerRun),
+    maxEstimatedCostUsdPerRun: Number(draft.maxAdaptationCostUsdPerRun)
   };
   const { timeoutMs: _oldTimeout, maxConcurrency: _oldConcurrency, authorizedDomainIds: _oldDomains, ...retainedExecutionDefaults } = flow.executionDefaults ?? {};
   const authorizedDomainIds = [...new Set(draft.authorizedDomainIds.map((item) => item.trim()).filter(Boolean))];
@@ -419,13 +456,18 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
       ...retainedMetadata,
       adaptationModeVersion: 1,
       adaptationMode: draft.adaptationMode,
-      ...(Object.keys(trainingModeSettings).length ? { trainingModeSettings } : {}),
-      ...(Object.keys(adaptationPolicySettings).length ? { adaptationPolicySettings } : {}),
+      // None of these keys may be left out on the strength of its value looking
+      // like a default. Core merges this patch over the stored metadata, so an
+      // omitted key keeps whatever is stored -- which silently refused every
+      // attempt to clear an encrypted key or return to the default adaptation
+      // policy. A key the form owns is stated on every save, defaults included.
+      trainingModeSettings,
+      adaptationPolicySettings,
       ...(llmProvider && llmProvider !== "host" ? { llmProvider } : {}),
       ...(llmModel && llmModel !== "host-default" ? { llmModel } : {}),
-      ...(llmSecretKeyId ? { llmSecretKeyId } : {}),
+      llmSecretKeyId,
       llmExecutionSettings,
-      ...(adaptationPolicyId && adaptationPolicyId !== "policy.default" ? { adaptationPolicyId } : {})
+      adaptationPolicyId: adaptationPolicyId || "policy.default"
     }
   };
 }
@@ -449,24 +491,6 @@ export function flowSettingsMetadata(flow: any) {
       exhaustedBehavior: "ask"
     }
   };
-  const adaptationPolicySettings = {
-    preset: "adaptive",
-    proposalMode: "auto",
-    manualReviewForStructuralChanges: true,
-    allowRuntimeRecovery: true,
-    allowCreateRecoveryPaths: true,
-    allowModifySubflows: true,
-    allowCreateSubflows: true,
-    allowModifyRouter: true,
-    allowModifyExpectations: true,
-    allowModifyActionTargets: true,
-    allowDeleteOrDisableBehavior: false,
-    allowExternalSideEffects: false,
-    requireApprovalForDestructiveChanges: true,
-    requireApprovalForExternalSideEffects: true,
-    maxInterventionsPerRun: 3,
-    maxEstimatedCostUsdPerRun: 1
-  };
   const existingAdaptationSettings = existingMetadata.adaptationPolicySettings && typeof existingMetadata.adaptationPolicySettings === "object" ? existingMetadata.adaptationPolicySettings : {};
   const mergedTrainingModeSettings = {
     ...trainingModeSettings,
@@ -484,13 +508,53 @@ export function flowSettingsMetadata(flow: any) {
     llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
     llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: FLOW_LLM_UNSET_CALL_COUNT, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
     adaptationPolicyId: "policy.default",
-    adaptationPolicySettings: { ...adaptationPolicySettings, ...existingAdaptationSettings },
     budgetExhaustedBehavior: "ask",
     frozenScopeCount: 0,
     ...existingMetadata,
-    trainingModeSettings: mergedTrainingModeSettings
+    // Both merged maps are re-applied *after* the stored metadata. Spreading
+    // `existingMetadata` last replaced the merge with the raw stored object, so
+    // a Flow that had saved any adaptation setting lost every default beside it
+    // -- which is how the two adaptation budgets came back blank and were then
+    // written as 0. `trainingModeSettings` was already re-applied here; the
+    // adaptation half was not, and that asymmetry was the whole defect.
+    trainingModeSettings: mergedTrainingModeSettings,
+    adaptationPolicySettings: { ...FLOW_ADAPTATION_POLICY_DEFAULTS, ...existingAdaptationSettings }
   };
 }
+
+/**
+ * The adaptation policy a Flow runs under when it has stored nothing of its own.
+ *
+ * Read by both the metadata merge and the draft, so the value a blank box would
+ * have saved and the value shown in it cannot drift apart.
+ *
+ * These must equal what Core resolves for a Flow that stored nothing, in
+ * `runtime/service/flow-settings/adaptation-policy.ts`. The four permission
+ * fields below were the opposite of Core's for as long as this table existed,
+ * so the panel showed "approval required" for a Flow Core was running without
+ * one -- and, now that a save states every field it owns, would have written
+ * that stale answer back over Core's. Core exports no defaults constant to
+ * import, only the resolver, so this mirrors it: changing Core's values without
+ * changing these puts the panel back to describing a Flow that does not exist.
+ */
+const FLOW_ADAPTATION_POLICY_DEFAULTS = {
+  preset: "adaptive",
+  proposalMode: "auto",
+  manualReviewForStructuralChanges: true,
+  allowRuntimeRecovery: true,
+  allowCreateRecoveryPaths: true,
+  allowModifySubflows: true,
+  allowCreateSubflows: true,
+  allowModifyRouter: true,
+  allowModifyExpectations: true,
+  allowModifyActionTargets: true,
+  allowDeleteOrDisableBehavior: true,
+  allowExternalSideEffects: true,
+  requireApprovalForDestructiveChanges: false,
+  requireApprovalForExternalSideEffects: false,
+  maxInterventionsPerRun: 3,
+  maxEstimatedCostUsdPerRun: 1
+} as const;
 
 function flowSettingsTrainingMode(value: unknown): FlowSettingsDraft["trainingMode"] {
   return value === "train_for_runs" || value === "train_until_stable" || value === "continuous_adaptive" ? value : "normal";

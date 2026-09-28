@@ -197,21 +197,25 @@ describe("Automation Studio Flow settings: the intervention mode a caller names"
       await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), adaptationModeVersion: 1, adaptationMode: "manual_approval" } } });
 
       const saved = await service.getFlow(project.id, flow.flowId);
-      expect(saved.metadata).toMatchObject({ trainingModeSettings: { mode: "normal", allowLlmIntervention: false } });
+      expect(saved.metadata).toMatchObject({ trainingModeSettings: { mode: "continuous_adaptive", allowLlmIntervention: true } });
       expect((await service.getFlowMetadataDetail(project.id, flow.flowId))?.settings?.interventionMode).toBe("manual_approval");
     } finally {
       await cleanup();
     }
   });
 
-  it("leaves a Flow that names no mode at no_llm_intervention, however its settings are patched", async () => {
+  // A Flow that never opted in keeps the creation default, and since 2026-09-28
+  // that default is `fully_adaptive`: repairing and re-authoring itself is the
+  // automation's own work, so silence permits it. What this row is really for is
+  // that patching unrelated settings does not move the mode.
+  it("leaves a Flow that names no mode at its creation default, however its settings are patched", async () => {
     const { service, cleanup } = await createCacheApiTestService();
     try {
       const project = await service.createProject({ name: "Settings default" });
       const flow = await service.createFlow({ projectId: project.id, name: "Never opted in" });
       const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin: vi.fn() } as any });
       registerAutomationStudioApi(registry, service);
-      expect((await service.getFlowMetadataDetail(project.id, flow.flowId))?.settings?.interventionMode).toBe("no_llm_intervention");
+      expect((await service.getFlowMetadataDetail(project.id, flow.flowId))?.settings?.interventionMode).toBe("fully_adaptive");
 
       const response = await registry.call({
         programId: "automation-studio",
@@ -222,8 +226,8 @@ describe("Automation Studio Flow settings: the intervention mode a caller names"
       });
 
       expect(response.ok, response.error).toBe(true);
-      expect((await service.getFlowMetadataDetail(project.id, flow.flowId))?.settings?.interventionMode).toBe("no_llm_intervention");
-      expect((await service.getFlow(project.id, flow.flowId)).metadata).toMatchObject({ adaptationMode: "no_llm_intervention", trainingModeSettings: { mode: "normal", allowLlmIntervention: false } });
+      expect((await service.getFlowMetadataDetail(project.id, flow.flowId))?.settings?.interventionMode).toBe("fully_adaptive");
+      expect((await service.getFlow(project.id, flow.flowId)).metadata).toMatchObject({ adaptationMode: "fully_adaptive", trainingModeSettings: { mode: "continuous_adaptive", allowLlmIntervention: true } });
     } finally {
       await cleanup();
     }

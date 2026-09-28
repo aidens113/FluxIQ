@@ -166,13 +166,19 @@ describe("the run datasets the service wires into a run", () => {
     // The pool closes once the run has its Flow and the output has been asked,
     // so the only thing left that can fail is storing the rows. There is no
     // JSONL fallback (C12): the attempt fails instead.
+    //
+    // Run deterministically, which is what this row always meant. Since
+    // 2026-09-28 a Flow nobody configured repairs itself by default, so without
+    // this the failed attempt would go on to a repair that reads the run's
+    // conversation -- out of the same closed pool -- and the test would be
+    // measuring that read rather than the dataset store it is about.
     let running: AutomationStudioService | undefined;
     const service = startService(async () => { await closeProjectStorage(running!); });
     running = service;
     const project = await service.createProject({ name: "Datasets fail closed", domainId: "example" });
     const flow = await extractionFlow(service, project.id, "flow.extract-closed");
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "no_llm_intervention" });
 
     expect(run.status).toBe("failed");
     const attempt = run.trace?.attempts.find((entry) => entry.nodeId === "extract");

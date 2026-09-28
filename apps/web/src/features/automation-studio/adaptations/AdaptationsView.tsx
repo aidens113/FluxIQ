@@ -39,7 +39,6 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
   const [detailView, setDetailView] = useState<"summary" | "changes" | "evidence" | "validation" | "audit">("summary");
   const [detailOffsets, setDetailOffsets] = useState<Record<string, number>>({ summary: 0, changes: 0, evidence: 0, validation: 0, audit: 0 });
   const [pendingReviewAction, setPendingReviewAction] = useState<AdaptationReviewAction | null>(null);
-  const [reviewPin, setReviewPin] = useState("");
   const [reviewReason, setReviewReason] = useState("");
   const [replacementAdaptationId, setReplacementAdaptationId] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -125,13 +124,19 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
   }, [flowId, props.projectId, props.requestedAdaptationId]);
   const requestAdaptationReview = (action: AdaptationReviewAction) => {
     setPendingReviewAction(action);
-    setReviewPin("");
     setReviewReason("");
     setReplacementAdaptationId("");
     setReviewError("");
   };
+  /**
+   * Approving, rejecting, applying, superseding and reverting an adaptation all
+   * reach `review-flow-adaptation`, which Core registers `authoring` and never
+   * PIN-checks. Reviewing is the improvement loop doing the job it was asked
+   * for, so it does not ask. `authorizationPin: ""` stays on the wire because
+   * the command shape still carries the field; the server ignores it here.
+   */
   const reviewAdaptation = async () => {
-    if (!props.projectId || !flowId || !selectedAdaptation || !pendingReviewAction || reviewPin.length < 4) return;
+    if (!props.projectId || !flowId || !selectedAdaptation || !pendingReviewAction) return;
     if ((pendingReviewAction === "reject" || pendingReviewAction === "supersede") && !reviewReason.trim()) {
       setReviewError("Enter a reason for this decision.");
       return;
@@ -147,7 +152,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
       flowId,
       adaptationId: selectedAdaptation.adaptationId,
       action: pendingReviewAction,
-      authorizationPin: reviewPin,
+      authorizationPin: "",
       ...(reviewReason.trim() ? { reason: reviewReason.trim() } : {}),
       ...(pendingReviewAction === "supersede" ? { supersededByAdaptationId: replacementAdaptationId.trim() } : {})
     });
@@ -158,7 +163,6 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
     }
     setSelectedAdaptation(result.payload.adaptation);
     setPendingReviewAction(null);
-    setReviewPin("");
     setReviewReason("");
     setReplacementAdaptationId("");
     void loadAdaptations(page.offset);
@@ -184,7 +188,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
   const pagedAuditEvents = phase9AuditEvents.slice(detailOffset, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE);
   return (
     <section className="automation-runs-workspace">
-      <header><div><strong>Adaptations</strong><span>Review runtime fixes and promotion evidence</span></div></header>
+      <header><div><strong>Suggested changes</strong><span>Read what FluxIQ wants to change, and the evidence behind it</span></div></header>
       {error ? <div className="automation-runtime-message" role="alert"><span>{error}</span><button className="button" disabled={loading} onClick={() => loadAdaptations(page.offset)} type="button">Retry</button></div> : null}
       <div className="automation-runtime-debugger automation-adaptation-workspace">
         <section className="automation-runtime-list-page">
@@ -202,7 +206,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
             <div className="automation-adaptation-table-head" role="row"><span role="columnheader">Trigger</span><span role="columnheader">Risk</span><span role="columnheader">Updated</span><span role="columnheader">Status</span></div>
             {!loading && adaptations.map((adaptation) => <button aria-selected={selectedAdaptation?.adaptationId === adaptation.adaptationId} className={selectedAdaptation?.adaptationId === adaptation.adaptationId ? "selected" : ""} key={adaptation.adaptationId} onClick={() => openAdaptation(adaptation.adaptationId)} role="row" type="button"><span role="cell"><strong>{adaptation.trigger || "Untitled adaptation"}</strong><small>{adaptation.adaptationId}</small></span><span role="cell"><StatusBadge value={adaptation.riskLevel ?? "low"} /></span><span role="cell">{formatRuntimeTimestamp(adaptation.updatedAt)}</span><span role="cell"><StatusBadge value={adaptation.status ?? "proposed"} /></span></button>)}
             {loading ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} aria-live="polite" role="cell">Loading adaptations...</span></div> : null}
-            {!loading && !adaptations.length ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} role="cell">{search || status || risk ? "No adaptations match these filters." : flowId ? "No adaptations have been created for this Flow." : "Select a Flow to review adaptations."}</span></div> : null}
+            {!loading && !adaptations.length ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} role="cell">{search || status || risk ? "No suggested changes match these filters. Clear them to see the rest." : flowId ? "No suggested changes yet. FluxIQ adds one here whenever a run finds something it would change." : "Select a Flow to review adaptations. Choose an automation from the list on the left."}</span></div> : null}
           </div>
           <footer className="automation-runtime-pagination-footer">
             <span>Page {page.total ? Math.floor(page.offset / page.limit) + 1 : 0} of {page.total ? Math.ceil(page.total / page.limit) : 0}</span>
@@ -292,7 +296,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
                 <DataTable label="Adaptation lifecycle events" columns={["Event", "Status", "Actor", "Reason", "At"]} rows={pagedAuditEvents.map((event: any) => [event.eventType ?? "event", [event.fromStatus, event.toStatus].filter(Boolean).join(" -> ") || "-", event.actorId ?? "system", event.reason ?? "-", formatRuntimeTimestamp(event.createdAt)])} empty="No typed lifecycle events were recorded." />
               </section>
               <section className="automation-runtime-log-section">
-                <header><strong>Review Actions</strong><span>PIN required</span></header>
+                <header><strong>Review Actions</strong><span>{adaptationReviewActions(selectedAdaptation.status, selectedAdaptation.metadata?.adaptationKind).length ? "Applied straight away" : "No actions left"}</span></header>
                 <div className="automation-runtime-json-actions">{adaptationReviewActions(selectedAdaptation.status, selectedAdaptation.metadata?.adaptationKind).map((action) => <button className={adaptationReviewCopy(action).danger ? "button button-danger" : action === "apply" ? "button button-primary" : "button"} key={action} onClick={() => requestAdaptationReview(action)} type="button">{adaptationReviewCopy(action).label}</button>)}{!adaptationReviewActions(selectedAdaptation.status).length ? <span className="automation-adaptation-copy">This adaptation is in a terminal state. Its audit record remains available.</span> : null}</div>
               </section>
               <JsonToggle label="Show complete adaptation JSON" value={selectedAdaptation} />
@@ -311,11 +315,11 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
         <div className="dialog-form">
           {(pendingReviewAction === "reject" || pendingReviewAction === "supersede") ? <Field label="Reason" required><textarea data-autofocus maxLength={1000} onChange={(event) => setReviewReason(event.target.value)} rows={3} value={reviewReason} /></Field> : null}
           {pendingReviewAction === "supersede" ? <Field hint="Use the stable ID shown in the replacement adaptation." label="Replacement adaptation ID" required><input onChange={(event) => setReplacementAdaptationId(event.target.value)} value={replacementAdaptationId} /></Field> : null}
-          <Field {...(reviewError ? { error: reviewError } : {})} hint="Use your current security PIN." label="PIN" required><input autoComplete="off" data-autofocus={pendingReviewAction !== "reject" && pendingReviewAction !== "supersede"} inputMode="numeric" onChange={(event) => setReviewPin(event.target.value.replace(/\D/g, "").slice(0, 12))} value={reviewPin} /></Field>
+          {reviewError ? <StatusText value={reviewError} /> : null}
         </div>
         <div className="modal-actions">
           <button className="button" disabled={reviewBusy} onClick={() => setPendingReviewAction(null)} type="button">Cancel</button>
-          <button className={adaptationReviewCopy(pendingReviewAction).danger ? "button button-danger" : "button button-primary"} data-modal-submit disabled={reviewBusy || reviewPin.length < 4 || ((pendingReviewAction === "reject" || pendingReviewAction === "supersede") && !reviewReason.trim()) || (pendingReviewAction === "supersede" && !replacementAdaptationId.trim())} onClick={() => void reviewAdaptation()} type="button">{reviewBusy ? "Working..." : adaptationReviewCopy(pendingReviewAction).label}</button>
+          <button className={adaptationReviewCopy(pendingReviewAction).danger ? "button button-danger" : "button button-primary"} data-modal-submit disabled={reviewBusy || ((pendingReviewAction === "reject" || pendingReviewAction === "supersede") && !reviewReason.trim()) || (pendingReviewAction === "supersede" && !replacementAdaptationId.trim())} onClick={() => void reviewAdaptation()} type="button">{reviewBusy ? "Working..." : adaptationReviewCopy(pendingReviewAction).label}</button>
         </div>
       </Modal> : null}
     </section>

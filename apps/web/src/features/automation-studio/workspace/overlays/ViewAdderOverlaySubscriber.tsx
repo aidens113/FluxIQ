@@ -3,6 +3,7 @@
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { automationWindowDescription, viewTitle } from "../components/view-metadata";
+import { automationViewGroupLabel } from "../view-adder";
 import { useAtomicOverlayCommand, type OverlayCommandDispatcher } from "./atomic-command";
 import { AccessibleFloatingOverlay } from "./accessible-floating-overlay";
 import type { ViewAdderOverlayCommand, ViewAdderOverlayRequest } from "./contracts";
@@ -54,26 +55,26 @@ export function ViewAdderOverlaySurface(props: {
   return (
     <AccessibleFloatingOverlay
       anchor={props.request.anchor}
-      ariaLabel="Add workspace tab"
+      ariaLabel="Open a panel"
       busy={status.pending}
       className="automation-window-adder-panel"
       onClose={props.onClose}
       preferredWidth={420}
     >
       <header>
-        <div><strong>Add Tab</strong><span>{props.request.area === "right" ? "Inspector" : "Main editor"}</span></div>
-        <button aria-label="Close tab picker" className="icon-button" disabled={status.pending} onClick={props.onClose} type="button"><X aria-hidden size={14} /></button>
+        <div><strong>Open a panel</strong><span>{props.request.area === "right" ? "Details panel" : "Main area"}</span></div>
+        <button aria-label="Close the panel picker" className="icon-button" disabled={status.pending} onClick={props.onClose} type="button"><X aria-hidden size={14} /></button>
       </header>
       <label className="automation-window-adder-search">
         <Search aria-hidden size={14} />
-        <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Find a view" type="search" value={query} />
+        <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Find a panel" type="search" value={query} />
       </label>
       {(["Flow", "Evidence", "Workspace"] as const).map((group) => {
         const grouped = options.filter((option) => option.group === group);
         if (!grouped.length) return null;
         return (
           <section key={group}>
-            <strong>{group}</strong>
+            <strong>{automationViewGroupLabel(group)}</strong>
             <div>
               {grouped.map((option) => {
                 const Icon = option.view.icon;
@@ -98,7 +99,7 @@ export function ViewAdderOverlaySurface(props: {
           </section>
         );
       })}
-      {!options.length ? <p className="automation-window-adder-empty">No matching views.</p> : null}
+      {!options.length ? <p className="automation-window-adder-empty">No panel matches that.</p> : null}
       {status.error ? <p className="field-error" role="alert">{status.error}</p> : null}
     </AccessibleFloatingOverlay>
   );

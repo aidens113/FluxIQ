@@ -226,6 +226,15 @@
     min-height: 0;
     height: 100%;
   }
+
+  /* The step-preview sheet owns the bottom of a narrow screen while it is open,
+     edge to edge. The conversation launcher moves above it instead of sitting
+     on top of it -- the two were both anchored to `bottom: 0` in the same
+     corner, so the sheet's own controls were underneath the launcher. The
+     height repeats the sheet's own, because that is the distance to clear. */
+  body:has(.drawer-panel.automation-preview-sheet) {
+    --automation-conversation-dock-bottom: calc(max(320px, min(64dvh, 560px)) + var(--space-sm));
+  }
 }
 
 @media (max-width: 480px) {

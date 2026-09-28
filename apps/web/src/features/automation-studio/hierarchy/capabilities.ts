@@ -1,7 +1,11 @@
 import type { AutomationHierarchyNode } from "./contracts";
 
+/**
+ * Identified by its generated structure, never by its display label: the label is user
+ * copy and changes, `flowStructure` is the node's identity and does not.
+ */
 export function automationHierarchyNodeIsSubflowRoot(node: AutomationHierarchyNode): boolean {
-  return Boolean(node.flowId && node.kind === "folder" && node.label === "Subflows" && node.metadata?.flowStructure === "subflows");
+  return Boolean(node.flowId && node.kind === "folder" && node.metadata?.flowStructure === "subflows");
 }
 
 export function automationHierarchyNodeIsSubflowCategory(node: AutomationHierarchyNode): boolean {

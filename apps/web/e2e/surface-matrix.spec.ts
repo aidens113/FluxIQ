@@ -53,18 +53,18 @@ test("keeps capability inventories inside Technical Details", async ({ page }) =
   await expect(trigger).toBeFocused();
 });
 const studioViews = [
-  "Connected Clients",
-  "Timeline",
-  "Flow",
-  "Router",
-  "Subflows",
-  "Instructions",
-  "Adaptations",
+  "Connected browsers",
+  "Recorded steps",
+  "Steps",
+  "Choose a path",
+  "Reusable parts",
+  "Guidance for the assistant",
+  "Suggested changes",
   "Settings",
-  "State View",
-  "Runtime Debug",
+  "What the page looked like",
+  "Run and test",
   "Problems",
-  "Inspector",
+  "Details",
 ] as const;
 
 test("captures every Automation Studio inner view", async ({ page }, testInfo) => {

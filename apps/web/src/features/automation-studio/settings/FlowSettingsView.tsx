@@ -1,6 +1,6 @@
 "use client";
 
-import { Combobox, Field, Modal, StatusBadge } from "../../programs/shared-ui";
+import { Combobox, StatusBadge } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, AlertTriangle, ArrowLeftRight, Bot, Boxes, CircleCheck, CircleDollarSign, Gauge, Info, ListChecks, Plus, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
@@ -10,6 +10,7 @@ import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
 import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
 import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-check-model";
+import { flowSettingsNotPersisted } from "./persistence-check";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 
@@ -52,9 +53,6 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const [publicationsLoading, setPublicationsLoading] = useState(false);
   const [publicationsError, setPublicationsError] = useState("");
   const [dependencyChoice, setDependencyChoice] = useState("");
-  const [saveAuthorizationOpen, setSaveAuthorizationOpen] = useState(false);
-  const [saveAuthorizationPin, setSaveAuthorizationPin] = useState("");
-  const [saveAuthorizationError, setSaveAuthorizationError] = useState("");
   const [revisionConflict, setRevisionConflict] = useState<any | null>(null);
   const [compareConflict, setCompareConflict] = useState(false);
   useEffect(() => {
@@ -126,6 +124,12 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   }, [props.projectId, flow?.flowId]);  const draftDirty = settingsDraftIsDirty(draft, baseDraft);
   useEffect(() => {
     if (!props.flow?.flowId || props.flow.flowId !== flow?.flowId) return;
+    // A catalog summary carries no settings metadata, so adopting one would
+    // redraw every control from the framework defaults and silently discard
+    // settings that were saved seconds earlier. The mount path already refuses
+    // a summary; this path did not, and a store refresh after a save pushes
+    // exactly that -- the same flow, a newer `updatedAt`, none of the detail.
+    if (props.flow.metadata?.summaryOnly === true) return;
     const revisionAction = settingsConcurrentRevisionAction({ currentRevision: flow?.updatedAt, incomingRevision: props.flow.updatedAt, dirty: draftDirty });
     if (revisionAction === "ignore") return;
     const incomingDraft = flowSettingsDraftFromFlow(props.flow);
@@ -161,19 +165,22 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const settingsErrors = [...generalRuntimeErrors, ...resultCheckErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
   const settingsPending = settingsLoading;
   const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const saveSettings = async (authorizationPin: string, propagateError = false) => {
-    if (!props.projectId || !flow?.flowId || settingsErrors.length || authorizationPin.trim().length < 4) {
+  // Saving Flow settings is ordinary editing. Core registers `updateFlowSettings`
+  // as `authoring`, and its API registry PIN-checks only `destructive`
+  // endpoints, so the dialog that used to sit in front of this button asked the
+  // person for a credential the server never looked at.
+  const saveSettings = async (propagateError = false) => {
+    if (!props.projectId || !flow?.flowId || settingsErrors.length) {
       if (propagateError) throw new Error(settingsErrors[0] ?? "Flow Settings are not ready to save.");
       return false;
     }
     setSaving(true);
     setMessage("");
     setError("");
-    setSaveAuthorizationError("");
     const result = await props.commands.saveFlow({
       projectId: props.projectId,
       flowId: flow.flowId,
-      authorizationPin: authorizationPin.trim(),
+      authorizationPin: "",
       expectedUpdatedAt: flow.updatedAt,
       flow: buildFlowSettingsSavePayload(flow, draft)
     });
@@ -181,7 +188,6 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     if (!result.ok || !result.payload?.flow) {
       const saveError = result.error?.includes("FLOW_SAVE_CONFLICT") ? "Save conflict: this Flow changed elsewhere. Your Settings draft is preserved; reload after reviewing the other change." : result.error ?? "Flow settings could not be saved.";
       setError(saveError);
-      setSaveAuthorizationError(saveError);
       if (result.error?.includes("FLOW_SAVE_CONFLICT") && props.flow?.flowId === flow.flowId) setRevisionConflict(props.flow);
       if (propagateError) throw new Error(saveError);
       return false;
@@ -191,9 +197,13 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     const nextDraft = flowSettingsDraftFromFlow(loadedFlow);
     setDraft(nextDraft);
     setBaseDraft(nextDraft);
-    setMessage("Settings saved.");
-    setSaveAuthorizationOpen(false);
-    setSaveAuthorizationPin("");
+    // An accepted save that stored something else is still a failure, and it is
+    // the one the person cannot see: the controls redraw from the response and
+    // the changed setting sits back on its old value under the words "Settings
+    // saved." Name what did not take instead of claiming success.
+    const notPersisted = flowSettingsNotPersisted(draft, nextDraft);
+    if (notPersisted.length) setError(`Saved, but ${notPersisted.length === 1 ? "this setting did" : "these settings did"} not take effect: ${notPersisted.join(", ")}. The value shown is what is stored.`);
+    else setMessage("Settings saved.");
     commitAutomationStudioMutation({
       kind: "flow-settings.changed",
       projectId: props.projectId,
@@ -206,10 +216,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     viewId: automationStudioViewId.settings,
     label: `Flow Settings: ${flow?.name ?? "current Flow"}`,
     dirty: draftDirty,
-    save: async (authorizationPin) => {
-      if (authorizationPin) await saveSettings(authorizationPin, true);
-      else { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }
-    },
+    save: async () => { await saveSettings(true); },
     discard: () => setDraft(baseDraft)
   });
   return (
@@ -334,8 +341,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
         <JsonToggle label="Show Technical Metadata" value={metadata} />
       </section>
       </SettingsSectionLayout>}
-      {!settingsPending && !settingsLoadError ? <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved Flow settings" : "All Flow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving} onClick={() => setDraft(baseDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !flow?.flowId || !draftDirty || saving} onClick={() => { if (settingsErrors.length) { setError("Fix the highlighted settings before saving."); return; } setError(""); setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }} type="button">{saving ? "Saving..." : "Save Settings"}</button></div></footer> : null}
-      {saveAuthorizationOpen ? <Modal title="Authorize Flow Settings Save" onClose={() => saving ? undefined : setSaveAuthorizationOpen(false)}><div className="automation-modal-form"><p className="automation-router-modal-intro">Confirm this Flow Settings write with your security PIN. Your draft remains intact if authorization or conflict checks fail.</p><Field label="Security PIN" {...(saveAuthorizationError ? { error: saveAuthorizationError } : {})}><input autoFocus inputMode="numeric" maxLength={12} onChange={(event) => { setSaveAuthorizationPin(event.target.value.replace(/\D/g, "")); setSaveAuthorizationError(""); }} type="password" value={saveAuthorizationPin} /></Field><div className="modal-actions"><button className="button" disabled={saving} onClick={() => setSaveAuthorizationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={saveAuthorizationPin.length < 4 || saving} onClick={() => void saveSettings(saveAuthorizationPin)} type="button">{saving ? "Saving..." : "Authorize and Save"}</button></div></div></Modal> : null}
+      {!settingsPending && !settingsLoadError ? <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved Flow settings" : "All Flow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving} onClick={() => setDraft(baseDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !flow?.flowId || !draftDirty || saving} onClick={() => { if (settingsErrors.length) { setError("Fix the highlighted settings before saving."); return; } setError(""); void saveSettings(); }} type="button">{saving ? "Saving..." : "Save Settings"}</button></div></footer> : null}
 
     </section>
   );

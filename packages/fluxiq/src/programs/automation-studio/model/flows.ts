@@ -220,17 +220,33 @@ export type AutomationStudioFlowArtifact = {
   metadata?: JsonObject;
 };
 
+/**
+ * What a Flow nobody has configured is allowed to do about itself.
+ *
+ * **Everything, as of 2026-09-28.** Until then this shipped `no_llm_intervention`
+ * with a `locked` policy, which meant a Flow created out of the box could not
+ * repair itself, re-author a subflow, reroute, retarget an action, create a
+ * recovery path or promote what it learned, and every proposal it did make waited
+ * on a person. That is the automation's own work, and the product owner's rule is
+ * that asking for the automation *is* the grant for it: only a delete or a
+ * movement of money reaches a person, and those are gated per action by
+ * `runtime/action-permissions/destructive.ts`, not by a standing setting here.
+ *
+ * A person who wants something narrower still sets it -- these are defaults, and
+ * an explicit setting is the one thing that narrows the rule. What changed is
+ * which way silence falls. `tests/default-settings.test.ts` pins it.
+ */
 export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
   const trainingModeSettings = {
-    mode: "normal",
+    mode: "continuous_adaptive",
     trainForRunCount: 3,
     minimumStabilityScore: 0.9,
-    allowLlmIntervention: false,
+    allowLlmIntervention: true,
     allowRuntimeRecovery: true,
-    allowAdaptationCreation: false,
-    proposalApprovalMode: "manual",
-    allowPromotion: false,
-    requireFirstManualReviewBeforeAutoPromotion: true,
+    allowAdaptationCreation: true,
+    proposalApprovalMode: "auto",
+    allowPromotion: true,
+    requireFirstManualReviewBeforeAutoPromotion: false,
     recoveryBudget: {
       // Two retries after the first attempt, so a Flow created with these
       // defaults gets the runtime's three. It was 1, from when this number only
@@ -249,25 +265,31 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     }
   };
   const adaptationPolicySettings = {
-    preset: "locked",
-    proposalMode: "manual",
+    preset: "adaptive",
+    proposalMode: "auto",
     allowRuntimeRecovery: true,
-    allowCreateRecoveryPaths: false,
-    allowModifySubflows: false,
-    allowCreateSubflows: false,
-    allowModifyRouter: false,
-    allowModifyExpectations: false,
-    allowModifyActionTargets: false,
-    allowDeleteOrDisableBehavior: false,
-    allowExternalSideEffects: false,
-    requireApprovalForDestructiveChanges: true,
-    requireApprovalForExternalSideEffects: true,
+    allowCreateRecoveryPaths: true,
+    allowModifySubflows: true,
+    allowCreateSubflows: true,
+    allowModifyRouter: true,
+    allowModifyExpectations: true,
+    allowModifyActionTargets: true,
+    // Removing or disabling a step of a Flow is editing a Flow, not deleting
+    // anything in the world. The real-world `delete` class is what reaches a
+    // person, action by action, at the permission gate.
+    allowDeleteOrDisableBehavior: true,
+    // Not a permission. The permission gate answers every action's real-world
+    // consequence; a flag that withheld the acting options outright left a run
+    // with nothing to ask about and no way to do what it was asked for.
+    allowExternalSideEffects: true,
+    requireApprovalForDestructiveChanges: false,
+    requireApprovalForExternalSideEffects: false,
     maxInterventionsPerRun: 3,
     maxEstimatedCostUsdPerRun: 1
   };
   return {
     adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
-    adaptationMode: "no_llm_intervention",
+    adaptationMode: "fully_adaptive",
     trainingMode: trainingModeSettings.mode,
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,

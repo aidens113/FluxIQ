@@ -5,7 +5,10 @@
 .automation-conversation-dock {
   position: fixed;
   right: var(--space-lg);
-  bottom: var(--space-lg);
+  /* How far up from the bottom edge. The workspace raises this so the launcher
+     clears the step-preview dock, and a narrow screen raises it again so it
+     clears the preview sheet; on any other page the default stands. */
+  bottom: var(--automation-conversation-dock-bottom, var(--space-lg));
   z-index: var(--layer-overlay);
   display: flex;
   flex-direction: column;
@@ -217,7 +220,7 @@
 @media (max-width: 768px) {
   .automation-conversation-dock {
     right: var(--space-sm);
-    bottom: var(--space-sm);
+    bottom: var(--automation-conversation-dock-bottom, var(--space-sm));
     left: var(--space-sm);
   }
 

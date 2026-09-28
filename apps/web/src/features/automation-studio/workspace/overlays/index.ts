@@ -20,16 +20,10 @@ export {
 } from "./overlay-state-store";
 export type {
   AutomationStudioOverlayState,
-  HierarchyFolderOption,
-  HierarchyFolderOptionSource,
-  HierarchyOverlayCommand,
-  HierarchyOverlayRequest,
   LayoutPickerOverlayCommand,
   LayoutPickerOverlayRequest,
   PreferencesOverlayCommand,
   PreferencesOverlayRequest,
-  ProjectOverlayCommand,
-  ProjectOverlayRequest,
   ViewAdderOverlayCommand,
   ViewAdderOverlayRequest
 } from "./contracts";

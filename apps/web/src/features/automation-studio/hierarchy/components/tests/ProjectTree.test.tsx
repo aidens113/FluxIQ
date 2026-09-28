@@ -194,8 +194,8 @@ describe("AutomationProjectTree", () => {
         requestAction={vi.fn()}
       />
     );
-    expect(html).toContain("lucide-list-checks");
-    expect(html).toContain("lucide-bug");
+    expect(html).toContain("lucide-scroll-text");
+    expect(html).toContain("lucide-play");
     expect(html).toContain("lucide-settings");
     expect(html).toContain("lucide-radio");
     expect(html).toContain("lucide-history");
@@ -229,7 +229,7 @@ describe("AutomationProjectTree", () => {
 
     expect(html.match(/selected type-/g)?.length).toBe(1);
     expect(html).toContain("selected type-flow-object");
-    expect(html).toContain("Nodes</strong><small>flow-object</small>");
+    expect(html).toContain("Nodes</strong></span>");
     expect(html).not.toContain("selected type-subflow");
     expect(automationHierarchyNodeCanRemainPrimary(nodes[3]!, selection)).toBe(true);
   });
@@ -263,7 +263,7 @@ describe("AutomationProjectTree", () => {
     );
 
     expect(html.match(/selected type-flow-object/g)?.length).toBe(1);
-    expect(html).toContain("Settings</strong><small>flow-object</small></span></button>");
+    expect(html).toContain("Settings</strong></span></button>");
   });
 
   it("visually selects Router instead of the Flow row when Router is the active Flow view", () => {
@@ -288,7 +288,7 @@ describe("AutomationProjectTree", () => {
     );
 
     expect(html.match(/selected type-/g)?.length).toBe(1);
-    expect(html).toContain("Router</strong><small>flow-object</small></span></button>");
+    expect(html).toContain("Router</strong></span></button>");
     expect(html).toContain("selected type-flow-object");
     expect(html).not.toContain("selected type-flow\"");
     expect(html).not.toContain("correlated type-flow");
@@ -515,7 +515,7 @@ describe("AutomationProjectTree", () => {
     );
 
     expect(html.match(/selected type-flow-object/g)?.length).toBe(1);
-    expect(html).toContain("Settings</strong><small>flow-object</small>");
+    expect(html).toContain("Settings</strong></span>");
     expect(html).toContain('aria-level="3"');
     expect(html).toContain('data-tree-parent-id="flow-a"');
     expect(html).toContain("Load more");

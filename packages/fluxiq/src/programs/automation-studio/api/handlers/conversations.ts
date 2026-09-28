@@ -1,5 +1,6 @@
-// The endpoints a person uses to talk to FluxIQ: the threads, one thread, what
-// a turn shows, a turn they write, and the answer to an ask.
+// The endpoints a person uses to talk to FluxIQ: the threads, the thread they
+// start, one thread, what a turn shows, a turn they write, and the answer to
+// an ask.
 //
 // **Every handler here asserts the project's domain access before it reads
 // anything**, for the reason the dataset handlers do (`datasets.ts`): a thread
@@ -27,7 +28,7 @@
 // service. `register.ts` builds the record from the service's `conversations`
 // field in one line.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { automationStudioPageLimit } from "../../storage/index.ts";
 import {
@@ -92,6 +93,39 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
         found.push(...await conversations().listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
       }
       return { ok: true, payload: { conversations: found.slice(0, limit) } };
+    }
+  });
+
+  // The thread a person starts. Core opens a thread by itself the first time a
+  // run, a build or a node has something to say, but until a person could open
+  // one there was nothing to say anything *into*: the composer had no
+  // conversation to append to and `append-turn` refuses an unknown thread. So
+  // the chat window could be spoken to and never spoken from.
+  //
+  // `programs.write` and `authoring`, exactly as `append-turn` is. Opening a
+  // thread removes nothing and acts nowhere outside, so it must not take a PIN
+  // -- only a real-world delete or a payment asks a person, and starting a
+  // conversation is neither.
+  //
+  // A subject the caller does not name falls back to the project itself, which
+  // is what a person opening the chat with nothing selected is talking about.
+  // Refusing them a thread for want of a subject would be the product declining
+  // to do the thing it was asked for.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation,
+    permission: "programs.write",
+    classification: "authoring",
+    handler: async (request) => {
+      const payload = conversationPayload<ConversationOpenRequest>(request.payload);
+      const projectId = String(payload.projectId ?? "");
+      await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const conversation = await conversations().openConversation({
+        projectId,
+        subject: requestedSubject(payload.subjectKind, payload.subjectId) ?? { kind: "project", id: projectId },
+        title: typeof payload.title === "string" && payload.title ? payload.title : null
+      });
+      return { ok: true, payload: { conversation } };
     }
   });
 

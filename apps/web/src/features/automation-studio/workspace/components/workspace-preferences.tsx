@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { Button } from "../../../programs/shared-ui";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight, automationStrictMainLayoutPresets, defaultAutomationWorkspacePrefs } from "../layout/defaults";
 import { defaultAutomationMainSplitRatios } from "../layout/mutations";
 import type { AutomationStrictMainLayoutPreset, AutomationWorkspacePrefs } from "../layout/contracts";
@@ -10,13 +12,20 @@ export function AutomationWorkspacePreferences(props: {
   saveStatus: string;
   setPrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs): void;
 }) {
+  // Resetting throws away every open tab, pane split and saved view state, and
+  // it sat one unlabelled click away next to a status line. It is the only
+  // control on this panel that destroys anything, so it asks first.
+  const [resetArmed, setResetArmed] = useState(false);
   const setNumber = (key: "sidebarWidth" | "inspectorWidth" | "bottomTimelineHeight", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
   const setPreset = (preset: AutomationStrictMainLayoutPreset) => props.setPrefs((current) => ({
     ...current,
     mainLayoutPreset: preset,
     mainSplitRatios: defaultAutomationMainSplitRatios(preset)
   }));
-  const resetLayout = () => props.setPrefs(() => defaultAutomationWorkspacePrefs());
+  const resetLayout = () => {
+    props.setPrefs(() => defaultAutomationWorkspacePrefs());
+    setResetArmed(false);
+  };
   return (
     <div className="automation-preferences-panel">
       <section className="automation-preference-group" aria-labelledby="workspace-frame-preferences">
@@ -63,8 +72,11 @@ export function AutomationWorkspacePreferences(props: {
         </label>
       </section>
       <footer className="automation-preferences-footer">
-        <output aria-live="polite" className="automation-preferences-save-status">{props.saveStatus}</output>
-        <button className="button" onClick={resetLayout} type="button">Reset workspace layout</button>
+        <output aria-live="polite" className="automation-preferences-save-status">{resetArmed ? "Reset closes every open tab, undoes every pane split, and restores the default sizes." : props.saveStatus}</output>
+        {resetArmed ? <>
+          <Button onClick={() => setResetArmed(false)}>Keep my layout</Button>
+          <Button onClick={resetLayout} variant="danger">Reset it anyway</Button>
+        </> : <Button onClick={() => setResetArmed(true)}>Reset workspace layout</Button>}
       </footer>
     </div>
   );

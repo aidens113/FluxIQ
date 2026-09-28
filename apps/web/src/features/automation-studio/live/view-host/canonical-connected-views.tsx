@@ -130,9 +130,10 @@ export const AutomationClientsConnectedView = createAutomationDirectViewConnecto
 
 export const AutomationFlowEditorConnectedView = createAutomationDirectViewConnector({
   id: automationStudioViewId.flowEditor,
-  placeholder: () => ({
+  placeholder: (scope: AutomationCanonicalConnectorScope) => ({
     editable: false, entries: [], policy: null, taskGraph: null, nativeNodeDefinitions: [],
-    recordings: [], selectedNode: null, focusRequest: null, selectedTimeline: null, signals: []
+    recordings: [], selectedNode: null, focusRequest: null, selectedTimeline: null, signals: [],
+    projectId: scope.projectId, authoringFlow: null
   }) as any,
   projectScopes: flowScopes,
   selectionScopes,
@@ -141,6 +142,14 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
     const flow = selectAutomationConnectorSubflowGraph(state, scope);
     if (flow.flow?.flowId && (!flow.entry || (flow.entry.source === "canonical" && flow.flow.metadata?.summaryOnly === true))) {
       void scope.loadFlowDetail(flow.flow.flowId, { refresh: true });
+    }
+    // With no Subflow graph open this pane hosts the "what should this do?"
+    // ask, which reads the top-level Flow's detail rather than its summary.
+    if (!flow.flow) {
+      const selected = selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor);
+      if (selected.flow?.flowId && (!selected.entry || (selected.entry.source === "canonical" && selected.flow.metadata?.summaryOnly === true))) {
+        void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
+      }
     }
     if (!(model.nativeNodeDefinitions?.length ?? 0)) void scope.loadNodeDefinitions();
   },
@@ -151,7 +160,12 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
       const taskGraph = selected.flow?.flowId === view.selectedTaskGraph?.flowId ? view.selectedTaskGraph : selected.flow;
       const drafts = resource<Record<string, any>>(state, "taskGraphDrafts", emptyRecord);
       const draftKey = automationGraphDraftIdentity(taskGraph);
+      const authoringFlow = taskGraph
+        ? null
+        : selectAutomationConnectorFlow(state, scope as AutomationCanonicalConnectorScope, automationStudioViewId.flowEditor).flow;
       return {
+        projectId: (scope as AutomationCanonicalConnectorScope).projectId,
+        authoringFlow,
         editable: Boolean(taskGraph && selected.entry?.source === "canonical"),
         entries: view.selectedTimelineEntries,
         policy: view.selectedPolicy,

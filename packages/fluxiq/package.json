@@ -16,6 +16,7 @@
     "import": "./dist/programs/automation-studio/runtime/llm/deepseek/models.js"
   },
   "./automation-studio/action-permissions": { "types": "./dist/programs/automation-studio/runtime/action-permissions/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/action-permissions/client/index.js" },
+    "./automation-studio/panel-capabilities": { "types": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.js" },
     "./automation-studio/nodes": { "types": "./dist/programs/automation-studio/nodes/index.d.ts", "import": "./dist/programs/automation-studio/nodes/index.js" },
     "./automation-studio/dsl": { "types": "./dist/programs/automation-studio/dsl/index.d.ts", "import": "./dist/programs/automation-studio/dsl/index.js" },
     "./automation-studio/dsl/generator": { "types": "./dist/programs/automation-studio/dsl/generator.d.ts", "import": "./dist/programs/automation-studio/dsl/generator.js" },

@@ -363,9 +363,9 @@ describe("AutomationStudioLive public behavior", () => {
 
     expect(pay?.metadata).toMatchObject({ graphFlowId: "flow.pay.graph", defaultCollapsed: true });
     expect(retry?.metadata).toMatchObject({ graphFlowId: "flow.retry.graph", defaultCollapsed: true });
-    const paySubflows = nodes.find((node) => node.label === "Subflows" && node.flowId === "flow.pay.graph");
+    const paySubflows = nodes.find((node) => node.label === "Reusable parts" && node.flowId === "flow.pay.graph");
     expect(nodes).toContainEqual(expect.objectContaining({ label: "Recovery", parentId: paySubflows?.id }));
-    expect(nodes).toContainEqual(expect.objectContaining({ label: "Nodes", parentId: pay?.id, flowId: "flow.pay.graph" }));
+    expect(nodes).toContainEqual(expect.objectContaining({ label: "Steps", parentId: pay?.id, flowId: "flow.pay.graph" }));
     expect(nodes).toContainEqual(expect.objectContaining({ label: "Settings", parentId: retry?.id, flowId: "flow.retry.graph" }));
     expect(nodes.filter((node) => node.viewId === "flow-router")).toHaveLength(1);
     expect(nodes.filter((node) => node.kind === "flow")).toHaveLength(1);

@@ -11,6 +11,9 @@ import { buildFlowMapRouteTestPayload, defaultFlowMapRouteDraft, flowMapConditio
 import { RouterContentView, ROUTER_ROUTE_PAGE_SIZE } from "./RouterContentView";
 
 
+/** Every change this view can make to the paths a run takes. */
+export type RouterAuthorizedAction = "save-route" | "delete-route" | "save-group" | "delete-group" | "save-fallback" | "mutate-route";
+
 type InitialRouterRoutePage = { routes: any[]; counts: { total: number; active: number; disabled: number; byGroup: Record<string, number> }; nextCursor: string | null; hasMore: boolean };
 export type RouterViewProps = { projectId: string | null; flow: any; initialRouter?: any; initialRoutePage?: InitialRouterRoutePage; initialSubflows?: any[]; onCreateSubflow?(): void };
 
@@ -43,7 +46,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
   const [routeTestValue, setRouteTestValue] = useState("");
   const [routeTestResult, setRouteTestResult] = useState<null | { matched: boolean; reason: string }>(null);
   const [testingRoute, setTestingRoute] = useState(false);
-  const [authorization, setAuthorization] = useState<null | { action: "save-route" | "delete-route" | "save-group" | "delete-group" | "save-fallback" | "mutate-route" }>(null);
+  const [authorization, setAuthorization] = useState<null | { action: RouterAuthorizedAction }>(null);
   const [authorizationPin, setAuthorizationPin] = useState("");
   const [routeMutation, setRouteMutation] = useState<null | { ruleId: string; action: "move_up" | "move_down" | "duplicate" | "toggle" | "delete" }>(null);
   const [loading, setLoading] = useState(() => Boolean(props.projectId && flowId && !isSubflowGraph && !props.initialSubflows?.length));
@@ -194,15 +197,30 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     });
     setFallbackModalOpen(true);
   };
-  const requestAuthorization = (action: "save-route" | "delete-route" | "save-group" | "delete-group" | "save-fallback" | "mutate-route") => {
+  /**
+   * Editing the paths a run can take is the product doing the job it was asked
+   * for, so it happens on the press. Core registers `save-flow-map-route`,
+   * `delete-flow-map-route`, `save-flow-map-route-group`,
+   * `save-flow-map-fallback` and `mutate-flow-map-route` all `authoring`, and
+   * its API registry PIN-checks only `destructive` endpoints - so a prompt in
+   * front of any of them asked for a credential the server never read.
+   * `delete-flow-map-route-group` is the one Core registers `destructive`:
+   * it removes a group and everything filed under it, and the server refuses it
+   * without a PIN, so that is the one action that still asks.
+   */
+  const requestAuthorization = (action: RouterAuthorizedAction) => {
     setError("");
-    setAuthorization({ action });
-    setAuthorizationPin("");
+    if (action === "delete-group") {
+      setAuthorization({ action });
+      setAuthorizationPin("");
+      return;
+    }
+    void applyRouterAction(action, "");
   };
 
   const requestRouteMutation = (ruleId: string, action: "move_up" | "move_down" | "duplicate" | "toggle" | "delete") => {
     setRouteMutation({ ruleId, action });
-    requestAuthorization("mutate-route");
+    void applyRouterAction("mutate-route", "", { ruleId, action });
   };
   const runRouteTest = async () => {
     if (!props.projectId || !flowId) return;
@@ -216,21 +234,29 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setRouteTestResult({ matched: result.payload?.matched === true, reason: result.payload?.reason ?? "No explanation was returned." });
   };
   const completeAuthorizedAction = async () => {
-    if (!props.projectId || !flowId || !authorization || !authorizationPin.trim()) return;
+    if (!authorization || !authorizationPin.trim()) return;
+    await applyRouterAction(authorization.action, authorizationPin.trim());
+  };
+  const applyRouterAction = async (
+    action: RouterAuthorizedAction,
+    authorizationPinValue: string,
+    mutation: { ruleId: string; action: string } | null = routeMutation
+  ) => {
+    if (!props.projectId || !flowId) return;
     setSaving(true);
     setError("");
-    const base = { projectId: props.projectId, flowId, authorizationPin: authorizationPin.trim() };
-    const result = authorization.action === "save-route"
+    const base = { projectId: props.projectId, flowId, authorizationPin: authorizationPinValue };
+    const result = action === "save-route"
       ? await props.commands.saveRoute({ ...base, ...(routeDraft.ruleId ? { ruleId: routeDraft.ruleId } : {}), name: routeDraft.name, description: routeDraft.description, targetSubflowId: routeDraft.targetSubflowId, order: routeDraft.order, status: routeDraft.status, groupId: routeDraft.groupId || null, setAsFallback: routeDraft.setAsFallback, confidence: routeDraft.confidence, conditionSummary: flowMapConditionSummary(routeDraft), conditionSignalPath: routeDraft.conditionMode === "when" ? routeDraft.conditionSource + "." + routeDraft.conditionField.trim() : "", conditionOperator: routeDraft.conditionOperator, conditionExpected: flowMapConditionExpected(routeDraft), clearCondition: routeDraft.conditionMode === "always" })
-      : authorization.action === "delete-route"
+      : action === "delete-route"
         ? await props.commands.deleteRoute({ ...base, ruleId: routeDraft.ruleId })
-        : authorization.action === "save-group"
+        : action === "save-group"
           ? await props.commands.saveGroup({ ...base, ...(groupDraft.groupId ? { groupId: groupDraft.groupId } : {}), name: groupDraft.name, description: groupDraft.description, order: groupDraft.order, collapsed: groupDraft.collapsed, status: groupDraft.status })
-          : authorization.action === "delete-group"
+          : action === "delete-group"
             ? await props.commands.deleteGroup({ ...base, groupId: groupDraft.groupId })
-            : authorization.action === "save-fallback"
+            : action === "save-fallback"
               ? await props.commands.saveFallback({ ...base, kind: fallbackDraft.kind, ...(fallbackDraft.kind === "subflow" ? { targetSubflowId: fallbackDraft.targetSubflowId } : { message: fallbackDraft.message }) })
-              : await props.commands.mutateRoute({ ...base, ruleId: routeMutation?.ruleId, action: routeMutation?.action });
+              : await props.commands.mutateRoute({ ...base, ruleId: mutation?.ruleId, action: mutation?.action });
     setSaving(false);
     if (!result.ok || !result.payload?.router) {
       setError(result.error ?? "Flow Map change could not be saved.");
@@ -242,12 +268,12 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setAuthorization(null);
     setAuthorizationPin("");
     setGroupModalOpen(false);
-    if (authorization.action === "save-fallback") setFallbackModalOpen(false);
-    if (authorization.action === "save-route") {
+    if (action === "save-fallback") setFallbackModalOpen(false);
+    if (action === "save-route") {
       setSelectedRuleId((result.payload.router.rules ?? []).find((rule: any) => rule.name === routeDraft.name)?.ruleId ?? routeDraft.ruleId ?? null);
       setRouteModalOpen(false);
     }
-    if (authorization.action === "delete-route") {
+    if (action === "delete-route") {
       setSelectedRuleId(null);
       setRouteDraft(defaultFlowMapRouteDraft());
       setRouteModalOpen(false);

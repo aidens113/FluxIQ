@@ -15,5 +15,11 @@ export {
   type ConversationViewHostCommands,
   type ConversationViewHostModel
 } from "./conversation-host";
+export * from "./capabilities";
 export * from "./thread";
-export { commitConversationChanged } from "./turn-commands";
+export {
+  commitConversationChanged,
+  conversationCapabilityTurnText,
+  runConversationCapability,
+  type ConversationCapabilityPayload
+} from "./turn-commands";

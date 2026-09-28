@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest } from "../index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES, parseAutomationStudioActionPermissionRequest } from "../index.ts";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..", "..", "..");
@@ -24,9 +24,16 @@ describe("the browser-safe action-permissions subpath", () => {
     expect(parseAutomationStudioActionPermissionRequest({})).toBeNull();
   });
 
+  // The browser needs this to say which capabilities re-authorize, and it must
+  // read Core's own decision rather than keep a copy of it: a copy goes stale
+  // the day the gate changes, with every test on both sides still green.
+  it("publishes the classes that still stop for a person, so the browser cannot hold a stale copy", () => {
+    expect([...AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES].sort()).toEqual(["delete", "move_money"]);
+  });
+
   it("has no Node, package, gate, service or storage runtime dependency", async () => {
     const entry = path.resolve(testsDir, "..", "index.ts");
-    const sources = [entry, path.resolve(testsDir, "..", "..", "consequences.ts"), path.resolve(testsDir, "..", "..", "request.ts")];
+    const sources = [entry, path.resolve(testsDir, "..", "..", "consequences.ts"), path.resolve(testsDir, "..", "..", "request.ts"), path.resolve(testsDir, "..", "..", "destructive.ts")];
     const offenders: string[] = [];
     for (const file of sources) {
       const source = await readFile(file, "utf8");

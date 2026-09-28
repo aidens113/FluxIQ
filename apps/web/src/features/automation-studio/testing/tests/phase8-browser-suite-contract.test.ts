@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { automationStudioViewDefinitions } from "../../views";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
@@ -23,9 +24,20 @@ describe("Phase 8 routed browser suite contract", () => {
 
   it("inventories all twelve Studio views and all nine global programs with axe", () => {
     const source = read("e2e/phase8-accessibility-matrix.spec.ts");
-    for (const view of ["Connected Clients", "Timeline", "Nodes", "Router", "Subflows", "Instructions", "Adaptations", "Settings", "State View", "Runtime Debug", "Problems", "Inspector"]) {
-      expect(source).toContain(`"${view}"`);
+    // Read from the registry rather than keeping a second copy of the twelve
+    // names. A hand-written list survived the 2026-09-28 rename untouched while
+    // every selector in the suite went stale, because it only ever compared one
+    // stale list against another. Deriving it means renaming a view fails this
+    // test until the browser suite is updated too, which is the point of it.
+    const labels = automationStudioViewDefinitions().map((definition) => definition.label);
+    expect(labels).toHaveLength(12);
+    for (const view of labels) {
+      expect(source, `the accessibility matrix must cover the "${view}" view`).toContain(`"${view}"`);
     }
+    // The e2e helpers resolve a view by its visible name, so the union they take
+    // has to hold the registry's labels and nothing else.
+    const union = read("e2e/support/app-fixture.ts").split("export type StudioViewTitle =")[1]?.split(";")[0] ?? "";
+    for (const view of labels) expect(union, `StudioViewTitle must list "${view}"`).toContain(`"${view}"`);
     for (const program of ["automation-studio", "background-tasks", "compute-control", "database-manager", "deployment-sync", "docs", "identity-access", "production-runner", "secret-keys"]) {
       expect(source).toContain(`"${program}"`);
     }

@@ -43,7 +43,7 @@ import { registerAutomationStudioApi } from "../index.ts";
 /**
  * Every endpoint that refuses a project outside the request's domain scope:
  * the six run-dataset endpoints, the seven reusable LLM context endpoints and
- * the five conversation endpoints. Each one returns, deletes or
+ * the six conversation endpoints. Each one returns, deletes or
  * counts content captured from somewhere else.
  *
  * A thread is on the list because it holds free text and some of that text
@@ -70,6 +70,7 @@ const DOMAIN_SCOPED = [
   AUTOMATION_STUDIO_ENDPOINTS.purgeExpiredReusableLlmContexts,
   AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts,
   AUTOMATION_STUDIO_ENDPOINTS.listConversations,
+  AUTOMATION_STUDIO_ENDPOINTS.openConversation,
   AUTOMATION_STUDIO_ENDPOINTS.getConversation,
   AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment,
   AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,

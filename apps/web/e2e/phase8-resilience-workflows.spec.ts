@@ -33,11 +33,11 @@ test("stale run-detail responses cannot replace the latest selected run", async 
         request: response.request().postDataJSON() as Record<string, unknown>,
         response: await response.json() as Record<string, any>,
       });
-    } catch { /* failed requests are surfaced by the Runtime Debug error state */ }
+    } catch { /* failed requests are surfaced by the Run and test error state */ }
   });
   await openFixtureProject(page, project);
   await selectFixtureFlow(page, project);
-  await openStudioView(page, "Runtime Debug");
+  await openStudioView(page, "Run and test");
   const runRows = page.locator(".automation-runtime-run-row");
   await expect.poll(() => runPages.find((entry) => entry.request.flowId === selectedFlowId)?.response.payload?.page?.total).toBe(10);
   await expect(runRows).toHaveCount(10);

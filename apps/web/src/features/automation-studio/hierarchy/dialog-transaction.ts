@@ -116,7 +116,11 @@ export function automationHierarchyDialogSubmission(
   transaction: AutomationHierarchyDialogTransaction
 ): AutomationHierarchyDialogSubmission {
   if (transaction.status === "submitting") return { ok: false, error: "This hierarchy action is already being submitted." };
-  if (transaction.authorizationPin.length < 4) return { ok: false, error: "Enter your PIN before changing hierarchy items." };
+  // Creating a Flow, a Subflow or a folder is the product doing the job it was
+  // asked for, and Core registers those endpoints `authoring`, which its API
+  // registry never PIN-checks. Deleting is the one irreversible act here, and it
+  // is the only one Core checks, so it is the only one that asks.
+  if (transaction.kind === "delete" && transaction.authorizationPin.length < 4) return { ok: false, error: "Enter your PIN before deleting this item." };
   if (transaction.kind === "create" && !transaction.name.trim()) return { ok: false, error: "Name is required." };
   return {
     ok: true,

@@ -18,14 +18,14 @@ describe("retired Automation Studio view recovery", () => {
       />
     );
 
-    expect(html).toContain("Saved view unavailable");
-    expect(html).toContain("Select a Flow");
-    expect(html).toContain("open Adaptations");
+    expect(html).toContain("This tab is no longer available");
+    expect(html).toContain("Pick an automation");
+    expect(html).toContain("open Suggested changes");
     expect(html).toContain("does not remove recordings");
     expect(html).not.toContain("Generate");
   });
 
-  it("directs retired Config tabs to Flow Settings without mounting Config UI", () => {
+  it("directs retired Config tabs to Settings without mounting Config UI", () => {
     const html = renderToStaticMarkup(
       <AutomationRetiredViewRecovery
         retiredId="config-default"
@@ -33,9 +33,9 @@ describe("retired Automation Studio view recovery", () => {
       />
     );
 
-    expect(html).toContain("Saved view unavailable");
-    expect(html).toContain("open Flow Settings");
-    expect(html).toContain("does not remove Flow settings");
-    expect(html).not.toContain("open Adaptations");
+    expect(html).toContain("This tab is no longer available");
+    expect(html).toContain("open Settings");
+    expect(html).toContain("does not change any settings");
+    expect(html).not.toContain("open Suggested changes");
   });
 });

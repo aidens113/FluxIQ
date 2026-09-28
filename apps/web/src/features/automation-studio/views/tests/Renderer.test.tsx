@@ -113,15 +113,15 @@ describe("Automation Studio typed view host", () => {
       <AutomationViewHost active activeRef={{ current: true }} request={retiredConfig} />
     );
 
-    expect(unknownHtml).toContain("View unavailable");
-    expect(unknownHtml).toContain("no longer registered");
-    expect(mismatchHtml).toContain("no longer matches its registered view type");
-    expect(unknownHtml).not.toContain("State View");
-    expect(retiredHtml).toContain("Saved view unavailable");
-    expect(retiredHtml).toContain("open Adaptations");
-    expect(retiredHtml).not.toContain("State View");
-    expect(retiredConfigHtml).toContain("Saved view unavailable");
-    expect(retiredConfigHtml).toContain("open Flow Settings");
+    expect(unknownHtml).toContain("This tab is no longer available");
+    expect(unknownHtml).toContain("no longer part of FluxIQ");
+    expect(mismatchHtml).toContain("no longer matches the panel it was saved as");
+    expect(unknownHtml).not.toContain("What the page looked like");
+    expect(retiredHtml).toContain("This tab is no longer available");
+    expect(retiredHtml).toContain("open Suggested changes");
+    expect(retiredHtml).not.toContain("What the page looked like");
+    expect(retiredConfigHtml).toContain("This tab is no longer available");
+    expect(retiredConfigHtml).toContain("open Settings");
     expect(retiredConfigHtml).not.toContain("automation-config-view");
   });
 });

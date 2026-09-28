@@ -35,9 +35,9 @@ describe("Automation Studio View Adder options", () => {
       { hasProject: true, hasFlow: false, hasTopLevelFlow: false, hasSubflowGraph: false, hasRecording: false, hasSelection: false },
       new Set(["runtime-debug"])
     );
-    expect(options.find((item) => item.view.id === "flow-nodes")?.disabledReason).toBe("Select a Subflow first");
-    expect(options.find((item) => item.view.id === "timeline-recording")?.disabledReason).toBe("Select a recording first");
-    expect(options.find((item) => item.view.id === "runtime-debug")?.disabledReason).toBe("Select a Flow or subflow first");
+    expect(options.find((item) => item.view.id === "flow-nodes")?.disabledReason).toBe("Pick a reusable part first");
+    expect(options.find((item) => item.view.id === "timeline-recording")?.disabledReason).toBe("Pick a recording first");
+    expect(options.find((item) => item.view.id === "runtime-debug")?.disabledReason).toBe("Pick an automation first");
     const duplicate = automationViewAdderOptions(
       views,
       "main",

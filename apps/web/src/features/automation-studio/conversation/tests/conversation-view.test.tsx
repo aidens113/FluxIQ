@@ -49,10 +49,20 @@ function commands(script: Script = {}) {
   const detailCalls: Array<Record<string, unknown>> = [];
   const appended: Array<Record<string, unknown>> = [];
   const answered: Array<Record<string, unknown>> = [];
-  const api: ConversationCommands & { detailCalls: typeof detailCalls; appended: typeof appended; answered: typeof answered } = {
+  const opened: Array<Record<string, unknown>> = [];
+  const ran: Array<Record<string, unknown>> = [];
+  const api: ConversationCommands & {
+    detailCalls: typeof detailCalls;
+    appended: typeof appended;
+    answered: typeof answered;
+    opened: typeof opened;
+    ran: typeof ran;
+  } = {
     detailCalls,
     appended,
     answered,
+    opened,
+    ran,
     listConversations: vi.fn(async () => script.listOk === false
       ? { ok: false, error: "The conversations could not be read." }
       : { ok: true, payload: { conversations: script.conversations ?? [conversation] } }) as any,
@@ -64,6 +74,12 @@ function commands(script: Script = {}) {
       // the conversation and its page of turns.
       return { ok: true, page: conversationThreadPage({ conversation, turns, hasMore: false }) };
     }) as any,
+    // A person can start a thread themselves now, so the double answers with the
+    // record Core answers with rather than an empty envelope the reader drops.
+    startConversation: vi.fn(async (payload: Record<string, unknown>) => {
+      opened.push(payload);
+      return { ok: true, payload: { conversation } };
+    }) as any,
     appendTurn: vi.fn(async (payload: Record<string, unknown>) => {
       appended.push(payload);
       return { ok: true, payload: {} };
@@ -71,7 +87,15 @@ function commands(script: Script = {}) {
     answerAsk: vi.fn(async (payload: Record<string, unknown>) => {
       answered.push(payload);
       return { ok: true, payload: {} };
-    }) as any
+    }) as any,
+    // The panel-operating half of the seam, and required rather than optional
+    // on purpose: a surface mounted without a way to run a capability is a
+    // surface a person cannot operate the panel from.
+    runCapability: vi.fn(async (payload: Record<string, unknown>) => {
+      ran.push(payload);
+      return { capability: null, confidence: 0, arguments: {}, outcome: { status: "done", summary: "Done." } };
+    }) as any,
+    describeCapabilities: vi.fn(() => ({ prose: "I can do things in this panel.", vocabulary: [] })) as any
   };
   return api;
 }
@@ -214,10 +238,29 @@ describe("ConversationViewContent", () => {
     expect(button(renderer, "Show me")).toBeTruthy();
   });
 
+  it("takes text on a project that has said nothing yet, and starts the thread on send", async () => {
+    // The composer was dead here until Core registered `open-conversation`:
+    // there were no threads and nothing outside Core could open one, so the one
+    // place the product asks people to talk to it could not be typed into.
+    const api = commands({ conversations: [] });
+    const renderer = await mount(api);
+    const box = renderer.root.findByProps({ "aria-label": "Message" });
+    expect(box.props.disabled).toBeFalsy();
+    await act(async () => box.props.onChange({ target: { value: "Pull last month's invoices." } }));
+    const form = renderer.root.findByProps({ "aria-label": "Write to FluxIQ" });
+    await act(async () => { await form.props.onSubmit({ preventDefault() {} }); });
+    await act(async () => { await Promise.resolve(); });
+    expect((api as any).opened).toEqual([{ projectId: "project.one" }]);
+    expect((api as any).appended[0]).toMatchObject({ conversationId: "conversation.1", text: "Pull last month's invoices." });
+  });
+
   it("says why the composer cannot be used rather than leaving a dead box", async () => {
-    const renderer = await mount(commands({ conversations: [] }));
+    // The landing screen mounts the dock before a project is chosen. There is
+    // no project to open a thread on, so this is the one state with genuinely
+    // nowhere to send, and it says so.
+    const renderer = await mount(commands({ conversations: [] }), { projectId: null });
     expect(renderer.root.findByProps({ "aria-label": "Message" }).props.disabled).toBe(true);
-    expect(textOf(renderer)).toContain("FluxIQ opens a thread as soon as a run, a build or a Flow has something to say.");
+    expect(textOf(renderer)).toContain("Open a project to start a conversation.");
   });
 
   it("takes text the moment a thread exists, which is the whole point of a channel", async () => {

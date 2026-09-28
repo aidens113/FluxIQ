@@ -49,6 +49,10 @@ export function ConversationViewContent(props: ConversationViewProps & { command
 
   const selected = thread.conversations.find((entry) => entry.conversationId === thread.selectedConversationId) ?? null;
   const nothingYet = thread.loaded && !thread.conversations.length;
+  // Writing with nothing selected opens a thread first, so the only state that
+  // genuinely has nowhere to send is one with no project to open a thread on -
+  // which is the dock mounted on the landing screen, before a project is picked.
+  const canWrite = Boolean(thread.selectedConversationId || props.projectId);
 
   return (
     <section aria-label="Conversation" className="automation-conversation-view">
@@ -98,14 +102,20 @@ export function ConversationViewContent(props: ConversationViewProps & { command
             {...(props.onOpenAttachment ? { onOpenAttachment: props.onOpenAttachment } : {})}
             onAnswer={thread.sendAnswer}
           />}
+      {/*
+        Writing with no thread selected opens one, so the composer is live
+        wherever there is a project to open a thread on. Until Core registered
+        `open-conversation` on 2026-09-28 nothing outside Core could start a
+        thread at all, so this box was permanently disabled on a project that
+        had not spoken yet - a control that could never work, in the one place
+        the product asks people to talk to it.
+      */}
       <ConversationComposer
         busy={thread.sending}
-        disabled={!thread.selectedConversationId}
-        {...(nothingYet
-          ? { unavailableReason: "FluxIQ opens a thread as soon as a run, a build or a Flow has something to say. You can write in it from here the moment one exists." }
-          : !thread.selectedConversationId
-            ? { unavailableReason: "Pick a thread above to write in it." }
-            : {})}
+        disabled={!canWrite}
+        {...(canWrite
+          ? {}
+          : { unavailableReason: "Open a project to start a conversation. FluxIQ also opens a thread by itself as soon as a run, a build or a Flow has something to say." })}
         onSend={thread.sendReply}
       />
     </section>

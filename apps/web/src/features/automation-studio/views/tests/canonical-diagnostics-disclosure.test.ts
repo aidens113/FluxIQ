@@ -14,7 +14,10 @@ const policies: Record<string, DiagnosticsPolicy> = {
   adaptations: { kind: "disclosed", files: ["../../adaptations/AdaptationsView.tsx", "../../adaptations/AdaptationChangeCard.tsx"], evidence: ["JsonToggle", "Show complete adaptation JSON", "Technical change details"] },
   "flow-settings": { kind: "disclosed", files: ["../../settings/FlowSettingsView.tsx", "../../settings/SubflowSettingsView.tsx"], evidence: ["JsonToggle", "<details", "Show Technical Metadata", "Technical ownership identifiers"] },
   "state-explorer": { kind: "disclosed", files: ["../../state/StateRawPanel.tsx"], evidence: ["Show raw JSON", "aria-expanded"] },
-  "runtime-debug": { kind: "disclosed", files: ["../../runtime/FlowRunView.tsx", "../../runtime/RunDetailPanels.tsx"], evidence: ["<details", "Advanced JSON", "JsonToggle", "Raw JSON"] },
+  // "Raw values" is the disclosure that used to read "Advanced JSON": the same
+  // <details>, holding the same run-input document, named for what a person
+  // reads rather than for the format it happens to be stored in.
+  "runtime-debug": { kind: "disclosed", files: ["../../runtime/FlowRunView.tsx", "../../runtime/RunDetailPanels.tsx"], evidence: ["<details", "Raw values", "JsonToggle", "Raw JSON"] },
   "problems-view": { kind: "user-facing-only", files: ["../../problems/ProblemsView.tsx"] },
   "global-inspector": { kind: "disclosed", files: ["../../inspector/InspectorSection.tsx"], evidence: ["<details", "<summary"] }
 };

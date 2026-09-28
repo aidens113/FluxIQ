@@ -34,6 +34,7 @@ export function AutomationViewContainer(props: {
   const tabPickerId = `automation-tab-picker-${useId().replace(/:/g, "")}`;
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [tabQuery, setTabQuery] = useState("");
+  const [hiddenTabCount, setHiddenTabCount] = useState(0);
   const activeView = props.tabs.find((tab) => tab.id === props.activeViewId);
   const Icon = activeView?.icon ?? props.icon;
   const activeTabDomId = `automation-tab-${props.windowId}-${props.activeViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -50,7 +51,29 @@ export function AutomationViewContainer(props: {
       tabWidth: selectedTab.offsetWidth
     });
     if (left !== container.scrollLeft) container.scrollTo({ left, behavior: "auto" });
-  }, [props.active, props.activeViewId, tabOrderKey]);
+    // Deliberately NOT keyed on `props.active`. Merely making a pane active --
+    // clicking into it, or focus moving between panes -- used to re-run this and
+    // throw away whatever the person had scrolled the strip to. The strip is
+    // brought back to the selected tab when the selection or the tab order
+    // changes, which is when it is actually out of date.
+  }, [props.activeViewId, tabOrderKey]);
+
+  // How many tabs are off the ends of the strip. Two chevrons and a search icon
+  // said nothing about how much was hidden, so a pane showing three of fifteen
+  // tabs looked like a pane with three tabs.
+  useLayoutEffect(() => {
+    const container = tabsRef.current;
+    if (!container) return;
+    const measure = () => setHiddenTabCount(automationHiddenTabCount(automationTabStripMetrics(container)));
+    measure();
+    container.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(container);
+    return () => {
+      container.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [tabOrderKey]);
   const requestTabSelection = (viewId: string) => {
     props.onTabSelect(viewId);
   };
@@ -168,6 +191,15 @@ export function AutomationViewContainer(props: {
             );
           })}
         </div>
+        {hiddenTabCount > 0 ? (
+          <button
+            aria-label={automationHiddenTabLabel(hiddenTabCount)}
+            className="automation-tab-overflow-count"
+            onClick={() => setTabPickerOpen(true)}
+            title={automationHiddenTabLabel(hiddenTabCount)}
+            type="button"
+          >+{hiddenTabCount}</button>
+        ) : <span className="automation-tab-overflow-count-empty" />}
         <button aria-label="Scroll tabs right" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: 220, behavior: "auto" })} type="button"><ChevronRight aria-hidden size={14} /></button>
         <button aria-controls={tabPickerId} aria-expanded={tabPickerOpen} aria-haspopup="dialog" aria-label="Find open tab" className="automation-tab-scroll" onClick={() => setTabPickerOpen((current) => !current)} ref={tabPickerButtonRef} type="button"><Search aria-hidden size={13} /></button>
         {tabPickerOpen ? (
@@ -196,6 +228,39 @@ export function AutomationViewContainer(props: {
       </div>      <div aria-labelledby={activeTabDomId} className="automation-view-body" id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
     </section>
   );
+}
+
+/**
+ * How many tabs are wholly or partly outside the strip's visible window.
+ *
+ * Pure, and measured from offsets the caller read, so the rule is testable
+ * without a layout engine.
+ */
+export function automationHiddenTabCount(input: {
+  clientWidth: number;
+  scrollLeft: number;
+  tabs: ReadonlyArray<{ left: number; width: number }>;
+}): number {
+  const visibleLeft = input.scrollLeft;
+  const visibleRight = visibleLeft + input.clientWidth;
+  return input.tabs.filter((tab) => tab.left < visibleLeft - 1 || tab.left + tab.width > visibleRight + 1).length;
+}
+
+export function automationHiddenTabLabel(hidden: number): string {
+  return hidden === 1 ? "1 more tab is open - show all open tabs" : `${hidden} more tabs are open - show all open tabs`;
+}
+
+/** The one place the strip is read out of the DOM, so the rule above stays pure. */
+function automationTabStripMetrics(container: HTMLElement): {
+  clientWidth: number;
+  scrollLeft: number;
+  tabs: Array<{ left: number; width: number }>;
+} {
+  return {
+    clientWidth: container.clientWidth,
+    scrollLeft: container.scrollLeft,
+    tabs: [...container.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => ({ left: tab.offsetLeft, width: tab.offsetWidth }))
+  };
 }
 
 export function automationActiveTabScrollLeft(input: {

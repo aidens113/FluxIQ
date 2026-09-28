@@ -22,7 +22,8 @@
 //    without trapping anyone in it.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Maximize2, MessagesSquare, Minimize2 } from "lucide-react";
+import { Maximize2, MessagesSquare, Minimize2 } from "lucide-react";
+import { AutomationCollapseToggle } from "../../shared/CollapseToggle";
 import type { ConversationViewHostCommands } from "../conversation-host";
 import { ConversationView } from "./ConversationView";
 
@@ -84,15 +85,16 @@ export function ConversationDock(props: ConversationDockProps) {
           >
             {wide ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
           </button>
-          <button
-            aria-label="Collapse the conversation"
+          <AutomationCollapseToggle
             className="automation-conversation-dock-icon"
-            onClick={close}
-            title="Collapse (Esc)"
-            type="button"
-          >
-            <ChevronDown aria-hidden size={16} />
-          </button>
+            collapsed={!open}
+            controls={panelId}
+            edge="bottom"
+            onToggle={close}
+            shortcut="Esc"
+            size={16}
+            subject="conversation"
+          />
         </header>
         <ConversationView
           active={open}

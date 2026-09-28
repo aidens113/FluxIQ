@@ -16,7 +16,7 @@ describe("createAutomationStudioViewInstances", () => {
     });
     expect(instances.find((instance) => instance.id === automationStudioViewId.flowEditor)?.label).toBe("Flow: Checkout");
     expect(instances.find((instance) => instance.id === automationStudioViewId.state)?.label).toBe("State: Submit");
-    expect(instances.find((instance) => instance.id === automationStudioViewId.runtime)?.label).toBe("Runtime Debug");
+    expect(instances.find((instance) => instance.id === automationStudioViewId.runtime)?.label).toBe("Run and test");
   });
 
   it("materializes independent instances of one inner view with object-specific titles", () => {
@@ -27,7 +27,7 @@ describe("createAutomationStudioViewInstances", () => {
       [child]: "Instructions: Child Subflow"
     }, [parent, child]);
     expect(instances.filter((instance) => instance.type === "instructions").map((instance) => [instance.id, instance.label])).toEqual([
-      [automationStudioViewId.instructions, "Instructions"],
+      [automationStudioViewId.instructions, "Guidance for the assistant"],
       [parent, "Instructions: Parent Flow"],
       [child, "Instructions: Child Subflow"]
     ]);

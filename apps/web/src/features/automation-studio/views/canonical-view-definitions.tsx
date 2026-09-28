@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type ComponentProps } from "react";
-import { AlertTriangle, Bug, FileSearch, GitBranch, ListChecks, Radio, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Image, Info, MonitorSmartphone, Play, Puzzle, Radio, Route, ScrollText, Settings, Sparkles, Workflow } from "lucide-react";
 import { AdaptationsView } from "../adaptations/AdaptationsView";
 import type { AdaptationsViewHostCommands, AdaptationsViewHostModel } from "../adaptations/adaptation-host";
 import { ClientGatewayView } from "../clients/ClientGatewayView";
@@ -48,14 +48,16 @@ const subflowsHost = defineAutomationViewHost<SubflowsViewHostModel, SubflowsVie
 const instructionsHost = defineAutomationViewHost<InstructionsViewHostModel, InstructionsViewHostCommands>(({ model, commands }) => <InstructionsView {...model} {...commands} />);
 const adaptationsHost = defineAutomationViewHost<AdaptationsViewHostModel, AdaptationsViewHostCommands>(({ model, commands }) => <AdaptationsView {...model} {...commands} />);
 const settingsHost = defineAutomationViewHost<SettingsViewHostModel, SettingsViewHostCommands>(({ model, commands }) => <SettingsView {...model} {...commands} />);
-const runtimeHost = defineAutomationViewHost<RuntimeViewHostModel, RuntimeViewHostCommands>(({ model, commands }) => (
-  <RuntimeCanonicalHost model={model} commands={commands} />
+const runtimeHost = defineAutomationViewHost<RuntimeViewHostModel, RuntimeViewHostCommands>(({ model, commands, activity }) => (
+  <RuntimeCanonicalHost activeRef={activity.activeRef} model={model} commands={commands} />
 ));
 
-function RuntimeCanonicalHost(props: { model: RuntimeViewHostModel; commands: RuntimeViewHostCommands }) {
+function RuntimeCanonicalHost(props: { activeRef: { current: boolean }; model: RuntimeViewHostModel; commands: RuntimeViewHostCommands }) {
   const { selectedTimeline, ...model } = props.model;
   const timelines = useMemo(() => selectedTimeline ? [selectedTimeline] : emptyTimelines, [selectedTimeline]);
-  return <FlowRunView {...model} {...props.commands} timelines={timelines} />;
+  // The run panel registers the workspace header's Play and Stop, so it has to
+  // be able to say whether it is the panel the person is looking at.
+  return <FlowRunView {...model} {...props.commands} activeRef={props.activeRef} timelines={timelines} />;
 }
 
 const standardStates = { loading: true, empty: true, error: true, stale: true, narrow: true } as const;
@@ -76,85 +78,85 @@ function functionality<Id extends string>(
 
 export const automationStudioViews = defineAutomationStudioViews({
   clients: {
-    id: "client-gateway", aliases: [], kind: "clients", label: "Connected Clients", icon: Radio,
-    group: "Workspace", region: "main", allowedRegions: ["main"], scope: "Current project", requires: "hasProject",
+    id: "client-gateway", aliases: [], kind: "clients", label: "Connected browsers", icon: MonitorSmartphone,
+    group: "Workspace", region: "main", allowedRegions: ["main"], scope: "This project", requires: "hasProject",
     isAvailable: available("hasProject"), addable: true, lifecycle: lifecycle(false), cache,
     functionality: functionality("client-gateway", "Connect and monitor project automation clients.", ["project"], ["client summaries"], ["client capabilities", "connection diagnostics"], "paged"),
     host: clientsHost
   },
   recordingTimeline: {
-    id: "timeline-recording", aliases: [], kind: "recordings", label: "Timeline", icon: Radio,
-    group: "Evidence", region: "main", allowedRegions: ["main"], scope: "Selected recording", requires: "hasRecording",
+    id: "timeline-recording", aliases: [], kind: "recordings", label: "Recorded steps", icon: Radio,
+    group: "Evidence", region: "main", allowedRegions: ["main"], scope: "The recording you picked", requires: "hasRecording",
     isAvailable: available("hasRecording"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("timeline-recording", "Inspect recording evidence, notes, markers, and processing state.", ["recording"], ["recording summary", "timeline summary"], ["timeline entries", "notes", "markers", "state references"], "virtualized"),
     host: recordingTimelineHost
   },
   flowEditor: {
-    id: "flow-nodes", aliases: ["policy-primary"], kind: "design", label: "Nodes", icon: GitBranch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected subflow", requires: "hasSubflowGraph",
+    id: "flow-nodes", aliases: ["policy-primary"], kind: "design", label: "Steps", icon: Workflow,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The part you picked", requires: "hasSubflowGraph",
     isAvailable: available("hasSubflowGraph"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-nodes", "Build and edit the selected Subflow node graph.", ["subflow"], ["Subflow graph identity", "graph revision"], ["nodes", "edges", "node definitions", "problems"], "graph"),
     host: flowEditorHost
   },
   router: {
-    id: "flow-router", aliases: [], kind: "router", label: "Router", icon: GitBranch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected top-level Flow", requires: "hasTopLevelFlow",
+    id: "flow-router", aliases: [], kind: "router", label: "Choose a path", icon: Route,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation you picked", requires: "hasTopLevelFlow",
     isAvailable: available("hasTopLevelFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-router", "Route a top-level Flow into scalable Subflow paths.", ["flow"], ["Flow identity", "Subflow summaries"], ["routes", "conditions", "route diagnostics"], "graph"),
     host: routerHost
   },
   subflows: {
-    id: "flow-subflows", aliases: [], kind: "subflows", label: "Subflows", icon: GitBranch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected Flow", requires: "hasFlow",
+    id: "flow-subflows", aliases: [], kind: "subflows", label: "Reusable parts", icon: Puzzle,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation you picked", requires: "hasFlow",
     isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-subflows", "Browse and manage reusable Subflows and nested categories.", ["flow"], ["Subflow page", "category tree"], ["Subflow readiness", "router references"], "paged"),
     host: subflowsHost
   },
   instructions: {
-    id: "flow-instructions", aliases: [], kind: "instructions", label: "Instructions", icon: ListChecks,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected Flow or subflow", requires: "hasFlow",
+    id: "flow-instructions", aliases: [], kind: "instructions", label: "Guidance for the assistant", icon: ScrollText,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation or part you picked", requires: "hasFlow",
     isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-instructions", "Author scoped deterministic and LLM guidance.", ["flow", "subflow"], ["instruction page", "effective order"], ["instruction body", "targets", "diagnostics"], "paged"),
     host: instructionsHost
   },
   adaptations: {
-    id: "adaptations", aliases: [], kind: "adaptations", label: "Adaptations", icon: FileSearch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected Flow or subflow", requires: "hasFlow",
+    id: "adaptations", aliases: [], kind: "adaptations", label: "Suggested changes", icon: Sparkles,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation or part you picked", requires: "hasFlow",
     isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("adaptations", "Review, approve, inspect, and revert runtime adaptations.", ["flow", "subflow"], ["adaptation page"], ["changed fields", "evidence", "review history", "raw JSON"], "paged"),
     host: adaptationsHost
   },
   settings: {
-    id: "flow-settings", aliases: [], kind: "settings", label: "Settings", icon: SlidersHorizontal,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected Flow or subflow", requires: "hasFlow",
+    id: "flow-settings", aliases: [], kind: "settings", label: "Settings", icon: Settings,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation or part you picked", requires: "hasFlow",
     isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-settings", "Configure Flow or Subflow runtime, LLM, adaptation, limits, safety, and interfaces.", ["flow", "subflow"], ["effective settings"], ["editable settings", "inheritance", "dependencies"], "light"),
     host: settingsHost
   },
   state: {
-    id: "state-explorer", aliases: ["signals-web"], kind: "state", label: "State View", icon: ListChecks,
-    group: "Evidence", region: "main", allowedRegions: ["main"], scope: "Current selection", requires: "hasSelection",
+    id: "state-explorer", aliases: ["signals-web"], kind: "state", label: "What the page looked like", icon: Image,
+    group: "Evidence", region: "main", allowedRegions: ["main"], scope: "Whatever you have selected", requires: "hasSelection",
     isAvailable: available("hasSelection"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("state-explorer", "Inspect observed and runtime State evidence across visual, structured, diff, compare, and raw modes.", ["selection", "recording", "flow"], ["state source index"], ["facts", "evidence", "visual surfaces", "comparisons"], "virtualized"),
     host: stateHost
   },
   runtime: {
-    id: "runtime-debug", aliases: ["runs-history"], kind: "runtime", label: "Runtime Debug", icon: Bug,
-    group: "Evidence", region: "main", allowedRegions: ["main"], scope: "Selected Flow", requires: "hasFlow",
+    id: "runtime-debug", aliases: ["runs-history"], kind: "runtime", label: "Run and test", icon: Play,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "The automation you picked", requires: "hasFlow",
     isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("runtime-debug", "Launch Flows and inspect paginated Run and action history.", ["flow"], ["Run page"], ["Run detail", "actions", "events", "state and effect evidence"], "paged"),
     host: runtimeHost
   },
   problems: {
     id: "problems-view", aliases: [], kind: "problems", label: "Problems", icon: AlertTriangle,
-    group: "Evidence", region: "right", allowedRegions: ["right"], scope: "Current project", requires: "hasProject",
+    group: "Workspace", region: "right", allowedRegions: ["right"], scope: "This project", requires: "hasProject",
     isAvailable: available("hasProject"), addable: true, lifecycle: lifecycle(false), cache,
     functionality: functionality("problems-view", "Find and navigate validation and runtime Problems.", ["project", "flow", "selection"], ["normalized problem list"], ["problem target and diagnostics"], "paged"),
     host: problemsHost
   },
   inspector: {
-    id: "global-inspector", aliases: ["workspace-dock", "ai-assistant", "node-detail"], kind: "inspector", label: "Inspector", icon: SlidersHorizontal,
-    group: "Workspace", region: "right", allowedRegions: ["right"], scope: "Current selection", requires: "hasProject",
+    id: "global-inspector", aliases: ["workspace-dock", "ai-assistant", "node-detail"], kind: "inspector", label: "Details", icon: Info,
+    group: "Workspace", region: "right", allowedRegions: ["right"], scope: "Whatever you have selected", requires: "hasProject",
     isAvailable: available("hasProject"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("global-inspector", "Inspect the currently selected Studio object without changing workspace ownership.", ["selection"], ["selected entity identity"], ["typed object panel", "references", "provenance"], "light"),
     host: inspectorHost

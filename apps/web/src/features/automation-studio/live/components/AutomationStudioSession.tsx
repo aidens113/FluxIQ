@@ -524,6 +524,7 @@ export function AutomationStudioSession(props: {
   const connectorCommands = useAutomationConnectorCommands({
     appendRecordingMarker: recordingCommands.appendMarker,
     appendRecordingNote: recordingCommands.appendNote,
+    createFlow: hierarchyBridge.createFlow,
     createSubflow: hierarchyBridge.createSubflow,
     deleteRecording: recordingCommands.deleteOne,
     discardGraphDraft: graphRuntime.discardDraft,
@@ -560,7 +561,7 @@ export function AutomationStudioSession(props: {
     const baseViewId = automationStudioViewBaseId(targetViewId);
     return workspaceBreadcrumbsForView(
       baseViewId,
-      viewById.get(targetViewId)?.label ?? (baseViewId === automationStudioViewId.flowEditor ? "Nodes" : "Workspace")
+      viewById.get(targetViewId)?.label ?? (baseViewId === automationStudioViewId.flowEditor ? "Steps" : "Workspace")
     );
   }, [viewById, workspaceBreadcrumbsForView]);
   const activateWorkspaceBreadcrumb = useStableAutomationEvent((crumb: AutomationWorkspaceBreadcrumb) => {
@@ -637,7 +638,7 @@ export function AutomationStudioSession(props: {
   const cacheStats = useCallback(() => projectDataPlatform.stats(), [projectDataPlatform]);
   const inspectorBinding = useMemo(() => ({ api, cacheStats }), [api, cacheStats]);
   if (restoringUrlProject || !activeProject) {
-    return (
+    return <>
       <AutomationStudioProjectGate
         api={api}
         catalog={studioStores.catalog}
@@ -647,7 +648,14 @@ export function AutomationStudioSession(props: {
         state={restoringUrlProject ? "restoring" : "catalog"}
         studioUiStore={studioUiStore}
       />
-    );
+      {/* The landing screen has a conversation too. This is the first screen
+          every person sees and the one where they have nothing yet, so it is
+          where they are most likely to want to ask -- and it was the one screen
+          with no way to. `projectId` is null because no project is open: the
+          list then spans every project the person can see, which is also how a
+          question raised by a run they started earlier reaches them here. */}
+      <ConversationDock projectId={null} />
+    </>;
   }
 
   return <>

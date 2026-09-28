@@ -104,15 +104,15 @@ function appendFlowObjectHierarchy(input: {
     ...changeProposalIds
   ].filter((sourceId, index, allIds) => allIds.indexOf(sourceId) === index);
   const sectionSpecs: Array<{ id: string; label: string; kind: AutomationHierarchyKind; viewId: AutomationHierarchyViewId; sourceIds?: unknown[]; metadata?: Record<string, unknown> }> = [
-    { id: "subflows", label: "Subflows", kind: "folder", viewId: automationStudioViewId.subflows, sourceIds: hierarchySubflowEntries(ownerFlow), metadata: { flowStructure: "subflows" } },
-    { id: "instructions", label: "Instructions", kind: "flow-object", viewId: automationStudioViewId.instructions, sourceIds: Array.isArray(expansion.instructionIds) ? expansion.instructionIds : [] },
-    { id: "recordings", label: "Recordings", kind: "folder", viewId: automationStudioViewId.recordingTimeline, sourceIds: flowRecordings.map((recording) => recording.recordingId) },
-    { id: "adaptations", label: "Adaptations", kind: "folder", viewId: automationStudioViewId.adaptations, sourceIds: adaptationSourceIds },
-    { id: automationStudioViewId.runtime, label: "Runtime Debug", kind: "flow-object", viewId: automationStudioViewId.runtime },
+    { id: "subflows", label: "Reusable parts", kind: "folder", viewId: automationStudioViewId.subflows, sourceIds: hierarchySubflowEntries(ownerFlow), metadata: { flowStructure: "subflows" } },
+    { id: "instructions", label: "Guidance for the assistant", kind: "flow-object", viewId: automationStudioViewId.instructions, sourceIds: Array.isArray(expansion.instructionIds) ? expansion.instructionIds : [] },
+    { id: "recordings", label: "Recorded steps", kind: "folder", viewId: automationStudioViewId.recordingTimeline, sourceIds: flowRecordings.map((recording) => recording.recordingId) },
+    { id: "adaptations", label: "Suggested changes", kind: "folder", viewId: automationStudioViewId.adaptations, sourceIds: adaptationSourceIds },
+    { id: automationStudioViewId.runtime, label: "Run and test", kind: "flow-object", viewId: automationStudioViewId.runtime },
     { id: "settings", label: "Settings", kind: "flow-object", viewId: automationStudioViewId.settings }
   ];
-  if (input.includeRouter) sectionSpecs.unshift({ id: "router", label: "Router", kind: "flow-object", viewId: automationStudioViewId.router });
-  else sectionSpecs.unshift({ id: "nodes", label: "Nodes", kind: "flow-object", viewId: automationStudioViewId.flowEditor, metadata: { flowStructure: "subflow-nodes" } });
+  if (input.includeRouter) sectionSpecs.unshift({ id: "router", label: "Choose a path", kind: "flow-object", viewId: automationStudioViewId.router });
+  else sectionSpecs.unshift({ id: "nodes", label: "Steps", kind: "flow-object", viewId: automationStudioViewId.flowEditor, metadata: { flowStructure: "subflow-nodes" } });
   for (const section of sectionSpecs) {
     const sectionId = `flow-${stableNodeId(navigationFlowId)}-${section.id}`;
     nodes.push({

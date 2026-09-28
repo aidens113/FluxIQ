@@ -116,8 +116,11 @@ describe("AutomationStudioService recording persistence", () => {
           runTask: async (request) => {
             taskKinds.push(request.taskKind);
             // The diagnosis is told what the permission gate permits; the patch is still
-            // told the flag, because the patch preflight still reads it.
-            expect(request.context.policyGates).toMatchObject(request.taskKind === "runtime_patch" ? { allowExternalSideEffects: false } : { actionPermissions: { permitted: [] } });
+            // told the flag, because the patch preflight still reads it. The flag reads
+            // `true` from 2026-09-28: acting on a page is the automation's own work, and
+            // what a person is asked about is a real-world delete or payment, per action
+            // at the permission gate rather than by this standing flag.
+            expect(request.context.policyGates).toMatchObject(request.taskKind === "runtime_patch" ? { allowExternalSideEffects: true } : { actionPermissions: { permitted: [] } });
             return request.taskKind === "runtime_patch"
               ? {
                 response: {

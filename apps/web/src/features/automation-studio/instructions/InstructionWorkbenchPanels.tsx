@@ -25,7 +25,7 @@ export function InstructionLibraryPanel(props: {
         <span className="automation-instruction-footer"><StatusBadge value={instruction.status ?? "active"} /><small>{instruction.requirement ?? "advisory"}</small></span>
       </button>)}
       {props.loading && !props.instructions.length ? <div className="automation-router-loading" aria-label="Loading instructions"><span /><span /><span /></div> : null}
-      {!props.loading && !props.instructions.length ? <div className="automation-subflow-directory-empty"><ListChecks size={22} aria-hidden /><strong>{props.flowId ? props.filtered ? "No matching instructions" : "No instructions yet" : "Select a Flow"}</strong><span>{props.flowId ? props.filtered ? "Adjust the search or filters to see other instructions." : "Create the first instruction to give this Flow usable guidance." : "Choose a Flow to review its instructions."}</span></div> : null}
+      {!props.loading && !props.instructions.length ? <div className="automation-subflow-directory-empty"><ListChecks size={22} aria-hidden /><strong>{props.flowId ? props.filtered ? "Nothing matches that search" : "No notes yet" : "No automation chosen"}</strong><span>{props.flowId ? props.filtered ? "Clear the search or the filters to see the rest." : "Notes tell FluxIQ how you want this automation to behave. Use New instruction to write the first one." : "Choose an automation from the list on the left to see its notes. To make a new automation, use the + button beside Flows at the top of that list."}</span></div> : null}
     </div>
     <footer className="automation-instruction-library-footer">
       <span>{props.page.total ? range : "0 of 0"}</span>

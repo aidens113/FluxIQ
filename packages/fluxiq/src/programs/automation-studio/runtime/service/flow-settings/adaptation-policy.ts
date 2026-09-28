@@ -25,10 +25,14 @@ export function adaptationPolicyFromFlowMetadata(flow: AutomationStudioFlowArtif
     allowModifyRouter: booleanSetting(settings.allowModifyRouter, true),
     allowModifyExpectations: booleanSetting(settings.allowModifyExpectations, true),
     allowModifyActionTargets: booleanSetting(settings.allowModifyActionTargets, true),
-    allowDeleteOrDisableBehavior: booleanSetting(settings.allowDeleteOrDisableBehavior, false),
-    allowExternalSideEffects: booleanSetting(settings.allowExternalSideEffects, false),
-    requireApprovalForDestructiveChanges: booleanSetting(settings.requireApprovalForDestructiveChanges, true),
-    requireApprovalForExternalSideEffects: booleanSetting(settings.requireApprovalForExternalSideEffects, true),
+    // Silence permits, for every one of these. Editing a Flow -- including
+    // removing a step of it -- and acting on a page are the automation's own
+    // work, and a real-world delete or payment is answered per action by the
+    // permission gate rather than by a standing setting here.
+    allowDeleteOrDisableBehavior: booleanSetting(settings.allowDeleteOrDisableBehavior, true),
+    allowExternalSideEffects: booleanSetting(settings.allowExternalSideEffects, true),
+    requireApprovalForDestructiveChanges: booleanSetting(settings.requireApprovalForDestructiveChanges, false),
+    requireApprovalForExternalSideEffects: booleanSetting(settings.requireApprovalForExternalSideEffects, false),
     ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
     ...(maxEstimatedCostUsdPerRun !== undefined ? { maxEstimatedCostUsdPerRun } : {}),
     createdAt: flow.createdAt,

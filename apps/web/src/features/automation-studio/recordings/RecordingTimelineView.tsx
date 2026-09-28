@@ -69,7 +69,6 @@ export function RecordingTimelineView(props: {
   const [timelineOffset, setTimelineOffset] = useState(0);
   const [generationOpen, setGenerationOpen] = useState(false);
   const [generationFlowId, setGenerationFlowId] = useState("");
-  const [generationPin, setGenerationPin] = useState("");
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [generationStatus, setGenerationStatus] = useState("");
@@ -97,7 +96,6 @@ export function RecordingTimelineView(props: {
   const openGeneration = () => {
     const associated = generationFlows.find((flow) => flow.flowId === props.selectedRecording?.taskId);
     setGenerationFlowId(associated?.flowId ?? generationFlows[0]?.flowId ?? "");
-    setGenerationPin("");
     setGenerationError("");
     setGenerationOpen(true);
   };
@@ -106,7 +104,11 @@ export function RecordingTimelineView(props: {
     setGenerationBusy(true);
     setGenerationError("");
     try {
-      const result = await dataPort.generateDeterministicSubflow({ projectId: props.projectId, recordingId: props.selectedRecording.recordingId, flowId: generationFlowId, authorizationPin: generationPin });
+      // Turning a recording the person made into a Subflow is the product doing
+      // the job it was asked for. Both endpoints behind this - proposal creation
+      // and proposal review - are registered `authoring` in Core, which never
+      // PIN-checks them, so the field that used to sit here bought nothing.
+      const result = await dataPort.generateDeterministicSubflow({ projectId: props.projectId, recordingId: props.selectedRecording.recordingId, flowId: generationFlowId, authorizationPin: "" });
       if (!result.ok) { setGenerationError(result.error ?? "Subflow generation failed."); return; }
       await props.onRefreshRecordings();
       setGenerationStatus("Deterministic Subflow generated from this recording.");
@@ -261,7 +263,7 @@ export function RecordingTimelineView(props: {
         </footer>
       </div>
     {recordingActions.kind ? <RecordingActionDialog busy={recordingActions.busy} error={recordingActions.error} kind={recordingActions.kind} pin={recordingActions.pin} value={recordingActions.value} onCancel={recordingActions.close} onPin={recordingActions.setPin} onSubmit={() => void recordingActions.submit()} onValue={recordingActions.setValue} /> : null}
-    {generationOpen ? <Modal busy={generationBusy} closeOnEscape={!generationBusy} description="Map this finalized recording through its domain mapper and replace only an empty or unedited recording-derived primary Subflow." title="Generate deterministic Subflow" onClose={() => setGenerationOpen(false)}><div className="dialog-form">{generationError ? <p className="automation-runtime-message" role="alert">{generationError}</p> : null}<Field label="Destination Flow" required><select value={generationFlowId} onChange={(event) => setGenerationFlowId(event.target.value)}>{generationFlows.map((flow) => <option key={flow.flowId} value={flow.flowId}>{flow.name}</option>)}</select></Field><Field hint="Use your current security PIN." label="Security PIN" required><input autoComplete="off" inputMode="numeric" type="password" value={generationPin} onChange={(event) => setGenerationPin(event.target.value.replace(/\D/g, "").slice(0, 12))} /></Field></div><div className="modal-actions"><button className="button" disabled={generationBusy} onClick={() => setGenerationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={generationBusy || generationPin.length < 4 || !generationFlowId} onClick={() => void generateSubflow()} type="button">{generationBusy ? "Generating..." : "Generate Subflow"}</button></div></Modal> : null}
+    {generationOpen ? <Modal busy={generationBusy} closeOnEscape={!generationBusy} description="Map this finalized recording through its domain mapper and replace only an empty or unedited recording-derived primary Subflow." title="Generate deterministic Subflow" onClose={() => setGenerationOpen(false)}><div className="dialog-form">{generationError ? <p className="automation-runtime-message" role="alert">{generationError}</p> : null}<Field label="Destination Flow" required><select value={generationFlowId} onChange={(event) => setGenerationFlowId(event.target.value)}>{generationFlows.map((flow) => <option key={flow.flowId} value={flow.flowId}>{flow.name}</option>)}</select></Field></div><div className="modal-actions"><button className="button" disabled={generationBusy} onClick={() => setGenerationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={generationBusy || !generationFlowId} onClick={() => void generateSubflow()} type="button">{generationBusy ? "Generating..." : "Generate Subflow"}</button></div></Modal> : null}
     </section>
   );
 }

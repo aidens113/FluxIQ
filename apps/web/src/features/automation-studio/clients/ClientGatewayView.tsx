@@ -48,8 +48,8 @@ export function ClientGatewayView(props: { active: boolean; projectId: string | 
           <ClientPageControls kind="trustedClients" controller={controller} />
         </section>
         <section className="automation-client-panel wide">
-          <header><Radio size={14} aria-hidden /><strong>Connected Clients</strong></header>
-          <ClientSearch kind="sessions" label="Search connected clients" controller={controller} />
+          <header><Radio size={14} aria-hidden /><strong>Connected browsers</strong></header>
+          <ClientSearch kind="sessions" label="Search connected browsers" controller={controller} />
           <div className="automation-client-list">
             {controller.sessions.map((session: any) => (
               <button className={controller.selectedSession?.sessionId === session.sessionId ? "selected" : ""} key={session.sessionId} onClick={() => controller.setSelectedSessionId(session.sessionId)} type="button">
@@ -57,7 +57,7 @@ export function ClientGatewayView(props: { active: boolean; projectId: string | 
                 <StatusBadge value={session.activeRecordingId ? "recording" : session.capabilities?.length ? "ready" : "idle"} />
               </button>
             ))}
-            {!controller.sessions.length ? <span>No clients connected yet.</span> : null}
+            {!controller.sessions.length ? <span><strong>No browsers connected yet</strong><small>Open the FluxIQ browser extension and pair it with this project. It shows up here within a few seconds.</small></span> : null}
           </div>
           <ClientPageControls kind="sessions" controller={controller} />
           {controller.selectedSessionLocation === "off-page" ? <p className="automation-client-selection-note">The selected client is on another page. Its details remain pinned.</p> : controller.selectedSessionLocation === "checking" ? <p className="automation-client-selection-note">Checking the selected client...</p> : controller.selectedSessionLocation === "missing" ? <p className="automation-client-selection-note missing" role="alert">The selected client disconnected or was removed. Choose another client.</p> : null}

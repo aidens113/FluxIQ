@@ -294,7 +294,13 @@ export function decideAutomationStudioLlmInvocationGate(input: AutomationStudioL
   if (input.knownRecoveryAvailable) return { invoke: false, reason: "A deterministic recovery path is available and must run before LLM intervention.", requiredPriorAction: "known_recovery", behavior, budget };
   if (input.rerouteAvailable) return { invoke: false, reason: "A deterministic reroute is available and must run before LLM intervention.", requiredPriorAction: "reroute", behavior, budget };
   if (!budget.ok) return { invoke: false, reason: `LLM budget exhausted: ${budget.exhausted.join(", ")}.`, requiredPriorAction: budget.behavior === "ask" ? "manual_approval" : "stop", behavior, budget };
-  if (input.settings.proposalApprovalMode === "manual") return { invoke: false, reason: "Manual proposal approval mode requires explicit approval before LLM intervention.", requiredPriorAction: "manual_approval", behavior, budget };
+  // `proposalApprovalMode: "manual"` no longer refuses the call, as of
+  // 2026-09-28. It says a person reviews the change before it is kept, which
+  // `decideAutomationStudioProposalApprovalGate` still enforces -- it never said
+  // the run may not try to repair itself. Conflating the two meant a person who
+  // wanted to see changes before they were applied got no repair at all, and
+  // therefore nothing to review: the setting silently disabled the feature it
+  // was supposed to supervise.
   return { invoke: true, reason: "LLM intervention is allowed for unresolved novelty after deterministic options are exhausted.", requiredPriorAction: "none", behavior, budget };
 }
 
@@ -326,27 +332,43 @@ export function decideAutomationStudioAdaptationPromotionGate(input: AutomationS
   if (evidence) return manualReview(evidence);
   const shared = sharedPromotionRefusal(input);
   if (shared) return manualReview(shared);
-  const structuralPatch = input.patchKinds.some((kind) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[kind]?.structural !== false);
-  if (structuralPatch) return manualReview("Structural adaptations require manual review before durable promotion.");
-  if (input.riskLevel !== "low") return manualReview("Only low-risk adaptations can be promoted automatically.");
-  return { autoApply: true, requiresManualApproval: false, reason: "Validated low-risk non-structural adaptation can be applied automatically." };
+  // No standing structural gate and no standing risk-rating gate. Re-authoring a
+  // router or a subflow is editing a Flow, which is the automation's own work,
+  // and a rating Core gave the change is not a person's instruction. The trial
+  // above is what says the change works, and the evaluator's rollback is what
+  // undoes one that did not.
+  //
+  // `mixed` is the exception, and it is an exception because a person chose it:
+  // it means exactly "route the major or high-risk ones to me", so under it --
+  // and only under it -- the structural and risk readings still decide, the same
+  // way `decideAutomationStudioProposalApprovalGate` reads them.
+  if (input.approvalMode === "mixed") {
+    const structuralPatch = input.patchKinds.some((kind) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[kind]?.structural !== false);
+    if (structuralPatch) return manualReview("Mixed adaptation approval mode routes a structural adaptation to a person.");
+    if (input.riskLevel === "high" || input.riskLevel === "destructive") return manualReview("Mixed adaptation approval mode routes a high-risk adaptation to a person.");
+  }
+  return { autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied." };
 }
 
 /**
  * Whether a Flow Bootstrap proposal may be applied without a person, by the same tier rules as a
- * runtime adaptation. Only a `create` qualifies: a blank Flow has nothing in place to break. An
- * `extend` changes a running Flow, which is structural; mixed mode routes a new Subflow to a person.
+ * runtime adaptation.
+ *
+ * **`extend` no longer waits on a person, as of 2026-09-28.** Extending a
+ * running Flow is re-authoring it, which is the automation's own work and may
+ * not be gated; it reached a person only because Core rated it structural. What
+ * stands in its place is the same trial every promotion needs, and the
+ * evaluator's rollback when a change made the Flow worse.
  */
 export function decideAutomationStudioBootstrapApplyGate(input: AutomationStudioBootstrapApplyGateInput): AutomationStudioAdaptationPromotionGateDecision {
   if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Automatic application of created Flows is disabled by training mode or settings." };
   const evidence = promotionEvidenceRefusal(input.confidence);
   if (evidence) return manualReview(evidence);
-  if (input.mode !== "create") return manualReview("Extending an existing Flow is a structural change and requires manual review.");
   const shared = sharedPromotionRefusal(input);
   if (shared) return manualReview(shared);
+  // `mixed` still sends a new Subflow to a person, because a person chose it.
   if (input.approvalMode !== "auto") return manualReview("Only auto approval mode applies a created Flow without review; mixed mode sends a new Subflow to a person.");
-  if (input.riskLevel !== "low") return manualReview("Only a low-risk created Flow can be applied automatically.");
-  return { autoApply: true, requiresManualApproval: false, reason: "A created Flow whose trial succeeded, at low risk, can be applied automatically." };
+  return { autoApply: true, requiresManualApproval: false, reason: `${input.mode === "create" ? "A created" : "An extended"} Flow whose trial succeeded is applied.` };
 }
 
 const UNVALIDATED_REASON = "Adaptation must pass validation before promotion.";
@@ -363,10 +385,24 @@ function promotionEvidenceRefusal(confidence: AutomationStudioChangeConfidenceDe
 }
 
 // The refusals every automatic promotion shares, in the order they are reported.
+//
+// **Only a person's own setting is left here, as of 2026-09-28.** Three standing
+// gates were removed: a `destructive` risk rating, a `high` risk rating, and the
+// Flow having external side effects at all. None of them was a person's choice --
+// each was Core's own caution about a change the model had already trialled
+// successfully, and together they sent almost every real web automation to a
+// person merely for acting on a page. Keeping what a run learned is the
+// automation's own work, and the rule is that asking for the automation is the
+// grant for it. What protects the Flow instead is what already did the work: a
+// change is promoted only on a succeeded trial (`promotionEvidenceRefusal`), and
+// a change the evaluator judges to have made things worse is rolled back to the
+// version that was better.
+//
+// A real-world delete or payment is still asked about, per action, at the
+// permission gate (`runtime/action-permissions/destructive.ts`). That is a
+// different question from whether a Flow edit is kept, and conflating the two is
+// what made this gate look reasonable.
 function sharedPromotionRefusal(input: AutomationStudioPromotionGateSharedInput): string | undefined {
-  if (input.riskLevel === "destructive") return "Destructive adaptations always require manual review.";
-  if (input.riskLevel === "high") return "High-risk adaptations require manual review.";
-  if (input.hasExternalSideEffects) return "External side effects require manual review before durable promotion.";
   if (input.requireFirstManualReview && !input.priorManualReviewExists) return "First automatic promotion is blocked until a manual review has been completed.";
   if (input.approvalMode === "manual") return "Manual adaptation approval mode requires explicit review.";
   return undefined;

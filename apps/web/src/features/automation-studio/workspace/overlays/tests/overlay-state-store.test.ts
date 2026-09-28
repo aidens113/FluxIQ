@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { projectDraftForRequest } from "../ProjectOverlaySubscriber";
 import {
   createAutomationStudioOverlayStore,
   defaultAutomationStudioOverlayState
@@ -8,20 +7,20 @@ import {
 describe("AutomationStudioOverlayStore", () => {
   it("publishes only the overlay channel that opened", () => {
     const store = createAutomationStudioOverlayStore();
-    const projectSubscriber = vi.fn();
-    const hierarchySubscriber = vi.fn();
     const preferencesSubscriber = vi.fn();
-    store.subscribe("project", projectSubscriber);
-    store.subscribe("hierarchy", hierarchySubscriber);
+    const viewAdderSubscriber = vi.fn();
+    const drawerSubscriber = vi.fn();
     store.subscribe("preferences", preferencesSubscriber);
+    store.subscribe("viewAdder", viewAdderSubscriber);
+    store.subscribe("drawer", drawerSubscriber);
 
-    store.replace("project", { id: "project-create", kind: "create-project", categoryId: null });
+    store.replace("preferences", { id: "prefs", prefs: {} as never, saveStatus: "idle" });
 
-    expect(projectSubscriber).toHaveBeenCalledTimes(1);
-    expect(hierarchySubscriber).not.toHaveBeenCalled();
-    expect(preferencesSubscriber).not.toHaveBeenCalled();
-    expect(store.getRevision("project")).toBe(1);
-    expect(store.getRevision("hierarchy")).toBe(0);
+    expect(preferencesSubscriber).toHaveBeenCalledTimes(1);
+    expect(viewAdderSubscriber).not.toHaveBeenCalled();
+    expect(drawerSubscriber).not.toHaveBeenCalled();
+    expect(store.getRevision("preferences")).toBe(1);
+    expect(store.getRevision("viewAdder")).toBe(0);
   });
 
   it("keeps form typing outside overlay, workspace, and domain stores", () => {
@@ -29,9 +28,8 @@ describe("AutomationStudioOverlayStore", () => {
     const overlaySubscriber = vi.fn();
     const workspaceSubscriber = vi.fn();
     const domainSubscriber = vi.fn();
-    store.subscribe("project", overlaySubscriber);
-    const request = { id: "edit", kind: "edit-project", project: { id: "p1", name: "Before" } } as const;
-    const draft = projectDraftForRequest(request);
+    store.subscribe("preferences", overlaySubscriber);
+    const draft = { name: "Before", pin: "" };
 
     const typedDraft = { ...draft, name: "After", pin: "1234" };
 

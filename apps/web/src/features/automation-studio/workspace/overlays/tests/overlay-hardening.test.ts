@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { immutableOverlayCommandSnapshot } from "../atomic-command";
 import { calculateFloatingPosition } from "../accessible-floating-overlay";
-import { boundedHierarchyFolderOptions } from "../HierarchyCreateOverlaySurface";
 import {
   acquireOverlayEnvironment,
   canCloseFloatingOverlay,
@@ -40,17 +39,17 @@ describe("Phase 9 overlay hardening", () => {
   it("resets only active channels and publishes each one once", () => {
     const store = createAutomationStudioOverlayStore();
     const controller = createAutomationStudioOverlayController(store);
-    const projectListener = vi.fn();
+    const viewAdderListener = vi.fn();
     const drawerListener = vi.fn();
-    store.subscribe("project", projectListener);
+    store.subscribe("viewAdder", viewAdderListener);
     store.subscribe("drawer", drawerListener);
-    controller.project.open({ id: "create", kind: "create-project", categoryId: null });
+    controller.viewAdder.open({ id: "adder", area: "main", anchor: {} as never, options: [] });
     controller.drawer.open({ id: "mobile", kind: "hierarchy", title: "Project" });
-    projectListener.mockClear();
+    viewAdderListener.mockClear();
     drawerListener.mockClear();
 
-    expect(controller.closeAll()).toEqual(["project", "drawer"]);
-    expect(projectListener).toHaveBeenCalledTimes(1);
+    expect(controller.closeAll()).toEqual(["viewAdder", "drawer"]);
+    expect(viewAdderListener).toHaveBeenCalledTimes(1);
     expect(drawerListener).toHaveBeenCalledTimes(1);
   });
 
@@ -164,30 +163,13 @@ describe("Phase 9 overlay hardening", () => {
     expect(below.top).toBe(48);
   });
 
-  it("bounds hierarchy folder results and retains the selected location", () => {
-    const options = Array.from({ length: 500 }, (_, index) => ({
-      id: `folder-${index}`,
-      label: `Folder ${index}`
-    }));
-    const source = {
-      resolve: (id: string) => options.find((option) => option.id === id) ?? null,
-      search: () => options
-    };
-
-    const result = boundedHierarchyFolderOptions(source, "", "folder-499");
-    expect(result).toHaveLength(100);
-    expect(result[0]?.id).toBe("folder-499");
-    expect(result.filter((option) => option.id === "folder-499")).toHaveLength(1);
-  });
   it("defines one exact adoption entry for every store channel", () => {
     expect(Object.keys(automationStudioOverlayRootAdoptionMap).sort()).toEqual([
       "dataInspector",
       "drawer",
-      "hierarchy",
       "inspectorDrawer",
       "layoutPicker",
       "preferences",
-      "project",
       "viewAdder"
     ]);
     for (const [key, entry] of Object.entries(automationStudioOverlayRootAdoptionMap)) {
@@ -195,7 +177,7 @@ describe("Phase 9 overlay hardening", () => {
       expect(entry.legacyOwner.length).toBeGreaterThan(10);
       expect(entry.subscriber.length).toBeGreaterThan(5);
     }
-    expect(automationStudioOverlayRootAdoptionSteps).toHaveLength(7);
+    expect(automationStudioOverlayRootAdoptionSteps).toHaveLength(6);
   });
 });
 

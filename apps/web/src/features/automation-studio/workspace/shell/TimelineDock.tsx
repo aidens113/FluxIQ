@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Radio } from "lucide-react";
+import { Radio } from "lucide-react";
 import { memo, type ReactNode } from "react";
+import { AutomationCollapseToggle } from "../../shared/CollapseToggle";
 import type { AutomationWorkspaceCommands, AutomationWorkspaceCommandPort } from "../commands/contracts";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight } from "../layout/defaults";
 import type { AutomationWorkspaceRenderStore } from "../render-store";
@@ -67,15 +68,14 @@ export const AutomationTimelineDock = memo(function AutomationTimelineDock(props
       <header className="automation-bottom-timeline-header">
         <div><Radio aria-hidden size={14} /><span><strong>Action Preview</strong><small>Selected recording or run action</small></span></div>
         <div className="automation-bottom-timeline-actions">
-          <button
-            aria-controls="automation-action-preview"
-            aria-expanded={!state.collapsed}
-            aria-label={state.collapsed ? "Expand timeline" : "Collapse timeline"}
-            className="icon-button"
-            onClick={props.commands.toggleTimeline}
-            title={state.collapsed ? "Expand timeline" : "Collapse timeline"}
-            type="button"
-          >{state.collapsed ? <ChevronUp aria-hidden size={13} /> : <ChevronDown aria-hidden size={13} />}</button>
+          <AutomationCollapseToggle
+            collapsed={state.collapsed}
+            controls="automation-action-preview"
+            edge="bottom"
+            onToggle={props.commands.toggleTimeline}
+            size={13}
+            subject="step preview"
+          />
         </div>
       </header>
       {!state.collapsed ? props.content : null}

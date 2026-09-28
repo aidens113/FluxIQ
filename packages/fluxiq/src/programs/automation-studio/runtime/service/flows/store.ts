@@ -33,6 +33,7 @@ import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-value
 import { uniqueStrings, upsertBy } from "../collections.ts";
 import { stableJson } from "../stable-json.ts";
 import { flowMapRouteGroups, flowMapSortedRules, flowNodeFromGraphRecord, flowSubflowCategoriesFromFlow, flowSummaryFromFlow, removeUndefinedSubflowFields, sqlInstructionRequirement, sqlInstructionStatus, subflowParentCategoryId } from "./mapping.ts";
+import { withoutAutomationStudioLockedDefaultSettings } from "../flow-settings/index.ts";
 
 // The Flow documents and the per-project SQL projection of them, in one place
 // because they are mutually dependent: saving a Flow writes its projection and
@@ -73,12 +74,21 @@ export class AutomationStudioFlowStore {
     }
   }
 
+  // Every read of a Flow clears the locked settings block a defect wrote into
+  // every Flow created before 2026-09-28
+  // (`flow-settings/locked-default-migration.ts`). It is done on the way out
+  // rather than by a sweep over storage so that no project has to be visited to
+  // be corrected, and so nothing is rewritten on a guess: the clearing writes
+  // nothing by itself, and the next ordinary save persists what it produced.
+  // Metadata a person configured does not match the block and is untouched.
   async getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
     await this.projects.findProject(projectId);
     await this.loadProjectFlow(projectId, flowId);
     const flow = await this.repositories.flows.get(flowId);
     if (!flow || flow.projectId !== projectId) throw new Error(`Unknown Automation Studio Flow: ${flowId}`);
-    return await this.materializeCanonicalGraphFlow(projectId, flow);
+    const canonical = await this.materializeCanonicalGraphFlow(projectId, flow);
+    const metadata = withoutAutomationStudioLockedDefaultSettings(canonical.metadata);
+    return metadata === canonical.metadata || metadata === undefined ? canonical : { ...canonical, metadata };
   }
 
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {

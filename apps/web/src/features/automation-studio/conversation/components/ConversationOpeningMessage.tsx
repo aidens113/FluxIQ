@@ -65,8 +65,8 @@ export function ConversationOpeningMessage() {
         answer a question in your own words -- it reads the thread before its next move.
       </p>
       <p className="automation-conversation-opening-empty">
-        Nothing has been said yet. A thread opens by itself the moment a run, a build or a Flow has
-        something to tell you.
+        Nothing has been said yet. Write below to start one, or wait: a thread opens by itself the
+        moment a run, a build or a Flow has something to tell you.
       </p>
     </section>
   );

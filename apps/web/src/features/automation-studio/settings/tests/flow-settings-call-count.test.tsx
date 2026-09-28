@@ -110,14 +110,13 @@ describe("Flow Settings without a call limit", () => {
       expect(buttonNamed("Save Settings")[0]!.props.disabled).toBe(false);
       await act(async () => buttonNamed("Save Settings")[0]!.props.onClick());
       expect(textOf(renderer.toJSON())).not.toContain("Fix the highlighted settings before saving.");
-      const pin = renderer.root.findAll((node) => node.type === "input" && node.props.type === "password");
-      expect(pin).toHaveLength(1);
-      await act(async () => pin[0]!.props.onChange({ target: { value: "1234" } }));
-      await act(async () => buttonNamed("Authorize and Save")[0]!.props.onClick());
+      // Saving settings is ordinary editing: the button saves, and nothing
+      // stops to ask for a credential Core never checks on this endpoint.
+      expect(renderer.root.findAll((node) => node.type === "input" && node.props.type === "password")).toHaveLength(0);
 
       expect(commands.saveFlow).toHaveBeenCalledTimes(1);
       const request = (commands.saveFlow.mock.calls[0] as any[])[0];
-      expect(request).toMatchObject({ projectId: "project.one", flowId: "flow.stored", authorizationPin: "1234" });
+      expect(request).toMatchObject({ projectId: "project.one", flowId: "flow.stored" });
       expect(request.flow.metadata.llmExecutionSettings).toEqual({ tokenLimits, maxCalls: 26, timeoutMs: 15000, maxEstimatedCostUsd: 0.25, retryCount: 0 });
     } finally {
       await act(async () => { renderer?.unmount(); });

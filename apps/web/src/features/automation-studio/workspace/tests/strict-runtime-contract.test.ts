@@ -41,9 +41,20 @@ describe("strict workspace runtime contract", () => {
     expect(drawers).toContain('props.panel === "inspector"');
     expect(drawers).toContain('props.panel === "timeline"');
     expect(rightPane).toContain('aria-label="Right utilities"');
-    expect(rightPane).toContain("aria-expanded={!state.collapsed}");
-    expect(timeline).toContain("aria-expanded={!state.collapsed}");
-    expect(shell).toContain('const inspectorLabel = activeRightView?.view.label ?? "Inspector"');
+    // Both regions collapse through the one shared control rather than each
+    // writing its own chevron, its own icon pair and its own wording; what a
+    // region still owns is the collapsed state it reports and the edge it is
+    // on, and `AutomationCollapseToggle` turns those into `aria-expanded` and
+    // the direction the chevron points.
+    const collapseToggle = readFileSync(new URL("../../shared/CollapseToggle.tsx", import.meta.url), "utf8");
+    expect(collapseToggle).toContain("aria-expanded={!props.collapsed}");
+    for (const region of [rightPane, timeline]) {
+      expect(region).toContain("<AutomationCollapseToggle");
+      expect(region).toContain("collapsed={state.collapsed}");
+    }
+    expect(rightPane).toContain('edge="right"');
+    expect(timeline).toContain('edge="bottom"');
+    expect(shell).toContain('const inspectorLabel = activeRightView?.view.label ?? "Details"');
     expect(drawers).toContain("title={props.inspectorTitle}");
     expect(source).toContain("source.subscribe(viewId, listener)");
     expect(source).toContain("source.getRevision(viewId)");
@@ -57,12 +68,12 @@ describe("strict workspace runtime contract", () => {
     const executor = readFileSync(new URL("../../hierarchy/commands/create-executor.ts", import.meta.url), "utf8");
 
     expect(dialog).toContain('aria-label="Choose item type"');
-    expect(dialog).toContain('label: "Subflow"');
+    expect(dialog).toContain('label: "Reusable part"');
     expect(dialog).toContain('label: "Folder"');
     expect(dialog).toContain("automationHierarchyNodeIsSubflowCategory");
     expect(dialog).toContain("automationHierarchyNodeIsSubflowRoot");
     expect(dialog).toContain('Field label="Location"');
-    expect(dialog).toContain('placeholder={transaction.createKind === "subflow" ? "Subflow name"');
+    expect(dialog).toContain('placeholder={transaction.createKind === "subflow" ? "Reusable part name"');
     expect(dialog).toContain("automationHierarchyDialogSubmission(transaction)");
     expect(executor).toContain("createSubflow(transaction, subflowParent, dependencies)");
     expect(executor).toContain("createSubflowCategory(transaction, subflowParent, dependencies)");

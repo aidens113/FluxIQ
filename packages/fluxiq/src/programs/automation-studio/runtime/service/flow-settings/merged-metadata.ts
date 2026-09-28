@@ -1,11 +1,19 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioInterventionMode, defaultAutomationStudioFlowSettingsMetadata, withAutomationStudioInterventionMode } from "../../../model/index.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
+import { withoutAutomationStudioLockedDefaultSettings } from "./locked-default-migration.ts";
 
 // Merging a Flow's stored settings metadata over the defaults, carrying the
 // pre-versioning shape forward without changing what it meant.
 
-export function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObject {
+// A Flow created before 2026-09-28 carries the locked block a defect wrote into
+// every new Flow, so it is cleared before anything is read off it. Applied here
+// as well as at the read in `service/flows/store.ts` because this is where a
+// setting becomes a decision, and a path that reached settings with metadata
+// straight out of storage would otherwise still be gated. Clearing is
+// idempotent, so doing it twice costs a comparison.
+export function mergedFlowSettingsMetadata(stored: JsonObject | undefined): JsonObject {
+  const metadata = withoutAutomationStudioLockedDefaultSettings(stored);
   const defaults = defaultAutomationStudioFlowSettingsMetadata();
   const canonical = withAutomationStudioInterventionMode(metadata, automationStudioInterventionMode(metadata));
   const configuredTrainingMode = jsonObjectFromUnknown(metadata?.trainingModeSettings)?.mode ?? metadata?.trainingMode;

@@ -56,39 +56,46 @@ describe("AutomationStudioService recording persistence", () => {
 
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.defaults", name: "Default settings Flow" });
 
+    // Every one of these flipped on 2026-09-28. A Flow created out of the box
+    // used to be locked: it could not repair itself, re-author a subflow,
+    // reroute, retarget an action, create a recovery path or keep what it
+    // learned, and every proposal waited on a person. That is the automation's
+    // own work, and asking for the automation is the grant for it. The rule and
+    // the reasoning are pinned in
+    // `programs/automation-studio/tests/permission-defaults.test.ts`.
     expect(flow.metadata).toMatchObject({
-      trainingMode: "normal",
-      proposalMode: "manual",
-      proposalApprovalMode: "manual",
+      trainingMode: "continuous_adaptive",
+      proposalMode: "auto",
+      proposalApprovalMode: "auto",
       llmProvider: "host",
       adaptationPolicyId: "policy.default",
       budgetExhaustedBehavior: "ask",
       adaptationPolicySettings: {
-        preset: "locked",
-        proposalMode: "manual",
+        preset: "adaptive",
+        proposalMode: "auto",
         allowRuntimeRecovery: true,
-        allowCreateRecoveryPaths: false,
-        allowModifySubflows: false,
-        allowCreateSubflows: false,
-        allowModifyRouter: false,
-        allowModifyExpectations: false,
-        allowModifyActionTargets: false,
-        allowDeleteOrDisableBehavior: false,
-        allowExternalSideEffects: false,
-        requireApprovalForDestructiveChanges: true,
-        requireApprovalForExternalSideEffects: true,
+        allowCreateRecoveryPaths: true,
+        allowModifySubflows: true,
+        allowCreateSubflows: true,
+        allowModifyRouter: true,
+        allowModifyExpectations: true,
+        allowModifyActionTargets: true,
+        allowDeleteOrDisableBehavior: true,
+        allowExternalSideEffects: true,
+        requireApprovalForDestructiveChanges: false,
+        requireApprovalForExternalSideEffects: false,
         maxInterventionsPerRun: 3,
         maxEstimatedCostUsdPerRun: 1
       },
       trainingModeSettings: {
-        mode: "normal",
+        mode: "continuous_adaptive",
         trainForRunCount: 3,
         minimumStabilityScore: 0.9,
-        allowLlmIntervention: false,
+        allowLlmIntervention: true,
         allowRuntimeRecovery: true,
-        allowAdaptationCreation: false,
-        proposalApprovalMode: "manual",
-        allowPromotion: false,
+        allowAdaptationCreation: true,
+        proposalApprovalMode: "auto",
+        allowPromotion: true,
         budgets: {
           maxInterventionsPerRun: 2,
           maxTokensPerRun: 12000,

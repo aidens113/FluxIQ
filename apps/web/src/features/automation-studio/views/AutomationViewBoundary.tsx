@@ -4,6 +4,75 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
 import type { AutomationViewInstance } from "./view-types";
 import type { AutomationViewReadiness } from "./view-readiness";
 
+/**
+ * Every empty panel used to read "No data yet. <Label> has no data for the current
+ * scope." - the same sentence whether the panel was genuinely empty or simply pointed
+ * at the wrong thing, and never a way out of either. Each panel now says what would
+ * appear in it and what a person does to make that happen. Keyed by view type rather
+ * than by view id, so canonical ids stay owned by the registry.
+ */
+const emptyStateCopy: Partial<Record<AutomationViewInstance["type"], { title: string; body: string }>> = {
+  clients: {
+    title: "No browsers connected yet",
+    body: "Pair a browser that has the FluxIQ extension installed and it appears here, ready to record and to act."
+  },
+  recordings: {
+    title: "Nothing recorded yet",
+    body: "Record yourself using the site, then pick that recording to replay every step it captured."
+  },
+  design: {
+    title: "This part has no steps yet",
+    body: "Add a step here, or open Run and test, describe the job in your own words, and let FluxIQ draft the steps for you."
+  },
+  router: {
+    title: "No paths yet",
+    body: "Add a rule that decides which reusable part handles a run. Until you do, every run takes the same route."
+  },
+  subflows: {
+    title: "No reusable parts yet",
+    body: "Create a part to group steps you want to use in more than one place, such as signing in."
+  },
+  instructions: {
+    title: "No guidance written yet",
+    body: "Write a note telling FluxIQ how to handle this automation: which account to use, what to avoid, what counts as finished."
+  },
+  adaptations: {
+    title: "No suggested changes",
+    body: "When a run meets something unexpected and FluxIQ works around it, the change appears here for you to keep or to undo."
+  },
+  settings: {
+    title: "No settings to show",
+    body: "Pick an automation, or one of its reusable parts, in the sidebar to change how it runs."
+  },
+  state: {
+    title: "Nothing captured yet",
+    body: "Run this automation or open a recording, then pick a step to see the page exactly as it was at that moment."
+  },
+  runtime: {
+    title: "This automation has not run yet",
+    body: "Describe what you want automated and press Run. Every run, and what it produced, is listed here."
+  },
+  runs: {
+    title: "No runs yet",
+    body: "Once this automation has run at least once, every run and what it produced is listed here."
+  },
+  problems: {
+    title: "No problems found",
+    body: "Anything that would stop an automation running, such as a missing value or a step that no longer matches the page, is listed here."
+  },
+  inspector: {
+    title: "Nothing selected",
+    body: "Pick a step, a reusable part or a whole automation and its details appear here."
+  }
+};
+
+function automationViewEmptyCopy(view: AutomationViewInstance): { title: string; body: string } {
+  return emptyStateCopy[view.type] ?? {
+    title: "Nothing to show yet",
+    body: `${view.label} has nothing to show for what you have selected.`
+  };
+}
+
 type LocalErrorBoundaryProps = { children: ReactNode; resetKey: string; view: AutomationViewInstance };
 type LocalErrorBoundaryState = { error: Error | null };
 
@@ -59,10 +128,11 @@ export function AutomationViewLoadingState(props: { view: AutomationViewInstance
 }
 
 export function AutomationViewEmptyState(props: { message?: string; view: AutomationViewInstance }) {
+  const copy = automationViewEmptyCopy(props.view);
   return (
     <AutomationViewStateSurface state="empty" view={props.view}>
-      <strong>No data yet</strong>
-      <span>{props.message ?? `${props.view.label} has no data for the current scope.`}</span>
+      <strong>{copy.title}</strong>
+      <span>{props.message ?? copy.body}</span>
     </AutomationViewStateSurface>
   );
 }

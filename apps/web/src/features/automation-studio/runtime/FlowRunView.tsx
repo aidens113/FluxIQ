@@ -28,10 +28,16 @@ import {
 import { useRuntimeDetailCommands, useRuntimeExecutionCommands, type RuntimeDetailCommands, type RuntimeExecutionCommands } from "./runtime-host";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { registerAutomationStudioRuntimeActions, updateAutomationStudioRuntimeActions } from "../workspace/studio-action-registry";
-import { BlankFlowAuthoringPanel } from "../authoring";
 import { AUTOMATION_LLM_PROGRESS_LABELS, llmRequestRequiresHighTokenWarning } from "../authoring/blank-flow-authoring-model";
 export type FlowRunViewProps = {
   projectId: string | null;
+  /**
+   * Whether this run panel is the visible one. Supplied by the canonical view
+   * host, which owns the activity a mounted-but-hidden pane still has, so the
+   * workspace header can resolve its Play and Stop to the panel in front of the
+   * person rather than to the most recently registered one.
+   */
+  activeRef?: { current: boolean };
   flow?: any;
   pipelineArtifacts: any;
   timelines: any[];
@@ -334,6 +340,11 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     else commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId: activeRunId });
   };
   const studioRuntimeActions = {
+    // The header's Play and Stop drive the run panel a person is looking at, not
+    // whichever one mounted last. The object-scoped view ids make a Run and test
+    // tab per Flow routine, so without this the header answered an invisible
+    // panel. `FlowGraphCanvas` resolves graph actions the same way.
+    active: () => props.activeRef?.current ?? true,
     canPlay: Boolean(props.projectId && props.flow?.flowId && !runningMode && !activeRunId),
     canPause: false,
     canStop: Boolean(props.projectId && activeRunId),
@@ -347,13 +358,12 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     <section className="automation-runtime-stage">
       <header className="automation-runtime-stage-header">
         <div>
-          <span>Runtime Debug</span>
+          <span>Run and test</span>
           <strong>{props.flow?.name ?? props.flow?.flowId ?? "Select a Flow"}</strong>
           <p>Start a controlled run, then inspect its actions, decisions, and state changes.</p>
         </div>
         <span>{runtimeRunCount} {runtimeRunCount === 1 ? "run" : "runs"}</span>
       </header>
-      <BlankFlowAuthoringPanel commands={props.commands} flow={props.flow} projectId={props.projectId} readiness={readiness} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} />
       <RuntimeRunControlPanel
         disabled={!props.projectId || !props.flow?.flowId || Boolean(runningMode)}
         readiness={readiness}
@@ -393,12 +403,12 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
 }
 
 function runtimeModeDescription(mode: AutomationRuntimeUiRunMode): string {
-  if (mode === "diagnosis_only") return "Run one bounded DeepSeek diagnosis call; no patching, retry, promotion, or external side effects.";
-  if (mode === "diagnose_and_adapt") return "Diagnose once, generate one bounded runtime patch, and queue any resulting adaptation for manual review; nothing is auto-applied.";
-  if (mode === "explore_and_adapt") return "If a step fails, explore the live page to find a repair and queue it for manual review. Anything with a lasting effect stops and asks for your permission first.";
-  if (mode === "manual_approval") return "Use LLM assistance, but keep generated adaptations queued for review.";
-  if (mode === "no_llm_intervention") return "Run without LLM intervention or adaptation creation.";
-  return "Use this Flow's adaptive policy and auto-apply safe validated adaptations.";
+  if (mode === "diagnosis_only") return "Ask the assistant once to explain what went wrong. It changes nothing, retries nothing, and publishes nothing.";
+  if (mode === "diagnose_and_adapt") return "Work out what went wrong and write one suggested fix, held for you to approve. Nothing is applied on its own.";
+  if (mode === "explore_and_adapt") return "If a step fails, look at the live page to find a fix and hold it for you to approve. Anything with a lasting effect asks you first.";
+  if (mode === "manual_approval") return "Let the assistant help, but hold every change it suggests for you to approve.";
+  if (mode === "no_llm_intervention") return "Run only the saved steps. No assistance, and no changes suggested.";
+  return "Run it, and let it fix itself when the page changes. Safe, checked fixes are applied for you.";
 }
 
 export function RuntimeRunControlPanel(props: {
@@ -445,17 +455,16 @@ export function RuntimeRunControlPanel(props: {
       <header>
         <div>
           <strong>New run</strong>
-          <span>Choose how this Flow should execute.</span>
+          <span>Try this automation and watch what it does.</span>
         </div>
         {!props.readiness.loading && !props.readiness.error && !readinessIssues.length ? <span className="automation-runtime-ready"><CircleCheck size={15} aria-hidden />Ready</span> : null}
       </header>
       {warnings.length ? <div className="automation-runtime-message">{warnings.join(" ")}</div> : null}
       <div className="automation-runtime-run-command">
-        <fieldset className="automation-runtime-mode-control">
-          <legend>Execution mode</legend>
-          <div>{runModes.map((mode) => <button aria-pressed={selectedMode === mode.mode} className={selectedMode === mode.mode ? "selected" : ""} disabled={Boolean(props.runningMode)} key={mode.mode} onClick={() => setSelectedMode(mode.mode)} type="button">{mode.label}</button>)}</div>
-          <small>{runtimeModeDescription(selectedMode)}</small>
-        </fieldset>
+        <div className="automation-runtime-mode-summary">
+          <strong>{runModes.find((mode) => mode.mode === selectedMode)?.label ?? ""}</strong>
+          <span>{runtimeModeDescription(selectedMode)}</span>
+        </div>
         <div className="automation-runtime-run-actions">
           <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
           <button className="button button-primary" disabled={props.disabled || props.readiness.loading || Boolean(props.readiness.error) || readinessIssues.length > 0 || inputErrors.length > 0 || !inputDocument.ok} onClick={() => props.onRun(selectedMode)} type="button">
@@ -463,9 +472,17 @@ export function RuntimeRunControlPanel(props: {
           </button>
         </div>
       </div>
-      {props.readiness.loading ? <div className="automation-runtime-readiness-check"><span aria-hidden className="automation-inline-spinner" /><span>Checking Flow readiness...</span></div> : props.readiness.error ? <div className="automation-runtime-readiness" role="alert"><AlertTriangle size={17} aria-hidden /><div><strong>Readiness check failed</strong><span>{props.readiness.error}</span></div><div><button className="button" onClick={props.onRetryReadiness} type="button">Retry</button></div></div> : readinessIssues.length ? <div className="automation-runtime-readiness" role="status"><AlertTriangle size={17} aria-hidden /><div><strong>Complete setup before running</strong>{readinessIssues.map((issue) => <span key={issue.label}>{issue.label}</span>)}</div><div>{readinessIssues.map((issue) => <button className="button" key={issue.target} onClick={() => props.onOpenTarget?.(issue.target)} type="button">{issue.action}</button>)}</div></div> : null}
+      <details className="automation-runtime-advanced-mode">
+        <summary>Advanced</summary>
+        <fieldset className="automation-runtime-mode-control">
+          <legend>Change how it runs</legend>
+          <div>{runModes.map((mode) => <button aria-pressed={selectedMode === mode.mode} className={selectedMode === mode.mode ? "selected" : ""} disabled={Boolean(props.runningMode)} key={mode.mode} onClick={() => setSelectedMode(mode.mode)} type="button">{mode.label}</button>)}</div>
+          <small>{runtimeModeDescription(selectedMode)}</small>
+        </fieldset>
+      </details>
+      {props.readiness.loading ? <div className="automation-runtime-readiness-check"><span aria-hidden className="automation-inline-spinner" /><span>Checking whether this is ready to run...</span></div> : props.readiness.error ? <div className="automation-runtime-readiness" role="alert"><AlertTriangle size={17} aria-hidden /><div><strong>We could not check this automation</strong><span>{props.readiness.error}</span></div><div><button className="button" onClick={props.onRetryReadiness} type="button">Retry</button></div></div> : readinessIssues.length ? <div className="automation-runtime-readiness" role="status"><AlertTriangle size={17} aria-hidden /><div><strong>Not ready yet</strong>{readinessIssues.map((issue) => <span key={issue.label}>{issue.label}</span>)}</div><div>{readinessIssues.map((issue) => <button className="button" key={issue.target} onClick={() => props.onOpenTarget?.(issue.target)} type="button">{issue.action}</button>)}</div></div> : null}
       {declaredInputs.length ? <div className="automation-runtime-input-fields">
-        <header><strong>Run Inputs</strong><span>Values passed into this run</span></header>
+        <header><strong>Values to use</strong><span>Fill these in before the run starts</span></header>
         <div>
           {declaredInputs.map((port) => {
             const value = inputValues[port.id];
@@ -475,13 +492,13 @@ export function RuntimeRunControlPanel(props: {
           })}
         </div>
       </div> : <div className="automation-runtime-input-preview">
-        <strong>No run inputs declared</strong>
-        <span>This Flow will run with its saved defaults.</span>
+        <strong>Nothing to fill in</strong>
+        <span>This automation runs with the values already saved on it.</span>
       </div>}
-      {props.activeRunId ? <div className="automation-runtime-live-control" role="status"><span className="automation-inline-spinner" aria-hidden /><div><strong>Run in progress</strong><span>{elapsedSeconds}s elapsed | {props.activeRunId}</span></div><button className="button" onClick={props.onOpenLiveLog} type="button">Open Live Log</button><button className="button danger" onClick={props.onStop} type="button">Stop</button></div> : props.canRetry ? <div className="automation-runtime-retry-control"><span>Run the same inputs and mode again.</span><button className="button" disabled={props.disabled} onClick={props.onRetry} type="button">Retry Run</button></div> : null}
+      {props.activeRunId ? <div className="automation-runtime-live-control" role="status"><span className="automation-inline-spinner" aria-hidden /><div><strong>Run in progress</strong><span>{elapsedSeconds}s elapsed | {props.activeRunId}</span></div><button className="button" onClick={props.onOpenLiveLog} type="button">Open Live Log</button><button className="button danger" onClick={props.onStop} type="button">Stop</button></div> : props.canRetry ? <div className="automation-runtime-retry-control"><span>Run it again with the same values.</span><button className="button" disabled={props.disabled} onClick={props.onRetry} type="button">Retry Run</button></div> : null}
       <details className="automation-runtime-advanced-inputs">
-        <summary>Advanced JSON</summary>
-        <label><span>Complete run input object</span><textarea aria-invalid={!inputDocument.ok} rows={8} spellCheck={false} value={props.inputText} onChange={(event) => props.onInputText(event.target.value)} />{!inputDocument.ok ? <small className="automation-field-error" role="alert">{inputDocument.error}</small> : <small>Changes here stay synchronized with the fields above.</small>}</label>
+        <summary>Raw values</summary>
+        <label><span>Every value for this run, as JSON</span><textarea aria-invalid={!inputDocument.ok} rows={8} spellCheck={false} value={props.inputText} onChange={(event) => props.onInputText(event.target.value)} />{!inputDocument.ok ? <small className="automation-field-error" role="alert">{inputDocument.error}</small> : <small>This stays in step with the fields above.</small>}</label>
       </details>
     </section>
   );

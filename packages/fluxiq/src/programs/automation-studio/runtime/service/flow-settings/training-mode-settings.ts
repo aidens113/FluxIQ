@@ -26,11 +26,14 @@ export function trainingModeSettingsFromMetadata(metadata: JsonObject): Automati
     ...(trainForRunCount !== undefined ? { trainForRunCount } : {}),
     ...(stableRunThreshold !== undefined ? { stableRunThreshold } : {}),
     ...(minimumStabilityScore !== undefined ? { minimumStabilityScore } : {}),
-    allowLlmIntervention: booleanSetting(settings.allowLlmIntervention, false),
+    // Silence permits. Repairing itself, authoring the repair and keeping what
+    // it learned are the automation's own work, so a Flow nobody has configured
+    // does them rather than stopping. Only an explicit `false` narrows it.
+    allowLlmIntervention: booleanSetting(settings.allowLlmIntervention, true),
     allowRuntimeRecovery: booleanSetting(settings.allowRuntimeRecovery, true),
-    allowAdaptationCreation: booleanSetting(settings.allowAdaptationCreation, false),
+    allowAdaptationCreation: booleanSetting(settings.allowAdaptationCreation, true),
     proposalApprovalMode: approvalModeValue(settings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
-    allowPromotion: booleanSetting(settings.allowPromotion, false),
+    allowPromotion: booleanSetting(settings.allowPromotion, true),
     requireFirstManualReviewBeforeAutoPromotion: booleanSetting(settings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
     resultCheck: resultCheckConfigurationFromMetadata(settings),
     recoveryBudget: {

@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, FolderOpen, Search, X } from "lucide-react";
+import { FolderOpen, Search, X } from "lucide-react";
 import { memo, useRef, useSyncExternalStore } from "react";
+import { AutomationCollapseToggle } from "../shared/CollapseToggle";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
@@ -43,9 +44,14 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
         {!props.collapsed ? <strong title={props.projectName}>{props.projectName}</strong> : null}
         <div className="inline-actions">
           {props.collapsed ? <button className="icon-button automation-sidebar-heading-action" onClick={props.onCloseProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
-          <button aria-controls="automation-project-hierarchy" aria-expanded={!props.collapsed} className="icon-button automation-sidebar-heading-action automation-sidebar-collapse-toggle" onClick={props.onToggleCollapsed} title={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">
-            {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}
-          </button>
+          <AutomationCollapseToggle
+            className="automation-sidebar-heading-action automation-sidebar-collapse-toggle"
+            collapsed={props.collapsed}
+            controls="automation-project-hierarchy"
+            edge="left"
+            onToggle={props.onToggleCollapsed}
+            subject="sidebar"
+          />
         </div>
       </div>
       {!props.collapsed ? <div className="automation-sidebar-tools">
@@ -62,10 +68,10 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
               <option value="all">All objects</option>
               <option value="flow">Flows</option>
               <option value="folder">Folders</option>
-              <option value="subflow">Subflows</option>
+              <option value="subflow">Reusable parts</option>
               <option value="flow-object">Flow objects</option>
-              <option value="instruction">Instructions</option>
-              <option value="adaptation">Adaptations</option>
+              <option value="instruction">Guidance notes</option>
+              <option value="adaptation">Suggested changes</option>
               <option value="recording">Recordings</option>
               <option value="run">Runs</option>
             </select>

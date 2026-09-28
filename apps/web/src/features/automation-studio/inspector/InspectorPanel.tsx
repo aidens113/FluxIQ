@@ -46,7 +46,7 @@ export function InspectorPanel(props: {
         <Search size={14} aria-hidden />
         <input aria-label="Search inspector fields" disabled={!props.identity} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search fields" type="search" value={searchQuery} />
       </div>
-      {!props.identity ? <div className="automation-inspector-empty"><Search size={22} aria-hidden /><strong>Select an object to inspect</strong><span>Choose a Flow, node, route, recording, event, run, state fact, or other workspace object.</span></div> : (
+      {!props.identity ? <div className="automation-inspector-empty"><Search size={22} aria-hidden /><strong>Select an object to inspect</strong><span>Click anything in the list on the left, or any step on the canvas, and its details show up here.</span></div> : (
         <InspectorFilterProvider query={searchQuery}>
           {searchQuery ? <p className="automation-inspector-filter-status">Showing fields matching <strong>{searchQuery}</strong></p> : null}
           {props.stateNodeId ? <button className="button automation-inspector-action" onClick={props.onOpenState} type="button"><ListChecks size={14} aria-hidden />Open State</button> : null}

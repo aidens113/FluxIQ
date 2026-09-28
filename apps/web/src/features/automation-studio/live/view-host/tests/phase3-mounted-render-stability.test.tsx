@@ -106,18 +106,12 @@ describe("Phase 3 mounted React render stability", () => {
 
     commits.reset();
     await act(async () => {
-      overlays.open("hierarchy", {
+      overlays.open("viewAdder", {
         id: "hierarchy-menu:create",
-        kind: "create",
-        category: "flow",
-        categoryLabel: "Flows",
-        parentId: "flow-a",
-        allowedKinds: ["folder", "subflow"],
-        folderSource: {
-          resolve: () => null,
-          search: () => []
-        },
-        subflowContainer: true
+        area: "main",
+        targetWindowId: "main",
+        anchor: { top: 0, right: 0, bottom: 0, left: 0 },
+        options: []
       });
     });
     expect(commits.snapshot()).toEqual({ "hierarchy-menu": 1 });
@@ -178,7 +172,7 @@ function HierarchyProbe(props: { store: ReturnType<typeof createAutomationHierar
 }
 
 function HierarchyMenuProbe(props: { store: ReturnType<typeof createAutomationStudioOverlayStore> }) {
-  const request = useAutomationOverlaySelection(props.store, "hierarchy");
+  const request = useAutomationOverlaySelection(props.store, "viewAdder");
   return <span>{request?.id ?? "closed"}</span>;
 }
 

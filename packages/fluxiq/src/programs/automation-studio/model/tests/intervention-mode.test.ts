@@ -8,15 +8,22 @@ import {
 } from "../flows.ts";
 
 describe("Automation Studio intervention mode compatibility", () => {
-  it("defaults new Flows to deterministic execution with manual proposals and no promotion", () => {
+  // Changed on 2026-09-28. A new Flow used to default to `no_llm_intervention`
+  // with manual proposals, which meant it could not repair itself, re-author a
+  // subflow or keep what it learned until somebody went and switched it on.
+  // Repairing and re-authoring are the automation's own work, and asking for the
+  // automation is the grant for it; a person who wants it narrower still says
+  // so, and every row below shows that their saying so is still honoured. The
+  // rule itself is pinned in `programs/automation-studio/tests/permission-defaults.test.ts`.
+  it("defaults new Flows to adapting themselves, with proposals applied automatically", () => {
     const metadata = defaultAutomationStudioFlowSettingsMetadata();
     expect(metadata).toMatchObject({
-      adaptationMode: "no_llm_intervention",
+      adaptationMode: "fully_adaptive",
       adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
-      proposalMode: "manual",
-      trainingModeSettings: { mode: "normal", allowLlmIntervention: false, allowAdaptationCreation: false, allowPromotion: false }
+      proposalMode: "auto",
+      trainingModeSettings: { mode: "continuous_adaptive", allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: true }
     });
-    expect(automationStudioInterventionMode(metadata)).toBe("no_llm_intervention");
+    expect(automationStudioInterventionMode(metadata)).toBe("fully_adaptive");
   });
 
   it.each([

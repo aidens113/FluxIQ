@@ -32,7 +32,7 @@ function eventTarget() {
   };
 }
 
-describe("Runtime Debug live refresh", () => {
+describe("Run and test live refresh", () => {
   beforeEach(() => {
     vi.stubGlobal("document", { visibilityState: "visible", ...eventTarget() });
     vi.stubGlobal("window", eventTarget());

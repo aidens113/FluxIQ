@@ -12,21 +12,21 @@ export function AutomationRetiredViewRecovery(props: AutomationRetiredViewRecove
   const configRetired = props.retiredId === "config" || props.retiredId === "config-default";
   return (
     <section
-      aria-label="Retired Automation Studio view"
+      aria-label="Tab from an older version of FluxIQ"
       className="automation-project-empty automation-retired-view-recovery"
       data-retired-view-id={props.retiredId}
       data-view-id={props.view.id}
       role="status"
     >
-      <strong>Saved view unavailable</strong>
+      <strong>This tab is no longer available</strong>
       <span>
         {configRetired
-          ? "This saved Config tab belongs to an older workspace. Select a Flow, then open Flow Settings to continue."
-          : "This saved tab belongs to an older review workflow. Select a Flow, then open Adaptations to continue."}
+          ? "This tab was saved by an older version of FluxIQ. Pick an automation, then open Settings to carry on."
+          : "This tab was saved by an older review screen. Pick an automation, then open Suggested changes to carry on."}
       </span>
       <small>{configRetired
-        ? "Closing this tab does not remove Flow settings or project data."
-        : "Closing this tab does not remove recordings, runtime history, or adaptation data."}</small>
+        ? "Closing this tab does not change any settings or remove project data."
+        : "Closing this tab does not remove recordings, past runs, or suggested changes."}</small>
     </section>
   );
 }

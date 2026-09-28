@@ -24,6 +24,7 @@ import {
   createBackoffPoller,
   latestConversationTurnId,
   mergeConversationTurns,
+  parseConversation,
   parseConversations,
   pendingConversationTurn,
   sortConversationsForThreadList,
@@ -57,6 +58,11 @@ export type ConversationThreadState = {
   /** True once a list read has come back, so "no threads" can be told from "not read yet". */
   loaded: boolean;
   selectConversation(conversationId: string): void;
+  /**
+   * Open a thread about this project and select it. False when there is no
+   * project to open one on, or Core refused; the reason is on `error`.
+   */
+  startConversation(): Promise<boolean>;
   sendReply(text: string): Promise<boolean>;
   sendAnswer(answer: ConversationAnswer, authorizationPin?: string): Promise<boolean>;
   refresh(): void;
@@ -236,11 +242,52 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
     void readConversations();
   }, [projectFor, readConversations, readTurns]);
 
-  const sendReply = useCallback(async (text: string) => {
-    const conversationId = selectedRef.current;
-    if (!conversationId || !text.trim() || sending) return false;
+  /**
+   * Open a thread and select it, without touching `sending` - both callers own
+   * that themselves, and one of them goes on to write into the thread it opened.
+   *
+   * Core continues a subject's open thread rather than minting a second one, so
+   * this is safe to call whenever there is nothing selected.
+   */
+  const openThread = useCallback(async (): Promise<string> => {
+    const project = projectId ?? "";
+    if (!project) return "";
+    const result = await commands.startConversation({ projectId: project });
+    const opened = result.ok
+      ? parseConversation((result.payload as { conversation?: unknown } | undefined)?.conversation)
+      : null;
+    if (!opened) {
+      setError(result.error ?? "A new thread could not be started.");
+      return "";
+    }
+    projectByConversationRef.current.set(opened.conversationId, opened.projectId);
+    setError("");
+    selectConversation(opened.conversationId);
+    return opened.conversationId;
+  }, [commands, projectId, selectConversation]);
+
+  const startConversation = useCallback(async () => {
+    if (sending) return false;
     setSending(true);
     try {
+      const opened = await openThread();
+      if (!opened) return false;
+      await afterWrite(opened);
+      return true;
+    } finally {
+      setSending(false);
+    }
+  }, [afterWrite, openThread, sending]);
+
+  const sendReply = useCallback(async (text: string) => {
+    if (!text.trim() || sending) return false;
+    setSending(true);
+    try {
+      // Writing into a project that has no thread yet is asking for one, not an
+      // error to report back. Opening it is what the person meant, and Core
+      // continues an existing thread rather than adding a second.
+      const conversationId = selectedRef.current || await openThread();
+      if (!conversationId) return false;
       const result = await commands.appendTurn({ projectId: projectFor(conversationId), conversationId, text: text.trim() });
       if (!result.ok) {
         setError(result.error ?? "The reply could not be sent.");
@@ -252,7 +299,7 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
     } finally {
       setSending(false);
     }
-  }, [afterWrite, commands, projectFor, sending]);
+  }, [afterWrite, commands, openThread, projectFor, sending]);
 
   const sendAnswer = useCallback(async (answer: ConversationAnswer, authorizationPin?: string) => {
     const conversationId = selectedRef.current;
@@ -291,6 +338,7 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
     sending,
     error,
     selectConversation,
+    startConversation,
     sendReply,
     sendAnswer,
     refresh: () => pollerRef.current?.sync()

@@ -22,14 +22,19 @@ describe("Flow editor communication boundary", () => {
     expect(controllerSource).toContain("props.focusRequest?.problem");
   });
 
-  it("routes keyboard and button saving through one project modal", () => {
+  it("routes keyboard and button saving through one project save, with nothing to authorize", () => {
     expect(controllerSource).toContain("const saveFlowGraph = useCallback(async (authorizationPin?: string) =>");
     expect(controllerSource).toContain("await props.onSaveGraph");
     expect(controllerSource).not.toContain('key === "s"');
     expect(graphRuntimeSource).not.toContain("window.prompt");
-    expect(dirtyGuardSource).toContain("callbacks.current.save(authorizationPin)");
+    // No PIN travels through the dirty-view channel any more: saving the
+    // person's own unsaved work is the least gate-worthy action in the product,
+    // and Core registers every endpoint a save reaches as `authoring`.
+    expect(dirtyGuardSource).toContain("callbacks.current.save()");
+    expect(dirtyGuardSource).not.toContain("Security PIN");
     expect(toolbarSource).not.toContain('aria-label="Save graph"');
     expect(globalToolbarSource).toContain('aria-label="Save entire project"');
-    expect(globalToolbarSource).toContain("saveDirtyAutomationViews(savePin)");
+    expect(globalToolbarSource).toContain("saveDirtyAutomationViews()");
+    expect(globalToolbarSource).not.toContain("Security PIN");
   });
 });

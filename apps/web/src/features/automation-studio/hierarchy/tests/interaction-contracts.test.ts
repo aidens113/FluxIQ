@@ -148,6 +148,12 @@ describe("hierarchy command and dialog transactions", () => {
       ok: true,
       transaction: { name: "Retry Checkout", authorizationPin: "12345" }
     });
+    // A create submits with no PIN at all: Core registers create-flow,
+    // create-flow-subflow and save-flow as `authoring` and never checks one.
+    expect(automationHierarchyDialogSubmission(named)).toMatchObject({
+      ok: true,
+      transaction: { name: "Retry Checkout", authorizationPin: "" }
+    });
   });
 
   it("validates the entire transaction instead of independent dialog fields", () => {
@@ -156,7 +162,7 @@ describe("hierarchy command and dialog transactions", () => {
     });
     expect(automationHierarchyDialogSubmission(transaction)).toEqual({
       ok: false,
-      error: "Enter your PIN before changing hierarchy items."
+      error: "Enter your PIN before deleting this item."
     });
     const failed = reduceAutomationHierarchyDialogTransaction(transaction, {
       type: "submit-failed",

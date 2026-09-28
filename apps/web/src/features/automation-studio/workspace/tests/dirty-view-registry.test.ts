@@ -43,16 +43,16 @@ describe("Automation Studio dirty-view decisions", () => {
     expect(proceed).toHaveBeenCalledOnce();
   });
 
-  it("saves every dirty project editor with one authorization PIN", async () => {
+  it("saves every dirty project editor at once, and asks for nothing", async () => {
     const first = vi.fn();
     const second = vi.fn();
     registerDirtyView({ id: "graph", viewId: "flow-nodes", label: "Graph", dirty: true, save: first, discard: vi.fn() });
     registerDirtyView({ id: "settings", viewId: "flow-settings", label: "Settings", dirty: true, save: second, discard: vi.fn() });
     registerDirtyView({ id: "clean", viewId: "instructions", label: "Instructions", dirty: false, save: vi.fn(), discard: vi.fn() });
 
-    await expect(saveDirtyAutomationViews("1234")).resolves.toBe(2);
-    expect(first).toHaveBeenCalledWith("1234");
-    expect(second).toHaveBeenCalledWith("1234");
+    await expect(saveDirtyAutomationViews()).resolves.toBe(2);
+    expect(first).toHaveBeenCalledWith();
+    expect(second).toHaveBeenCalledWith();
   });
 
   it("keeps a pending save decision open when persistence fails", async () => {
@@ -61,12 +61,12 @@ describe("Automation Studio dirty-view decisions", () => {
       viewId: "flow-nodes",
       label: "Graph",
       dirty: true,
-      save: vi.fn(async () => { throw new Error("PIN rejected"); }),
+      save: vi.fn(async () => { throw new Error("The graph could not be saved."); }),
       discard: vi.fn()
     });
     requestDirtyViewDecision({ actionLabel: "changing selection", proceed: vi.fn() });
 
-    await expect(resolveDirtyViewDecision("save", "1234")).rejects.toThrow("PIN rejected");
+    await expect(resolveDirtyViewDecision("save")).rejects.toThrow("The graph could not be saved.");
     expect(dirtyViewRegistrySnapshot().pending?.entries.map((entry) => entry.id)).toEqual(["graph"]);
   });
 });

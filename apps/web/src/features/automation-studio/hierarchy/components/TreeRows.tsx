@@ -11,6 +11,29 @@ import { automationHierarchyNodeSelectionState } from "../selectors";
 import { automationHierarchyIconForNode } from "../tree-icons";
 import type { AutomationHierarchyFlatNodeRow } from "../virtualized-tree";
 
+/**
+ * The row subtitle used to print the raw internal kind, so the sidebar read as a column
+ * of the words flow, subflow, flow-object, adaptation. These are the words a person
+ * would use instead. A kind with no useful noun renders no subtitle at all, which is
+ * every generated Flow section: its own label already says what it is.
+ */
+const hierarchyKindNouns: Record<AutomationHierarchyFlatNodeRow["node"]["kind"], string> = {
+  flow: "Automation",
+  subflow: "Reusable part",
+  folder: "Folder",
+  "flow-object": "",
+  instruction: "Guidance note",
+  adaptation: "Suggested change",
+  "change-proposal": "Suggested change",
+  proposal: "Suggested change",
+  recording: "Recording",
+  run: "Run",
+  client: "Connected browser",
+  task: "Task",
+  routine: "Older automation",
+  config: "Settings"
+};
+
 export type AutomationHierarchyTreeRowProps = {
   row: AutomationHierarchyFlatNodeRow;
   activeViewId?: string;
@@ -43,6 +66,7 @@ export const AutomationHierarchyTreeRow = memo(function AutomationHierarchyTreeR
   const menuActionIds = actionIds.filter((actionId) => actionId !== "create-child");
   const Icon = automationHierarchyIconForNode(node);
   const isFolder = node.kind === "folder";
+  const kindNoun = hierarchyKindNouns[node.kind] ?? "";
   return (
     <div
       aria-expanded={props.row.isContainer ? !props.row.collapsed : undefined}
@@ -95,7 +119,7 @@ export const AutomationHierarchyTreeRow = memo(function AutomationHierarchyTreeR
         type="button"
       >
         <Icon size={14} aria-hidden />
-        <span className="tree-row-label"><strong>{node.label}</strong><small>{node.kind}</small></span>
+        <span className="tree-row-label"><strong>{node.label}</strong>{kindNoun ? <small>{kindNoun}</small> : null}</span>
       </button>
       {canCreateChild ? (
         <button

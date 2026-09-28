@@ -56,8 +56,8 @@ function hierarchyTransactionCapabilityError(
   })) return "This location does not allow new hierarchy items.";
   const subflowParent = parent ? hierarchySubflowParent(parent) : null;
   if (subflowParent && transaction.createKind !== "subflow" && transaction.createKind !== "folder") {
-    return "Only subflows and folders can be created here.";
+    return "Only reusable parts and folders can be created here.";
   }
-  if (!subflowParent && transaction.createKind === "subflow") return "Subflows must be created inside a Flow's Subflows folder.";
+  if (!subflowParent && transaction.createKind === "subflow") return "A reusable part must be created inside an automation's Reusable parts folder.";
   return null;
 }

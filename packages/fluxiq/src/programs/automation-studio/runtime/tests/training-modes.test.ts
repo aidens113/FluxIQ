@@ -98,7 +98,10 @@ describe("Automation Studio training modes", () => {
     })).toMatchObject({ invoke: false, requiredPriorAction: "stop" });
     expect(decideAutomationStudioLlmInvocationGate({ settings: adaptive, policyPreset: "locked" })).toMatchObject({ invoke: false, requiredPriorAction: "manual_approval" });
     expect(decideAutomationStudioLlmInvocationGate({ settings: adaptive, policyPreset: "observe" })).toMatchObject({ invoke: false, requiredPriorAction: "manual_approval" });
-    expect(decideAutomationStudioLlmInvocationGate({ settings: settings({ mode: "continuous_adaptive", proposalApprovalMode: "manual" }) })).toMatchObject({ invoke: false, requiredPriorAction: "manual_approval" });
+    // Manual proposal approval says a person reviews the change before it is
+    // kept, not that the run may not try to repair itself. Refusing the call
+    // for it left that person with no repair at all, and so nothing to review.
+    expect(decideAutomationStudioLlmInvocationGate({ settings: settings({ mode: "continuous_adaptive", proposalApprovalMode: "manual" }) })).toMatchObject({ invoke: true, requiredPriorAction: "none" });
     expect(decideAutomationStudioLlmInvocationGate({ settings: adaptive })).toMatchObject({ invoke: true, requiredPriorAction: "none" });
   });
 
@@ -148,7 +151,7 @@ describe("Automation Studio training modes", () => {
     })).toEqual({
       autoApply: true,
       requiresManualApproval: false,
-      reason: "Validated low-risk non-structural adaptation can be applied automatically."
+      reason: "An adaptation whose trial succeeded is applied."
     });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "manual",
@@ -163,14 +166,20 @@ describe("Automation Studio training modes", () => {
       patchKinds: ["edit_router"],
       confidence: tierOf([trial()]),
       promoteAdaptations: true
-    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Structural adaptations require manual review before durable promotion." });
+      // Re-authoring a router is editing a Flow, which is the automation's own
+      // work. What sends it to a person here is `mixed`, and that is a person's
+      // own setting: under `auto` the same change is applied.
+    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Mixed adaptation approval mode routes a structural adaptation to a person." });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "auto",
       riskLevel: "destructive",
       patchKinds: ["edit_action_target"],
       confidence: tierOf([trial()]),
       promoteAdaptations: true
-    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Destructive adaptations always require manual review." });
+      // A rating Core gave the change is not a person's instruction, so it no
+      // longer holds a proved adaptation back. A real-world delete is asked
+      // about per action at the permission gate instead.
+    })).toMatchObject({ autoApply: true, requiresManualApproval: false });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "auto",
       riskLevel: "low",
@@ -198,13 +207,13 @@ describe("Automation Studio training modes", () => {
       promoteAdaptations: true
     });
 
-    expect(gate([trial()])).toEqual({ autoApply: true, requiresManualApproval: false, reason: "Validated low-risk non-structural adaptation can be applied automatically." });
+    expect(gate([trial()])).toEqual({ autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied." });
     expect(gate([trial(), replay(), replay()])).toMatchObject({ autoApply: true });
     expect(gate([legacy("succeeded")])).toMatchObject({ autoApply: true });
     expect(gate([])).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
     expect(gate([trial("failed")])).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Its latest trial failed, so the change is not promoted until a new trial succeeds." });
     expect(gate([trial(), replay("failed")])).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Its latest replay failed, so the change is not promoted until a new trial succeeds." });
-    expect(gate([trial()], "medium")).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Only low-risk adaptations can be promoted automatically." });
+    expect(gate([trial()], "medium")).toMatchObject({ autoApply: true, requiresManualApproval: false });
   });
 
   it("never promotes a change with no succeeded trial, however many replays it lists", () => {
@@ -254,19 +263,22 @@ describe("Automation Studio training modes", () => {
       ...overrides
     });
 
-    expect(gate()).toEqual({ autoApply: true, requiresManualApproval: false, reason: "A created Flow whose trial succeeded, at low risk, can be applied automatically." });
+    expect(gate()).toEqual({ autoApply: true, requiresManualApproval: false, reason: "A created Flow whose trial succeeded is applied." });
     expect(gate({ confidence: tierOf([trial(), replay(), replay()]) })).toMatchObject({ autoApply: true });
     expect(gate({ confidence: tierOf([]) })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
     expect(gate({ confidence: tierOf([replay()]) })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "A change with no succeeded trial is never promoted automatically." });
     expect(gate({ confidence: tierOf([trial(), trial("failed")]) })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Its latest trial failed, so the change is not promoted until a new trial succeeds." });
     expect(gate({ confidence: tierOf([{ ...trial(), kind: "structural_check" } as unknown as AutomationStudioFlowAdaptationValidationResult]) })).toMatchObject({ autoApply: false, requiresManualApproval: true });
-    expect(gate({ mode: "extend" })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Extending an existing Flow is a structural change and requires manual review." });
-    expect(gate({ mode: undefined as unknown as "create" })).toMatchObject({ autoApply: false, requiresManualApproval: true });
+    // Extending a Flow that already runs is re-authoring it, which the
+    // automation may do; the trial above is what proves the change.
+    expect(gate({ mode: "extend" })).toEqual({ autoApply: true, requiresManualApproval: false, reason: "An extended Flow whose trial succeeded is applied." });
     expect(gate({ approvalMode: "manual" })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Manual adaptation approval mode requires explicit review." });
     expect(gate({ approvalMode: "mixed" })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Only auto approval mode applies a created Flow without review; mixed mode sends a new Subflow to a person." });
-    expect(gate({ riskLevel: "medium" })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Only a low-risk created Flow can be applied automatically." });
-    expect(gate({ riskLevel: "high" })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "High-risk adaptations require manual review." });
-    expect(gate({ hasExternalSideEffects: true })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "External side effects require manual review before durable promotion." });
+    // Core's own risk rating, and the Flow acting on a page at all, no longer
+    // send a proved change to a person: neither is something the person said.
+    expect(gate({ riskLevel: "medium" })).toMatchObject({ autoApply: true, requiresManualApproval: false });
+    expect(gate({ riskLevel: "high" })).toMatchObject({ autoApply: true, requiresManualApproval: false });
+    expect(gate({ hasExternalSideEffects: true })).toMatchObject({ autoApply: true, requiresManualApproval: false });
     expect(gate({ requireFirstManualReview: true, priorManualReviewExists: false })).toEqual({ autoApply: false, requiresManualApproval: true, reason: "First automatic promotion is blocked until a manual review has been completed." });
     expect(gate({ requireFirstManualReview: true, priorManualReviewExists: true })).toMatchObject({ autoApply: true });
     expect(gate({ promoteAdaptations: false })).toEqual({ autoApply: false, requiresManualApproval: false, reason: "Automatic application of created Flows is disabled by training mode or settings." });

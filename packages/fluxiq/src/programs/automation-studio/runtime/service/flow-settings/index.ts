@@ -1,4 +1,5 @@
 export * from "./adaptation-policy.ts";
+export * from "./locked-default-migration.ts";
 export * from "./merged-metadata.ts";
 export * from "./result-check-settings.ts";
 export * from "./settings-fingerprint.ts";

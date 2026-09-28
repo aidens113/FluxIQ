@@ -104,13 +104,13 @@ test("bounds long tasks and retained heap across repeated project and view switc
   for (let cycle = 0; cycle < 5; cycle += 1) {
     interactions["project-" + cycle + "-scale"] = await measureInteraction(page, async () => openFixtureProject(page, manifest.projects.scale), { waitForSettled: true });
     await flowRow(page).click();
-    const runtimeDebug = treeRow(page, "Runtime Debug");
-    const router = treeRow(page, "Router");
+    const runtimeDebug = treeRow(page, "Run and test");
+    const router = treeRow(page, "Choose a path");
     for (let viewCycle = 0; viewCycle < 4; viewCycle += 1) {
       await runtimeDebug.click();
-      await expect(page.getByText("Runtime Debug", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("Run and test", { exact: true }).first()).toBeVisible();
       await router.click();
-      await expect(page.getByText("Router", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("Choose a path", { exact: true }).first()).toBeVisible();
     }
     const cycleSnapshot = await collectUiPerformance(page, interactions);
     longTasks.push(...cycleSnapshot.longTasks.map((task) => ({ ...task, cycle })));
@@ -168,10 +168,10 @@ async function exerciseHierarchyAndGraph(page: Page, recorder: Recorder) {
   await expect(flowsRoot).toHaveAttribute("aria-expanded", "true");
   await recorder.record("hierarchy.rowClick", "viewSwitch.flow", async () => {
     await flowRow(page).click();
-    await expect(page.getByText("Router", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Choose a path", { exact: true }).first()).toBeVisible();
   });
 
-  await treeRow(page, "Nodes").click();
+  await treeRow(page, "Steps").click();
   const frame = page.getByLabel("Nodes whiteboard");
   await expect(frame).toBeVisible();
   const firstNode = page.locator(".react-flow__node").first();
@@ -209,8 +209,8 @@ async function exerciseHierarchyAndGraph(page: Page, recorder: Recorder) {
 
 async function exerciseRuntime(page: Page, recorder: Recorder) {
   await recorder.record("runtime.listOpen", "runtimeDebugOpen", async () => {
-    await treeRow(page, "Runtime Debug").click();
-    await expect(page.getByText("Runtime Debug", { exact: true }).first()).toBeVisible();
+    await treeRow(page, "Run and test").click();
+    await expect(page.getByText("Run and test", { exact: true }).first()).toBeVisible();
     await expect(page.locator(".automation-runtime-run-row").first()).toBeVisible();
   });
   await recorder.record("runtime.runLogOpen", "runLogOpen", async () => {
@@ -228,16 +228,16 @@ async function exerciseWorkspaceViews(page: Page, recorder: Recorder) {
   const picker = page.locator(".automation-window-adder-panel");
   await recorder.record("overlay.type", "overlayTyping.tabPicker", async () => {
     await picker.getByRole("searchbox").fill("connected");
-    await expect(picker.getByRole("button", { name: /^Connected Clients/ })).toBeVisible();
+    await expect(picker.getByRole("button", { name: /^Connected browsers/ })).toBeVisible();
   });
   await recorder.record("view.coldOpen", "coldViewOpen.clients", async () => {
-    await picker.getByRole("button", { name: /^Connected Clients/ }).click();
-    await expect(page.getByRole("tab", { name: /Connected Clients/ })).toHaveAttribute("aria-selected", "true");
+    await picker.getByRole("button", { name: /^Connected browsers/ }).click();
+    await expect(page.getByRole("tab", { name: /Connected browsers/ })).toHaveAttribute("aria-selected", "true");
   });
 
   const tabs = page.getByRole("tab");
   const firstTab = tabs.first();
-  const clientsTab = page.getByRole("tab", { name: /Connected Clients/ });
+  const clientsTab = page.getByRole("tab", { name: /Connected browsers/ });
   if (await tabs.count() > 1) {
     await firstTab.click();
     await expect(firstTab).toHaveAttribute("aria-selected", "true");

@@ -53,11 +53,11 @@ export function RouterContentView(props: RouterContentViewProps) {
   if (!flowId) {
     return (
       <section className="automation-runs-workspace automation-flow-map-workspace">
-        <header><div><strong>Router</strong><span>Route traffic into the right subflow</span></div></header>
+        <header><div><strong>Choose a path</strong><span>Send each run to the right part of this automation</span></div></header>
         <section className="automation-router-empty-state">
           <Route size={22} aria-hidden />
           <strong>Select a Flow to edit its Router</strong>
-          <p>Router rules belong to one top-level Flow.</p>
+          <p>Router rules belong to one top-level Flow. Choose an automation from the list on the left. To make a new one, use the + button beside Flows at the top of that list.</p>
         </section>
       </section>
     );
@@ -66,7 +66,7 @@ export function RouterContentView(props: RouterContentViewProps) {
     return (
       <section className="automation-runs-workspace automation-flow-map-workspace">
         <header>
-          <div><strong>Router</strong><span>Loading route targets...</span></div>
+          <div><strong>Choose a path</strong><span>Loading route targets...</span></div>
         </header>
         <div aria-busy="true" className="automation-router-loading" aria-label="Loading Router routes">
           <span />
@@ -81,11 +81,11 @@ export function RouterContentView(props: RouterContentViewProps) {
     return (
       <section className="automation-runs-workspace automation-flow-map-workspace">
         {error ? <div className="automation-router-error" role="alert"><StatusText value={error} /><button className="button" onClick={() => void retryFlowMap()} type="button">Retry</button></div> : null}
-        <header><div><strong>Router</strong><span>Route traffic into the right subflow</span></div></header>
+        <header><div><strong>Choose a path</strong><span>Send each run to the right part of this automation</span></div></header>
         <section className="automation-router-empty-state">
           <Workflow size={22} aria-hidden />
           <strong>This Flow needs a subflow</strong>
-          <p>Router rules send each run to a subflow target.</p>
+          <p>Router rules send each run to a subflow target. There has to be at least one part of this automation to send it to, so make the first one here.</p>
           <button className="button button-primary" disabled={!onCreateSubflow} onClick={onCreateSubflow} type="button">
             <Plus size={14} aria-hidden />Create Subflow
           </button>
@@ -97,7 +97,7 @@ export function RouterContentView(props: RouterContentViewProps) {
     <section className="automation-runs-workspace automation-flow-map-workspace">
       <StatusText value={error} />
       <header>
-        <div><strong>Router</strong><span>{saving ? "Saving changes..." : flowMap?.name ?? "Flow Map route orchestration"}</span></div>
+        <div><strong>Choose a path</strong><span>{saving ? "Saving changes..." : flowMap?.name ?? "Rules that pick the path a run takes"}</span></div>
         <div className="automation-runtime-log-toolbar">
           <button className="button button-primary" onClick={beginNewRoute} disabled={!flowId || !activeSubflows.length} type="button"><Plus size={14} aria-hidden />New Route</button>
         </div>
@@ -263,12 +263,17 @@ export function RouterContentView(props: RouterContentViewProps) {
           <div className="modal-actions"><button className="button button-primary" onClick={() => requestAuthorization("save-group")} disabled={!groupDraft.name.trim()} type="button">Save Group</button>{groupDraft.groupId ? <button className="button danger" onClick={() => requestAuthorization("delete-group")} type="button">Delete Group</button> : null}</div>
         </div>
       </Modal> : null}
-      {authorization ? <Modal title="Authorize Router Change" onClose={() => setAuthorization(null)}>
+      {/*
+        The one Router change that still asks. Core registers
+        `delete-flow-map-route-group` `destructive` and refuses it without a
+        PIN. Every other change here is `authoring` and happens on the press.
+      */}
+      {authorization ? <Modal title="Delete this route group?" onClose={() => setAuthorization(null)}>
         <div className="automation-modal-form">
-          <p className="automation-router-modal-intro">Confirm this Router change with your security PIN.</p>
+          <p className="automation-router-modal-intro">Deleting a group removes it and unfiles the routes inside it. That cannot be undone, so confirm it with your security PIN.</p>
           <StatusText value={error} />
           <Field label="Security PIN"><input autoFocus inputMode="numeric" maxLength={12} type="password" value={authorizationPin} onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, ""))} /></Field>
-          <div className="modal-actions"><button className="button" onClick={() => setAuthorization(null)} type="button">Back</button><button className="button button-primary" data-modal-submit disabled={authorizationPin.length < 4 || saving} onClick={() => void completeAuthorizedAction()} type="button">{saving ? "Saving..." : "Authorize and save"}</button></div>
+          <div className="modal-actions"><button className="button" onClick={() => setAuthorization(null)} type="button">Back</button><button className="button button-danger" data-modal-submit disabled={authorizationPin.length < 4 || saving} onClick={() => void completeAuthorizedAction()} type="button">{saving ? "Deleting..." : "Delete group"}</button></div>
         </div>
       </Modal> : null}
     </section>

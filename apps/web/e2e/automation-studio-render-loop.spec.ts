@@ -193,10 +193,10 @@ test("the global panel and Automation Studio remain responsive without update lo
     : null;
   for (let cycle = 0; cycle < LIVE_SWITCH_CYCLES; cycle += 1) {
     for (const { label, viewId } of [
-      { label: "Runtime Debug", viewId: "runtime-debug" },
-      { label: "Instructions", viewId: "flow-instructions" },
+      { label: "Run and test", viewId: "runtime-debug" },
+      { label: "Guidance for the assistant", viewId: "flow-instructions" },
       { label: "Settings", viewId: "flow-settings" },
-      { label: "Router", viewId: "flow-router" }
+      { label: "Choose a path", viewId: "flow-router" }
     ]) {
       const metricsBefore = await readBrowserMetrics(performanceSession);
       const timing = await selectTreeRow(page, label, viewId);
@@ -216,7 +216,7 @@ test("the global panel and Automation Studio remain responsive without update lo
     }
   }
   const chromeTrace = stopChromeTrace ? await stopChromeTrace() : null;
-  const nodes = page.getByRole("tab", { name: "Nodes", exact: true });
+  const nodes = page.getByRole("tab", { name: "Steps", exact: true });
   await nodes.click();
   await expect(nodes).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Nodes whiteboard")).toBeVisible();

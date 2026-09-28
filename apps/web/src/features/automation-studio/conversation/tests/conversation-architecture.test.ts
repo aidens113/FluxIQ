@@ -31,13 +31,30 @@ describe("the conversation is an overlay, not one view among twelve", () => {
     const session = source("../../live/components/AutomationStudioSession.tsx");
     expect(session).toContain("<ConversationDock");
     // Outside the workspace composition, so it is over every region rather
-    // than inside one of them.
-    expect(session.indexOf("<ConversationDock")).toBeGreaterThan(session.indexOf("<AutomationStudioWorkspaceComposition"));
+    // than inside one of them. `lastIndexOf`, because the gate mounts one too
+    // and the gate is returned earlier in the file -- see the next case.
+    expect(session.lastIndexOf("<ConversationDock")).toBeGreaterThan(session.indexOf("<AutomationStudioWorkspaceComposition"));
 
     const dock = source("../components/ConversationDock.tsx");
     expect(dock).toContain('className="automation-conversation-dock-launcher"');
     expect(dock).toContain('role="dialog"');
     expect(source("../../styles/conversation/02-dock.css")).toContain("position: fixed");
+  });
+
+  it("is on the landing screen too, which is where a person has nothing to work with yet", () => {
+    // The gate is returned before the workspace, so for the whole of a person's
+    // first visit -- and every visit before they pick a project -- there was no
+    // conversation at all. That is exactly the screen on which someone has
+    // nothing built and the most to ask about. It carries no project, so the
+    // thread list spans every project they can see and a question raised by a
+    // run they started earlier still reaches them here.
+    const session = source("../../live/components/AutomationStudioSession.tsx");
+    const gate = session.indexOf("<AutomationStudioProjectGate");
+    const workspace = session.indexOf("<AutomationStudioWorkspaceComposition");
+    const onTheGate = session.indexOf("<ConversationDock projectId={null} />");
+    expect(gate).toBeGreaterThan(-1);
+    expect(onTheGate).toBeGreaterThan(gate);
+    expect(onTheGate).toBeLessThan(workspace);
   });
 
   it("collapses without unmounting, so the badge can still be lit by a question", () => {

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { clientAuthorizationCopy } from "../../clients/client-model";
 
-describe("Connected Clients UX contracts", () => {
+describe("Connected browsers UX contracts", () => {
   it("uses command-specific PIN dialogs and inline pairing resolution", () => {
     expect(clientAuthorizationCopy("start").title).toBe("Start client recording");
     expect(clientAuthorizationCopy("stop").description).toContain("Flow evidence");

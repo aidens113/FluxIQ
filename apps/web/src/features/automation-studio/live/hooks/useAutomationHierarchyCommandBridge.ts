@@ -121,6 +121,22 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
       typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : undefined
     );
   });
+  /**
+   * Start a new top-level automation from anywhere, not only from the `+` beside
+   * Flows in the tree, so a view's empty state can offer the thing it is waiting
+   * for instead of describing where to find it. `parentId: null` is the project
+   * root, which `automationHierarchyCreateCommandCanDispatch` allows for the
+   * `flow` category; setting the kind straight away skips the type picker, so
+   * the person lands on the name field with one press rather than two.
+   */
+  const createFlow = stable((source) => {
+    const current = withSnapshot(source);
+    const requested = current.dialogStore.request(
+      { action: "create", category: "flow", parentId: null },
+      current.indexes.hierarchyNodeById
+    );
+    if (requested) current.dialogStore.dispatch({ type: "set-create-kind", createKind: "flow" });
+  });
   const createSubflow = stable((source) => {
     const current = withSnapshot(source);
     const root = current.selectedTaskGraph?.flowId
@@ -131,7 +147,7 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
       current.indexes.hierarchyNodeById
     );
   });
-  return { createSubflow, execute, openTreeSubflow, openTreeView, requestAction, setTreeSelection };
+  return { createFlow, createSubflow, execute, openTreeSubflow, openTreeView, requestAction, setTreeSelection };
 }
 
 function withSnapshot(options: Options): Options {

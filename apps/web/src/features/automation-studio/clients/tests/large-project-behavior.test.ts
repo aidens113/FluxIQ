@@ -39,7 +39,7 @@ describe("Client Gateway large-project behavior", () => {
     expect(post).toHaveBeenCalledWith("list-client-gateway-items", { kind: "sessions", limit: 50, cursor: "cursor.2", search: "checkout" });
     const view = readFileSync(new URL("../ClientGatewayView.tsx", import.meta.url), "utf8");
     const controller = readFileSync(new URL("../useClientGatewayController.ts", import.meta.url), "utf8");
-    expect(view).toContain("Search connected clients");
+    expect(view).toContain("Search connected browsers");
     expect(view).toContain(">Retry<");
     expect(view).toContain('selectedSessionLocation === "off-page"');
     expect(view).toContain('selectedSessionLocation === "missing"');

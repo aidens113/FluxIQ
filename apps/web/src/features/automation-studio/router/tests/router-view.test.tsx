@@ -164,7 +164,7 @@ describe("Automation Router workspace", () => {
     expect(source).toContain("Fallback behavior");
     expect(source).toContain("Save Fallback");
     expect(source).toContain("commands.saveFallback");
-    expect(source).toContain('authorization.action === "save-fallback"');
+    expect(source).toContain('action === "save-fallback"');
     expect(source).toContain("setFallbackModalOpen(false)");
     expect(source).toContain("fallbackModalOpen && !authorization");
     expect(source).toContain("Continue to a subflow");
@@ -231,7 +231,12 @@ describe("Automation Router workspace", () => {
     expect(source).toContain("Loading Router routes");
     expect(source).toContain("Retry");
     expect(source).toContain("Saving changes");
-    expect(source).toContain("Authorize Router Change");
+    // Routine Router edits save on the press; only deleting a route group asks,
+    // because `delete-flow-map-route-group` is the one endpoint Core registers
+    // `destructive`.
+    expect(source).toContain("Delete this route group?");
+    expect(source).toContain('action === "delete-group"');
+    expect(source).not.toContain("Authorize Router Change");
     expect(source).toContain("routeModalOpen && !authorization");
     expect(source).toContain("scopeRef.current");
   });

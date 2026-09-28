@@ -53,7 +53,7 @@ describe("State source indexing and signatures", () => {
         signals: []
       });
   
-      expect(model.title).toBe("State View");
+      expect(model.title).toBe("What the page looked like");
       expect(model.sources).toEqual([]);
       expect(model.emptyState?.title).toBe("No state source");
     });

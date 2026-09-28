@@ -32,8 +32,6 @@ export function createAutomationStudioOverlayController(
   store: AutomationStudioOverlayStore
 ): AutomationStudioOverlayController {
   return {
-    project: channel(store, "project"),
-    hierarchy: channel(store, "hierarchy"),
     preferences: channel(store, "preferences"),
     viewAdder: channel(store, "viewAdder"),
     layoutPicker: channel(store, "layoutPicker"),
@@ -52,18 +50,6 @@ type AdoptionEntry = {
 };
 
 export const automationStudioOverlayRootAdoptionMap = {
-  project: {
-    dispatcher: "dispatchers.project",
-    legacyOwner: "project dialog state and project/category mutation handlers",
-    storeKey: "project",
-    subscriber: "ProjectOverlaySubscriber"
-  },
-  hierarchy: {
-    dispatcher: "dispatchers.hierarchy",
-    legacyOwner: "hierarchy create/delete dialog state and confirmation handlers",
-    storeKey: "hierarchy",
-    subscriber: "HierarchyActionOverlaySubscriber"
-  },
   preferences: {
     dispatcher: "dispatchers.preferences",
     legacyOwner: "workspace preferences modal state",
@@ -106,7 +92,6 @@ export const automationStudioOverlayRootAdoptionSteps = [
   "Create one overlay store and controller per mounted Automation Studio project shell.",
   "Memoize AutomationStudioOverlayDispatchers and AutomationStudioOverlaySurfaces at the root boundary.",
   "Replace each legacy owner using automationStudioOverlayRootAdoptionMap and controller.<channel>.open(request).",
-  "Provide hierarchy requests a stable indexed folder source whose search method honors its requested limit.",
   "Render one AutomationStudioOverlays instance beside the workspace shell.",
   "On project close or switch, call controller.closeAll() before disposing project-scoped bindings.",
   "Delete legacy overlay state, render arrays, modal JSX, and global overlay event channels."

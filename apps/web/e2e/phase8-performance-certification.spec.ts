@@ -23,8 +23,8 @@ import {
   type Phase8FixtureProfileName,
 } from "../src/features/automation-studio/testing/phase8-certification";
 
-const populatedViewNames = ["Connected Clients", "Timeline", "Router", "Subflows", "Instructions", "Adaptations", "Settings", "Runtime Debug", "Problems", "Inspector"] as const satisfies readonly StudioViewTitle[];
-const emptyViewNames = ["Connected Clients", "Nodes", "Router", "Subflows", "Instructions", "Adaptations", "Settings", "Runtime Debug", "Problems", "Inspector"] as const satisfies readonly StudioViewTitle[];
+const populatedViewNames = ["Connected browsers", "Recorded steps", "Choose a path", "Reusable parts", "Guidance for the assistant", "Suggested changes", "Settings", "Run and test", "Problems", "Details"] as const satisfies readonly StudioViewTitle[];
+const emptyViewNames = ["Connected browsers", "Steps", "Choose a path", "Reusable parts", "Guidance for the assistant", "Suggested changes", "Settings", "Run and test", "Problems", "Details"] as const satisfies readonly StudioViewTitle[];
 
 test("certifies Empty, Ordinary, and Scale interaction and resource budgets", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chromium", "Normalized Phase 8 performance runs on pinned desktop Chromium.");
@@ -200,14 +200,14 @@ async function waitForStudioViewSettled(page: Page): Promise<void> {
 }
 
 async function ensureViewsOpen(page: Page, project: FixtureProject, viewNames: readonly StudioViewTitle[]): Promise<void> {
-  if (viewNames.includes("Timeline")) {
+  if (viewNames.includes("Recorded steps")) {
     await selectFixtureRecording(page, project);
-    await openStudioView(page, "Timeline");
+    await openStudioView(page, "Recorded steps");
     await expect(page.locator(".automation-view-activation-placeholder")).toHaveCount(0);
   }
   await selectFixtureFlow(page, project);
   for (const name of viewNames) {
-    if (name === "Timeline") continue;
+    if (name === "Recorded steps") continue;
     await openStudioView(page, name);
     await expect(page.locator(".automation-view-activation-placeholder")).toHaveCount(0);
   }

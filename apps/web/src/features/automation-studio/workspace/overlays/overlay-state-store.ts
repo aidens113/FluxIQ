@@ -26,8 +26,6 @@ export type AutomationStudioOverlayStore = {
 
 export function defaultAutomationStudioOverlayState(): AutomationStudioOverlayState {
   return {
-    project: null,
-    hierarchy: null,
     preferences: null,
     viewAdder: null,
     layoutPicker: null,

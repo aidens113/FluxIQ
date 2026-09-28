@@ -5,7 +5,7 @@ import type { InspectorPanelBuilder, InspectorPanelContext, InspectorPanelModel,
 
 const registry: InspectorPanelRegistry = {
   workspace: (context) => ({
-    sections: [{ title: "Workspace Selection", rows: [["Object", context.selection.id === "clients" ? "Connected Clients" : "Runs"], ["Scope", "Current project"]] }]
+    sections: [{ title: "Workspace Selection", rows: [["Object", context.selection.id === "clients" ? "Connected browsers" : "Past runs"], ["Scope", "This project"]] }]
   }),
   flow: (context) => ({
     sections: [

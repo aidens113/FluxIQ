@@ -12,9 +12,14 @@ describe("Automation Studio project dialog configuration", () => {
     expect(project).toContain('name="automation-project-category-name"');
     expect(project).toContain('name="automation-project-authorization-pin"');
     expect(project.match(/autoComplete="off"/g)).toHaveLength(4);
+    // One PIN input, rendered only by the two delete modes. Creating, renaming,
+    // moving and reordering a project no longer ask for anything.
+    expect(project.match(/name="automation-project-authorization-pin"/g)).toHaveLength(1);
     expect(hierarchy).toContain('name="automation-hierarchy-item-name"');
-    expect(hierarchy.match(/name="automation-hierarchy-authorization-pin"/g)).toHaveLength(2);
-    expect(hierarchy.match(/autoComplete="off"/g)).toHaveLength(3);
+    // Only the delete branch asks: creating a Flow, Subflow or folder is the
+    // product doing the job it was asked for.
+    expect(hierarchy.match(/name="automation-hierarchy-authorization-pin"/g)).toHaveLength(1);
+    expect(hierarchy.match(/autoComplete="off"/g)).toHaveLength(2);
   });
 
   it("describes complete project deletion and uses a destructive command", () => {

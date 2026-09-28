@@ -50,7 +50,7 @@ describe("recordingListPageRange", () => {
     const recoverySource = readFileSync(new URL("../RetiredViewRecovery.tsx", import.meta.url), "utf8");
     expect(clientController).toContain("stopped and is available as Flow evidence");
     expect(rendererSource).not.toContain("onOpenProposalGenerator");
-    expect(recoverySource).toContain("Select a Flow, then open Adaptations");
+    expect(recoverySource).toContain("Pick an automation, then open Suggested changes");
     expect(recoverySource).not.toContain("Create direct or assisted proposals from recordings.");
   });
 

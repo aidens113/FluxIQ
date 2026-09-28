@@ -15,18 +15,33 @@ export type AutomationViewAdderContext = {
 export type AutomationViewAdderOption = {
   view: AutomationViewInstance;
   group: "Flow" | "Evidence" | "Workspace";
+  groupLabel: string;
   placement: string;
   scope: string;
   disabledReason: string | null;
 };
 
+/**
+ * "Flow", "Evidence" and "Workspace" are stable internal group keys, exactly as view
+ * ids are. This is the only place that turns one into words a first-time user reads.
+ */
+const groupLabels: Record<AutomationViewAdderOption["group"], string> = {
+  Flow: "This automation",
+  Evidence: "What happened",
+  Workspace: "This project"
+};
+
+export function automationViewGroupLabel(group: AutomationViewAdderOption["group"]): string {
+  return groupLabels[group];
+}
+
 const contextLabels: Record<keyof AutomationViewAdderContext, string> = {
   hasProject: "Open a project first",
-  hasFlow: "Select a Flow or subflow first",
-  hasTopLevelFlow: "Select a top-level Flow first",
-  hasSubflowGraph: "Select a Subflow first",
-  hasRecording: "Select a recording first",
-  hasSelection: "Select an object first"
+  hasFlow: "Pick an automation first",
+  hasTopLevelFlow: "Pick a whole automation first",
+  hasSubflowGraph: "Pick a reusable part first",
+  hasRecording: "Pick a recording first",
+  hasSelection: "Select something first"
 };
 
 export function automationViewAdderOptions(
@@ -43,7 +58,8 @@ export function automationViewAdderOptions(
     return [{
       view,
       group: rule.group,
-      placement: area === "right" ? "Inspector tab" : "Main editor tab",
+      groupLabel: automationViewGroupLabel(rule.group),
+      placement: area === "right" ? "Details panel" : "Main area",
       scope: rule.scope,
       disabledReason: missingContext ?? alreadyOpen
     }];

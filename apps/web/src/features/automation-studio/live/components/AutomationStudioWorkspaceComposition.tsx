@@ -164,7 +164,6 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
     <AutomationStudioOverlays
       dataInspector={inspector}
       dispatchers={overlays.dispatchers}
-      pinConfigured={Boolean(props.currentUser.pinConfigured)}
       store={overlays.store}
     />
     <DirtyViewGuard />

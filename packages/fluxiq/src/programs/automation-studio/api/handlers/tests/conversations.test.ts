@@ -7,7 +7,7 @@
 // The endpoints are registered against their own dependency record because
 // the service facade does not carry a `conversations` field yet. When it
 // does, `register.ts` registers them with the rest and `domain-scope.test.ts`
-// gains all four in its `DOMAIN_SCOPED` list.
+// gains all of them in its `DOMAIN_SCOPED` list.
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,6 +25,7 @@ const writeActor = { ...cacheActor("user.writer"), permissions: ["programs.write
 function conversationApi(overrides: Record<string, unknown> = {}) {
   const conversations = {
     listConversations: vi.fn().mockResolvedValue([]),
+    openConversation: vi.fn().mockResolvedValue({ conversationId: "conversation.one" }),
     getConversation: vi.fn().mockResolvedValue(null),
     appendTurn: vi.fn().mockResolvedValue({ turnId: "turn.1" }),
     answerAsk: vi.fn().mockResolvedValue({ askId: "ask.1", status: "answered" }),
@@ -41,6 +42,7 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
 // One representative call per endpoint, with the collaborator method it must reach.
 const CONVERSATION_ENDPOINTS = [
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations, method: "listConversations", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation, method: "openConversation", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one" } },
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversation, method: "getConversation", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", conversationId: "conversation.one" } },
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, method: "appendTurn", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one", text: "Go ahead." } },
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk, method: "answerAsk", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", askId: "ask.one", kind: "grant" } },
@@ -153,6 +155,33 @@ describe("Automation Studio conversation API", () => {
     expect(conversations.listConversations).toHaveBeenCalledTimes(1);
   });
 
+  // A person opening the chat with nothing selected is talking about the
+  // project. Refusing them a thread for want of a subject would be the product
+  // declining the thing it was asked for, so the project is the fallback -- and
+  // a named subject is still carried through.
+  it("starts a thread about the project when the person names no subject, and about what they do name", async () => {
+    const { registry, conversations } = conversationApi();
+    const start = (payload: Record<string, unknown>) =>
+      registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation, scope: { domainId: null }, actor: writeActor, payload });
+
+    expect((await start({ projectId: "project.one" })).ok).toBe(true);
+    expect(conversations.openConversation).toHaveBeenCalledWith({ projectId: "project.one", subject: { kind: "project", id: "project.one" }, title: null });
+
+    expect((await start({ projectId: "project.one", subjectKind: "flow", subjectId: "flow.7", title: "Why did this stop?" })).ok).toBe(true);
+    expect(conversations.openConversation).toHaveBeenCalledWith({ projectId: "project.one", subject: { kind: "flow", id: "flow.7" }, title: "Why did this stop?" });
+  });
+
+  // Opening a thread removes nothing and acts nowhere outside it, so it must
+  // not take a PIN. Only a real-world delete or a payment asks a person.
+  it("lets a writer start a thread with no PIN, and refuses a reader", async () => {
+    const { registry, conversations } = conversationApi();
+    const call = (actor: typeof readActor | typeof writeActor) =>
+      registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation, scope: { domainId: null }, actor, payload: { projectId: "project.one" } });
+    expect((await call(writeActor)).ok).toBe(true);
+    expect((await call(readActor)).errorCode).toBe("authorization.forbidden");
+    expect(conversations.openConversation).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a payload the collaborator could not make sense of, without calling it", async () => {
     const { registry, conversations } = conversationApi();
     const refusals = [
@@ -160,7 +189,8 @@ describe("Automation Studio conversation API", () => {
       { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations, actor: readActor, payload: { projectId: "project.one", subjectKind: "run" }, error: "A conversation subject needs an ID." },
       { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations, actor: readActor, payload: { projectId: "project.one", status: "closed" }, error: "A conversation status is open or resolved." },
       { endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk, actor: writeActor, payload: { projectId: "project.one", askId: "ask.one", kind: "maybe" }, error: "An answer is one of: grant, deny, choice, text." },
-      { endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one", text: "Hi.", attachmentKind: "run" }, error: "A conversation attachment needs both a kind and a reference." }
+      { endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one", text: "Hi.", attachmentKind: "run" }, error: "A conversation attachment needs both a kind and a reference." },
+      { endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation, actor: writeActor, payload: { projectId: "project.one", subjectKind: "page", subjectId: "page.one" }, error: "A conversation subject kind must be project, flow, build or run." }
     ];
     for (const { endpoint, actor, payload, error } of refusals) {
       const response = await registry.call({ programId: "automation-studio", endpoint, scope: { domainId: null }, actor, payload });
@@ -169,5 +199,6 @@ describe("Automation Studio conversation API", () => {
     expect(conversations.listConversations).not.toHaveBeenCalled();
     expect(conversations.answerAsk).not.toHaveBeenCalled();
     expect(conversations.appendTurn).not.toHaveBeenCalled();
+    expect(conversations.openConversation).not.toHaveBeenCalled();
   });
 });

@@ -265,8 +265,12 @@ describe("Automation Studio extracted owner contracts", () => {
     const warm = read("../../workspace/commands/warm-activation.ts");
     expect(commands).not.toContain("warm.activate");
     expect(warm).toContain("subscribe(listener)");
-    expect(warm).toContain("AUTOMATION_WARM_VIEW_DESKTOP_CAP = 6");
-    expect(warm).toContain("AUTOMATION_WARM_VIEW_CONSTRAINED_CAP = 3");
+    // The caps exist to bound mounted trees, not to decide behaviour: eviction
+    // never drops an active or a dirty view. They were 6 and 3, which threw
+    // away a view's filters on the fourth tab; what this pins is that a bound
+    // is still declared, and that the narrow one is the smaller of the two.
+    expect(warm).toContain("AUTOMATION_WARM_VIEW_DESKTOP_CAP = 12");
+    expect(warm).toContain("AUTOMATION_WARM_VIEW_CONSTRAINED_CAP = 6");
     expect(warm).toContain("isWarm(paneId, viewId)");
     expect(warm).toContain("markWarm(paneId, viewId)");
     expect(warm).not.toContain("scheduleWorkspaceNavigation");

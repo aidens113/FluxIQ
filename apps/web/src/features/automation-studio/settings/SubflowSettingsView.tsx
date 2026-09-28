@@ -1,6 +1,6 @@
 "use client";
 
-import { Combobox, Field, Modal, StatusBadge } from "../../programs/shared-ui";
+import { Combobox, StatusBadge } from "../../programs/shared-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ChevronRight, GitBranch, Plus, Settings2, Trash2 } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
@@ -10,6 +10,7 @@ import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsD
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
 import { splitSettingsValues, subflowSettingsDraft, subflowSettingsErrors, type SubflowSettingsDraft } from "./subflow-settings-model";
+import { subflowSettingsNotPersisted } from "./persistence-check";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
@@ -46,9 +47,6 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
   const [instructionOptions, setInstructionOptions] = useState<any[]>([]);
   const [instructionChoice, setInstructionChoice] = useState("");
   const [router, setRouter] = useState<any | null>(null);
-  const [saveAuthorizationOpen, setSaveAuthorizationOpen] = useState(false);
-  const [saveAuthorizationPin, setSaveAuthorizationPin] = useState("");
-  const [saveAuthorizationError, setSaveAuthorizationError] = useState("");
   const [revisionConflict, setRevisionConflict] = useState<any | null>(null);
   const [compareConflict, setCompareConflict] = useState(false);
   const subflowRef = useRef<any | null>(null);
@@ -99,21 +97,25 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
   const settingsErrors = draft ? subflowSettingsErrors(draft, flowInputs, flowOutputs, subflowInputs, subflowOutputs) : [];
   const routeReferences = routerReferencesForSubflow(router, props.ownership.subflowId);
   const inheritedMode = flowSettingsDraftFromFlow(parentFlow).adaptationMode;
-  const saveSettings = async (authorizationPin: string, propagateError = false) => {
-    if (!props.projectId || !draft || authorizationPin.trim().length < 4) {
+  // Renaming a subflow, remapping its inputs, or enabling and disabling it is
+  // ordinary editing. Core registers `updateFlowSubflow` and the three lifecycle
+  // endpoints as `authoring`, and its API registry PIN-checks only `destructive`
+  // endpoints, so the dialog in front of this button asked for a credential the
+  // server never read.
+  const saveSettings = async (propagateError = false) => {
+    if (!props.projectId || !draft) {
       if (propagateError) throw new Error("Subflow Settings are not ready to save.");
       return false;
     }
     setSaving(true);
     setMessage("");
     setError("");
-    setSaveAuthorizationError("");
     const updateResult = await props.commands.updateSubflow({
       projectId: props.projectId,
       flowId: props.ownership.parentFlowId,
       subflowId: props.ownership.subflowId,
       expectedUpdatedAt: subflow?.updatedAt,
-      authorizationPin: authorizationPin.trim(),
+      authorizationPin: "",
       name: draft.name,
       description: draft.description,
       role: draft.role,
@@ -125,13 +127,12 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
     });
     const lifecycleEndpoint = draft.status !== subflow?.status ? draft.status === "active" ? "enable-flow-subflow" : draft.status === "disabled" ? "disable-flow-subflow" : "archive-flow-subflow" : null;
     const result = updateResult.ok && lifecycleEndpoint
-      ? await props.commands.changeSubflowLifecycle(lifecycleEndpoint, { projectId: props.projectId, flowId: props.ownership.parentFlowId, subflowId: props.ownership.subflowId, authorizationPin: authorizationPin.trim() })
+      ? await props.commands.changeSubflowLifecycle(lifecycleEndpoint, { projectId: props.projectId, flowId: props.ownership.parentFlowId, subflowId: props.ownership.subflowId, authorizationPin: "" })
       : updateResult;
     setSaving(false);
     if (!result.ok || !result.payload?.subflow) {
       const saveError = result.error?.includes("SUBFLOW_SAVE_CONFLICT") ? "Save conflict: this subflow changed elsewhere. Your draft is preserved; reload after reviewing the other change." : result.error ?? "Subflow settings could not be saved.";
       setError(saveError);
-      setSaveAuthorizationError(saveError);
       if (result.error?.includes("SUBFLOW_SAVE_CONFLICT")) void loadResources(false);
       if (propagateError) throw new Error(saveError);
       return false;
@@ -141,9 +142,13 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
     subflowRef.current = result.payload.subflow; draftRef.current = nextDraft; savedDraftRef.current = nextDraft;
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
-    setMessage("Subflow settings saved.");
-    setSaveAuthorizationOpen(false);
-    setSaveAuthorizationPin("");
+    // An accepted save that stored something else redraws these controls from
+    // the response, so say what did not take rather than reporting success over
+    // the top of it. The status is excluded: it is applied by a separate
+    // lifecycle call whose own result is already checked above.
+    const notPersisted = subflowSettingsNotPersisted({ ...draft, status: nextDraft.status }, nextDraft);
+    if (notPersisted.length) setError(`Saved, but ${notPersisted.length === 1 ? "this setting did" : "these settings did"} not take effect: ${notPersisted.join(", ")}. The value shown is what is stored.`);
+    else setMessage("Subflow settings saved.");
     commitAutomationStudioMutation({
       kind: "subflow.changed",
       projectId: props.projectId,
@@ -157,10 +162,7 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
     viewId: automationStudioViewId.settings,
     label: `Subflow Settings: ${subflow?.name ?? props.flow?.name ?? props.ownership.subflowId}`,
     dirty: draftDirty,
-    save: async (authorizationPin) => {
-      if (authorizationPin) await saveSettings(authorizationPin, true);
-      else { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }
-    },
+    save: async () => { await saveSettings(true); },
     discard: () => { if (savedDraft) setDraft(savedDraft); }
   });
   return (
@@ -225,8 +227,7 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
           <details className="automation-settings-technical-details"><summary>Technical ownership identifiers</summary><div className="automation-settings-technical-list"><code>{props.ownership.parentFlowId}</code><code>{props.ownership.subflowId}</code><code>{props.flow?.flowId ?? subflow?.graphFlowId ?? "-"}</code></div></details>
         </section>
       </SettingsSectionLayout> : null}
-      {draft ? <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved subflow changes" : "All subflow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving || !savedDraft} onClick={() => savedDraft && setDraft(savedDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !draftDirty || saving || settingsErrors.length > 0} onClick={() => { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }} type="button">{saving ? "Saving..." : "Save Subflow Settings"}</button></div></footer> : null}
-      {saveAuthorizationOpen ? <Modal title="Authorize Subflow Settings Save" onClose={() => saving ? undefined : setSaveAuthorizationOpen(false)}><div className="automation-modal-form"><p className="automation-router-modal-intro">Confirm this Subflow Settings write with your security PIN. Your draft remains intact if authorization or conflict checks fail.</p><Field label="Security PIN" {...(saveAuthorizationError ? { error: saveAuthorizationError } : {})}><input autoFocus inputMode="numeric" maxLength={12} onChange={(event) => { setSaveAuthorizationPin(event.target.value.replace(/\D/g, "")); setSaveAuthorizationError(""); }} type="password" value={saveAuthorizationPin} /></Field><div className="modal-actions"><button className="button" disabled={saving} onClick={() => setSaveAuthorizationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={saveAuthorizationPin.length < 4 || saving} onClick={() => void saveSettings(saveAuthorizationPin)} type="button">{saving ? "Saving..." : "Authorize and Save"}</button></div></div></Modal> : null}
+      {draft ? <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved subflow changes" : "All subflow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving || !savedDraft} onClick={() => savedDraft && setDraft(savedDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !draftDirty || saving || settingsErrors.length > 0} onClick={() => void saveSettings()} type="button">{saving ? "Saving..." : "Save Subflow Settings"}</button></div></footer> : null}
     </section>
   );
 }

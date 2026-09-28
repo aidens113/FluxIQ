@@ -77,7 +77,7 @@ describe("AutomationStudioService recording persistence", () => {
         approvalDecision: {
           autoApply: true,
           requiresManualApproval: false,
-          reason: "Validated low-risk non-structural adaptation can be applied automatically.",
+          reason: "An adaptation whose trial succeeded is applied.",
           confidence: "provisional"
         },
         applicationRecord: { durable: true }

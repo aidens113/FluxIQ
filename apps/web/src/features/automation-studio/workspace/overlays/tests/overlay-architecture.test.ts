@@ -14,6 +14,17 @@ const implementationFiles = readdirSync(overlayDirectory)
   .filter((name) => /\.(ts|tsx)$/.test(name) && !name.endsWith(".test.ts") && !name.endsWith(".test.tsx"));
 
 describe("Phase 9 overlay architecture", () => {
+  it("keeps no overlay surface that nothing renders", () => {
+    // The hierarchy create/delete surfaces and the project subscriber were a
+    // second, unreachable implementation of dialogs that live under
+    // hierarchy/. Nothing supplied their dispatchers, so nothing ever mounted
+    // them, and a fix worker reading the tree could not tell which copy was
+    // real. They are gone; this keeps them gone.
+    for (const name of ["HierarchyCreateOverlaySurface.tsx", "HierarchyDeleteOverlaySurface.tsx", "ProjectOverlaySubscriber.tsx", "HierarchyActionOverlaySubscriber.tsx", "hierarchy-overlay-model.ts"]) {
+      expect(implementationFiles, name).not.toContain(name);
+    }
+  });
+
   it("contains no shell output contamination or unexpected one-line implementations", () => {
     for (const name of implementationFiles) {
       const source = readFileSync(new URL(name, overlayDirectory), "utf8");
@@ -52,9 +63,6 @@ describe("Phase 9 overlay architecture", () => {
     expect(floating).toContain("maxHeight:");
     expect(floating).toContain("maxWidth:");
     const modalSubscribers = [
-      "ProjectOverlaySubscriber.tsx",
-      "HierarchyCreateOverlaySurface.tsx",
-      "HierarchyDeleteOverlaySurface.tsx",
       "PreferencesOverlaySubscriber.tsx"
     ].map((name) => readFileSync(new URL(name, overlayDirectory), "utf8")).join("\n");
     expect(modalSubscribers).toContain("<Modal");

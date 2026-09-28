@@ -21,13 +21,13 @@ describe("Automation Subflows workspace", () => {
   });
   it("exposes focused Subflow lifecycle actions without embedding an editor", () => {
     const source = SubflowDirectoryContent.toString();
-    expect(source).toContain("Rename subflow");
-    expect(source).toContain("Duplicate subflow");
-    expect(source).toContain("Disable subflow");
-    expect(source).toContain("Enable subflow");
-    expect(source).toContain("Archive subflow");
-    expect(source).toContain("Delete subflow");
-    expect(source).toContain("independent Nodes graph");
+    expect(source).toContain("Rename reusable part");
+    expect(source).toContain("Duplicate reusable part");
+    expect(source).toContain("Disable reusable part");
+    expect(source).toContain("Enable reusable part");
+    expect(source).toContain("Archive reusable part");
+    expect(source).toContain("Delete reusable part");
+    expect(source).toContain("gets its own steps");
     expect(source).toContain("Router references must be removed first");
     expect(source).toContain("Security PIN");
   });
@@ -38,14 +38,14 @@ describe("Automation Subflows workspace", () => {
     }));
 
     expect(html).toContain("automation-subflow-directory");
-    expect(html).toContain("No subflows yet");
-    expect(html).toContain("plus button beside the Subflows folder");
+    expect(html).toContain("No reusable parts yet");
+    expect(html).toContain("plus button beside Reusable parts");
     expect(html).not.toContain("Subflow Detail");
     expect(html).not.toContain("Show Subflow JSON");
     expect(html).not.toContain("automation-policy-canvas");
-    expect(html).toContain("Search subflows");
+    expect(html).toContain("Search reusable parts");
     expect(html).toContain("All statuses");
-    expect(html).toContain("Subflows per page");
+    expect(html).toContain("Reusable parts per page");
     expect(html).toContain("First page");
     expect(html).toContain("Last page");
     expect(html).toContain('class="automation-subflow-directory-list" role="list"');

@@ -25,9 +25,6 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [router, setRouter] = useState<any | null>(null);
-  const [saveAuthorizationOpen, setSaveAuthorizationOpen] = useState(false);
-  const [saveAuthorizationPin, setSaveAuthorizationPin] = useState("");
-  const [saveAuthorizationError, setSaveAuthorizationError] = useState("");
   const [routerLoaded, setRouterLoaded] = useState(false);
   const [subflowAction, setSubflowAction] = useState<null | { subflow: any; action: "rename" | "duplicate" | "enable" | "disable" | "archive" | "delete"; name: string; pin: string }>(null);
   const [actionSaving, setActionSaving] = useState(false);
@@ -90,7 +87,7 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
     if (requestId !== requestRef.current) return;
     setLoading(false);
     if (!result.ok) {
-      setError(result.error ?? "Subflows could not be loaded.");
+      setError(result.error ?? "Reusable parts could not be loaded.");
       return;
     }
     const resultPage = result.payload?.page;
@@ -110,13 +107,21 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
     setSubflowAction({ subflow, action, name: action === "duplicate" ? String(subflow.name ?? "") + " Copy" : String(subflow.name ?? ""), pin: "" });
   };
 
+  /**
+   * Renaming, duplicating, enabling, disabling and archiving are the product
+   * doing the job it was asked for, and Core registers each of those endpoints
+   * `authoring`, which its API registry never PIN-checks. Deleting is the one
+   * irreversible act here and the one endpoint Core registers `destructive`, so
+   * it is the only one that asks.
+   */
   const completeSubflowAction = async () => {
-    if (!props.projectId || !flowId || !subflowAction?.pin.trim()) return;
+    if (!props.projectId || !flowId || !subflowAction) return;
+    if (subflowAction.action === "delete" && !subflowAction.pin.trim()) return;
     setActionSaving(true);
     setError("");
     const result = await props.commands.applyAction(subflowAction.action, { projectId: props.projectId, flowId, subflowId: subflowAction.subflow.subflowId, authorizationPin: subflowAction.pin.trim(), ...(["rename", "duplicate"].includes(subflowAction.action) ? { name: subflowAction.name.trim() } : {}) });
     setActionSaving(false);
-    if (!result.ok) { setError(result.error ?? "Subflow change could not be saved."); return; }
+    if (!result.ok) { setError(result.error ?? "That change could not be saved."); return; }
     setSubflowAction(null);
     commitAutomationStudioMutation({
       kind: "subflow.changed",
@@ -138,44 +143,44 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
     <section className="automation-runs-workspace automation-subflow-directory">
       {error ? <div className="automation-router-error" role="alert"><StatusText value={error} /><button className="button" onClick={() => void loadSubflows(page.offset)} type="button">Retry</button></div> : null}
       <header>
-        <div><strong>Subflows</strong><span>{props.flow?.name ?? "Select a Flow"}</span></div>
+        <div><strong>Reusable parts</strong><span>{props.flow?.name ?? "Select a Flow"}</span></div>
         <span className="automation-subflow-directory-count">{String(page.total)}</span>
       </header>
       <div className="automation-subflow-directory-toolbar" role="search">
-        <label className="automation-subflow-search"><Search size={14} aria-hidden /><input aria-label="Search subflows" onChange={(event) => setQueryInput(event.target.value)} placeholder="Search subflows" type="search" value={queryInput} /></label>
+        <label className="automation-subflow-search"><Search size={14} aria-hidden /><input aria-label="Search reusable parts" onChange={(event) => setQueryInput(event.target.value)} placeholder="Search reusable parts" type="search" value={queryInput} /></label>
         <select aria-label="Filter by status" onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}><option value="">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option><option value="archived">Archived</option></select>
         <select aria-label="Filter by role" onChange={(event) => setFilters((current) => ({ ...current, role: event.target.value }))} value={filters.role}><option value="">All roles</option>{["primary", "site", "screen", "integration", "recovery", "fallback", "utility"].map((role) => <option key={role} value={role}>{role}</option>)}</select>
-        <select aria-label="Sort subflows" onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value as SubflowDirectoryState["sort"] }))} value={filters.sort}><option value="updated">Recently updated</option><option value="name">Name</option><option value="status">Status</option><option value="role">Role</option></select>
+        <select aria-label="Sort reusable parts" onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value as SubflowDirectoryState["sort"] }))} value={filters.sort}><option value="updated">Recently updated</option><option value="name">Name</option><option value="status">Status</option><option value="role">Role</option></select>
         <button aria-label={filters.direction === "asc" ? "Sort descending" : "Sort ascending"} className="icon-button" onClick={() => setFilters((current) => ({ ...current, direction: current.direction === "asc" ? "desc" : "asc" }))} title={filters.direction === "asc" ? "Sort descending" : "Sort ascending"} type="button">{filters.direction === "asc" ? <ArrowUp size={14} aria-hidden /> : <ArrowDown size={14} aria-hidden />}</button>
       </div>
-      <div aria-busy={loading} className="automation-subflow-directory-list" role="list" aria-label="Flow subflows">
+      <div aria-busy={loading} className="automation-subflow-directory-list" role="list" aria-label="Reusable parts in this automation">
         {subflows.map((subflow) => {
           const referenceSummary = routerReferenceSummaryForSubflow(router, subflow.subflowId);
           const readiness = subflowReadiness(subflow);
           return (
           <div className="automation-subflow-directory-row" key={subflow.subflowId} role="listitem">
-            <button aria-label={"Open " + (subflow.name ?? subflow.subflowId) + " in Flow editor"} className="automation-subflow-directory-open" onClick={() => props.onOpenSubflow?.(flowId, subflow.subflowId, "preview")} type="button">
+            <button aria-label={"Open " + (subflow.name ?? subflow.subflowId) + " in Steps"} className="automation-subflow-directory-open" onClick={() => props.onOpenSubflow?.(flowId, subflow.subflowId, "preview")} type="button">
               <span className="automation-subflow-directory-icon"><Workflow size={17} aria-hidden /></span>
               <span className="automation-subflow-directory-main"><strong>{subflow.name ?? subflow.subflowId}</strong><small>{subflow.subflowId}</small></span>
               <span className="automation-subflow-directory-meta"><span>{subflow.role ?? "utility"}</span><StatusBadge value={subflow.status ?? "active"} /><span className={"automation-subflow-readiness " + readiness.tone}>{readiness.label}</span><span>{referenceSummary.total ? referenceSummary.total + (referenceSummary.total === 1 ? " Router reference" : " Router references") : routerLoaded ? "Not routed" : "Checking routes"}</span><span>{formatRuntimeTimestamp(subflow.updatedAt)}</span></span>
               <ChevronRight size={16} aria-hidden />
             </button>
             <Menu icon={<MoreHorizontal size={15} aria-hidden />} iconOnly label={"Actions for " + String(subflow.name ?? subflow.subflowId)} options={[
-              { id: "rename", label: "Rename subflow", icon: <Pencil size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, "rename") },
-              { id: "duplicate", label: "Duplicate subflow", icon: <Copy size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, "duplicate") },
-              { id: "lifecycle", label: subflow.status === "active" ? "Disable subflow" : "Enable subflow", icon: <Power size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, subflow.status === "active" ? "disable" : "enable") },
-              { id: "archive", label: "Archive subflow", icon: <Workflow size={14} aria-hidden />, disabled: subflow.status === "archived", onSelect: () => beginSubflowAction(subflow, "archive") },
-              { id: "delete", label: "Delete subflow", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => beginSubflowAction(subflow, "delete") }
+              { id: "rename", label: "Rename reusable part", icon: <Pencil size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, "rename") },
+              { id: "duplicate", label: "Duplicate reusable part", icon: <Copy size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, "duplicate") },
+              { id: "lifecycle", label: subflow.status === "active" ? "Disable reusable part" : "Enable reusable part", icon: <Power size={14} aria-hidden />, onSelect: () => beginSubflowAction(subflow, subflow.status === "active" ? "disable" : "enable") },
+              { id: "archive", label: "Archive reusable part", icon: <Workflow size={14} aria-hidden />, disabled: subflow.status === "archived", onSelect: () => beginSubflowAction(subflow, "archive") },
+              { id: "delete", label: "Delete reusable part", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => beginSubflowAction(subflow, "delete") }
             ]} />
           </div>
           );
         })}
-        {loading && !subflows.length ? <div className="automation-router-loading" aria-label="Loading subflows" role="listitem"><span /><span /><span /></div> : null}
-        {!loading && !subflows.length ? <div className="automation-subflow-directory-empty" role="listitem"><Workflow size={22} aria-hidden /><strong>{flowId ? filtered ? "No matching subflows" : "No subflows yet" : "Select a Flow"}</strong><span>{flowId ? filtered ? "Adjust the search or filters to see other subflows." : "Add subflows from the plus button beside the Subflows folder." : "Choose a Flow to view its subflows."}</span></div> : null}
+        {loading && !subflows.length ? <div className="automation-router-loading" aria-label="Loading reusable parts" role="listitem"><span /><span /><span /></div> : null}
+        {!loading && !subflows.length ? <div className="automation-subflow-directory-empty" role="listitem"><Workflow size={22} aria-hidden /><strong>{flowId ? filtered ? "Nothing matches that search" : "No reusable parts yet" : "No automation chosen"}</strong><span>{flowId ? filtered ? "Clear the search or the filters to see the rest." : "A reusable part is a piece of this automation you can use more than once. Add the first one from the plus button beside Reusable parts in the list on the left." : "Choose an automation from the list on the left to see its parts. To make a new automation, use the + button beside Flows at the top of that list."}</span></div> : null}
       </div>
       <footer className="automation-subflow-directory-footer">
         <span>{firstVisible}-{lastVisible} of {page.total}</span>
-        <label>Rows <select aria-label="Subflows per page" onChange={(event) => setPage((current) => ({ ...current, limit: Number(event.target.value), offset: 0 }))} value={page.limit}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
+        <label>Rows <select aria-label="Reusable parts per page" onChange={(event) => setPage((current) => ({ ...current, limit: Number(event.target.value), offset: 0 }))} value={page.limit}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
         <div>
           <button className="icon-button" disabled={loading || page.offset <= 0} onClick={() => void loadSubflows(0)} title="First page" aria-label="First page" type="button"><ChevronsLeft size={14} aria-hidden /></button>
           <button className="icon-button" disabled={loading || page.offset <= 0} onClick={() => void loadSubflows(previousOffset)} title="Previous page" aria-label="Previous page" type="button"><ChevronLeft size={14} aria-hidden /></button>
@@ -183,13 +188,13 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
           <button className="icon-button" disabled={loading || nextOffset >= page.total} onClick={() => void loadSubflows(lastOffset)} title="Last page" aria-label="Last page" type="button"><ChevronsRight size={14} aria-hidden /></button>
         </div>
       </footer>
-      {subflowAction ? <Modal title={subflowAction.action === "rename" ? "Rename Subflow" : subflowAction.action === "duplicate" ? "Duplicate Subflow" : subflowAction.action === "delete" ? "Delete Subflow" : subflowAction.action === "archive" ? "Archive Subflow" : subflowAction.action === "disable" ? "Disable Subflow" : "Enable Subflow"} onClose={() => setSubflowAction(null)}>
+      {subflowAction ? <Modal title={subflowAction.action === "rename" ? "Rename reusable part" : subflowAction.action === "duplicate" ? "Duplicate reusable part" : subflowAction.action === "delete" ? "Delete reusable part" : subflowAction.action === "archive" ? "Archive reusable part" : subflowAction.action === "disable" ? "Disable reusable part" : "Enable reusable part"} onClose={() => setSubflowAction(null)}>
         <div className="automation-modal-form">
-          <p className="automation-router-modal-intro">{subflowAction.action === "delete" ? "This removes the Subflow and its Nodes graph. Router references must be removed first." : subflowAction.action === "duplicate" ? "The duplicate receives an independent Nodes graph." : "Update this Subflow without changing its stable identity."}</p>
+          <p className="automation-router-modal-intro">{subflowAction.action === "delete" ? "This removes the part and the steps inside it. Router references must be removed first." : subflowAction.action === "duplicate" ? "The copy gets its own steps, separate from the original." : "Update this part without changing the identity other parts refer to."}</p>
           {subflowAction.action === "delete" && actionReferences.length ? <div className="automation-subflow-reference-warning" role="alert"><strong>Still used by Router</strong><span>Remove these references before deleting:</span><ul>{actionReferences.map((reference) => <li key={reference.id}>{reference.name} - {reference.condition}</li>)}</ul></div> : null}
           {subflowAction.action === "rename" || subflowAction.action === "duplicate" ? <Field label="Name"><input autoFocus value={subflowAction.name} onChange={(event) => setSubflowAction((current) => current ? { ...current, name: event.target.value } : current)} /></Field> : null}
-          <Field label="Security PIN"><input autoFocus={!["rename", "duplicate"].includes(subflowAction.action)} inputMode="numeric" value={subflowAction.pin} onChange={(event) => setSubflowAction((current) => current ? { ...current, pin: event.target.value.replace(/\D/g, "") } : current)} /></Field>
-          <div className="modal-actions"><button className="button" onClick={() => setSubflowAction(null)} type="button">Cancel</button><button className={"button " + (subflowAction.action === "delete" ? "danger" : "button-primary")} disabled={actionSaving || !subflowAction.pin.trim() || (["rename", "duplicate"].includes(subflowAction.action) && !subflowAction.name.trim()) || (subflowAction.action === "delete" && actionReferences.length > 0)} onClick={() => void completeSubflowAction()} type="button">{actionSaving ? "Saving..." : subflowAction.action === "delete" ? "Delete Subflow" : "Confirm"}</button></div>
+          {subflowAction.action === "delete" ? <Field label="Security PIN"><input autoFocus inputMode="numeric" maxLength={12} type="password" value={subflowAction.pin} onChange={(event) => setSubflowAction((current) => current ? { ...current, pin: event.target.value.replace(/\D/g, "") } : current)} /></Field> : null}
+          <div className="modal-actions"><button className="button" onClick={() => setSubflowAction(null)} type="button">Cancel</button><button className={"button " + (subflowAction.action === "delete" ? "danger" : "button-primary")} disabled={actionSaving || (subflowAction.action === "delete" && !subflowAction.pin.trim()) || (["rename", "duplicate"].includes(subflowAction.action) && !subflowAction.name.trim()) || (subflowAction.action === "delete" && actionReferences.length > 0)} onClick={() => void completeSubflowAction()} type="button">{actionSaving ? "Saving..." : subflowAction.action === "delete" ? "Delete this part" : "Confirm"}</button></div>
         </div>
       </Modal> : null}
     </section>

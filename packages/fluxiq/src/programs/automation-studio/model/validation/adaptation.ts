@@ -314,12 +314,16 @@ export function validateAutomationStudioAdaptationPolicy(policy: AutomationStudi
   ].some(Boolean)) {
     addIssue(issues, "error", "adaptation_policy.locked_allows_changes", "Locked adaptation policy cannot allow runtime recovery or modifications.", "preset");
   }
-  if (policy.allowDeleteOrDisableBehavior && !policy.requireApprovalForDestructiveChanges) {
-    addIssue(issues, "error", "adaptation_policy.destructive_without_approval", "Destructive behavior changes require approval.", "requireApprovalForDestructiveChanges");
-  }
-  if (policy.allowExternalSideEffects && !policy.requireApprovalForExternalSideEffects) {
-    addIssue(issues, "error", "adaptation_policy.side_effects_without_approval", "External side effects require approval.", "requireApprovalForExternalSideEffects");
-  }
+  // Two rules were removed here on 2026-09-28: a policy that allowed removing a
+  // step of a Flow had to require approval for it, and a policy that allowed
+  // acting on a page had to require approval for that. Both made a standing
+  // approval gate on the automation's own work impossible to switch off -- the
+  // policy was refused as invalid unless the gate was on -- which is a
+  // mechanism that can refuse the product doing its job, and so a defect rather
+  // than a setting. The real-world consequences a person is asked about are
+  // `delete` and `move_money`, answered per action by the permission gate
+  // (`runtime/action-permissions/destructive.ts`). A person who wants either
+  // approval flag on may still set it; nothing forces it on for them.
   if (policy.maxInterventionsPerRun !== undefined && (!Number.isInteger(policy.maxInterventionsPerRun) || policy.maxInterventionsPerRun < 0)) {
     addIssue(issues, "error", "adaptation_policy.invalid_intervention_limit", "maxInterventionsPerRun must be a non-negative integer.", "maxInterventionsPerRun");
   }

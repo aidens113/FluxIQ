@@ -301,10 +301,16 @@ describe("Flow editor decomposition contracts", () => {
     const preloader = readFileSync(new URL("../view-surface-preloader.ts", import.meta.url), "utf8");
 
     expect(source).toContain("memo(function FlowEditorView");
-    expect(source).toContain('aria-label="Opening node editor"');
-    expect(source).toContain("Saved Nodes could not be loaded:");
-    expect(source).toContain(">Retry</button>");
-    expect(source).toContain("props.taskGraph.metadata?.summaryOnly === true");
+    // A summary-only graph is a genuine load and still announces itself; what
+    // changed is that the announcement now carries visible words and a spinner
+    // instead of an empty aria-labelled div. A missing graph is not a load at
+    // all and renders the start pane, so it is no longer announced as busy.
+    expect(source).toContain('aria-busy="true"');
+    expect(source).toContain('aria-live="polite"');
+    expect(source).toContain("Opening these steps...");
+    expect(source).toContain("These steps could not be loaded:");
+    expect(source).toContain(">Try again</button>");
+    expect(source).toContain("props.taskGraph?.metadata?.summaryOnly === true");
     expect(source).toContain('lazy(() => import("./FlowGraphCanvas")');
     expect(source).not.toContain("if (!props.active) return null");
     expect(definitions).toContain('ComponentProps<typeof FlowEditorView>, "activeRef"');

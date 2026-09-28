@@ -70,7 +70,7 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
     : { title: "No state source", message: nodeId ? "No observed, learned, or runtime state is linked to this node yet." : "Select a node or recording moment to inspect state." };
 
   return {
-    title: nodeId ? `Node State: ${nodeLabel}` : "State View",
+    title: nodeId ? `Node State: ${nodeLabel}` : "What the page looked like",
     subtitle: activeSource ? `${sourceLabel(activeSource)} | ${phaseLabel(activePhase)}` : "No state source selected",
     sources,
     activeSource,

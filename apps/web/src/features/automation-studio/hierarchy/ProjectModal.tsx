@@ -2,6 +2,7 @@
 
 import { Button, Field, InlineNotice, KeyValue, Modal } from "../../programs/shared-ui";
 import type { CurrentUser } from "../../programs/types";
+import { AutomationPinRequirementNotice } from "../authorization";
 import type { AutomationProjectModal, AutomationStudioProject, AutomationStudioProjectCategory } from "./model";
 
 export function AutomationProjectModalView(props: {
@@ -31,8 +32,13 @@ export function AutomationProjectModalView(props: {
 }) {
   const isProjectForm = props.mode === "create" || props.mode === "rename";
   const isCategoryForm = props.mode === "create-category" || props.mode === "rename-category";
+  // Only a delete asks. Creating, renaming, moving and reordering are the
+  // product doing what it was asked for, and Core registers each of those
+  // endpoints `authoring`, which its API registry never PIN-checks. Requiring a
+  // PIN to create the first project turned a new account away at the door for
+  // no gain whatsoever.
   const isDelete = props.mode === "delete" || props.mode === "delete-category";
-  const pinReady = Boolean(props.currentUser.pinConfigured) && props.pin.length >= 4;
+  const pinReady = !isDelete || (Boolean(props.currentUser.pinConfigured) && props.pin.length >= 4);
   const contentReady = isProjectForm ? Boolean(props.name.trim()) : isCategoryForm ? Boolean(props.categoryName.trim()) : true;
   const config = projectModalConfig(props);
   const submit = props.mode === "create" ? props.onCreate
@@ -77,22 +83,22 @@ export function AutomationProjectModalView(props: {
           ["Position", "Before the selected category"]
         ]} /> : null}
         {isDelete ? <InlineNotice message={config.consequence} title="This cannot be undone" tone="warning" /> : null}
-        {!props.currentUser.pinConfigured ? (
-          <InlineNotice message="Configure a security PIN in Identity and Access before changing projects or categories." title="PIN not configured" tone="error" />
-        ) : (
-          <Field hint="Use your current user security PIN." label="Security PIN" required>
-            <input
-              autoComplete="off"
-              autoFocus={isDelete || props.mode === "move" || props.mode === "move-category"}
-              inputMode="numeric"
-              maxLength={12}
-              name="automation-project-authorization-pin"
-              type="password"
-              value={props.pin}
-              onChange={(event) => props.onPinChange(event.target.value)}
-            />
-          </Field>
-        )}
+        {isDelete ? (
+          props.currentUser.pinConfigured ? (
+            <Field hint="Use your current user security PIN." label="Security PIN" required>
+              <input
+                autoComplete="off"
+                autoFocus
+                inputMode="numeric"
+                maxLength={12}
+                name="automation-project-authorization-pin"
+                type="password"
+                value={props.pin}
+                onChange={(event) => props.onPinChange(event.target.value)}
+              />
+            </Field>
+          ) : <AutomationPinRequirementNotice pinConfigured={false} />
+        ) : null}
         {props.status ? <InlineNotice message={props.status} tone="error" /> : null}
       </div>
       <div className="modal-actions">

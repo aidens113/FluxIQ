@@ -28,13 +28,16 @@ export function useAutomationSessionDirtyGuards(options: {
     viewId: automationStudioViewId.flowEditor,
     label: `Node graph: ${options.selectedTaskGraph?.name ?? options.selectedFlow?.name ?? "current Flow"}`,
     dirty: hasDirtyTaskGraph,
-    save: async (authorizationPin) => {
-      if (!authorizationPin) throw new Error("A security PIN is required to save the graph.");
-      const activeEditorSave = saveActiveAutomationStudioGraph(authorizationPin);
+    // Saving the node graph is ordinary editing, so it no longer asks for a
+    // PIN: Core registers every endpoint a graph save touches as `authoring`,
+    // and only `destructive` endpoints are PIN-checked. The empty string keeps
+    // the wire shape the save commands already have.
+    save: async () => {
+      const activeEditorSave = saveActiveAutomationStudioGraph("");
       const result = activeEditorSave
         ? await activeEditorSave
         : options.graphRuntime.draft
-          ? await options.graphRuntime.saveGraph(options.graphRuntime.draft, authorizationPin)
+          ? await options.graphRuntime.saveGraph(options.graphRuntime.draft, "")
           : { ok: false, message: "The current graph draft is unavailable." };
       if (!result.ok) throw new Error(result.message);
     },

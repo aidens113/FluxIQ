@@ -80,7 +80,7 @@ async function runAdaptation(renderer: ReactTestRenderer) {
   await act(async () => button(renderer, "Run")!.props.onClick());
 }
 
-describe("Runtime Debug mounted diagnosis authorization", () => {
+describe("Run and test mounted diagnosis authorization", () => {
   it("counts a run started by this view before the project summary refreshes", async () => {
     const runtimeCommands = commands({
       execute: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.local", status: "succeeded" } } }))

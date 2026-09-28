@@ -1,13 +1,6 @@
-import type { AutomationWorkspacePane, AutomationWorkspacePrefs } from "../layout/contracts";
-import { defaultAutomationRightSidebarPrefs, defaultAutomationWorkspacePanes } from "../layout/defaults";
-import { automationStudioViewDefinitions } from "../../views/view-registry";
-import {
-  automationMainLayoutPresetForPaneCount,
-  automationMainPaneCount,
-  closeAutomationWorkspacePaneTab,
-  defaultAutomationMainSplitRatios,
-  moveAutomationWorkspacePaneTab
-} from "../layout/mutations";
+import type { AutomationWorkspacePrefs } from "../layout/contracts";
+import { defaultAutomationRightSidebarPrefs } from "../layout/defaults";
+import { closeAutomationWorkspacePaneTab, moveAutomationWorkspacePaneTab } from "../layout/mutations";
 import { automationWorkspaceRegionForView } from "../layout/regions";
 import type {
   AutomationWorkspaceCommandPort,
@@ -16,14 +9,18 @@ import type {
 } from "./contracts";
 import type { AutomationWarmViewRegistry } from "./warm-activation";
 import { chooseAutomationMainPane, nextAutomationPaneId } from "./pane-choice";
+import { addMainPane, automationWorkspaceMaxMainPanes, resizeMainPanesForPreset, uniqueTabs } from "./pane-layout";
+import { automationClosingTabLabel, createAutomationPreviewTabRegistry } from "./preview-tabs";
 import { requestDirtyViewDecision } from "../dirty-view-registry";
 
-export const automationWorkspaceMaxMainPanes = 3;
+export { automationClosingTabLabel } from "./preview-tabs";
+export { automationWorkspaceMaxMainPanes } from "./pane-layout";
 
-const defaultMainViewId = defaultAutomationWorkspacePanes()[0]!.activeViewId;
-const uniqueMainPaneFallbacks = automationStudioViewDefinitions()
-  .filter((definition) => definition.region === "main" && definition.id !== defaultMainViewId)
-  .map((definition) => definition.id);
+/**
+ * How an activation treats the pane's preview tab: leave it as it is, make this
+ * view the preview, or keep this view for good.
+ */
+type AutomationPaneActivationMode = "keep" | "preview" | "pin";
 
 export function createAutomationWorkspaceCommands(options: {
   port: AutomationWorkspaceCommandPort;
@@ -32,25 +29,32 @@ export function createAutomationWorkspaceCommands(options: {
 }): AutomationWorkspaceCommands {
   const { port } = options;
   const defaultRightViewId = defaultAutomationRightSidebarPrefs().activeViewId;
+  // At most one preview tab per pane; see `preview-tabs.ts` for why.
+  const preview = createAutomationPreviewTabRegistry();
   const notifyRegion = (activation: AutomationWorkspaceRegionActivation) => {
     options.onRegionActivated?.(activation);
   };
   const commit = (update: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, persist = false) => {
     return port.commit(update, { persist, scope: "workspace" });
   };
-  const activateMain = (paneId: string, viewId: string) => {
+  const activateMain = (paneId: string, viewId: string, mode: AutomationPaneActivationMode = "keep") => {
     const current = port.read();
     const pane = current.panes.find((candidate) => candidate.id === paneId);
     if (!pane) return false;
+    const replaced = mode === "preview" ? preview.replaceable(pane, viewId) : null;
+    if (mode === "preview") preview.preview(paneId, viewId);
+    if (mode === "pin") preview.pin(paneId, viewId);
     const unchanged = current.activePaneId === paneId
       && current.activeViewId === viewId
       && pane.activeViewId === viewId
-      && pane.tabs.includes(viewId);
+      && pane.tabs.includes(viewId)
+      && !replaced;
     if (unchanged) return false;
     const changed = commit((latest) => {
       const latestPane = latest.panes.find((candidate) => candidate.id === paneId);
       if (!latestPane) return latest;
-      if (latest.activePaneId === paneId
+      if (!replaced
+        && latest.activePaneId === paneId
         && latest.activeViewId === viewId
         && latestPane.activeViewId === viewId
         && latestPane.tabs.includes(viewId)) return latest;
@@ -58,8 +62,11 @@ export function createAutomationWorkspaceCommands(options: {
         ...latest,
         activePaneId: paneId,
         activeViewId: viewId,
+        // The outgoing preview leaves in the same commit the incoming one
+        // arrives in, so the strip never flickers through a state with both.
+        // `viewId` is always in the result, so the filter cannot empty a pane.
         panes: latest.panes.map((candidate) => candidate.id === paneId
-          ? { ...candidate, activeViewId: viewId, tabs: uniqueTabs([...candidate.tabs, viewId]) }
+          ? { ...candidate, activeViewId: viewId, tabs: uniqueTabs([...candidate.tabs, viewId]).filter((tab) => tab !== replaced) }
           : candidate)
       };
     }, true);
@@ -121,17 +128,21 @@ export function createAutomationWorkspaceCommands(options: {
         return changed;
       }
       const pane = chooseAutomationMainPane(current, viewId);
-      return pane ? activateMain(pane.id, viewId) : false;
+      return pane ? activateMain(pane.id, viewId, mode === "preview" ? "preview" : "pin") : false;
     },
     activatePane(paneId) {
       const pane = port.read().panes.find((candidate) => candidate.id === paneId);
       return pane ? activateMain(pane.id, pane.activeViewId) : false;
     },
-    selectPaneTab: activateMain,
-    addPaneTab: activateMain,
+    // Clicking a tab leaves its preview standing: the person is reading it, not
+    // deciding to keep it. Adding one from the palette is that decision, so it
+    // pins.
+    selectPaneTab: (paneId, viewId) => activateMain(paneId, viewId),
+    addPaneTab: (paneId, viewId) => activateMain(paneId, viewId, "pin"),
     closePaneTab(paneId, viewId) {
       if (!port.read().panes.some((pane) => pane.id === paneId && pane.tabs.includes(viewId))) return false;
-      return requestDirtyViewDecision({ actionLabel: `closing ${viewId}`, viewIds: [viewId], proceed: () => {
+      return requestDirtyViewDecision({ actionLabel: automationClosingTabLabel(viewId), viewIds: [viewId], proceed: () => {
+        preview.forget(paneId, viewId);
         commit((current) => ({
           ...current,
           ...closeAutomationWorkspacePaneTab(current.panes, paneId, viewId, current.activePaneId, current.mainLayoutPreset)
@@ -140,6 +151,8 @@ export function createAutomationWorkspaceCommands(options: {
     },
     movePaneTab(sourcePaneId, targetPaneId, viewId, targetViewId = null, placement = "end") {
       if (sourcePaneId === targetPaneId && targetViewId === viewId) return false;
+      // A tab the person dragged somewhere is a tab they meant to keep.
+      preview.forget(sourcePaneId, viewId);
       return commit((current) => {
         const moved = moveAutomationWorkspacePaneTab(
           current.panes,
@@ -163,7 +176,7 @@ export function createAutomationWorkspaceCommands(options: {
     addRightTab: activateRight,
     closeRightTab(viewId) {
       if (!port.read().rightSidebar.tabs.includes(viewId)) return false;
-      return requestDirtyViewDecision({ actionLabel: `closing ${viewId}`, viewIds: [viewId], proceed: () => {
+      return requestDirtyViewDecision({ actionLabel: automationClosingTabLabel(viewId), viewIds: [viewId], proceed: () => {
         commit((current) => {
           const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
           const nextTabs = tabs.length ? tabs : [defaultRightViewId];
@@ -204,90 +217,4 @@ export function createAutomationWorkspaceCommands(options: {
     }
   };
   return commands;
-}
-
-function addMainPane(
-  current: AutomationWorkspacePrefs,
-  viewId: string,
-  paneId = nextAutomationPaneId(current.panes)
-): AutomationWorkspacePrefs {
-  const pane: AutomationWorkspacePane = {
-    id: paneId,
-    activeViewId: viewId,
-    tabs: [viewId]
-  };
-  const panes = [...current.panes, pane];
-  const preset = automationMainLayoutPresetForPaneCount(panes.length, current.mainLayoutPreset);
-  return {
-    ...current,
-    activePaneId: pane.id,
-    activeViewId: viewId,
-    panes,
-    mainLayoutPreset: preset,
-    mainSplitRatios: defaultAutomationMainSplitRatios(preset),
-    maximizedWindowId: null
-  };
-}
-
-function resizeMainPanesForPreset(
-  current: AutomationWorkspacePrefs,
-  preset: AutomationWorkspacePrefs["mainLayoutPreset"]
-): AutomationWorkspacePrefs {
-  const targetCount = Math.min(automationWorkspaceMaxMainPanes, automationMainPaneCount(preset));
-  const panes = current.panes.slice(0, targetCount).map((pane) => ({ ...pane, tabs: uniqueTabs(pane.tabs) }));
-  const removedTabs = current.panes.slice(targetCount).flatMap((pane) => pane.tabs);
-  if (panes.length && removedTabs.length) {
-    const last = panes[panes.length - 1]!;
-    last.tabs = uniqueTabs([...last.tabs, ...removedTabs]);
-  }
-  if (!panes.length) {
-    panes.push({ ...defaultAutomationWorkspacePanes()[0]!, tabs: [...defaultAutomationWorkspacePanes()[0]!.tabs] });
-  }
-
-  removeDuplicatePaneOwnership(panes);
-  while (panes.length < targetCount) {
-    const used = new Set(panes.flatMap((pane) => pane.tabs));
-    let viewId: string | undefined = uniqueMainPaneFallbacks.find((candidate) => !used.has(candidate));
-    if (!viewId) {
-      const donor = panes.find((pane) => pane.tabs.length > 1);
-      viewId = donor?.tabs.find((candidate) => candidate !== donor.activeViewId);
-      if (donor && viewId) donor.tabs = donor.tabs.filter((candidate) => candidate !== viewId);
-    }
-    if (!viewId) break;
-    panes.push({ id: nextAutomationPaneId(panes), activeViewId: viewId, tabs: [viewId] });
-  }
-
-  const activePane = panes.find((pane) => pane.id === current.activePaneId) ?? panes[0]!;
-  return {
-    ...current,
-    activePaneId: activePane.id,
-    activeViewId: activePane.activeViewId,
-    mainLayoutPreset: preset,
-    mainSplitRatios: defaultAutomationMainSplitRatios(preset),
-    panes,
-    maximizedWindowId: null
-  };
-}
-
-function removeDuplicatePaneOwnership(panes: AutomationWorkspacePane[]): void {
-  const claimed = new Set<string>();
-  for (const pane of panes) {
-    pane.tabs = pane.tabs.filter((viewId) => {
-      if (claimed.has(viewId)) return false;
-      claimed.add(viewId);
-      return true;
-    });
-    if (!pane.tabs.length) {
-      const fallback = uniqueMainPaneFallbacks.find((viewId) => !claimed.has(viewId));
-      if (fallback) {
-        pane.tabs = [fallback];
-        claimed.add(fallback);
-      }
-    }
-    pane.activeViewId = pane.tabs.includes(pane.activeViewId) ? pane.activeViewId : pane.tabs[0] ?? "";
-  }
-}
-
-function uniqueTabs(tabs: string[]): string[] {
-  return tabs.filter((tab, index) => tabs.indexOf(tab) === index);
 }

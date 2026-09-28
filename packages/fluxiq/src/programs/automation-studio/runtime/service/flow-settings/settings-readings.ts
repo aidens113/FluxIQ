@@ -12,8 +12,15 @@ export function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/**
+ * The fallback is `continuous_adaptive`, not `normal`: `normal` refuses
+ * `invokeLlm` and `createAdaptations` outright whatever the allow flags say
+ * (`training-modes.ts`), so a Flow that simply never wrote a mode could not
+ * repair itself. Silence is not a person asking for a Flow that cannot adapt;
+ * writing `"normal"` is, and that is still read and still honoured.
+ */
 export function trainingModeValue(value: unknown): AutomationStudioTrainingModeSettings["mode"] {
-  return value === "train_for_runs" || value === "train_until_stable" || value === "continuous_adaptive" ? value : "normal";
+  return value === "train_for_runs" || value === "train_until_stable" || value === "normal" ? value : "continuous_adaptive";
 }
 
 export function approvalModeValue(value: unknown): AutomationStudioTrainingModeSettings["proposalApprovalMode"] {

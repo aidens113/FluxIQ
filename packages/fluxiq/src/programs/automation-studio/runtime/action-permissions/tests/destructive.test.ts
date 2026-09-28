@@ -69,25 +69,40 @@ function gate(input: { permitted?: readonly string[]; derive?: () => Promise<rea
 }
 
 describe("which classes a person is still asked about", () => {
-  // Both rows here name the list in full rather than probing one class, so a
-  // change to `DESTROYS` is a failing test and never a surprise on a live run.
-  // `modify_existing` left the list on 2026-09-26: it is the broadest of the
-  // five, so gating it asked a person about ordinary editing -- which is the
-  // automation doing the job it was asked to do.
-  it("is the three high-risk real-world classes, and no others", () => {
-    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete", "send_or_publish"]);
+  // These rows name the list in full rather than probing one class, so a change
+  // to `DESTROYS` is a failing test and never a surprise on a live run.
+  //
+  // The list has shrunk twice on the same rule -- the person's instruction is
+  // itself the grant, so only a genuinely high-risk real-world consequence
+  // reaches them. `modify_existing` left on 2026-09-26 because it is the
+  // broadest of the five, so gating it asked about ordinary editing.
+  // `send_or_publish` left on 2026-09-28 because a run that sends is a run whose
+  // instruction asked for the sending, so gating it asked permission for the
+  // request itself. Both are still declared, still recorded, and still compared
+  // against the instruction by the cross-check.
+  it("is exactly delete and money movement, and no others", () => {
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete"]);
     expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => !isAutomationStudioDestructiveActionConsequence(consequence)))
-      .toEqual(["modify_existing", "create_new"]);
-    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(true);
+      .toEqual(["send_or_publish", "modify_existing", "create_new"]);
+    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence("modify_existing")).toBe(false);
+    expect(isAutomationStudioDestructiveActionConsequence("create_new")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence("purchase")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence(undefined)).toBe(false);
   });
 
-  it("keeps Core's order, drops repeats, and drops ordinary creation and editing", () => {
+  // The counted form of the same rule, so re-gating a class fails here too
+  // however it is reintroduced.
+  it("gates two of the five classes and leaves three ungated", () => {
+    expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES).toHaveLength(5);
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toHaveLength(2);
+    expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter(isAutomationStudioDestructiveActionConsequence)).toHaveLength(2);
+  });
+
+  it("keeps Core's order, drops repeats, and drops ordinary creating, editing and sending", () => {
     expect(automationStudioDestructiveConsequences(["create_new", "delete", "move_money", "delete", "send_or_publish"]))
-      .toEqual(["move_money", "delete", "send_or_publish"]);
-    expect(automationStudioDestructiveConsequences(["create_new", "send_or_publish", "modify_existing"])).toEqual(["send_or_publish"]);
+      .toEqual(["move_money", "delete"]);
+    expect(automationStudioDestructiveConsequences(["create_new", "send_or_publish", "modify_existing"])).toEqual([]);
   });
 });
 
@@ -113,21 +128,28 @@ describe("an act the person's instruction plainly asks for", () => {
     });
   });
 
-  it("keeps ordinary creation free but refuses sending when instruction authority cannot be derived", async () => {
+  // The regression this row exists for. A send used to need the derivation that
+  // reads the instruction to succeed, and that derivation misses whenever the
+  // provider call fails, the model does not name the class, or the quote is not
+  // the person's own words -- so an instruction that says "send the seller a
+  // message" in so many words still stopped the run. Sending is ungated now, so
+  // none of those three misses can stop it.
+  it("still sends when the instruction's authority cannot be derived at all", async () => {
     const claimedNothing = gate({ derive: async () => readAutomationStudioInstructedConsequences({ instructions: [BASKET], result: { instructed: [] } }) });
     const providerDown = gate({ derive: async () => { throw new Error("provider down"); } });
     const noDerivation = gate();
 
     for (const run of [claimedNothing, providerDown, noDerivation]) {
       expect(await run.checkFor(PRESS)(ADD_TO_BASKET)).toEqual({ permitted: true });
-      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: "permission-request:one" });
-      expect(run.request?.missing).toEqual(["send_or_publish"]);
+      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
+      expect(run.request).toBeUndefined();
+      expect(run.signal.aborted).toBe(false);
     }
   });
 
-  it("keeps creation permitted with no run, but refuses sending when nobody can ask", async () => {
+  it("creates and sends with no run behind it either, since neither is anybody's to refuse", async () => {
     expect(await automationStudioActionPermissionDenied(ADD_TO_BASKET)).toEqual({ permitted: true });
-    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: null });
+    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: true });
   });
 });
 
@@ -191,15 +213,11 @@ describe("a destructive act the instruction did not ask for", () => {
     expect(await asked.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: true });
     expect(asked.request).toBeUndefined();
 
-    const sendGranted = gate({ permitted: ["send_or_publish"], derive: async () => [] });
-    expect(await sendGranted.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
-    expect(sendGranted.request).toBeUndefined();
   });
 
   it("is refused where there is no run behind it, since no instruction could have asked", async () => {
     expect(await automationStudioActionPermissionDenied(CHECK_OUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: null });
     expect(await automationStudioActionPermissionDenied(EMPTY_BASKET)).toEqual({ permitted: false, missing: ["delete"], requestId: null });
-    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: null });
   });
 });
 

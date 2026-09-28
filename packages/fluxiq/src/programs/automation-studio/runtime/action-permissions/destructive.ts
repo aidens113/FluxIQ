@@ -6,22 +6,30 @@
 // sounds serious. What is left to ask about is the narrow case where doing the
 // thing cannot be taken back and the instruction did not ask for it.
 //
-// **Only what has a genuinely high-risk real-world consequence.** Three classes
+// **Only what has a genuinely high-risk real-world consequence.** Two classes
 // need authority beyond an unrelated instruction:
 //
 // - `move_money` -- completing a purchase or a checkout, a charge, a refund, a
 //   transfer. The money has gone.
 // - `delete` -- removing something so that it is gone.
-// - `send_or_publish` -- communicating or publishing on the person's behalf.
 //
-// The other two are not asked about. `create_new` adds something that was not
+// The other three are not asked about. `create_new` adds something that was not
 // there, and `modify_existing` is the broadest of the five, so gating either
 // asks a person about ordinary work. Note this is the class, not the act:
 // placing an order is `move_money` and is asked about; putting the same item in
-// a basket is `create_new` and is not. Sending exactly what the instruction
-// asked to send is authorised by that instruction; an unrelated instruction or
-// a run with no instruction is not authority to communicate on the person's
-// behalf.
+// a basket is `create_new` and is not.
+//
+// **`send_or_publish` came off this list on 2026-09-28**, on the product owner's
+// rule that the person's instruction is itself the grant. A run that sends is a
+// run whose instruction asked for the sending, so a standing gate on every send
+// asks permission for the request itself -- the exact shape the rule forbids.
+// The case it was there for, a send *nobody asked for*, is not a permission
+// question at all: it is a disagreement between what a step declared and what
+// the instruction called for, and `cross-check.ts` is what compares those two. A
+// standing gate cannot tell the two apart, so it stopped every send -- including
+// the ones the person asked for in so many words -- whenever the derivation that
+// reads the instruction missed, which it does whenever the provider call fails,
+// the model does not name the class, or the quote is not the person's own words.
 //
 // **Why this exists as its own file.** Until 2026-09-24 every one of the five
 // gated, so a build told to add an item to a cart, save a listing for later or
@@ -53,22 +61,25 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, automationStudioConsequencesInOr
  * somebody decides whether a person has to be asked about it. Defaulting a new
  * class either way silently would be the mistake this shape exists to prevent.
  *
- * **Only a very high risk is asked about, as of 2026-09-26.** The user's rule is
+ * **Only a very high risk is asked about, as of 2026-09-28.** The user's rule is
  * that their instruction is itself the grant, and that a question reaches them
- * for genuinely risky real-world consequences and nothing else -- a delete, a
- * checkout, money, sending or publishing. `modify_existing` came off this list
- * on that instruction: it is the broadest of the five classes, so gating it
- * asked a person about ordinary editing, which is the automation doing the job
- * it was asked to do. An
- * irreversible overwrite that the instruction did not ask for is caught where it
- * belongs, by the consequence cross-check comparing what a step declared against
- * what the instruction called for, rather than by a standing gate on every edit.
+ * for genuinely risky real-world consequences and nothing else -- deleting
+ * something, and completing a purchase, payment or transfer. Those two, and
+ * nothing else. `modify_existing` came off this list on 2026-09-26 and
+ * `send_or_publish` on 2026-09-28, on the same instruction: each was gating the
+ * automation doing the job it was asked to do. An irreversible overwrite or a
+ * send the instruction did not ask for is caught where it belongs, by the
+ * consequence cross-check comparing what a step declared against what the
+ * instruction called for, rather than by a standing gate on every edit or send.
+ *
+ * Adding a class here re-gates ordinary work, so `tests/destructive.test.ts`
+ * names this table in full and fails the build on any change to it.
  */
 const DESTROYS: Readonly<Record<AutomationStudioActionConsequence, boolean>> = Object.freeze({
   move_money: true,
   delete: true,
   modify_existing: false,
-  send_or_publish: true,
+  send_or_publish: false,
   create_new: false
 });
 

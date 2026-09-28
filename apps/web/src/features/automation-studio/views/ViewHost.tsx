@@ -47,16 +47,16 @@ export function AutomationSleepingView(props: { view: AutomationViewInstance }) 
 export function AutomationUnknownView(props: { view: AutomationViewInstance; reason?: "unknown" | "mismatch" }) {
   return (
     <section
-      aria-label="Unavailable Automation Studio view"
+      aria-label="Unavailable panel"
       className="automation-project-empty"
       data-view-id={props.view.id}
       role="status"
     >
-      <strong>View unavailable</strong>
+      <strong>This tab is no longer available</strong>
       <span>
         {props.reason === "mismatch"
-          ? "This saved view no longer matches its registered view type. Close the tab and reopen it from the Studio sidebar."
-          : "This saved view is no longer registered. Close the tab and choose an available view from the Studio sidebar."}
+          ? "This tab no longer matches the panel it was saved as. Close it and open the panel you want from the sidebar."
+          : "This tab is no longer part of FluxIQ. Close it and open the panel you want from the sidebar."}
       </span>
     </section>
   );
