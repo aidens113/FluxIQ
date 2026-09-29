@@ -49,9 +49,11 @@ describe("evidence-loop draft progress", () => {
       resultCode: "llm_evidence_loop.draft_amended",
       draftChange: { targetedStepIds: ["d2"], appliedCount: 1, refusedCount: 0, keptStepCount: 1 }
     });
+    // The step a rerun replaces is still kept when the amendment is recorded:
+    // it is withdrawn only once the rerun has worked, which the final draft shows.
     expect(result.trace[5]).toMatchObject({
       resultCode: "llm_evidence_loop.draft_rerun",
-      draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 0, rerunStepId: "d1" }
+      draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 1, rerunStepId: "d1" }
     });
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([
       // Reordering changes position, never identity.
