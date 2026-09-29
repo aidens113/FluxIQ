@@ -25,6 +25,7 @@
 // The order is the order a tie breaks in, so the plainer request comes first.
 
 import type { PanelCapability } from "../contract";
+import { ADAPTATION_CAPABILITIES } from "./adaptations";
 import { CONVERSATION_CAPABILITIES } from "./conversations";
 import { FLOW_CAPABILITIES } from "./flows";
 import { PROJECT_CAPABILITIES } from "./projects";
@@ -37,6 +38,7 @@ export const PANEL_CAPABILITIES: readonly PanelCapability[] = Object.freeze([
   ...FLOW_CAPABILITIES,
   ...RUNNING_CAPABILITIES,
   ...VERSION_CAPABILITIES,
+  ...ADAPTATION_CAPABILITIES,
   ...SETTINGS_CAPABILITIES,
   ...PROJECT_CAPABILITIES,
   ...RECORDING_CAPABILITIES,

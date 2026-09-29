@@ -48,6 +48,24 @@ const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: strin
   "flow.explore": {
     error: /^Flow Bootstrap generation failed \(flow_bootstrap\.evidence_runtime_unavailable\)\.$/u,
     because: "The contract world binds no browser, so Core has no evidence tools to explore with."
+  },
+  // Improving a Flow extends the steps it already has. The world's Flow has a
+  // Router and Subflows but no steps in any of them, so after the handler has
+  // read every field -- `mode` among them -- and checked the grant the
+  // capability issued, the service refuses to extend a Flow with nothing to
+  // amend. That is Core declining an empty Flow, not a request defect; a
+  // malformed request would be refused by the handler instead.
+  "flow.improve": {
+    error: /^Flow Bootstrap generation failed \(flow_bootstrap\.blank_target_required\)\.$/u,
+    because: "The world's Flow has a Router and Subflows but no steps in them, so there is nothing to extend."
+  },
+  // The world's seeded adaptation edits an expectation (`expect.ready`) that no
+  // node in its Flow carries. Core approves it -- the request is sound -- and
+  // then refuses to apply a patch to a node that does not exist, which is the
+  // apply path's own integrity check rather than anything in the request.
+  "adaptation.apply": {
+    error: /^Unknown Flow node for adaptation patch: expect\.ready$/u,
+    because: "The seeded adaptation targets a node the seeded Flow does not have, so it can be approved but not applied."
   }
 };
 
