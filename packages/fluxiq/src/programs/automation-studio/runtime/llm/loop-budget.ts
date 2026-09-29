@@ -22,8 +22,25 @@
 // could not use reports none, so it is counted at the loop's average; and one
 // decision's worth is held back for calls the loop cannot see that spend the
 // same grant, such as the build's one reading of its instructions.
+//
+// **The last decisions are for finishing, not only the very last one.** The
+// last decision used to be the only one offered completion alone, so a
+// completion refused on it had no turn left to be corrected:
+// `run-mulxsbyy-d4d4c7a1` was refused on its forced final decision and ended
+// with nothing. From `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS`
+// decisions left, the loop stops offering new tools and offers completion and
+// amendments, so a refusal still has two decisions to be answered in -- one to
+// amend what it names, one to finish again -- before the last.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/exhaustion.ts";
+
+/**
+ * Decisions left from which the loop offers only completion and amendments:
+ * the wrap-up. Three, so a completion refused on the first of them has one
+ * decision to amend and one to finish again.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS = 3;
 
 /** The bounds a loop is given, each optional. */
 export type AutomationStudioLlmEvidenceLoopBudget = {
@@ -53,6 +70,13 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
 /** What is left, this decision included. Only the bounds the budget names appear. */
 export type AutomationStudioLlmEvidenceLoopRemaining = {
   decisionsLeft: number;
+  /**
+   * The bound that left the fewest decisions, and so the one that ends the
+   * loop if nothing changes. Recorded on an exhausted loop so a reader need not
+   * work out from the trace which of tokens, cost and time it was
+   * (`./evidence-loop/exhaustion.ts`). Never shown to the model.
+   */
+  limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound;
   tokensLeft?: number;
   costLeftUsd?: number;
   secondsLeft?: number;
@@ -63,41 +87,55 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID = "core.budget";
 
 const BUDGET_INSTRUCTION = "What this exploration has left, this decision included. Plan to complete while it is enough: running out ends the exploration without a result.";
 const FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: write the result now from the evidence you have.";
+const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
 
 /** How many decisions each bound still allows, and the smallest of them with `decisionsLeft` from the iteration backstop. */
 export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudioLlmEvidenceLoopBudget, spent: AutomationStudioLlmEvidenceLoopSpending, iterationsLeft: number): AutomationStudioLlmEvidenceLoopRemaining {
   const unreported = Math.max(0, spent.decisions - spent.reportedDecisions);
   const averageTokens = spent.reportedDecisions ? spent.totalTokens / spent.reportedDecisions : budget.maxTokensPerDecision ?? 0;
   const averageCost = spent.reportedDecisions ? spent.estimatedCostUsd / spent.reportedDecisions : 0;
-  const counts = [iterationsLeft];
-  const remaining: Omit<AutomationStudioLlmEvidenceLoopRemaining, "decisionsLeft"> = {};
+  const counts: Array<[AutomationStudioLlmEvidenceLoopBudgetBound, number]> = [["iterations", iterationsLeft]];
+  const remaining: Omit<AutomationStudioLlmEvidenceLoopRemaining, "decisionsLeft" | "limitedBy"> = {};
   if (budget.maxTotalTokens !== undefined) {
     // Unreported decisions at the average, and one more held back.
     const tokensLeft = budget.maxTotalTokens - spent.totalTokens - (unreported + 1) * averageTokens;
     const perDecision = budget.maxTokensPerDecision ?? averageTokens;
-    counts.push(tokensLeft < perDecision ? 0 : 1 + Math.floor((tokensLeft - perDecision) / Math.max(1, averageTokens)));
+    counts.push(["tokens", tokensLeft < perDecision ? 0 : 1 + Math.floor((tokensLeft - perDecision) / Math.max(1, averageTokens))]);
     remaining.tokensLeft = Math.max(0, Math.floor(tokensLeft));
   }
   if (budget.maxCostUsd !== undefined) {
     const costLeft = budget.maxCostUsd - spent.estimatedCostUsd - (unreported + 1) * averageCost;
-    counts.push(costLeft <= 0 ? 0 : averageCost > 0 ? Math.floor(costLeft / averageCost) : iterationsLeft);
+    counts.push(["cost", costLeft <= 0 ? 0 : averageCost > 0 ? Math.floor(costLeft / averageCost) : iterationsLeft]);
     remaining.costLeftUsd = Math.max(0, Math.floor(costLeft * 10_000) / 10_000);
   }
   if (budget.maxDurationMs !== undefined) {
     const msLeft = budget.maxDurationMs - spent.elapsedMs;
     const averageMs = spent.decisions ? spent.elapsedMs / spent.decisions : 0;
-    counts.push(msLeft <= 0 ? 0 : averageMs > 0 ? Math.floor(msLeft / averageMs) : iterationsLeft);
+    counts.push(["duration", msLeft <= 0 ? 0 : averageMs > 0 ? Math.floor(msLeft / averageMs) : iterationsLeft]);
     remaining.secondsLeft = Math.max(0, Math.floor(msLeft / 1_000));
   }
-  return { decisionsLeft: Math.max(0, Math.min(...counts)), ...remaining };
+  // The first of the smallest, so the backstop is named only when it is the
+  // bound that binds and no budget ties it.
+  const [limitedBy, fewest] = counts.reduce((least, entry) => entry[1] < least[1] ? entry : least);
+  return { decisionsLeft: Math.max(0, fewest), limitedBy, ...remaining };
 }
 
 /** The entry the model reads its remaining budget from: closed numbers and Core's words. */
-export function automationStudioLlmEvidenceBudgetEntry(iteration: number, remaining: AutomationStudioLlmEvidenceLoopRemaining): { callId: string; toolId: string; value: JsonObject } {
+export function automationStudioLlmEvidenceBudgetEntry(
+  iteration: number,
+  remaining: AutomationStudioLlmEvidenceLoopRemaining,
+  /** Whether the loop is withholding new tools this decision; absent, read from what is left. */
+  wrappingUp = remaining.decisionsLeft <= AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS
+): { callId: string; toolId: string; value: JsonObject } {
+  const { limitedBy: _limitedBy, ...shown } = remaining;
   return {
     callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID}.${iteration}`,
     toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID,
-    value: { code: "llm_evidence_loop.budget", ...remaining, instruction: remaining.decisionsLeft <= 1 ? FINAL_INSTRUCTION : BUDGET_INSTRUCTION }
+    value: {
+      code: "llm_evidence_loop.budget",
+      ...shown,
+      instruction: remaining.decisionsLeft <= 1 ? FINAL_INSTRUCTION : wrappingUp ? WRAP_UP_INSTRUCTION : BUDGET_INSTRUCTION
+    }
   };
 }
 

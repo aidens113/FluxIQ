@@ -165,7 +165,8 @@ function evidenceLoopExhausted(
     iterations: exhaustion.iterations,
     draftSteps: exhaustion.draftSteps,
     proposableSteps: exhaustion.proposableSteps,
-    completionAttempts: exhaustion.completionAttempts
+    completionAttempts: exhaustion.completionAttempts,
+    ...(exhaustion.budgetBound ? { budgetBound: exhaustion.budgetBound } : {})
   };
 }
 

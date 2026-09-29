@@ -61,6 +61,12 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // sentence is fixed and quotes nothing; where the Flow starts travels beside
   // the issues, in the feedback the completion check builds.
   "bootstrap.cannot_reach_start_location",
+  // Which lasting act no step does (`../instructed-acts/`), and which limit a
+  // completed result exceeded (`./profile-limits.ts`). Both sentences are
+  // fixed and quote nothing; the acts, the person's words and the limits travel
+  // beside the issues in the feedback the completion check builds.
+  "bootstrap.instructed_act_missing",
+  "bootstrap.completion_profile_limit_exceeded",
   "bootstrap.invalid_subflows",
   "bootstrap.subflow_has_no_nodes",
   "bootstrap.invalid_node",

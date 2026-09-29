@@ -93,9 +93,12 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
      * The loop's own record is reused rather than copied -- a copy is how this
      * diagnostic came to publish three of the eight fields the trace kept -- less
      * the last refusal's codes, which travel in `issueCodes` below so that a
-     * reader has one place to look for them.
+     * reader has one place to look for them. The outstanding completion
+     * failures stay behind as well: they are what a continuation of the build
+     * is told (`flow-bootstrap/incomplete-draft/`), and while the last attempt
+     * was the one refused they are the same codes as `issueCodes`.
      */
-    exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes">;
+    exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes" | "outstandingIssueCodes">;
   };
   /**
    * The codes behind this failure that its own code does not already say.

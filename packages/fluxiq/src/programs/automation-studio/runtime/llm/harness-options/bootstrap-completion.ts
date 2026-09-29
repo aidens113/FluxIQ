@@ -11,18 +11,31 @@
 // So every check a completed result must pass runs here, as the evidence
 // loop's completion check: the wrapper, the plan's structure, the evidence
 // profile's limits, the domain's resolution of each node's parameters, the
-// registry validation, and last of all whether the Flow could answer the
-// instruction at all. A result that passes is handed back ready to persist. A
-// result that fails comes back with the code creation fails under, the issues
-// that refused it, and the feedback the model sees before it is asked again --
-// issue codes and plan paths, which are the plan's own structure, and the
-// shape each refused parameter accepts, read from its node definition
-// (`automationStudioFlowBootstrapIssueFeedback`) -- never page content and never
-// a validator's prose.
+// registry validation, whether the Flow could answer the instruction at all,
+// whether it could run at all, and whether it does every lasting thing the
+// instruction asks to be done. A result that passes is handed back ready to
+// persist. A result that fails comes back with the code creation fails under,
+// the issues that refused it, and the feedback the model sees before it is
+// asked again -- issue codes and plan paths, which are the plan's own
+// structure, and the shape each refused parameter accepts, read from its node
+// definition (`automationStudioFlowBootstrapIssueFeedback`) -- never page
+// content and never a validator's prose.
 //
-// **The last two checks ask what none of the others did.** Every check above
-// holds the plan to the node library: it parses, its parameters resolve, its
-// nodes are registered. Neither of the two questions a person would ask is
+// **Every check runs on every attempt, and every failure comes back at once.**
+// The checks used to stop at the first refusal, so a build was told one thing
+// at a time. `run-mulxsbyy-d4d4c7a1` was refused three times by three different
+// checks -- the start location at decision 24, the dry run at 27, a profile
+// limit at 41 -- and learned of each only after answering the last, the third
+// on the forced final decision with no turn left to answer it. All three were
+// true at decision 24. So a check whose input exists runs whatever the others
+// said: the capability checks ask their question of the furthest plan the
+// structural checks produced, the instructed acts are read off the draft, and
+// the refusal lists every failure together. Only a check with nothing to look
+// at is skipped -- a plan that never parsed has no nodes to resolve.
+//
+// **The capability checks ask what none of the others did.** Every structural
+// check holds the plan to the node library: it parses, its parameters resolve,
+// its nodes are registered. Neither of the questions a person would ask is
 // among them.
 //
 // *Could this Flow answer?* Four live builds against one instruction proposed
@@ -37,8 +50,13 @@
 // `flow-bootstrap/reachability/` answers that from the plan and the start
 // location the build was given.
 //
-// Neither costs a provider call, and each refusal carries its own account of
-// what is missing beside the issue rather than only a code.
+// *Does this Flow do what it was told to do?* `run-mulxk0ro-36bf090d` was told
+// to save three tables and list saved items, and was accepted having only read
+// a results page. `flow-bootstrap/instructed-acts/` answers that from the
+// instruction's words and the steps the model names for them.
+//
+// None costs a provider call, and each refusal carries its own account of what
+// is missing beside the issue rather than only a code.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -50,14 +68,16 @@ import {
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
+  automationStudioEvidenceFlowBootstrapLimitsExceeded,
   automationStudioFlowBootstrapIssueFeedback,
   checkAutomationStudioFlowBootstrapAnswersInstruction,
   checkAutomationStudioFlowBootstrapReachesStartLocation,
-  isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
+  checkAutomationStudioInstructedActs,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapIssue,
   type AutomationStudioFlowBootstrapPhaseFailureCode,
+  type AutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBuildPlan
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
@@ -84,7 +104,10 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
   }
   | {
     ok: false;
+    /** The first failure's code, in the order the checks run. Every failure's issues are in `issues`. */
     code: AutomationStudioFlowBootstrapCompletionFailureCode;
+    /** Every failure's code, in the order the checks run, once each. */
+    codes: AutomationStudioFlowBootstrapCompletionFailureCode[];
     issues: AutomationStudioFlowBootstrapIssue[];
     /** What the evidence loop is told: the codes, and the model's feedback. */
     check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> & {
@@ -113,6 +136,12 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   // its own script handed back; this sentence is what tells it to amend that.
   + "Where previous is given, it is the script you just sent. Send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory.";
 
+/** Said first whenever more than one check refused, so the model fixes them together. */
+const SEVERAL_INSTRUCTION = "Every check was run and refusals lists each one that failed: correct all of them before completing again, not only the first.";
+
+/** Said of a profile limit, since what to do about one is not a parameter's business. */
+const LIMITS_INSTRUCTION = "limitsExceeded names each limit the result is over, its max and the actual value: shorten the summary, or drop or split what that limit counts.";
+
 /** What the refused script may cost in the feedback before it is left out. */
 const MAX_PREVIOUS_SCRIPT_LENGTH = 6_000;
 
@@ -139,25 +168,25 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   /**
    * The active instructions' own words, title and body, as the build read them.
    *
-   * What the last check reads. Absent -- a caller with no instruction text --
-   * leaves the check with nothing to hold the Flow to, and it passes: a plan is
-   * never refused for a request nobody stated.
+   * What the answerability and instructed-acts checks read. Absent -- a caller
+   * with no instruction text -- leaves them with nothing to hold the Flow to,
+   * and they pass: a plan is never refused for a request nobody stated.
    */
   instructionText?: string | undefined;
   /**
    * Where the Flow starts, as the build was told it
    * (`flow-bootstrap/start-location.ts`).
    *
-   * What the seventh check reads. Absent -- a build handed its target rather
-   * than told where it is -- leaves it with nothing to hold the Flow to, and it
-   * passes: a Flow is never refused for an arrival nobody asked for.
+   * What the reachability check reads. Absent -- a build handed its target
+   * rather than told where it is -- leaves it with nothing to hold the Flow to,
+   * and it passes: a Flow is never refused for an arrival nobody asked for.
    */
   startLocation?: string | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
   if (!Object.keys(result).length) {
-    return refused("flow_bootstrap.evidence_completion_wrapper_invalid", [issue("bootstrap.completion_wrapper_invalid", "result")]);
+    return refused([{ code: "flow_bootstrap.evidence_completion_wrapper_invalid", issues: [issue("bootstrap.completion_wrapper_invalid", "result")] }]);
   }
   // The draft wins wherever there is one. Where there is none -- a domain
   // whose actions are not nodes of the registry, or a build that completed
@@ -171,72 +200,99 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
   const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
+  const failures: CompletionFailure[] = [];
+  // The furthest plan the structural checks produced, which is what the
+  // capability checks are asked of, and the plan to build when nothing failed.
+  let capabilityPlan: AutomationStudioFlowBootstrapPlan | undefined;
+  let buildPlan: AutomationStudioFlowBuildPlan | undefined;
   // A refused Flow script carries the plan its steps got as far as, and the
   // issues' paths are that plan's. Read from the reply instead, as it was
   // before, and `bootstrap.unknown_parameter` came back naming a path into a
   // plan the model never wrote with nothing beside it -- so it wrote the same
   // key again. The nested JSON plan is the model's own writing and stays.
   if (!accepted.ok) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(accepted.issues), about(accepted.refusedPlan ?? written), accepted.script);
+    failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(accepted.issues), about: about(accepted.refusedPlan ?? written) });
+  } else {
+    const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
+    if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
+      failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(parsed.issues), about: about(accepted.plan) });
+    } else {
+      capabilityPlan = parsed.plan;
+      // A plan Core assembled from the draft is held to the Flow's own limits;
+      // one the model wrote, to what one reply may carry (`profile-limits.ts`).
+      const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: accepted.summary, plan: parsed.plan }, drafted ? "draft" : "reply");
+      if (exceeded.length) {
+        failures.push({
+          code: "flow_bootstrap.evidence_completion_profile_limit_exceeded",
+          issues: exceeded.map((limit) => issue("bootstrap.completion_profile_limit_exceeded", limit.path, "The completed result is over one of its limits; limitsExceeded names which.")),
+          detail: { key: "limitsExceeded", value: exceeded.map((limit) => ({ ...limit })), instruction: LIMITS_INSTRUCTION }
+        });
+      }
+      const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
+        plan: parsed.plan,
+        projectId: input.projectId,
+        flowId: input.flowId,
+        binding: input.binding,
+        handlesIssued: true,
+        permissionFor: input.permissionFor
+      });
+      if (!resolved.ok) {
+        failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
+      } else {
+        capabilityPlan = resolved.plan;
+        const validated = validatePlan(resolved.plan, input.registry, input.resolution);
+        if (validated.threw) {
+          // A check that throws refuses the plan under a code of its own, rather
+          // than ending creation with a record that cannot say what happened.
+          failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: [issue("bootstrap.validation_failed", "plan")] });
+        } else if (!validated.outcome.ok || !validated.outcome.validated) {
+          failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(validated.outcome.issues), about: about(resolved.plan) });
+        } else {
+          buildPlan = validated.outcome.validated;
+          capabilityPlan = buildPlan.plan;
+        }
+      }
+    }
   }
-  // Every refusal from here on is about a plan that was read, so each one hands
-  // the script back: the parameter check is where a handle the model invented
-  // is caught, and that is the refusal the whole re-emission failure came from.
-  const script = accepted.script;
-  const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
-  if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(parsed.issues), about(accepted.plan), script);
+  // The capability questions, of the furthest plan there is. Answering is not
+  // running: a Flow that acts on the target it was told to start at and never
+  // goes there fails before its first step, whatever it would have produced.
+  let answerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  if (capabilityPlan) {
+    const answers = checkAutomationStudioFlowBootstrapAnswersInstruction({ plan: capabilityPlan, registry: input.registry, resolution: input.resolution, instructionText: input.instructionText });
+    answerability = answers.answerability;
+    if (!answers.ok) {
+      failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [answers.issue], about: about(capabilityPlan), detail: { key: "cannotAnswer", value: answers.cannotAnswer, instruction: answers.instruction } });
+    }
+    const reaches = checkAutomationStudioFlowBootstrapReachesStartLocation({ plan: capabilityPlan, registry: input.registry, resolution: input.resolution, startLocation: input.startLocation });
+    if (!reaches.ok) {
+      failures.push({ code: "flow_bootstrap.evidence_completion_cannot_reach_start", issues: [reaches.issue], about: about(capabilityPlan), detail: { key: "cannotReach", value: reaches.cannotReach, instruction: reaches.instruction } });
+    }
   }
-  if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: accepted.summary, plan: parsed.plan })) {
-    return refused("flow_bootstrap.evidence_completion_profile_limit_exceeded", [issue("bootstrap.completion_profile_limit_exceeded", "result")], undefined, script);
+  // Read off the draft rather than the plan, so it is asked even of a draft
+  // whose plan did not assemble. Only a Flow built from the draft has steps a
+  // claim can name.
+  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? input.draftSteps : undefined });
+  if (!acts.ok) {
+    // Filed under the cannot-answer code: a Flow that does not do what it was
+    // told cannot answer the instruction, and the issue code says which way.
+    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: acts.missingActs, instruction: acts.instruction } });
   }
-  const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
-    plan: parsed.plan,
-    projectId: input.projectId,
-    flowId: input.flowId,
-    binding: input.binding,
-    handlesIssued: true,
-    permissionFor: input.permissionFor
-  });
-  if (!resolved.ok) return refused("flow_bootstrap.evidence_completion_parameters_unresolved", resolved.issues, about(parsed.plan), script);
-  let validated: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan>;
+  if (failures.length || !buildPlan || !accepted.ok) return refused(failures, accepted.script, answerability);
+  return { ok: true, summary: accepted.summary, buildPlan, check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false } } };
+}
+
+/** Registry validation, which may throw. */
+function validatePlan(
+  plan: AutomationStudioFlowBootstrapPlan,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): { threw: true } | { threw: false; outcome: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan> } {
   try {
-    validated = validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry: input.registry, resolution: input.resolution });
+    return { threw: false, outcome: validateAutomationStudioFlowBootstrapPlan({ plan, registry, resolution }) };
   } catch {
-    // A check that throws refuses the plan under a code of its own, rather than
-    // ending creation with a record that cannot say what happened.
-    return refused("flow_bootstrap.evidence_completion_plan_invalid", [issue("bootstrap.validation_failed", "plan")], undefined, script);
+    return { threw: true };
   }
-  if (!validated.ok || !validated.validated) return refused("flow_bootstrap.evidence_completion_plan_invalid", errors(validated.issues), about(resolved.plan), script);
-  // Last, and only on a plan every other check accepted: could this Flow answer
-  // the instruction at all, and could it run at all? Placed here so a build is
-  // told one thing at a time -- a plan with a refused parameter hears about the
-  // parameter -- and so both questions are asked of the plan that would have
-  // been built.
-  const answers = checkAutomationStudioFlowBootstrapAnswersInstruction({
-    plan: validated.validated.plan,
-    registry: input.registry,
-    resolution: input.resolution,
-    instructionText: input.instructionText
-  });
-  if (!answers.ok) {
-    return refused("flow_bootstrap.evidence_completion_cannot_answer", [answers.issue], about(validated.validated.plan), script,
-      { key: "cannotAnswer", detail: answers.cannotAnswer, instruction: answers.instruction }, answers.answerability);
-  }
-  // Answering is not running. A Flow that acts on the target it was told to
-  // start at and never goes there fails before its first step, whatever it
-  // would have produced there.
-  const reaches = checkAutomationStudioFlowBootstrapReachesStartLocation({
-    plan: validated.validated.plan,
-    registry: input.registry,
-    resolution: input.resolution,
-    startLocation: input.startLocation
-  });
-  if (!reaches.ok) {
-    return refused("flow_bootstrap.evidence_completion_cannot_reach_start", [reaches.issue], about(validated.validated.plan), script,
-      { key: "cannotReach", detail: reaches.cannotReach, instruction: reaches.instruction }, answers.answerability);
-  }
-  return { ok: true, summary: accepted.summary, buildPlan: validated.validated, check: { ok: true, answerability: answers.answerability } };
 }
 
 /**
@@ -292,47 +348,66 @@ const DRAFT_SCRIPT_NOTE = "The Flow is the list of steps in your draft. Correct 
 type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };
 
 /**
- * A refusal, fed back with each issue and, where the plan it is about and the
- * registry can say, the shape each refused parameter accepts.
+ * One check's refusal: its code, its issues, the plan they are about where the
+ * shape of a refused parameter can be read from it, and, for a refusal that is
+ * about what the Flow lacks rather than how a step was written, its own account
+ * under its own key with its own sentence.
+ */
+type CompletionFailure = {
+  code: AutomationStudioFlowBootstrapCompletionFailureCode;
+  issues: AutomationStudioFlowBootstrapIssue[];
+  about?: RefusalSubject;
+  detail?: { key: "cannotAnswer" | "cannotReach" | "missingActs" | "limitsExceeded"; value: JsonObject | JsonObject[]; instruction: string };
+};
+
+/**
+ * Every refusal together: each issue, with the shape each refused parameter
+ * accepts where the plan it is about and the registry can say, every account
+ * of what is missing, and one instruction that covers them all.
  */
 function refused(
-  code: AutomationStudioFlowBootstrapCompletionFailureCode,
-  issues: AutomationStudioFlowBootstrapIssue[],
-  about?: RefusalSubject,
+  failures: readonly CompletionFailure[],
   previousScript?: string,
-  /**
-   * The capability refusal, where one of the last two checks is what refused
-   * the plan. Its own account of what is missing travels beside the issues
-   * under its own key, and its own sentence replaces the one about correcting a
-   * parameter: neither refusal is about how a step was written.
-   */
-  capability?: { key: "cannotAnswer" | "cannotReach"; detail: JsonObject; instruction: string },
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability
 ): AutomationStudioFlowBootstrapCompletionVerdict {
-  const shown = issues.slice(0, MAX_FEEDBACK_ISSUES);
+  const all = failures.length ? failures : [{ code: "flow_bootstrap.evidence_completion_plan_invalid" as const, issues: [issue("bootstrap.invalid_plan", "plan")] }];
+  let room = MAX_FEEDBACK_ISSUES;
+  const shownIssues: AutomationStudioFlowBootstrapIssue[] = [];
+  const feedbackIssues = all.flatMap((failure) => {
+    const shown = failure.issues.slice(0, Math.max(0, room));
+    room -= shown.length;
+    shownIssues.push(...shown);
+    return shown.length
+      ? automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
+      : [];
+  });
+  const codes = [...new Set(all.map((failure) => failure.code))];
+  const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
+  // A failure with no account of its own is about how the plan was written, and
+  // is answered with the parameter guidance; each account brings its own.
+  const instructions = [...new Set([
+    ...(all.length > 1 ? [SEVERAL_INSTRUCTION] : []),
+    ...all.map((failure) => failure.detail?.instruction ?? FEEDBACK_INSTRUCTION)
+  ])];
   const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
   const baseCheck: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> = {
     ok: false,
-    issueCodes: [...new Set(shown.map((item) => item.code))],
+    issueCodes: [...new Set(all.flatMap((failure) => failure.issues.map((item) => item.code)))],
     feedback: {
       ok: false,
       code: "flow_bootstrap.completion_refused",
-      refusal: code,
-      issues: automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(about ? { plan: about.plan, registry: about.registry, resolution: about.resolution } : {}) }),
+      refusal: codes[0]!,
+      ...(codes.length > 1 ? { refusals: codes } : {}),
+      issues: feedbackIssues,
       ...previous,
-      ...(capability ? { [capability.key]: capability.detail } : {}),
-      instruction: capability?.instruction ?? FEEDBACK_INSTRUCTION
+      ...details,
+      instruction: instructions.join(" ")
     }
   };
   const check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] = answerability === undefined
     ? baseCheck
     : { ...baseCheck, answerability };
-  return {
-    ok: false,
-    code,
-    issues,
-    check
-  };
+  return { ok: false, code: codes[0]!, codes, issues: all.flatMap((failure) => failure.issues), check };
 }
 
 function errors(issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowBootstrapIssue[] {
@@ -340,6 +415,6 @@ function errors(issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioF
   return found.length ? found : [issue("bootstrap.invalid_plan", "plan")];
 }
 
-function issue(code: string, path: string): AutomationStudioFlowBootstrapIssue {
-  return { severity: "error", code, message: "The completed result was refused.", path };
+function issue(code: string, path: string, message = "The completed result was refused."): AutomationStudioFlowBootstrapIssue {
+  return { severity: "error", code, message, path };
 }

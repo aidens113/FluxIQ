@@ -70,14 +70,20 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
       now,
       generate: async () => {
         const executionGrant = deps.executionGrant;
-        const purpose = executionGrant?.purpose;
-        // Each guard throws its own closed code: a plain error here was recorded
-        // as nothing more than "unexpected", and which guard refused was lost.
+        // No gate on the grant's purpose, by design and with a test
+        // (`tests/refuted-result/tests/reauthor-service.test.ts`): repairing is
+        // the automation's own work, which the person's instruction already
+        // granted. The build runs under the run's grant as it is, purpose and
+        // all, because that is the grant the registry holds for this run; every
+        // purpose pays for a build (`service/flow-bootstrap-commands/generation-request.ts`).
+        // What the build needs that the run does not name -- the Flow's current
+        // digest and settings revision -- is read here, never demanded. Only a
+        // run holding no grant at all has nothing to pay with, and that is named
+        // rather than thrown plainly.
         if (!executionGrant) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.execution_grant_unavailable");
-        if (purpose !== "build_and_adapt" && purpose !== "explore_and_adapt") throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.execution_grant_purpose_invalid");
         const binding = await deps.binding(decision.projectId, decision.flowId);
         previousBinding = binding;
-        const generated = await deps.generate({ projectId: decision.projectId, flowId: decision.flowId, mode: "extend", evidenceGuided: true, executionGrant: { ...executionGrant, purpose, executionDigest: binding.executionDigest, settingsRevision: binding.settingsRevision } }, brief);
+        const generated = await deps.generate({ projectId: decision.projectId, flowId: decision.flowId, mode: "extend", evidenceGuided: true, executionGrant: { ...executionGrant, executionDigest: binding.executionDigest, settingsRevision: binding.settingsRevision } }, brief);
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR }),

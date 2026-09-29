@@ -13,7 +13,7 @@
 import { automationStudioFlowStartLocation } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "../../flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences } from "../../action-permissions/index.ts";
-import type { AutomationStudioBuildAndAdaptExecutionGrant } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, type AutomationStudioBuildAndAdaptExecutionGrant, type AutomationStudioRuntimeSessionGrantPurpose } from "../../llm/index.ts";
 import {
   assertExactObjectFields,
   requiredBootstrapCommandId,
@@ -46,15 +46,24 @@ const GRANT_FIELDS = ["grantId", "actorUserId", "actorSessionId", "purpose", "ex
  * override under manual review and does not buy exploring, so a run holding it
  * may not be routed into a loop that explores -- which is the widening reverted
  * earlier in this task rather than something to reintroduce by another door.
+ *
+ * **None of this applies to the run's own repair.** A run whose answer was
+ * refuted extends its Flow under whatever grant the run holds, whatever its
+ * purpose (`runOwnedRepair` below). The person's instruction is the grant for
+ * the automation's own work, and repairing is that work: gating it on the name
+ * of a purpose is how the wrong-answer repair never ran once in five live runs,
+ * when the gate asked for `explore_and_adapt` and every instruction-built Flow
+ * ran under `build_and_adapt`. Every purpose iterates and admits every task
+ * kind (`llm/grant-capabilities.ts`), so every grant carries what a build
+ * spends; the build's own loop limits and stall guard bound it, and per-call
+ * limits the grant does not state fall back to the harness defaults.
  */
 const GENERATION_GRANT_PURPOSES = ["build_and_adapt", "explore_and_adapt"] as const;
 
-type AutomationStudioFlowBootstrapGenerationPurpose = (typeof GENERATION_GRANT_PURPOSES)[number];
-
-/** A grant this entry point accepts: the build grant, or the exploring recovery's. */
+/** A grant this entry point accepts: the build grant or the exploring recovery's from a caller, or any run's own grant for its repair. */
 export type AutomationStudioFlowBootstrapGenerationGrant =
   Omit<AutomationStudioBuildAndAdaptExecutionGrant, "purpose">
-  & { purpose: AutomationStudioFlowBootstrapGenerationPurpose };
+  & { purpose: AutomationStudioRuntimeSessionGrantPurpose };
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
 export type AutomationStudioFlowBootstrapGenerationRequest = {
@@ -75,7 +84,9 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
  */
 export function readAutomationStudioFlowBootstrapGenerationRequest(
   unsafeInput: Record<string, unknown>,
-  unsafeGrant: Record<string, unknown> | undefined
+  unsafeGrant: Record<string, unknown> | undefined,
+  /** `runOwnedRepair`: the run's own repair of a refuted answer, which extends under the run's grant whatever its purpose. Never set from a caller's request. */
+  options: { runOwnedRepair?: boolean } = {}
 ): AutomationStudioFlowBootstrapGenerationRequest {
   assertExactObjectFields(unsafeInput, REQUEST_FIELDS, "Flow Bootstrap generation input");
   if (unsafeInput.evidenceGuided !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Evidence-guided generation flag is invalid.");
@@ -85,8 +96,13 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(
   const mode: AutomationStudioBootstrapAdaptationMode = unsafeInput.mode === "extend" ? "extend" : "create";
   if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
   assertExactObjectFields(unsafeGrant, GRANT_FIELDS, "Flow Bootstrap execution grant");
-  const purpose = GENERATION_GRANT_PURPOSES.find((granted) => granted === unsafeGrant.purpose);
-  // An exploring recovery's grant reaches only the door it was argued for.
+  const repair = options.runOwnedRepair === true && mode === "extend";
+  const purpose = repair
+    ? AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((granted) => granted === unsafeGrant.purpose)
+    : GENERATION_GRANT_PURPOSES.find((granted) => granted === unsafeGrant.purpose);
+  // An exploring recovery's grant reaches only the door it was argued for. A
+  // run's own repair is not a door a caller can argue for: any purpose Core
+  // issues is accepted, and only a value that is no purpose at all is refused.
   if (!purpose || (mode === "create" && purpose !== "build_and_adapt")) throw new Error("Flow Bootstrap generation requires a build_and_adapt execution grant.");
   // Where the Flow starts, when the caller named one, checked here so that
   // everything downstream is handed a value rather than a field

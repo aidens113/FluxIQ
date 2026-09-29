@@ -8,7 +8,7 @@ import {
   AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
   type AutomationStudioNodeDefinition,
 } from "../../../../nodes/index.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, AutomationStudioLlmExecutionGrantService, type AutomationStudioRuntimeSessionGrantPurpose } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import {
   AutomationStudioService,
@@ -168,6 +168,8 @@ async function createHarness(options: {
   failContinuation?: boolean;
   failAppliedBindingRead?: boolean;
   pauseReauthorProvider?: boolean;
+  /** The run's grant purpose. Absent is `build_and_adapt` with four calls; present, the grant is issued with no call budget of its own. */
+  purpose?: AutomationStudioRuntimeSessionGrantPurpose;
 }): Promise<TestHarness> {
   const io = new IoRegistry();
   io.registerOutput("t240", {
@@ -465,15 +467,14 @@ async function createHarness(options: {
     flowId: flow.flowId,
     provider: "deepseek",
     model: "deepseek-flash",
-    purpose: "build_and_adapt",
-    maxCalls: 4,
+    ...(options.purpose ? { purpose: options.purpose } : { purpose: "build_and_adapt", maxCalls: 4 }),
   });
   await grants.holdForRun({
     grantId: grant.grantId,
     ...ACTOR,
     projectId: project.id,
     flowId: flow.flowId,
-    purpose: "build_and_adapt",
+    purpose: options.purpose ?? "build_and_adapt",
   });
 
   return {
@@ -492,6 +493,36 @@ async function createHarness(options: {
 }
 
 describe("refuted-result service composition", () => {
+  // The supervisor's ruling, 2026-09-28: repairing is the automation's own work
+  // and no grant purpose may refuse it. This gate is how the wrong-answer repair
+  // never ran once across five live runs (it asked for `explore_and_adapt`,
+  // every instruction-built Flow ran under `build_and_adapt`), so every purpose
+  // Core issues is driven through the real service and the real grant registry
+  // here, with a grant that states no call budget of its own.
+  it.each(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.filter((purpose) => purpose !== "build_and_adapt"))(
+    "reaches the re-author and applies its edit under a %s grant",
+    { timeout: 60_000 },
+    async (purpose) => {
+      const harness = await createHarness({ failReauthorProvider: false, purpose });
+      const run = await harness.service.runRuntimeSession({
+        projectId: harness.projectId,
+        flowId: harness.flowId,
+        llmExecution: { grantId: harness.grant.grantId, ...ACTOR, purpose },
+      });
+      const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
+      // The build ran: its decision reached the provider, under the run's own grant and purpose.
+      expect(harness.taskKinds).toContain("evidence_tool_decision");
+      const build = harness.resolverObservations.find((observation) => {
+        const grant = observation.input.executionGrant;
+        return Boolean(grant && "executionDigest" in grant);
+      });
+      expect(build?.input.executionGrant).toMatchObject({ grantId: harness.grant.grantId, purpose });
+      expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
+      expect(JSON.stringify(detail?.metadata?.resultReauthor)).not.toContain("execution_grant_purpose_invalid");
+      expect(run.status).toBe("succeeded");
+    },
+  );
+
   it(
     "does not leak private retention to a same-grant public generation on another Flow",
     { timeout: 60_000 },

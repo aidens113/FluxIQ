@@ -71,7 +71,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       trace: [{ iteration: 26, decision: "unusable", resultCode: "bootstrap.cannot_answer_instruction" }],
       steps: [],
       accounting: { iterations: 26, toolCalls: 22, evidenceBytes: 4_096, inputTokens: 400_000, cacheHitInputTokens: 0, outputTokens: 2_600, totalTokens: 402_600, estimatedCostUsd: 0.047 },
-      exhaustion: { bound, maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3, lastIssueCodes }
+      exhaustion: { bound, maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3, lastIssueCodes, outstandingIssueCodes: lastIssueCodes }
     });
 
     it("is named as itself and marked retryable, never as an unusable decision", () => {

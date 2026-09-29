@@ -79,6 +79,8 @@ export type AutomationStudioLlmEvidenceNoProgress = {
    * once at iteration 20 and then lost for the fourteen decisions that circled it.
    */
   completionRefused(issueCodes: readonly string[]): void;
+  /** The last refusal to finish, until the model tries to finish again: what a continuation still owes. */
+  readonly outstanding: readonly string[];
   /** Say plainly that this is going nowhere, when saying so is due. */
   redirect(iteration: number): void;
 };
@@ -146,6 +148,7 @@ export function automationStudioLlmEvidenceNoProgress(input: {
     completionRefused(issueCodes) {
       lastRefusal = [...issueCodes];
     },
+    get outstanding() { return [...lastRefusal]; },
     redirect(iteration) {
       if (steps < input.redirectAt || steps >= input.max) return;
       input.show(iteration, automationStudioLlmEvidenceStallRedirect({
