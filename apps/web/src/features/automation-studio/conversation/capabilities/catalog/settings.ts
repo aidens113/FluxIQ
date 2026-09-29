@@ -21,10 +21,15 @@ export const SETTINGS_CAPABILITIES: readonly PanelCapability[] = [
     phrases: ["change a setting", "settings", "configure the flow", "set the retries", "change the timeout"],
     control: { view: automationStudioViewId.settings, label: "Settings" },
     endpoints: ["update-flow-settings"],
-    arguments: [PROJECT, FLOW, { name: "settings", kind: "json", describe: "The settings to change, as names and values.", required: true }],
+    arguments: [PROJECT, FLOW, {
+      name: "settings",
+      kind: "json",
+      describe: 'The settings to change, as names and values. name, description and executionDefaults change the Flow itself; anything else is one of its settings by name, for example {"trainingMode": "normal"} to stop training it or {"trainingMode": "continuous_adaptive"} to keep training it.',
+      required: true
+    }],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
-      await saveFlowSettings(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId"), ...json(args, "settings") }),
+      await saveFlowSettings(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId"), flow: flowSettingsPatch(json(args, "settings")) }),
       "Changed the Flow's settings.",
       "The settings could not be changed."
     )
@@ -192,3 +197,30 @@ export const SETTINGS_CAPABILITIES: readonly PanelCapability[] = [
     )
   })
 ];
+
+/** What the Flow record itself carries; every other setting lives in its metadata. */
+const FLOW_FIELDS: ReadonlySet<string> = new Set(["name", "description", "visibility", "interface", "executionDefaults"]);
+
+/**
+ * A settings change in the shape `update-flow-settings` reads: one `flow`
+ * object, with the Flow's own fields at its top and every other setting under
+ * `metadata`. Spreading the names into the request instead -- what this
+ * capability did until 2026-09-28 -- reached Core with no `flow` at all and was
+ * refused with "Flow settings are required." every time, so no setting could
+ * be changed from the chat window. A patch already written as `{ flow: ... }`
+ * or with its own `metadata` is taken as it is.
+ */
+export function flowSettingsPatch(settings: Record<string, unknown>): Record<string, unknown> {
+  if (settings.flow && typeof settings.flow === "object" && !Array.isArray(settings.flow)) return { ...(settings.flow as Record<string, unknown>) };
+  const flow: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = settings.metadata && typeof settings.metadata === "object" && !Array.isArray(settings.metadata)
+    ? { ...(settings.metadata as Record<string, unknown>) }
+    : {};
+  for (const [name, value] of Object.entries(settings)) {
+    if (name === "metadata") continue;
+    if (FLOW_FIELDS.has(name)) flow[name] = value;
+    else metadata[name] = value;
+  }
+  if (Object.keys(metadata).length) flow.metadata = metadata;
+  return flow;
+}

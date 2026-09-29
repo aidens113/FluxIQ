@@ -251,10 +251,21 @@ function parseControl(value: unknown): ConversationAsk["control"] | undefined {
   };
 }
 
+/**
+ * A confirmation Core raised before a delete or a payment carries the
+ * invocation it would run as base64url JSON (`panel-records.ts`). That is still
+ * only letters, digits, `-` and `_`, but it is longer than an id, and refusing
+ * it would drop the confirmation turn whole.
+ */
+const PANEL_INVOCATION_REF = /^[A-Za-z0-9_-]{1,1000}$/u;
+
 function parseAttachment(value: unknown): ConversationAttachment | null {
   if (!isRecord(value)) return null;
-  if (typeof value.kind !== "string" || !ATTACHMENT_KIND.test(value.kind) || !isId(value.ref)) return null;
-  return { kind: value.kind, ref: value.ref };
+  if (typeof value.kind !== "string" || !ATTACHMENT_KIND.test(value.kind)) return null;
+  const ref = value.ref;
+  const readable = isId(ref) || (value.kind === "panel-capability" && typeof ref === "string" && PANEL_INVOCATION_REF.test(ref));
+  if (!readable) return null;
+  return { kind: value.kind, ref: ref as string };
 }
 
 function isAbsent(value: unknown): boolean {

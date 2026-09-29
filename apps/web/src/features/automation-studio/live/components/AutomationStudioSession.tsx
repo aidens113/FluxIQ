@@ -672,8 +672,18 @@ export function AutomationStudioSession(props: {
     {/* Over the whole workspace, not inside a region: the conversation is the
         product's channel to the person, so it has to be in front of whatever
         they are looking at rather than one tab they have to go and find. */}
+    {/* What is open travels with every message, so "run it" means the Flow on
+        screen. A selected part of a Flow counts as its parent Flow, exactly as
+        the recording bridge above reads it. */}
     <ConversationDock
       projectId={activeProject.id}
+      onScreen={{
+        ...(isAutomationTopLevelFlow(selectedFlow)
+          ? { flowId: selectedFlow.flowId }
+          : typeof selectedFlow?.metadata?.parentFlowId === "string" ? { flowId: selectedFlow.metadata.parentFlowId } : {}),
+        ...(typeof flowRunState.runId === "string" && flowRunState.runId ? { runId: flowRunState.runId } : {}),
+        ...(typeof selectedRecordingId === "string" && selectedRecordingId ? { recordingId: selectedRecordingId } : {})
+      }}
       onOpenAttachment={conversationNavigation.openConversationAttachment}
     />
   </>;

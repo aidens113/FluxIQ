@@ -23,3 +23,11 @@ export {
   runConversationCapability,
   type ConversationCapabilityPayload
 } from "./turn-commands";
+export {
+  conversationCapabilityArguments,
+  sendConversationInstruction,
+  type ConversationInstructionDecision,
+  type ConversationInstructionPayload,
+  type ConversationInstructionResult,
+  type ConversationOnScreen
+} from "./instruction-commands";

@@ -19,6 +19,16 @@ import { AutomationStudioProjectConversationStore } from "./store.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubject, AutomationStudioConversationThread } from "./thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn } from "./turn.ts";
 import {
+  interpretAutomationStudioConversationTurn,
+  respondToAutomationStudioConversationTurn,
+  AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS,
+  automationStudioConversationModelTranscript,
+  type AutomationStudioConversationInstructionAnswer,
+  type AutomationStudioConversationInstructionRequest,
+  type AutomationStudioConversationModel,
+  type AutomationStudioConversationModelTurn
+} from "./instructions/index.ts";
+import {
   automationStudioConversationWriter,
   type AutomationStudioConversationAutomationTurnRequest,
   type AutomationStudioConversationOpenRequest,
@@ -114,6 +124,13 @@ export class AutomationStudioConversations {
    * could have had immediately is latency for nothing.
    */
   private readonly askSettledListeners = new Map<string, Set<() => void>>();
+
+  /**
+   * The model a person's message is read with, or null. Null is not a dead
+   * chat window: the words are matched to the closest capability by Core
+   * itself, and the thread says so.
+   */
+  private model: AutomationStudioConversationModel | null = null;
 
   constructor(
     private readonly pool: AutomationStudioProjectDatabasePool | undefined,
@@ -223,6 +240,60 @@ export class AutomationStudioConversations {
         attachment: input.attachment ?? null
       })
     );
+  }
+
+  /** Connects the model a person's message is read with. Null disconnects it. */
+  bindModel(model: AutomationStudioConversationModel | null): this {
+    this.model = model;
+    return this;
+  }
+
+  /**
+   * A person's turn, read as an instruction and answered in the thread.
+   *
+   * The turn is stored before anything else is tried, so nothing that fails
+   * afterwards can lose what the person wrote. The model then reads it with the
+   * panel's vocabulary and the end of the thread and decides to run a
+   * capability, ask one question, or reply; a model that cannot be used is
+   * retried and then stood in for (`instructions/interpret.ts`). The decision is
+   * written back as an automation turn. What runs a capability is the panel,
+   * from the answer this returns, because the capability's handler is the
+   * panel's own code.
+   */
+  async respondToPersonTurn(input: AutomationStudioConversationInstructionRequest): Promise<AutomationStudioConversationInstructionAnswer> {
+    const turn = await this.appendTurn(input);
+    const earlier = await this.earlierTurns(input, turn.turnId);
+    const interpretation = await interpretAutomationStudioConversationTurn({
+      model: this.model,
+      message: input.text,
+      transcript: earlier.transcript,
+      transcriptWithheld: earlier.withheld,
+      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen: input.onScreen },
+      caller: input.caller ?? null,
+      ...(input.limits ? { limits: input.limits } : {})
+    });
+    try {
+      const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows });
+      return { turn, response: { ...interpretation, ...written }, problem: null };
+    } catch (error) {
+      // The person's turn is stored and the decision was made; only writing
+      // the answer failed. Say so rather than failing the whole request, which
+      // would read as the message itself being lost and invite a duplicate.
+      return { turn, response: null, problem: `Your message was saved, but my answer could not be written into the thread: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+
+  /** The end of the thread before `turnId`, as the model reads it, or a note that it could not be read. */
+  private async earlierTurns(input: { projectId: string; conversationId: string }, turnId: string): Promise<{ transcript: AutomationStudioConversationModelTurn[]; withheld: boolean }> {
+    try {
+      const turns = await this.withStore(input.projectId, (store) => store.recentTurns(input.conversationId, AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS + 1));
+      const transcript = automationStudioConversationModelTranscript(turns, turnId);
+      return { transcript, withheld: false };
+    } catch (error) {
+      // The earlier thread is context, not the message. The model is told it
+      // is missing (`withheld`), and the message is still read and answered.
+      return { transcript: [], withheld: error !== undefined };
+    }
   }
 
   /** Settles one ask. An ask is answered once; a second, different answer is refused. */

@@ -120,7 +120,13 @@ export type PanelCapabilityArguments = Readonly<Record<string, PanelCapabilityAr
 export type PanelCapabilityOutcome =
   | { status: "done"; summary: string; payload?: unknown }
   | { status: "asks"; summary: string; consequences: readonly AutomationStudioActionConsequence[] }
-  | { status: "failed"; summary: string; error: string };
+  | {
+    status: "failed";
+    summary: string;
+    error: string;
+    /** The transport said the same request could succeed if sent again. Only reads are retried on it. */
+    retryable?: boolean;
+  };
 
 export type PanelCapability = {
   /** Stable, dotted, and the name the conversation calls it by: `flow.run`. */
@@ -193,10 +199,10 @@ export function definePanelCapability(capability: PanelCapability): PanelCapabil
  * invented over the top of it.
  */
 export function panelCapabilityResult(
-  response: { ok: boolean; payload?: unknown; error?: string },
+  response: { ok: boolean; payload?: unknown; error?: string; retryable?: boolean },
   done: string,
   failed: string
 ): PanelCapabilityOutcome {
   if (response.ok) return { status: "done", summary: done, payload: response.payload };
-  return { status: "failed", summary: failed, error: response.error ?? failed };
+  return { status: "failed", summary: failed, error: response.error ?? failed, ...(response.retryable ? { retryable: true } : {}) };
 }

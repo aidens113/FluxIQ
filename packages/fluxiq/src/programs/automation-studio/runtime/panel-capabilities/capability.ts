@@ -56,6 +56,21 @@ export type AutomationStudioPanelCapability = {
   control: string;
   arguments: readonly AutomationStudioPanelCapabilityArgument[];
   /**
+   * Ways a person might say it, as the panel declares them. Optional on the
+   * wire and empty when absent. Core reads them when it has to match a
+   * person's words or a model's misspelt id to a capability by itself, so the
+   * closest match Core finds is scored on the same phrases the panel's own
+   * resolver uses.
+   */
+  phrases: readonly string[];
+  /**
+   * Everything lasting it would cause, in Core's own consequence classes.
+   * Empty for a read. Core decides from these whether the capability stops for
+   * the person, against its own gated set, rather than taking the browser's
+   * word for it.
+   */
+  consequences: readonly string[];
+  /**
    * True only where performing it re-authorizes -- deleting something, or
    * completing a purchase or payment.
    *
@@ -64,6 +79,9 @@ export type AutomationStudioPanelCapability = {
    * the panel can do is ordinary work the person's own request already
    * authorised. A model must be able to see which two those are so it never
    * offers to ask about the rest.
+   *
+   * `parse.ts` derives it: true when the browser said so, and true whenever
+   * `consequences` names a class Core gates, whatever the browser said.
    */
   reauthorizes: boolean;
 };

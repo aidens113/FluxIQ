@@ -65,3 +65,10 @@ export {
   promptableConversationTurn,
   withDismissedAsk
 } from "./pending-asks";
+export {
+  CONVERSATION_PANEL_CAPABILITY_ATTACHMENT,
+  CONVERSATION_PANEL_RESULT_ATTACHMENT,
+  conversationAttachmentIsPanelRecord,
+  conversationPanelInvocation,
+  type ConversationPanelInvocation
+} from "./panel-records";

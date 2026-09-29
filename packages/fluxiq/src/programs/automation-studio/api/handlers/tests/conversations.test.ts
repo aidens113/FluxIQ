@@ -30,13 +30,15 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
     appendTurn: vi.fn().mockResolvedValue({ turnId: "turn.1" }),
     answerAsk: vi.fn().mockResolvedValue({ askId: "ask.1", status: "answered" }),
     getAttachment: vi.fn().mockResolvedValue({ attachment: { kind: "run", ref: "run.17" }, payload: null }),
+    respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: { runNow: true }, problem: null }),
     ...overrides
   };
   const assertProjectDomainAccess = vi.fn().mockResolvedValue(undefined);
   const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "project.one" }, { id: "project.two" }] });
+  const listFlows = vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]);
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, conversations: conversations as unknown as AutomationStudioConversations } });
-  return { registry, conversations, assertProjectDomainAccess, listProjects };
+  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, listFlows, conversations: conversations as unknown as AutomationStudioConversations } });
+  return { registry, conversations, assertProjectDomainAccess, listProjects, listFlows };
 }
 
 // One representative call per endpoint, with the collaborator method it must reach.
@@ -200,5 +202,43 @@ describe("Automation Studio conversation API", () => {
     expect(conversations.answerAsk).not.toHaveBeenCalled();
     expect(conversations.appendTurn).not.toHaveBeenCalled();
     expect(conversations.openConversation).not.toHaveBeenCalled();
+  });
+
+  it("reads a turn that carries the panel's vocabulary as an instruction, with the project's Flows and what is on screen", async () => {
+    const { registry, conversations, listFlows } = conversationApi();
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+      scope: { domainId: null },
+      actor: writeActor,
+      payload: {
+        projectId: "project.one",
+        conversationId: "conversation.one",
+        text: "run my kettle flow",
+        capabilities: [{ id: "run.execute", consequences: ["create_new"] }, { id: "flow.delete", consequences: ["delete"] }, { title: "no id" }],
+        onScreen: { flowId: "flow.kettle", runId: 7 }
+      }
+    });
+    expect(response).toEqual({ ok: true, payload: { turn: { turnId: "turn.1" }, response: { runNow: true }, problem: null } });
+    expect(conversations.appendTurn).not.toHaveBeenCalled();
+    expect(listFlows).toHaveBeenCalledWith("project.one");
+    const request = conversations.respondToPersonTurn.mock.calls[0]?.[0];
+    expect(request).toMatchObject({ projectId: "project.one", conversationId: "conversation.one", text: "run my kettle flow", flows: [{ flowId: "flow.kettle", name: "Kettle price checker" }], onScreen: { flowId: "flow.kettle" } });
+    // The vocabulary is parsed on the way in, and Core decides what re-authorizes.
+    expect(request.capabilities.map((capability: { id: string; reauthorizes: boolean }) => [capability.id, capability.reauthorizes])).toEqual([["run.execute", false], ["flow.delete", true]]);
+  });
+
+  it("still reads the instruction when the Flows cannot be listed, telling the model they are missing", async () => {
+    const { registry, conversations, listFlows } = conversationApi();
+    listFlows.mockRejectedValueOnce(new Error("catalogue index is locked"));
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+      scope: { domainId: null },
+      actor: writeActor,
+      payload: { projectId: "project.one", conversationId: "conversation.one", text: "run it", capabilities: [] }
+    });
+    expect(response.ok).toBe(true);
+    expect(conversations.respondToPersonTurn.mock.calls[0]?.[0]).toMatchObject({ flows: null, capabilities: [], onScreen: {} });
   });
 });

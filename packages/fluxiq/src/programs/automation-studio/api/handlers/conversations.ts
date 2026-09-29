@@ -32,6 +32,11 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type Conve
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { automationStudioPageLimit } from "../../storage/index.ts";
 import {
+  parseAutomationStudioPanelCapabilities,
+  type AutomationStudioConversationFlowReference,
+  type AutomationStudioConversationOnScreen
+} from "../../runtime/index.ts";
+import {
   AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS,
   isAutomationStudioConversationStatus,
   isAutomationStudioConversationSubjectKind,
@@ -59,6 +64,11 @@ export type AutomationStudioConversationApiDependencies = {
     assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void>;
     /** Exactly what the `projects` endpoint returns for a domain scope: the caller's entitlement, already decided. */
     listProjects(domainId?: string | null): Promise<{ projects: Array<{ id: string }> }>;
+    /**
+     * The project's Flows, so a person can name one the way they know it. Optional:
+     * without it a Flow the person names is passed on as they wrote it.
+     */
+    listFlows?(projectId: string): Promise<Array<{ flow: { flowId: string; name: string } }>>;
     readonly conversations: AutomationStudioConversations;
   };
 };
@@ -157,13 +167,26 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationTurnAppendRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const turn = await conversations().appendTurn({
+      const personTurn = {
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         text: String(payload.text ?? ""),
         actorId: request.actor?.userId,
         attachment: requestedAttachment(payload.attachmentKind, payload.attachmentRef)
-      });
+      };
+      // With the panel's vocabulary, the turn is an instruction as well as a
+      // record: Core reads it, decides, and writes the answer into the thread.
+      if (Array.isArray(payload.capabilities)) {
+        const answer = await conversations().respondToPersonTurn({
+          ...personTurn,
+          capabilities: parseAutomationStudioPanelCapabilities(payload.capabilities),
+          flows: await projectFlows(service, projectId),
+          onScreen: requestedOnScreen(payload.onScreen),
+          caller: request.actor ? { userId: request.actor.userId, sessionId: request.actor.sessionId } : null
+        });
+        return { ok: true, payload: { turn: answer.turn, response: answer.response, problem: answer.problem } };
+      }
+      const turn = await conversations().appendTurn(personTurn);
       return { ok: true, payload: { turn } };
     }
   });
@@ -205,6 +228,35 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       return { ok: true, payload: { attachment } };
     }
   });
+}
+
+/**
+ * The project's Flows by name, or null when they could not be listed. Null is
+ * not an empty project: the model is told the list is missing and passes a
+ * named Flow on as written, so a failed listing costs the person a lookup, not
+ * their instruction.
+ */
+async function projectFlows(service: AutomationStudioConversationApiDependencies["service"], projectId: string): Promise<AutomationStudioConversationFlowReference[] | null> {
+  if (!service.listFlows) return null;
+  try {
+    const entries = await service.listFlows(projectId);
+    return entries.map((entry) => ({ flowId: entry.flow.flowId, name: entry.flow.name || entry.flow.flowId }));
+  } catch (error) {
+    if (error instanceof Error && /domain scope|unavailable/iu.test(error.message)) throw error;
+    return null;
+  }
+}
+
+/** What the panel has open. Anything that is not a non-empty string is left out rather than refused. */
+function requestedOnScreen(value: unknown): AutomationStudioConversationOnScreen {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const onScreen: AutomationStudioConversationOnScreen = {};
+  for (const key of ["flowId", "subflowId", "runId", "recordingId"] as const) {
+    const entry = record[key];
+    if (typeof entry === "string" && entry.trim()) onScreen[key] = entry.trim();
+  }
+  return onScreen;
 }
 
 function conversationPayload<TRequest>(payload: unknown): Partial<TRequest> {

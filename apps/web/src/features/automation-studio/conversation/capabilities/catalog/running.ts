@@ -14,7 +14,7 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
     id: "run.start",
     title: "Get a run ready",
-    summary: "Opens a run for the Flow so it can be given its inputs and started.",
+    summary: "Opens a run for the Flow without running it, so it can be given its inputs first. To run a Flow now, use run.execute.",
     group: "Running",
     phrases: ["prepare a run", "set up a run", "get ready to run"],
     control: { view: automationStudioViewId.runtime, label: "New run" },

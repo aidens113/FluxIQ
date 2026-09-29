@@ -12,6 +12,7 @@
 // model answers with and what the panel looks up. A title, a summary, a group
 // and a control are filled from the id when they are missing.
 
+import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../action-permissions/client/index.ts";
 import type { AutomationStudioPanelCapability, AutomationStudioPanelCapabilityArgument } from "./capability.ts";
 
 /** The longest vocabulary Core will carry. Well past the panel's 38; a backstop, not a budget. */
@@ -44,6 +45,7 @@ function parseOne(value: unknown): AutomationStudioPanelCapability | null {
   const record = value as Record<string, unknown>;
   const id = text(record.id);
   if (!id || !ID.test(id)) return null;
+  const consequences = texts(record.consequences);
   return {
     id,
     // A title read from the id is worse than one the panel wrote and far better
@@ -53,13 +55,26 @@ function parseOne(value: unknown): AutomationStudioPanelCapability | null {
     group: text(record.group) || "Other",
     control: text(record.control) || "",
     arguments: parseArguments(record.arguments),
+    phrases: texts(record.phrases),
+    consequences,
     // Absent reads as `false`, and that is the safe direction: an extra
     // re-authorization prompt on something that did not need one is an
     // annoyance, while claiming a delete needs no PIN would skip Core's gate.
     // Core gates the act itself regardless, so this field guides what the model
     // says, never what the runtime permits.
+    //
+    // A capability whose consequences include a class Core gates re-authorizes
+    // whatever the browser said: which classes stop for a person is Core's
+    // decision (`action-permissions/destructive.ts`), not the sender's.
     reauthorizes: record.reauthorizes === true
+      || consequences.some((consequence) => (AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES as readonly string[]).includes(consequence))
   };
+}
+
+/** Non-empty strings out of a list, trimmed; anything else is left out rather than refusing the entry. */
+function texts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(text).filter((entry) => entry.length > 0).slice(0, 40);
 }
 
 function parseArguments(value: unknown): AutomationStudioPanelCapabilityArgument[] {

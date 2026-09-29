@@ -290,6 +290,22 @@ export class AutomationStudioProjectConversationStore {
     };
   }
 
+  /**
+   * The newest `count` turns of a thread, oldest first. This is what a model
+   * reading a person's latest message needs -- the end of the thread, not its
+   * beginning -- and `getConversation` pages forward from the start.
+   */
+  async recentTurns(conversationId: string, count: number): Promise<AutomationStudioConversationTurn[]> {
+    const id = automationStudioConversationIdOrRefuse(conversationId, "conversation");
+    const rows = await this.lease.database.all<AutomationStudioConversationTurnRow>(
+      `select ${AUTOMATION_STUDIO_CONVERSATION_TURN_COLUMNS} from conversation_turns where conversation_id = ? order by ordinal desc limit ?`,
+      [id, automationStudioPageLimit(count)]
+    );
+    const ordered = rows.reverse();
+    const asks = await this.readAsksFor(id, ordered);
+    return ordered.map((turn) => automationStudioConversationTurnFromRow(turn, asks.get(turn.turn_id) ?? null));
+  }
+
   /** One turn by id, or null when the thread does not hold it. */
   async getTurn(conversationId: string, turnId: string): Promise<AutomationStudioConversationTurn | null> {
     const id = automationStudioConversationIdOrRefuse(conversationId, "conversation");

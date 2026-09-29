@@ -5,11 +5,11 @@
 // the commands as props, so a test mounts it with doubles and never touches a
 // transport.
 //
-// `runCapability` and `describeCapabilities` are what make the window operate
-// the panel. They are on the same seam as the reads and the turn write, so a
-// surface that already takes these commands gains the whole control panel
-// without learning a second way to reach it, and a test drives a capability
-// with a double exactly as it drives a turn.
+// `sendInstruction`, `runCapability` and `describeCapabilities` are what make
+// the window operate the panel. They are on the same seam as the reads and the
+// turn write, so a surface that already takes these commands gains the whole
+// control panel without learning a second way to reach it, and a test drives
+// a capability with a double exactly as it drives a turn.
 
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
@@ -32,12 +32,18 @@ import {
   type ConversationOpenPayload
 } from "./turn-commands";
 import { describePanelCapabilities, panelCapabilityVocabulary, type PanelCapabilityDescription } from "./capabilities";
+import { sendConversationInstruction, type ConversationInstructionPayload, type ConversationOnScreen } from "./instruction-commands";
 
 export type ConversationViewHostModel = {
   /** The project whose threads are listed, or null to list across every project the person can see. */
   projectId: string | null;
   /** Restored by whatever mounted the surface, so it reopens on the same thread. */
   requestedConversationId?: string;
+  /**
+   * What the panel has open, so "run it" means the Flow on screen. Optional:
+   * without it Core asks which Flow when more than one could be meant.
+   */
+  onScreen?: ConversationOnScreen;
 };
 
 export type ConversationViewHostCommands = {
@@ -56,6 +62,13 @@ export type ConversationCommands = {
    */
   startConversation(payload: ConversationOpenPayload): ReturnType<typeof startConversation>;
   appendTurn(payload: ConversationAppendTurnPayload): ReturnType<typeof appendConversationTurn>;
+  /**
+   * What the composer sends: a turn Core reads as an instruction, with the
+   * panel's vocabulary, and the capability Core chose run when it is ordinary
+   * work. Required, like `runCapability`: a composer that only stores text is
+   * a chat window that operates nothing.
+   */
+  sendInstruction(payload: ConversationInstructionPayload): ReturnType<typeof sendConversationInstruction>;
   answerAsk(payload: ConversationAnswerAskPayload): ReturnType<typeof answerConversationAsk>;
   /** Do something in the panel, from the thread, and record it there. */
   runCapability(payload: ConversationCapabilityPayload): ReturnType<typeof runConversationCapability>;
@@ -75,6 +88,7 @@ export function useConversationCommands(): ConversationCommands {
     loadConversation: (payload, signal) => getConversation(transport, payload, signal),
     startConversation: (payload) => startConversation(transport, payload),
     appendTurn: (payload) => appendConversationTurn(transport, payload),
+    sendInstruction: (payload) => sendConversationInstruction(transport, payload),
     answerAsk: (payload) => answerConversationAsk(transport, payload),
     runCapability: (payload) => runConversationCapability(transport, payload),
     describeCapabilities: () => ({ prose: describePanelCapabilities(), vocabulary: panelCapabilityVocabulary() }),

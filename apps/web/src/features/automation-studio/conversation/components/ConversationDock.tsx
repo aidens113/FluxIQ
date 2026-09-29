@@ -24,10 +24,10 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Maximize2, MessagesSquare, Minimize2 } from "lucide-react";
 import { AutomationCollapseToggle } from "../../shared/CollapseToggle";
-import type { ConversationViewHostCommands } from "../conversation-host";
+import type { ConversationViewHostCommands, ConversationViewHostModel } from "../conversation-host";
 import { ConversationView } from "./ConversationView";
 
-export type ConversationDockProps = ConversationViewHostCommands & {
+export type ConversationDockProps = ConversationViewHostCommands & Pick<ConversationViewHostModel, "onScreen"> & {
   /** The project whose threads are shown, or null for every project the person can see. */
   projectId: string | null;
 };
@@ -99,6 +99,7 @@ export function ConversationDock(props: ConversationDockProps) {
         <ConversationView
           active={open}
           projectId={props.projectId}
+          {...(props.onScreen ? { onScreen: props.onScreen } : {})}
           onWaitingChange={onWaitingChange}
           {...(props.onOpenAttachment ? { onOpenAttachment: props.onOpenAttachment } : {})}
           {...(props.onSelectedConversationChange ? { onSelectedConversationChange: props.onSelectedConversationChange } : {})}

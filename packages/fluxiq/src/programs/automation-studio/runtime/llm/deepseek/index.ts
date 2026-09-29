@@ -58,3 +58,8 @@ export {
   type AutomationStudioDeepSeekRefusalWithheld
 } from "./refusal.ts";
 export { automationStudioDeepSeekRequestShape, type AutomationStudioDeepSeekRequestShape } from "./request-shape.ts";
+// The chat window's model call (`panel-command.ts`) and the key it is released
+// (`panel-command-key.ts`): a person's message, the panel's vocabulary and the
+// thread, answered with one decision.
+export { automationStudioDeepSeekPanelCommandBody, createAutomationStudioDeepSeekPanelCommandModel, type AutomationStudioDeepSeekPanelCommandOptions } from "./panel-command.ts";
+export { automationStudioPanelCommandKeyFromSecretKeys, type AutomationStudioPanelCommandKeyPorts } from "./panel-command-key.ts";

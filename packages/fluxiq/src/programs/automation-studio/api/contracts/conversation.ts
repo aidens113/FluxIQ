@@ -63,12 +63,31 @@ export type ConversationReadRequest = FlowProjectRequest & {
   limit?: unknown;
 };
 
-/** A turn the person writes. The author is always the person: Core's own turns do not come through the API. */
+/**
+ * A turn the person writes. The author is always the person: Core's own turns
+ * do not come through the API.
+ *
+ * With `capabilities` the turn is also read as an instruction. That is the
+ * panel's vocabulary (`fluxiq/automation-studio/panel-capabilities`), handed
+ * across on every message so Core never keeps a second catalog; Core stores the
+ * turn first, has the model decide whether to run a capability, ask one
+ * question or reply, writes that into the thread, and answers with the
+ * decision so the panel can run what was chosen. Without it the turn is only
+ * stored, exactly as before -- which is how the panel records what it did.
+ */
 export type ConversationTurnAppendRequest = FlowProjectRequest & {
   conversationId: string;
   text: string;
   attachmentKind?: string;
   attachmentRef?: string;
+  capabilities?: unknown[];
+  /** What the panel has open, so "run it" means the Flow on screen. Every field optional. */
+  onScreen?: {
+    flowId?: string;
+    subflowId?: string;
+    runId?: string;
+    recordingId?: string;
+  };
 };
 
 /**

@@ -25,6 +25,10 @@ export type PanelCapabilityDescription = {
   /** Where the same thing is on screen, for a person who would rather press it. */
   control: string;
   arguments: Array<{ name: string; describe: string; required: boolean }>;
+  /** Ways a person might say it. Core scores its own closest match on these when no model can read the words. */
+  phrases: string[];
+  /** Everything lasting it would cause, in Core's classes. Core decides from these what stops for the person. */
+  consequences: string[];
   /** True only for deleting and moving money: it re-authorizes, it does not ask permission. */
   reauthorizes: boolean;
 };
@@ -41,6 +45,8 @@ function describe(capability: PanelCapability): PanelCapabilityDescription {
       describe: argument.describe,
       required: argument.required
     })),
+    phrases: [...capability.phrases],
+    consequences: [...capability.consequences],
     reauthorizes: panelCapabilityAsksFirst(capability)
   };
 }

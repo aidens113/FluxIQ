@@ -30,12 +30,15 @@ import {
   type PanelCapabilityDispatch,
   type PanelCapabilityRequest
 } from "./capabilities";
-import { conversationAnswerRequest, type ConversationAnswer } from "./thread";
+import { CONVERSATION_PANEL_RESULT_ATTACHMENT, conversationAnswerRequest, type ConversationAnswer } from "./thread";
 
 export type ConversationAppendTurnPayload = {
   projectId: string;
   conversationId: string;
   text: string;
+  /** What the turn shows beside its words. Both or neither. */
+  attachmentKind?: string;
+  attachmentRef?: string;
 };
 
 export type ConversationAnswerAskPayload = {
@@ -112,10 +115,14 @@ export async function runConversationCapability(
   const dispatch = await dispatchPanelCapability({ ...payload.context, transport: api }, payload.request);
   const projectId = payload.context.projectId;
   if (projectId) {
+    // Marked as the panel's record, so Core reads it back to the model as the
+    // panel speaking rather than as something the person said.
     await appendConversationTurn(api, {
       projectId,
       conversationId: payload.conversationId,
-      text: conversationCapabilityTurnText(dispatch)
+      text: conversationCapabilityTurnText(dispatch),
+      attachmentKind: CONVERSATION_PANEL_RESULT_ATTACHMENT,
+      attachmentRef: dispatch.capability?.id ?? "none"
     }).catch(/* best-effort: the capability has already run, so a failure to write the record must not be reported as the capability failing; the dispatch is returned either way and the change feed still fires. */ () => undefined);
     commitConversationChanged({ projectId, conversationId: payload.conversationId });
   }

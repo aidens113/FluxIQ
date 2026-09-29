@@ -84,6 +84,12 @@ function commands(script: Script = {}) {
       appended.push(payload);
       return { ok: true, payload: {} };
     }) as any,
+    // What the composer sends now: a turn Core reads as an instruction. The
+    // double records it beside plain appends so both are visible to a case.
+    sendInstruction: vi.fn(async (payload: Record<string, unknown>) => {
+      appended.push(payload);
+      return { ok: true, problem: null, decision: { kind: "reply" }, dispatch: null };
+    }) as any,
     answerAsk: vi.fn(async (payload: Record<string, unknown>) => {
       answered.push(payload);
       return { ok: true, payload: {} };
@@ -201,7 +207,9 @@ describe("ConversationViewContent", () => {
       await renderer.root.findByProps({ "aria-label": "Write to FluxIQ" }).props.onSubmit({ preventDefault: () => undefined });
     });
 
-    expect((api as any).appended).toEqual([{ projectId: "project.one", conversationId: "conversation.1", text: "Use the second filter." }]);
+    expect((api as any).appended).toEqual([{ projectId: "project.one", conversationId: "conversation.1", text: "Use the second filter.", onScreen: {} }]);
+    expect(api.sendInstruction).toHaveBeenCalledTimes(1);
+    expect(api.appendTurn).not.toHaveBeenCalled();
     const text = textOf(renderer);
     expect(text).toContain("Said at 10.");
     expect(text).toContain("Use the second filter.");

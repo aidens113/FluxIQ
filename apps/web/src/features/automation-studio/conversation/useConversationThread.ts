@@ -18,9 +18,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { subscribeToAutomationStudioMutations } from "../stores";
 import type { ConversationCommands } from "./conversation-host";
+import { conversationCapabilityArguments, type ConversationOnScreen } from "./instruction-commands";
 import { commitConversationChanged } from "./turn-commands";
 import { CONVERSATION_LIST_PAGE_SIZE, CONVERSATION_TURN_PAGE_SIZE } from "./turn-queries";
 import {
+  CONVERSATION_PANEL_CAPABILITY_ATTACHMENT,
+  conversationPanelInvocation,
   createBackoffPoller,
   latestConversationTurnId,
   mergeConversationTurns,
@@ -41,6 +44,8 @@ export type ConversationThreadInput = {
   /** False while the surface is closed; the poll drops to its idle beat, the state stays. */
   active?: boolean;
   requestedConversationId?: string;
+  /** What the panel has open, sent with every message so "run it" means the Flow on screen. */
+  onScreen?: ConversationOnScreen;
   onSelectedConversationChange?(conversationId: string): void;
 };
 
@@ -86,7 +91,9 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
   const selectedRef = useRef(selectedConversationId);
   const projectByConversationRef = useRef(new Map<string, string>());
   const pollerRef = useRef<{ sync(): void } | null>(null);
+  const onScreenRef = useRef<ConversationOnScreen>({});
   const onSelected = input.onSelectedConversationChange;
+  onScreenRef.current = input.onScreen ?? {};
 
   turnsRef.current = turns;
   selectedRef.current = selectedConversationId;
@@ -288,18 +295,50 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
       // continues an existing thread rather than adding a second.
       const conversationId = selectedRef.current || await openThread();
       if (!conversationId) return false;
-      const result = await commands.appendTurn({ projectId: projectFor(conversationId), conversationId, text: text.trim() });
+      // Sent as an instruction: Core reads it with the panel's vocabulary,
+      // answers in the thread, and the capability it chose runs here when it
+      // is ordinary work. The result, success or failure, is written into the
+      // thread by the time this returns.
+      const result = await commands.sendInstruction({
+        projectId: projectFor(conversationId),
+        conversationId,
+        text: text.trim(),
+        onScreen: onScreenRef.current
+      });
       if (!result.ok) {
+        // Not stored: the words stay in the composer so nothing is lost.
         setError(result.error ?? "The reply could not be sent.");
         return false;
       }
-      setError("");
+      // Stored, even when the answer could not be written; the reason is shown.
+      setError(result.problem ?? "");
       await afterWrite(conversationId);
       return true;
     } finally {
       setSending(false);
     }
   }, [afterWrite, commands, openThread, projectFor, sending]);
+
+  /**
+   * A confirmation Core raised before a delete or a payment, now granted: run
+   * exactly the invocation it carried, with the PIN the person just gave.
+   * Nothing else runs from an answer -- an ask Core raised for any other
+   * reason carries no invocation and this does nothing for it.
+   */
+  const runConfirmed = useCallback(async (conversationId: string, askId: string, authorizationPin: string | undefined) => {
+    const turn = turnsRef.current.find((entry) => entry.ask?.askId === askId);
+    if (turn?.attachment?.kind !== CONVERSATION_PANEL_CAPABILITY_ATTACHMENT) return;
+    const invocation = conversationPanelInvocation(turn);
+    if (!invocation) {
+      setError("That confirmation did not say what to run, so nothing was done. Ask for it again.");
+      return;
+    }
+    await commands.runCapability({
+      conversationId,
+      request: { capabilityId: invocation.capabilityId, arguments: conversationCapabilityArguments(invocation.arguments) },
+      context: { projectId: projectFor(conversationId), ...onScreenRef.current, ...(authorizationPin ? { authorizationPin } : {}) }
+    });
+  }, [commands, projectFor]);
 
   const sendAnswer = useCallback(async (answer: ConversationAnswer, authorizationPin?: string) => {
     const conversationId = selectedRef.current;
@@ -316,12 +355,13 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
         return false;
       }
       setError("");
+      if (answer.kind === "grant") await runConfirmed(conversationId, answer.askId, authorizationPin);
       await afterWrite(conversationId);
       return true;
     } finally {
       setSending(false);
     }
-  }, [afterWrite, commands, projectFor, sending]);
+  }, [afterWrite, commands, projectFor, runConfirmed, sending]);
 
   const pendingTurn = useMemo(() => pendingConversationTurn(turns), [turns]);
   const unanswered = useMemo(() => unansweredConversationCount(conversations), [conversations]);

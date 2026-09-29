@@ -38,6 +38,7 @@ export function ConversationViewContent(props: ConversationViewProps & { command
     commands: props.commands,
     ...(props.active === undefined ? {} : { active: props.active }),
     ...(props.requestedConversationId ? { requestedConversationId: props.requestedConversationId } : {}),
+    ...(props.onScreen ? { onScreen: props.onScreen } : {}),
     ...(props.onSelectedConversationChange ? { onSelectedConversationChange: props.onSelectedConversationChange } : {})
   });
 

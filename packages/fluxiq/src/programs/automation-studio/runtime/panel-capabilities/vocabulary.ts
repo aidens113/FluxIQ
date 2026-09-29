@@ -57,6 +57,13 @@ function line(capability: AutomationStudioPanelCapability): string {
   const parts = [`${capability.id} -- ${capability.summary}`];
   if (capability.arguments.length > 0) {
     parts.push(`arguments: ${capability.arguments.map((argument) => (argument.required ? `${argument.name} (required)` : argument.name)).join(", ")}`);
+    // What a value looks like, for the arguments whose shape is not obvious
+    // from the name. An id is an id and FluxIQ fills it; a settings object or
+    // an instruction is not, and a model shown only the name writes `false`
+    // where the Flow expects `"normal"`. Ids are left out to keep the list short.
+    for (const argument of capability.arguments) {
+      if (!/Id$/u.test(argument.name) && argument.describe && argument.describe !== argument.name) parts.push(`${argument.name}: ${argument.describe}`);
+    }
   }
   if (capability.control) parts.push(`the person's own control: ${capability.control}`);
   return parts.join(" | ");

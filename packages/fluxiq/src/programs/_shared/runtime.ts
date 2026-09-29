@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -121,6 +121,12 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     () => llmExecutionGrants.close(),
     (input) => llmExecutionGrants.continueAfterAppliedFlowAdaptation(input)
   );
+  // The chat window reads plain requests with DeepSeek, on the key of whoever
+  // sent the message, released to their own unlocked session. With no key, or
+  // a locked session, the conversation still answers from its offline reading.
+  automationStudio.conversations.bindModel(createAutomationStudioDeepSeekPanelCommandModel({
+    resolveKey: automationStudioPanelCommandKeyFromSecretKeys(secretKeys)
+  }));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));

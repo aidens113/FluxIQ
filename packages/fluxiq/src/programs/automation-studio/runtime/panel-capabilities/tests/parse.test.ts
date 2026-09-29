@@ -21,7 +21,7 @@ describe("reading the panel's capability vocabulary", () => {
   // the panel looks up. Everything else is filled rather than refused.
   it("fills a missing title, summary and group from the id", () => {
     const [capability] = parseAutomationStudioPanelCapabilities([{ id: "run.start" }]);
-    expect(capability).toEqual({ id: "run.start", title: "run.start", summary: "run.start", group: "Other", control: "", arguments: [], reauthorizes: false });
+    expect(capability).toEqual({ id: "run.start", title: "run.start", summary: "run.start", group: "Other", control: "", arguments: [], phrases: [], consequences: [], reauthorizes: false });
   });
 
   it("drops a duplicate id, because the model picks by id and two would be ambiguous when acted on", () => {
@@ -49,5 +49,20 @@ describe("reading the panel's capability vocabulary", () => {
 
   it("refuses an id that is not one, rather than carrying a name nothing can look up", () => {
     expect(parseAutomationStudioPanelCapabilities([{ id: "run start" }, { id: "" }, { id: 7 }])).toEqual([]);
+  });
+
+  // Which classes stop for a person is Core's decision, so a capability that
+  // deletes re-authorizes whatever the browser sent. A browser that marks one
+  // as re-authorizing is still honoured: an extra prompt is an annoyance, a
+  // skipped one is not safe.
+  it("derives re-authorization from Core's own gated consequences, and carries phrases and consequences", () => {
+    const parsed = parseAutomationStudioPanelCapabilities([
+      { id: "flow.delete", consequences: ["delete"], reauthorizes: false, phrases: ["remove the flow", "", 7] },
+      { id: "flow.settings", consequences: ["modify_existing"] },
+      { id: "run.execute", consequences: ["create_new"], reauthorizes: true }
+    ]);
+    expect(parsed.map((capability) => [capability.id, capability.reauthorizes])).toEqual([["flow.delete", true], ["flow.settings", false], ["run.execute", true]]);
+    expect(parsed[0]?.phrases).toEqual(["remove the flow"]);
+    expect(parsed[0]?.consequences).toEqual(["delete"]);
   });
 });

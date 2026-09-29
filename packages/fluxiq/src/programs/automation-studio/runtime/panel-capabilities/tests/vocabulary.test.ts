@@ -18,6 +18,8 @@ function capability(overrides: Partial<AutomationStudioPanelCapability> = {}): A
     group: "Running",
     control: "Run (runtime-debug)",
     arguments: [{ name: "flowId", describe: "which Flow", required: false }],
+    phrases: [],
+    consequences: [],
     reauthorizes: false,
     ...overrides
   };
@@ -71,6 +73,9 @@ describe("the panel capability vocabulary a model is given", () => {
       capability({ arguments: [{ name: "flowId", describe: "which Flow", required: false }, { name: "text", describe: "what to say", required: true }] })
     ]);
     expect(text).toContain("arguments: flowId, text (required)");
+    // The shape of a value that is not an id is shown; an id's is not.
+    expect(text).toContain("text: what to say");
+    expect(text).not.toContain("flowId: which Flow");
     expect(text).toContain("filled in from what the panel has open");
   });
 

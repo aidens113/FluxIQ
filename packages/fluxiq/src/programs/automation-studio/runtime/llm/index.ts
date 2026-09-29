@@ -40,6 +40,16 @@ export {
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
   estimateAutomationStudioDeepSeekCostUsd
 } from "./deepseek/index.ts";
+// The chat window's model call and the key it is released
+// (`deepseek/panel-command.ts`, `deepseek/panel-command-key.ts`). Public
+// because the host binds them: the key comes from Secret Keys, which only the
+// host holds.
+export {
+  automationStudioPanelCommandKeyFromSecretKeys,
+  createAutomationStudioDeepSeekPanelCommandModel,
+  type AutomationStudioDeepSeekPanelCommandOptions,
+  type AutomationStudioPanelCommandKeyPorts
+} from "./deepseek/index.ts";
 export * from "./execution/index.ts";
 // The grant's authorization table. Only the names `execution/grants.ts` used to
 // publish itself are exported; the checks the grant runs stay internal.

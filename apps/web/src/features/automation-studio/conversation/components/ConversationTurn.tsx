@@ -12,7 +12,12 @@
 
 import { Bot, User } from "lucide-react";
 import { formatRuntimeTimestamp } from "../../runtime";
-import type { ConversationAnswer, ConversationTurn as ConversationTurnRecord } from "../thread";
+import {
+  CONVERSATION_PANEL_RESULT_ATTACHMENT,
+  conversationAttachmentIsPanelRecord,
+  type ConversationAnswer,
+  type ConversationTurn as ConversationTurnRecord
+} from "../thread";
 import type { ConversationCommands } from "../conversation-host";
 import { ConversationAskForm } from "./ConversationAskForm";
 import { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
@@ -27,17 +32,21 @@ export function ConversationTurn(props: {
   onOpenAttachment?(attachment: { kind: string; ref: string }): void;
 }) {
   const { turn } = props;
-  const fromPerson = turn.author === "person";
+  // What the panel did on the person's behalf is written through the person's
+  // own endpoint, but it is the panel speaking, and "You: Started the run"
+  // would put words in the person's mouth.
+  const panelRecord = turn.attachment?.kind === CONVERSATION_PANEL_RESULT_ATTACHMENT;
+  const fromPerson = turn.author === "person" && !panelRecord;
   const Icon = fromPerson ? User : Bot;
   return (
     <article className={`automation-conversation-turn ${fromPerson ? "person" : "automation"}`}>
       <header>
         <Icon aria-hidden size={14} />
-        <strong>{fromPerson ? "You" : "FluxIQ"}</strong>
+        <strong>{fromPerson ? "You" : panelRecord ? "FluxIQ panel" : "FluxIQ"}</strong>
         <time dateTime={new Date(turn.createdAt).toISOString()}>{formatRuntimeTimestamp(turn.createdAt)}</time>
       </header>
       {turn.text ? <p>{turn.text}</p> : null}
-      {turn.attachment ? (
+      {turn.attachment && !conversationAttachmentIsPanelRecord(turn.attachment.kind) ? (
         <ConversationAttachmentPanel
           attachment={turn.attachment}
           conversationId={turn.conversationId}

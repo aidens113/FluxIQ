@@ -137,20 +137,51 @@ export async function dispatchPanelCapability(
   }
   if (missing.length) return { capability, confidence, arguments: args, outcome: describeMissing(capability, missing) };
 
-  try {
-    return { capability, confidence, arguments: args, outcome: await capability.invoke(context, args) };
-  } catch (error) {
-    // A thrown transport is still an answer the person is owed. The panel says
-    // what it was doing and hands back the reason rather than losing both.
-    return {
-      capability,
-      confidence,
-      arguments: args,
-      outcome: {
+  return { capability, confidence, arguments: args, outcome: await invokeDefensively(capability, context, args) };
+}
+
+/** How many times a read is tried before its failure is reported. */
+const READ_ATTEMPTS = 3;
+const RETRY_PAUSE_MS = 200;
+
+/**
+ * Run it, absorbing what can safely be absorbed.
+ *
+ * A capability that changes nothing -- listing runs, inspecting one, reading
+ * an audit -- is tried again when the transport throws or says the request may
+ * succeed if sent again: asking twice costs nothing. One that changes something
+ * is tried once, because a request whose answer was lost may already have
+ * happened, and a second "create a Flow" makes two Flows. Its failure says so,
+ * so the person knows asking again is theirs to decide.
+ *
+ * A thrown transport is still an answer the person is owed: the panel says
+ * what it was doing and hands back the reason rather than losing both.
+ */
+async function invokeDefensively(
+  capability: PanelCapability,
+  context: PanelCapabilityContext,
+  args: PanelCapabilityArguments
+): Promise<PanelCapabilityOutcome> {
+  const changesSomething = capability.consequences.length > 0;
+  const attempts = changesSomething ? 1 : READ_ATTEMPTS;
+  let outcome: PanelCapabilityOutcome = { status: "failed", summary: `"${capability.title}" did not finish.`, error: "It was never started." };
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      outcome = await capability.invoke(context, args);
+      if (outcome.status !== "failed" || !outcome.retryable) return outcome;
+    } catch (error) {
+      outcome = {
         status: "failed",
         summary: `"${capability.title}" did not finish.`,
-        error: error instanceof Error ? error.message : String(error)
-      }
-    };
+        error: error instanceof Error ? error.message : String(error),
+        retryable: true
+      };
+    }
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt));
   }
+  if (outcome.status !== "failed" || !outcome.retryable) return outcome;
+  const note = changesSomething
+    ? " I did not try again by myself, because it changes something and may already have happened; ask again if it did not."
+    : ` I tried ${attempts} times.`;
+  return { ...outcome, summary: `${outcome.summary}${note}` };
 }

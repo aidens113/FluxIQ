@@ -105,7 +105,7 @@ describe("only deleting stops for the person", () => {
     );
     expect(dispatch.outcome.status).toBe("done");
     expect(calls[0]?.endpoint).toBe("update-flow-settings");
-    expect(calls[0]?.payload).toMatchObject({ retryLimit: 5 });
+    expect(calls[0]?.payload).toMatchObject({ flow: { metadata: { retryLimit: 5 } } });
   });
 });
 
@@ -166,3 +166,53 @@ describe("the thread keeps the record of what was done", () => {
     })).toBe("Ran the Flow.");
   });
 });
+
+describe("a capability that fails is retried only where that is safe", () => {
+  function flaky(failures: number) {
+    let calls = 0;
+    const answer = async () => {
+      calls += 1;
+      if (calls <= failures) throw new Error("network down");
+      return { ok: true, payload: { runs: [] } };
+    };
+    return { api: { get: vi.fn(answer), post: vi.fn(answer) } as unknown as ProgramCommandTransport, count: () => calls };
+  }
+
+  it("tries a read again after a transient failure and succeeds", async () => {
+    const { api, count } = flaky(2);
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1" }, { capabilityId: "run.list" });
+    expect(dispatch.outcome.status).toBe("done");
+    expect(count()).toBe(3);
+  });
+
+  it("gives up on a read after three tries and says it tried", async () => {
+    const { api, count } = flaky(5);
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1" }, { capabilityId: "run.list" });
+    expect(count()).toBe(3);
+    expect(dispatch.outcome.summary).toContain("I tried 3 times.");
+  });
+
+  it("does not repeat something that changes things, and says asking again is the person's call", async () => {
+    const { api, count } = flaky(1);
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, { capabilityId: "run.execute" });
+    expect(count()).toBe(1);
+    expect(dispatch.outcome.status).toBe("failed");
+    expect(dispatch.outcome.summary).toContain("may already have happened");
+  });
+});
+
+describe("a settings change reaches Core in the shape it reads", () => {
+  // `update-flow-settings` reads one `flow` object and refuses a request
+  // without it. This capability spread the names into the request instead, so
+  // every settings change from the chat window was refused.
+  it("puts the Flow's own fields on the Flow and every other setting in its metadata", async () => {
+    const { api, calls } = transport();
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, {
+      capabilityId: "flow.settings",
+      arguments: { settings: { trainingMode: "normal", name: "Kettle watch" } }
+    });
+    expect(dispatch.outcome.status).toBe("done");
+    expect(calls).toEqual([{ endpoint: "update-flow-settings", payload: { projectId: "p1", flowId: "f1", flow: { name: "Kettle watch", metadata: { trainingMode: "normal" } } } }]);
+  });
+});
+
