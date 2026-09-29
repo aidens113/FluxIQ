@@ -53,15 +53,24 @@ const MAX_FEEDBACK_ISSUE_CODES = 8;
  * as the schema: the schema is already in the request, and what a model that
  * missed it needs is the plainest picture of an answer.
  */
-function acceptedDecision(): JsonObject {
-  return {
-    oneOf: [
-      { kind: "tool_call", callId: "<a new id: letters, digits, . _ : ->", toolId: "<one toolId from the decision schema>", input: "<an object matching that tool's input schema>" },
-      { kind: "complete", result: "<an object matching the completion schema, when the decision schema offers complete>" }
-    ],
-    rule: "Answer with exactly one of these objects and no other keys."
-  };
+//
+// **Every kind the loop offered, and only those.** This listed `tool_call` and
+// `complete` alone, so a model whose `amend_draft` was malformed was answered
+// with a picture of every decision but the one it was making -- and editing the
+// draft is the commonest decision a hard build makes (every lane-t172 build ran
+// between seven and twenty of them). A wrap-up decision offers no tools and the
+// final one no amending, so where the loop says what it offered, the picture
+// shows that and nothing else; a caller that does not say gets all three.
+function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | undefined): JsonObject {
+  const shapes: JsonObject[] = [];
+  if (!offers || offers.tools) shapes.push({ kind: "tool_call", callId: "<a new id: letters, digits, . _ : ->", toolId: "<one toolId from the decision schema>", input: "<an object matching that tool's input schema>" });
+  if (!offers || offers.complete) shapes.push({ kind: "complete", result: `<an object matching the completion schema${offers ? "" : ", when the decision schema offers complete"}>` });
+  if (!offers || offers.amend) shapes.push({ kind: "amend_draft", amendments: [{ step: "<a step number the draft entry shows>", change: "<one change the decision schema lists>" }] });
+  return { oneOf: shapes, rule: "Answer with exactly one of these objects and no other keys." };
 }
+
+/** Which kinds of decision the loop offered the decision that could not be used. */
+export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; complete: boolean; amend: boolean };
 
 const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
   + "Answer again with exactly one decision of the accepted shape. The same issues again count toward stopping this exploration.";
@@ -117,6 +126,8 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   issueCodes: readonly string[];
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
+  /** What the unusable decision was offered, so the accepted shapes are the ones it could have given. */
+  offers?: AutomationStudioLlmUnusableDecisionOffers;
 }): JsonObject {
   return {
     ok: false,
@@ -124,7 +135,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     issueCodes: [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_FEEDBACK_ISSUE_CODES),
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
-    accepted: acceptedDecision(),
+    accepted: acceptedDecision(input.offers),
     instruction: DECISION_FEEDBACK_INSTRUCTION
   };
 }

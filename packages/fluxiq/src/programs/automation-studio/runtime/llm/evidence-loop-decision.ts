@@ -23,6 +23,7 @@ import {
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type {
+  AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceCompletionCheck,
   AutomationStudioLlmEvidenceLoopAnswerability,
   AutomationStudioLlmEvidenceLoopDecision,
@@ -305,10 +306,22 @@ export function automationStudioLlmEvidenceParseCompletionCheck(value: unknown):
   if (!isRecord(value)) return undefined;
   const answerability = readAnswerability(value.answerability);
   if (value.answerability !== undefined && !answerability) return undefined;
-  if (value.ok === true && exactKeys(value, ["ok", "answerability"])) return { ok: true, ...(answerability ? { answerability } : {}) };
-  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback", "answerability"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
+  const restoredStep = automationStudioLlmEvidenceParseRestoredStep(value.restoredStep);
+  if (value.restoredStep !== undefined && !restoredStep) return undefined;
+  const facts = { ...(answerability ? { answerability } : {}), ...(restoredStep ? { restoredStep } : {}) };
+  if (value.ok === true && exactKeys(value, ["ok", "answerability", "restoredStep"])) return { ok: true, ...facts };
+  if (value.ok !== false || !exactKeys(value, ["ok", "issueCodes", "feedback", "answerability", "restoredStep"]) || !Array.isArray(value.issueCodes) || !isJsonObject(value.feedback)) return undefined;
   const issueCodes = value.issueCodes.filter((code): code is string => typeof code === "string" && /^[a-z0-9_.:-]{1,100}$/i.test(code));
-  return { ok: false, issueCodes, feedback: structuredClone(value.feedback), ...(answerability ? { answerability } : {}) };
+  return { ok: false, issueCodes, feedback: structuredClone(value.feedback), ...facts };
+}
+
+/** A restored step as a check or a stored record wrote it, or nothing when it is not exactly one. */
+export function automationStudioLlmEvidenceParseRestoredStep(value: unknown): AutomationStudioLlmEvidenceRestoredStep | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const { step, withdrawnAs, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length || !Number.isSafeInteger(step) || (step as number) < 1) return undefined;
+  if (withdrawnAs !== "dropped" && withdrawnAs !== "exploratory") return undefined;
+  return { step: step as number, withdrawnAs };
 }
 
 function readAnswerability(value: unknown): AutomationStudioLlmEvidenceLoopAnswerability | undefined {

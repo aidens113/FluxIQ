@@ -24,6 +24,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
+  automationStudioLlmEvidenceAmendmentMemory,
   automationStudioLlmEvidenceAnsweredRequestNote,
   automationStudioLlmEvidenceCallDiagnostic as callDiagnostic,
   automationStudioLlmEvidenceCallRecord as callRecord,
@@ -130,15 +131,8 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS 
 
 /**
  * What the loop's contract is, declared one noun per file in `evidence-loop/`
- * and republished here.
- *
- * Every one of these was declared in this file, and the file was 941 lines of
- * the contract and the loop together -- over the 800-line limit, with no
- * baseline entry, which made the centre of the improvement loop the one file
- * nobody was allowed to add a line to. They are re-exported rather than moved
- * away, because a dozen modules across `harness/`, `harness-options/`,
- * `node-tools/`, `deepseek/` and `runtime/recovery/` import them from this
- * path, and the point of the split is that none of them notices it.
+ * and republished here, because a dozen modules across the runtime import them
+ * from this path and the split is meant to be one none of them notices.
  */
 export type {
   AutomationStudioLlmEvidenceCompletionCheck,
@@ -157,7 +151,7 @@ export type {
   AutomationStudioLlmEvidenceToolExecutionResult
 } from "./evidence-loop/index.ts";
 /** The evidence entry a refused completion's feedback arrives under. */
-export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "./evidence-loop/index.ts";
+export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceRestoredStep } from "./evidence-loop/index.ts";
 
 
 /**
@@ -243,6 +237,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const draftSteps: AutomationStudioFlowDraftStep[] = automationStudioLlmEvidenceLoopSeedSteps(input.draft);
   const drafting = input.draft !== false;
   let draftAmendments = 0;
+  // Refusals already given, and drafts already stood at (`./evidence-loop/amendment-memory.ts`).
+  const amendmentMemory = automationStudioLlmEvidenceAmendmentMemory();
   // Steps appended so far, ever, including any since withdrawn: the source of
   // the id below, so no two steps of one build ever share one.
   let draftAppended = draftSteps.reduce((largest, step) => {
@@ -579,7 +575,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}) }, thrown.issueCodes);
         if (!stalled) {
           // The model is told what was wrong, as evidence, before it is asked again.
-          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers: { tools: offered.length > 0, complete: canComplete, amend: canAmend } });
           if (reserveEvidence(feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
           evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
           continue;
@@ -603,7 +599,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       }
       if (attempt.kind === "ended") return failure(draftSteps, attempt.code, trace, accounting);
       const answered = attempt.answerability ? { answerability: attempt.answerability } : {};
-      const usage = decision.usage ? { usage: decision.usage } : {};
+      const usage = { ...(decision.usage ? { usage: decision.usage } : {}), ...(attempt.restoredStep ? { restoredStep: attempt.restoredStep } : {}) };
       if (attempt.kind === "accepted") {
         recordRow({ iteration, decision: "complete", ...usage }, answered);
         return { ok: true, result: decision.result, trace, steps: draftSteps, accounting };
@@ -641,7 +637,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // Which node each position held before the edit, so a refused amendment
       // is recorded with the node it was about (`./evidence-loop/trace.ts`).
       const nodeAt = new Map(draftSteps.map((step) => [step.position, step.actionId] as const));
+      amendmentMemory.before(iteration, draftSteps);
       const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
+      // Edits that put the draft back exactly as it stood changed nothing about the Flow.
+      const sameDraftAs = rerun.request || !amended.applied ? undefined : amendmentMemory.after(iteration, draftSteps);
       // **Every refusal of this decision on one path, the draft's and the
       // loop's own.** A `rerun` is filtered out of the apply call above, so the
       // draft never sees one and never refuses one -- and a rerun this loop
@@ -659,7 +658,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         ...(rerunReplaces?.id ? { rerunStepId: rerunReplaces.id } : {})
       };
       recordRow(
-        { iteration, decision: "amend_draft", resultCode: rerun.request ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", amended: amended.applied, ...(refused.length ? { amendmentsRefused: refused } : {}), ...(decision.usage ? { usage: decision.usage } : {}) },
+        { iteration, decision: "amend_draft", resultCode: rerun.request ? "llm_evidence_loop.draft_rerun" : sameDraftAs !== undefined ? "llm_evidence_loop.draft_amendment_undone" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", amended: amended.applied, ...(refused.length ? { amendmentsRefused: refused } : {}), ...(decision.usage ? { usage: decision.usage } : {}) },
         { draftChanged: Boolean(amended.applied || rerun.request), draftChange }
       );
       // An edit is progress on the draft and never on the evidence, so an edit
@@ -669,7 +668,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // a row, all `draft_unchanged` with the same two step ids refused each
       // time, is the first half of `run-mulum3x7-18ceeb75`, so the redirection
       // is what the sixth gets rather than nothing at all.
-      if (!rerun.request && !amended.applied) {
+      if (!rerun.request && (!amended.applied || sameDraftAs !== undefined)) {
         noProgress.stepped();
         if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
         noProgress.redirect(iteration);
@@ -679,9 +678,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // is. After the guard, so the count it is shown is the one it is being
       // held to; whenever anything was refused, because an edit that half landed
       // is one the model must still be told about.
-      if (refused.length) {
+      if (refused.length || sameDraftAs !== undefined) {
         const amendmentFeedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-          refusals: refused, applied: amended.applied, steps: draftSteps, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress
+          refusals: amendmentMemory.refusals(refused), applied: amended.applied, steps: draftSteps, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
+          ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs })
         });
         if (reserveEvidence(amendmentFeedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
         evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });

@@ -45,8 +45,8 @@ export type AutomationStudioFlowBootstrapDraftWithStartStep = {
    * holding copies of every step whose place or disposition changed.
    */
   steps: readonly AutomationStudioFlowDraftStep[];
-  /** The step put back, by the position and id it had in the draft handed in. */
-  restored?: { position: number; id?: string };
+  /** The step put back, by the position and id it had in the draft handed in, and how it had been withdrawn. */
+  restored?: { position: number; id?: string; withdrawnAs: "dropped" | "exploratory" };
 };
 
 /**
@@ -78,7 +78,7 @@ export function automationStudioFlowBootstrapDraftWithStartStep(input: {
   const ordered = [...rest.slice(0, firstKept), restored, ...rest.slice(firstKept)];
   return {
     steps: ordered.map((step, index) => step.position === index + 1 && step !== restored ? step : { ...step, position: index + 1 }),
-    restored: { position: arrival.position, ...(arrival.id === undefined ? {} : { id: arrival.id }) }
+    restored: { position: arrival.position, ...(arrival.id === undefined ? {} : { id: arrival.id }), withdrawnAs: arrival.disposition === "dropped" ? "dropped" : "exploratory" }
   };
 }
 

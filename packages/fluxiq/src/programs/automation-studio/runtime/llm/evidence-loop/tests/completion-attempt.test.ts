@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceCompletionAttempt } from "../completion-attempt.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
 
 const steps: AutomationStudioFlowDraftStep[] = [
   { position: 1, iteration: 1, callId: "call.1", actionId: "press", input: { target: "a" }, effect: "mutate", effectApplied: true, disposition: "kept" }
@@ -95,5 +96,28 @@ describe("one attempt to finish", () => {
       .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.cancelled" });
     await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, dryRun: async () => "evidence_limit" }))
       .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.evidence_limit" });
+  });
+
+  // Flow Bootstrap puts back the step that reached the start location when the
+  // model had withdrawn it, and nothing on the record said so: the Flow judged
+  // had a step the model took out. The check says which, and the row keeps it,
+  // on an accepted completion and a refused one alike.
+  it("carries a restored step from the check onto the completion row, accepted or refused", async () => {
+    const restoredStep = { step: 1, withdrawnAs: "dropped" as const };
+    const tools = [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const }];
+    let attempts = 0;
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true }),
+      decide: vi.fn()
+        .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "a" } })
+        .mockResolvedValue({ kind: "complete", result: { summary: "done" } }),
+      checkCompletion: () => (attempts += 1) === 1 ? { ...refusal("check.one"), restoredStep } : { ok: true, restoredStep }
+    });
+    expect(result.ok).toBe(true);
+    expect(result.trace.filter((row) => row.decision !== "tool_call").map((row) => [row.decision, row.restoredStep])).toEqual([
+      ["unusable", restoredStep],
+      ["complete", restoredStep]
+    ]);
   });
 });

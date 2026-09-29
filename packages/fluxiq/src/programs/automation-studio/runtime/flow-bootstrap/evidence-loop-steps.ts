@@ -25,6 +25,7 @@
 // on an audit detail that no redaction rule covers.
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
 import type {
+  AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceLoopAnswerability,
   AutomationStudioLlmEvidenceLoopDraftChange,
   AutomationStudioLlmEvidenceLoopDraftShown,
@@ -148,6 +149,8 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
   draft?: AutomationStudioLlmEvidenceLoopDraftShown;
   /** Content-free capability facts observed by the completion check. */
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
+  /** A withdrawn step the completion check put back before judging the draft: its position and how it was withdrawn. */
+  restoredStep?: AutomationStudioLlmEvidenceRestoredStep;
   /** When the row was recorded, in epoch milliseconds. Absent where the loop recorded no moment. */
   at?: number;
   /** What the provider reported for the call that made this decision. Absent where it reported nothing. */
@@ -179,7 +182,10 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   no_such_position: true,
   run_by_the_loop: true,
   no_step_before_it: true,
-  not_a_kept_step: true
+  not_a_kept_step: true,
+  did_not_work: true,
+  already_in_flow: true,
+  already_out: true
 });
 /**
  * The most refusals one step may report: the most amendments one decision may
@@ -214,6 +220,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
   const draftChange = evidenceStepDraftChange(entry.draftChange);
   const draft = evidenceStepDraft(entry.draft);
   const answerability = evidenceStepAnswerability(entry.answerability);
+  const restoredStep = evidenceStepRestoredStep(entry.restoredStep);
   const kept = {
     iteration: Number.isSafeInteger(entry.iteration) && entry.iteration >= 0 ? entry.iteration : 0,
     ...(entry.resultCode && EVIDENCE_STEP_CODE.test(entry.resultCode) ? { resultCode: entry.resultCode } : {}),
@@ -230,6 +237,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     ...(draftChange ? { draftChange } : {}),
     ...(draft ? { draft } : {}),
     ...(answerability ? { answerability } : {}),
+    ...(restoredStep ? { restoredStep } : {}),
     ...(nonNegative(entry.at) ? { at: entry.at as number } : {}),
     ...(usage ? { usage } : {})
   };
@@ -296,7 +304,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -332,6 +340,8 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
     if (step.draft !== undefined && !draft) return null;
     const answerability = evidenceStepAnswerability(step.answerability);
     if (step.answerability !== undefined && !answerability) return null;
+    const restoredStep = evidenceStepRestoredStep(step.restoredStep);
+    if (step.restoredStep !== undefined && !restoredStep) return null;
     steps.push({
       toolId: step.toolId,
       ...(step.iteration !== undefined ? { iteration: step.iteration as number } : {}),
@@ -348,6 +358,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(draftChange ? { draftChange } : {}),
       ...(draft ? { draft } : {}),
       ...(answerability ? { answerability } : {}),
+      ...(restoredStep ? { restoredStep } : {}),
       ...(step.at !== undefined ? { at: step.at as number } : {}),
       ...(usage ? { usage } : {})
     });
@@ -370,6 +381,19 @@ const MAX_DRAFT_REVISIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterat
 const MAX_REPRESENTED_DRAFT_STEPS = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes
   + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
   + 1;
+
+/**
+ * A withdrawn step the completion check put back, as a row or a published step
+ * carries it: a draft position and a closed word, or nothing when it is not
+ * exactly that. Read here rather than imported from `../llm/`, for the same
+ * reason every other member's reader is: this module imports only types from
+ * there, and a value import closes a cycle through the provider adapters.
+ */
+export function evidenceStepRestoredStep(value: unknown): AutomationStudioLlmEvidenceRestoredStep | undefined {
+  if (!isStepRecord(value) || !hasExactFields(value, ["step", "withdrawnAs"]) || !Number.isSafeInteger(value.step) || (value.step as number) < 1) return undefined;
+  if (value.withdrawnAs !== "dropped" && value.withdrawnAs !== "exploratory") return undefined;
+  return { step: value.step as number, withdrawnAs: value.withdrawnAs };
+}
 
 /**
  * Optional progress instrumentation is all-or-nothing. A malformed member is
