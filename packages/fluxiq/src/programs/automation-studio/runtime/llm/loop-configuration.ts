@@ -11,7 +11,11 @@
 // surface is unchanged and every existing consumer still reads it from there.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS
+} from "../loop-limits/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
@@ -250,6 +254,15 @@ export type EvidenceLoopLimits = {
   toolEvidenceBytes: number;
   minToolCalls: number;
   maxStepsWithoutProgress: number;
+  /**
+   * Steps in a row without progress after which the loop changes what it asks
+   * for instead of stopping (`./evidence-loop/stall-redirect.ts`).
+   *
+   * Always below `maxStepsWithoutProgress`, so the redirection always comes
+   * first and stopping is always the last resort. Derived, never configured: a
+   * caller that shortens the guard shortens this with it.
+   */
+  redirectAtStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
   /** What the draft entry beside the window may cost. */
   draftBytes: number;
@@ -305,6 +318,10 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     toolEvidenceBytes: Math.max(1, maxEvidenceContextBytes - 512),
     minToolCalls: input.minToolCalls ?? 0,
     maxStepsWithoutProgress,
+    // One below the guard at the tightest, so a loop configured to stop at two
+    // still says so before it stops, and a loop that cannot redirect before it
+    // stops is one nobody can configure.
+    redirectAtStepsWithoutProgress: Math.max(1, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS, maxStepsWithoutProgress - 1)),
     maxUnusableDecisionsInARow: unusable?.maxInARow
       ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
     // A quarter of what a decision carries, capped: enough for a few dozen

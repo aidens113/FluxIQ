@@ -524,48 +524,48 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.activeGrantsAfter).toBe(0);
   }, 30_000);
 
-  // It used to stop after three. Three was the no-progress guard as well as the
-  // malformed-reply guard, and it ended builds that were working, so the guard
-  // is now a far backstop and what bounds a run of bad replies is what the run
-  // may spend -- here the grant's own call count.
-  it("stops once a run of unusable decisions has spent what the grant allows, with a named outcome, and releases the grant", async () => {
+  // **The guard stops this, and until 2026-09-28 it could not.** It used to stop
+  // after three, three ended builds that were working, and the answer was to
+  // make the guard twenty-four -- which is at or above `maxIterations` on every
+  // run anybody makes, because the guard is held to the iterations and a build
+  // is given 12, 26 or 48 calls. So this run of eleven identical malformed
+  // replies was ended by the *grant's call count*, published as "the loop ran
+  // out of turns", and no stall could ever be reported as a stall. Eight is read
+  // off two live traces (`runtime/loop-limits/evidence-loop.ts`), and the
+  // difference is visible here: the same script now stops at eight of twelve,
+  // four calls unspent, and says what actually happened.
+  it("stops on the no-progress guard while the grant still has calls, with a named outcome, and releases the grant", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
-    expect(run.sentIterations).toEqual(Array.from({ length: 11 }, (_, index) => index + 1));
-    expect(run.revealed).toHaveLength(11);
+    expect(run.sentIterations).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
+    expect(run.revealed).toHaveLength(8);
     expect(run.failure).toMatchObject({
-      // **What ended this is the grant's call count, and that is what it says.**
-      // Neither guard could have fired first: both the no-progress guard and the
-      // unusable backstop are held to the loop's own iterations, so on a
-      // twelve-call run there is no room beneath the budget for either. It used
-      // to be published as `evidence_unusable_decision` at `retryable: false`
-      // because the last decision was a refusal -- true of the decision, false
-      // of the ending, and the mistake that cost a live debug hours
-      // (`runtime/llm/evidence-loop/exhaustion.ts`). The eleven identical
-      // refusals travel as issue codes instead, which is where the rest of this
-      // record's issue codes already live.
-      code: "flow_bootstrap.evidence_iteration_limit",
+      // The stall's own ending, not the budget's. `retryable: false` is right
+      // here and wrong for an exhaustion, which is the distinction
+      // `runtime/llm/evidence-loop/exhaustion.ts` exists to keep: a build whose
+      // replies keep coming back unusable is not one a bigger budget fixes.
+      code: "flow_bootstrap.evidence_unusable_decision",
       stage: "provider_output_validation",
-      retryable: true,
+      retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
       // Every malformed reply was paid for nothing, so the record says so.
       accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 0, totalTokens: 0 }),
       // One step per decision, each naming the iteration that paid for it --
-      // which is the whole point: eleven refusals reading the same code are
+      // which is the whole point: eight refusals reading the same code are
       // told apart by nothing else.
       // `at` rides on every step now, a clock reading rather than a value, so
       // the steps are matched on what they say and their moment is asserted
       // as being present at all.
       evidenceLoop: {
-        iterationCount: 12, decisionCount: 11, toolCallCount: 0, evidenceBytes: expect.any(Number),
-        // Never a completion attempt, and never a draft step: this build asked
-        // for nothing the loop could act on, which the counts now say outright.
-        exhausted: { bound: "budget", maxIterations: 12, iterations: 12, draftSteps: 0, proposableSteps: 0, completionAttempts: 0 },
-        steps: Array.from({ length: 11 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) }))
+        iterationCount: 8, decisionCount: 8, toolCallCount: 0, evidenceBytes: expect.any(Number),
+        steps: Array.from({ length: 8 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) }))
       },
       issueCodes: ["llm.provider_malformed_response"]
     });
+    // A stall is not an exhaustion, and the record must not carry the other
+    // one's facts: nothing ran out here.
+    expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");
     expect(run.adaptationCount).toBe(0);
     expect(run.revoked).toHaveLength(1);
     expect(run.activeGrantsAfter).toBe(0);

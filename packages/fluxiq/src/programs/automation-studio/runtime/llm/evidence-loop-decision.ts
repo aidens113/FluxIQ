@@ -59,9 +59,9 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; nodeId?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; nodeId?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "nodeId", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "nodeId", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
@@ -83,6 +83,12 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
       ...(value.resultCode ? { resultCode: value.resultCode } : {}),
       ...(closedCode(value.resultReason) ? { resultReason: value.resultReason as string } : {}),
+      // A count, read as one and never as a code: the caller saying it has just
+      // answered with what it already answered. Dropped rather than fatal for
+      // the same reason the two beside it are, and held to two or more because
+      // the first answer of a run is not a repeat of anything.
+      ...(typeof value.repeatedAnswer === "number" && Number.isInteger(value.repeatedAnswer) && value.repeatedAnswer >= 2
+        ? { repeatedAnswer: value.repeatedAnswer } : {}),
       ...(closedCode(value.nodeId) ? { nodeId: value.nodeId as string } : {}),
       ...(draft ? { draft } : {})
     };

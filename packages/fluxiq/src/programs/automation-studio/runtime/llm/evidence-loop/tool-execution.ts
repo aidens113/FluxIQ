@@ -27,6 +27,28 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    */
   resultReason?: string;
   /**
+   * How many times in a row this caller has now answered this call with what it
+   * had already answered, counting from 2 -- the caller's own statement that
+   * the call it just made carried nothing the model did not hold.
+   *
+   * **Why the loop cannot work this out for itself.** It can, and does, for an
+   * answer that repeats byte for byte (`../evidence-loop.ts`). What it cannot
+   * see is an answer that repeats *and says so*: a caller that writes the
+   * repetition onto the packet -- which is the right thing for it to do, since
+   * a model told the same words again has no way to tell a repeat from a new
+   * answer that happens to agree -- makes every repeat differ from the last by
+   * the count it carries. On `run-mulum3x7-18ceeb75` the web domain's own
+   * repeat notice did exactly that, and Core's byte comparison went blind to
+   * the five refusals it was announcing.
+   *
+   * So the caller says it here, in a number Core reads as a count and never as
+   * a code. A repeat is not a reason to refuse anything: the call happened, its
+   * evidence stands, and only the loop's no-progress guard is told. A value
+   * that is not a whole number of two or more is dropped, like the other
+   * diagnostics beside it.
+   */
+  repeatedAnswer?: number;
+  /**
    * The node this call ran, resolved by the caller against its own catalog.
    *
    * Only a name the caller resolved may be reported here. A name the model

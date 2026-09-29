@@ -23,6 +23,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, automationSt
 // reads a different path than it did before.
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   automationStudioLlmEvidenceAnsweredRequestNote,
   automationStudioLlmEvidenceCallDiagnostic as callDiagnostic,
@@ -31,6 +32,7 @@ import {
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopDraftShown,
   automationStudioLlmEvidenceLoopFailure as failure,
+  automationStudioLlmEvidenceNoProgress,
   automationStudioLlmEvidenceRerunRequest,
   automationStudioLlmEvidenceUnusedCallId,
   type AutomationStudioLlmEvidenceAnsweredRequestCode,
@@ -287,10 +289,6 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const observeToolFailures = (input.toolFailures ?? (input.unusableDecisions ? "observe" : "end")) === "observe";
   // Calls that failed: counted as calls, never as evidence toward `minToolCalls`.
   let failedToolCalls = 0;
-  // The no-progress guard: steps in a row that gave the loop nothing new, and
-  // the unusable issue sets seen since the last tool result.
-  let stepsWithoutProgress = 0;
-  const unusableIssueSets = new Set<string>();
   // The far backstop: unusable decisions in a row, however they differ, and the latest one's issues.
   let unusableInARow = 0;
   let lastIssueCodes: readonly string[] = [];
@@ -298,22 +296,36 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // turns having never tried to finish and one that tried three times and was
   // refused are different builds, and the ending alone cannot tell them apart.
   let completionAttempts = 0;
-  // What the last decision was shown, and what was brought back into view since
-  // the last tool result: asking once for a result that had left the window is
-  // how the model sees it again, so only a second ask, or one for a result it
-  // could see, is a step without progress.
-  let lastShown = new Set<string>();
-  const broughtBack = new Set<string>();
   // The budget's clock and the decisions whose usage it could count.
   const clock = input.budget?.now ?? Date.now;
   const startedAtMs = clock();
   let reportedDecisions = 0;
   let finalDecision = false;
-  const progressed = (): void => {
-    stepsWithoutProgress = 0;
-    unusableIssueSets.clear();
-    broughtBack.clear();
-  };
+  // Whether this iteration offered the model the chance to finish. Read by the
+  // redirection rather than passed to it: it is pushed from five places, only
+  // two of them inside the iteration that worked this out, and telling a model
+  // to finish when finishing is not on offer is what that entry must never do.
+  let offeredCompletion = false;
+  // Everything the loop remembers in order to tell working from repeating, and
+  // what it says when the answer is repeating (`./evidence-loop/no-progress.ts`
+  // states the whole rule and the run it was measured on). The stop is the last
+  // resort: several steps earlier this starts telling the model plainly that it
+  // already holds what it keeps asking for, at no cost in calls or iterations.
+  const noProgress = automationStudioLlmEvidenceNoProgress({
+    max: limits.maxStepsWithoutProgress,
+    redirectAt: limits.redirectAtStepsWithoutProgress,
+    facts: () => ({
+      proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
+      completionAttempts,
+      canComplete: offeredCompletion,
+      answerability: previousAnswerability
+    }),
+    // Dropped rather than ending anything when it will not fit.
+    show: (iteration: number, note: JsonObject) => {
+      if (reserveEvidence(note) === undefined) return;
+      evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, value: note });
+    }
+  });
   // Counts evidence the loop itself adds against the byte limit. Returns its
   // bytes, or nothing when it does not fit.
   const reserveEvidence = (value: JsonValue): number | undefined => {
@@ -327,29 +339,24 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: RowTransition): { error: unknown } | undefined => {
     unusableInARow += 1;
     lastIssueCodes = issueCodes;
-    const issueSet = automationStudioLlmUnusableDecisionIssueSet(issueCodes);
-    if (unusableIssueSets.has(issueSet)) stepsWithoutProgress += 1;
-    else {
-      unusableIssueSets.add(issueSet);
-      stepsWithoutProgress = 1;
-    }
+    if (transition) noProgress.completionRefused(issueCodes);
+    if (noProgress.sameIssuesAgain(automationStudioLlmUnusableDecisionIssueSet(issueCodes))) noProgress.stepped();
+    else noProgress.restarted();
     recordRow(step, transition);
-    if (stepsWithoutProgress < limits.maxStepsWithoutProgress && unusableInARow < limits.maxUnusableDecisionsInARow) return undefined;
+    if (!noProgress.reached() && unusableInARow < limits.maxUnusableDecisionsInARow) {
+      // A refused completion is the one stall the redirection has something
+      // specific to say about: its issue codes are what stand between the
+      // draft and a Flow.
+      noProgress.redirect(step.iteration);
+      return undefined;
+    }
     return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
   };
   // **A loop that ran out of turns ends as that, whatever its last decision
-  // was.** This used to divert to `unusableDecisions.stalled` whenever the last
-  // paid decision had been refused, on the reasoning that the refusal was why
-  // there was no result -- so an exhausted build was published as
-  // "the model kept answering with something the exploration could not use",
-  // not retryable, at a stage that validates provider output. Nothing had been
-  // validated and the provider's output was never the problem: the loop used
-  // its last call. `./evidence-loop/exhaustion.ts` records what that cost and
-  // which live run it was. The last refusal is not lost -- it travels as
-  // `lastIssueCodes` -- but it is carried as context, never as the ending.
-  //
-  // Shared by every allowance that can run out: the budget's at the top of an
-  // iteration, the tool-call ceiling, and the literal max-iteration exit.
+  // was** (`./evidence-loop/exhaustion.ts` says what the other reading cost and
+  // which live run it was). Shared by every allowance that can run out: the
+  // budget's at the top of an iteration, the tool-call ceiling, and the literal
+  // max-iteration exit.
   const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound): AutomationStudioLlmEvidenceLoopResult =>
     failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, {
       bound,
@@ -380,18 +387,19 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (!observeToolFailures) return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     accounting.toolCalls += 1;
     failedToolCalls += 1;
-    stepsWithoutProgress += 1;
+    noProgress.stepped(tool.toolId);
     if (tool.effect === "mutate") { mutationEpoch += 1; attemptEpoch += 1; }
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", callId, toolId: tool.toolId, resultCode: code, ...(usage ? { usage } : {}) };
-    if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
+    if (noProgress.reached()) {
       recordRow(step, { draftChanged });
       return failure(draftSteps, "llm_evidence_loop.tool_failed", trace, accounting);
     }
-    const record = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+    const record = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
     const recordBytes = reserveEvidence(record);
     recordRow(recordBytes === undefined ? step : { ...step, evidenceBytes: recordBytes }, { draftChanged });
     if (recordBytes === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
     evidence.push({ callId, toolId: tool.toolId, value: record, call: { resultCode: code, changed: tool.effect === "mutate" ? "unknown" : "no" } });
+    noProgress.redirect(iteration);
     return undefined;
   };
   // A request the loop answers itself: the tool is not run, the result that
@@ -404,14 +412,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     code: AutomationStudioLlmEvidenceAnsweredRequestCode,
     answeredByCallId: string
   ): AutomationStudioLlmEvidenceLoopResult | undefined => {
-    if (lastShown.has(answeredByCallId) || broughtBack.has(answeredByCallId)) stepsWithoutProgress += 1;
-    else broughtBack.add(answeredByCallId);
+    noProgress.answeredFromEvidence(answeredByCallId, decision.toolId);
     const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
-    if (stepsWithoutProgress >= limits.maxStepsWithoutProgress) {
+    if (noProgress.reached()) {
       recordRow({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
       return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     }
-    const note = automationStudioLlmEvidenceAnsweredRequestNote({ code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+    const note = automationStudioLlmEvidenceAnsweredRequestNote({ code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
     const answeredTool = toolsById.get(decision.toolId);
     const draftChanged = draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, proposes: false, resultCode: code });
     const noteBytes = reserveEvidence(note);
@@ -423,6 +430,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (earlier >= 0) evidence.push(...evidence.splice(earlier, 1));
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, value: note });
     recordRow({ ...step, evidenceBytes: noteBytes }, { draftChanged });
+    // After the note, so the redirection is the newest thing the model reads.
+    noProgress.redirect(iteration);
     return undefined;
   };
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
@@ -478,6 +487,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
         latestObservations.set(initialTool.toolId, callId);
       }
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence, call: { resultCode: execution.resultCode ?? "ok", changed: "no" } });
+      // The free look is this tool's last answer as much as any other call is,
+      // so a first decision that asks for it again and gets the same bytes back
+      // is a step without progress rather than the loop's first step.
+      noProgress.answered(initialTool.toolId, JSON.stringify(execution.evidence));
       const draftChanged = draftRecord({ iteration: 0, callId, ...callRecord(initialTool, initialInput, execution), effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
       const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
         ? "unobserved"
@@ -499,6 +512,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     );
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
     const canComplete = accounting.toolCalls - failedToolCalls >= limits.minToolCalls;
+    offeredCompletion = canComplete;
     if (!eligibleTools.length && !canComplete) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
     // What the budget leaves (`loop-budget.ts`): told to the model as
     // the newest entry, and a last decision that is offered only completion.
@@ -535,7 +549,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const besideBytes = beside.reduce((total, entry) => total + Buffer.byteLength(JSON.stringify(entry), "utf8") + 1, 0);
       const window = automationStudioLlmEvidenceContextWindow(evidence, limits.maxEvidenceContextBytes - besideBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls - beside.length);
       const shown = [...window, ...beside];
-      lastShown = new Set(shown.map((entry) => entry.callId));
+      noProgress.shown(shown.map((entry) => entry.callId));
       decision = automationStudioLlmEvidenceParseDecision(await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
     } catch (thrown) {
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
@@ -545,7 +559,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}) }, thrown.issueCodes);
         if (!stalled) {
           // The model is told what was wrong, as evidence, before it is asked again.
-          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
           if (reserveEvidence(feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
           evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
           continue;
@@ -636,15 +650,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // nothing silently, on a build where every other kind had been telling the
       // model why since t140. The row records both and the model is shown both.
       const refused = [...amended.refused, ...rerun.refused];
-      // **How many steps the decision edited, beside which kind of edit it was.**
-      // One decision may carry sixteen amendments and the code records one
-      // word for all of them, with `rerun` beating everything applied beside
-      // it -- so `draft_rerun` is equally consistent with one amendment and
-      // with sixteen. On `run-muht9lpw-a39aa056` two amend rows both read
-      // `draft_rerun`, nine action steps were withdrawn alongside them, and a
-      // reader had to establish that by eliminating three files and counting
-      // output tokens. A count cannot say which steps went, and it says at
-      // once that steps went at all.
+      // How many steps the decision edited, beside which kind of edit it was
+      // (`./evidence-loop/draft-change.ts` says why a count had to join the word).
       const draftChange: AutomationStudioLlmEvidenceLoopDraftChange = {
         targetedStepIds,
         appliedCount: amended.applied + (rerun.request ? 1 : 0),
@@ -657,15 +664,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
         { draftChanged: Boolean(amended.applied || rerun.request), draftChange }
       );
       // An edit is progress on the draft and never on the evidence, so an edit
-      // that landed neither clears the no-progress guard nor is spent by it.
-      // Clearing it was the first thing tried, and a live build alternated a
-      // repeated request with an edit until the reset had laundered every
-      // repeat: the guard never tripped and the build ran to its iteration
-      // limit having gathered nothing new since its eleventh call. An edit that
-      // changed nothing does count, because that guard is the only thing that
-      // stops a model editing one step forever.
-      if (!rerun.request && !amended.applied && (stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
-        return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      // that landed neither clears the no-progress guard nor is spent by it --
+      // and an edit that changed nothing does count, because that guard is the
+      // only thing that stops a model editing one step forever. Six of these in
+      // a row, all `draft_unchanged` with the same two step ids refused each
+      // time, is the first half of `run-mulum3x7-18ceeb75`, so the redirection
+      // is what the sixth gets rather than nothing at all.
+      if (!rerun.request && !amended.applied) {
+        noProgress.stepped();
+        if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+        noProgress.redirect(iteration);
       }
       // The model is told which of its amendments changed nothing and why, as
       // evidence, before it is asked again -- the same way a refused completion
@@ -674,7 +682,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // is one the model must still be told about.
       if (refused.length) {
         const amendmentFeedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-          refusals: refused, applied: amended.applied, steps: draftSteps, stepsWithoutProgress, maxStepsWithoutProgress: limits.maxStepsWithoutProgress
+          refusals: refused, applied: amended.applied, steps: draftSteps, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress
         });
         if (reserveEvidence(amendmentFeedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
         evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });
@@ -767,30 +775,25 @@ export async function runAutomationStudioLlmEvidenceLoop(
       { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
       { draftChanged, pageState }
     );
-    // **A refused look is not progress**, and saying so is the deliberate half
-    // of letting it be retried. Deleting its signature takes away the bound
-    // that used to stop it being asked forever, so the no-progress guard has to
-    // be that bound instead. A call that threw is already counted this way
-    // (`toolFailed`); a look that returned tidily and said no is the same event
-    // in a better envelope, and counting one while resetting for the other is
-    // exactly what would leave the retry unbounded. The model still learns from
-    // the first refusal, and acting on what it learned means doing something
-    // else, which clears the count on its first answered call. At the default
-    // of 24 steps a build genuinely working around a refusal has room, and one
-    // that is only asking again stops.
-    //
-    // A refused *action* used to keep clearing the count, bounded by its own
-    // signature instead. That bound only catches an identical retry, and a
-    // model naming a different target each time escapes it: a new signature
-    // every call, a cleared count every call, and nothing stopping either.
-    // `company-directory-register-page` spent 31 of its 45 build steps that way
-    // and ended in `bootstrap.evidence_unusable_decision` after 44 provider
-    // calls (`run-muf2bs04-f6fea9fe`, 2026-09-24). So the count now asks
-    // whether anything happened -- no applied effect and an `ok: false` answer
-    // -- and a call that did something still clears it, action or look.
-    if (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied })) progressed();
-    else if ((stepsWithoutProgress += 1) >= limits.maxStepsWithoutProgress) {
-      return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+    // **What the loop learned, not what it ran.** The whole rule -- the four
+    // ways of learning nothing, why a refused look counts, why a repeat that
+    // announces itself needs the caller to say so, and the live runs each was
+    // measured on -- is in `./evidence-loop/no-progress.ts`. A call that
+    // changed something is always progress; anything else whose answer is the
+    // one its own tool already gave is not, whatever its code says.
+    const repeated = noProgress.answerRepeats({
+      toolId: decision.toolId,
+      answer: JSON.stringify(value),
+      // The caller's statement about *this* call, not its tool's standing
+      // declaration, which is what lets one tool run a whole library.
+      mutated: record.effect === "mutate" && effectApplied,
+      ...(execution.repeatedAnswer === undefined ? {} : { repeatedAnswer: execution.repeatedAnswer })
+    });
+    if (!repeated && !automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied })) noProgress.cleared();
+    else {
+      noProgress.stepped(decision.toolId);
+      if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      noProgress.redirect(iteration);
     }
   }
   return exhausted("iterations");
