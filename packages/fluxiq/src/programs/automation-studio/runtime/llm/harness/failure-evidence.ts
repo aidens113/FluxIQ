@@ -1,3 +1,4 @@
+import { AutomationStudioLlmRequestRefusedError } from "./request-refusal.ts";
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmRecentActionContext } from "./context-packet.ts";
@@ -69,12 +70,12 @@ export function sanitizeAutomationStudioLlmFailureEvidence(
   evidence: JsonObject,
   deniedKeys: readonly string[] = []
 ): JsonObject {
-  if (taskKind !== "runtime_diagnosis" && taskKind !== "runtime_patch") throw new Error("Failure evidence is available only to runtime diagnosis and patch tasks.");
-  if (typeof evidence.schemaVersion !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(evidence.schemaVersion)) throw new Error("Failure evidence requires a bounded schema version.");
-  if (!boundedFailureEvidenceValue(evidence, new Set(deniedKeys.map(automationStudioEvidenceKey)))) throw new Error("Failure evidence contains an unsafe or unbounded value.");
+  if (taskKind !== "runtime_diagnosis" && taskKind !== "runtime_patch") throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence is available only to runtime diagnosis and patch tasks.");
+  if (typeof evidence.schemaVersion !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(evidence.schemaVersion)) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence requires a bounded schema version.");
+  if (!boundedFailureEvidenceValue(evidence, new Set(deniedKeys.map(automationStudioEvidenceKey)))) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence contains an unsafe or unbounded value.");
   let serialized: string;
-  try { serialized = JSON.stringify(evidence); } catch { throw new Error("Failure evidence must be serializable JSON."); }
-  if (Buffer.byteLength(serialized, "utf8") > AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES) throw new Error("Failure evidence exceeds the byte limit.");
+  try { serialized = JSON.stringify(evidence); } catch { throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence must be serializable JSON."); }
+  if (Buffer.byteLength(serialized, "utf8") > AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence exceeds the byte limit.");
   return JSON.parse(serialized) as JsonObject;
 }
 

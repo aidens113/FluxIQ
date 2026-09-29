@@ -1,3 +1,4 @@
+import { AutomationStudioLlmRequestRefusedError } from "./request-refusal.ts";
 import {
   isAutomationStudioAdaptiveFailureClass,
   parseAutomationStudioFailureRecord,
@@ -25,6 +26,7 @@ import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage }
 import { packAutomationStudioLlmConversation, type AutomationStudioLlmConversationContext } from "./conversation.ts";
 import { automationStudioExecutableTargetKey, screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
+import { automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
 import { AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH, type AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
@@ -312,7 +314,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
  */
 function packRoutingContext(routing: AutomationStudioFlowBootstrapRoutingContext, deniedKeys: readonly string[]): AutomationStudioFlowBootstrapRoutingContext {
   if (screenAutomationStudioLlmEvidence(routing, deniedKeys).deniedKey) {
-    throw new Error("The routing context carries a key the bound domain denies, so the request is refused rather than sent.");
+    throw new AutomationStudioLlmRequestRefusedError("llm.request.routing_denied_key", "The routing context carries a key the bound domain denies, so the request is refused rather than sent.");
   }
   const situations = routing.situations.map((situation) => ({
     seen: situation.seen,
@@ -348,7 +350,7 @@ function packDiagnosisFields(
   taskKind: AutomationStudioLlmTaskKind,
   diagnosis: AutomationStudioLlmDiagnosisFields
 ): { diagnosis?: AutomationStudioLlmDiagnosisFields } {
-  if (taskKind !== "runtime_patch" && taskKind !== "runtime_diagnosis") throw new Error("The model's diagnosis is carried only to a runtime patch or a re-planning runtime diagnosis request.");
+  if (taskKind !== "runtime_patch" && taskKind !== "runtime_diagnosis") throw new AutomationStudioLlmRequestRefusedError("llm.request.diagnosis_misplaced", "The model's diagnosis is carried only to a runtime patch or a re-planning runtime diagnosis request.");
   const verdict = (value: unknown): "yes" | "no" | "unknown" | undefined =>
     value === "yes" || value === "no" || value === "unknown" ? value : undefined;
   const text = (value: unknown): string | undefined =>
@@ -376,15 +378,21 @@ function packDiagnosisFields(
  * A request carrying a denied key is not built, so no provider is called; the
  * loop that asked ends on the refusal, which is what a failure capture carrying
  * one does too. The refusal names no key and repeats no value.
+ *
+ * The draft beside the evidence is the one exception, and it is withheld from
+ * rather than refused: it is the Flow's own authored parameters, not page
+ * payload, and refusing it ended every repair of a Flow whose steps carried a
+ * denied key before the repair made a single call (`draft-screen.ts`).
  */
 function packEvidenceLoop(
   loop: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>,
   deniedKeys: readonly string[]
 ): NonNullable<AutomationStudioLlmContextPacket["evidenceLoop"]> {
-  if (loop.evidence.some((item) => screenAutomationStudioLlmEvidence(item.value, deniedKeys).deniedKey)) {
-    throw new Error("Evidence-loop evidence carries a key the bound domain denies, so the decision request is refused rather than sent.");
+  const evidence = loop.evidence.map((item) => automationStudioLlmDraftEntryWithoutDeniedKeys(item, deniedKeys));
+  if (evidence.some((item) => screenAutomationStudioLlmEvidence(item.value, deniedKeys).deniedKey)) {
+    throw new AutomationStudioLlmRequestRefusedError("llm.request.evidence_denied_key", "Evidence-loop evidence carries a key the bound domain denies, so the decision request is refused rather than sent.");
   }
-  return structuredClone(loop);
+  return structuredClone({ ...loop, evidence });
 }
 
 /**
@@ -410,14 +418,14 @@ function declaredDeniedEvidenceKeys(input: AutomationStudioLlmHarnessInput): rea
   const gathered = input.taskKind === "evidence_tool_decision" && (input.evidenceLoop?.evidence.length ?? 0) > 0;
   const observed = (input.flowBootstrap?.routing?.situations.length ?? 0) > 0;
   if (input.failureEvidence !== undefined || input.explorationEvidence !== undefined || input.reusableContext !== undefined || gathered || observed) {
-    throw new Error("Automation Studio LLM context carrying failure evidence, exploration evidence, gathered evidence-loop evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
+    throw new AutomationStudioLlmRequestRefusedError("llm.request.denied_keys_undeclared", "Automation Studio LLM context carrying failure evidence, exploration evidence, gathered evidence-loop evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
   }
   return [];
 }
 
 function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket, deniedKeys: readonly string[]): AutomationStudioReusableLlmContextPacket {
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items) || packet.items.length > 5) throw new Error("Reusable LLM context packet is invalid.");
+  if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items) || packet.items.length > 5) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet is invalid.");
   const ids = new Set<string>();
   const items = packet.items.map((item) => {
     const allowed = ["advisory", "recordId", "contentDigest", "outcome", "reviewerState", "validationState", "sourceRunIds", "sourceAdaptationIds", "promptProjection"];
@@ -426,12 +434,12 @@ function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmCon
       || !["succeeded", "failed", "unknown"].includes(item.outcome) || !["unreviewed", "approved"].includes(item.reviewerState)
       || !["unknown", "validated", "applied"].includes(item.validationState)
       || !safeReusableSourceIds(item.sourceRunIds) || !safeReusableSourceIds(item.sourceAdaptationIds)
-      || containsReusableExecutableTarget(item.promptProjection, denied)) throw new Error("Reusable LLM context packet is invalid.");
+      || containsReusableExecutableTarget(item.promptProjection, denied)) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet is invalid.");
     ids.add(item.recordId);
     return structuredClone(item);
   });
   const clean: AutomationStudioReusableLlmContextPacket = { schemaVersion: packet.schemaVersion, items };
-  if (Buffer.byteLength(JSON.stringify(clean), "utf8") > 8_192) throw new Error("Reusable LLM context packet exceeds its byte limit.");
+  if (Buffer.byteLength(JSON.stringify(clean), "utf8") > 8_192) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet exceeds its byte limit.");
   return clean;
 }
 

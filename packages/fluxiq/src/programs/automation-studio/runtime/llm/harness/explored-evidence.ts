@@ -7,6 +7,7 @@
 // leaves the process. That is the shape the failure-evidence slot already had:
 // one rule, run by its builder and re-run by the adapter.
 
+import { AutomationStudioLlmRequestRefusedError } from "./request-refusal.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioLlmTokenBudgetBytes } from "../token-estimation.ts";
@@ -65,12 +66,12 @@ export function packAutomationStudioLlmExploredEvidence(
   deniedKeys: readonly string[],
   packedBytes: number
 ): AutomationStudioLlmExploredEvidenceSlot {
-  if (input.taskKind !== "runtime_patch" && input.taskKind !== "runtime_diagnosis") throw new Error("Exploration evidence is available only to runtime patch and runtime diagnosis tasks.");
-  if (!Number.isSafeInteger(exploration.maxBytes) || exploration.maxBytes < 1) throw new Error("Exploration evidence requires a positive byte allowance.");
-  if (!Array.isArray(exploration.packets)) throw new Error("Exploration evidence requires a list of packets.");
+  if (input.taskKind !== "runtime_patch" && input.taskKind !== "runtime_diagnosis") throw new AutomationStudioLlmRequestRefusedError("llm.request.exploration_evidence_invalid", "Exploration evidence is available only to runtime patch and runtime diagnosis tasks.");
+  if (!Number.isSafeInteger(exploration.maxBytes) || exploration.maxBytes < 1) throw new AutomationStudioLlmRequestRefusedError("llm.request.exploration_evidence_invalid", "Exploration evidence requires a positive byte allowance.");
+  if (!Array.isArray(exploration.packets)) throw new AutomationStudioLlmRequestRefusedError("llm.request.exploration_evidence_invalid", "Exploration evidence requires a list of packets.");
   const labels = new Set<string>();
   for (const entry of exploration.packets) {
-    if (!labelledEntry(entry, labels)) throw new Error("Exploration evidence packets require distinct bounded labels.");
+    if (!labelledEntry(entry, labels)) throw new AutomationStudioLlmRequestRefusedError("llm.request.exploration_evidence_invalid", "Exploration evidence packets require distinct bounded labels.");
     labels.add(entry.evidenceId);
   }
   const limits = resolveAutomationStudioLlmTokenLimits(input.tokenLimits).limits;

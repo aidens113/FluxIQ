@@ -38,9 +38,10 @@
 // Every refusal is recorded on the run under one key with one code, so "this
 // was not re-authored" is always a stated reason rather than a silence.
 
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../result-verification/index.ts";
-import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./repair.ts";
+import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./history.ts";
 
 /**
  * Core's code for the verdict this routes on.
@@ -121,8 +122,11 @@ function automationStudioRefutedResultCode(detail: AutomationStudioFlowRunDetail
  * adaptations are promoted in general.
  */
 export async function automationStudioReauthorRefutedResult(input: {
-  /** Builds the extend-mode adaptation and answers its id. */
-  generate(): Promise<string>;
+  /**
+   * Builds the extend-mode adaptation and answers its id, or its id and what
+   * the build spent, which is then recorded on the run beside the attempt.
+   */
+  generate(): Promise<string | AutomationStudioRefutedResultGenerated>;
   approve(adaptationId: string): Promise<unknown>;
   apply(adaptationId: string): Promise<unknown>;
   /**
@@ -138,12 +142,18 @@ export async function automationStudioReauthorRefutedResult(input: {
    * computed in the diagnostic the caller already parses, and thrown away here.
    */
   failureCode(error: unknown): AutomationStudioRefutedResultFailure;
-}): Promise<{ adaptationId?: string; applied?: true; failure?: AutomationStudioRefutedResultFailure }> {
+  now?: () => number;
+}): Promise<{ adaptationId?: string; applied?: true; failure?: AutomationStudioRefutedResultFailure; accounting?: JsonObject; durationMs: number }> {
+  const now = input.now ?? Date.now;
+  const started = now();
   let adaptationId: string;
+  let accounting: JsonObject | undefined;
   try {
-    adaptationId = await input.generate();
+    const generated = await input.generate();
+    adaptationId = typeof generated === "string" ? generated : generated.adaptationId;
+    accounting = typeof generated === "string" ? undefined : generated.accounting;
   } catch (error) {
-    return { failure: input.failureCode(error) };
+    return { failure: input.failureCode(error), durationMs: now() - started };
   }
   // From here the edit exists, so its id travels whatever happens next: an
   // approval refused for an unanswered permission question has still produced a
@@ -152,10 +162,13 @@ export async function automationStudioReauthorRefutedResult(input: {
     await input.approve(adaptationId);
     await input.apply(adaptationId);
   } catch (error) {
-    return { adaptationId, failure: input.failureCode(error) };
+    return { adaptationId, failure: input.failureCode(error), ...(accounting ? { accounting } : {}), durationMs: now() - started };
   }
-  return { adaptationId, applied: true };
+  return { adaptationId, applied: true, ...(accounting ? { accounting } : {}), durationMs: now() - started };
 }
+
+/** What a successful re-author build answers: its adaptation, and what it spent (`generateFlowBootstrapAdaptation`'s accounting). */
+export type AutomationStudioRefutedResultGenerated = { adaptationId: string; accounting?: JsonObject };
 
 /**
  * The run, carrying what became of the route.
@@ -165,6 +178,15 @@ export async function automationStudioReauthorRefutedResult(input: {
  * records why. Both are on the run itself, because the run detail is what the
  * next reader has -- an evaluation, a person, or the next agent looking at why
  * nothing changed.
+ *
+ * **Every attempt, not only the latest.** The top-level fields are the latest
+ * attempt's, as they always were, so every existing reader keeps working.
+ * `attempts` lists each re-author this run has made, oldest first, with how long
+ * it took, what it spent, and -- for a build that failed -- the build's own
+ * decision rows from its failure diagnostic. A build that succeeded keeps its
+ * rows on its adaptation (`adaptationId`), exactly where a first build keeps
+ * them, so the two are read the same way. Before this, `run-mulwm2dc-0bd95f22`'s
+ * four-minute re-author left nothing in the run to debug it from.
  */
 export function automationStudioRefutedResultReauthored(input: {
   detail: AutomationStudioFlowRunDetail;
@@ -172,28 +194,74 @@ export function automationStudioRefutedResultReauthored(input: {
   adaptationId?: string | undefined;
   applied?: true | undefined;
   failure?: AutomationStudioRefutedResultFailure | undefined;
+  /** Which repair of this run this was: 1 for the first. */
+  attempt?: number | undefined;
+  durationMs?: number | undefined;
+  accounting?: JsonObject | undefined;
+  /** What the repair build was told, as counts and codes (`brief.ts`'s record). */
+  brief?: JsonObject | undefined;
 }): AutomationStudioFlowRunDetail {
   const failure = input.failure;
+  const latest: JsonObject = input.decision.route
+    ? {
+        routed: true,
+        ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}),
+        ...(input.applied ? { applied: true } : {}),
+        ...(failure ? { code: failure.code } : {}),
+        // Everything the diagnostic knew that a reader can act on. Each is
+        // absent when the caller could not read it, so "not recorded" and
+        // "recorded as none" stay different facts.
+        ...(failure?.stage ? { stage: failure.stage } : {}),
+        ...(failure?.retryable === undefined ? {} : { retryable: failure.retryable }),
+        ...(failure?.providerInvocation ? { providerInvocation: failure.providerInvocation } : {}),
+        ...(failure?.providerResponse ? { providerResponse: failure.providerResponse } : {}),
+        ...(failure?.providerStatus === undefined ? {} : { providerStatus: failure.providerStatus })
+      }
+    : { routed: false, code: input.decision.refusal };
+  const attempt: JsonObject = {
+    ...(input.attempt === undefined ? {} : { attempt: input.attempt }),
+    ...latest,
+    ...(input.durationMs === undefined ? {} : { durationMs: Math.max(0, Math.round(input.durationMs)) }),
+    ...(input.accounting ?? failure?.accounting ? { accounting: (input.accounting ?? failure?.accounting)! } : {}),
+    ...(failure?.evidenceLoop ? { evidenceLoop: failure.evidenceLoop } : {}),
+    ...(input.brief ? { brief: input.brief } : {})
+  };
   return {
     ...input.detail,
     metadata: {
       ...(input.detail.metadata ?? {}),
-      [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: input.decision.route
-        ? {
-            routed: true,
-            ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}),
-            ...(input.applied ? { applied: true } : {}),
-            ...(failure ? { code: failure.code } : {}),
-            // Everything the diagnostic knew that a reader can act on. Each is
-            // absent when the caller could not read it, so "not recorded" and
-            // "recorded as none" stay different facts.
-            ...(failure?.stage ? { stage: failure.stage } : {}),
-            ...(failure?.retryable === undefined ? {} : { retryable: failure.retryable }),
-            ...(failure?.providerInvocation ? { providerInvocation: failure.providerInvocation } : {}),
-            ...(failure?.providerResponse ? { providerResponse: failure.providerResponse } : {}),
-            ...(failure?.providerStatus === undefined ? {} : { providerStatus: failure.providerStatus })
-          }
-        : { routed: false, code: input.decision.refusal }
+      [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: {
+        ...latest,
+        ...(input.attempt === undefined ? {} : { attempt: input.attempt }),
+        attempts: [...recordedAttempts(input.detail), attempt]
+      }
+    }
+  };
+}
+
+/**
+ * The run, recording that the re-author built nothing and the repair fell back
+ * to a smaller one.
+ *
+ * The defensive rule is that a repair which throws is retried or degraded,
+ * never silently ended. The retry is recorded as a second attempt; this is the
+ * degradation, on the same marker, so a reader sees "the build failed under
+ * this code, and the patch ladder was run instead" rather than a routed repair
+ * that simply stopped. `failed` says the fallback itself threw.
+ */
+export function automationStudioRefutedResultDegraded(
+  detail: AutomationStudioFlowRunDetail,
+  input: { to: "patch_ladder"; afterCode: string; failed?: true | undefined }
+): AutomationStudioFlowRunDetail {
+  const marker = reauthorMarker(detail) ?? {};
+  return {
+    ...detail,
+    metadata: {
+      ...(detail.metadata ?? {}),
+      [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: {
+        ...marker,
+        degraded: { to: input.to, afterCode: input.afterCode, ...(input.failed ? { failed: true } : {}) }
+      }
     }
   };
 }
@@ -202,8 +270,11 @@ export function automationStudioRefutedResultReauthored(input: {
  * What a reader is told about a step of this route that failed: the code, and
  * the closed facts around it that say which kind of failure it was.
  *
- * Codes, flags and a status number only, because this is written onto the run
- * and published from there.
+ * Codes, flags, counts and a status number, because this is written onto the
+ * run and published from there. `accounting` and `evidenceLoop` are the failed
+ * build's own diagnostic sections, already bounded and screened by the build
+ * (`flow-bootstrap/generation-failure/diagnostic.ts`), so a build that failed
+ * part way can be walked decision by decision.
  */
 export type AutomationStudioRefutedResultFailure = {
   code: string;
@@ -212,6 +283,8 @@ export type AutomationStudioRefutedResultFailure = {
   providerInvocation?: "not_attempted" | "attempted" | "unknown" | undefined;
   providerResponse?: "not_received" | "received" | "unknown" | undefined;
   providerStatus?: number | undefined;
+  accounting?: JsonObject | undefined;
+  evidenceLoop?: JsonObject | undefined;
 };
 
 /**
@@ -223,7 +296,23 @@ export type AutomationStudioRefutedResultFailure = {
  * same wrong answer.
  */
 export function automationStudioRefutedResultFlowWasReauthored(detail: AutomationStudioFlowRunDetail): boolean {
+  return reauthorMarker(detail)?.applied === true;
+}
+
+/**
+ * Whether an applied re-author may be replayed: false only where the grant
+ * continuation said it may not (`service/runtime-adaptation/reauthor-continuation.ts`).
+ */
+export function automationStudioRefutedResultReplayReady(detail: AutomationStudioFlowRunDetail): boolean {
+  return reauthorMarker(detail)?.replayReady !== false;
+}
+
+function reauthorMarker(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
   const marker = detail.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY];
-  if (!marker || typeof marker !== "object" || Array.isArray(marker)) return false;
-  return (marker as { applied?: unknown }).applied === true;
+  return marker && typeof marker === "object" && !Array.isArray(marker) ? marker as JsonObject : undefined;
+}
+
+function recordedAttempts(detail: AutomationStudioFlowRunDetail): JsonObject[] {
+  const attempts = reauthorMarker(detail)?.attempts;
+  return Array.isArray(attempts) ? attempts.filter((item): item is JsonObject => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
 }

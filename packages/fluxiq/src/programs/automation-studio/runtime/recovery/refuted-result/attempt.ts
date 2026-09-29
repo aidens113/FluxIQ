@@ -57,6 +57,8 @@ export type AutomationStudioRefutedResultAttemptInput = {
   /** The verification's own answer. Only a refutation produces an attempt. */
   outcome: AutomationStudioResultVerificationOutcome;
   now: number;
+  /** Which repair of this run the attempt opens. The first keeps the id it always had; a later one is suffixed, so two refutations of one run never share an id. */
+  attempt?: number | undefined;
 };
 
 /**
@@ -86,7 +88,7 @@ export function automationStudioRefutedResultAttempt(input: AutomationStudioRefu
   if (!source) return undefined;
   const startedAt = source.finishedAt ?? source.startedAt;
   const order = (input.detail.actionAttempts ?? []).reduce((highest, attempt) => Math.max(highest, attempt.order), 0) + 1;
-  const attemptId = `${AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX}.${input.runId}`;
+  const attemptId = `${AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX}.${input.runId}${input.attempt !== undefined && input.attempt > 1 ? `.${input.attempt}` : ""}`;
   return {
     trace: {
       attemptId,

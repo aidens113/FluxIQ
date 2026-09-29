@@ -102,3 +102,7 @@ export { automationStudioRuntimePatchOutputSchema } from "./runtime-patch-schema
 export { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 export { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 export { runAutomationStudioLlmHarness } from "./run.ts";
+// Every guard that refuses to build a request, named, so a build that failed on
+// one says which (`request-refusal.ts`).
+export { AUTOMATION_STUDIO_LLM_REQUEST_REFUSAL_CODES, AutomationStudioLlmRequestRefusedError, type AutomationStudioLlmRequestRefusalCode } from "./request-refusal.ts";
+export { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";

@@ -42,6 +42,19 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.pre_provider_invalid_timeout",
     "flow_bootstrap.pre_provider_invalid_token_limits",
     "flow_bootstrap.pre_provider_context_invalid",
+    // A model request Core refused to build, one code per guard
+    // (`runtime/llm/harness/request-refusal.ts`). Each was a plain throw that
+    // arrived as `flow_bootstrap.unexpected_error` at `provider_request`, which
+    // is all `run-mulxk0ro-36bf090d`'s wrong-answer repair left of itself: which
+    // guard refused, and that no provider was ever called, were both lost.
+    // Pre-provider because a refused request is never sent.
+    "flow_bootstrap.request_refused_evidence_denied_key",
+    "flow_bootstrap.request_refused_routing_denied_key",
+    "flow_bootstrap.request_refused_denied_keys_undeclared",
+    "flow_bootstrap.request_refused_reusable_context_invalid",
+    "flow_bootstrap.request_refused_diagnosis_misplaced",
+    "flow_bootstrap.request_refused_failure_evidence_invalid",
+    "flow_bootstrap.request_refused_exploration_evidence_invalid",
     // The run's spending authority, refused before anything was sent. Pre-provider
     // because that is what a refused reservation is: the harness never calls the
     // provider. They used to arrive on the path that carries provider metadata,

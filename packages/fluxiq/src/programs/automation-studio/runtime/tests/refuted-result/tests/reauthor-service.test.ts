@@ -118,6 +118,8 @@ interface TestHarness {
   projectId: string;
   flowId: string;
   taskKinds: string[];
+  /** What each build decision sent the provider, as the provider received it. */
+  decisionPayloads: string[];
   resolverObservations: ResolverObservation[];
   revokedGrantIds: string[];
   reauthorProviderStarted: Promise<void>;
@@ -181,6 +183,7 @@ async function createHarness(options: {
     }),
   });
   const taskKinds: string[] = [];
+  const decisionPayloads: string[] = [];
   const revokedGrantIds: string[] = [];
   let signalReauthorProviderStarted!: () => void;
   let releaseReauthorProvider!: () => void;
@@ -260,6 +263,7 @@ async function createHarness(options: {
       }
 
       if (taskKind === "evidence_tool_decision") {
+        decisionPayloads.push(body.messages?.find((message) => message.role === "user")?.content ?? "");
         if (options.pauseReauthorProvider) {
           signalReauthorProviderStarted();
           await reauthorProviderRelease;
@@ -479,6 +483,7 @@ async function createHarness(options: {
     projectId: project.id,
     flowId: flow.flowId,
     taskKinds,
+    decisionPayloads,
     resolverObservations,
     revokedGrantIds,
     reauthorProviderStarted,
@@ -601,6 +606,26 @@ describe("refuted-result service composition", () => {
         ),
       ).resolves.toMatchObject({ mode: "extend", status: "applied" });
       expect(harness.grants.activeGrantCount()).toBe(0);
+
+      // run-mulwm2dc-0bd95f22: the re-author was called with a Flow id, a mode
+      // and a grant, and the check's refutation went no further. The build's own
+      // decision request now carries Core's repair brief beside the instruction.
+      expect(harness.decisionPayloads).toHaveLength(1);
+      const sent = JSON.parse(harness.decisionPayloads[0]!) as { context: { instructions: { instructions: Array<{ instructionId: string; title: string; body: string }> } } };
+      const listed = sent.context.instructions.instructions;
+      const brief = listed.find((instruction) => instruction.instructionId === "core.result_repair.brief");
+      expect(brief?.title).toBe("Repair brief from Core: the last answer was judged wrong");
+      expect(brief?.body).toContain("This build is repair attempt 1 of at most 3.");
+      expect(brief?.body).toContain("put it into the parameters of the step that reads the items");
+      // The person's own instruction is still there, ahead of the brief.
+      expect(listed.findIndex((instruction) => instruction.instructionId === "core.result_repair.brief")).toBeGreaterThan(0);
+
+      // Every attempt is on the run with what it cost and how long it took, and
+      // the repair says it settled once the repaired answer was judged.
+      expect((detail?.metadata?.resultReauthor as { attempts?: unknown[] }).attempts).toEqual([
+        expect.objectContaining({ attempt: 1, routed: true, applied: true, durationMs: expect.any(Number), accounting: expect.objectContaining({ requestId: expect.any(String) }), brief: expect.objectContaining({ instructionId: "core.result_repair.brief", earlierAttempts: 0 }) }),
+      ]);
+      expect(detail?.metadata?.resultRepair).toMatchObject({ attempted: true, attempts: 1, phase: "settled", outcome: "answered" });
     },
   );
 
@@ -724,6 +749,12 @@ describe("refuted-result service composition", () => {
         providerResponse: "received",
         providerStatus: 400,
       });
+      // The failed build is on the run as an attempt of its own, with what it
+      // spent and its code, and still without the provider's words.
+      expect((detail?.metadata?.resultReauthor as { attempts?: unknown[] }).attempts).toEqual([
+        expect.objectContaining({ attempt: 1, code: "flow_bootstrap.provider_http_error", durationMs: expect.any(Number), accounting: expect.objectContaining({ requestId: expect.any(String) }) }),
+      ]);
+      expect(detail?.metadata?.resultRepair).toMatchObject({ phase: "settled", outcome: "not_rerun" });
       expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
       expect(harness.grants.activeGrantCount()).toBe(0);
     },

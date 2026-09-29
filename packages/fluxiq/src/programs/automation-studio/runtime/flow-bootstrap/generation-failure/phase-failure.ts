@@ -5,6 +5,7 @@ import {
   type AutomationStudioFlowBootstrapFailureStage,
   type AutomationStudioFlowBootstrapPhaseFailureCode
 } from "./codes.ts";
+import type { AutomationStudioLlmRequestRefusalCode } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError, parseAutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
@@ -107,6 +108,34 @@ export function automationStudioFlowBootstrapFailureDiagnosticOf(
   error: unknown,
   stage: AutomationStudioFlowBootstrapFailureStage
 ): AutomationStudioFlowBootstrapFailureDiagnostic {
+  const refused = flowBootstrapRequestRefusalCode(error);
+  if (refused) return flowBootstrapPhaseFailure("pre_provider_validation", undefined, refused).diagnostic;
   return parseAutomationStudioFlowBootstrapGenerationError(error)
     ?? flowBootstrapPhaseFailure(stage, undefined, flowBootstrapUnclassifiedThrowCode(error, stage)).diagnostic;
+}
+
+/**
+ * The build's code for a model request one of Core's guards refused to build.
+ *
+ * Whatever stage the caller vouches for, a refused request was never sent, so
+ * it is `pre_provider_validation` with the guard named. Recognised by the
+ * error's `name` and `code` rather than its class, because this directory takes
+ * only types from `runtime/llm`.
+ */
+const FLOW_BOOTSTRAP_REQUEST_REFUSAL_CODES: { readonly [Code in AutomationStudioLlmRequestRefusalCode]: AutomationStudioFlowBootstrapPhaseFailureCode } = Object.freeze({
+  "llm.request.evidence_denied_key": "flow_bootstrap.request_refused_evidence_denied_key",
+  "llm.request.routing_denied_key": "flow_bootstrap.request_refused_routing_denied_key",
+  "llm.request.denied_keys_undeclared": "flow_bootstrap.request_refused_denied_keys_undeclared",
+  "llm.request.reusable_context_invalid": "flow_bootstrap.request_refused_reusable_context_invalid",
+  "llm.request.diagnosis_misplaced": "flow_bootstrap.request_refused_diagnosis_misplaced",
+  "llm.request.failure_evidence_invalid": "flow_bootstrap.request_refused_failure_evidence_invalid",
+  "llm.request.exploration_evidence_invalid": "flow_bootstrap.request_refused_exploration_evidence_invalid"
+});
+
+function flowBootstrapRequestRefusalCode(error: unknown): AutomationStudioFlowBootstrapPhaseFailureCode | undefined {
+  if (!(error instanceof Error) || error.name !== "AutomationStudioLlmRequestRefusedError") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && Object.hasOwn(FLOW_BOOTSTRAP_REQUEST_REFUSAL_CODES, code)
+    ? FLOW_BOOTSTRAP_REQUEST_REFUSAL_CODES[code as AutomationStudioLlmRequestRefusalCode]
+    : undefined;
 }

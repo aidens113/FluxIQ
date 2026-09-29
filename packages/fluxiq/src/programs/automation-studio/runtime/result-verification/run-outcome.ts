@@ -65,8 +65,12 @@ import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from
 
 import {
   automationStudioRefutedResultFlowWasReauthored,
+  automationStudioRefutedResultReplayReady,
+  automationStudioResultRepairSettled,
   repairAutomationStudioRefutedRunResult,
-  type AutomationStudioRefutedResultRepairPort
+  type AutomationStudioRefutedResultRepairPort,
+  type AutomationStudioResultRepairHistoryEntry,
+  type AutomationStudioResultRepairOutcome
 } from "../recovery/refuted-result/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
@@ -204,6 +208,14 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
    */
   verificationDeadlineMs?: number | undefined;
   signal?: AbortSignal | undefined;
+  /**
+   * The refutations earlier passes of this verification met on this run,
+   * oldest first, each as the next repair is shown it
+   * (`recovery/refuted-result/history.ts`). Set by the re-run below, never by
+   * a caller: it holds the check's own prose, which lives only as long as the
+   * repair loop that reads it.
+   */
+  repairHistory?: readonly AutomationStudioResultRepairHistoryEntry[] | undefined;
 };
 
 /**
@@ -282,35 +294,63 @@ export async function verifyAutomationStudioRuntimeSessionResult(
       ...(input.subflowId ? { subflowId: input.subflowId } : {}),
       now: next.finishedAt ?? Date.now(),
       repair: input.ports.repairRefutedResult,
-      saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail)
+      saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail),
+      history: input.repairHistory ?? [],
+      willRerun: input.ports.rerunRepairedFlow !== undefined
     });
     // The loop closes: the corrected Flow runs, and the run it produces is
     // judged exactly as this one was. Only where the repair actually reached
     // the Flow -- an edit that was built and could not be applied has changed
     // nothing, and re-running would buy a second verdict on the same Flow.
     //
-    // **One cycle, and the bound is structural rather than a counter.** The
-    // re-run keeps this run's id and carries its metadata forward, so the
-    // marker saying this result has been repaired once survives
-    // (`recovery/refuted-result/repair.ts`). On the pass below, that marker
-    // makes `repairAutomationStudioRefutedRunResult` answer nothing at its
-    // first line, so the recursion cannot reach this point a second time --
-    // a Flow that answers wrongly again is reported wrong, not repaired again.
-    const reauthor = repaired?.metadata?.resultReauthor;
-    const replayReady = !(reauthor && typeof reauthor === "object" && !Array.isArray(reauthor)
-      && (reauthor as { replayReady?: unknown }).replayReady === false);
-    if (repaired && replayReady && automationStudioRefutedResultFlowWasReauthored(repaired) && input.ports.rerunRepairedFlow) {
-      const rerun = await input.ports.rerunRepairedFlow({ detail: repaired, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
-      if (rerun) {
+    // **Bounded by a count and by convergence, and each pass is told the ones
+    // before it.** The re-run keeps this run's id and carries its metadata
+    // forward, so the marker counting this run's repairs survives
+    // (`recovery/refuted-result/repair.ts`), and the pass below is handed this
+    // refutation as history. A refutation past the bound, or a second repair in
+    // a row that changed nothing in the answer, is recorded and stops there
+    // (`recovery/refuted-result/history.ts`).
+    if (repaired && !repaired.stopped) {
+      const reauthored = automationStudioRefutedResultFlowWasReauthored(repaired.detail) && automationStudioRefutedResultReplayReady(repaired.detail);
+      const rerun = reauthored && input.ports.rerunRepairedFlow
+        ? await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
+        : undefined;
+      if (rerun?.session.status === "succeeded") {
         return await verifyAutomationStudioRuntimeSessionResult({
           ...input,
           session: rerun.session,
-          ...(rerun.flow ? { flow: rerun.flow } : {})
+          ...(rerun.flow ? { flow: rerun.flow } : {}),
+          repairHistory: [...(input.repairHistory ?? []), repaired.entry]
         });
       }
+      // A re-run that did not finish with a result has nothing to judge, and a
+      // repair that could not be re-run has nothing to show: either way the
+      // repair is over, and the run says so rather than reading as in progress.
+      if (reauthored && input.ports.rerunRepairedFlow) await settleResultRepair(input, next.runId, rerun ? "rerun_failed" : "not_rerun");
+      return rerun?.session ?? next;
     }
+    if (repaired) return next;
+  }
+  // No repair was entered on this pass. If an earlier pass started one -- this
+  // is the re-run it earned -- it ends here, with this pass's verdict.
+  if (recorded) {
+    const settled = automationStudioResultRepairSettled(recorded, repairOutcomeOf(outcome, failing), Date.now());
+    if (settled) await input.ports.saveFlowRunDetail(settled);
   }
   return next;
+}
+
+/** How a repair ends when the answer its re-run gave is not repaired again. */
+function repairOutcomeOf(outcome: AutomationStudioResultVerificationOutcome, failing: boolean): AutomationStudioResultRepairOutcome {
+  if (outcome.performed === true && outcome.verdict === "answers") return "answered";
+  return failing ? "stopped" : "unverified";
+}
+
+/** Marks a repair in progress on this run as finished, from the run's own stored record. */
+async function settleResultRepair(input: AutomationStudioRuntimeSessionVerificationInput, runId: string, outcome: AutomationStudioResultRepairOutcome): Promise<void> {
+  const detail = await input.ports.getFlowRunDetail(input.projectId, runId);
+  const settled = detail ? automationStudioResultRepairSettled(detail, outcome, Date.now()) : undefined;
+  if (settled) await input.ports.saveFlowRunDetail(settled);
 }
 
 /**

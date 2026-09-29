@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
-import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "../repair.ts";
+import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "../history.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE,
@@ -74,19 +74,19 @@ describe("what the run records about it", () => {
   it("names the adaptation a routed run proposed", () => {
     const decision = automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE });
     const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision, adaptationId: "adaptation.bootstrap.1" });
-    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, adaptationId: "adaptation.bootstrap.1" });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, adaptationId: "adaptation.bootstrap.1", attempts: [{ routed: true, adaptationId: "adaptation.bootstrap.1" }] });
   });
 
   it("names the code a routed run failed under, so a route that reached nothing is not a silence", () => {
     const decision = automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE });
     const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision, failure: { code: "flow_bootstrap.evidence_runtime_unavailable" } });
-    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, code: "flow_bootstrap.evidence_runtime_unavailable" });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, code: "flow_bootstrap.evidence_runtime_unavailable", attempts: [{ routed: true, code: "flow_bootstrap.evidence_runtime_unavailable" }] });
   });
 
   it("names why a run was not routed, and keeps everything else the run carried", () => {
     const decision = automationStudioRefutedResultReauthorDecision({ detail: detail("core.result.verdict_unsure"), ...ROUTABLE });
     const recorded = automationStudioRefutedResultReauthored({ detail: detail("core.result.verdict_unsure"), decision });
-    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: false, code: "not_a_wrong_answer" });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: false, code: "not_a_wrong_answer", attempts: [{ routed: false, code: "not_a_wrong_answer" }] });
     expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]).toBeDefined();
   });
 });
@@ -108,14 +108,14 @@ describe("building the edit and putting it on the Flow", () => {
 
   it("builds, approves and applies, in that order, and says the Flow changed", async () => {
     const step = steps();
-    await expect(automationStudioReauthorRefutedResult(step)).resolves.toEqual({ adaptationId: "adaptation.bootstrap.1", applied: true });
+    await expect(automationStudioReauthorRefutedResult(step)).resolves.toEqual({ adaptationId: "adaptation.bootstrap.1", applied: true, durationMs: expect.any(Number) });
     expect(step.order).toEqual(["generate", "approve:adaptation.bootstrap.1", "apply:adaptation.bootstrap.1"]);
   });
 
   it("reports the code a build failed under, and names no adaptation, when nothing was built", async () => {
     const step = steps();
     await expect(automationStudioReauthorRefutedResult({ ...step, generate: async () => { throw new Error("no provider"); }, failureCode: () => ({ code: "flow_bootstrap.provider_resolution_failed" }) }))
-      .resolves.toEqual({ failure: { code: "flow_bootstrap.provider_resolution_failed" } });
+      .resolves.toEqual({ failure: { code: "flow_bootstrap.provider_resolution_failed" }, durationMs: expect.any(Number) });
     expect(step.order).toEqual([]);
   });
 
@@ -144,7 +144,7 @@ describe("building the edit and putting it on the Flow", () => {
       decision: { route: true, projectId: "project.1", flowId: "flow.1" },
       ...result
     });
-    expect(detail.metadata?.resultReauthor).toEqual({
+    expect(detail.metadata?.resultReauthor).toMatchObject({
       routed: true,
       code: "flow_bootstrap.provider_request_failed",
       stage: "provider_request",
@@ -161,7 +161,7 @@ describe("building the edit and putting it on the Flow", () => {
       decision: { route: true, projectId: "project.1", flowId: "flow.1" },
       failure: { code: "flow_bootstrap.extend_failed" }
     });
-    expect(detail.metadata?.resultReauthor).toEqual({ routed: true, code: "flow_bootstrap.extend_failed" });
+    expect(detail.metadata?.resultReauthor).toEqual({ routed: true, code: "flow_bootstrap.extend_failed", attempts: [{ routed: true, code: "flow_bootstrap.extend_failed" }] });
   });
 
   it("keeps the proposal when approval is refused, and does not say the Flow changed", async () => {
@@ -169,7 +169,7 @@ describe("building the edit and putting it on the Flow", () => {
     // and waits for their answer, and nothing is applied behind them.
     const step = steps();
     const result = await automationStudioReauthorRefutedResult({ ...step, approve: async () => { throw new Error("permission unanswered"); }, failureCode: () => ({ code: "flow_bootstrap.permission_unanswered" }) });
-    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.permission_unanswered" } });
+    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.permission_unanswered" }, durationMs: expect.any(Number) });
     expect(step.order).toEqual(["generate"]);
     expect(result.applied).toBeUndefined();
   });
@@ -177,7 +177,7 @@ describe("building the edit and putting it on the Flow", () => {
   it("keeps the proposal when the apply is refused", async () => {
     const step = steps();
     const result = await automationStudioReauthorRefutedResult({ ...step, apply: async () => { throw new Error("stale"); } });
-    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.extend_failed" } });
+    expect(result).toEqual({ adaptationId: "adaptation.bootstrap.1", failure: { code: "flow_bootstrap.extend_failed" }, durationMs: expect.any(Number) });
     expect(step.order).toEqual(["generate", "approve:adaptation.bootstrap.1"]);
   });
 });
@@ -188,7 +188,7 @@ describe("whether the Flow was actually changed", () => {
   it("is true only once the edit reached the Flow", () => {
     const applied = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.1", applied: true });
     expect(automationStudioRefutedResultFlowWasReauthored(applied)).toBe(true);
-    expect(applied.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, adaptationId: "adaptation.1", applied: true });
+    expect(applied.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, adaptationId: "adaptation.1", applied: true, attempts: [{ routed: true, adaptationId: "adaptation.1", applied: true }] });
   });
 
   it("is false for an edit that was built and never applied, so nothing re-runs the same Flow", () => {
@@ -199,5 +199,35 @@ describe("whether the Flow was actually changed", () => {
   it("is false for a run that was never routed", () => {
     const decision = automationStudioRefutedResultReauthorDecision({ detail: detail("core.result.verdict_unsure"), ...ROUTABLE });
     expect(automationStudioRefutedResultFlowWasReauthored(automationStudioRefutedResultReauthored({ detail: detail(), decision }))).toBe(false);
+  });
+});
+
+// run-mulwm2dc-0bd95f22: a four-minute re-author left nothing on the run but an
+// adaptation id. Each attempt is now recorded, and a second attempt adds to the
+// list rather than replacing the first.
+describe("every re-author a run makes, recorded", () => {
+  const routed = { route: true as const, projectId: "project.demo", flowId: "flow.catalog" };
+
+  it("keeps the earlier attempts when a later one is recorded, with the latest at the top level", () => {
+    const first = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.1", applied: true, attempt: 1, durationMs: 240_000.4, accounting: { requestId: "evidence.1", totalTokens: 90_000, estimatedCostUsd: 0.05 }, brief: { findingCodes: ["result.counts_look_right"], earlierAttempts: 0 } });
+    const second = automationStudioRefutedResultReauthored({ detail: first, decision: routed, attempt: 2, durationMs: 1_000, failure: { code: "flow_bootstrap.provider_http_error", accounting: { requestId: "evidence.2", inputTokens: 10 }, evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 2, evidenceBytes: 400, steps: [{ toolId: "core.evidence_loop.complete", iteration: 3, resultCode: "draft_unchanged" }] } } });
+    const marker = second.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY] as { attempt?: number; applied?: boolean; code?: string; attempts?: Array<Record<string, unknown>> };
+    expect(marker).toMatchObject({ routed: true, attempt: 2, code: "flow_bootstrap.provider_http_error" });
+    expect(marker.applied).toBeUndefined();
+    expect(marker.attempts).toHaveLength(2);
+    expect(marker.attempts?.[0]).toMatchObject({ attempt: 1, adaptationId: "adaptation.1", applied: true, durationMs: 240_000, accounting: { totalTokens: 90_000 }, brief: { findingCodes: ["result.counts_look_right"] } });
+    // A build that failed part way keeps its own decision rows on the run, since it left no adaptation to hold them.
+    expect(marker.attempts?.[1]).toMatchObject({ attempt: 2, code: "flow_bootstrap.provider_http_error", accounting: { requestId: "evidence.2" }, evidenceLoop: { decisionCount: 3, steps: [{ resultCode: "draft_unchanged" }] } });
+  });
+
+  it("answers what the build spent beside its adaptation when the build reports it", async () => {
+    const result = await automationStudioReauthorRefutedResult({
+      generate: async () => ({ adaptationId: "adaptation.2", accounting: { requestId: "evidence.9", totalTokens: 1_234 } }),
+      approve: async () => undefined,
+      apply: async () => undefined,
+      failureCode: () => ({ code: "unused" }),
+      now: (() => { let clock = 1_000; return () => (clock += 500); })()
+    });
+    expect(result).toEqual({ adaptationId: "adaptation.2", applied: true, accounting: { requestId: "evidence.9", totalTokens: 1_234 }, durationMs: 500 });
   });
 });

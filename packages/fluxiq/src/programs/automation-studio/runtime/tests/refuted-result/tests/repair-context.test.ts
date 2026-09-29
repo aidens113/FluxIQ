@@ -57,31 +57,59 @@ describe("a refuted result entering the failure entry point", () => {
     // the ladder's own `find(status === "failed")` sees it.
     expect(handed[0]?.detail.summary.status).toBe("failed");
     expect(handed[0]?.detail.actionAttempts?.at(-1)).toMatchObject({ status: "failed", nodeId: "node.s5", failure: { stage: "verification" } });
-    // Saved whether or not the recovery produced anything: the run has to say
-    // which step's output was wrong even when no provider was available.
-    expect(saved).toHaveLength(1);
-    expect(result?.actionAttempts).toHaveLength(5);
+    // Saved twice whether or not the recovery produced anything: once before it
+    // starts, so a reader sees a repair in progress, and once when it returns.
+    // The run has to say which step's output was wrong even when no provider was
+    // available.
+    expect(saved).toHaveLength(2);
+    expect(saved[0]?.metadata?.resultRepair).toMatchObject({ attempted: true, attempts: 1, phase: "reauthoring" });
+    expect(saved[1]?.metadata?.resultRepair).toMatchObject({ attempts: 1, phase: "settled", outcome: "not_rerun" });
+    expect(result?.detail.actionAttempts).toHaveLength(5);
+    expect(handed[0]?.current).toMatchObject({ attempt: 1, produced: { totalRecordCount: 24 } });
+    expect(handed[0]?.history).toEqual([]);
   });
 
   // Verifying a repaired run's own result closes a circle: verify, repair,
-  // retry, verify. The entry point is taken once per run, and the run says so,
-  // so a second refutation is recorded and not repaired again.
-  it("is entered once per run, whatever the re-run's result is judged to be", async () => {
-    const first = await repairAutomationStudioRefutedRunResult({
-      runId: "run.1", detail: cleanRun(), outcome: refuted(), summary: resultSummary(), now: NOW,
-      repair: async () => undefined, saveFlowRunDetail: async () => undefined
-    });
+  // retry, verify. run-mulwm2dc-0bd95f22 showed one turn is not enough -- the
+  // first re-author missed and Core stopped -- so a later refutation is repaired
+  // again, handed the earlier ones, until the answer stops changing or the
+  // bound is reached.
+  it("repairs a later refutation again, shown the earlier ones, and stops once the answer stops changing", async () => {
+    const handed: Parameters<Parameters<typeof repairAutomationStudioRefutedRunResult>[0]["repair"]>[0][] = [];
+    const pass = async (detail: AutomationStudioFlowRunDetail, history: NonNullable<Parameters<typeof repairAutomationStudioRefutedRunResult>[0]["history"]>) =>
+      await repairAutomationStudioRefutedRunResult({
+        runId: "run.1",
+        // What the re-run saves: a run detail rebuilt from the retried session's
+        // trace, with the pre-retry metadata carried forward.
+        detail: { ...cleanRun(), metadata: detail.metadata ?? {} },
+        outcome: refuted(), summary: resultSummary(), now: NOW, history, willRerun: true,
+        repair: async (request) => { handed.push(request); return undefined; },
+        saveFlowRunDetail: async () => undefined
+      });
+    const first = await pass(cleanRun(), []);
+    const second = await pass(first!.detail, [first!.entry]);
+    expect(handed).toHaveLength(2);
+    expect(handed[1]?.current.attempt).toBe(2);
+    expect(handed[1]?.history.map((entry) => entry.attempt)).toEqual([1]);
+    expect(handed[1]?.failedTraceAttempt.attemptId).toBe("result-verification.run.1.2");
+    // The same answer three times running: two repairs in a row changed
+    // nothing, so the third refutation is recorded and not repaired.
+    const third = await pass(second!.detail, [first!.entry, second!.entry]);
+    expect(handed).toHaveLength(2);
+    expect(third?.stopped).toBe("result_repair.not_converging");
+    expect(third?.detail.metadata?.resultRepair).toMatchObject({ attempts: 2, phase: "settled", outcome: "stopped", stopped: "result_repair.not_converging" });
+    expect((third?.detail.metadata?.resultRepair as { history?: unknown[] }).history).toHaveLength(3);
+  });
 
-    expect(first?.metadata?.resultRepair).toMatchObject({ attempted: true, nodeId: "node.s5" });
-    expect(await repairAutomationStudioRefutedRunResult({
+  it("stops at the bound however much the answer changes", async () => {
+    const stopped = await repairAutomationStudioRefutedRunResult({
       runId: "run.1",
-      // What the adaptive retry saves: a run detail rebuilt from the retried
-      // session's trace, with the pre-retry metadata carried forward.
-      detail: { ...cleanRun(), metadata: first?.metadata ?? {} },
-      outcome: refuted(), summary: resultSummary(), now: NOW + 1_000,
-      repair: async () => { throw new Error("The failure entry point must not be taken twice for one run."); },
-      saveFlowRunDetail: async () => { throw new Error("A second pass must save nothing."); }
-    })).toBeUndefined();
+      detail: { ...cleanRun(), metadata: { resultRepair: { attempted: true, attempts: 3 } } },
+      outcome: refuted(), summary: resultSummary(), now: NOW,
+      repair: async () => { throw new Error("A fourth repair must not be made."); },
+      saveFlowRunDetail: async () => undefined
+    });
+    expect(stopped?.stopped).toBe("result_repair.attempts_exhausted");
   });
 
   it("does nothing, and saves nothing, for a result that answers", async () => {
