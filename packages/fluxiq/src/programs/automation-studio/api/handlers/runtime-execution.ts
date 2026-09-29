@@ -18,6 +18,28 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
     }
   });
+  // Stopping a run. Declared and implemented for as long as runs have been
+  // cancellable, but never registered, so every Stop -- the web panel's run
+  // controls, its conversation's "stop that run", and the extension's -- was
+  // answered 404. `authoring` under `runtime.control`, the same as starting one:
+  // stopping removes nothing and acts nowhere outside, so it must never wait
+  // behind a PIN. A run that is already over comes back as it ended, and one
+  // that does not exist comes back as null, the way `get-runtime-session`
+  // answers, so pressing Stop twice is never an error.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelRuntimeSession,
+    permission: "runtime.control",
+    classification: "authoring",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; runId?: unknown; reason?: unknown } : {};
+      const projectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";
+      const runId = typeof payload.runId === "string" ? payload.runId.trim() : "";
+      if (!projectId || !runId) return { ok: false, error: "Stopping a run needs its project and run IDs." };
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim().slice(0, 500) : undefined;
+      return { ok: true, payload: { runtimeSession: await service.cancelRuntimeSession(projectId, runId, reason) } };
+    }
+  });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,

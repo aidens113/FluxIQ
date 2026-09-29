@@ -266,6 +266,39 @@ The web shell exposes global client-gateway endpoints:
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
+A paired client's credential is also an HTTP bearer token, on two routes only.
+`GET /api/recordings` accepts it for the extension's recordings list. The
+program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
+these Automation Studio endpoints, which are what the extension's panel needs to
+talk to FluxIQ and to stop a run:
+
+- `list-conversations`, `open-conversation`, `get-conversation`, `append-turn`,
+  `answer-ask`
+- `list-runtime-sessions`, `cancel-runtime-session`
+
+The allowlist lives in `apps/web/src/lib/program-route.ts`, and four rules
+bound it:
+
+- A token call runs as the person who approved the pairing
+  (`operatorUserId` on the ready session), with that person's role permissions
+  narrowed to `programs.read`, `programs.write` and `runtime.control`. A
+  disabled or deleted person's clients reach nothing.
+- It is scoped to the domain the client declared in `client.hello`
+  (`metadata.domainId`). A URL that names another domain is refused with 403.
+- The route refuses any endpoint the registry classifies as other than `read`
+  or `authoring`, so a mistaken allowlist entry still cannot reach a delete, a
+  payment or a program-gated credential check. Deletes and money movement keep
+  asking the person for their PIN in the web panel. Answering an ask is
+  `authoring`: it is the person answering in their own thread, and the act it
+  answers is still gated where it happens.
+- No auth session is injected into a token call's payload, and one the caller
+  names is removed, so a PIN check a handler runs fails closed.
+
+Every other program endpoint refuses the token with 403 before the token is
+looked up. A valid login cookie always takes precedence over a bearer header.
+The token is never logged or echoed, and the actor's session ID names the
+gateway session (`client-gateway:<sessionId>`), never the token.
+
 Start/stop recording and action execution are privileged operations and use
 shared PIN authorization. Client-initiated pairing requests can create pending
 display references without PIN because the client still cannot pair until a
