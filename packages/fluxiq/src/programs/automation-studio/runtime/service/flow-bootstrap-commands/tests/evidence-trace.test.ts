@@ -50,6 +50,7 @@ describe("the trace stored on a build", () => {
       draftChange: { targetedStepIds: ["d2"], appliedCount: 1, refusedCount: 0, keptStepCount: 3, rerunStepId: "d2" },
       draft: { bytes: 649, budget: 4_096, steps: 3, instructionBytes: 120, unlisted: 1, withoutInput: 1 },
       answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false, issueCode: "bootstrap.cannot_answer_instruction" },
+      restoredStep: { step: 1, withdrawnAs: "exploratory" },
       usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 }
     };
     const rowMembers = Object.keys(full).filter((member) => member !== "decision");
@@ -58,11 +59,12 @@ describe("the trace stored on a build", () => {
       expect(cleaned[member], `sanitizeEvidenceLoopTrace dropped \`${member}\``).toBeDefined();
     }
     const [published] = evidenceTraceAuditDetail([{ ...full, at: 1_700_000_000_000 }]).steps as Array<Record<string, unknown>>;
-    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "at", "usage"]) {
+    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"]) {
       expect(published?.[member], `the published step dropped \`${member}\``).toBeDefined();
     }
     expect(published?.resultReason).toBe("node_not_runnable_here");
     expect(published?.nodeId).toBe("web.output.dom-extract_list");
+    expect(published?.restoredStep).toEqual({ step: 1, withdrawnAs: "exploratory" });
   });
 
   it("keeps the code each decision came to and whether its effect was applied", () => {

@@ -15,6 +15,7 @@
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
+import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
 import type { AutomationStudioLlmEvidenceLoopProgress } from "./progress.ts";
@@ -117,6 +118,8 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
   draftChange?: AutomationStudioLlmEvidenceLoopDraftChange;
   /** Capability facts observed for a completion row. */
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
+  /** A withdrawn step the completion check put back before judging the draft (`./completion-check.ts`). */
+  restoredStep?: AutomationStudioLlmEvidenceRestoredStep;
   /**
    * When the row was recorded, in epoch milliseconds.
    *
