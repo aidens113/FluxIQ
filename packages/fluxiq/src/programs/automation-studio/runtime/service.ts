@@ -210,7 +210,7 @@ import {
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -2760,8 +2760,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             }
           }] : []
         }, adaptationContext);
-        const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-          detail: routedRunDetail,
+        const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: routedRunDetail, recovering: Boolean(adaptationContext), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+          detail,
           context: adaptationContext,
           runtimeFlow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical),
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}),
@@ -2770,7 +2770,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
           ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
-        });
+        }) });
         // A verified repair resumes a granted run too. Withholding it here is
         // what left an explicit repair applying a patch and then reporting the
         // original failure, with nothing having re-run.
@@ -2819,8 +2819,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {
       const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
-      const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-        detail: runDetail,
+      const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: runDetail, recovering: true, saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+        detail,
         context: adaptationContext,
         runtimeFlow: runtimeCanonical ? canonicalFlowDocument(runtimeCanonical) : runtimeFlow,
         ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
@@ -2828,7 +2828,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
         ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
-      });
+      }) });
       const retry = await this.rerunAfterRepair({
         projectId: input.projectId,
         session: next,

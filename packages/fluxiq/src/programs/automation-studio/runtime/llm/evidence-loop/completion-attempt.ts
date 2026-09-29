@@ -18,10 +18,10 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceParseCompletionCheck } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck } from "./completion-check.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
 
 export type AutomationStudioLlmEvidenceCompletionAttempt =
-  | { kind: "accepted"; answerability?: AutomationStudioLlmEvidenceLoopAnswerability }
+  | { kind: "accepted"; answerability?: AutomationStudioLlmEvidenceLoopAnswerability; restoredStep?: AutomationStudioLlmEvidenceRestoredStep }
   | {
     kind: "refused";
     /** The check's issues first, then the dry run's. */
@@ -29,6 +29,7 @@ export type AutomationStudioLlmEvidenceCompletionAttempt =
     /** The check's feedback, when the check refused. The dry run shows its own. */
     feedback?: JsonObject;
     answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
+    restoredStep?: AutomationStudioLlmEvidenceRestoredStep;
   }
   | { kind: "ended"; code: "llm_evidence_loop.cancelled" | "llm_evidence_loop.evidence_limit" | "llm_evidence_loop.invalid_decision" }
   | { kind: "threw"; error: unknown };
@@ -60,7 +61,7 @@ export async function automationStudioLlmEvidenceCompletionAttempt(input: {
   const replay = await input.dryRun();
   if (replay === "cancelled") return { kind: "ended", code: "llm_evidence_loop.cancelled" };
   if (replay === "evidence_limit") return { kind: "ended", code: "llm_evidence_loop.evidence_limit" };
-  const answerability = check.answerability ? { answerability: check.answerability } : {};
+  const answerability = { ...(check.answerability ? { answerability: check.answerability } : {}), ...(check.restoredStep ? { restoredStep: check.restoredStep } : {}) };
   if (check.ok && !replay) return { kind: "accepted", ...answerability };
   return {
     kind: "refused",

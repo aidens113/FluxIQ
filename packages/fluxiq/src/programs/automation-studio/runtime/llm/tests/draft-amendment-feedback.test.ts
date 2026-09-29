@@ -97,10 +97,10 @@ describe("an amendment the draft refused", () => {
     expect(amendRow(result.trace)).toMatchObject({
       resultCode: "llm_evidence_loop.draft_unchanged",
       amended: 0,
-      amendmentsRefused: [{ step: 1, reason: "already_so" }]
+      amendmentsRefused: [{ step: 1, reason: "already_in_flow" }]
     });
     const feedback = feedbackShown(decide, 2);
-    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "already_so" }] });
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "already_in_flow" }] });
     // Nothing was named that does not exist, so no positions are listed.
     expect(feedback?.positions).toBeUndefined();
   });
@@ -202,7 +202,8 @@ describe("the feedback an amendment refusal is shown as", () => {
   // compile here until this test names it, and in the module until it is
   // explained there.
   const everyReason: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], true> = {
-    no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, not_a_kept_step: true
+    no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, not_a_kept_step: true,
+    did_not_work: true, already_in_flow: true, already_out: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {

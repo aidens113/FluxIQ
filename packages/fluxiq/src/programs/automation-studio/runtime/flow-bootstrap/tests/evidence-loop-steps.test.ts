@@ -179,4 +179,14 @@ describe("Flow Bootstrap evidence steps: content-free progress", () => {
 
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([old])).toEqual([old]);
   });
+
+  // The start step the completion check put back: a draft position and a closed word, and nothing else.
+  it("publishes and reads back which withdrawn step the completion check restored, and refuses anything else there", () => {
+    const [published] = automationStudioFlowBootstrapEvidenceSteps([{ iteration: 5, decision: "complete", restoredStep: { step: 2, withdrawnAs: "exploratory" } }]);
+    expect(published).toMatchObject({ restoredStep: { step: 2, withdrawnAs: "exploratory" } });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([published])).toEqual([published]);
+    for (const restoredStep of [{ step: 0, withdrawnAs: "dropped" }, { step: 2, withdrawnAs: "kept" }, { step: 2, withdrawnAs: "dropped", url: "https://x" }]) {
+      expect(parseAutomationStudioFlowBootstrapEvidenceSteps([{ ...published, restoredStep }])).toBeNull();
+    }
+  });
 });

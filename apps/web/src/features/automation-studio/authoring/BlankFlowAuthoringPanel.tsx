@@ -73,7 +73,22 @@ function confirmationRows(mode: "build" | "explore", limits: PreflightRunLimits)
   ];
 }
 
+// Core's note that a build which ran out kept its draft as an incomplete
+// record (`diagnostic.evidenceLoop.incompleteDraft`): two counts, read only when
+// both are positive whole numbers, so nothing else in the diagnostic is shown.
+function keptDraftSentence(result: any): string {
+  const kept = result?.payload?.diagnostic?.evidenceLoop?.incompleteDraft;
+  const revision = kept?.revision;
+  const steps = kept?.steps;
+  if (!Number.isSafeInteger(revision) || !Number.isSafeInteger(steps) || revision < 1 || steps < 1) return "";
+  return ` FluxIQ kept what it worked out so far: a draft of ${wholeNumber(steps)} ${steps === 1 ? "step" : "steps"} (revision ${wholeNumber(revision)}). The next build carries on from it instead of starting over.`;
+}
+
 function generationFailureMessage(result: any, mode: "build" | "explore"): string {
+  return generationFailureReason(result, mode) + keptDraftSentence(result);
+}
+
+function generationFailureReason(result: any, mode: "build" | "explore"): string {
   const code = typeof result?.payload?.diagnostic?.code === "string" ? result.payload.diagnostic.code : "";
   if (code === "flow_bootstrap.provider_timeout") return "The model request timed out. Keep the browser connected and try again.";
   if (code === "flow_bootstrap.evidence_iteration_limit" || code === "flow_bootstrap.evidence_limit") return "Exploration reached its evidence limit before it could create a proposal. Start closer to the target page or make the website task more specific, then try again.";
