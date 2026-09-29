@@ -84,6 +84,21 @@ describe("a list read's summary on a saved attempt", () => {
     });
   });
 
+  // Live run `run-mulwm2dc-0bd95f22` asked for fifty pages, read one, and its
+  // run record said `pagesRead: 1, truncated: false` and nothing about why. The
+  // page had ignored its Next; a Next that named nothing would have looked
+  // identical, and the two are different repairs.
+  it("carries why a paginated read stopped paging", async () => {
+    const detail = await runDetailFor({
+      commandId: "command.runtime",
+      actionType: "web.dom.extract_list",
+      status: "succeeded",
+      extraction: { ...READ, recordCount: 12, paginationStop: "list_unchanged" }
+    });
+
+    expect(detail.actionAttempts?.[0]?.metadata?.extraction).toEqual({ ...READ, recordCount: 12, paginationStop: "list_unchanged" });
+  });
+
   it("carries nothing for an attempt whose host reported no summary, rather than an empty record", async () => {
     const detail = await runDetailFor({ commandId: "command.runtime", status: "succeeded", url: "https://example.test/" });
 
@@ -123,6 +138,21 @@ describe("what the projection admits", () => {
   it("renames a stop word it does not know rather than dropping the read that reported it", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, listWait: { ...WAIT, stoppedOn: "items_stopped_growing" } } } }))
       .toEqual({ ...READ, listWait: { stoppedOn: "unknown", waitedMs: 2089, waitedFor: 1 } });
+  });
+
+  it("keeps every pagination stop word, and renames one it does not know rather than dropping the read", () => {
+    const words = ["control_absent", "control_disabled", "no_following_page", "scrolled_to_end", "list_vanished", "page_limit", "item_limit", "deadline", "list_unchanged", "page_repeated", "control_not_clickable", "page_fault"];
+    for (const paginationStop of words) {
+      expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop } } })).toEqual({ ...READ, paginationStop });
+    }
+    const projected = extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop: "#next-button was hidden" } } });
+    expect(projected).toEqual({ ...READ, paginationStop: "unknown" });
+    expect(JSON.stringify(projected)).not.toContain("#next-button");
+  });
+
+  it("refuses a pagination stop that is not even a word", () => {
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop: 3 } } })).toBeUndefined();
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop: null } } })).toBeUndefined();
   });
 
   it("publishes the unknown word rather than the one the producer sent, so nothing unredacted rides out on it", () => {

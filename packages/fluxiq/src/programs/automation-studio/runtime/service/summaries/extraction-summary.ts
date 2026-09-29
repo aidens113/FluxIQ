@@ -44,6 +44,11 @@
 // foreign string is discarded rather than republished, so what lands in the run
 // record is still a word from a closed set.
 //
+// `paginationStop` is the second such set and takes the same rule, for the same
+// reason: it names the ways a paginated read can stop paging, and a newer
+// producer that finds another way publishes here as `"unknown"` rather than
+// costing the account.
+//
 // Tolerance goes to the closed word sets and no further, because version skew
 // adds words and members -- it does not turn a count into a string. A count
 // that is not a count, or a `stoppedOn` that is not even a string, is a
@@ -71,6 +76,32 @@ const WAIT_STOPS = new Set(["list_present", "page_settled", "window_elapsed", "d
 const WAIT_STOP_UNKNOWN = "unknown";
 
 /**
+ * Why a read that pages stopped paging (contract C2): the list ending
+ * (`control_absent`, `control_disabled`, `no_following_page`,
+ * `scrolled_to_end`, `list_vanished`), a bound (`page_limit`, `item_limit`,
+ * `deadline`), or the page misbehaving (`list_unchanged`, `page_repeated`,
+ * `control_not_clickable`, `page_fault`). Live run `run-mulwm2dc-0bd95f22` read
+ * one page of fifty and its run record could not say which of these it was.
+ */
+const PAGINATION_STOPS = new Set([
+  "control_absent",
+  "control_disabled",
+  "no_following_page",
+  "scrolled_to_end",
+  "list_vanished",
+  "page_limit",
+  "item_limit",
+  "deadline",
+  "list_unchanged",
+  "page_repeated",
+  "control_not_clickable",
+  "page_fault"
+]);
+
+/** What a pagination stop word outside the set above is published as, on the rule `WAIT_STOP_UNKNOWN` states. */
+const PAGINATION_STOP_UNKNOWN = "unknown";
+
+/**
  * How many `where` conditions a read may report rejections for. A read carries
  * one count per condition it was given, and a list of more than this is not one
  * the product writes -- so an unbounded array arriving from a downstream host
@@ -82,9 +113,9 @@ const MAXIMUM_CONDITIONS = 64;
  * The read's summary, rebuilt member by member, or `undefined` when the attempt
  * dispatched no read, the host reported no summary, the result payload was
  * withheld (a dispatch that saves records keeps a marker in its place), or any
- * member is not one this contract knows -- with the single exception the header
- * states, an unrecognised `listWait.stoppedOn`, which is published as
- * `"unknown"` rather than costing the summary.
+ * member is not one this contract knows -- with the two exceptions the header
+ * states, an unrecognised `listWait.stoppedOn` or `paginationStop`, each
+ * published as `"unknown"` rather than costing the summary.
  *
  * It is looked for at two depths for the reason its neighbour is: a
  * *runtime*-dispatched output puts the client's action-result payload straight
@@ -125,6 +156,13 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   if (summary.emptyRecords !== undefined && emptyRecords === undefined) return undefined;
   const listWait = summary.listWait === undefined ? undefined : waitReport(summary.listWait);
   if (summary.listWait !== undefined && listWait === undefined) return undefined;
+  // Why paging stopped: absent from a read that did not page, a word from the
+  // set or `"unknown"` for a newer one, and a summary dropped for anything that
+  // is not a word at all.
+  if (summary.paginationStop !== undefined && typeof summary.paginationStop !== "string") return undefined;
+  const paginationStop = typeof summary.paginationStop === "string"
+    ? (PAGINATION_STOPS.has(summary.paginationStop) ? summary.paginationStop : PAGINATION_STOP_UNKNOWN)
+    : undefined;
   return {
     recordCount,
     pagesRead,
@@ -135,7 +173,8 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
     ...(emptyRecords !== undefined ? { emptyRecords } : {}),
     ...(typeof listPresence === "string" ? { listPresence } : {}),
     ...(listWait ? { listWait } : {}),
-    ...(conditions ? { conditions } : {})
+    ...(conditions ? { conditions } : {}),
+    ...(paginationStop !== undefined ? { paginationStop } : {})
   };
 }
 
