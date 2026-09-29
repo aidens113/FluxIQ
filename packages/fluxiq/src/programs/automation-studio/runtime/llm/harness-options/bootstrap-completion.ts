@@ -69,6 +69,7 @@ import {
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
   automationStudioEvidenceFlowBootstrapLimitsExceeded,
+  automationStudioFlowBootstrapDraftWithStartStep,
   automationStudioFlowBootstrapIssueFeedback,
   checkAutomationStudioFlowBootstrapAnswersInstruction,
   checkAutomationStudioFlowBootstrapReachesStartLocation,
@@ -192,9 +193,18 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // whose actions are not nodes of the registry, or a build that completed
   // without running anything -- the reply's own plan is still read, because a
   // host that cannot run a node must still be able to build a Flow.
-  const proposed = input.draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
-  const drafted = proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
-    ? fromDraft(input.draftSteps!, result, input.registry, input.resolution)
+  //
+  // The step that took the build to where its Flow starts is kept whatever the
+  // amendments since said about it: the domain made the build run it before
+  // anything else, and the Flow cannot take a step without it. Putting it back
+  // here is the Flow the reachability refusal would have asked the model for,
+  // without the turn (`flow-bootstrap/reachability/start-step.ts`).
+  const draftSteps = input.draftSteps
+    ? automationStudioFlowBootstrapDraftWithStartStep({ steps: input.draftSteps, startLocation: input.startLocation }).steps
+    : undefined;
+  const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
+  const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
+    ? fromDraft(draftSteps, result, input.registry, input.resolution)
     : undefined;
   const accepted = drafted ?? fromReply(result, input.registry, input.resolution);
   // An issue about a normalised plan still carries the path of the plan the
@@ -272,7 +282,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // Read off the draft rather than the plan, so it is asked even of a draft
   // whose plan did not assemble. Only a Flow built from the draft has steps a
   // claim can name.
-  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? input.draftSteps : undefined });
+  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
   if (!acts.ok) {
     // Filed under the cannot-answer code: a Flow that does not do what it was
     // told cannot answer the instruction, and the issue code says which way.

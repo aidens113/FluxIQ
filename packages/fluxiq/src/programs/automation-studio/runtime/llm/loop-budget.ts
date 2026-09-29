@@ -33,7 +33,7 @@
 // amend what it names, one to finish again -- before the last.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/exhaustion.ts";
+import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/index.ts";
 
 /**
  * Decisions left from which the loop offers only completion and amendments:

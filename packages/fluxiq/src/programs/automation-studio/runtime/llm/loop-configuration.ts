@@ -22,7 +22,7 @@ import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
 import { automationStudioLlmTokenBudgetBytes } from "./token-estimation.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/resume.ts";
+import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
   type AutomationStudioLlmEvidenceCompletionCheck,

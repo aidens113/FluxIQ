@@ -349,7 +349,9 @@ describe("which unusable decisions are progress", () => {
   it("stops when the same issues come back, whatever their order", async () => {
     const { promise, decide, stalled } = run([["b.issue", "a.issue"], ["a.issue", "b.issue", "a.issue"]], { maxConsecutive: 2 });
 
-    await expect(promise).rejects.toThrow("stalled on a.issue,b.issue,a.issue");
+    // The stall names each code once: a refusal that repeats a code within
+    // itself is still the same set of issues.
+    await expect(promise).rejects.toThrow(/^stalled on a\.issue,b\.issue$/);
     expect(decide).toHaveBeenCalledTimes(2);
     expect(stalled).toHaveBeenCalledTimes(1);
   });

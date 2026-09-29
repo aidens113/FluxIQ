@@ -189,7 +189,7 @@ function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | nul
 
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps", "exhausted"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps", "exhausted", "incompleteDraft"])) return null;
   if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
     || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
@@ -207,14 +207,28 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
   }
   const exhausted = value.exhausted === undefined ? undefined : parseEvidenceLoopExhausted(value.exhausted);
   if (exhausted === null) return null;
+  const incompleteDraft = value.incompleteDraft === undefined ? undefined : parseIncompleteDraftPointer(value.incompleteDraft);
+  if (incompleteDraft === null) return null;
   return {
     iterationCount: value.iterationCount as number,
     decisionCount: value.decisionCount as number,
     toolCallCount: value.toolCallCount as number,
     evidenceBytes: value.evidenceBytes as number,
     ...(steps ? { steps } : {}),
-    ...(exhausted ? { exhausted } : {})
+    ...(exhausted ? { exhausted } : {}),
+    ...(incompleteDraft ? { incompleteDraft } : {})
   };
+}
+
+/**
+ * The pointer to a kept incomplete draft: a revision from 1 and at least one
+ * step, since a draft with no proposable step is never kept.
+ */
+function parseIncompleteDraftPointer(value: unknown): { revision: number; steps: number } | null {
+  if (!isRecord(value) || !hasExactFields(value, ["revision", "steps"])
+    || !Number.isSafeInteger(value.revision) || (value.revision as number) < 1
+    || !boundedInteger(value.steps, EVIDENCE_LOOP_MAX_DRAFT_STEPS) || value.steps === 0) return null;
+  return { revision: value.revision as number, steps: value.steps as number };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

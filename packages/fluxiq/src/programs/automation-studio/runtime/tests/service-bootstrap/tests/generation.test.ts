@@ -271,7 +271,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     } });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true, useReusableContext: true });
     expect(selectedEvidence).toHaveLength(1);
-    expect(requests[0]?.context.evidenceLoop?.evidence).toHaveLength(1);
+    // The fresh inspection is the only evidence observed. A three-call grant
+    // is inside the wrap-up from its first decision (`llm/loop-budget.ts`), so
+    // that decision also carries the loop's own `core.budget` entry.
+    const observed = (requests[0]?.context.evidenceLoop?.evidence ?? []).filter((entry) => entry.toolId !== "core.budget");
+    expect(observed).toEqual([expect.objectContaining({ callId: "initial.inspect", toolId: "inspect" })]);
     expect(requests[0]?.context.reusableContext).toMatchObject({ items: [{ advisory: true, recordId: "context.creation", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] }] });
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
     expect(stored?.reusableContext).toMatchObject({ status: "hit", freshContributionCount: 1, reusedContributionCount: 1, sourceRecordIds: ["context.creation"] });

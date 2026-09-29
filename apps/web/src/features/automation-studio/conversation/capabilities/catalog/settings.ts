@@ -178,19 +178,23 @@ export const SETTINGS_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
     id: "route.delete",
     title: "Remove a branch",
-    summary: "Takes one of the Flow's branches out. Asks for your PIN first.",
+    summary: "Takes one of the Flow's branches out.",
     group: "Settings",
     phrases: ["remove the branch", "delete the route", "drop that condition"],
     control: { view: automationStudioViewId.router, label: "Delete route" },
     endpoints: ["delete-flow-map-route"],
-    arguments: [PROJECT, FLOW, { name: "routeId", kind: "id", describe: "The branch to remove.", required: true }, PIN],
-    consequences: ["delete"],
+    arguments: [PROJECT, FLOW, { name: "routeId", kind: "id", describe: "The branch to remove.", required: true }],
+    // Core classes `delete-flow-map-route` as authoring, not destructive: a
+    // branch is part of the Flow's routing, put back with `route.save`, and
+    // Core asks for no PIN. It names the branch `ruleId`; it never read
+    // `routeId`, so every removal from the chat was refused with "Route rule
+    // ID is required.".
+    consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
       await deleteFlowMapRoute(context.transport, {
         projectId: str(args, "projectId"),
         flowId: str(args, "flowId"),
-        routeId: str(args, "routeId"),
-        authorizationPin: str(args, "authorizationPin")
+        ruleId: str(args, "routeId")
       }),
       "Removed the branch.",
       "The branch could not be removed."

@@ -20,7 +20,7 @@ describe("what an evidence loop has left", () => {
 
     // Tokens: 600,000 less the 120,000 spent and one decision held back leaves
     // 468,000; the next call needs its 56,000 worst case, the rest go at 12,000.
-    expect(remaining).toEqual({ decisionsLeft: 35, tokensLeft: 468_000, costLeftUsd: expect.closeTo(1.9395, 3), secondsLeft: 470 });
+    expect(remaining).toEqual({ decisionsLeft: 35, limitedBy: "tokens", tokensLeft: 468_000, costLeftUsd: expect.closeTo(1.9395, 3), secondsLeft: 470 });
   });
 
   it("assumes the worst case before anything is reported, and counts an unreported decision at the average", () => {
@@ -32,9 +32,9 @@ describe("what an evidence loop has left", () => {
 
   it("is nothing once a bound is spent, and never more than the iteration backstop", () => {
     const spent = { decisions: 4, reportedDecisions: 4, totalTokens: 40_000, estimatedCostUsd: 0.4, elapsedMs: 40_000 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent, 60).decisionsLeft).toBe(0);
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxDurationMs: 40_000 }, spent, 60).decisionsLeft).toBe(0);
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, spent, 3).decisionsLeft).toBe(3);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent, 60)).toMatchObject({ decisionsLeft: 0, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxDurationMs: 40_000 }, spent, 60)).toMatchObject({ decisionsLeft: 0, limitedBy: "duration" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, spent, 3)).toMatchObject({ decisionsLeft: 3, limitedBy: "iterations" });
   });
 });
 

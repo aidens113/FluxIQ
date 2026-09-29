@@ -93,7 +93,7 @@ import { automationStudioLlmExecutionGrantRefusalCode, type AutomationStudioLlmE
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftKeeper, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import { assertAutomationStudioBootstrapHasNoRecordingProvenance, automationStudioBootstrapTargetRefusal, bootstrapAdaptationAsFlowAdaptation, normalizeAutomationStudioFlowBuildPlan, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioBootstrapAdaptation, type AutomationStudioBootstrapAdaptationMode, type AutomationStudioBootstrapAdaptationOrigin, type AutomationStudioBootstrapExistingTopology } from "./flow-bootstrap/index.ts";
@@ -133,6 +133,7 @@ import {
   AutomationStudioProjectPaths,
   AutomationStudioLegacyRetirementStore,
   AutomationStudioBootstrapAdaptationStore,
+  AutomationStudioFlowBootstrapIncompleteDraftStore,
   AutomationStudioObjectDocuments,
   AutomationStudioFlowStore,
   AutomationStudioAdaptationPatches,
@@ -357,6 +358,7 @@ export class AutomationStudioService {
   private readonly legacy: AutomationStudioLegacyRetirementStore;
   private readonly uiCache: AutomationStudioServiceUiCache;
   private readonly bootstrapAdaptations: AutomationStudioBootstrapAdaptationStore;
+  private readonly incompleteDrafts: AutomationStudioFlowBootstrapIncompleteDraftStore;
   private readonly objectDocuments: AutomationStudioObjectDocuments;
   private readonly flows: AutomationStudioFlowStore;
   private readonly recordings: AutomationStudioRecordingStore;
@@ -431,6 +433,7 @@ export class AutomationStudioService {
     this.indexes = new AutomationStudioServiceIndexes(this.projectPaths, this.projects);
     this.legacy = new AutomationStudioLegacyRetirementStore(this.projectPaths, this.projects, this.objectStore);
     this.bootstrapAdaptations = new AutomationStudioBootstrapAdaptationStore(this.projectPaths, this.flowPaths, this.projects);
+    this.incompleteDrafts = new AutomationStudioFlowBootstrapIncompleteDraftStore(this.projectPaths, this.flowPaths, this.projects);
     this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
     this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore);
@@ -1556,6 +1559,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let permission: AutomationStudioBootstrapPermissionOutcome = {};
         let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
         let accounting: AutomationStudioBootstrapAccounting;
+        let incomplete: ReturnType<typeof automationStudioFlowBootstrapIncompleteDraftKeeper> | undefined; // A stopped build keeps its draft, and a later one continues it (`flow-bootstrap/incomplete-draft/`).
         const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs });
         // `startLocation` reaches the domain on every call this registry makes,
         // including the free first look: that look is where the domain says
@@ -1574,12 +1578,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             provider: unresolvedProvider.provider.metadata.provider, model: unresolvedProvider.provider.metadata.model,
             inputTokens: spent.inputTokens + authority.usage.inputTokens, outputTokens: spent.outputTokens + authority.usage.outputTokens, totalTokens: spent.totalTokens + authority.usage.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + authority.usage.estimatedCostUsd });
           const accepted: { verdict?: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: true }> | undefined } = {};
-          const stateDigest = automationStudioBootstrapStateDigestHook(this.llmEvidenceRuntime, { projectId, flowId, ...(startLocation === undefined ? {} : { startLocation }) });
-          const loop = await runAutomationStudioLlmEvidenceLoop({
+          const stateDigest = automationStudioBootstrapStateDigestHook(this.llmEvidenceRuntime, { projectId, flowId, ...(startLocation === undefined ? {} : { startLocation }) }); const keeper = incomplete = automationStudioFlowBootstrapIncompleteDraftKeeper({ enabled: !extend, stored: extend ? undefined : await this.incompleteDrafts.get(projectId, flowId), projectId, flowId, baseDependencyDigest: binding.executionDigest, sourceInstructionIds: resolvedInstructions.instructionIds, save: (record) => this.incompleteDrafts.save(record), discard: () => this.incompleteDrafts.delete(projectId, flowId) });
+          const loop = await keeper.settle(runAutomationStudioLlmEvidenceLoop({
             tools: harnessOptions.tools,
-            propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting)) },
+            propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? keeper.stalled(flowBootstrapEvidenceUnusableDecisionFailure(progress, loopAccounting(progress.accounting))) },
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
             checkCompletion: async (result, context) => {
+              keeper.attempted(context.steps);
               const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps, instructionText: bootstrapInstructionText, ...(startLocation === undefined ? {} : { startLocation }) });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.check;
@@ -1591,12 +1596,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             ...(stateDigest ? { captureStateDigest: stateDigest } : {}),
             ...bootstrapLoopLimits.loop,
             // An extend does not start from nothing: the Flow it is editing is already the draft, and every amendment edits that.
-            ...(extend ? { draft: { seed: extend.seed.steps } } : {}),
+            ...(extend ? { draft: { seed: extend.seed.steps } } : keeper.draft ? { draft: keeper.draft } : {}),
             decide: routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
-              if (input.useReusableContext === true && evidence.length) {
+              const fresh = evidence.filter((item) => !item.toolId.startsWith("core.")); // What the domain observed; the loop's own `core.*` entries (budget, resume, feedback) are not evidence of the target.
+              if (input.useReusableContext === true && fresh.length) {
                 reusableContextResult = await this.reusableLlmContextForFreshEvidence({
                   optedIn: true, taskKind: "flow_bootstrap", projectId, flowId,
-                  freshEvidence: evidence.map((item) => item.value), freshEvidenceCount: evidence.length,
+                  freshEvidence: fresh.map((item) => item.value), freshEvidenceCount: fresh.length,
                   maxInputTokens: resolveAutomationStudioLlmTokenLimits(unresolvedProvider.tokenLimits).limits.maxInputTokens,
                   actorId: executionGrant.actorUserId
                 });
@@ -1619,14 +1625,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             }),
             executeTool: permissions.executeTool
-          });
+          }));
           // A request ends the build only when the build produced nothing. A
           // plan the completion check accepted is still a Flow worth having,
           // and the request travels with it instead of discarding it: the
           // person answers before it is applied (`flow-bootstrap/adaptation.ts`).
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
           if (askedPermission && !accepted.verdict) throw askedPermission;
-          if (!loop.ok) throw flowBootstrapEvidenceLoopFailure(loop, loopAccounting(loop.accounting));
+          if (!loop.ok) throw await keeper.exhausted(loop, (kept) => flowBootstrapEvidenceLoopFailure(loop, loopAccounting(loop.accounting), kept));
           evidenceTrace = loop.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
           failureStage = "provider_output_validation";
           accounting = loopAccounting(loop.accounting);
@@ -1682,6 +1688,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {}),
           actorId: executionGrant.actorUserId
         });
+        await incomplete?.finished();
         return {
           projectId,
           flowId,

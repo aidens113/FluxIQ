@@ -21,6 +21,7 @@ export * from "./draft-change.ts";
 export * from "./exhaustion.ts";
 export * from "./no-progress.ts";
 export * from "./progress.ts";
+export * from "./rerun-replacement.ts";
 export * from "./rerun-request.ts";
 export * from "./resume.ts";
 export * from "./result.ts";

@@ -62,6 +62,18 @@ function idFor(ids: Ids, name: string): string | undefined {
  * holds. Keyed by capability id; each entry is one variant.
  */
 const OVERRIDES: Readonly<Record<string, Readonly<Record<string, Override>>>> = {
+  // Saying what a Flow should do, and building it from that, is done to a blank
+  // Flow: Core refuses both on a Flow that already has a Router. The build grant
+  // the world issues is bound to that Flow.
+  "flow.describe": {
+    "on a blank Flow": (ids) => ({ flowId: ids.blankFlowId })
+  },
+  "flow.build": {
+    "on a blank Flow": (ids) => ({ flowId: ids.blankFlowId })
+  },
+  "flow.explore": {
+    "on a blank Flow": (ids) => ({ flowId: ids.blankFlowId })
+  },
   "flow.settings": {
     "a setting and a Flow field": () => ({ settings: { trainingMode: "normal", description: "Checks the kettle price." } })
   },

@@ -43,6 +43,7 @@ import {
   type AutomationStudioLlmEvidenceLoopDraftChange,
   type AutomationStudioLlmEvidenceLoopDraftShown,
   type AutomationStudioLlmEvidenceLoopResult,
+  automationStudioLlmEvidenceRerunReplaced,
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress,
   type AutomationStudioLlmEvidenceTool
@@ -518,9 +519,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     draftShown = undefined;
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
     let canAmend = false;
-    // Whether this iteration's call is a step the model asked to run again,
-    // which is never a repeat however identical it looks.
+    // Whether this iteration's call is a step the model asked to run again, which
+    // is never a repeat however identical it looks, and the step it replaces.
     let rerunning = false;
+    let rerunReplaces: AutomationStudioFlowDraftStep | undefined;
     const eligibleTools = input.tools.filter((tool) =>
       !automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== attemptEpoch
     );
@@ -626,22 +628,20 @@ export async function runAutomationStudioLlmEvidenceLoop(
       unusableInARow = 0;
       // One amendment cannot be carried out here, because it has to run
       // something: `rerun` replaces a step by doing it again with a corrected
-      // argument. The step it replaces is withdrawn, and the call that follows
-      // goes through exactly the path an ordinary tool call goes through, so a
-      // corrected step is recorded, digested and checked like any other.
+      // argument. The call that follows goes the ordinary tool-call path, so it
+      // is recorded, digested and checked like any other; the step it replaces
+      // is found before a reorder beside it renumbers the draft, and withdrawn
+      // only once that call has worked (`./evidence-loop/rerun-replacement.ts`).
       const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, toolIds);
       const targetedStepIds = [...new Set(decision.amendments.flatMap((amendment) => {
         const step = draftSteps.find((candidate) => candidate.position === amendment.step);
         return step?.id ? [step.id] : [];
       }))];
-      const rerunStepId = rerun.request
-        ? draftSteps.find((candidate) => candidate.position === rerun.request!.step)?.id
-        : undefined;
+      rerunReplaces = rerun.request ? draftSteps.find((candidate) => candidate.position === rerun.request!.step) : undefined;
       // Which node each position held before the edit, so a refused amendment
       // is recorded with the node it was about (`./evidence-loop/trace.ts`).
       const nodeAt = new Map(draftSteps.map((step) => [step.position, step.actionId] as const));
       const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
-      if (rerun.request) applyAutomationStudioFlowDraftAmendments(draftSteps, [{ step: rerun.request.step, change: "drop" }]);
       // **Every refusal of this decision on one path, the draft's and the
       // loop's own.** A `rerun` is filtered out of the apply call above, so the
       // draft never sees one and never refuses one -- and a rerun this loop
@@ -656,7 +656,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         appliedCount: amended.applied + (rerun.request ? 1 : 0),
         refusedCount: refused.length,
         keptStepCount: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
-        ...(rerunStepId ? { rerunStepId } : {})
+        ...(rerunReplaces?.id ? { rerunStepId: rerunReplaces.id } : {})
       };
       recordRow(
         { iteration, decision: "amend_draft", resultCode: rerun.request ? "llm_evidence_loop.draft_rerun" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", amended: amended.applied, ...(refused.length ? { amendmentsRefused: refused } : {}), ...(decision.usage ? { usage: decision.usage } : {}) },
@@ -706,11 +706,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const tool = toolsById.get(decision.toolId)!;
     const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch, attemptEpoch, input: decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
-    // Not offered this iteration: an observation nothing has happened since.
-    // Its latest call is always recorded with its epoch.
+    // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
+    // or, in the wrap-up, any tool at all -- the wrap-up offers none, and a call it was not offered is answered, never run.
     const reobservation = !eligibleToolIds.has(decision.toolId);
-    if (!rerunning && (answeredBy !== undefined || reobservation)) {
-      const ended = answeredBy !== undefined
+    if (!rerunning && (answeredBy !== undefined || reobservation || wrappingUp)) {
+      const ended = wrappingUp ? answerRequest(iteration, decision, "llm_evidence_loop.not_offered", latestObservations.get(decision.toolId) ?? "") : answeredBy !== undefined
         ? answerRequest(iteration, decision, "llm_evidence_loop.already_answered", answeredBy)
         : answerRequest(iteration, decision, "llm_evidence_loop.already_observed", latestObservations.get(decision.toolId)!);
       if (ended) return ended;
@@ -767,6 +767,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     }
     evidence.push({ callId, toolId: decision.toolId, value, call: { resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no" } });
     const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
+    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces);
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
       ? "unobserved"
       : stateBefore === stateAfter ? "unchanged" : "changed";

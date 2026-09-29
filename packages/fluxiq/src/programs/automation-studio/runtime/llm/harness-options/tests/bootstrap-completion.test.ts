@@ -297,6 +297,34 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       .toEqual(["web.output.browser-navigate", "web.output.dom-extract_list"]);
   });
 
+  // Both bigbox builds (`run-mulx76vv-a882551e`, `run-mum0ke7z-940cbd27`) ran
+  // the navigation first, as the domain requires, then withdrew it with an
+  // amendment, and spent a turn being refused for it at the end of the budget.
+  it("builds a draft whose navigation was withdrawn with that navigation as its first step", async () => {
+    const step = (position: number, node: string, parameters: JsonObject, disposition: AutomationStudioFlowDraftStep["disposition"], effect: "observe" | "mutate"): AutomationStudioFlowDraftStep => ({
+      position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
+      input: { node, parameters, consequences: [] }, effect, effectApplied: true, disposition,
+      ...(effect === "observe" ? { proposes: true } : {})
+    });
+    const draftSteps = [
+      step(1, "web.browser.navigate", { url: START_LOCATION }, "exploratory", "mutate"),
+      step(2, "web.dom.extract_list", { extractList }, "kept", "observe")
+    ];
+
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products" },
+      projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps,
+      startLocation: START_LOCATION
+    });
+
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId))
+      .toEqual(["web.output.browser-navigate", "web.output.dom-extract_list"]);
+    // The loop's own draft still says what the model said about the step.
+    expect(draftSteps[0]?.disposition).toBe("exploratory");
+  });
+
   it("never reaches the check for a build that was given no start location", async () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products", plan: planWith({ extractList }) },

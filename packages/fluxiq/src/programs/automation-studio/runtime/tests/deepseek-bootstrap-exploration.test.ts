@@ -629,10 +629,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     const run = await create({ maxCalls: 20, reply: (_call, iteration) => look(iteration) });
 
     expect(run.sentIterations).toHaveLength(20);
-    // Twenty decisions, nineteen tool calls: the twentieth is the last the
-    // budget allows, so it is offered only completion, and a look asked for on
-    // it anyway is not run (t057, `llm/loop-budget.ts`).
-    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 19 } });
+    // Twenty decisions, seventeen tool calls: the eighteenth and nineteenth are
+    // the wrap-up and the twentieth the last, none of which offers a tool, so a
+    // look asked for on them anyway is not run (t057, `llm/loop-budget.ts`).
+    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 17 } });
     expect(run.activeGrantsAfter).toBe(0);
   }, 120_000);
 
@@ -658,8 +658,14 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(postRefusal.map((observation) => observation.completionFeedback)).toEqual(
       Array.from({ length: 16 }, () => ["bootstrap.cannot_answer_instruction"])
     );
-    expect(postRefusal.slice(0, -1).map((observation) => observation.offeredDecisionKinds)).toEqual(
-      Array.from({ length: 15 }, () => ["complete", "amend_draft", "tool_call"])
+    // Decisions 11-23 may still look; 24 and 25 are the wrap-up, which offers
+    // only completion and amendments (`AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS`
+    // in `llm/loop-budget.ts`); the twenty-sixth is the last, only completion.
+    expect(postRefusal.slice(0, -3).map((observation) => observation.offeredDecisionKinds)).toEqual(
+      Array.from({ length: 13 }, () => ["complete", "amend_draft", "tool_call"])
+    );
+    expect(postRefusal.slice(-3, -1).map((observation) => observation.offeredDecisionKinds)).toEqual(
+      Array.from({ length: 2 }, () => ["complete", "amend_draft"])
     );
     expect(postRefusal.at(-1)?.offeredDecisionKinds).toEqual(["complete"]);
     expect(postRefusal.every((observation) => observation.registeredRecordProducerCount === 1)).toBe(true);
@@ -668,7 +674,9 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       expect(observation.draft).toMatchObject({
         present: true,
         budget: 4_000,
-        steps: observation.iteration - 4,
+        // Decision 24's look falls in the wrap-up and is not run, so it adds no
+        // step; decision 25's rerun amendment is offered there, and does.
+        steps: observation.iteration - 4 - (observation.iteration > 24 ? 1 : 0),
         unlisted: 0,
         withoutInput: 0,
         inputTooLarge: 0,
@@ -692,7 +700,7 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       issueCodes: ["bootstrap.cannot_answer_instruction"],
       accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 31_200, outputTokens: 3_900, totalTokens: 35_100 },
       evidenceLoop: {
-        iterationCount: 26, decisionCount: 26, toolCallCount: 22, evidenceBytes: expect.any(Number),
+        iterationCount: 26, decisionCount: 26, toolCallCount: 21, evidenceBytes: expect.any(Number),
         // How close it came, which is the question the old ending could not be
         // asked: a draft that had grown real steps, and three attempts to finish.
         // `iterations`, and that is the live run's own path: the twenty-sixth
@@ -709,7 +717,7 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(steps.filter((step) => step.iteration === 25)).toHaveLength(2);
     expect(steps).toEqual(expect.arrayContaining([
       expect.objectContaining({ iteration: 8, resultCode: "llm_evidence_loop.draft_amended", amended: 1 }),
-      expect.objectContaining({ iteration: 9, resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, amendmentsRefused: [{ step: 2, reason: "already_so" }] }),
+      expect.objectContaining({ iteration: 9, resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, amendmentsRefused: [{ step: 2, reason: "already_so", nodeId: "demo.look" }], amendmentRefusals: ["2:already_so:demo.look"] }),
       expect.objectContaining({ iteration: 10, resultCode: "bootstrap.cannot_answer_instruction", progress: expect.objectContaining({ answerabilityState: "first_observed" }), answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false, issueCode: "bootstrap.cannot_answer_instruction" } }),
       expect.objectContaining({ iteration: 26, resultCode: "bootstrap.cannot_answer_instruction", progress: expect.objectContaining({ answerabilityState: "unchanged" }) })
     ]));

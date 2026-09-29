@@ -17,16 +17,14 @@ export const PROJECT_CAPABILITIES: readonly PanelCapability[] = [
     endpoints: ["create-project"],
     arguments: [
       { name: "name", kind: "text", describe: "What to call it.", required: true },
-      { name: "description", kind: "text", describe: "What it is for.", required: false },
-      PIN
+      { name: "description", kind: "text", describe: "What it is for.", required: false }
     ],
     consequences: ["create_new"],
     invoke: async (context, args) => panelCapabilityResult(
       await context.transport.post("create-project", {
         name: str(args, "name"),
         description: str(args, "description"),
-        categoryId: null,
-        authorizationPin: str(args, "authorizationPin")
+        categoryId: null
       }),
       "Created the project.",
       "The project could not be created."
@@ -43,16 +41,14 @@ export const PROJECT_CAPABILITIES: readonly PanelCapability[] = [
     arguments: [
       PROJECT,
       { name: "name", kind: "text", describe: "The new name.", required: true },
-      { name: "description", kind: "text", describe: "What it is for.", required: false },
-      PIN
+      { name: "description", kind: "text", describe: "What it is for.", required: false }
     ],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
       await context.transport.post("update-project", {
         projectId: str(args, "projectId"),
         name: str(args, "name"),
-        description: str(args, "description"),
-        authorizationPin: str(args, "authorizationPin")
+        description: str(args, "description")
       }),
       "Renamed the project.",
       "The project could not be renamed."

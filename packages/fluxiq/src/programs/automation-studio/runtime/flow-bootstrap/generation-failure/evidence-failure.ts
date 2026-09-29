@@ -19,6 +19,7 @@ import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState } from "./failure-state.ts";
 
 type EvidenceAccounting = NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>;
+type IncompleteDraftPointer = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["incompleteDraft"]>;
 
 const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioFlowBootstrapPhaseFailureCode> = {
   "llm_evidence_loop.invalid_configuration": "flow_bootstrap.evidence_invalid_configuration",
@@ -49,7 +50,9 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
 export function flowBootstrapEvidenceLoopFailure(
   result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>,
   /** What the loop spent before it ended, when the caller can say. */
-  accounting?: EvidenceAccounting
+  accounting?: EvidenceAccounting,
+  /** The incomplete draft the build kept, when it kept one (`../incomplete-draft/`). */
+  incompleteDraft?: IncompleteDraftPointer
 ): AutomationStudioFlowBootstrapGenerationError {
   const code = EVIDENCE_LOOP_FAILURE_CODES[result.code];
   const issueCodes = flowBootstrapDiagnosticIssueCodes(result.exhaustion?.lastIssueCodes ?? []);
@@ -60,7 +63,7 @@ export function flowBootstrapEvidenceLoopFailure(
     providerInvocation: "attempted",
     providerResponse: "received",
     ...(accounting ? { accounting } : {}),
-    evidenceLoop: evidenceLoopDiagnostic(result, result.exhaustion),
+    evidenceLoop: { ...evidenceLoopDiagnostic(result, result.exhaustion), ...(incompleteDraft ? { incompleteDraft } : {}) },
     ...(issueCodes.length ? { issueCodes } : {})
   });
 }

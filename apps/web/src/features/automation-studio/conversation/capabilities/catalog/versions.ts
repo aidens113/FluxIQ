@@ -9,7 +9,7 @@ import { listFlowAdaptations, reviewFlowAdaptation } from "../../../adaptations"
 import { AUTOMATION_FLOW_ENDPOINTS } from "../../../flow-editor";
 import { automationStudioViewId } from "../../../views";
 import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityContext } from "../contract";
-import { PROJECT, FLOW, PIN } from "./argument";
+import { PROJECT, FLOW } from "./argument";
 import { str } from "./value";
 
 export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
@@ -41,8 +41,7 @@ export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
       PROJECT,
       FLOW,
       { name: "version", kind: "text", describe: "What to call the version.", required: true },
-      { name: "changelog", kind: "text", describe: "What changed.", required: false },
-      PIN
+      { name: "changelog", kind: "text", describe: "What changed.", required: false }
     ],
     consequences: ["create_new"],
     invoke: async (context, args) => panelCapabilityResult(
@@ -51,8 +50,7 @@ export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
         flowId: str(args, "flowId"),
         version: str(args, "version"),
         changelog: str(args, "changelog"),
-        publishedBy: "conversation",
-        authorizationPin: str(args, "authorizationPin")
+        publishedBy: "conversation"
       }),
       "Published the version.",
       "The version could not be published."
@@ -114,7 +112,7 @@ export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
     id: "version.deprecate",
     title: "Take a published version out of service",
-    summary: "Marks a published version as no longer to be used. Asks for your PIN first.",
+    summary: "Marks a published version as no longer to be used.",
     group: "Versions",
     phrases: ["deprecate", "retire the version", "stop using that version"],
     control: { view: automationStudioViewId.settings, label: "Deprecate" },
@@ -123,8 +121,7 @@ export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
       PROJECT,
       FLOW,
       { name: "version", kind: "text", describe: "The version to retire.", required: true },
-      { name: "reason", kind: "text", describe: "Why it is being retired.", required: true },
-      PIN
+      { name: "reason", kind: "text", describe: "Why it is being retired.", required: true }
     ],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
@@ -132,8 +129,7 @@ export const VERSION_CAPABILITIES: readonly PanelCapability[] = [
         projectId: str(args, "projectId"),
         flowId: str(args, "flowId"),
         version: str(args, "version"),
-        reason: str(args, "reason"),
-        authorizationPin: str(args, "authorizationPin")
+        reason: str(args, "reason")
       }),
       "Took the version out of service.",
       "The version could not be retired."

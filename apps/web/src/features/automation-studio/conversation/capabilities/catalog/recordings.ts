@@ -22,8 +22,7 @@ export const RECORDING_CAPABILITIES: readonly PanelCapability[] = [
       PROJECT,
       RECORDING,
       { name: "text", kind: "text", describe: "What to write, or what to call the marker.", required: true },
-      { name: "asMarker", kind: "boolean", describe: "True to drop a marker rather than write a note.", required: false },
-      PIN
+      { name: "asMarker", kind: "boolean", describe: "True to drop a marker rather than write a note.", required: false }
     ],
     consequences: ["modify_existing"],
     invoke: async (context, args) => {
@@ -32,8 +31,10 @@ export const RECORDING_CAPABILITIES: readonly PanelCapability[] = [
         await context.transport.post(marker ? AUTOMATION_RECORDING_ENDPOINTS.appendMarker : AUTOMATION_RECORDING_ENDPOINTS.appendNote, {
           projectId: str(args, "projectId"),
           recordingId: str(args, "recordingId"),
-          authorizationPin: str(args, "authorizationPin"),
-          ...(marker ? { label: str(args, "text"), linkedEntryIds: [] } : { text: str(args, "text"), linkedEntryIds: [] })
+          // A marker names at most one entry (`linkedEntryId`), and none is
+          // named here; only a note takes a list. Core never read the empty
+          // `linkedEntryIds` this sent with a marker.
+          ...(marker ? { label: str(args, "text") } : { text: str(args, "text"), linkedEntryIds: [] })
         }),
         marker ? "Dropped the marker." : "Wrote the note.",
         marker ? "The marker could not be dropped." : "The note could not be written."
@@ -48,14 +49,13 @@ export const RECORDING_CAPABILITIES: readonly PanelCapability[] = [
     phrases: ["rename the recording", "call the recording", "change the recording name"],
     control: { view: automationStudioViewId.recordingTimeline, label: "Rename" },
     endpoints: [AUTOMATION_RECORDING_ENDPOINTS.update],
-    arguments: [PROJECT, RECORDING, { name: "name", kind: "text", describe: "The new name.", required: true }, PIN],
+    arguments: [PROJECT, RECORDING, { name: "name", kind: "text", describe: "The new name.", required: true }],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
       await context.transport.post(AUTOMATION_RECORDING_ENDPOINTS.update, {
         projectId: str(args, "projectId"),
         recordingId: str(args, "recordingId"),
-        name: str(args, "name"),
-        authorizationPin: str(args, "authorizationPin")
+        name: str(args, "name")
       }),
       "Renamed the recording.",
       "The recording could not be renamed."
