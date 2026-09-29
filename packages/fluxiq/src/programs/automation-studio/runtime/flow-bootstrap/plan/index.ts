@@ -28,6 +28,7 @@ export * from "./name-correction.ts";
 export * from "./name-correction-assumption.ts";
 export * from "./output-schema.ts";
 export * from "./parsing.ts";
+export * from "./profile-limits.ts";
 export * from "./record-output-contract.ts";
 export * from "./route-condition.ts";
 export * from "./route-validation.ts";

@@ -1486,7 +1486,7 @@ export class AutomationStudioService {
     try {
       // Every field of the request and of its grant, read and refused in one
       // place (`./service/flow-bootstrap-commands/generation-request.ts`).
-      const { projectId, flowId, startLocation, executionGrant, mode } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput, unsafeGrant);
+      const { projectId, flowId, startLocation, executionGrant, mode } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput, unsafeGrant, { runOwnedRepair: retainRunOwnedGrant });
       failureCode = "flow_bootstrap.generation_lock_failed";
       return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
         failureCode = "flow_bootstrap.blank_target_required";

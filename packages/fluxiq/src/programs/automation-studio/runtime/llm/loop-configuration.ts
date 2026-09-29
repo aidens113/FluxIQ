@@ -22,6 +22,7 @@ import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
 import { automationStudioLlmTokenBudgetBytes } from "./token-estimation.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/resume.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
   type AutomationStudioLlmEvidenceCompletionCheck,
@@ -211,6 +212,17 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * amendment naming a step names one step.
      */
     seed?: readonly AutomationStudioFlowDraftStep[];
+    /**
+     * The seed is the draft of a build that ran out before it finished, and
+     * this build continues it (`../flow-bootstrap/incomplete-draft/`).
+     *
+     * Before the first decision the model is told what the last build still
+     * owed (`./evidence-loop/resume.ts`), and the draft is replayed through the
+     * dry run so the target is where the draft leaves it rather than where the
+     * Flow starts. A seed carried from the loop's own steps keeps their replay,
+     * so unlike an extend's seed it is dry-run gated like any draft.
+     */
+    resume?: AutomationStudioLlmEvidenceLoopResume;
   };
   /**
    * Whether a completed result must first have its draft replayed clean

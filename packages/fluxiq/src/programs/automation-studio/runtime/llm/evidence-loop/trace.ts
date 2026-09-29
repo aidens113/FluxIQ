@@ -82,7 +82,15 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
    * here too: a `rerun` it declined to carry out says so through this field
    * rather than disappearing (`./rerun-request.ts`).
    */
-  amendmentsRefused?: readonly AutomationStudioFlowDraftAmendmentRefusal[];
+  amendmentsRefused?: ReadonlyArray<AutomationStudioFlowDraftAmendmentRefusal & {
+    /**
+     * The node the refused amendment's step held when it was refused. Absent
+     * where the step named no step at all, which `no_such_step` says.
+     * `run-mulx76vv-a882551e` refused eighteen amendments and no record said
+     * which node any of them was about.
+     */
+    nodeId?: string;
+  }>;
   /**
    * What this decision was shown of the draft, and what showing it cost
    * (`./draft-shown.ts`).

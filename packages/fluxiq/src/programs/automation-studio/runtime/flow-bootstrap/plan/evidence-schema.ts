@@ -18,6 +18,10 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "./flow-script-format.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
+import { automationStudioEvidenceFlowBootstrapLimitsExceeded } from "./profile-limits.ts";
+
+/** The most lasting actions one completion may account for. */
+const MAX_ACT_CLAIMS = 16;
 
 /**
  * The completion an evidence-guided Bootstrap call returns: one line-oriented
@@ -83,22 +87,35 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA: 
   required: ["summary"],
   description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs."
     + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
-    + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later.",
+    + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later."
+    + " Where the instruction asks for something to be done -- saved, added to a cart or list, a coupon collected, a store, filter or setting changed, a page opened to read from, something booked, bought, sent, posted, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
   properties: {
-    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." }
+    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." },
+    // Why the model names the step rather than Core finding it
+    // (`../instructed-acts/`): a draft step is opaque to Core by design, so only
+    // the model can say which press was the save, and Core checks the claim.
+    acts: {
+      type: "array",
+      maxItems: MAX_ACT_CLAIMS,
+      description: "One entry for each thing the instruction asks to be done, naming the draft step that does it. Leave it out when the instruction only asks for something to be read.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["action", "step"],
+        properties: {
+          action: { type: "string", minLength: 1, maxLength: 200, description: "The act, in the instruction's words or by the id a refusal gave it, such as a1." },
+          step: { type: "string", minLength: 1, maxLength: 16, description: "The id of the kept draft step that does it, such as d7." }
+        }
+      }
+    }
   }
 };
 
+/**
+ * Whether a model-written result is within the reply's limits. Which limit a
+ * result exceeded, and the limits a Core-assembled plan is held to instead, are
+ * `./profile-limits.ts`'s.
+ */
 export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(value: { summary: string; plan: AutomationStudioFlowBootstrapPlan }): boolean {
-  const limits = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS;
-  return value.summary.length <= limits.maxSummaryLength
-    && Buffer.byteLength(JSON.stringify(value), "utf8") <= limits.maxResultBytes
-    && value.plan.router.name.length <= limits.maxNameLength
-    && value.plan.router.rules.length <= limits.maxRules
-    && value.plan.router.rules.every((rule) => rule.name.length <= limits.maxNameLength && rule.routeTags.length <= limits.maxRouteTags)
-    && value.plan.subflows.length <= limits.maxSubflows
-    && value.plan.subflows.every((subflow) => subflow.name.length <= limits.maxNameLength
-      && subflow.nodes.length <= limits.maxNodesPerSubflow
-      && subflow.edges.length <= limits.maxEdgesPerSubflow
-      && subflow.nodes.every((node) => !node.parameters || Object.keys(node.parameters).length <= limits.maxParametersPerNode));
+  return automationStudioEvidenceFlowBootstrapLimitsExceeded(value, "reply").length === 0;
 }

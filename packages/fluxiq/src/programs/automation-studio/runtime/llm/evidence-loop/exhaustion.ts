@@ -88,4 +88,27 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    * is the ordinary case and the one that used to be reported honestly.
    */
   lastIssueCodes: readonly string[];
+  /**
+   * Which of the run's budget bounds had no decision left, when `bound` is
+   * `budget`: the one whose count of decisions left was smallest
+   * (`../loop-budget.ts`). Absent for the other bounds.
+   *
+   * `run-mulx76vv-a882551e` ended `budget` with $0.06 of a $0.25 cost cap spent
+   * and 527,633 of 600,000 tokens, and the debug had to compute from the trace
+   * that it was the tokens; this says so.
+   */
+  budgetBound?: AutomationStudioLlmEvidenceLoopBudgetBound;
+  /**
+   * The issue codes of the last completion refusal the model had not yet
+   * answered with another attempt to finish, whatever came after it. Empty when
+   * it never tried, or its last attempt was not refused.
+   *
+   * What a continuation of this build is told it still owes
+   * (`../../flow-bootstrap/incomplete-draft/`), which `lastIssueCodes` cannot say:
+   * that one empties the moment any usable decision follows the refusal.
+   */
+  outstandingIssueCodes: readonly string[];
 };
+
+/** A budget bound that can run out, as `../loop-budget.ts` counts them. */
+export type AutomationStudioLlmEvidenceLoopBudgetBound = "iterations" | "tokens" | "cost" | "duration";

@@ -20,10 +20,16 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-exec
  * absent whenever the caller said nothing -- a call that simply worked usually
  * does.
  */
-export function automationStudioLlmEvidenceCallDiagnostic(execution: { resultReason?: string; nodeId?: string }): { resultReason?: string; nodeId?: string } {
+export function automationStudioLlmEvidenceCallDiagnostic(execution: { resultReason?: string; nodeId?: string; draft?: { actionId?: string } | undefined }): { resultReason?: string; nodeId?: string } {
+  // A call that worked usually names no node of its own, while the draft entry
+  // it declared does: `run-mulx76vv-a882551e` published a node id only on its
+  // refused rows, so which node any of its nine successful actions ran could
+  // not be read. The declared action is the caller's resolution, never a name
+  // the model wrote, so it answers the same question.
+  const nodeId = execution.nodeId ?? execution.draft?.actionId;
   return {
     ...(execution.resultReason ? { resultReason: execution.resultReason } : {}),
-    ...(execution.nodeId ? { nodeId: execution.nodeId } : {})
+    ...(nodeId ? { nodeId } : {})
   };
 }
 

@@ -2,7 +2,6 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   applyAutomationStudioFlowDraftAmendments,
-  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
   automationStudioFlowDraftEntry,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable,
@@ -28,6 +27,8 @@ import {
   automationStudioLlmEvidenceAnsweredRequestNote,
   automationStudioLlmEvidenceCallDiagnostic as callDiagnostic,
   automationStudioLlmEvidenceCallRecord as callRecord,
+  automationStudioLlmEvidenceCompletionAttempt,
+  automationStudioLlmEvidenceResumeEntry,
   automationStudioLlmEvidenceLoopAddUsage,
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopDraftShown,
@@ -50,7 +51,6 @@ import { automationStudioFlowDraftDryRunGate } from "./node-tools/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceRecord } from "./context-window.ts";
 import {
   automationStudioLlmEvidenceCanonicalJson,
-  automationStudioLlmEvidenceParseCompletionCheck,
   automationStudioLlmEvidenceParseDecision,
   automationStudioLlmEvidenceParseToolExecutionResult,
   automationStudioLlmEvidenceValidTools,
@@ -61,7 +61,7 @@ import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenc
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES, automationStudioLlmEvidenceLoopSeedSteps, resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
-import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceLoopRemaining } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
 import { automationStudioLlmTokenBudgetBytes } from "./token-estimation.ts";
@@ -301,6 +301,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const startedAtMs = clock();
   let reportedDecisions = 0;
   let finalDecision = false;
+  // What the budget left last: which bound an exhausted loop ran out of.
+  let lastRemaining: AutomationStudioLlmEvidenceLoopRemaining | undefined;
   // Whether this iteration offered the model the chance to finish. Read by the
   // redirection rather than passed to it: it is pushed from five places, only
   // two of them inside the iteration that worked this out, and telling a model
@@ -371,7 +373,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // Only while the run of refusals is unbroken. A loop that ran out after a
       // decision it could use has no last refusal, and reporting the one before
       // it would be the same conflation in a smaller field.
-      lastIssueCodes: unusableInARow ? [...lastIssueCodes] : []
+      lastIssueCodes: unusableInARow ? [...lastIssueCodes] : [],
+      ...(bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
+      // What a continuation of this build is told it still owes.
+      outstandingIssueCodes: noProgress.outstanding
     });
   // A call that threw or returned what is not a result: recorded and shown to
   // the model under its own call id when failures are observed. Returns the
@@ -498,6 +503,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
       recordRow({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...callDiagnostic(execution) }, { draftChanged, pageState });
     }
   }
+  // A continuation: told what it owes, its draft replayed (`./evidence-loop/resume.ts`).
+  const resume = input.draft === false ? undefined : input.draft?.resume;
+  if (resume) {
+    const resumed = automationStudioLlmEvidenceResumeEntry(resume, draftSteps);
+    if (reserveEvidence(resumed.value) !== undefined) evidence.push(resumed);
+    const replayed = await dryRun();
+    if (replayed === "cancelled") return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+    if (replayed === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
+  }
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
@@ -522,14 +536,18 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // Nothing left to pay for a decision with. The run's budget is what ran
     // out, which a retry raises; what the last decision happened to be is
     // recorded beside it and is not the ending.
+    lastRemaining = remaining || undefined;
     if (remaining && remaining.decisionsLeft === 0) return exhausted("budget");
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
-    const offered = finalDecision ? [] : eligibleTools;
+    // The wrap-up (`./loop-budget.ts`): the last few decisions offer finishing
+    // and amending, so a refused completion still has turns to be answered in.
+    const wrappingUp = remaining !== undefined && remaining.decisionsLeft <= AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS && canComplete;
+    const offered = wrappingUp ? [] : eligibleTools;
     try {
       canAmend = drafting && !finalDecision && draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
-      const budgetEntry = remaining && (iteration > 1 || finalDecision) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining) : undefined;
+      const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp) : undefined;
       // The draft sits beside the window, never inside it: the window keeps
       // the newest result per tool, and every action of one kind arrives under
       // one tool id, which is how a live build lost four of five presses.
@@ -574,50 +592,28 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (decision.kind === "complete") {
       completionAttempts += 1;
       if (accounting.toolCalls - failedToolCalls < limits.minToolCalls) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-      let check: ReturnType<typeof automationStudioLlmEvidenceParseCompletionCheck> = { ok: true };
-      if (input.checkCompletion) {
-        try {
-          check = automationStudioLlmEvidenceParseCompletionCheck(await input.checkCompletion(structuredClone(decision.result), { steps: draftSteps.map((step) => ({ ...step })) }));
-        } catch (error) {
-          if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-          if (input.propagateDecisionErrors) throw error;
-          return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-        }
+      // The caller's check and the draft's dry run, both asked and answered
+      // together (`./evidence-loop/completion-attempt.ts` says why both).
+      const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun, signal: input.signal });
+      if (attempt.kind === "threw") {
+        if (input.propagateDecisionErrors) throw attempt.error;
+        return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
       }
-      if (check?.ok) {
-        // Last, because it is the only check that costs seconds and touches the
-        // world: a plan that does not even assemble is refused before anything
-        // is replayed.
-        const refusedDryRun = await dryRun();
-        if (refusedDryRun === "cancelled") return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-        if (refusedDryRun === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
-        if (refusedDryRun) {
-          if (!input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-          const stalledReplay = unusable(
-            { iteration, decision: "unusable", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, ...(decision.usage ? { usage: decision.usage } : {}) },
-            refusedDryRun.issueCodes,
-            { ...(check.answerability ? { answerability: check.answerability } : {}) }
-          );
-          if (!stalledReplay) continue;
-          if (input.propagateDecisionErrors) throw stalledReplay.error;
-          return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-        }
-        recordRow(
-          { iteration, decision: "complete", ...(decision.usage ? { usage: decision.usage } : {}) },
-          { ...(check.answerability ? { answerability: check.answerability } : {}) }
-        );
+      if (attempt.kind === "ended") return failure(draftSteps, attempt.code, trace, accounting);
+      const answered = attempt.answerability ? { answerability: attempt.answerability } : {};
+      const usage = decision.usage ? { usage: decision.usage } : {};
+      if (attempt.kind === "accepted") {
+        recordRow({ iteration, decision: "complete", ...usage }, answered);
         return { ok: true, result: decision.result, trace, steps: draftSteps, accounting };
       }
-      if (!check || !input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
-      // The model is told why, as evidence, before it is asked again.
-      if (reserveEvidence(check.feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
-      evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: check.feedback });
-      const resultCode = check.issueCodes[0];
-      const stalled = unusable(
-        { iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(decision.usage ? { usage: decision.usage } : {}) },
-        check.issueCodes,
-        { ...(check.answerability ? { answerability: check.answerability } : {}) }
-      );
+      if (!input.unusableDecisions) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+      // The model is told why before it is asked again; the dry run showed its own.
+      if (attempt.feedback) {
+        if (reserveEvidence(attempt.feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
+        evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: attempt.feedback });
+      }
+      const resultCode = attempt.issueCodes[0];
+      const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...usage }, attempt.issueCodes, answered);
       if (!stalled) continue;
       if (input.propagateDecisionErrors) throw stalled.error;
       return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
@@ -641,6 +637,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const rerunStepId = rerun.request
         ? draftSteps.find((candidate) => candidate.position === rerun.request!.step)?.id
         : undefined;
+      // Which node each position held before the edit, so a refused amendment
+      // is recorded with the node it was about (`./evidence-loop/trace.ts`).
+      const nodeAt = new Map(draftSteps.map((step) => [step.position, step.actionId] as const));
       const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, decision.amendments.filter((amendment) => amendment.change !== "rerun"));
       if (rerun.request) applyAutomationStudioFlowDraftAmendments(draftSteps, [{ step: rerun.request.step, change: "drop" }]);
       // **Every refusal of this decision on one path, the draft's and the
@@ -649,7 +648,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // could not carry out was therefore the one amendment that changed
       // nothing silently, on a build where every other kind had been telling the
       // model why since t140. The row records both and the model is shown both.
-      const refused = [...amended.refused, ...rerun.refused];
+      const refused = [...amended.refused, ...rerun.refused].map((refusal) => nodeAt.has(refusal.step) ? { ...refusal, nodeId: nodeAt.get(refusal.step)! } : refusal);
       // How many steps the decision edited, beside which kind of edit it was
       // (`./evidence-loop/draft-change.ts` says why a count had to join the word).
       const draftChange: AutomationStudioLlmEvidenceLoopDraftChange = {

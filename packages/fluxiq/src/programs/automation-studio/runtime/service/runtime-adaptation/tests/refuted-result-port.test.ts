@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
-import { AutomationStudioLlmRequestRefusedError, type AutomationStudioRuntimeSessionGrant } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, AutomationStudioLlmRequestRefusedError, type AutomationStudioRuntimeSessionGrant } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY,
@@ -62,6 +62,19 @@ function deps(overrides: Partial<AutomationStudioRefutedResultRepairPortDependen
 function marker(result: AutomationStudioFlowRunDetail | undefined): Record<string, any> {
   return (result?.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY] ?? {}) as Record<string, any>;
 }
+
+describe("the grant a re-author builds under", () => {
+  // No purpose may refuse the automation's own repair: the build is handed the
+  // run's grant as it is, and the Flow's binding is read rather than demanded.
+  it.each(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES)("builds under a %s grant, as that grant", async (purpose) => {
+    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const result = await automationStudioRefutedResultRepairPort(deps({ executionGrant: { purpose } as unknown as AutomationStudioRuntimeSessionGrant, generate: generate as never }))(request);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect((generate.mock.calls[0] as unknown[])[0]).toMatchObject({ mode: "extend", executionGrant: { purpose, executionDigest: "digest", settingsRevision: 1 } });
+    expect(marker(result)).toMatchObject({ routed: true, applied: true });
+    expect(marker(result).degraded).toBeUndefined();
+  });
+});
 
 describe("a re-author whose build fails", () => {
   it("names the guard that refused the request and degrades to the patch ladder instead of ending", async () => {

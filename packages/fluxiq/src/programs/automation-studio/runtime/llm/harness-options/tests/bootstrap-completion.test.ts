@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../bootstrap-completion.ts";
 import { automationStudioPlanNodeHandleSites } from "../plan-node-handles.ts";
 
@@ -301,6 +302,128 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       result: { summary: "Scrape the products", plan: planWith({ extractList }) },
       projectId: "project.1", flowId: "flow.1", registry, resolution
     });
+
+    expect(verdict.ok).toBe(true);
+  });
+});
+
+// `run-mulxsbyy-d4d4c7a1` was refused three times by three different checks,
+// one per attempt, the last on its forced final decision. Every check whose
+// input exists now runs on every attempt, and the refusal carries them all.
+describe("every check on every attempt", () => {
+  const readsOneValue: JsonObject = {
+    schemaVersion: "0.1",
+    router: { name: "Read", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+    subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [{ key: "read", definitionId: "web.output.dom-extract", definitionVersion: "1.0.0", outputActionId: "web.dom.extract", parameters: { selector: ".price" } }], edges: [] }]
+  };
+
+  it("returns a refused parameter, an unanswerable plan and an unreachable start together", async () => {
+    const binding = { resolvePlanNodeParameters: () => ({ status: "refused" as const, issueCodes: ["web.handle.invented"] }) };
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Read the price", plan: readsOneValue },
+      projectId: "project.1", flowId: "flow.1", registry, resolution, binding,
+      instructionText: "Scrape every product the search returns as a table with columns name and price.",
+      startLocation: "https://shop.test/search"
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.codes).toEqual([
+      "flow_bootstrap.evidence_completion_parameters_unresolved",
+      "flow_bootstrap.evidence_completion_cannot_answer",
+      "flow_bootstrap.evidence_completion_cannot_reach_start"
+    ]);
+    expect(verdict.code).toBe("flow_bootstrap.evidence_completion_parameters_unresolved");
+    expect(verdict.check.issueCodes).toEqual(["web.handle.invented", "bootstrap.cannot_answer_instruction", "bootstrap.cannot_reach_start_location"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { refusals: string[]; cannotAnswer: JsonObject; cannotReach: JsonObject };
+    expect(feedback.refusals).toEqual(verdict.codes);
+    expect(feedback.cannotAnswer).toBeDefined();
+    expect(feedback.cannotReach).toBeDefined();
+    expect(feedback.instruction).toContain("correct all of them before completing again");
+    expect(feedback.instruction).toContain("Where an issue carries accepted");
+    expect(feedback.instruction).toContain("keep it in the draft as the first step");
+  });
+
+  it("names the limit a result is over, its maximum and the actual value", async () => {
+    const nodes = Array.from({ length: 17 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" }));
+    const { verdict, feedback } = await refusal({ summary: "Candidate.", plan: { ...planWith({ extractList }), subflows: [{ key: "primary", name: "Primary", role: "primary", nodes, edges: [] }] } });
+
+    expect(verdict.codes).toContain("flow_bootstrap.evidence_completion_profile_limit_exceeded");
+    expect((feedback as unknown as { limitsExceeded: JsonObject[] }).limitsExceeded).toContainEqual({ limit: "maxNodesPerSubflow", max: 16, actual: 17, path: "plan.subflows.0.nodes" });
+    expect(feedback.instruction).toContain("limitsExceeded names each limit");
+  });
+});
+
+// `run-mum06sfc-f1d9403f`: told to put two kettles in the cart, move the phone
+// case to Save for later and read the cart back, the build searched, went to
+// the cart and read it, and `complete` was accepted because the Flow produced
+// records. Its consequence cross-check said `undeclared` and refused nothing.
+// Completion now refuses it, naming each act it left undone.
+describe("a completed draft that does not do what the instruction asks", () => {
+  const KETTLES = "Kettle to cart" + NEWLINE + "Put two Tidewell electric kettles in sage green, 1.7 litre, sold by Brightaisle itself, in my cart, and move the phone case that is already in my cart to Save for later. Then give me what is in my cart, leaving out the saved items, as a table with columns item, quantity and price, where quantity is a plain number and price is the price of one.";
+  const ran = (position: number, node: string, parameters: JsonObject, effect: "observe" | "mutate" = "mutate"): AutomationStudioFlowDraftStep => ({
+    position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
+    input: { node, parameters, consequences: [] }, effect, effectApplied: true, disposition: "kept",
+    ...(effect === "observe" ? { proposes: true } : {})
+  });
+  // Search, press Go, go to the cart, read it: what the run built, less its merge.
+  const searchedAndRead = [
+    ran(1, "web.browser.navigate", { url: "https://store.test/" }),
+    ran(2, "web.dom.type", { selector: "#search", text: "kettle" }),
+    ran(3, "web.dom.click", { selector: "#go" }),
+    ran(4, "web.browser.navigate", { url: "https://store.test/cart" }),
+    ran(5, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe")
+  ];
+  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts?: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
+    result: { summary: "Reads the cart.", ...(acts ? { acts } : {}) },
+    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: KETTLES
+  });
+
+  it("is refused, naming every act the instruction asks for that no step is named as doing", async () => {
+    const verdict = await complete(searchedAndRead);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_cannot_answer"]);
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[]; keptSteps: string[] } };
+    expect(feedback.missingActs.acts.map((act) => [act.id, act.kind, act.verb, act.reason])).toEqual([
+      ["a1", "add_to", "put", "no_step_named"],
+      ["a2", "move", "move", "no_step_named"],
+      ["a3", "open", "give", "no_step_named"]
+    ]);
+    expect(feedback.missingActs.acts[0]?.quote).toContain("Put two Tidewell electric kettles");
+    expect(feedback.issues).toContainEqual(expect.objectContaining({ code: "bootstrap.instructed_act_missing" }));
+    expect(feedback.instruction).toContain("missingActs.acts are things the person's instruction asks to be done");
+  });
+
+  it("still names the two acts left undone once the model names the cart for the one it did", async () => {
+    const verdict = await complete(searchedAndRead, [{ action: "give me what is in my cart", step: "d4" }]);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
+    expect(feedback.missingActs.acts.map((act) => act.id)).toEqual(["a1", "a2"]);
+  });
+
+  it("refuses the read of the cart claimed as putting the kettles in it", async () => {
+    const verdict = await complete(searchedAndRead, [{ action: "a1", step: "d5" }, { action: "a2", step: "d3" }, { action: "a3", step: "d4" }]);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
+    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_changed_nothing"]]);
+  });
+
+  it("is accepted once each act has a kept step of its own that changed something", async () => {
+    const didTheJob = [
+      ...searchedAndRead.slice(0, 3),
+      ran(4, "web.dom.click", { selector: "#add-to-cart" }),
+      ran(5, "web.browser.navigate", { url: "https://store.test/cart" }),
+      ran(6, "web.dom.click", { selector: "#save-for-later" }),
+      ran(7, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe")
+    ];
+    const verdict = await complete(didTheJob, [{ action: "put the kettles in my cart", step: "d4" }, { action: "move the phone case", step: "d6" }, { action: "give", step: "d5" }]);
 
     expect(verdict.ok).toBe(true);
   });

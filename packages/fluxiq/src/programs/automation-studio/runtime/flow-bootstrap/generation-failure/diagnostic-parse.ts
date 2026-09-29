@@ -150,7 +150,9 @@ type EvidenceLoopExhausted = NonNullable<NonNullable<AutomationStudioFlowBootstr
  * Core's without the producer's value in hand.
  */
 const EVIDENCE_LOOP_EXHAUSTED_BOUNDS: readonly string[] = ["iterations", "budget", "tool_calls"];
-const EVIDENCE_LOOP_EXHAUSTED_FIELDS = ["bound", "maxIterations", "iterations", "draftSteps", "proposableSteps", "completionAttempts"];
+const EVIDENCE_LOOP_EXHAUSTED_FIELDS = ["bound", "maxIterations", "iterations", "draftSteps", "proposableSteps", "completionAttempts", "budgetBound"];
+/** Which of the budget's bounds ran out, in `runtime/llm/loop-budget.ts`'s closed set; only beside `bound: "budget"`. */
+const EVIDENCE_LOOP_BUDGET_BOUNDS: readonly string[] = ["iterations", "tokens", "cost", "duration"];
 /**
  * The most draft steps an exhausted record may claim: a seeded extend build
  * keeps a whole supported Flow and may append one step in every iteration.
@@ -172,14 +174,16 @@ function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | nul
     || !boundedInteger(value.iterations, EVIDENCE_LOOP_MAX_ITERATIONS)
     || !boundedInteger(value.draftSteps, EVIDENCE_LOOP_MAX_DRAFT_STEPS)
     || !boundedInteger(value.proposableSteps, value.draftSteps as number)
-    || !boundedInteger(value.completionAttempts, EVIDENCE_LOOP_MAX_ITERATIONS)) return null;
+    || !boundedInteger(value.completionAttempts, EVIDENCE_LOOP_MAX_ITERATIONS)
+    || (value.budgetBound !== undefined && (value.bound !== "budget" || typeof value.budgetBound !== "string" || !EVIDENCE_LOOP_BUDGET_BOUNDS.includes(value.budgetBound)))) return null;
   return {
     bound: value.bound as EvidenceLoopExhausted["bound"],
     maxIterations: value.maxIterations as number,
     iterations: value.iterations as number,
     draftSteps: value.draftSteps as number,
     proposableSteps: value.proposableSteps as number,
-    completionAttempts: value.completionAttempts as number
+    completionAttempts: value.completionAttempts as number,
+    ...(value.budgetBound !== undefined ? { budgetBound: value.budgetBound as NonNullable<EvidenceLoopExhausted["budgetBound"]> } : {})
   };
 }
 

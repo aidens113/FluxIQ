@@ -129,7 +129,17 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
    * closed set, which is a count and a code -- the only two kinds of thing this
    * record ever carries.
    */
-  amendmentsRefused?: AutomationStudioFlowDraftAmendmentRefusal[];
+  amendmentsRefused?: StepAmendmentRefusal[];
+  /**
+   * The same refusals as one flat list of codes, `<step>:<reason>[:<node>]`.
+   *
+   * The Lab's bundle projection keeps a list of scalars and drops a list of
+   * objects, so on `run-mulx76vv-a882551e` eighteen refused amendments reached
+   * the bundle as nothing: no reason, no node. Codes and identifiers joined by
+   * a colon are still only codes and identifiers, and they survive any reader
+   * that keeps a list of strings.
+   */
+  amendmentRefusals?: string[];
   /** Content-free measurement of the draft, page, and answerability transition. */
   progress?: AutomationStudioLlmEvidenceLoopProgress;
   /** Stable ids and bounded counts for one draft-amendment decision. */
@@ -143,6 +153,12 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
   /** What the provider reported for the call that made this decision. Absent where it reported nothing. */
   usage?: AutomationStudioLlmUsageSummary;
 };
+
+/** A refused amendment as a step publishes it: the draft's own refusal, and the node its step held. */
+type StepAmendmentRefusal = AutomationStudioFlowDraftAmendmentRefusal & { nodeId?: string };
+
+/** One refusal in the flat form: a position, a reason, and optionally a node id. */
+const EVIDENCE_STEP_AMENDMENT_REFUSAL_CODE = /^[0-9]{1,4}:[a-z_]{1,40}(?::[a-z0-9_.:-]{1,200})?$/i;
 
 /** The shape a code must have to travel: no whitespace, so no sentence. */
 const EVIDENCE_STEP_CODE = /^[a-z0-9_.:-]{1,100}$/i;
@@ -209,7 +225,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
     ...(nonNegative(entry.amended) ? { amended: entry.amended as number } : {}),
-    ...(amendmentsRefused ? { amendmentsRefused } : {}),
+    ...(amendmentsRefused ? { amendmentsRefused, amendmentRefusals: amendmentsRefused.map(amendmentRefusalCode) } : {}),
     ...(progress ? { progress } : {}),
     ...(draftChange ? { draftChange } : {}),
     ...(draft ? { draft } : {}),
@@ -241,14 +257,19 @@ function stepUsage(usage: AutomationStudioLlmUsageSummary | undefined): Automati
  * refused nothing, so a step that landed every amendment carries no field.
  */
 function stepAmendmentRefusals(
-  refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[] | undefined
-): AutomationStudioFlowDraftAmendmentRefusal[] | undefined {
+  refusals: readonly StepAmendmentRefusal[] | undefined
+): StepAmendmentRefusal[] | undefined {
   if (!refusals?.length) return undefined;
   const kept = refusals
     .filter((refusal) => isAmendmentRefusalStep(refusal.step) && Object.hasOwn(EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS, refusal.reason))
     .slice(0, MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS)
-    .map((refusal) => ({ step: refusal.step, reason: refusal.reason }));
+    .map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.nodeId && EVIDENCE_STEP_ID.test(refusal.nodeId) ? { nodeId: refusal.nodeId } : {}) }));
   return kept.length ? kept : undefined;
+}
+
+/** A refusal in the flat form `<step>:<reason>[:<node>]`. */
+function amendmentRefusalCode(refusal: StepAmendmentRefusal): string {
+  return `${refusal.step}:${refusal.reason}${refusal.nodeId ? `:${refusal.nodeId}` : ""}`;
 }
 
 function isAmendmentRefusalStep(value: unknown): boolean {
@@ -275,7 +296,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -301,6 +322,8 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
     if (step.usage !== undefined && !usage) return null;
     const amendmentsRefused = parseStepAmendmentRefusals(step.amendmentsRefused);
     if (step.amendmentsRefused !== undefined && !amendmentsRefused) return null;
+    const amendmentRefusals = step.amendmentRefusals === undefined ? undefined : parseStepAmendmentRefusalCodes(step.amendmentRefusals);
+    if (amendmentRefusals === null) return null;
     const progress = evidenceStepProgress(step.progress);
     if (step.progress !== undefined && !progress) return null;
     const draftChange = evidenceStepDraftChange(step.draftChange);
@@ -320,6 +343,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
       ...(step.amended !== undefined ? { amended: step.amended as number } : {}),
       ...(amendmentsRefused ? { amendmentsRefused } : {}),
+      ...(amendmentRefusals ? { amendmentRefusals } : {}),
       ...(progress ? { progress } : {}),
       ...(draftChange ? { draftChange } : {}),
       ...(draft ? { draft } : {}),
@@ -451,16 +475,23 @@ function parseStepUsage(value: unknown): AutomationStudioLlmUsageSummary | null 
  * actually has. `null` for anything else -- an unknown reason is a record Core
  * did not write, and a list this long or this shaped is not one it published.
  */
-function parseStepAmendmentRefusals(value: unknown): AutomationStudioFlowDraftAmendmentRefusal[] | null {
+function parseStepAmendmentRefusals(value: unknown): StepAmendmentRefusal[] | null {
   if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS) return null;
-  const refusals: AutomationStudioFlowDraftAmendmentRefusal[] = [];
+  const refusals: StepAmendmentRefusal[] = [];
   for (const refusal of value) {
-    if (!isStepRecord(refusal) || !hasExactFields(refusal, ["step", "reason"])
+    if (!isStepRecord(refusal) || !hasExactFields(refusal, ["step", "reason", "nodeId"])
       || !isAmendmentRefusalStep(refusal.step)
-      || typeof refusal.reason !== "string" || !Object.hasOwn(EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS, refusal.reason)) return null;
-    refusals.push({ step: refusal.step as number, reason: refusal.reason as AutomationStudioFlowDraftAmendmentRefusal["reason"] });
+      || typeof refusal.reason !== "string" || !Object.hasOwn(EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS, refusal.reason)
+      || (refusal.nodeId !== undefined && (typeof refusal.nodeId !== "string" || !EVIDENCE_STEP_ID.test(refusal.nodeId)))) return null;
+    refusals.push({ step: refusal.step as number, reason: refusal.reason as AutomationStudioFlowDraftAmendmentRefusal["reason"], ...(refusal.nodeId !== undefined ? { nodeId: refusal.nodeId as string } : {}) });
   }
   return refusals;
+}
+
+/** The flat refusal codes, read back: `null` for anything that is not a short list of them. */
+function parseStepAmendmentRefusalCodes(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.length || value.length > MAX_EVIDENCE_STEP_AMENDMENT_REFUSALS) return null;
+  return value.every((code) => typeof code === "string" && EVIDENCE_STEP_AMENDMENT_REFUSAL_CODE.test(code)) ? [...value] as string[] : null;
 }
 
 function isStepRecord(value: unknown): value is Record<string, unknown> {
