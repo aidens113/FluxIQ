@@ -7,7 +7,7 @@ export function settingsConcurrentRevisionAction(input: { currentRevision: numbe
   return input.dirty ? "conflict" : "adopt";
 }
 
-const FLOW_SETTINGS_SECTIONS = ["flow-settings-general", "flow-settings-runtime", "flow-settings-llm", "flow-settings-adaptation", "flow-settings-limits", "flow-settings-safety", "flow-settings-inputs", "flow-settings-dependencies", "flow-settings-effective"] as const;
+const FLOW_SETTINGS_SECTIONS = ["flow-settings-general", "flow-settings-ai-provider", "flow-settings-runtime", "flow-settings-llm", "flow-settings-adaptation", "flow-settings-limits", "flow-settings-safety", "flow-settings-inputs", "flow-settings-dependencies", "flow-settings-effective"] as const;
 const SUBFLOW_SETTINGS_SECTIONS = ["subflow-settings-general", "subflow-settings-routing", "subflow-settings-inputs", "subflow-settings-outputs", "subflow-settings-lifecycle"] as const;
 
 export function readSettingsSection(search: string, kind: "flow" | "subflow"): string {

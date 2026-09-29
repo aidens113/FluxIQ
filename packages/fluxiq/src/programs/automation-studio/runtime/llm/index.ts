@@ -4,6 +4,9 @@
 // for the same reason: runtime/index.ts never exported it.
 export * from "./harness.ts";
 export * from "./provider-contract.ts";
+// What an untyped provider throw was, as read and as a stored Flow Bootstrap
+// failure carries it once the harness has screened it (`throw-account/`).
+export * from "./throw-account/index.ts";
 export * from "./provider-factories.ts";
 // The retry policy every provider call runs under, and the record of what it did
 // (`provider-retry/`). Public because the record travels out of a run: a caller

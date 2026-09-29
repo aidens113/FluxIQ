@@ -20,6 +20,7 @@ import type {
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import type { AutomationStudioFlowBootstrapFailureStage, AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes } from "./diagnostic.ts";
+import { parseAutomationStudioFlowBootstrapProviderThrow } from "./diagnostic-parse.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
 import { FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES, FLOW_BOOTSTRAP_RUN_BUDGET_CODES } from "./harness-vocabulary.ts";
@@ -65,10 +66,20 @@ export function flowBootstrapHarnessFailure(input: {
   // (`error.refusal ?? parse(error.responseBody)`), and a record the reader
   // would refuse does not lose the refusal, it loses the whole diagnostic.
   const providerRefusal = parseAutomationStudioLlmProviderRefusal(input.providerRefusal);
+  // What an untyped throw was, where the failure is the one code that says only
+  // that something threw -- by either path to it, the normalizer's
+  // `llm.provider_request_failed` or an unrecognised code whose diagnostic
+  // happens to carry one. Re-read through the reader's parse for the refusal's
+  // reason: a value it would refuse would take the whole diagnostic with it, so
+  // one that does not parse is left out and the failure keeps its code.
+  const providerThrow = projected.code === "flow_bootstrap.provider_transport_unknown"
+    ? parseAutomationStudioFlowBootstrapProviderThrow(error?.metadata?.providerThrow) ?? undefined
+    : undefined;
   return harnessFailure({
     ...projected,
     providerInvocation: input.providerInvocation,
     providerStatus,
+    ...(providerThrow ? { providerThrow } : {}),
     accounting: {
       ...request,
       ...(input.provider?.provider ? { provider: input.provider.provider } : {}),
@@ -90,6 +101,7 @@ function harnessFailure(projected: {
   providerStatus?: number | undefined;
   providerInvocation: AutomationStudioLlmProviderInvocationState;
   accounting: NonNullable<AutomationStudioFlowBootstrapGenerationError["diagnostic"]["accounting"]>;
+  providerThrow?: AutomationStudioFlowBootstrapGenerationError["diagnostic"]["providerThrow"];
 }): AutomationStudioFlowBootstrapGenerationError {
   const state = automationStudioFlowBootstrapFailureState(projected.code, projected.stage, projected.providerStatus);
   return new AutomationStudioFlowBootstrapGenerationError({
@@ -99,7 +111,8 @@ function harnessFailure(projected: {
     providerInvocation: state.acceptedProviderInvocations.includes(projected.providerInvocation) ? projected.providerInvocation : state.providerInvocation,
     providerResponse: state.providerResponse,
     ...(projected.issueCodes?.length ? { issueCodes: projected.issueCodes } : {}),
-    accounting: projected.accounting
+    accounting: projected.accounting,
+    ...(projected.providerThrow ? { providerThrow: projected.providerThrow } : {})
   });
 }
 
