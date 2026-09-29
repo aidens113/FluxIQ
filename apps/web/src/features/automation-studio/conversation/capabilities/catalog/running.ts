@@ -4,7 +4,9 @@
 // "why did it fail" is asked in the same breath as "run it", and a person
 // switching between the two should not be switching vocabularies.
 
+import { flowModelFromDetail } from "../../../authoring";
 import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunDetail, issueLlmExecutionGrant, listRuntimeRunActions, listRuntimeRuns, preflightLlmExecution, startRuntimeSession } from "../../../runtime";
+import { loadFlowSettingsDetail } from "../../../settings";
 import { automationStudioViewId } from "../../../views";
 import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityArgument, type PanelCapabilityContext } from "../contract";
 import { PROJECT, FLOW, RUN } from "./argument";
@@ -141,7 +143,7 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     group: "Permissions",
     phrases: ["allow the model", "grant it", "give it permission", "let it use the model", "authorise the model"],
     control: { view: automationStudioViewId.flowEditor, label: "Allow model run" },
-    endpoints: ["get-flow", "issue-llm-execution-grant"],
+    endpoints: ["get-flow-metadata-detail", "issue-llm-execution-grant"],
     arguments: [PROJECT, FLOW, PURPOSE],
     consequences: ["create_new"],
     invoke: async (context, args) => {
@@ -166,7 +168,7 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     group: "Permissions",
     phrases: ["what does it need", "check permissions", "preflight", "is it ready to build"],
     control: { view: automationStudioViewId.flowEditor, label: "Check readiness" },
-    endpoints: ["get-flow", "preflight-llm-execution"],
+    endpoints: ["get-flow-metadata-detail", "preflight-llm-execution"],
     arguments: [PROJECT, FLOW, PURPOSE],
     consequences: [],
     invoke: async (context, args) => {
@@ -215,12 +217,19 @@ type FlowModelKey =
  * Core's grant service refuses a request with no `keyId` ("An enabled LLM key
  * is required."), and a person asking the chat to "allow the model" never names
  * a key. The panel's own build button takes it from the Flow's
- * `metadata.llmSecretKeyId`, so this reads the same place rather than asking.
+ * `metadata.llmSecretKeyId`, so this reads the same choice rather than asking.
+ *
+ * It reads the Flow's metadata detail, never `get-flow`: the browser refuses
+ * whole-document reads (`data-request-policy.ts`,
+ * `AUTOMATION_STUDIO_BROWSER_BLOCKED_LEGACY_ENDPOINTS`), so a `get-flow` here
+ * threw in the real chat window before any grant could be issued, and chat
+ * build and explore had no way to get one. The detail keeps the choice in
+ * `settings.llm` (`flowModelFromDetail`).
  */
 async function flowModelKey(transport: PanelCapabilityContext["transport"], projectId: string, flowId: string): Promise<FlowModelKey> {
-  const read = await transport.post<{ flow?: { metadata?: Record<string, unknown> } }>("get-flow", { projectId, flowId });
+  const read = await loadFlowSettingsDetail(transport, { projectId, flowId });
   if (!read.ok) return { ok: false, error: read.error ?? "The Flow could not be read.", ...((read as { retryable?: boolean }).retryable ? { retryable: true } : {}) };
-  const metadata = read.payload?.flow?.metadata ?? {};
+  const metadata = flowModelFromDetail(read.payload?.flow).metadata;
   const keyId = typeof metadata.llmSecretKeyId === "string" ? metadata.llmSecretKeyId : "";
   if (!keyId) return { ok: false, error: "This Flow has no model key chosen. Choose one in the Flow's settings first." };
   return {

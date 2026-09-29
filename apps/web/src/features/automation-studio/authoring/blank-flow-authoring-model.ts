@@ -1,4 +1,4 @@
-import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-models";
+import { flowModelBinding, isEmptyOrchestrationParent, type FlowModelBinding } from "./flow-model-binding";
 import { llmPreflightRunLimits } from "./llm-preflight-run-limits";
 
 /**
@@ -89,34 +89,11 @@ export type BlankFlowAuthoringReadiness = {
   error: string;
 };
 
-type BlankFlowRequestBase = { ok: true; payload: Record<string, any>; settings: Record<string, any> } | { ok: false };
-
-function blankFlowRequestBase(projectId: string | null, flow: any, readiness: BlankFlowAuthoringReadiness, requireActiveInstruction: boolean): BlankFlowRequestBase {
-  const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
-  const settings = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
-  const isOrchestration = metadata.flowRepresentationKind === "orchestration"
-    || (metadata.flowRepresentationKind === undefined && metadata.subflowGraph !== true && !flow?.legacyProvenance);
-  const isBlank = isOrchestration
-    && Array.isArray(flow?.nodes) && flow.nodes.length === 0
-    && Array.isArray(flow?.edges) && flow.edges.length === 0
-    && !readiness.router
-    && readiness.subflowTotal === 0;
+function blankFlowRequestBase(projectId: string | null, flow: any, readiness: BlankFlowAuthoringReadiness, requireActiveInstruction: boolean): FlowModelBinding {
+  const isBlank = isEmptyOrchestrationParent(flow) && !readiness.router && readiness.subflowTotal === 0;
   const hasActiveInstruction = readiness.instructions.some((instruction) => instruction?.status === "active");
-  if (!projectId || !flow?.flowId || readiness.loading || readiness.error || !isBlank || (requireActiveInstruction && !hasActiveInstruction)
-    || metadata.llmProvider !== "deepseek" || !isAutomationStudioDeepSeekModel(metadata.llmModel)
-    || typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false };
-  return {
-    ok: true,
-    settings,
-    payload: {
-      purpose: "build_and_adapt",
-      projectId,
-      flowId: flow.flowId,
-      keyId: metadata.llmSecretKeyId,
-      provider: "deepseek",
-      model: metadata.llmModel
-    }
-  };
+  if (readiness.loading || readiness.error || !isBlank || (requireActiveInstruction && !hasActiveInstruction)) return { ok: false };
+  return flowModelBinding(projectId, flow);
 }
 
 function savedLimitsMatchBlankFlowAuthoring(settings: Record<string, any>): boolean {

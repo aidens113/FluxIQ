@@ -123,6 +123,13 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
    * is meant to get there by itself (`runtime/flow-bootstrap/start-location.ts`).
    */
   startLocation?: string;
+  /**
+   * `extend` improves the Flow as it stands -- its steps become the draft the
+   * model amends and its Router, Subflow and graph Flow ids are kept -- rather
+   * than writing a Flow from nothing. Omitted, the build is a `create`, which
+   * requires a blank Flow (`runtime/flow-bootstrap/extend.ts`).
+   */
+  mode?: "create" | "extend";
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

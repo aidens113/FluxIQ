@@ -31,6 +31,7 @@ const WORDS: Readonly<Record<string, string>> = {
   name: "Contract name",
   description: "Kept by the capability contract test.",
   instruction: "Collect the price of the kettle.",
+  change: "When a cookie banner covers the page, close it first.",
   text: "Always check the price twice.",
   version: "2.0.0",
   changelog: "Tightened the price check.",

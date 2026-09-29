@@ -650,4 +650,48 @@ describe("Automation Studio LLM execution API", () => {
     }
     expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
   });
+  // Improving a Flow that already exists. The service has taken `mode` since
+  // modes were introduced; the handler refused it as an unsupported field, so
+  // no person could ask for an improvement at all. It is forwarded only as the
+  // one word that changes anything, and any other value is refused.
+  it("forwards an extend request, keeps create the default, and refuses a mode it does not know", async () => {
+    const generateFlowBootstrapAdaptation = vi.fn().mockResolvedValue({
+      projectId: "project.one",
+      flowId: "flow.built",
+      adaptationId: "adaptation.bootstrap.extend",
+      status: "proposed",
+      riskLevel: "low",
+      sourceInstructionIds: ["instruction.one"],
+      baseDependencyDigest: "digest.one",
+      baseSettingsRevision: 7,
+      accounting: { requestId: "request.one", estimatedInputTokens: 300 }
+    });
+    const grants = {
+      inspectAvailable: vi.fn().mockResolvedValue({ grantId: "llm-grant:build", purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 7 })
+    };
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, grants as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+    const call = (mode: unknown) => registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+      scope: {},
+      actor,
+      payload: { projectId: "project.one", flowId: "flow.built", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true, ...(mode === undefined ? {} : { mode }) }
+    });
+
+    await expect(call("extend")).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "extend", evidenceGuided: true }));
+
+    await expect(call("create")).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation.mock.calls.at(-1)?.[0]).not.toHaveProperty("mode");
+    await expect(call(undefined)).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation.mock.calls.at(-1)?.[0]).not.toHaveProperty("mode");
+
+    generateFlowBootstrapAdaptation.mockClear();
+    for (const bad of ["replace", "", "EXTEND", 1, null]) {
+      await expect(call(bad)).resolves.toEqual({ ok: false, error: "Flow bootstrap generation request contains an invalid mode." });
+    }
+    expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
+  });
 });

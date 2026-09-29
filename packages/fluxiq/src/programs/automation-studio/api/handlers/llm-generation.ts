@@ -89,6 +89,10 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
+      // `extend` improves the Flow as it stands instead of writing one from
+      // nothing. Only the two words Core knows pass; absent is `create`, which
+      // is what every caller that predates the field has always meant.
+      if (payload.mode !== undefined && payload.mode !== "create" && payload.mode !== "extend") return { ok: false, error: "Flow bootstrap generation request contains an invalid mode." };
       // Refused here rather than carried: a build that lost the one thing
       // telling it where its Flow starts would explore from nowhere.
       let startLocation: string | undefined;
@@ -129,6 +133,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           },
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
+          ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
           // Where the Flow starts, when the caller named one. Validated above,
           // so a request that named an unusable one was already refused rather
           // than built from nowhere.
@@ -161,7 +166,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "authSessionId",
   "evidenceGuided",
   "useReusableContext",
-  "startLocation"
+  "startLocation",
+  "mode"
 ]);
 
 function flowBootstrapGenerationReadiness(
