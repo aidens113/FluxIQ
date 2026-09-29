@@ -361,6 +361,27 @@ describe("blank Flow instruction authoring", () => {
     await act(async () => renderer.unmount());
   });
 
+  it("says a build that ran out kept its draft, from Core's two counts and nothing else", async () => {
+    const answer = (incompleteDraft: unknown) => vi.fn(async () => ({
+      ok: false,
+      payload: { diagnostic: { code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { decisionCount: 34, incompleteDraft }, providerResponse: "private-provider-output" } }
+    }));
+    const run = async (incompleteDraft: unknown) => {
+      const { renderer } = await mount(commands({ generateFromWebsite: answer(incompleteDraft) }));
+      await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Complete checkout" } }));
+      await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+      const rendered = JSON.stringify(renderer.toJSON());
+      await act(async () => renderer.unmount());
+      return rendered;
+    };
+    const kept = await run({ revision: 4, steps: 7 });
+    expect(kept).toContain("Start closer to the target page");
+    expect(kept).toContain("a draft of 7 steps (revision 4)");
+    expect(kept).not.toContain("private-provider-output");
+    expect(await run({ revision: 4, steps: "7 <script>" })).not.toContain("draft of");
+    expect(await run(undefined)).not.toContain("draft of");
+  });
+
   it("refuses malformed permission requests", async () => {
     const generateFromWebsite = vi.fn(async () => permissionFailure({ ...actionPermissionRequest, unexpected: true }));
     const authoringCommands = commands({ generateFromWebsite });
