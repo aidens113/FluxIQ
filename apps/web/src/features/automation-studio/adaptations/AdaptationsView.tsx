@@ -7,6 +7,8 @@ import { JsonToggle, compactConditionLabel, flowMapFallbackLabel, formatRuntimeT
 import { adaptationReviewActions, adaptationReviewCopy, type AdaptationObjectTarget, type AdaptationReviewAction } from "./adaptation-model";
 import { useAdaptationCommands, type AdaptationCommands } from "./adaptation-host";
 import { AdaptationChangeCard, AdaptationTargetAction } from "./AdaptationChangeCard";
+import { ChangeDiffSection } from "./ChangeDiffSection";
+import { isFlowBootstrapAdaptation } from "./change-diff";
 
 const ADAPTATION_PAGE_SIZE = 25;
 const ADAPTATION_DETAIL_PAGE_SIZE = 8;
@@ -252,6 +254,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
               </section> : null}
             </div> : null}
             {detailView === "changes" ? <div className="automation-adaptation-detail-body">
+              {isFlowBootstrapAdaptation(selectedAdaptation) ? <ChangeDiffSection adaptation={selectedAdaptation} flowId={flowId} projectId={props.projectId} onRequestReview={requestAdaptationReview} {...(props.commands.loadTopology ? { loadTopology: props.commands.loadTopology } : {})} /> : null}
               <section className="automation-runtime-log-section">
                 <header><strong>Planned Changes</strong><span>{selectedAdaptation.patch?.length ?? 0} changes</span></header>
                 <div className="automation-adaptation-change-list">{pagedChanges.map((patch: any, index: number) => <AdaptationChangeCard change={patch} key={patch.targetId ?? detailOffset + index} {...(props.onOpenTarget ? { onOpenTarget: props.onOpenTarget } : {})} />)}{!selectedAdaptation.patch?.length ? <p className="automation-runtime-empty">This adaptation does not contain changes.</p> : null}</div>

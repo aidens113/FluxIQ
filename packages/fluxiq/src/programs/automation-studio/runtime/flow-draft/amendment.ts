@@ -51,7 +51,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
-import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 import { automationStudioFlowDraftPrecedingProposedStep, automationStudioFlowDraftStepId } from "./routing.ts";
 
@@ -92,7 +92,7 @@ export type AutomationStudioFlowDraftAmendment = {
 /** Why one amendment changed nothing. */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
-  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "not_a_kept_step";
+  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out";
 };
 
 /** What the model is shown of the amendment shape, as a decision variant's schema. */
@@ -144,6 +144,16 @@ export function applyAutomationStudioFlowDraftAmendments(
       refused.push({ step: amendment.step, reason: "run_by_the_loop" });
       continue;
     }
+    // A step that did not work is out of the Flow whatever it is called, so the
+    // only edit that can change anything about it is running it again. Every
+    // hard live build of 2026-09-28 spent decisions dropping or "keeping"
+    // refused presses; a drop "applied" and looked like progress, and a keep
+    // was refused as "already so" -- false in the model's reading, since the
+    // draft showed the step out -- and was sent again.
+    if (automationStudioFlowDraftStepIsAction(step) && step.effectApplied === false) {
+      refused.push({ step: amendment.step, reason: "did_not_work" });
+      continue;
+    }
     if (amendment.change === "reorder") {
       if (moveStep(steps, step, amendment.to, amendment.settings)) applied += 1;
       else refused.push({ step: amendment.step, reason: placeExists(steps, amendment.to) ? "already_so" : "no_such_position" });
@@ -163,7 +173,10 @@ export function applyAutomationStudioFlowDraftAmendments(
     // about a step it made conditional means the step, unconditionally.
     const clearsRouting = amendment.change === "keep" && step.routing !== undefined;
     if (!changesDisposition && !changesSettings && !clearsRouting) {
-      refused.push({ step: amendment.step, reason: "already_so" });
+      // Said as which side of the Flow the step is already on, because that is
+      // what the model was trying to settle: a `keep` about a step in the Flow
+      // is a confirmation, and the generic "already so" got it sent again.
+      refused.push({ step: amendment.step, reason: disposition === "kept" ? "already_in_flow" : "already_out" });
       continue;
     }
     step.disposition = disposition;
