@@ -6,9 +6,12 @@
 
 import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunDetail, issueLlmExecutionGrant, listRuntimeRunActions, listRuntimeRuns, preflightLlmExecution, startRuntimeSession } from "../../../runtime";
 import { automationStudioViewId } from "../../../views";
-import { definePanelCapability, panelCapabilityResult, type PanelCapability } from "../contract";
-import { PROJECT, FLOW, RUN, PIN } from "./argument";
+import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityArgument, type PanelCapabilityContext } from "../contract";
+import { PROJECT, FLOW, RUN } from "./argument";
 import { str } from "./value";
+
+/** What a model run is for. Left out, Core applies its own default. */
+const PURPOSE: PanelCapabilityArgument = { name: "purpose", kind: "text", describe: "What the model run is for, such as `build_and_adapt`.", required: false };
 
 export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
@@ -134,22 +137,27 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
     id: "permission.allowModelRun",
     title: "Allow a model run",
-    summary: "Issues the grant a build or a repair spends, so the model can do the work you asked for.",
+    summary: "Issues the grant a build or a repair spends, so the model can do the work you asked for, on the model key chosen in the Flow's settings.",
     group: "Permissions",
     phrases: ["allow the model", "grant it", "give it permission", "let it use the model", "authorise the model"],
     control: { view: automationStudioViewId.flowEditor, label: "Allow model run" },
-    endpoints: ["issue-llm-execution-grant"],
-    arguments: [PROJECT, FLOW, { name: "purpose", kind: "text", describe: "What the grant is for, such as `build_and_adapt`.", required: false }],
+    endpoints: ["get-flow", "issue-llm-execution-grant"],
+    arguments: [PROJECT, FLOW, PURPOSE],
     consequences: ["create_new"],
-    invoke: async (context, args) => panelCapabilityResult(
-      await issueLlmExecutionGrant(context.transport, {
-        projectId: str(args, "projectId"),
-        flowId: str(args, "flowId"),
-        ...(args.purpose ? { purpose: str(args, "purpose") } : {})
-      }),
-      "The model may run.",
-      "The grant could not be issued."
-    )
+    invoke: async (context, args) => {
+      const model = await flowModelKey(context.transport, str(args, "projectId"), str(args, "flowId"));
+      if (!model.ok) return { status: "failed", summary: "The grant could not be issued.", error: model.error, ...(model.retryable ? { retryable: true } : {}) };
+      return panelCapabilityResult(
+        await issueLlmExecutionGrant(context.transport, {
+          projectId: str(args, "projectId"),
+          flowId: str(args, "flowId"),
+          ...model.request,
+          ...(args.purpose ? { purpose: str(args, "purpose") } : {})
+        }),
+        "The model may run.",
+        "The grant could not be issued."
+      );
+    }
   }),
   definePanelCapability({
     id: "permission.check",
@@ -158,29 +166,69 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     group: "Permissions",
     phrases: ["what does it need", "check permissions", "preflight", "is it ready to build"],
     control: { view: automationStudioViewId.flowEditor, label: "Check readiness" },
-    endpoints: ["preflight-llm-execution"],
-    arguments: [PROJECT, FLOW],
+    endpoints: ["get-flow", "preflight-llm-execution"],
+    arguments: [PROJECT, FLOW, PURPOSE],
     consequences: [],
-    invoke: async (context, args) => panelCapabilityResult(
-      await preflightLlmExecution(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") }),
-      "Here is what a model run would need.",
-      "The check could not be made."
-    )
+    invoke: async (context, args) => {
+      const model = await flowModelKey(context.transport, str(args, "projectId"), str(args, "flowId"));
+      if (!model.ok) return { status: "failed", summary: "The check could not be made.", error: model.error, ...(model.retryable ? { retryable: true } : {}) };
+      return panelCapabilityResult(
+        await preflightLlmExecution(context.transport, {
+          projectId: str(args, "projectId"),
+          flowId: str(args, "flowId"),
+          ...model.request,
+          ...(args.purpose ? { purpose: str(args, "purpose") } : {})
+        }),
+        "Here is what a model run would need.",
+        "The check could not be made."
+      );
+    }
   }),
   definePanelCapability({
     id: "permission.revokeClient",
     title: "Revoke a paired browser's trust",
-    summary: "Takes a paired browser off the trusted list so it can no longer act. Asks for your PIN first.",
+    summary: "Takes a paired browser off the trusted list so it can no longer act.",
     group: "Permissions",
     phrases: ["revoke", "untrust this browser", "remove the pairing", "disconnect the client"],
     control: { view: automationStudioViewId.clients, label: "Revoke trust" },
     endpoints: ["revoke-client-trust"],
-    arguments: [{ name: "trustedClientId", kind: "id", describe: "The paired browser to revoke.", required: true }, PIN],
-    consequences: ["delete"],
+    arguments: [{ name: "trustedClientId", kind: "id", describe: "The paired browser to revoke.", required: true }],
+    // Core classes `revoke-client-trust` as authoring, not destructive: the
+    // browser can be paired again, so nothing is gone for good and Core asks
+    // for no PIN. A PIN sent here was never read.
+    consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
-      await context.transport.post("revoke-client-trust", { trustedClientId: str(args, "trustedClientId"), authorizationPin: str(args, "authorizationPin") }),
+      await context.transport.post("revoke-client-trust", { trustedClientId: str(args, "trustedClientId") }),
       "Revoked the browser's trust.",
       "The trust could not be revoked."
     )
   })
 ];
+
+type FlowModelKey =
+  | { ok: true; request: { keyId: string; provider?: string; model?: string } }
+  | { ok: false; error: string; retryable?: boolean };
+
+/**
+ * The model key, provider and model chosen in the Flow's settings.
+ *
+ * Core's grant service refuses a request with no `keyId` ("An enabled LLM key
+ * is required."), and a person asking the chat to "allow the model" never names
+ * a key. The panel's own build button takes it from the Flow's
+ * `metadata.llmSecretKeyId`, so this reads the same place rather than asking.
+ */
+async function flowModelKey(transport: PanelCapabilityContext["transport"], projectId: string, flowId: string): Promise<FlowModelKey> {
+  const read = await transport.post<{ flow?: { metadata?: Record<string, unknown> } }>("get-flow", { projectId, flowId });
+  if (!read.ok) return { ok: false, error: read.error ?? "The Flow could not be read.", ...((read as { retryable?: boolean }).retryable ? { retryable: true } : {}) };
+  const metadata = read.payload?.flow?.metadata ?? {};
+  const keyId = typeof metadata.llmSecretKeyId === "string" ? metadata.llmSecretKeyId : "";
+  if (!keyId) return { ok: false, error: "This Flow has no model key chosen. Choose one in the Flow's settings first." };
+  return {
+    ok: true,
+    request: {
+      keyId,
+      ...(typeof metadata.llmProvider === "string" && metadata.llmProvider ? { provider: metadata.llmProvider } : {}),
+      ...(typeof metadata.llmModel === "string" && metadata.llmModel ? { model: metadata.llmModel } : {})
+    }
+  };
+}

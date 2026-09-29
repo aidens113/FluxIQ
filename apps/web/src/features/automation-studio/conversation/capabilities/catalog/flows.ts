@@ -87,10 +87,23 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     phrases: ["add an instruction", "always do this", "remember this rule", "add a rule"],
     control: { view: automationStudioViewId.instructions, label: "Add instruction" },
     endpoints: ["save-flow-instruction"],
-    arguments: [PROJECT, FLOW, { name: "text", kind: "text", describe: "The instruction itself.", required: true }],
+    arguments: [
+      PROJECT,
+      FLOW,
+      { name: "text", kind: "text", describe: "The instruction itself.", required: true },
+      { name: "title", kind: "text", describe: "A short name for it. Left out, it is the instruction's opening words.", required: false }
+    ],
     consequences: ["modify_existing"],
+    // Core stores an instruction as a title and a body, and refuses one
+    // without both ("Instruction title and body are required."). It never read
+    // `text`, which is what this sent until 2026-09-28.
     invoke: async (context, args) => panelCapabilityResult(
-      await saveFlowInstruction(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId"), text: str(args, "text") }),
+      await saveFlowInstruction(context.transport, {
+        projectId: str(args, "projectId"),
+        flowId: str(args, "flowId"),
+        title: str(args, "title").trim() || instructionTitle(str(args, "text")),
+        body: str(args, "text")
+      }),
       "Added the instruction.",
       "The instruction could not be added."
     )
@@ -112,3 +125,10 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     )
   })
 ];
+
+/** The opening words of an instruction, as the title a person would have given it. */
+function instructionTitle(text: string): string {
+  const firstLine = text.trim().split(/\r?\n/u)[0] ?? "";
+  const sentence = firstLine.split(/(?<=[.!?])\s/u)[0] ?? firstLine;
+  return sentence.length > 80 ? `${sentence.slice(0, 77).trimEnd()}...` : sentence;
+}

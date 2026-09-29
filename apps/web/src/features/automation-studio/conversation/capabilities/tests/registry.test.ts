@@ -71,14 +71,15 @@ describe("only deleting and moving money stop for the person", () => {
   });
 
   it("asks only where something is deleted", () => {
+    // `permission.revokeClient` and `route.delete` asked until 2026-09-28. Core
+    // classes both endpoints as authoring and never reads a PIN for them, and
+    // `core-contract.test.ts` holds the catalog to Core's classification.
     const asking = PANEL_CAPABILITIES.filter(panelCapabilityAsksFirst).map((capability) => capability.id).sort();
     expect(asking).toEqual([
       "data.delete",
       "flow.delete",
-      "permission.revokeClient",
       "project.delete",
       "recording.delete",
-      "route.delete",
       "subflow.delete"
     ]);
   });

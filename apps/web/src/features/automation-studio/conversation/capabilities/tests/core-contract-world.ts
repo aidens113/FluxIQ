@@ -21,7 +21,8 @@ import type { ApiResponse, JsonObject } from "../../../../programs/program-api";
 import type { ProgramCommandTransport } from "../../../data/program-transport";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramEndpointClassification } from "../../../../../../../../packages/fluxiq/src/programs/_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/api/handlers/index.ts";
-import { AutomationStudioLlmExecutionGrantService, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
+import { AutomationStudioLlmExecutionGrantService, AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/nodes/index.ts";
 
 export const CONTRACT_PIN = "482915";
 const SESSION_ID = "session.contract";
@@ -44,7 +45,15 @@ export type ContractWorld = {
   classifications: ReadonlyMap<string, ProgramEndpointClassification>;
   ids: {
     projectId: string;
+    /** A built Flow: it has a Router, a primary part and two more. */
     flowId: string;
+    /**
+     * A blank Flow with an instruction and a model key, which is the only kind
+     * Core builds from an instruction ("Flow Bootstrap requires a Flow without
+     * a Router."). The build grant is bound to it.
+     */
+    blankFlowId: string;
+    /** A part of `flowId` that nothing routes to, so it can be deleted. */
     subflowId: string;
     runId: string;
     recordingId: string;
@@ -80,9 +89,75 @@ function traced(value: unknown, at: string, reads: Set<string>): unknown {
 const TRUSTED_CLIENT_ID = "client.contract";
 const LLM_KEY_ID = "secret:contract";
 
+/**
+ * The node registry a build draws on: Core's built-in control nodes, plus one
+ * executable domain node, which is the least Core's readiness check accepts
+ * ("Flow bootstrap generation runtime is unavailable." otherwise).
+ */
+function buildNodeRuntime(): AutomationStudioNativeNodeRuntime {
+  const action: AutomationStudioNodeDefinition = {
+    schemaVersion: "0.1",
+    id: "contract.action",
+    version: "1.0.0",
+    label: "Contract action",
+    description: "Do one deterministic thing.",
+    category: "action",
+    source: { kind: "importer", domainId: "contract", packageId: "contract.package", implementationKey: "action" },
+    availability: { kind: "domain", domainId: "contract" },
+    capabilities: { executable: true, codeBacked: true },
+    inputs: [{ id: "in", label: "In", valueType: "any" }],
+    outputs: [{ id: "success", label: "Success", valueType: "any" }],
+    parameters: []
+  };
+  return new AutomationStudioNativeNodeRuntime().register(
+    { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "contract.package", packageVersion: "1.0.0", domainId: "contract", nodes: [action] },
+    { packageId: "contract.package", packageVersion: "1.0.0", implementations: { action: () => ({ status: "success", route: "success", outputs: { success: true } }) } }
+  );
+}
+
+/**
+ * The model, scripted: every call answers with the smallest Flow Core accepts,
+ * Start to End. The contract under test is the request the capability sends,
+ * not what a model makes of it, so a real provider would only add a network.
+ */
+const SCRIPTED_MODEL = {
+  provider: {
+    metadata: { provider: "deepseek", model: "deepseek-flash" },
+    runTask: async () => ({
+      response: {
+        kind: "flow_bootstrap",
+        summary: "Start, then end.",
+        plan: {
+          schemaVersion: "0.1",
+          router: { name: "Instruction router", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+          subflows: [{
+            key: "primary",
+            name: "Primary",
+            role: "primary",
+            nodes: [
+              { key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0" },
+              { key: "end", definitionId: "builtin.control.end", definitionVersion: "1.0.0" }
+            ],
+            edges: [{ key: "start_end", source: { nodeKey: "start", portId: "success" }, target: { nodeKey: "end", portId: "in" } }]
+          }]
+        }
+      },
+      usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000, estimatedCostUsd: 0.001 }
+    })
+  },
+  tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 512, maxTotalTokens: 9_000 },
+  maxCallsPerRun: 1,
+  maxEstimatedCostUsd: 0.25,
+  timeoutMs: 20_000
+};
+
 export async function openContractWorld(): Promise<ContractWorld> {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-capability-contract-"));
-  const service = new AutomationStudioService({ dataDir: path.join(rootDir, ".fluxiq", "data"), seedFixture: false });
+  const service = new AutomationStudioService({
+    dataDir: path.join(rootDir, ".fluxiq", "data"),
+    seedFixture: false,
+    llmProviderResolver: async () => SCRIPTED_MODEL as never
+  }).bindNativeNodeRuntime(buildNodeRuntime());
   const identityAccess = {
     authorizeSessionPin: async (input: { sessionId?: string; pin?: string }) => {
       if (input.sessionId !== SESSION_ID || input.pin !== CONTRACT_PIN) throw new Error("The PIN was not accepted.");
@@ -150,11 +225,17 @@ export async function openContractWorld(): Promise<ContractWorld> {
     const created = await service.createFlow({ projectId: project.id, name: "Contract Flow" });
     // A Flow with a model key chosen in its settings, as the panel's own build
     // button requires before it will ask for a grant.
-    await service.saveFlow({ projectId: project.id, flow: { ...created, metadata: { ...(created.metadata ?? {}), llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: LLM_KEY_ID } } });
+    const withModelKey = <T extends { metadata?: unknown }>(flow: T) => ({ ...flow, metadata: { ...((flow.metadata as Record<string, unknown> | undefined) ?? {}), llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: LLM_KEY_ID } });
+    await service.saveFlow({ projectId: project.id, flow: withModelKey(created) as never });
     const flow = created;
     const primary = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Primary", role: "primary" });
     const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Checkout" });
-    const route = await service.upsertFlowMapRoute({ projectId: project.id, flowId: flow.flowId, name: "When it is in stock", targetSubflowId: subflow.subflowId });
+    // The seeded branch goes to a third part, not to `subflow`: Core will not
+    // delete a part a branch still reaches ("Remove this Subflow from Router
+    // routes and fallback before deleting it."), and `subflow.delete` deletes
+    // `subflow`.
+    const routed = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "In stock" });
+    const route = await service.upsertFlowMapRoute({ projectId: project.id, flowId: flow.flowId, name: "When it is in stock", targetSubflowId: routed.subflowId });
     const routeId = route.rules.find((entry) => entry.name === "When it is in stock")?.ruleId;
     if (!routeId) throw new Error("The seeded route did not come back from Core.");
     const run = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -176,6 +257,11 @@ export async function openContractWorld(): Promise<ContractWorld> {
     });
     const version = "1.0.0";
     await service.publishFlow({ projectId: project.id, flowId: flow.flowId, version, publishedBy: "contract" });
+    // The blank Flow a build starts from, as the panel's build button needs
+    // it: a model key chosen, and an instruction saying what to build.
+    const blankCreated = await service.createFlow({ projectId: project.id, name: "Contract blank Flow" });
+    await service.saveFlow({ projectId: project.id, flow: withModelKey(blankCreated) as never });
+    await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: blankCreated.flowId, instruction: "Create a deterministic Start to End Flow." });
     // A build grant, issued by Core's grant service to this person's session,
     // as the panel's own build button issues one.
     const grant = await llmExecutionGrants.issue({
@@ -183,7 +269,7 @@ export async function openContractWorld(): Promise<ContractWorld> {
       actorSessionId: SESSION_ID,
       keyId: LLM_KEY_ID,
       projectId: project.id,
-      flowId: flow.flowId,
+      flowId: blankCreated.flowId,
       provider: "deepseek",
       model: "deepseek-flash",
       purpose: "build_and_adapt",
@@ -198,6 +284,7 @@ export async function openContractWorld(): Promise<ContractWorld> {
       ids: {
         projectId: project.id,
         flowId: flow.flowId,
+        blankFlowId: blankCreated.flowId,
         subflowId: subflow.subflowId,
         runId: run.runId,
         recordingId: recording.recordingId,

@@ -37,10 +37,22 @@ import { CONTRACT_PIN, openContractWorld, type ContractExchange, type ContractWo
  * from beyond the request's own validation. Anything else is the defect this
  * file looks for. The list is expected to stay short.
  */
-const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: string }>> = {};
+const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: string }>> = {
+  // Exploring opens the real website through a paired browser, and Core runs it
+  // on the evidence tools that browser binds. The contract world has no
+  // browser, and a Core with no evidence tools bound must refuse an
+  // exploration rather than build from nothing, so this refusal is the correct
+  // behaviour. It is Core's service refusing after the handler accepted the
+  // request, read every field and checked the grant; a request defect would be
+  // refused earlier, in other words, and would still fail here.
+  "flow.explore": {
+    error: /^Flow Bootstrap generation failed \(flow_bootstrap\.evidence_runtime_unavailable\)\.$/u,
+    because: "The contract world binds no browser, so Core has no evidence tools to explore with."
+  }
+};
 
 const PLACEHOLDER_IDS: ContractWorld["ids"] = {
-  projectId: "p", flowId: "f", subflowId: "s", runId: "r", recordingId: "rec", adaptationId: "a", routeId: "rt", trustedClientId: "c", version: "v", llmExecutionGrantId: "g"
+  projectId: "p", flowId: "f", blankFlowId: "b", subflowId: "s", runId: "r", recordingId: "rec", adaptationId: "a", routeId: "rt", trustedClientId: "c", version: "v", llmExecutionGrantId: "g"
 };
 
 /** The variant labels, or the reason the capability cannot be exercised at all. */
