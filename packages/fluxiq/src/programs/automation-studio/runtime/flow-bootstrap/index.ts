@@ -14,6 +14,7 @@ export * from "./draft-reduction.ts";
 export * from "./evidence-loop-steps.ts";
 export * from "./extend.ts";
 export * from "./generation-failure/index.ts";
+export * from "./incomplete-draft/index.ts";
 export * from "./instructed-acts/index.ts";
 export * from "./plan.ts";
 export * from "./reachability/index.ts";

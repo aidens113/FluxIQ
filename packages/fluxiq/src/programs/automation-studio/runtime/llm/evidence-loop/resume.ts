@@ -31,8 +31,12 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID = "core.resumed";
 export type AutomationStudioLlmEvidenceLoopResume = {
   /** Which version of the incomplete draft this continues, counting from 1. */
   revision: number;
-  /** Which allowance the build it continues ran out of. */
-  stopped: AutomationStudioLlmEvidenceLoopExhaustedBound;
+  /**
+   * Which allowance the build it continues ran out of, or `unusable_decisions`
+   * when that build ended because its decisions kept coming back unusable --
+   * most often completions the checks kept refusing -- rather than on a count.
+   */
+  stopped: AutomationStudioLlmEvidenceLoopExhaustedBound | "unusable_decisions";
   /** The completion failures that build had not answered, by issue code. */
   outstandingIssueCodes: readonly string[];
 };

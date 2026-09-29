@@ -706,11 +706,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const tool = toolsById.get(decision.toolId)!;
     const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch, attemptEpoch, input: decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
-    // Not offered this iteration: an observation nothing has happened since.
-    // Its latest call is always recorded with its epoch.
+    // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
+    // or, in the wrap-up, any tool at all -- the wrap-up offers none, and a call it was not offered is answered, never run.
     const reobservation = !eligibleToolIds.has(decision.toolId);
-    if (!rerunning && (answeredBy !== undefined || reobservation)) {
-      const ended = answeredBy !== undefined
+    if (!rerunning && (answeredBy !== undefined || reobservation || wrappingUp)) {
+      const ended = wrappingUp ? answerRequest(iteration, decision, "llm_evidence_loop.not_offered", latestObservations.get(decision.toolId) ?? "") : answeredBy !== undefined
         ? answerRequest(iteration, decision, "llm_evidence_loop.already_answered", answeredBy)
         : answerRequest(iteration, decision, "llm_evidence_loop.already_observed", latestObservations.get(decision.toolId)!);
       if (ended) return ended;

@@ -99,6 +99,17 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
      * was the one refused they are the same codes as `issueCodes`.
      */
     exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes" | "outstandingIssueCodes">;
+    /**
+     * Present when the build kept its draft as an incomplete record
+     * (`flow-bootstrap/incomplete-draft/`): which revision was written, and how
+     * many proposable steps it holds. Only beside a build that ended without an
+     * accepted completion -- `flow_bootstrap.evidence_iteration_limit` or
+     * `flow_bootstrap.evidence_unusable_decision` -- and it changes nothing about
+     * that ending: the code still says why the build stopped, and this says only
+     * that its work was not thrown away, and that the next build of the Flow
+     * continues from it. Two counts; the steps themselves stay in the record.
+     */
+    incompleteDraft?: { revision: number; steps: number };
   };
   /**
    * The codes behind this failure that its own code does not already say.

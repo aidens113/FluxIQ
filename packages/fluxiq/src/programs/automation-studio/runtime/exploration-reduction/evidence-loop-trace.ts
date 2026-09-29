@@ -89,7 +89,8 @@ export type AutomationStudioExplorationTraceGapEntry = {
 const NOT_RUN_RESULT_CODES: ReadonlySet<string> = new Set([
   "llm_evidence_loop.already_answered",
   "llm_evidence_loop.already_observed",
-  "llm_evidence_loop.rejected.repeat_without_progress"
+  "llm_evidence_loop.rejected.repeat_without_progress",
+  "llm_evidence_loop.not_offered"
 ]);
 
 export type AutomationStudioExplorationStepsFromTraceInput = {

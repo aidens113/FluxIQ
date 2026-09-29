@@ -18,7 +18,12 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID = "core.reques
 /** What a request the loop answered itself, rather than running, is recorded as. */
 const ANSWERED_REQUEST = {
   "llm_evidence_loop.already_answered": "This exact request was already answered and nothing has changed since, so it was not run again. Its result is the evidence entry named by answeredByCallId, placed just before this one. Use it, or choose a different tool or input, or complete.",
-  "llm_evidence_loop.already_observed": "This observation was already made and no action has changed anything since, so it was not run again. Its latest result is the evidence entry named by answeredByCallId, placed just before this one. Use it, change something first, or complete."
+  "llm_evidence_loop.already_observed": "This observation was already made and no action has changed anything since, so it was not run again. Its latest result is the evidence entry named by answeredByCallId, placed just before this one. Use it, change something first, or complete.",
+  // The wrap-up (`../loop-budget.ts`) offers no tools, and a call it was not
+  // offered used to run anyway: the check was against the tools the loop could
+  // run, not the ones it had offered. answeredByCallId is the tool's latest
+  // call where there is one, and empty where there is none.
+  "llm_evidence_loop.not_offered": "The build is in its last decisions, which offer no tools, so this call was not run. Complete from your draft, or amend it and complete."
 } as const;
 
 export type AutomationStudioLlmEvidenceAnsweredRequestCode = keyof typeof ANSWERED_REQUEST;
