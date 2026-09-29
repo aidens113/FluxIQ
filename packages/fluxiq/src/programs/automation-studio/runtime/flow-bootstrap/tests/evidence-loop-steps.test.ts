@@ -22,7 +22,21 @@ describe("Flow Bootstrap evidence steps: refused amendments", () => {
       iteration: 3,
       resultCode: "llm_evidence_loop.draft_unchanged",
       amended: 0,
-      amendmentsRefused: [{ step: 9, reason: "no_such_step" }, { step: 1, reason: "already_so" }]
+      amendmentsRefused: [{ step: 9, reason: "no_such_step" }, { step: 1, reason: "already_so" }],
+      // The same refusals as flat `step:reason` codes, for a reader that keeps
+      // only a list of strings.
+      amendmentRefusals: ["9:no_such_step", "1:already_so"]
+    });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
+  });
+
+  it("names the refused step's node in both forms when the trace knows it", () => {
+    const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
+      amendmentsRefused: [{ step: 2, reason: "already_so", nodeId: "demo.look" }]
+    })]);
+    expect(step).toMatchObject({
+      amendmentsRefused: [{ step: 2, reason: "already_so", nodeId: "demo.look" }],
+      amendmentRefusals: ["2:already_so:demo.look"]
     });
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
   });
@@ -31,6 +45,7 @@ describe("Flow Bootstrap evidence steps: refused amendments", () => {
     for (const refused of [undefined, [] as const]) {
       const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({ amended: 2, ...(refused ? { amendmentsRefused: refused } : {}) })]);
       expect(step).not.toHaveProperty("amendmentsRefused");
+      expect(step).not.toHaveProperty("amendmentRefusals");
     }
   });
 
@@ -48,6 +63,7 @@ describe("Flow Bootstrap evidence steps: refused amendments", () => {
       ]
     })]);
     expect(step?.amendmentsRefused).toEqual([{ step: 7, reason: "not_a_kept_step" }]);
+    expect(step?.amendmentRefusals).toEqual(["7:not_a_kept_step"]);
   });
 
   it("publishes at most the refusals one decision can carry", () => {
