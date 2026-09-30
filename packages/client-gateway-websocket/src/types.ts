@@ -41,7 +41,8 @@ export type FluxIQClientGatewayWebSocketEvent =
   | { type: "start_recording"; message: Extract<ClientGatewayServerMessage, { type: "server.start_recording" }> }
   | { type: "stop_recording"; message: Extract<ClientGatewayServerMessage, { type: "server.stop_recording" }> }
   | { type: "capture_snapshot"; message: Extract<ClientGatewayServerMessage, { type: "server.capture_snapshot" }> }
-  | { type: "execute_action"; message: Extract<ClientGatewayServerMessage, { type: "server.execute_action" }> };
+  | { type: "execute_action"; message: Extract<ClientGatewayServerMessage, { type: "server.execute_action" }> }
+  | { type: "activity"; message: Extract<ClientGatewayServerMessage, { type: "server.activity" }> };
 
 export type FluxIQClientGatewayWebSocketEventType = FluxIQClientGatewayWebSocketEvent["type"];
 export type FluxIQClientGatewayWebSocketHandler<TType extends FluxIQClientGatewayWebSocketEventType = FluxIQClientGatewayWebSocketEventType> = (

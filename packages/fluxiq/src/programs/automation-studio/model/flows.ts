@@ -4,6 +4,7 @@ import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "./artif
 import type { AutomationStudioPublishedFlowSnapshot } from "./composites.ts";
 import type { AutomationStudioFlowExpansionReferences } from "./flow-adaptation.ts";
 import type { AutomationStudioFlowRegion, AutomationStudioFlowRegionHandoff } from "./regions.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "./flow-size/index.ts";
 
 /** The workspace in which a canonical Flow is authored and may execute. */
 export type AutomationStudioFlowScope =
@@ -298,7 +299,11 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     llmProvider: "host",
     adaptationPolicyId: "policy.default",
     budgetExhaustedBehavior: "ask",
-    frozenScopeCount: 0
+    frozenScopeCount: 0,
+    // How many nodes one Subflow may hold (`flow-size/flow-size-settings.ts`).
+    // Written into a new Flow so its settings say so; a Flow saved before the
+    // setting existed has none and reads the same default.
+    [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.metadataKey]: { [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.field]: AUTOMATION_STUDIO_FLOW_SIZE_SETTING.defaultValue }
   };
 }
 

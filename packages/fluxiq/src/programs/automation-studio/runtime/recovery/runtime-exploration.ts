@@ -61,6 +61,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
 import { automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
@@ -246,7 +247,7 @@ export async function runAutomationStudioRuntimeExploration(
       // Out of time before the first provider call. Refusing here rather than
       // starting and aborting keeps the receipt honest: no call was billed.
       ? undefined
-      : await runAutomationStudioLlmEvidenceLoop({
+      : await runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
         tools: input.loop.tools,
         // An answer that could not be used is asked for again, each attempt
         // admitted and charged like any other call. It is a step that did not
@@ -322,7 +323,7 @@ export async function runAutomationStudioRuntimeExploration(
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         toolFailures: "observe",
         signal: stopSignal
-      });
+      }));
     return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();

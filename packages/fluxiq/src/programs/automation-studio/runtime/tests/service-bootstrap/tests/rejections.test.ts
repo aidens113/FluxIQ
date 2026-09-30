@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../../../flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapSizeLimits } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -61,13 +61,26 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   it.each([
     ["wrapper shape", "flow_bootstrap.evidence_completion_wrapper_invalid", "bootstrap.completion_wrapper_invalid", () => ({})],
     ["plan structure", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.subflow_has_no_nodes", () => ({ summary: "Candidate.", plan: { subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [], edges: [] }] } })],
+    // One reply's shape: more Subflows than a reply may carry. A Subflow's node
+    // count is the Flow's size setting, which the structural parse holds a plan
+    // to first; it is the next case.
     ["evidence profile limits", "flow_bootstrap.evidence_completion_profile_limit_exceeded", "bootstrap.completion_profile_limit_exceeded", () => ({
+      summary: "Candidate.",
+      plan: {
+        ...plan(),
+        subflows: Array.from({ length: 5 }, (_unused, index) => ({
+          key: index === 0 ? "primary" : `part_${index}`, name: `Part ${index}`, role: index === 0 ? "primary" : "utility",
+          nodes: [{ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" }], edges: []
+        }))
+      }
+    })],
+    ["Flow size", "flow_bootstrap.evidence_completion_plan_invalid", "bootstrap.invalid_nodes", () => ({
       summary: "Candidate.",
       plan: {
         ...plan(),
         subflows: [{
           ...plan().subflows[0],
-          nodes: Array.from({ length: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNodesPerSubflow + 1 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" })),
+          nodes: Array.from({ length: automationStudioFlowBootstrapSizeLimits().maxNodesPerSubflow + 1 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" })),
           edges: []
         }]
       }

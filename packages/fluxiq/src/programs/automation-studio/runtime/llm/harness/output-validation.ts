@@ -23,7 +23,8 @@ export function validateAutomationStudioLlmOutput(
     else diagnostics.push(...validateAutomationStudioFlowBootstrapPlan({
       plan: response.plan,
       ...(flowBootstrap.registry ? { registry: flowBootstrap.registry } : {}),
-      resolution: flowBootstrap.resolution
+      resolution: flowBootstrap.resolution,
+      ...(flowBootstrap.size ? { size: flowBootstrap.size } : {})
     }).issues);
   }
   if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_call" && !response.decision.toolId.trim()) {

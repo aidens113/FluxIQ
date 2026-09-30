@@ -1,5 +1,6 @@
 import type { AutomationStudioAdaptationPolicy, AutomationStudioDeterministicPath, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeOrigin, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "../flow-size/index.ts";
 import { validateConditionExpression } from "./condition.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
 
@@ -11,8 +12,6 @@ const VALIDATION_BASIS_MAX_ENTRIES = 16;
 const ORIGIN_ID_MAX_LENGTH = 256;
 const ORIGIN_SIGNATURE_MAX_LENGTH = 512;
 const ORIGIN_MAX_INSTRUCTION_IDS = 64;
-/** How many nodes one deterministic recovery path may insert. */
-const DETERMINISTIC_PATH_MAX_NODES = 16;
 const DETERMINISTIC_PATH_ID_MAX_LENGTH = 256;
 const DETERMINISTIC_PATH_LABEL_MAX_LENGTH = 200;
 const DETERMINISTIC_PATH_NODE_KEYS = ["nodeId", "definitionId", "definitionVersion", "label", "parameters", "target", "expectation"];
@@ -123,7 +122,16 @@ export function validateAutomationStudioFlowChangeProposal(proposal: AutomationS
   return result(issues);
 }
 
-export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioValidationResult {
+/**
+ * `maxNodesPerSubflow` is the Flow's size setting, which bounds how many nodes
+ * a deterministic path patch may insert. It defaults to the setting's default:
+ * this is fresh validation of a change on its way into the store, and a caller
+ * holding the Flow passes its setting so a Flow allowed more is not held to it.
+ */
+export function validateAutomationStudioFlowAdaptation(
+  adaptation: AutomationStudioFlowAdaptation,
+  maxNodesPerSubflow: number = AUTOMATION_STUDIO_FLOW_SIZE_SETTING.defaultValue
+): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];
   if (!adaptation.adaptationId.trim()) addIssue(issues, "error", "adaptation.missing_id", "Adaptation must have an adaptationId.", "adaptationId");
   if (!adaptation.flowId.trim()) addIssue(issues, "error", "adaptation.missing_flow_id", "Adaptation must have a flowId.", "flowId");
@@ -150,7 +158,7 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
     if (patch.kind !== "insert_deterministic_path") continue;
     const path = `patch.${index}`;
     if (!patch.targetId?.trim()) addIssue(issues, "error", "adaptation.path_missing_target", "A deterministic path patch must name the node whose failure it recovers.", `${path}.targetId`);
-    const parsed = parseAutomationStudioDeterministicPath(patch.after);
+    const parsed = parseAutomationStudioDeterministicPath(patch.after, maxNodesPerSubflow);
     if (!parsed) {
       addIssue(issues, "error", "adaptation.path_invalid", "A deterministic path patch must list the nodes to insert, each with a node id and a definition id.", `${path}.after`);
     }
@@ -176,10 +184,19 @@ export function validateAutomationStudioFlowAdaptation(adaptation: AutomationStu
  * A path must insert at least one node, because a patch that inserts none would
  * wire the failed node's `failed` port to nothing and report a repair that never
  * happened -- the defect this patch kind exists to end.
+ *
+ * A path inserts its nodes into one Subflow, so it may insert at most the most
+ * nodes one Subflow may hold: `maxNodes`, the Flow's size setting
+ * (`../flow-size/flow-size-settings.ts`). It defaults to the setting's default;
+ * a reader of a stored adaptation with no Flow in hand passes the setting's
+ * maximum, so a path a larger setting allowed still reads.
  */
-export function parseAutomationStudioDeterministicPath(value: unknown): AutomationStudioDeterministicPath | undefined {
+export function parseAutomationStudioDeterministicPath(
+  value: unknown,
+  maxNodes: number = AUTOMATION_STUDIO_FLOW_SIZE_SETTING.defaultValue
+): AutomationStudioDeterministicPath | undefined {
   if (!isRecord(value) || !hasOnlyKeys(Object.keys(value), DETERMINISTIC_PATH_KEYS)) return undefined;
-  if (!Array.isArray(value.nodes) || !value.nodes.length || value.nodes.length > DETERMINISTIC_PATH_MAX_NODES) return undefined;
+  if (!Array.isArray(value.nodes) || !value.nodes.length || value.nodes.length > maxNodes) return undefined;
   const nodes: AutomationStudioDeterministicPathNode[] = [];
   for (const entry of value.nodes) {
     const node = parseDeterministicPathNode(entry);

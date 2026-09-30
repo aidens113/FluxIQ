@@ -20,7 +20,7 @@ describe("Settings large-project behavior", () => {
     expect(flowLimitsInterfaceErrors({
       maxInterventionsPerRun: "2", maxTokensPerRun: "12000", maxCostUsdPerTrainingWindow: "5",
       maxAdaptationInterventionsPerRun: "2", maxAdaptationCostUsdPerRun: "1", maxRetriesPerAction: "1",
-      maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2", interfaceInputs, interfaceOutputs: []
+      maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2", maxNodesPerSubflow: "100", interfaceInputs, interfaceOutputs: []
     })).toEqual([]);
   });
 

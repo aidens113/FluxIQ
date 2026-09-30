@@ -1,12 +1,24 @@
 // Structural parsing of an untrusted Bootstrap plan: shape, field sets, key
 // syntax, and the count and byte bounds. It knows nothing of the node
 // registry -- registry agreement is validation.ts.
+//
+// The node, edge and byte bounds are the Flow's own (`./size-limits.ts`),
+// passed in by a caller that has the Flow and the setting's default otherwise,
+// and a plan over one is refused naming the setting that bounds it.
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { boundedText, error, identifier, rejectFields, symbolic } from "./issues.ts";
 import { isJsonObject, isRecord, safeByteLength } from "./json-guards.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
+import {
+  automationStudioFlowBootstrapSizeLimits,
+  automationStudioFlowBootstrapSizeRefusal,
+  type AutomationStudioFlowBootstrapSizeLimits
+} from "./size-limits.ts";
 
-export function parseAutomationStudioFlowBootstrapPlan(value: unknown): {
+export function parseAutomationStudioFlowBootstrapPlan(
+  value: unknown,
+  size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits()
+): {
   plan?: AutomationStudioFlowBootstrapPlan;
   issues: AutomationStudioFlowBootstrapIssue[];
 } {
@@ -18,14 +30,15 @@ export function parseAutomationStudioFlowBootstrapPlan(value: unknown): {
   if (!Array.isArray(value.subflows)) issues.push(error("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
   else if (value.subflows.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxSubflows) issues.push(error("bootstrap.too_many_subflows", "Bootstrap plan exceeds the Subflow limit.", "plan.subflows"));
   else {
-    value.subflows.forEach((subflow, index) => parseSubflow(subflow, index, issues));
+    value.subflows.forEach((subflow, index) => parseSubflow(subflow, index, size, issues));
     const totalNodes = value.subflows.reduce((count, subflow) => count + (isRecord(subflow) && Array.isArray(subflow.nodes) ? subflow.nodes.length : 0), 0);
     const totalEdges = value.subflows.reduce((count, subflow) => count + (isRecord(subflow) && Array.isArray(subflow.edges) ? subflow.edges.length : 0), 0);
-    if (totalNodes > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes) issues.push(error("bootstrap.too_many_nodes", "Bootstrap plan exceeds the total node limit.", "plan.subflows"));
-    if (totalEdges > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalEdges) issues.push(error("bootstrap.too_many_edges", "Bootstrap plan exceeds the total edge limit.", "plan.subflows"));
+    if (totalNodes > size.maxTotalNodes) issues.push(error("bootstrap.too_many_nodes", automationStudioFlowBootstrapSizeRefusal(`Bootstrap plan has ${totalNodes} nodes in all`, "maxTotalNodes", size), "plan.subflows"));
+    if (totalEdges > size.maxTotalEdges) issues.push(error("bootstrap.too_many_edges", automationStudioFlowBootstrapSizeRefusal(`Bootstrap plan has ${totalEdges} edges in all`, "maxTotalEdges", size), "plan.subflows"));
   }
-  if (safeByteLength(value) > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxPlanBytes) {
-    issues.push(error("bootstrap.plan_too_large", "Bootstrap plan exceeds the byte limit.", "plan"));
+  const planBytes = safeByteLength(value);
+  if (planBytes > size.maxPlanBytes) {
+    issues.push(error("bootstrap.plan_too_large", automationStudioFlowBootstrapSizeRefusal(`Bootstrap plan is ${planBytes} bytes`, "maxPlanBytes", size), "plan"));
   }
   return issues.some((issue) => issue.severity === "error")
     ? { issues }
@@ -63,7 +76,7 @@ function parseRouter(value: unknown, issues: AutomationStudioFlowBootstrapIssue[
   } else issues.push(error("bootstrap.invalid_router_fallback", "Router fallback kind is invalid.", "plan.router.fallback.kind"));
 }
 
-function parseSubflow(value: unknown, index: number, issues: AutomationStudioFlowBootstrapIssue[]): void {
+function parseSubflow(value: unknown, index: number, size: AutomationStudioFlowBootstrapSizeLimits, issues: AutomationStudioFlowBootstrapIssue[]): void {
   const path = `plan.subflows.${index}`;
   if (!isRecord(value)) {
     issues.push(error("bootstrap.invalid_subflow", "Subflow must be an object.", path));
@@ -73,11 +86,15 @@ function parseSubflow(value: unknown, index: number, issues: AutomationStudioFlo
   symbolic(value.key, `${path}.key`, issues);
   boundedText(value.name, `${path}.name`, issues);
   if (!["primary", "integration", "recovery", "fallback", "utility"].includes(String(value.role))) issues.push(error("bootstrap.invalid_subflow_role", "Subflow role is invalid.", `${path}.role`));
-  if (!Array.isArray(value.nodes) || value.nodes.length === 0 || value.nodes.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxNodesPerSubflow) {
+  if (!Array.isArray(value.nodes) || value.nodes.length === 0) {
     issues.push(error("bootstrap.invalid_nodes", "Subflow nodes must be a nonempty bounded array.", `${path}.nodes`));
+  } else if (value.nodes.length > size.maxNodesPerSubflow) {
+    issues.push(error("bootstrap.invalid_nodes", automationStudioFlowBootstrapSizeRefusal(`Subflow has ${value.nodes.length} nodes`, "maxNodesPerSubflow", size), `${path}.nodes`));
   } else value.nodes.forEach((node, nodeIndex) => parseNode(node, `${path}.nodes.${nodeIndex}`, issues));
-  if (!Array.isArray(value.edges) || value.edges.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxEdgesPerSubflow) {
+  if (!Array.isArray(value.edges)) {
     issues.push(error("bootstrap.invalid_edges", "Subflow edges must be a bounded array.", `${path}.edges`));
+  } else if (value.edges.length > size.maxEdgesPerSubflow) {
+    issues.push(error("bootstrap.invalid_edges", automationStudioFlowBootstrapSizeRefusal(`Subflow has ${value.edges.length} edges`, "maxEdgesPerSubflow", size), `${path}.edges`));
   } else value.edges.forEach((edge, edgeIndex) => parseEdge(edge, `${path}.edges.${edgeIndex}`, issues));
 }
 

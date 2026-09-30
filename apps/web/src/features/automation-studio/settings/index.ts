@@ -4,6 +4,7 @@ export * from "./AiProviderSettingsSection";
 export * from "./ai-provider-model";
 export * from "./SubflowSettingsView";
 export * from "./flow-settings-model";
+export * from "./max-nodes-setting";
 export * from "./persistence-check";
 export * from "./settings-commands";
 export * from "./settings-model";

@@ -21,6 +21,7 @@ import { registerInstructionEndpoints } from "./instructions.ts";
 import { registerRunEndpoints } from "./runs.ts";
 import { registerRunDatasetEndpoints } from "./datasets.ts";
 import { registerAutomationStudioConversationEndpoints } from "./conversations.ts";
+import { registerAutomationStudioActivityEndpoints } from "./activity.ts";
 import { registerRouterEndpoints } from "./router.ts";
 import { registerLlmGenerationEndpoints } from "./llm-generation.ts";
 import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
@@ -43,6 +44,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerRunDatasetEndpoints(dependencies);
   // The conversation endpoints take their own dependency record: the registry, and the narrow service surface they use.
   registerAutomationStudioConversationEndpoints({ registry, service });
+  registerAutomationStudioActivityEndpoints({ registry });
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);
   registerRuntimeExecutionEndpoints(dependencies);

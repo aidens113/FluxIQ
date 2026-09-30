@@ -185,7 +185,8 @@ rules; the schema does not weaken or replace parser and registry validation.
 Core rejects unknown fields and validates all untrusted output against the same
 scope-aware registry used to form the catalog. Validation covers:
 
-- schema, UTF-8 bytes, counts, and graph depth;
+- schema, UTF-8 bytes, counts, and graph depth, each derived from the Flow's
+  size setting (see "Flow Size" below);
 - exactly one primary Subflow and valid symbolic Router targets;
 - definition availability and exact version pins;
 - required, unknown, typed, constrained, and state-bound parameters;
@@ -198,6 +199,32 @@ scope-aware registry used to form the catalog. Validation covers:
 This is deliberately stricter than general hand-authored Flow validation.
 Bootstrap graphs are finite DAGs so a model cannot introduce an implicit
 unbounded loop during first authoring.
+
+## Flow Size
+
+How large a Flow may be is one setting a person changes: the most nodes one
+Subflow may hold, `flowSizeSettings.maxNodesPerSubflow` in the Flow's metadata,
+shown in Flow Settings as "Maximum nodes per Subflow". It defaults to 100 and
+accepts a whole number from 1 through 1,000; a Flow saved before the setting
+existed reads the default. The model is `model/flow-size/`.
+
+Every bound on a Flow's size is derived from it in
+`runtime/flow-bootstrap/plan/size-limits.ts`, so raising it raises all of them:
+two edges per node in a Subflow, eight full Subflows in total, a graph depth
+equal to the node setting (a straight chain of every node fits), two kilobytes
+of plan per node (never below 65,536 bytes), and one kilobyte per node for one
+reply's result (never below 12,000 bytes). Parsing, registry validation, the
+reply and draft profile limits, the output and evidence completion schemas the
+model is shown, and the deterministic recovery path all read it. A refusal over
+a bound names the setting and the value it had. A reader of a record written
+earlier -- a published trace, a stored incomplete draft -- has no Flow in hand
+and bounds by the setting's largest value instead, so a record any Flow's
+setting allowed stays readable. The setting is part of the Flow's settings
+revision whenever it differs from the default, so changing it makes a proposal
+built under the old value stale rather than applying it; a Bootstrap context
+built for a non-default Flow carries `maxNodesPerSubflow`, which is how the
+provider adapters, holding only the request, size the schema they check and the
+plan they parse.
 
 ## Plan handles
 
@@ -407,9 +434,10 @@ content.
 Evidence-guided Bootstrap completion uses a separate self-contained,
 reference-free schema while retaining the canonical public Bootstrap plan
 shape. This avoids dangling local references when the plan schema is nested
-inside an evidence decision. The evidence completion is capped at 12,000 UTF-8
-bytes, a 240-character summary, four Subflows, eight Router rules, sixteen
-nodes and twenty-four edges per Subflow, and sixteen parameters per node. Its
+inside an evidence decision. The evidence completion is held to a
+240-character summary, four Subflows, eight Router rules and sixteen parameters
+per node; how many nodes and edges it may carry, and its UTF-8 byte budget, come
+from the Flow's size setting (see "Flow Size" below). Its
 instruction asks for one primary Subflow with Router fallback by default and
 permits extra topology only when the active instruction requires it. Core
 rechecks these bounds after parsing and before registry validation. The ranked
