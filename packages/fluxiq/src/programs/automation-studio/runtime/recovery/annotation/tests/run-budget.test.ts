@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
-  AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN,
   resolveAutomationStudioRecoveryRunBudget
 } from "../run-budget.ts";
 
@@ -42,28 +41,35 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false }).declaredCallsPerRun).toBeUndefined();
   });
 
-  it("uses the resolver's total for a run a person asked for, and never more than Core's per-recovery ceiling", () => {
-    const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 10, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1.5 } });
-    expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1.5 });
-    expect(asked.maxEstimatedCostUsdPerCall).toBeCloseTo(0.15, 8);
+  it("uses a smaller resolver total for a run a person asked for, and never more than the run cost ceiling", () => {
+    const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 10, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.15 } });
+    expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 0.15 });
+    expect(asked.maxEstimatedCostUsdPerCall).toBeCloseTo(0.015, 8);
 
     // A resolver that gives a per-call cost and no total would otherwise be
-    // multiplied into $6; the ceiling holds it at $2.
+    // multiplied into $6; the ceiling holds it at $0.25.
     const untotalled = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxEstimatedCostUsd: 0.25 } });
-    expect(AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN).toBe(2);
-    expect(untotalled.ledger.maxEstimatedCostUsdPerRun).toBe(2);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 9 } }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
+    expect(untotalled.ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 9 } }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
   });
 
   // The ledger reserves each call's share, rounded to a billionth, against the
   // total. Every declared call must still fit on the last one, or it is
   // refused on cost while the run still has money.
   it.each([10, 25, 26, 64])("fits every reservation of a %i-call run inside its total", (calls) => {
-    const total = 2;
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: calls, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: total } });
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: calls, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 } });
+    const total = budget.ledger.maxEstimatedCostUsdPerRun;
+    expect(total).toBe(0.25);
     const rounded = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000_000;
+    // A call never reserves less than its own worst case (the default 8,000 /
+    // 2,000 tokens at deepseek-flash's peak rates), so where an even share is
+    // smaller the purse admits fewer worst-case calls than were declared, and
+    // every one of those still fits.
+    const worstCase = estimateAutomationStudioDeepSeekCostUsd(8_000, 2_000);
+    expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(Math.max(total / calls, worstCase), 8);
+    const admitted = Math.min(calls, Math.floor(total / budget.maxEstimatedCostUsdPerCall));
     let committed = 0;
-    for (let call = 0; call < calls; call += 1) {
+    for (let call = 0; call < admitted; call += 1) {
       expect(rounded(committed + budget.maxEstimatedCostUsdPerCall)).toBeLessThanOrEqual(total);
       committed = rounded(committed + budget.maxEstimatedCostUsdPerCall);
     }
@@ -75,22 +81,106 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   it("caps the token pot at a resolver's whole-run token exposure, however many calls it declared", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxTotalEstimatedCostUsd: 2 } });
 
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 2 });
+    expect(budget.ledger).toEqual({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 0.25 });
   });
 
-  // The Flow's configured spend limit is the ceiling of a run a person asked
-  // for, in place of the resolver's default total, and still under Core's own.
-  it("holds a run a person asked for to the Flow's configured ceiling when one is set", () => {
+  // The Flow's configured spend limit lowers the ceiling of a run a person
+  // asked for, and the resolver's total lowers it too; neither raises it.
+  it("holds a run a person asked for to the smallest of the ceiling, the resolver's total and the Flow's limit", () => {
     const resolution = { maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 };
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 0.6 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.6);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 0.5 }, policyMaxEstimatedCostUsdPerRun: 1.2 }).ledger.maxEstimatedCostUsdPerRun).toBe(1.2);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 0.2 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.2);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 0.15 }, policyMaxEstimatedCostUsdPerRun: 0.2 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.15);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
   });
 
   it("ignores a nonsensical declared call count rather than letting it zero the run", () => {
     for (const maxCallsPerRun of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, resolution: { maxCallsPerRun } }).ledger.maxCallsPerRun).toBe(AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP);
     }
+  });
+});
+
+// The user's rule: a run costs at most $0.25, whoever asked for it. A run a
+// person asked for used to take the Flow's configured figure, or the
+// resolver's $2 default total, up to a $2 recovery ceiling.
+describe("the recovery's cost ceiling", () => {
+  const hostDefaults = { maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 };
+
+  it("defaults a recovery a person asked for to $0.25, and derives each call's reservation from it", () => {
+    for (const resolution of [hostDefaults, { maxEstimatedCostUsd: 0.25 }, undefined]) {
+      const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution });
+      expect(budget.ledger.maxEstimatedCostUsdPerRun, JSON.stringify(resolution)).toBe(0.25);
+      expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(0.25 / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 8);
+    }
+  });
+
+  it("never lets the Flow's setting raise it, and lets it lower it", () => {
+    for (const explicitRunBudget of [true, false]) {
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: hostDefaults, policyMaxEstimatedCostUsdPerRun: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: hostDefaults, policyMaxEstimatedCostUsdPerRun: 0.1 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.1);
+    }
+  });
+});
+
+// A recovery that is one part of a refuted result's repair is handed what the
+// repair's purse has left, and that is its total (`../../refuted-result/purse.ts`).
+describe("a recovery that is part of a repair", () => {
+  it("is held to what the repair has left, which lowers the total like any other limit and never raises it", () => {
+    for (const explicitRunBudget of [true, false]) {
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: { maxTotalEstimatedCostUsd: 2 }, costLeftUsd: 0.05 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.05);
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, policyMaxEstimatedCostUsdPerRun: 0.03, costLeftUsd: 0.05 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.03);
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, costLeftUsd: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
+    }
+  });
+});
+
+// `run-munutuvf-6a1c548a` and `run-munv9eqy-1827b928`: a live repair under the
+// $0.25 purse with the Flow's 64 declared calls reserved an even share,
+// $0.0039, per call, and its $0.0041 and $0.0044 plan-stage diagnoses were
+// each counted a budget breach, which failed both runs. A call now reserves its
+// own worst case, and the purse still binds.
+describe("a recovery call's reservation", () => {
+  const live = { maxCallsPerRun: 64, tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 };
+
+  it("is one call's worst case at the model's peak rates, so an ordinary diagnosis is no breach", () => {
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash" });
+    expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, "deepseek-flash"), 8);
+    expect(budget.maxEstimatedCostUsdPerCall).toBeGreaterThan(0.25 / 64);
+
+    const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+    const reserved = ledger.reserve({ runId: "run-1", requestId: "diagnosis-plan", estimatedInputTokens: 13_189, maxOutputTokens: 8_000, maxEstimatedCostUsd: budget.maxEstimatedCostUsdPerCall });
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+    reserved.lease.complete({ inputTokens: 13_189, outputTokens: 498, totalTokens: 13_687, estimatedCostUsd: 0.004441404 });
+    expect(ledger.snapshot("run-1")).toMatchObject({ calls: 1, budgetBreaches: 0 });
+  });
+
+  it("is priced for the model the provider calls, and Core's default model when that is not a priced one", () => {
+    const pro = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-v4-pro" });
+    expect(pro.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, "deepseek-v4-pro"), 8);
+    const mock = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "mock" });
+    expect(mock.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000), 8);
+  });
+
+  it("never exceeds the purse or the resolver's per-call cost, and the purse still stops the run before it is passed", () => {
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: 0.01 }).maxEstimatedCostUsdPerCall).toBe(0.01);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: 0.005 }, model: "deepseek-flash" }).maxEstimatedCostUsdPerCall).toBe(0.005);
+
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash" });
+    const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+    let spent = 0;
+    for (let call = 0; call < 64; call += 1) {
+      const reserved = ledger.reserve({ runId: "run-2", requestId: `call-${call}`, estimatedInputTokens: 13_000, maxOutputTokens: 8_000, maxEstimatedCostUsd: budget.maxEstimatedCostUsdPerCall });
+      if (!reserved.ok) {
+        expect(reserved.diagnostic.code).toBe("llm_budget.run_cost_limit");
+        break;
+      }
+      reserved.lease.complete({ inputTokens: 13_000, outputTokens: 8_000, totalTokens: 21_000, estimatedCostUsd: 0.0135 });
+      spent += 0.0135;
+    }
+    expect(spent).toBeLessThanOrEqual(0.25);
+    expect(ledger.snapshot("run-2")).toMatchObject({ budgetBreaches: 0 });
+    expect(spent).toBeGreaterThan(0.25 - 2 * budget.maxEstimatedCostUsdPerCall);
   });
 });

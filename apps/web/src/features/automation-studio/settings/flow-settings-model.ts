@@ -570,7 +570,9 @@ const FLOW_ADAPTATION_POLICY_DEFAULTS = {
   requireApprovalForDestructiveChanges: false,
   requireApprovalForExternalSideEffects: false,
   maxInterventionsPerRun: 3,
-  maxEstimatedCostUsdPerRun: 1
+  // Core's run cost ceiling: a build or recovery never spends more than $0.25
+  // whatever is stored here, so the form offers that and lets a person lower it.
+  maxEstimatedCostUsdPerRun: 0.25
 } as const;
 
 function flowSettingsTrainingMode(value: unknown): FlowSettingsDraft["trainingMode"] {

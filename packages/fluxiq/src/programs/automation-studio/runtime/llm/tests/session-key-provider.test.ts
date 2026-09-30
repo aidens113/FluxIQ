@@ -20,7 +20,7 @@ describe("session-key provider resolver", () => {
     });
     const resolution = resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.one", actorSessionId: "session.one" } });
     expect(resolution).toBeDefined();
-    expect(resolution).toMatchObject({ timeoutMs: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.timeoutMs, maxTotalEstimatedCostUsd: 2 });
+    expect(resolution).toMatchObject({ timeoutMs: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.timeoutMs, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 });
     const first = await resolution!.provider.runTask(request()) as { response: unknown };
     await resolution!.provider.runTask(request({ requestId: "request.two", idempotencyKey: "idempotency.two" }));
     expect(first.response).toMatchObject({ kind: "diagnosis" });

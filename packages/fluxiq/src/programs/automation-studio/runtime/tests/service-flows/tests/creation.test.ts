@@ -85,7 +85,7 @@ describe("AutomationStudioService recording persistence", () => {
         requireApprovalForDestructiveChanges: false,
         requireApprovalForExternalSideEffects: false,
         maxInterventionsPerRun: 3,
-        maxEstimatedCostUsdPerRun: 1
+        maxEstimatedCostUsdPerRun: 0.25
       },
       trainingModeSettings: {
         mode: "continuous_adaptive",
