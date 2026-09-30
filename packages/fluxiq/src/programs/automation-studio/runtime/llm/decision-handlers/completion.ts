@@ -66,7 +66,7 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   // The model is told why before it is asked again; the dry run showed its own.
   if (attempt.feedback) {
     const feedback: JsonObject = repeat && repeat.times >= 2 ? sentAgain(attempt.feedback, repeat.iterations[0]!, repeat.times) : attempt.feedback;
-    if (context.reserveEvidence(feedback) === undefined) return end("llm_evidence_loop.evidence_limit");
+    context.accountEvidence(feedback);
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: feedback });
   }
   const resultCode = attempt.issueCodes[0];

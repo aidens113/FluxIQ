@@ -51,19 +51,19 @@ export type AutomationStudioLlmContextPacket = {
   recentActions?: AutomationStudioLlmRecentActionContext[];
   failureEvidence?: JsonObject;
   /** The pages a recovery's exploration returned, carried to a runtime patch so
-   * a control only the exploration revealed can be named in the repair. The
-   * newest packets that fit, oldest first; the rest are counted and never
-   * sent. A target check reads this list and no other. Runtime patch only. */
+   * a control only the exploration revealed can be named in the repair. Every
+   * packet, oldest first. A target check reads this list and no other. Runtime
+   * patch and re-planning diagnosis only. */
   explorationEvidence?: AutomationStudioLlmExploredEvidenceSlot;
-  /** The standardized account of what went wrong: sections in a fixed priority
-   * order, a byte budget, and a record of what was withheld and why. Runtime
-   * tasks only, like `failureEvidence`. */
+  /** The standardized account of what went wrong: every section whole, and a
+   * record of any secret-shaped value that was withheld. Runtime tasks only,
+   * like `failureEvidence`. */
   recoveryContext?: AutomationStudioRuntimeRecoveryContext;
   /** The diagnosis the model produced one call earlier, so the stage that is
    * told to carry out the plan it just stated is shown that plan. Runtime
    * patch only. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
-  /** The bounded account of what a finished run produced, and of the shape of
+  /** The account of what a finished run produced, and of the shape of
    * the Flow that produced it. Carried to the verification, whose whole subject
    * it is, and to a runtime diagnosis or patch, because a repair entered from a
    * refuted result is repairing exactly this: the rows the run stored, the
@@ -267,8 +267,9 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     instructions,
-    ...(input.stateDiffs?.length ? { stateDiffs: input.stateDiffs.slice(0, 50) } : {}),
-    ...(input.routeHistory?.length ? { routeHistory: input.routeHistory.slice(-25) } : {}),
+    // Page-derived, so carried whole: every state diff and every route visited.
+    ...(input.stateDiffs?.length ? { stateDiffs: [...input.stateDiffs] } : {}),
+    ...(input.routeHistory?.length ? { routeHistory: [...input.routeHistory] } : {}),
     ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS).map(compactRecentActionForLlm) } : {}),
     ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence, deniedEvidenceKeys) } : {}),
     // Held to the same task-kind rule as the failure evidence it sits beside: a
@@ -298,12 +299,8 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
-  // Packed last, because what it may take is what the rest of the request left.
   if (input.explorationEvidence === undefined) return packed;
-  return {
-    ...packed,
-    explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys, Buffer.byteLength(JSON.stringify(packed), "utf8"))
-  };
+  return { ...packed, explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys) };
 }
 
 /**
@@ -427,7 +424,7 @@ function declaredDeniedEvidenceKeys(input: AutomationStudioLlmHarnessInput): rea
 
 function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket, deniedKeys: readonly string[]): AutomationStudioReusableLlmContextPacket {
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items) || packet.items.length > 5) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet is invalid.");
+  if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items)) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet is invalid.");
   const ids = new Set<string>();
   const items = packet.items.map((item) => {
     const allowed = ["advisory", "recordId", "contentDigest", "outcome", "reviewerState", "validationState", "sourceRunIds", "sourceAdaptationIds", "promptProjection"];
@@ -440,13 +437,12 @@ function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmCon
     ids.add(item.recordId);
     return structuredClone(item);
   });
-  const clean: AutomationStudioReusableLlmContextPacket = { schemaVersion: packet.schemaVersion, items };
-  if (Buffer.byteLength(JSON.stringify(clean), "utf8") > 8_192) throw new AutomationStudioLlmRequestRefusedError("llm.request.reusable_context_invalid", "Reusable LLM context packet exceeds its byte limit.");
-  return clean;
+  // Every item, whole: no count or byte limit on what earlier runs learned.
+  return { schemaVersion: packet.schemaVersion, items };
 }
 
 function safeReusableSourceIds(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length <= 25 && value.every((item) => typeof item === "string" && /^[A-Za-z0-9._:-]{1,200}$/u.test(item));
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && /^[A-Za-z0-9._:-]{1,200}$/u.test(item));
 }
 
 /**

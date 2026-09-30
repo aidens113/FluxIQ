@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import type { AutomationStudioSessionKeyPorts } from "../deepseek/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../session-key-provider.ts";
 
 // A model call made for a person needs no grant: nothing is issued, held or
@@ -27,6 +28,19 @@ describe("session-key provider resolver", () => {
     expect(authorization).toBe("Bearer key-value");
     // One release per call, each to the caller's own session; nothing held between.
     expect(reveals).toEqual([{ sessionId: "session.one", userId: "user.one" }, { sessionId: "session.one", userId: "user.one" }]);
+  });
+
+  // The one per-request limit is the model's context window (2026-09-30): the
+  // profile is the whole window, the reply reserved out of it.
+  it("sizes one call to the model's whole context window", () => {
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
+    const caller = { actorUserId: "user.one", actorSessionId: "session.one" };
+    for (const model of AUTOMATION_STUDIO_DEEPSEEK_MODELS) {
+      const window = AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model].contextTokens;
+      const { tokenLimits } = resolve({ projectId: "p", flowId: "f", caller, modelId: model })!;
+      expect(tokenLimits).toEqual({ maxInputTokens: window - 8_000, maxOutputTokens: 8_000, maxTotalTokens: window });
+    }
+    expect(AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits).toEqual({ maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 });
   });
 
   it("resolves no provider for a call made for nobody", () => {

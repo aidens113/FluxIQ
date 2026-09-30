@@ -41,8 +41,6 @@ export type AutomationStudioLlmEvidenceLoopResume = {
   outstandingIssueCodes: readonly string[];
 };
 
-const MAX_OUTSTANDING = 16;
-
 const INSTRUCTION = "This build continues one that ran out of decisions before it finished. "
   + "Your draft is the steps it proved, and they have just been run again from where the Flow starts, so the page is where your draft leaves it; "
   + "if a core.dry_run entry follows, a step did not replay and that is the first thing to correct. "
@@ -60,7 +58,7 @@ export function automationStudioLlmEvidenceResumeEntry(
     stopped: resume.stopped,
     draftSteps: steps.length,
     proposableSteps: steps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
-    outstanding: resume.outstandingIssueCodes.filter((code) => /^[a-z0-9_.:-]{1,100}$/iu.test(code)).slice(0, MAX_OUTSTANDING),
+    outstanding: resume.outstandingIssueCodes.filter((code) => /^[a-z0-9_.:-]{1,100}$/iu.test(code)),
     instruction: INSTRUCTION
   };
   return { callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID}.0`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID, value };

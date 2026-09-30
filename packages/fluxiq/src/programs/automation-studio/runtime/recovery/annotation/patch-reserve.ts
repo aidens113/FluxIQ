@@ -14,6 +14,13 @@
 // handed back unspent the moment the exploration ends. When a call count was
 // declared, the exploration's own call ceiling is also lowered to what remains
 // after the patch, so the usual ending is the exploration's own named limit.
+//
+// A held call is sized on the largest call this run has already made -- the
+// diagnosis, which carried the same failure evidence and context the patch
+// will -- and priced as the provider prices a request, never above the call's
+// cost ceiling. It used to be the per-request token limit, which is now the
+// model's whole window (992,000 tokens): one held call was the whole $0.25
+// purse, so the hold was never affordable and the patch lost its protection.
 
 import {
   resolveAutomationStudioLlmTokenLimits,
@@ -55,15 +62,19 @@ export function holdAutomationStudioRecoveryPatchReserve(input: {
    * nothing. Absent means one.
    */
   reservedCalls?: number | undefined;
+  /** Prices one held call, as the provider prices a request (`AutomationStudioLlmProvider.estimateCostUsd`). */
+  estimateCostUsd?: ((tokens: { inputTokens: number; outputTokens: number }) => number) | undefined;
 }): AutomationStudioRecoveryPatchReserve {
   const reservedCalls = Math.max(1, Math.floor(input.reservedCalls ?? 1));
   const limits = resolveAutomationStudioLlmTokenLimits(input.tokenLimits).limits;
+  const made = input.runBudget.callRecords(input.runId).calls.map((call) => call.charged.inputTokens);
+  const heldInputTokens = made.length ? Math.min(limits.maxInputTokens, Math.max(...made)) : limits.maxInputTokens;
   const hold = input.runBudget.reserve({
     runId: input.runId,
     requestId: "recovery.patch-reserve",
-    estimatedInputTokens: limits.maxInputTokens * reservedCalls,
+    estimatedInputTokens: heldInputTokens * reservedCalls,
     maxOutputTokens: limits.maxOutputTokens * reservedCalls,
-    maxEstimatedCostUsd: input.maxEstimatedCostUsd * reservedCalls
+    maxEstimatedCostUsd: heldCostUsd(input.estimateCostUsd, heldInputTokens, limits.maxOutputTokens, input.maxEstimatedCostUsd) * reservedCalls
   });
   // A hold the run cannot afford is not taken: the run cannot pay for the
   // patch either, and the exploration will be refused on the same numbers.
@@ -82,4 +93,14 @@ export function holdAutomationStudioRecoveryPatchReserve(input: {
       maxActions: Math.max(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxActions, remaining + 1)
     })
   };
+}
+
+function heldCostUsd(price: ((tokens: { inputTokens: number; outputTokens: number }) => number) | undefined, inputTokens: number, outputTokens: number, ceilingUsd: number): number {
+  let priced: number | undefined;
+  try {
+    priced = price?.({ inputTokens, outputTokens });
+  } catch {
+    priced = undefined;
+  }
+  return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? Math.min(ceilingUsd, priced) : ceilingUsd;
 }

@@ -299,8 +299,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
 
     expect(run.patchRequest?.context.explorationEvidence).toEqual({
       schemaVersion: "automation-studio.exploration-evidence.v1",
-      packets: [{ evidenceId: "explored.1", toolId: "test.inspect", packet: REVEALED_PAGE }],
-      withheldPackets: 0
+      packets: [{ evidenceId: "explored.1", toolId: "test.inspect", packet: REVEALED_PAGE }]
     });
     expect(run.patchRequest?.context.failureEvidence).toEqual(FAILURE_PAGE);
     expect(run.asked).toEqual([{ page: "page.revealed", handles: { control: "candidate.7" } }]);
@@ -312,7 +311,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
       targetEvidence: "exploration_evidence"
     })]);
     expect(run.detail.changeProposalIds).toHaveLength(1);
-    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.explorationEvidence).toEqual({ carriedPackets: 1, withheldPackets: 0 });
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.explorationEvidence).toEqual({ carriedPackets: 1 });
   });
 
   it("still refuses a handle no packet issued, with the refusal it always had", async () => {

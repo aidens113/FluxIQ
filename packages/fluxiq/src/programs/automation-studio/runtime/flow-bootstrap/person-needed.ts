@@ -139,7 +139,7 @@ export function automationStudioFlowBootstrapPersonNeeded(input: {
     for (;;) {
       let ran: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult;
       try {
-        ran = await input.executeTool({ callId: `${call.callId}.look`, toolId: look.toolId, value: structuredClone(look.initialObservation!.input), maxEvidenceBytes: call.maxEvidenceBytes, ...(call.signal ? { signal: call.signal } : {}) });
+        ran = await input.executeTool({ callId: `${call.callId}.look`, toolId: look.toolId, value: structuredClone(look.initialObservation!.input), ...(call.signal ? { signal: call.signal } : {}) });
       } catch (error) {
         // The build stopping is not a look that failed.
         if (stopped.signal.aborted) throw error;

@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
-import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../deepseek/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
-  AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   packAutomationStudioLlmContext,
   resolveAutomationStudioLlmInstructions,
   resolveAutomationStudioLlmTokenLimits,
@@ -172,23 +171,18 @@ describe("Automation Studio LLM harness", () => {
     expect(JSON.stringify(context)).not.toMatch(/PRIVATE_EXPECTED|PRIVATE_ACTUAL|selector_miss/);
   });
 
-  it("bounds ephemeral failure evidence and exposes it only to runtime diagnosis or patch tasks", () => {
+  it("carries failure evidence whole and exposes it only to runtime diagnosis or patch tasks", () => {
     const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[], deniedEvidenceKeys: [] as readonly string[] };
-    expect(() => packAutomationStudioLlmContext({
-      ...base,
-      taskKind: "runtime_diagnosis",
-      // Eight bounded strings rather than two big ones, so this stays a
-      // byte-limit refusal at any value of the limit: each is well inside the
-      // per-string bound, and together they are twice the packet's.
-      failureEvidence: { schemaVersion: "web-llm-evidence.v1", notes: Array.from({ length: 8 }, () => "x".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 4)) }
-    })).toThrow(/byte limit/);
-    // Core's bounds are structural and name no medium. A string past the limit
-    // is refused whatever it is called and whoever sent it.
-    expect(() => packAutomationStudioLlmContext({
-      ...base,
-      taskKind: "runtime_patch",
-      failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "x".repeat(2_001) }
-    })).toThrow(/unsafe or unbounded/);
+    // Nothing capped (2026-09-30): a 200 KB page, a 5,000-character string,
+    // 2,000 elements and nesting past the old depth of 12 all reach the model.
+    const whole: JsonObject = {
+      schemaVersion: "web-llm-evidence.v1",
+      note: "x".repeat(5_000),
+      elements: Array.from({ length: 2_000 }, (_, index) => ({ tag: "li", text: `Row ${index} ${"y".repeat(80)}` })),
+      deep: Array.from({ length: 20 }).reduce<JsonObject>((inner) => ({ inner }), { leaf: true })
+    };
+    expect(Buffer.byteLength(JSON.stringify(whole), "utf8")).toBeGreaterThan(200_000);
+    expect(packAutomationStudioLlmContext({ ...base, taskKind: "runtime_diagnosis", failureEvidence: whole }).failureEvidence).toEqual(whole);
     // `snapshot` used to be one of seven keys Core denied by name. Denying it
     // was wrong twice over: the other six are a browser's and an HTTP client's
     // vocabulary inside a framework that has neither, and `snapshot` is Core's
@@ -208,7 +202,7 @@ describe("Automation Studio LLM harness", () => {
       taskKind: "runtime_patch",
       deniedEvidenceKeys: ["innerHTML", "pageSource"],
       failureEvidence: { schemaVersion: "web-llm-evidence.v1", elements: [{ inner_html: "PRIVATE_RAW_HTML" }] }
-    })).toThrow(/unsafe or unbounded/);
+    })).toThrow(/denied key/);
     expect(() => packAutomationStudioLlmContext({
       ...base,
       taskKind: "flow_bootstrap",
@@ -520,26 +514,27 @@ describe("Automation Studio LLM harness", () => {
 
 // D-3. The pages a recovery's exploration returned reach the patch that
 // follows, so a control only the exploration revealed can be named in the
-// repair -- bounded like every other piece of evidence, and never allowed to
-// cost the patch call its place under the input budget.
+// repair -- every one of them, whole (2026-09-30, "the model sees the whole
+// page"), with only denied keys and credential shapes withheld.
 describe("Automation Studio LLM harness, explored evidence", () => {
   const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[], deniedEvidenceKeys: [] as readonly string[] };
   const page = (label: string, extra: JsonObject = {}): JsonObject => ({ schemaVersion: "web-llm-evidence.v2", location: `https://example.test/${label}`, elements: [{ target: "target.1", tag: "button", name: label }], ...extra });
+  const withheld = (reason: string): JsonObject => ({ schemaVersion: "automation-studio.explored-packet-withheld.v1", withheld: reason });
 
-  it("carries the newest bounded packets to a runtime patch, oldest first, and counts what it withholds", () => {
+  it("carries every explored packet to a runtime patch, in order, with a denied or secret packet withheld in its place", () => {
     const context = packAutomationStudioLlmContext({
       ...base,
       taskKind: "runtime_patch",
       deniedEvidenceKeys: ["innerHTML"],
       explorationEvidence: {
-        maxBytes: 8_000,
         packets: [
           { evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") },
           // Raw payload under a declared key, at any depth: never sent.
           { evidenceId: "explored.2", toolId: "web.recovery.inspect", packet: page("raw", { elements: [{ target: "target.1", inner_html: "PRIVATE_RAW_HTML" }] }) },
-          // Not a packet at all: a refusal names no schema.
+          // A domain's refusal is evidence too, and is carried.
           { evidenceId: "explored.3", toolId: "web.recovery.act", packet: { ok: false, code: "target_unsafe" } },
-          { evidenceId: "explored.4", toolId: "web.recovery.reveal", packet: page("revealed") }
+          { evidenceId: "explored.4", toolId: "web.recovery.reveal", packet: page("revealed") },
+          { evidenceId: "explored.5", toolId: "web.recovery.inspect", packet: page("token", { note: "Bearer abcdefghij0123456789klmnop" }) }
         ]
       }
     });
@@ -548,35 +543,34 @@ describe("Automation Studio LLM harness, explored evidence", () => {
       schemaVersion: "automation-studio.exploration-evidence.v1",
       packets: [
         { evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") },
-        { evidenceId: "explored.4", toolId: "web.recovery.reveal", packet: page("revealed") }
-      ],
-      withheldPackets: 2
+        { evidenceId: "explored.2", toolId: "web.recovery.inspect", packet: withheld("denied_key") },
+        { evidenceId: "explored.3", toolId: "web.recovery.act", packet: { ok: false, code: "target_unsafe" } },
+        { evidenceId: "explored.4", toolId: "web.recovery.reveal", packet: page("revealed") },
+        { evidenceId: "explored.5", toolId: "web.recovery.inspect", packet: withheld("secret_shaped") }
+      ]
     });
     expect(JSON.stringify(context)).not.toContain("PRIVATE_RAW_HTML");
+    expect(JSON.stringify(context)).not.toContain("abcdefghij0123456789");
+  });
 
-    // Over the allowance, the newest packet is the one kept.
-    const tight = packAutomationStudioLlmContext({
-      ...base,
-      taskKind: "runtime_patch",
-      explorationEvidence: { maxBytes: 450, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") }, { evidenceId: "explored.2", toolId: "web.recovery.reveal", packet: page("second") }] }
-    });
-    expect(tight.explorationEvidence?.packets.map((entry) => entry.evidenceId)).toEqual(["explored.2"]);
-    expect(tight.explorationEvidence?.withheldPackets).toBe(1);
-
-    // No more packets than one exploration could ever gather.
+  it("carries every packet however many and however large, with no allowance and no count", () => {
+    const large = page("large", { text: "z".repeat(50_000), elements: Array.from({ length: 1_500 }, (_, index) => ({ tag: "li", name: `Item ${index}` })) });
     const many = packAutomationStudioLlmContext({
       ...base,
       taskKind: "runtime_patch",
-      tokenLimits: { maxInputTokens: 50_000, maxOutputTokens: 1_000, maxTotalTokens: 50_000 },
-      explorationEvidence: { maxBytes: 100_000, packets: Array.from({ length: 70 }, (_, index) => ({ evidenceId: `explored.${index + 1}`, toolId: "web.recovery.inspect", packet: { schemaVersion: "web-llm-evidence.v2" } })) }
+      explorationEvidence: { packets: [
+        ...Array.from({ length: 70 }, (_, index) => ({ evidenceId: `explored.${index + 1}`, toolId: "web.recovery.inspect", packet: { schemaVersion: "web-llm-evidence.v2" } })),
+        { evidenceId: "explored.71", toolId: "web.recovery.inspect", packet: large }
+      ] }
     });
-    expect(many.explorationEvidence?.packets).toHaveLength(64);
-    expect(many.explorationEvidence?.packets[0]?.evidenceId).toBe("explored.7");
-    expect(many.explorationEvidence?.withheldPackets).toBe(6);
+    expect(many.explorationEvidence?.packets).toHaveLength(71);
+    expect(many.explorationEvidence?.packets[0]?.evidenceId).toBe("explored.1");
+    expect(many.explorationEvidence?.packets[70]?.packet).toEqual(large);
+    expect(many.explorationEvidence).not.toHaveProperty("withheldPackets");
   });
 
-  it("refuses explored evidence on any other task, without a declaration, without an allowance, or with labels that could be misread", () => {
-    const explorationEvidence = { maxBytes: 8_000, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") }] };
+  it("refuses explored evidence on any other task, without a declaration, or with labels that could be misread", () => {
+    const explorationEvidence = { packets: [{ evidenceId: "explored.1", toolId: "web.recovery.inspect", packet: page("first") }] };
     for (const taskKind of ["evidence_tool_decision", "flow_bootstrap"] as const) {
       expect(() => packAutomationStudioLlmContext({ ...base, taskKind, explorationEvidence }), taskKind).toThrow(/only to runtime patch and runtime diagnosis/);
     }
@@ -586,59 +580,26 @@ describe("Automation Studio LLM harness, explored evidence", () => {
     expect(packAutomationStudioLlmContext({ ...base, taskKind: "runtime_diagnosis", stage: "plan", explorationEvidence }).explorationEvidence?.packets).toHaveLength(1);
     const undeclared = { projectId: base.projectId, flowId: base.flowId, instructions: base.instructions };
     expect(() => packAutomationStudioLlmContext({ ...undeclared, taskKind: "runtime_patch", explorationEvidence })).toThrow(/declared deniedEvidenceKeys/);
-    expect(() => packAutomationStudioLlmContext({ ...base, taskKind: "runtime_patch", explorationEvidence: { ...explorationEvidence, maxBytes: 0 } })).toThrow(/positive byte allowance/);
     for (const evidenceId of ["explored:1", "", "explored.1"]) {
       const packets = [...explorationEvidence.packets, { evidenceId, toolId: "web.recovery.inspect", packet: page("second") }];
-      expect(() => packAutomationStudioLlmContext({ ...base, taskKind: "runtime_patch", explorationEvidence: { maxBytes: 8_000, packets } }), evidenceId).toThrow(/distinct bounded labels/);
+      expect(() => packAutomationStudioLlmContext({ ...base, taskKind: "runtime_patch", explorationEvidence: { packets } }), evidenceId).toThrow(/distinct bounded labels/);
     }
     // No packets offered, no slot: the request is the one it always was.
     expect(packAutomationStudioLlmContext({ ...base, taskKind: "runtime_patch" })).not.toHaveProperty("explorationEvidence");
   });
 
-  // The reserve for what a patch request costs besides its context is a
-  // measurement, so it is pinned here: the largest packet the room admits still
-  // passes the DeepSeek adapter's own input estimate, and the next byte is
-  // withheld rather than sent.
-  it("never lets explored packets push a patch request past its input budget", async () => {
-    const tokenLimits = { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 };
-    const input = { ...base, taskKind: "runtime_patch" as const, tokenLimits, tokenBudget: tokenLimits.maxInputTokens };
-    const packedBytes = Buffer.byteLength(JSON.stringify(packAutomationStudioLlmContext(input)), "utf8");
-    const room = tokenLimits.maxInputTokens * 3 - packedBytes - 6_000;
-    const slotBytes = (padding: number) => {
-      const slot = { schemaVersion: "automation-studio.exploration-evidence.v1", packets: [filled(padding)], withheldPackets: 1 };
-      return Buffer.byteLength(JSON.stringify({ explorationEvidence: slot }), "utf8");
-    };
-    let largest = room - slotBytes(0);
-    while (slotBytes(largest) > room) largest -= 1;
-    expect(largest).toBeGreaterThan(2_000);
-    expect(room - slotBytes(largest)).toBeLessThanOrEqual(3);
-    expect(slotBytes(largest + 1)).toBeGreaterThan(room);
-
-    const fits = await runAutomationStudioLlmHarness({ ...input, dryRun: true, explorationEvidence: { maxBytes: 100_000, packets: [filled(largest)] } });
-    expect(fits.ok).toBe(true);
-    expect(fits.request.context.explorationEvidence?.packets).toHaveLength(1);
-    expect(estimateAutomationStudioDeepSeekInputTokens(fits.request)).toBeLessThanOrEqual(tokenLimits.maxInputTokens);
-
-    const over = packAutomationStudioLlmContext({ ...input, explorationEvidence: { maxBytes: 100_000, packets: [filled(largest + 1)] } });
-    expect(over.explorationEvidence).toEqual({ schemaVersion: "automation-studio.exploration-evidence.v1", packets: [], withheldPackets: 1 });
-  });
-
   it("tells the model how to name a handle from an explored packet only when the request carries one", async () => {
-    const withPackets = await promptFor({ maxBytes: 8_000, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet: page("revealed") }] });
+    const withPackets = await promptFor({ packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet: page("revealed") }] });
     const withoutSlot = await promptFor(undefined);
-    const allWithheld = await promptFor({ maxBytes: 8_000, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.act", packet: { ok: false, code: "target_unsafe" } }] });
 
     expect(withPackets.system).toContain("explorationEvidence.packets");
     expect(withPackets.system).toContain("explored.2:target.3");
     expect(withPackets.context.explorationEvidence).toMatchObject({ packets: [{ evidenceId: "explored.1" }] });
-    for (const prompt of [withoutSlot, allWithheld]) {
-      expect(prompt.system).not.toContain("explorationEvidence");
-      expect(prompt.system).toBe(withoutSlot.system);
-    }
+    expect(withoutSlot.system).not.toContain("explorationEvidence");
     expect(withoutSlot.context).not.toHaveProperty("explorationEvidence");
   });
 
-  async function promptFor(explorationEvidence: { maxBytes: number; packets: Array<{ evidenceId: string; toolId: string; packet: JsonObject }> } | undefined): Promise<{ system: string; context: Record<string, unknown> }> {
+  async function promptFor(explorationEvidence: { packets: Array<{ evidenceId: string; toolId: string; packet: JsonObject }> } | undefined): Promise<{ system: string; context: Record<string, unknown> }> {
     const prepared = await runAutomationStudioLlmHarness({
       ...base,
       taskKind: "runtime_patch",

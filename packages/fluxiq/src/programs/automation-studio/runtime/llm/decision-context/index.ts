@@ -3,7 +3,7 @@
 // the same, the closed codes a refusal's feedback may leave on a row, the one
 // entry the history is shown to the model under, what one decision is shown
 // beside the window, and how a superseded Core note leaves it. The row grouping
-// and the compression ladder are the entry's own and stay internal.
+// and the full telling are the entry's own and stay internal.
 export * from "./closed-code.ts";
 export * from "./closed-detail.ts";
 export * from "./decision.ts";

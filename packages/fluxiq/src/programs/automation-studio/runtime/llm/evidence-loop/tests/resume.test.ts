@@ -43,11 +43,12 @@ describe("the entry a continued build starts from", () => {
     }
   });
 
-  it("keeps only issue codes that are codes, and at most sixteen of them", () => {
+  it("keeps only issue codes that are codes, and every one of them", () => {
     const codes = ["ok.code", "has spaces", "<script>", "x".repeat(101), ...Array.from({ length: 20 }, (_, index) => `code.${index}`)];
     const outstanding = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "tool_calls", outstandingIssueCodes: codes }, []).value.outstanding as string[];
 
-    expect(outstanding).toHaveLength(16);
+    // No count limit: all twenty-one codes, and none of the three that are not codes.
+    expect(outstanding).toHaveLength(21);
     expect(outstanding[0]).toBe("ok.code");
     expect(outstanding).not.toContain("has spaces");
     expect(outstanding).not.toContain("<script>");

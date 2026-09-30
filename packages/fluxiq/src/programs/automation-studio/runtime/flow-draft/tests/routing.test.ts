@@ -82,7 +82,7 @@ describe("saying when a step runs", () => {
   it("shows the statement back in the numbers the model reads", () => {
     const draft = steps();
     applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "only_if", check: 1 }]);
-    const value = automationStudioFlowDraftEntry({ steps: draft, maxBytes: 4_000 })?.value as { steps: { step: number; runs?: string }[] };
+    const value = automationStudioFlowDraftEntry({ steps: draft })?.value as { steps: { step: number; runs?: string }[] };
 
     expect(value.steps[1]?.runs).toBe("only if step 1 succeeded");
     expect(value.steps[0]?.runs).toBeUndefined();

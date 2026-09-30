@@ -35,10 +35,6 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
 
-/** Core's default token pot, per share of the run. It used to be the literal
- * 12_000, written when a run meant two calls, so 6_000 is that number per call
- * unchanged. A `maxTokensPerRun` a person sets still binds exactly as written. */
-export const AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE = 6_000;
 
 /**
  * How many shares a recovery's token pot and cost purse are sized and divided
@@ -88,7 +84,10 @@ export type AutomationStudioRecoveryRunBudgetInput = {
 export type AutomationStudioRecoveryRunBudget = {
   /** What the run's ledger is constructed with. Every field is set. */
   ledger: Required<AutomationStudioLlmRunBudgetLimits>;
-  /** What one call may reserve against the purse before it knows what it spent. */
+  /** What one call may reserve against the purse before it knows what it spent.
+   * A ceiling: the harness reserves the request's own measured size, priced by
+   * the provider, under it (`../../llm/harness/run.ts`). At the window profile
+   * this ceiling is the whole purse, and only that keeps it from binding. */
   maxEstimatedCostUsdPerCall: number;
   /** The call count the resolver declared, when it declared one. Absent means
    * the ledger's count is only Core's backstop, and no stage should plan by it. */
@@ -108,8 +107,11 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // share larger than purse / declared calls would refuse the last few calls on
   // cost while the run still had money.
   const costShares = declaredCalls ?? AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
-  // A run a person asked for sizes its token pot at the per-call limit times
-  // the calls. Otherwise the default shares size it.
+  // The token pot is the per-call limit times the shares, lowered by a
+  // `maxTokensPerRun` a person set or a resolver's whole-run exposure. There is
+  // no smaller default of Core's own any more: it was 6,000 tokens per share
+  // (144,000 for a recovery nobody asked for), which refused a whole page's
+  // diagnosis outright. The $0.25 purse is what bounds spending (2026-09-30).
   const tokenShares = input.explicitRunBudget ? costShares : Math.min(costShares, AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
   const tokenLimits = resolution?.tokenLimits;
   const requestedTotalTokens = (tokenLimits?.maxTotalTokens ?? 10_000) * tokenShares;
@@ -118,7 +120,7 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
     positiveInteger(resolution?.maxTotalTokensPerRun) ?? Number.POSITIVE_INFINITY,
     input.explicitRunBudget
       ? requestedTotalTokens
-      : Math.min(input.maxTokensPerRun ?? AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE * tokenShares, requestedTotalTokens)
+      : Math.min(input.maxTokensPerRun ?? requestedTotalTokens, requestedTotalTokens)
   )));
   const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (tokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * tokenShares)));
   // A resolver that gives a per-call cost and no total is multiplied into a

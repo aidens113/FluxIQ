@@ -68,7 +68,9 @@ export function sanitizeEvidenceLoopTrace(
     if (item.callId !== undefined) clean.callId = requiredBootstrapCommandId(item.callId, "evidence call");
     if (item.toolId !== undefined) clean.toolId = requiredBootstrapCommandId(item.toolId, "evidence tool");
     if (item.evidenceBytes !== undefined) {
-      if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
+      // A count, not a bound: one call's evidence is a whole page and has no
+      // ceiling of its own (t200), so only the shape of the number is checked.
+      if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0) throw new Error("Flow Bootstrap evidence byte count is invalid.");
       clean.evidenceBytes = item.evidenceBytes;
     }
     if (item.effectApplied !== undefined) {

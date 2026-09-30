@@ -10,9 +10,5 @@
 export * from "./authored-state-screen.ts";
 export * from "./flow-graph.ts";
 export * from "./parameter-screen.ts";
+export * from "./secret-named-key.ts";
 export * from "./step-parameters.ts";
-// `parameter-vocabulary.ts` is deliberately absent: it is the screen's own
-// policy -- which of Core's words carry a value, and how deep -- and calling
-// `coreVocabularyKey` from outside would mean reimplementing the screen around
-// it. The screen is the seam, and `recovery/index.ts` re-exports this barrel so
-// the Testing Lab can reach that.

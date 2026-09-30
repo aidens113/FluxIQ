@@ -27,11 +27,6 @@ import type {
 } from "../../../model/index.ts";
 import { automationStudioScreenedNodeParameters } from "./parameter-screen.ts";
 
-/** How many steps the section carries, newest last. The same bound the packet's own recent-action list uses. */
-export const AUTOMATION_STUDIO_REPAIR_CONTEXT_MAX_STEPS = 12;
-
-const MAX_LABEL_LENGTH = 80;
-
 /**
  * The step chain, or nothing when the run recorded no attempt.
  *
@@ -48,8 +43,8 @@ export function automationStudioStepParametersSection(input: {
 }): JsonObject | undefined {
   if (!input.attempts.length) return undefined;
   const authored = new Map((input.flow?.nodes ?? []).map((node) => [node.id, node]));
-  const carried = input.attempts.slice(-AUTOMATION_STUDIO_REPAIR_CONTEXT_MAX_STEPS);
-  const steps = carried.map((attempt) => {
+  // Every step the run took, in order: no step count and no label length.
+  const steps = input.attempts.map((attempt) => {
     const node = authored.get(attempt.nodeId);
     const screened = node?.parameterValues
       ? automationStudioScreenedNodeParameters(node.parameterValues, input.deniedKeys)
@@ -60,7 +55,7 @@ export function automationStudioStepParametersSection(input: {
       order: attempt.order,
       nodeId: attempt.nodeId,
       definitionId: attempt.definitionId,
-      ...(node?.label ? { label: node.label.slice(0, MAX_LABEL_LENGTH) } : {}),
+      ...(node?.label ? { label: node.label } : {}),
       status: attempt.status,
       ...(attempt.route ? { route: attempt.route } : {}),
       ...(attempt.comparisonStatus ? { comparisonStatus: attempt.comparisonStatus } : {}),
@@ -81,7 +76,6 @@ export function automationStudioStepParametersSection(input: {
   });
   return {
     steps,
-    ...(input.attempts.length > steps.length ? { earlierStepCount: input.attempts.length - steps.length } : {}),
     // Said plainly rather than inferred from an absent key: a Flow that could
     // not be read and a Flow whose steps authored no parameters must not look
     // alike to a repair that is about to rewrite one of them.

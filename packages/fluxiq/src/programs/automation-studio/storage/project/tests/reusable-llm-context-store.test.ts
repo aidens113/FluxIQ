@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../content-protection.ts";
 import {
-  AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_PROMPT_BYTES,
   AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_TTL_MS,
   AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION,
   AutomationStudioProjectReusableLlmContextStore,
@@ -93,14 +92,15 @@ describe("AutomationStudioProjectReusableLlmContextStore", () => {
     await one.close(); await two.close(); await pool.closeAll();
   });
 
-  it("rejects unsafe fields, oversized projections, excessive TTLs, and excessive source IDs", async () => {
+  it("rejects unsafe fields, excessive TTLs, and excessive source IDs, and stores a large projection whole", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.bounds", enabled: true, contentProtection });
     for (const forbidden of ["password", "authToken", "access_token", "cookieJar", "requestHeaders", "rawHtml", "pageSnapshot", "inputValue"]) {
       await expect(store.put(write({ promptProjection: { [forbidden]: "not-storable" } }))).rejects.toThrow("forbidden field");
     }
-    await expect(store.put(write({ promptProjection: { text: "x".repeat(2_049) } }))).rejects.toThrow("oversized string");
-    await expect(store.put(write({ promptProjection: Array.from({ length: 257 }, (_, index) => index) }))).rejects.toThrow("item limit");
+    // A projection is stored whole: no string, item or byte limit.
+    await expect(store.put(write({ recordId: "context.long-string", promptProjection: { text: "x".repeat(20_000) } }))).resolves.toMatchObject({ recordId: "context.long-string" });
+    await expect(store.put(write({ recordId: "context.many-items", promptProjection: Array.from({ length: 2_000 }, (_, index) => index) }))).resolves.toMatchObject({ recordId: "context.many-items" });
     await expect(store.put(write({ ttlMs: AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_TTL_MS + 1 }))).rejects.toThrow("ttlMs");
     await expect(store.put(write({ sourceRunIds: Array.from({ length: 26 }, (_, index) => `run.${index}`) }))).rejects.toThrow("item limit");
     await expect(store.put(write({
@@ -111,7 +111,6 @@ describe("AutomationStudioProjectReusableLlmContextStore", () => {
         truncated: false, digest: "sha256.packet", byteCount: 512
       }
     }))).resolves.toMatchObject({ recordId: "context.safe-shape" });
-    expect(AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_PROMPT_BYTES).toBe(12_288);
     await store.close(); await pool.closeAll();
   });
 });

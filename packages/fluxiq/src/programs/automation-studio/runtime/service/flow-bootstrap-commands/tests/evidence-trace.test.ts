@@ -21,6 +21,20 @@ const trace: AutomationStudioLlmEvidenceLoopTrace[] = [
   { iteration: 4, decision: "complete" }
 ];
 
+describe("a whole page on the trace (t200)", () => {
+  // One call's evidence is a whole page and has no ceiling, so the trace keeps
+  // its byte count however large it is. A count past 1 MiB used to throw here
+  // and discard the record of a build that had otherwise completed.
+  it("keeps a count past the old 1 MiB bound", () => {
+    const [row] = sanitizeEvidenceLoopTrace([{ iteration: 0, decision: "tool_call", callId: "call-0", toolId: "web.observe_page", evidenceBytes: 5_000_000 }]);
+    expect(row?.evidenceBytes).toBe(5_000_000);
+  });
+
+  it("still refuses a count that is not a count", () => {
+    expect(() => sanitizeEvidenceLoopTrace([{ iteration: 0, decision: "tool_call", evidenceBytes: -1 }])).toThrow("evidence byte count is invalid");
+  });
+});
+
 describe("the trace stored on a build", () => {
   // **The rebuilder test.** Four functions between the loop and a published
   // record rebuild a decision row member by member, and three times now a

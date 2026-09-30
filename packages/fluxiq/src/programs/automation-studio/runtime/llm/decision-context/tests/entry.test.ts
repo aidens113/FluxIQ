@@ -2,14 +2,13 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, automationStudioLlmDecisionContextEntry } from "../index.ts";
 import { answered, bytes, call, recorded, refusedCompletion } from "./history-fixtures.ts";
 
-const LARGE = 100_000;
 
 describe("decision history entry", () => {
   it("is absent until a decision at iteration 1 or later is recorded", () => {
     const recorder = recorded([[0, { kind: "look", callId: "look-0", toolId: "core.observe", resultCode: "web.observe.succeeded" }]]);
-    expect(automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE })).toBeUndefined();
+    expect(automationStudioLlmDecisionContextEntry({ records: recorder.records() })).toBeUndefined();
     recorder.record(1, call("c1", "open"));
-    const entry = automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE });
+    const entry = automationStudioLlmDecisionContextEntry({ records: recorder.records() });
     expect(entry?.callId).toBe("core.evidence_history");
     expect(entry?.toolId).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID);
   });
@@ -28,7 +27,7 @@ describe("decision history entry", () => {
       // The same result against a changed draft is a new attempt, so a new row.
       [8, refusedCompletion({ script: "a" }, ["flow_bootstrap.missing_act"], 3, { code: "flow_bootstrap.completion_refused", missingActs: [{ id: "pick-store" }] })]
     ]);
-    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE })!.value as Record<string, unknown>;
+    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records() })!.value as Record<string, unknown>;
     const feedback = { feedback: { code: "flow_bootstrap.completion_refused", missingActs: [{ id: "pick-store" }] } };
     expect(value).toMatchObject({
       code: "llm_evidence_loop.decision_history",
@@ -54,7 +53,7 @@ describe("decision history entry", () => {
       [2, { kind: "amendment", signature: "s", applied: 0, refusals: [{ step: 4, reason: "because it looked wrong", repeated: false }], withdrewChanged: [] }],
       [3, { kind: "redirect", code: "you are going round in circles" }]
     ]);
-    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE })!.value as Record<string, unknown>;
+    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records() })!.value as Record<string, unknown>;
     expect(value.rows).toEqual([
       [1, "call", "core.run_node", null, "c1", null, "yes"],
       [2, "amendment", null, null, null, "refused", null, { applied: 0, refused: [[4, null, false]] }]
@@ -67,7 +66,7 @@ describe("decision history entry", () => {
     const recorder = recorded([
       [21, { kind: "amendment", signature: "s21", applied: 2, refusals: [{ step: 9, reason: "no_such_step", repeated: true }], withdrewChanged: [12], undoneTo: 11, rerun: 4 }]
     ]);
-    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE })!.value as Record<string, unknown>;
+    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records() })!.value as Record<string, unknown>;
     expect(value.rows).toEqual([
       [21, "amendment", null, null, null, "no_such_step", null, { applied: 2, refused: [[9, "no_such_step", true]], withdrewChanged: [12], undoneTo: 11, rerun: 4 }]
     ]);
@@ -78,7 +77,7 @@ describe("decision history entry", () => {
       [22, { kind: "completion", signature: "c", draftRevision: 5, accepted: true, issueCodes: [], dryRun: [{ step: 4, status: "diverged" }, { step: 11, status: "failed" }] }],
       [30, { kind: "completion", signature: "d", draftRevision: 6, accepted: true, issueCodes: [], dryRun: "clean" }]
     ]);
-    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records(), maxBytes: LARGE })!.value as Record<string, unknown>;
+    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records() })!.value as Record<string, unknown>;
     expect(value.rows).toEqual([
       [22, "completion", null, null, null, "dry_run_refused", null, { dryRun: [[4, "diverged"], [11, "failed"]] }],
       [30, "completion", null, null, null, "accepted", null, { dryRun: "clean" }]

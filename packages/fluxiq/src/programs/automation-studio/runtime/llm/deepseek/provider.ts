@@ -21,7 +21,9 @@ import {
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES,
   readAutomationStudioDeepSeekBoundedResponse
 } from "./bounded-read.ts";
-import { buildAutomationStudioDeepSeekRequestBody, estimateAutomationStudioDeepSeekInputTokens } from "./request-body.ts";
+import { buildAutomationStudioDeepSeekRequestBody, measureAutomationStudioDeepSeekInput } from "./request-body.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./models.ts";
+import { estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { automationStudioDeepSeekRequestShape } from "./request-shape.ts";
 import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusal } from "./refusal.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
@@ -64,6 +66,12 @@ export function createAutomationStudioDeepSeekProvider(options: AutomationStudio
   }
   return {
     metadata: { provider: "deepseek", model },
+    // The same measure `runDeepSeekTask` refuses on, so the harness refuses an
+    // oversize request first and with its size (`../harness/run.ts`).
+    measureInput: (request) => measureAutomationStudioDeepSeekInput(request),
+    // All input a cache miss, at the model's peak rates: what the harness
+    // reserves for a call of this size against the run's ledger.
+    estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model),
     runTask: async (request, execution) => {
       try {
         return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes });
@@ -87,17 +95,27 @@ async function runDeepSeekTask(input: {
   maxResponseBytes: number;
 }): Promise<{ response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary }> {
   let body: string;
-  let estimatedInputTokens: number;
   try {
     validateAutomationStudioDeepSeekRequest(input.request);
     if (!Number.isInteger(input.request.timeoutMs) || input.request.timeoutMs <= 0 || input.request.timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS) {
       throw new AutomationStudioLlmProviderError("llm.provider_request_timeout_invalid", "LLM request timeout is outside the allowed provider range.");
     }
     body = buildAutomationStudioDeepSeekRequestBody(input.request, input.model);
-    estimatedInputTokens = estimateAutomationStudioDeepSeekInputTokens(input.request, input.model);
-    if (estimatedInputTokens > input.request.tokenLimits.maxInputTokens
-      || estimatedInputTokens + input.request.tokenLimits.maxOutputTokens > input.request.tokenLimits.maxTotalTokens) {
-      throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Outbound request exceeds the estimated input-token budget.");
+    const measured = measureAutomationStudioDeepSeekInput(input.request);
+    const estimatedInputTokens = measured.estimatedInputTokens;
+    // The one size limit on a request: the model's context window, which the
+    // request's token limits are sized to (`../session-key-provider.ts`). Over
+    // it, the request is refused with its measured size and never trimmed to
+    // fit (`../context-window.ts`).
+    const limits = input.request.tokenLimits;
+    const window = AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[input.model].contextTokens;
+    if (estimatedInputTokens > limits.maxInputTokens
+      || estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens
+      || estimatedInputTokens + limits.maxOutputTokens > window) {
+      // The size travels as numbers on the error, so the recorded failure states
+      // it too: the normalizer's safe message for this code is built from them.
+      const inputSize = { estimatedInputTokens, estimatedInputBytes: measured.estimatedInputBytes, maxInputTokens: limits.maxInputTokens, maxOutputTokens: limits.maxOutputTokens, maxTotalTokens: limits.maxTotalTokens, contextWindowTokens: window };
+      throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", `Outbound request is an estimated ${estimatedInputTokens} input tokens (${measured.estimatedInputBytes} bytes) plus ${limits.maxOutputTokens} reserved for the reply, over its ${limits.maxInputTokens}-token input or ${limits.maxTotalTokens}-token total limit; ${input.model}'s context window is ${window} tokens. It was not sent, and nothing was trimmed to fit.`, false, undefined, undefined, undefined, undefined, inputSize);
     }
   } catch (error) {
     if (error instanceof AutomationStudioLlmProviderError) throw error;

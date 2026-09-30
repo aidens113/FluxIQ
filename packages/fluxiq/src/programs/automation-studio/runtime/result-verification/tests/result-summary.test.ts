@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 
 // What leaves the process for a verification, and what may not.
 //
-// A verification is one call, so the result it is shown is a count, a column
-// list and a handful of rows -- never a dataset. And the rows come off a medium
-// Core does not know, so they go through the same screen every other evidence
-// slot passes before anything is sent.
+// The result is shown whole (2026-09-30, "the model sees the whole page"):
+// every record set, every column, every stored row and every value. The rows
+// come off a medium Core does not know, so they still go through the screen
+// every other evidence slot passes: a denied column is left out, a
+// credential-shaped value is replaced by a marker, and no declaration means no
+// rows at all.
 
 const datasetSummary = (fields: Partial<AutomationStudioRunDatasetSummary> = {}): AutomationStudioRunDatasetSummary => ({
   runId: "run-1",
@@ -31,16 +33,42 @@ const rows = (count: number, value = "Hollis"): JsonObject[] =>
   Array.from({ length: count }, (_row, index) => ({ name: `${value} ${index}`, role: "admin" }));
 
 describe("summarizeAutomationStudioRunResult", () => {
-  it("counts every record set and samples only a few rows of the ones it lists", () => {
+  it("carries every row of every record set it was given, and says nothing was withheld", () => {
     const summary = summarizeAutomationStudioRunResult({
-      recordSets: [{ summary: datasetSummary(), schema: schema(["name", "role"]), rows: rows(50) }],
+      recordSets: [{ summary: datasetSummary({ recordCount: 50 }), schema: schema(["name", "role"]), rows: rows(50) }],
       deniedEvidenceKeys: []
     });
-    expect(summary.totalRecordCount).toBe(240);
+    expect(summary.totalRecordCount).toBe(50);
     expect(summary.recordSetCount).toBe(1);
     expect(summary.recordSets[0]?.columns).toEqual(["name", "role"]);
-    expect(summary.recordSets[0]?.sampleRows?.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxSampleRowsPerSet);
-    expect(summary.withheld).toBe(true);
+    expect(summary.recordSets[0]?.sampleRows).toEqual(rows(50));
+    expect(summary.withheld).toBe(false);
+  });
+
+  // The nothing-capped pin: 50 rows by 40 columns, long values, six record
+  // sets and sixty steps, all whole.
+  it("carries a 50-row by 40-column result whole, every set, every value at full length, and every step", () => {
+    const ids = Array.from({ length: 40 }, (_field, index) => `field${index}`);
+    const wide = schema(ids);
+    const tableRows: JsonObject[] = Array.from({ length: 50 }, (_row, row) => Object.fromEntries(ids.map((id) => [id, `${id} of row ${row} ${"v".repeat(200)}`])));
+    const sets = Array.from({ length: 6 }, (_set, index) => ({ summary: datasetSummary({ datasetId: `set${index}`, recordCount: 50 }), schema: wide, rows: tableRows }));
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: sets,
+      flowNodes: Array.from({ length: 60 }, (_node, index) => ({ id: `n${index}`, definitionId: "web.extract.list", label: `Step ${index} ${"l".repeat(120)}`, parameterValues: { maxRows: index } })),
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets).toHaveLength(6);
+    for (const set of summary.recordSets) {
+      expect(set.columns).toEqual(ids);
+      expect(set.columnsWithheld).toBe(false);
+      expect(set.sampleRows).toEqual(tableRows);
+    }
+    expect(summary.flowShape).toHaveLength(60);
+    expect(summary.flowShape.every((step) => step.parameters !== undefined)).toBe(true);
+    expect(summary.flowShape[59]?.label).toBe(`Step 59 ${"l".repeat(120)}`);
+    expect(summary.flowParametersWithheld).toBeUndefined();
+    expect(summary.withheld).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(summary), "utf8")).toBeGreaterThan(400_000);
   });
 
   it("carries the Flow's authored shape, which is where a missing filtering step shows", () => {
@@ -56,12 +84,7 @@ describe("summarizeAutomationStudioRunResult", () => {
     expect(summary.flowShape.map((step) => step.definitionId)).toEqual(["builtin.navigate", "builtin.policy.action", "builtin.end"]);
   });
 
-  it("says what each step runs with, screened, which is what a definition id alone cannot", () => {
-    // Mutation: carry the node ids alone. The judgement is asked whether the Flow
-    // had a step that could narrow what the request asked to narrow, and two
-    // definition ids answer that identically whether the condition is right or
-    // wrong. This is the parity gap with the repair, which has been shown the
-    // same projection since t139.
+  it("says what each step runs with, full URL included, which is what a definition id alone cannot", () => {
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary({ recordCount: 2 }), schema: schema(["name"]), rows: rows(2) }],
       flowNodes: [
@@ -72,17 +95,15 @@ describe("summarizeAutomationStudioRunResult", () => {
     });
     const [navigate, extract] = summary.flowShape;
     expect(navigate?.label).toBe("Open the directory");
-    // The origin travels and the query does not, and the dropped path is named
-    // with dotted segments rather than brackets so it survives the locator screen.
-    expect(navigate?.parameters).toEqual({ url: "https://members.test", newTab: false });
-    expect(navigate?.parametersWithheld).toEqual(["url"]);
+    expect(navigate?.parameters).toEqual({ url: "https://members.test/list?team=ops", newTab: false });
+    expect(navigate?.parametersWithheld).toBeUndefined();
     expect(extract?.parameters?.maxRows).toBe(25);
     expect(extract?.parameters?.where).toEqual({ count: 1, items: [{ field: "role", matches: "admin" }] });
     expect(summary.flowParametersWithheld).toBeUndefined();
   });
 
   it("carries no step parameters at all when no denied-key declaration was made", () => {
-    // The same rule the row sample follows: absent means nobody said what this
+    // The same rule the rows follow: absent means nobody said what this
     // medium's raw payload is called, never "deny nothing".
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary({ recordCount: 2 }) }],
@@ -92,64 +113,48 @@ describe("summarizeAutomationStudioRunResult", () => {
     expect(summary.flowParametersWithheld).toBeUndefined();
   });
 
-  it("leaves a step bare when its parameters are not what the Flow authored, and names the paths", () => {
+  it("withholds a denied key and a secret-named value from a step's parameters, and names the paths", () => {
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary({ recordCount: 1 }) }],
-      flowNodes: [{ id: "n1", definitionId: "web.output.type", parameterValues: { text: "Hollis", selector: "#name", timeoutMs: 5000 } }],
+      flowNodes: [{ id: "n1", definitionId: "web.output.type", parameterValues: { text: "Hollis", selector: "#name", password: "hunter2", timeoutMs: 5000 } }],
       deniedEvidenceKeys: ["selector"]
     });
-    expect(summary.flowShape[0]?.parameters).toEqual({ timeoutMs: 5000, text: null });
-    expect(summary.flowShape[0]?.parametersWithheld).toEqual(["text", "selector"]);
-    expect(JSON.stringify(summary)).not.toContain("Hollis");
+    expect(summary.flowShape[0]?.parameters).toEqual({ text: "Hollis", password: null, timeoutMs: 5000 });
+    expect(summary.flowShape[0]?.parametersWithheld).toEqual(["selector", "password"]);
     expect(JSON.stringify(summary)).not.toContain("#name");
+    expect(JSON.stringify(summary)).not.toContain("hunter2");
   });
 
-  it("keeps the row sample and gives the parameters what is left, saying when a step went without", () => {
-    // Parameters are spent out of the remainder on purpose: the sample is the
-    // data the judgement is about. A step left bare for want of room must not
-    // read like a step that runs on its defaults.
-    const wide = schema(Array.from({ length: 4 }, (_field, index) => `field${index}`));
-    const heavyRow: JsonObject = Object.fromEntries(wide.fields.map((field) => [field.id, "y".repeat(110)]));
-    const heavyParameters = Object.fromEntries(Array.from({ length: 12 }, (_value, index) => [`name${index}`, index]));
-    const summary = summarizeAutomationStudioRunResult({
-      recordSets: [{ summary: datasetSummary({ recordCount: 4 }), schema: wide, rows: [heavyRow, heavyRow, heavyRow, heavyRow] }],
-      flowNodes: Array.from({ length: 20 }, (_node, index) => ({ id: `n${index}`, definitionId: "web.extract.list", parameterValues: heavyParameters })),
-      deniedEvidenceKeys: []
-    });
-    expect(Buffer.byteLength(JSON.stringify(summary), "utf8")).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes);
-    expect(summary.recordSets[0]?.sampleRows?.length).toBeGreaterThan(0);
-    expect(summary.flowShape.some((step) => step.parameters === undefined)).toBe(true);
-    expect(summary.flowParametersWithheld).toBe(true);
-    expect(summary.withheld).toBe(true);
-  });
-
-  it("samples no row at all when no denied-key declaration was made", () => {
+  it("carries no row at all when no denied-key declaration was made", () => {
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary(), schema: schema(["name"]), rows: rows(3) }]
     });
     expect(summary.recordSets[0]?.sampleRows).toBeUndefined();
     expect(summary.recordSets[0]?.recordCount).toBe(240);
+    expect(summary.withheld).toBe(true);
   });
 
-  it("drops a sample whose rows carry a key the domain denies", () => {
+  it("leaves a denied column out of every row and carries the rest", () => {
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary(), schema: schema(["name", "innerHtml"]), rows: [{ name: "Hollis", innerHtml: "<div>x</div>" }] }],
       deniedEvidenceKeys: ["inner_html"]
     });
-    expect(summary.recordSets[0]?.sampleRows).toBeUndefined();
+    expect(summary.recordSets[0]?.sampleRows).toEqual([{ name: "Hollis" }]);
+    expect(JSON.stringify(summary)).not.toContain("<div>x</div>");
     expect(summary.withheld).toBe(true);
   });
 
-  it("drops a sample whose rows carry credential-shaped text", () => {
+  it("replaces a credential-shaped value with a marker and carries the rest of the row", () => {
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary(), schema: schema(["name", "note"]), rows: [{ name: "Hollis", note: "Authorization: Bearer abcd1234efgh5678ijkl9012" }] }],
       deniedEvidenceKeys: []
     });
-    expect(summary.recordSets[0]?.sampleRows).toBeUndefined();
+    expect(summary.recordSets[0]?.sampleRows).toEqual([{ name: "Hollis", note: "[withheld]" }]);
+    expect(summary.withheld).toBe(true);
   });
 
-  it("carries only the columns the schema names, cut to a fixed value length, with nested values withheld", () => {
-    const long = "x".repeat(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxValueLength + 40);
+  it("carries only the columns the schema names, each value whole, nested values included", () => {
+    const long = "x".repeat(5_000);
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{
         summary: datasetSummary({ recordCount: 1 }),
@@ -160,23 +165,8 @@ describe("summarizeAutomationStudioRunResult", () => {
     });
     const sampled = summary.recordSets[0]?.sampleRows?.[0] ?? {};
     expect(Object.keys(sampled)).toEqual(["name", "detail"]);
-    expect(String(sampled.name).length).toBe(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxValueLength + 1);
-    expect(sampled.detail).toBe("[withheld]");
-  });
-
-  it("stays inside its byte budget by dropping every sample rather than sending a large one", () => {
-    const wide = schema(Array.from({ length: 20 }, (_field, index) => `field${index}`));
-    const heavyRow: JsonObject = Object.fromEntries(wide.fields.map((field) => [field.id, "y".repeat(110)]));
-    const summary = summarizeAutomationStudioRunResult({
-      recordSets: [
-        { summary: datasetSummary({ datasetId: "a", recordCount: 4 }), schema: wide, rows: [heavyRow, heavyRow, heavyRow, heavyRow] },
-        { summary: datasetSummary({ datasetId: "b", recordCount: 4 }), schema: wide, rows: [heavyRow, heavyRow, heavyRow, heavyRow] }
-      ],
-      deniedEvidenceKeys: []
-    });
-    expect(Buffer.byteLength(JSON.stringify(summary), "utf8")).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes);
-    expect(summary.recordSets.every((set) => set.sampleRows === undefined)).toBe(true);
-    expect(summary.withheld).toBe(true);
+    expect(sampled.name).toBe(long);
+    expect(sampled.detail).toEqual({ nested: "value" });
   });
 });
 
@@ -227,7 +217,7 @@ describe("the required-value check", () => {
     expect(summary.recordSets[0]?.missingRequiredColumns).toEqual([]);
   });
 
-  it("checks the rows it was given to check, not only the few it samples, and still samples only a few", () => {
+  it("checks the rows it was given to check", () => {
     const good = { address: "9 Mill Lane", price: "£395,000" };
     const checkedRows = [good, good, good, good, good, { address: "12 Dene Road", price: "" }];
     const summary = summarizeAutomationStudioRunResult({
@@ -236,7 +226,7 @@ describe("the required-value check", () => {
     });
     expect(summary.recordSets[0]?.rowsChecked).toBe(6);
     expect(summary.recordSets[0]?.rowsMissingRequired).toBe(1);
-    expect(summary.recordSets[0]?.sampleRows?.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxSampleRowsPerSet);
+    expect(summary.recordSets[0]?.sampleRows).toHaveLength(4);
   });
 
   it("checks whether or not any row may be sampled, since nothing it reads is sent", () => {
@@ -256,13 +246,14 @@ describe("the required-value check", () => {
     expect(summary.totalRowsMissingRequired).toBe(0);
   });
 
-  it("reads no more than its own bound of rows per set", () => {
+  it("checks every row it was given, with no bound", () => {
     const row = { address: "9 Mill Lane", price: "" };
-    const many = Array.from({ length: AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRowsCheckedPerSet + 50 }, () => row);
+    const many = Array.from({ length: 1_250 }, () => row);
     const summary = summarizeAutomationStudioRunResult({
       recordSets: [{ summary: datasetSummary({ datasetId: "homes", recordCount: many.length }), schema: homes, checkedRows: many }],
       deniedEvidenceKeys: []
     });
-    expect(summary.recordSets[0]?.rowsChecked).toBe(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxRowsCheckedPerSet);
+    expect(summary.recordSets[0]?.rowsChecked).toBe(1_250);
+    expect(summary.recordSets[0]?.rowsMissingRequired).toBe(1_250);
   });
 });

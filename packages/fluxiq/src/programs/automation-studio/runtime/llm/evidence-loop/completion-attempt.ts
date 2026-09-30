@@ -31,7 +31,7 @@ export type AutomationStudioLlmEvidenceCompletionAttempt =
     answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
     restoredStep?: AutomationStudioLlmEvidenceRestoredStep;
   }
-  | { kind: "ended"; code: "llm_evidence_loop.cancelled" | "llm_evidence_loop.evidence_limit" | "llm_evidence_loop.invalid_decision" }
+  | { kind: "ended"; code: "llm_evidence_loop.cancelled" | "llm_evidence_loop.invalid_decision" }
   | { kind: "threw"; error: unknown };
 
 /** Asks the check and the dry run about one completed result. */
@@ -40,7 +40,7 @@ export async function automationStudioLlmEvidenceCompletionAttempt(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   checkCompletion?: ((result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }) => AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>) | undefined;
   /** The loop's dry-run gate: nothing when the draft replayed clean or is not gated. */
-  dryRun(): Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
+  dryRun(): Promise<"cancelled" | { issueCodes: readonly string[] } | undefined>;
   signal?: AbortSignal | undefined;
 }): Promise<AutomationStudioLlmEvidenceCompletionAttempt> {
   let check: AutomationStudioLlmEvidenceCompletionCheck | undefined = { ok: true };
@@ -60,7 +60,6 @@ export async function automationStudioLlmEvidenceCompletionAttempt(input: {
   // world -- but asked whatever the check said.
   const replay = await input.dryRun();
   if (replay === "cancelled") return { kind: "ended", code: "llm_evidence_loop.cancelled" };
-  if (replay === "evidence_limit") return { kind: "ended", code: "llm_evidence_loop.evidence_limit" };
   const answerability = { ...(check.answerability ? { answerability: check.answerability } : {}), ...(check.restoredStep ? { restoredStep: check.restoredStep } : {}) };
   if (check.ok && !replay) return { kind: "accepted", ...answerability };
   return {

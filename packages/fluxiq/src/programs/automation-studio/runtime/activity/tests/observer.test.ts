@@ -16,7 +16,7 @@ afterEach(() => unsubscribe());
 
 const inScope = <T>(fn: () => Promise<T>) => runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, fn);
 const decideRequest = { iteration: 1, tools: [], evidence: [], decisionSchema: {}, canComplete: true };
-const call = (toolId: string) => ({ callId: "c1", toolId, value: {}, maxEvidenceBytes: 1_000 });
+const call = (toolId: string) => ({ callId: "c1", toolId, value: {} });
 
 function loopInput(overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}): AutomationStudioLlmEvidenceLoopInput {
   return {

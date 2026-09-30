@@ -108,6 +108,70 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): the model sees the whole page (`fluxiq`)
+
+Core no longer caps, ranks or trims what a model call is shown. Only two
+bounds remain: secret screening, and the $0.25 run cost ceiling. A request
+over the model's context window (1,000,000 tokens) is refused before it is
+sent, with its size, and is never trimmed. Read this entry if a domain binds an
+evidence runtime or harness options, a host supplies its own LLM provider, or a
+test pins a limit below.
+
+**Removed.**
+- `maxEvidenceBytes` on the `executeTool` input of
+  `AutomationStudioLlmEvidenceRuntimeBinding`, on
+  `AutomationStudioHarnessOptionExecution`, and on the harness-option loop
+  binding. A domain that passes it in an object literal fails to compile.
+- `withheldPackets` on the explored-evidence slot. A packet Core will not send
+  stands in the list as `{ schemaVersion:
+  "automation-studio.explored-packet-withheld.v1", withheld: <reason> }`.
+- `AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS`, the failure-evidence byte limit
+  (6,000 bytes), the recovery context byte budget and its omission reason
+  `byte_budget`, the result summary's 4,000-byte ceiling and sampling, the
+  repair parameter screen's depth, key, item and length caps, the reusable
+  context's five-record and 8,192-byte caps, and the 24,000-byte evidence
+  context window.
+- `AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE`. A recovery nobody
+  asked for no longer has a token pot of Core's own (it was 144,000 tokens):
+  its pot is the per-call total times the shares, lowered by a
+  `maxTokensPerRun` a person set or a resolver's `maxTotalTokensPerRun`.
+
+**Changed.**
+- The per-request ceiling
+  (`AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`, and the web
+  app's `FLOW_LLM_HARD_MAX_TOKENS`) is the model's window, 1,000,000 tokens; it
+  was 64,000. The session-key profile is 992,000 input, 8,000 output,
+  1,000,000 total.
+- One estimator measures a request everywhere: UTF-8 bytes / 3. The harness
+  measured characters / 4, so a request of about 3 to 4 MB passed the harness
+  and was refused by the adapter without its size.
+- `AutomationStudioLlmProvider` gains two optional methods. `measureInput`
+  returns the request's size as the provider will send it, and the harness
+  refuses on the larger of that and the packed request, so its size-carrying
+  refusal fires first. `estimateCostUsd` prices a call of a given size, and the
+  harness reserves that price against the run's ledger, under the call's cost
+  ceiling. A provider without them is measured on the packed request and held
+  at its ceiling, as before. The built-in DeepSeek adapter implements both.
+- The run ledger reserves each call at its own measured input tokens, not its
+  `maxInputTokens`. At the window profile a window-sized reservation was the
+  whole purse, and every call after the first was refused.
+- The recovery's patch reserve sizes each held call on the largest call the run
+  has made, priced by the provider, instead of on the token limits.
+- `AutomationStudioLlmProviderError` takes an optional eighth argument,
+  `inputSize`. On `llm.provider_input_budget_exceeded` the normalized failure
+  carries it, and its message states the size in numbers. Every other
+  pre-flight refusal keeps the one safe sentence.
+- A credential-shaped explored packet is withheld by the harness, in place,
+  rather than refused. The adapter still refuses a slot that carries one.
+- The repair parameter screen no longer treats the bare word `key` as a secret,
+  so a keyboard step's `key: "Enter"` reaches the repair. `apikey`,
+  `secretkey`, `privatekey`, `accesskey` and the other named kinds still
+  withhold, including across two adjacent words (`api_key`, `private_key_pem`).
+- Reusable context is ordered by creation time, newest first, with no ranking
+  by outcome, validation or review.
+- `flowParametersWithheld` on a result summary is no longer set by a new
+  summary.
+
 ### Next minor (unreleased): model calls need no execution grant (`fluxiq`)
 
 LLM execution grants are removed. A model call made while building, exploring,

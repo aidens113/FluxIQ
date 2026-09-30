@@ -231,9 +231,14 @@ is configuration, not a property of a runtime intent: only `diagnosis_only` is
 fixed at one call, because one diagnosis is all it asks for. What bounds every
 other run is its budget; see
 [Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds).
-No request setting may raise the absolute total-token ceiling above 50,000,
-and Core rejects a request before provider invocation when its estimated input
-plus output allowance exceeds the effective total. Provider transport output
+No request setting may raise the absolute total-token ceiling above the
+model's context window, 1,000,000 tokens
+(`AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`). Core measures
+a request once, with one estimator (UTF-8 bytes / 3), on the larger of the
+packed request and what the provider says it will send (`measureInput`), and
+rejects it before provider invocation when that estimated input plus the output
+allowance exceeds the effective total. The refusal states the estimated tokens,
+the bytes and the window; nothing is trimmed to fit. Provider transport output
 is untrusted: the harness parses strict registered structures, rejects extra
 fields and malformed usage, normalizes provider throws to terminal diagnostics,
 and persists only a compact structured-result summary without provider
@@ -253,8 +258,11 @@ allowance, a bounded timeout and abort signal, request/idempotency identifiers,
 and an opaque scoped secret resolver. A per-run reservation ledger is shared by
 every call a recovery makes (the diagnosis, each evidence decision, and the
 patch), so the total-token, output-token, and estimated-cost budgets, and a
-250-call runaway backstop, are reserved before transport dispatch. Failed or
-usage-less calls are charged conservatively.
+250-call runaway backstop, are reserved before transport dispatch. Each call is
+reserved at its own measured input tokens and, when the provider prices calls
+(`estimateCostUsd`), at its own worst-case price under the call's cost ceiling,
+never at its window-sized limit. Failed or usage-less calls are charged
+conservatively.
 
 **A model call is paid for by the person it is made for, and needs nothing
 else.** Building, exploring, repairing, verifying or judging, diagnosing and
@@ -394,10 +402,11 @@ where the schedule did not check it.
 The verification request's `flowShape` now gives each step its bounded label
 and the same screened authored parameters the repair context receives.
 `parametersWithheld` names dotted paths whose original value was removed or
-transformed; `flowParametersWithheld` distinguishes a flow-wide byte-budget
-omission from a step that simply had no parameters. `loop_verification` also
-receives the conversation and per-step record counts, while result data remains
-the bounded summary rather than unrestricted stored rows.
+transformed. There is no flow-wide byte budget, so `flowParametersWithheld` is
+set only on summaries written before 2026-09-30. `loop_verification` also
+receives the conversation and per-step record counts, and result data is every
+record set, column and stored row the run kept, screened for the domain's
+denied keys and credential-shaped values but not sampled or cut to a size.
 
 A `does_not_answer` verdict carries
 `automation-studio.result-repair-directive.v1`: Core-authored coded findings and
@@ -445,8 +454,9 @@ raises a request for the person.
 
 Whichever way a run's calls are paid for, they are made one at a time, and
 each releases the key afresh through its own one-use Secret Keys authorization.
-Every request carries at most 50,000 total tokens and a finite per-call timeout
-and cost ceiling, and the run ledger reserves its worst case before dispatch and
+Every request carries at most the model's context window (1,000,000 total
+tokens) and a finite per-call timeout and cost ceiling, and the run ledger
+reserves the request's own measured size and price before dispatch and
 charges it what it reported using, or its worst case when that report is
 missing or inconsistent. Cancellation, the run's abort signal, the recovery
 deadline, or service close aborts the call in flight. No password, PIN, or
@@ -1031,8 +1041,11 @@ its own name:
    refusal, a key Secret Keys would not release, or a provider refusing the
    request, ends the exploration.
 6. **The patch reserve.** Before an exploration starts, the recovery reserves
-   one patch-sized call on the run ledger: the patch's token limits and its
-   per-call cost. The ledger refuses, on its ordinary codes, any exploration
+   one patch-sized call on the run ledger, sized on the largest call the run
+   has already made (the diagnosis, which carries the same evidence and
+   context) and priced by the provider under the per-call cost ceiling. It was
+   sized on the token limits, which at the window profile made one held call
+   the whole purse. The ledger refuses, on its ordinary codes, any exploration
    decision that would eat into that reservation, and the recovery releases it
    just before the patch. A reservation the run cannot afford is not taken.
    When the resolution declares a call count, the exploration's own call

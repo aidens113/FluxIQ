@@ -346,12 +346,14 @@ describe("route-state captures per recorded build", () => {
       rows[name] = { decisions: decisions.length, before, afterReported: 0, afterUnreported, callsBeforeUnseen };
     }
     console.table(rows);
-    // The old trigger is a high-water mark on the shown count, which stops growing once the window is full:
-    // it fired rarely, and missed most of the states these builds reached.
+    // The old trigger is a high-water mark on the shown count. While the window was capped it stopped
+    // growing once the window was full and missed most of the states these builds reached; with every
+    // evidence entry shown (2026-09-30) it grows with the evidence, and still misses a call whose
+    // evidence did not add an entry.
     expect(rows).toEqual({
-      "bigbox-run6": { decisions: 37, before: 7, afterReported: 0, afterUnreported: 17, callsBeforeUnseen: 13 },
-      crossborder: { decisions: 22, before: 5, afterReported: 0, afterUnreported: 11, callsBeforeUnseen: 8 },
-      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 32, callsBeforeUnseen: 28 }
+      "bigbox-run6": { decisions: 37, before: 15, afterReported: 0, afterUnreported: 17, callsBeforeUnseen: 7 },
+      crossborder: { decisions: 22, before: 12, afterReported: 0, afterUnreported: 11, callsBeforeUnseen: 2 },
+      "everything-store-run4": { decisions: 48, before: 29, afterReported: 0, afterUnreported: 32, callsBeforeUnseen: 6 }
     });
   });
 

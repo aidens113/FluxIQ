@@ -633,18 +633,17 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(postRefusal.every((observation) => observation.registeredRecordProducerCount === 1)).toBe(true);
     expect(postRefusal.every((observation) => observation.visibleRecordProducerCount === 1)).toBe(true);
     for (const observation of postRefusal) {
+      // The draft is shown whole (2026-09-30): no 4,000-byte cap to stay
+      // under, and every step listed with its argument.
       expect(observation.draft).toMatchObject({
         present: true,
-        budget: 4_000,
         // Decision 24's look falls in the wrap-up and is not run, so it adds no
         // step; decision 25's rerun amendment is offered there, and does.
         steps: observation.iteration - 4 - (observation.iteration > 24 ? 1 : 0),
         unlisted: 0,
         withoutInput: 0,
-        inputTooLarge: 0,
-        overBudget: false
+        inputTooLarge: 0
       });
-      expect(observation.draft.bytes).toBeLessThanOrEqual(observation.draft.budget);
     }
 
     // **This is `run-mulryg6h-ff241a12`'s ending, reproduced.** It used to read

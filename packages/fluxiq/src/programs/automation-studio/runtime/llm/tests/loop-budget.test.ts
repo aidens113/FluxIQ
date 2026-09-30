@@ -44,7 +44,7 @@ describe("an evidence loop given a budget", () => {
       .mockResolvedValueOnce(look(1, 10_000)).mockResolvedValueOnce(look(2, 10_000))
       .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 10_000 } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 20, maxToolCalls: 20, maxEvidenceContextBytes: 2_048,
+      tools, decide, maxIterations: 20, maxToolCalls: 20,
       budget: { maxTotalTokens: 200_000, maxTokensPerDecision: 20_000, maxCostUsd: 1 },
       executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
     });
@@ -54,7 +54,8 @@ describe("an evidence loop given a budget", () => {
     // Nothing is spent before the first decision, so it carries no budget entry.
     expect(shown.map((evidence) => budgetOf(evidence)?.decisionsLeft)).toEqual([undefined, 17, 16]);
     expect(budgetOf(shown[2]!)).toEqual({ code: "llm_evidence_loop.budget", decisionsLeft: 16, tokensLeft: 170_000, costLeftUsd: expect.closeTo(0.985, 3), instruction: expect.stringContaining("Plan to complete") });
-    for (const evidence of shown) expect(Buffer.byteLength(JSON.stringify(evidence), "utf8")).toBeLessThanOrEqual(2_048);
+    // Every result is shown whole, in call order, before the budget entry.
+    expect(shown[2]!.filter((entry) => entry.toolId === "inspect").map((entry) => entry.value.page)).toEqual([1, 2]);
   });
 
   it("offers its last decision only completion, and the build ends with a result", async () => {

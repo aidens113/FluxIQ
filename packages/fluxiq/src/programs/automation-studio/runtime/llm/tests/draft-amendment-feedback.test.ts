@@ -118,21 +118,21 @@ describe("an amendment the draft refused", () => {
     expect(feedbackShown(decide, 2)).toBeUndefined();
   });
 
-  // The entry is counted against the byte limit like any other the loop adds.
-  // The row is recorded first, so the record still says what the decision was
-  // and why it changed nothing even when there is no room to say it to the model.
-  it("ends the loop on the evidence limit when there is no room left for it, and keeps the row", async () => {
+  // No byte limit ends a loop any more: after a large result the refusal is
+  // still shown to the model, and the loop asks again.
+  it("is shown however large the evidence before it, and the loop goes on", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValue(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, maxEvidenceBytes: 1_024, maxEvidenceContextBytes: 1_024,
-      unusableDecisions: { stalled }, executeTool: pressing(850)
+      tools, decide, maxIterations: 8, maxToolCalls: 8,
+      unusableDecisions: { stalled }, executeTool: pressing(2_000_000)
     });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.evidence_limit" });
+    expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({ amended: 0, amendmentsRefused: [{ step: 9, reason: "no_such_step" }] });
-    expect(decide).toHaveBeenCalledTimes(2);
+    const shown = decide.mock.calls[2]![0].evidence as { toolId: string }[];
+    expect(shown.some((entry) => entry.toolId === "core.amendment_check")).toBe(true);
   });
 });
 

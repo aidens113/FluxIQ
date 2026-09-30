@@ -19,9 +19,8 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLlmDecisionContextClosedCode } from "./closed-code.ts";
 
-/** How many objects of accounts are kept in all, and how many fields of each. */
-const MAX_OBJECTS = 8;
-const MAX_FIELDS = 4;
+// Every account object and every closed field of each is kept: there is no
+// count limit on what a row carries (`../context-window.ts`).
 
 /** Keys read as codes at the top of the feedback. */
 const CODE_KEYS = ["code", "refusal"] as const;
@@ -38,32 +37,29 @@ export function automationStudioLlmDecisionContextClosedDetail(feedback: unknown
     if (code) detail[key] = code;
   }
   if (Array.isArray(feedback.refusals)) {
-    const refusals = feedback.refusals.flatMap((value) => automationStudioLlmDecisionContextClosedCode(value) ?? []).slice(0, MAX_OBJECTS);
+    const refusals = feedback.refusals.flatMap((value) => automationStudioLlmDecisionContextClosedCode(value) ?? []);
     if (refusals.length) detail.refusals = refusals;
   }
-  let room = MAX_OBJECTS;
   for (const [key, value] of Object.entries(feedback)) {
-    if (UNREAD_KEYS.has(key) || !FIELD_NAME.test(key) || room <= 0) continue;
+    if (UNREAD_KEYS.has(key) || !FIELD_NAME.test(key)) continue;
     // An account is a list of objects; one written as a single object is a
     // list of one.
     const objects = (Array.isArray(value) ? value : [value]).flatMap((item: unknown) => isObject(item) ? [item] : []);
-    const kept = objects.slice(0, room).flatMap((item) => {
+    const kept = objects.flatMap((item) => {
       const fields = closedFields(item);
       return fields ? [fields] : [];
     });
     if (!kept.length) continue;
-    room -= kept.length;
     detail[key] = kept;
   }
   return Object.keys(detail).length ? detail : undefined;
 }
 
-/** An object's fields whose names and values are closed, at most `MAX_FIELDS` of them. */
+/** An object's fields whose names and values are closed. */
 function closedFields(item: { [key: string]: JsonValue | undefined }): JsonObject | undefined {
   const fields: JsonObject = {};
   let count = 0;
   for (const [key, value] of Object.entries(item)) {
-    if (count >= MAX_FIELDS) break;
     if (!FIELD_NAME.test(key)) continue;
     const kept = Number.isInteger(value) ? value as number : automationStudioLlmDecisionContextClosedCode(value);
     if (kept === undefined) continue;

@@ -50,9 +50,8 @@ export function automationStudioLlmEvidenceHandleFailedCall(
     return end("llm_evidence_loop.tool_failed");
   }
   const failureRecord = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
-  const recordBytes = context.reserveEvidence(failureRecord);
-  context.recordRow(recordBytes === undefined ? step : { ...step, evidenceBytes: recordBytes }, { draftChanged });
-  if (recordBytes === undefined) return end("llm_evidence_loop.evidence_limit");
+  const recordBytes = context.accountEvidence(failureRecord);
+  context.recordRow({ ...step, evidenceBytes: recordBytes }, { draftChanged });
   context.evidence.push({ callId, toolId: tool.toolId, value: failureRecord });
   noProgress.redirect(iteration);
   return { kind: "continue" };

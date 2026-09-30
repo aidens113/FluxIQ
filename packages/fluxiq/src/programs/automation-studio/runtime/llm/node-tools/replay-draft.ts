@@ -38,16 +38,14 @@ import {
   automationStudioNodeReplayToolId
 } from "./replay.ts";
 
-/** What the caller has to lend a replay: the executor, and how to bound it. */
+/** What the caller has to lend a replay: the executor. */
 export type AutomationStudioFlowDraftReplayInput = {
   steps: readonly AutomationStudioFlowDraftStep[];
   /** 1 for the first replay of this build. */
   attempt: number;
   /** Steps already put to the model as unreproducible (`../../flow-draft/dry-run.ts`). */
   asked: ReadonlySet<string>;
-  /** What one replayed step's evidence may cost, the same bound a tool call gets. */
-  maxEvidenceBytes: number;
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   signal?: AbortSignal;
 };
 
@@ -159,7 +157,7 @@ async function call(
   value: JsonObject
 ): Promise<ReplayAnswer> {
   try {
-    const ran = await input.executeTool({ callId, toolId, value, maxEvidenceBytes: input.maxEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) });
+    const ran = await input.executeTool({ callId, toolId, value, ...(input.signal ? { signal: input.signal } : {}) });
     const result = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
     return result ? { readable: true, result } : { readable: false };
   } catch (error) {

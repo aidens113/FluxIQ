@@ -45,9 +45,6 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY = "resultRepair";
 /** How many consecutive attempts may leave the answer unchanged before the loop stops. */
 const MAX_UNCHANGED_IN_A_ROW = 2;
 
-/** The longest text of one step's parameters an attempt keeps. */
-const MAX_PARAMETERS_CHARS = 1_200;
-
 /** Why a refuted run was not re-authored again, in codes a reader can key on. */
 export type AutomationStudioResultRepairStop =
   /** Every attempt the bound allows has been made. */
@@ -101,7 +98,7 @@ export function automationStudioResultRepairHistoryEntry(input: {
       totalRecordCount: input.summary.totalRecordCount,
       recordSets: input.summary.recordSets.map((set) => ({ recordCount: set.recordCount, columns: [...set.columns] }))
     },
-    ...(shape ? { step: { nodeId: shape.nodeId, definitionId: shape.definitionId, ...(parameters ? { parameters: parameters.slice(0, MAX_PARAMETERS_CHARS) } : {}) } } : {}),
+    ...(shape ? { step: { nodeId: shape.nodeId, definitionId: shape.definitionId, ...(parameters ? { parameters } : {}) } } : {}),
     answerDigest: answerDigest(input.summary, directive)
   };
 }

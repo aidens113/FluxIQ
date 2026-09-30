@@ -37,9 +37,8 @@ function gate(steps: AutomationStudioFlowDraftStep[]) {
   const dryRun = automationStudioFlowDraftDryRunGate({
     enabled: true,
     steps,
-    maxEvidenceBytes: 8_000,
     executeTool,
-    reserveEvidence: () => 1,
+    accountEvidence: () => 1,
     showEvidence: (entry) => shown.push(entry.callId),
     targetMoved
   });

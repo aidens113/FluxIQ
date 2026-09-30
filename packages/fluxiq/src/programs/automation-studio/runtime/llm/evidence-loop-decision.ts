@@ -408,12 +408,21 @@ function isPosition(value: unknown): boolean { return value === undefined || (Nu
 function validId(value: unknown): value is string { return typeof value === "string" && /^[a-z0-9_.:-]{1,200}$/i.test(value); }
 function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 function isJsonObject(value: unknown): value is JsonObject { return isRecord(value) && isJsonValue(value); }
+/** How deep a JSON value may nest before it is refused: a recursion guard, not a size limit. */
+const AUTOMATION_STUDIO_LLM_JSON_MAX_DEPTH = 64;
+
+/**
+ * Whether a value is JSON. No count or length limit: a whole page arrives as
+ * one tool result with thousands of elements, and every one of them is shown
+ * to the model (`./context-window.ts`). What stays is what makes it JSON at
+ * all -- no cycle, finite numbers -- and a recursion guard.
+ */
 function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0): value is JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (!value || typeof value !== "object" || depth > 20 || seen.has(value)) return false;
+  if (!value || typeof value !== "object" || depth > AUTOMATION_STUDIO_LLM_JSON_MAX_DEPTH || seen.has(value)) return false;
   seen.add(value);
-  if (Array.isArray(value)) return value.length <= 1_000 && value.every((item) => isJsonValue(item, seen, depth + 1));
-  const entries = Object.entries(value as Record<string, unknown>);
-  return entries.length <= 1_000 && entries.every(([key, item]) => key.length <= 500 && isJsonValue(item, seen, depth + 1));
+  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen, depth + 1));
+  return Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen, depth + 1));
 }
+

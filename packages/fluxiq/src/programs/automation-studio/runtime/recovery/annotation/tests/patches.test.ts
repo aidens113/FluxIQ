@@ -397,7 +397,6 @@ function carried(): AutomationStudioLlmContextPacket["explorationEvidence"] {
     instructions: [],
     deniedEvidenceKeys: [],
     explorationEvidence: {
-      maxBytes: 8_000,
       packets: [
         { evidenceId: "explored.1", toolId: "example.inspect", packet: { schemaVersion: "example.page.v1", page: "page.before-reveal", controls: ["candidate.1"] } },
         { evidenceId: "explored.2", toolId: "example.reveal", packet: { schemaVersion: "example.page.v1", page: "page.after-reveal", controls: ["candidate.1", "candidate.7"] } }

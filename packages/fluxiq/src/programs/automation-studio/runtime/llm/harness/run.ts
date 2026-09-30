@@ -9,6 +9,8 @@ import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryA
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
+import type { AutomationStudioLlmProvider } from "./provider.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
 import { validRequestIdentity } from "./json-bounds.ts";
 import { automationStudioLlmScreenedProviderThrow } from "./throw-screen.ts";
@@ -18,7 +20,6 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, A
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD,
-  estimateTokens,
   resolveAutomationStudioLlmTokenLimits,
   validateAutomationStudioLlmUsage
 } from "./token-limits.ts";
@@ -64,7 +65,13 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
     ...(input.dryRun ? { dryRun: true } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
-  const estimatedInputTokens = estimateTokens(JSON.stringify(request));
+  // What the request measures, stated on any refusal below: a request over the
+  // model's context window is refused loudly and never trimmed to fit. One
+  // estimator (UTF-8 bytes / 3) for the harness and the adapter alike, and the
+  // larger of the two measures -- the packed request, and the messages the
+  // provider will actually send -- so the adapter can never refuse, without a
+  // size, a request this passed.
+  const { estimatedInputTokens, estimatedInputBytes } = measuredInput(request, input.provider);
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
   // sent, and only when one was made: absent stays absent, never an empty list.
@@ -96,10 +103,10 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   });
   if (!Number.isFinite(maxEstimatedCostUsd) || maxEstimatedCostUsd <= 0 || maxEstimatedCostUsd > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD) budgetDiagnostics.push({ severity: "error", code: "llm_budget.invalid_cost_limit", message: "Estimated cost limit is outside the server range.", path: "maxEstimatedCostUsd" });
   if (estimatedInputTokens > request.tokenLimits.maxInputTokens) {
-    budgetDiagnostics.push({ severity: "error", code: "llm_budget.input_limit_exceeded", message: "Packed LLM request exceeds the configured input-token limit.", path: "context", metadata: { estimatedInputTokens, maxInputTokens: request.tokenLimits.maxInputTokens } });
+    budgetDiagnostics.push({ severity: "error", code: "llm_budget.input_limit_exceeded", message: `Packed LLM request is an estimated ${estimatedInputTokens} input tokens (${estimatedInputBytes} bytes), over its ${request.tokenLimits.maxInputTokens}-token input limit: the ${request.tokenLimits.maxTotalTokens}-token context window less ${request.tokenLimits.maxOutputTokens} reserved for the reply. It was not sent, and nothing was trimmed to fit.`, path: "context", metadata: { estimatedInputTokens, estimatedInputBytes, maxInputTokens: request.tokenLimits.maxInputTokens, maxOutputTokens: request.tokenLimits.maxOutputTokens, maxTotalTokens: request.tokenLimits.maxTotalTokens } });
   }
   if (estimatedInputTokens + request.tokenLimits.maxOutputTokens > request.tokenLimits.maxTotalTokens) {
-    budgetDiagnostics.push({ severity: "error", code: "llm_budget.request_total_exceeded", message: "Estimated input plus the requested output allowance exceeds the configured total-token limit.", path: "tokenLimits", metadata: { estimatedInputTokens, maxOutputTokens: request.tokenLimits.maxOutputTokens, maxTotalTokens: request.tokenLimits.maxTotalTokens } });
+    budgetDiagnostics.push({ severity: "error", code: "llm_budget.request_total_exceeded", message: `Packed LLM request is an estimated ${estimatedInputTokens} input tokens (${estimatedInputBytes} bytes) plus ${request.tokenLimits.maxOutputTokens} reserved for the reply, over the ${request.tokenLimits.maxTotalTokens}-token context window. It was not sent, and nothing was trimmed to fit.`, path: "tokenLimits", metadata: { estimatedInputTokens, estimatedInputBytes, maxOutputTokens: request.tokenLimits.maxOutputTokens, maxTotalTokens: request.tokenLimits.maxTotalTokens } });
   }
   if (budgetDiagnostics.some((diagnostic) => diagnostic.severity === "error")) {
     const diagnostics = [...context.instructions.diagnostics, ...budgetDiagnostics];
@@ -128,9 +135,15 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     ? input.runBudget.reserve({
       runId: input.runId,
       requestId,
-      estimatedInputTokens: request.tokenLimits.maxInputTokens,
+      // The request's own measured size, not its limit: the limit is now the
+      // model's window (992,000 tokens), and reserving it on every call priced
+      // each one as a full-window request against the run's ledger.
+      estimatedInputTokens,
       maxOutputTokens: request.tokenLimits.maxOutputTokens
-      , maxEstimatedCostUsd: request.maxEstimatedCostUsd
+      // The request's own worst case, under its ceiling: a small call is not
+      // held at the price of a full window, which at the window profile is
+      // the whole $0.25 purse and refused every call after the first.
+      , maxEstimatedCostUsd: reservedCostUsd(input.provider, estimatedInputTokens, request.tokenLimits.maxOutputTokens, request.maxEstimatedCostUsd)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.
       , call: {
@@ -201,6 +214,8 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
         metadata: {
           retryable: failure.retryable,
           ...(failure.status !== undefined ? { providerStatus: failure.status } : {}),
+          // The refused request's size, when the adapter refused it as too large.
+          ...(failure.inputSize ? { inputSize: failure.inputSize } : {}),
           // Metadata, never the diagnostic's message: the message is what an
           // intervention's validation line prints.
           ...(providerThrow ? { providerThrow } : {})
@@ -306,4 +321,40 @@ function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount
       }))
     }
   }];
+}
+
+/**
+ * The request's size by Core's one estimator: the packed request, and -- when
+ * the provider says how it will measure it -- the messages it will send,
+ * whichever is larger. A provider's measure that throws is not a size; the
+ * packed request stands and the provider refuses the request by its own code.
+ */
+function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined): { estimatedInputTokens: number; estimatedInputBytes: number } {
+  const packedBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
+  const packed = { estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(packedBytes), estimatedInputBytes: packedBytes };
+  let sent: { estimatedInputTokens: number; estimatedInputBytes: number } | undefined;
+  try {
+    sent = provider?.measureInput?.(request);
+  } catch {
+    sent = undefined;
+  }
+  return sent && Number.isSafeInteger(sent.estimatedInputTokens) && Number.isSafeInteger(sent.estimatedInputBytes) && sent.estimatedInputTokens > packed.estimatedInputTokens
+    ? { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes }
+    : packed;
+}
+
+/**
+ * What the ledger holds for this call: the provider's price for the request's
+ * own measured input plus the reply's allowance, never more than the call's
+ * cost ceiling. A provider that does not price, or prices nonsense, is held at
+ * the ceiling, as every call was before.
+ */
+function reservedCostUsd(provider: AutomationStudioLlmProvider, inputTokens: number, outputTokens: number, ceilingUsd: number): number {
+  let priced: number | undefined;
+  try {
+    priced = provider.estimateCostUsd?.({ inputTokens, outputTokens });
+  } catch {
+    priced = undefined;
+  }
+  return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? Math.min(ceilingUsd, priced) : ceilingUsd;
 }

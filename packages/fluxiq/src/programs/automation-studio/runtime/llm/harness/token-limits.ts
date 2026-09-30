@@ -1,28 +1,31 @@
+// Read at module evaluation, so from the leaf that imports no value: through
+// the deepseek barrel this module would re-enter the harness part-built by way
+// of the provider's pre-flight, and the constant would arrive undefined.
+import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS } from "../model-limits/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 
 /**
- * The most a single request may carry: Core's own ceiling, not the model's.
+ * The most a single request may carry: the model's context window.
  *
- * It was raised to 64,000 because that was `deepseek-chat`'s whole context
- * window, and while that alias was the only model Core would send to, Core's
- * ceiling and the model's window were the same number. They are not any more.
- * `deepseek-flash` carries 1,000,000 tokens of context and will generate up to
- * 384,000 in one reply (`AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS`), so this
- * number is now a budget decision rather than a physical limit, and it is left
- * where it is deliberately: at the peak cache-miss rate a 64,000-token request
- * costs about $0.019, and a 1,000,000-token one about $0.30 -- before output,
- * and before the run's other calls. Raising it raises what a single mistaken
- * call can spend by the same factor, so it is moved on purpose or not at all.
+ * Derived, never restated: the largest `contextTokens` in
+ * `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` (1,000,000 for both models today).
+ * It was Core's own ceiling of 64,000 (and 50,000 before that), set as a
+ * budget decision; with whole-page evidence that ceiling hid the page from the
+ * model, and the standing decision of 2026-09-30 is that the only limit on a
+ * request is the model's window. A request over it is refused before it is
+ * sent, with its measured size (`./run.ts`, `../deepseek/provider.ts`), and is
+ * never trimmed to fit.
  *
- * This was 50_000 and is the deepest of the seven places that held a ceiling of
- * this kind -- the Lab's default budget and contract cap, the Lab plan's bound,
- * the campaign's own arguments, this program's default, the API handler's
- * settings bound, and the provider's final check. Every one of them had to move
- * together: raising any single one was silently clamped by the next, which is
- * why the first attempt at this changed nothing observable.
+ * Spend is not bounded here. The run's $0.25 cost ceiling and the per-call
+ * cost check derived from it (`../flow-execution-limits/`) are what stop a
+ * build spending, and they are unchanged.
+ *
+ * Every other per-request ceiling reads this: the API handler's Flow-settings
+ * bound, the provider's pre-flight, the session-key profile and the web app's
+ * Flow settings form.
  */
-export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST = 64_000;
+export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST: number = AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS;
 export const AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD = 0.25;
 export const AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD = 10;
 
@@ -54,7 +57,7 @@ export function resolveAutomationStudioLlmTokenLimits(input?: Partial<Automation
       diagnostics.push({
         severity: "error",
         code: "llm_budget.absolute_token_ceiling",
-        message: `${key} cannot exceed the absolute ${AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST}-token per-request ceiling.`,
+        message: `${key} cannot exceed the model's ${AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST}-token context window.`,
         path: `tokenLimits.${key}`
       });
       return AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST;

@@ -37,7 +37,7 @@ describe("the draft a build accrues", () => {
   // Three presses share one tool id, so the window keeps one of their results.
   // The draft is placed beside the window, so all three are in front of the
   // model when it writes the Flow -- which is the whole point of it.
-  it("is shown beside the window, and survives what the window evicts", async () => {
+  it("is shown beside every result, each whole", async () => {
     const page = { markup: "z".repeat(3_000) };
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
@@ -45,14 +45,14 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(3))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, maxEvidenceContextBytes: 6_000,
+      tools, decide, maxIterations: 8, maxToolCalls: 8,
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: page, effectApplied: true })
     });
     const shown = decide.mock.calls[3]?.[0].evidence as { callId: string; toolId: string; value: unknown }[];
     const draft = shown.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: { step: number; input: unknown }[] };
     expect(draft.steps.map((step) => step.input)).toEqual([{ target: "target.1" }, { target: "target.2" }, { target: "target.3" }]);
-    // The window itself could not hold all three results at this size.
-    expect(shown.filter((entry) => entry.toolId === "press").length).toBeLessThan(3);
+    // Every result is shown too, in call order: nothing is evicted.
+    expect(shown.filter((entry) => entry.toolId === "press").map((entry) => entry.value)).toEqual([page, page, page]);
   });
 
   it("lets the model mark a step exploratory, and says so next time", async () => {

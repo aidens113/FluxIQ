@@ -1,4 +1,5 @@
 import {
+  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   automationStudioLlmRequestEvidenceRefusal,
   isAutomationStudioLlmRecentActionContext,
@@ -11,7 +12,14 @@ import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-
 import { automationStudioDeepSeekExpectedOutput } from "./output-schema.ts";
 import { isRecord } from "./json-record.ts";
 
-const AUTOMATION_STUDIO_DEEPSEEK_MAX_INTERNAL_CONTEXT_ENTRIES = 20_000;
+/**
+ * How deep the request context may nest: a recursion guard, not a size limit.
+ * There is no count, entry-total, string- or key-length limit on the context:
+ * a whole page is thousands of elements, and every one is sent. The only bound
+ * on a request's size is the model's context window, checked with the
+ * request's measured size (`./provider.ts`).
+ */
+const AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_DEPTH = 64;
 
 // Each check refuses with its own code, in the order they are made. They were
 // one condition and one code, which is how a stale field list went unnoticed.
@@ -33,7 +41,7 @@ export function validateAutomationStudioDeepSeekRequest(request: AutomationStudi
   if (!Number.isInteger(request.estimatedInputTokens) || request.estimatedInputTokens < 0
     || !Number.isFinite(request.maxEstimatedCostUsd) || request.maxEstimatedCostUsd <= 0 || request.maxEstimatedCostUsd > 10
     || !Number.isInteger(limits.maxInputTokens) || !Number.isInteger(limits.maxOutputTokens) || !Number.isInteger(limits.maxTotalTokens)
-    || limits.maxInputTokens <= 0 || limits.maxOutputTokens <= 0 || limits.maxTotalTokens <= 0 || limits.maxTotalTokens > 64_000
+    || limits.maxInputTokens <= 0 || limits.maxOutputTokens <= 0 || limits.maxTotalTokens <= 0 || limits.maxTotalTokens > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST
     || limits.maxInputTokens > limits.maxTotalTokens || limits.maxOutputTokens > limits.maxTotalTokens
     || request.estimatedInputTokens > limits.maxInputTokens || request.estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens) {
     refuse("llm.provider_request_limits_invalid", "DeepSeek request token or cost limits are invalid.");
@@ -53,14 +61,12 @@ function validRecentActions(actions: unknown): boolean {
 function boundedJson(root: unknown): boolean {
   const stack: Array<{ value: unknown; depth: number; leave?: true }> = [{ value: root, depth: 0 }];
   const active = new Set<object>();
-  let entries = 0;
   while (stack.length) {
     const { value, depth, leave } = stack.pop()!;
-    if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) continue;
-    if (typeof value === "string") { if (value.length > 20_000) return false; continue; }
+    if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) continue;
     if (!value || typeof value !== "object") return false;
     if (leave) { active.delete(value); continue; }
-    if (depth > 20 || active.has(value)) return false;
+    if (depth > AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_DEPTH || active.has(value)) return false;
     active.add(value);
     stack.push({ value, depth, leave: true });
     let children: ReadonlyArray<readonly [string, unknown]>;
@@ -69,8 +75,6 @@ function boundedJson(root: unknown): boolean {
     } catch {
       return false;
     }
-    entries += children.length;
-    if (children.length > 1000 || entries > AUTOMATION_STUDIO_DEEPSEEK_MAX_INTERNAL_CONTEXT_ENTRIES || children.some(([key]) => key.length > 500)) return false;
     for (const [, child] of children) stack.push({ value: child, depth: depth + 1 });
   }
   return true;
@@ -105,15 +109,16 @@ function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["cont
     && selection.missingRequiredTerms.length === 0;
 }
 
-// The iteration and evidence bounds are the loop's own ceilings. They were a
-// literal sixteen here, left behind when the loop's ceiling was raised, so a
-// real exploration was refused at its seventeenth decision.
+// The iteration bound is the loop's own ceiling. It was a literal sixteen here,
+// left behind when the loop's ceiling was raised, so a real exploration was
+// refused at its seventeenth decision. There is no bound on how many evidence
+// entries a decision carries: it is shown every one (`../context-window.ts`).
 function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["context"]): boolean {
   const loop = context.evidenceLoop;
   if (!isRecord(loop) || !Number.isInteger(loop.iteration) || (loop.iteration as number) < 1
     || (loop.iteration as number) > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
     || !Array.isArray(loop.tools) || loop.tools.length > 32
-    || !Array.isArray(loop.evidence) || loop.evidence.length > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return false;
+    || !Array.isArray(loop.evidence)) return false;
   const ids = new Set<string>();
   for (const tool of loop.tools) {
     if (!isRecord(tool) || Object.keys(tool).some((key) => !["toolId", "description", "inputSchema", "effect", "perCallEffect", "repeatPolicy", "initialObservation"].includes(key))
