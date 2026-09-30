@@ -49,6 +49,22 @@ describe("AutomationStudioProjectDatabasePool", () => {
     await pool.closeAll();
   });
 
+  it("never hands a lease a database closed by the last release while that lease awaited its entry", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const first = await pool.acquire("project.race");
+    await first.database.run("create table items (id text primary key)");
+    const pending = pool.acquire("project.race");
+    const releasing = first.release();
+    const second = await pending;
+    await releasing;
+    await expect(second.database.run("insert into items (id) values (?)", ["after-release"])).resolves.toMatchObject({ changes: 1 });
+    await expect(second.database.get<{ count: number }>("select count(*) as count from items")).resolves.toEqual({ count: 1 });
+    expect(pool.stats().openProjects).toBe(1);
+    await second.release();
+    expect(pool.stats().openProjects).toBe(0);
+    await pool.closeAll();
+  });
+
   it("rejects project IDs that could escape the project database root", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     await expect(pool.acquire("../outside")).rejects.toThrow(/project ID/);

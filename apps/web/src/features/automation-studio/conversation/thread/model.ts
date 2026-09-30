@@ -101,26 +101,3 @@ export function sortConversationsForThreadList(conversations: readonly Conversat
 export function unansweredConversationCount(conversations: readonly Conversation[]): number {
   return conversations.reduce((total, conversation) => total + (conversation.pendingAskCount > 0 ? 1 : 0), 0);
 }
-
-/**
- * How a thread reads in the list. Core's own title when it opened the thread
- * with one -- "Nightly listings run" rather than "Run run.2026-09-22.nightly"
- * -- and the subject otherwise, which is still a name a person recognises even
- * if it is an id. Nothing is invented that Core did not send.
- */
-export function conversationSubjectLabel(conversation: Conversation): string {
-  return conversation.title ?? conversationSubjectFallbackLabel(conversation);
-}
-
-/** The subject as a noun and an id, for a thread Core opened without a title. */
-export function conversationSubjectFallbackLabel(conversation: Conversation): string {
-  const kind = conversation.subject.kind;
-  const noun = kind === "project" ? "Project" : kind === "flow" ? "Flow" : kind === "build" ? "Build" : "Run";
-  return `${noun} ${conversation.subject.id}`;
-}
-
-/** The one-line subtitle under a thread's name: what it is about, and whether it is closed. */
-export function conversationSubjectDetail(conversation: Conversation): string {
-  const subject = conversationSubjectFallbackLabel(conversation);
-  return conversation.status === "resolved" ? `${subject} - resolved` : subject;
-}

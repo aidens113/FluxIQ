@@ -131,10 +131,14 @@ export type ClientGatewayActivityPhase =
 
 /**
  * One activity event: the current status of one unit of work (a build or a
- * run) plus an optional detail row for the chat stream. Bounded and
- * content-free beyond what the person's own panel already shows: labels are
- * Core's own sentences, tool and node ids, and authored step labels; never
- * observed target content, tokens or secrets. Core truncates `label` to 160
+ * run) plus an optional detail row for the chat stream. Bounded, and
+ * content-free beyond what the person's own panel already shows: labels and
+ * titles are Core's own sentences, the actions a step's own input names, tool
+ * and node ids, and authored step labels; never raw evidence a tool gathered,
+ * tokens or secrets. A `thought` row's `text` is the model's own stated reason
+ * for that step (what it does next, on what, and why) or its diagnosis or
+ * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
+ * (240 characters for a decision's reason). Core truncates `label` to 160
  * characters, `detail.title` to 160 and `detail.text` to 1,000.
  */
 export type ClientGatewayActivity = {

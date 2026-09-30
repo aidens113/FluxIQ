@@ -1,13 +1,10 @@
-// The paced status, the words a step is said in, and the grouped stream.
+// The paced status and the words a step is said in.
 
 import { describe, expect, it } from "vitest";
-import type { ConversationTurn } from "../../thread";
 import {
   CONVERSATION_ACTIVITY_DETAIL_INTERVAL_MS,
   ConversationActivityPacer,
-  conversationActivityDuration,
   conversationActivitySentence,
-  conversationStream,
   type ConversationActivity,
   type ConversationActivityDisplay
 } from "..";
@@ -119,32 +116,5 @@ describe("the words a step is said in", () => {
     expect(conversationActivitySentence(raw)).toBe("Working on the page");
     expect(conversationActivitySentence(event(2, { label: "Using web.inspect", detail: { kind: "step", title: "Step 6" } }))).toBe("Step 6");
     expect(conversationActivitySentence(event(3, { label: "target_unobserved", detail: { kind: "check", title: "n3.web_click" } }))).toBe("Checking the Flow");
-  });
-});
-
-describe("the grouped stream", () => {
-  const turn = (turnId: string, createdAt: number, author: "person" | "automation"): ConversationTurn =>
-    ({ turnId, conversationId: "c.1", author, createdAt, text: turnId }) as ConversationTurn;
-
-  it("folds the rows between two turns into one group and leaves Core's notes out", () => {
-    const base = 1_790_000_000_000;
-    const stream = conversationStream({
-      turns: [turn("ask", base, "person"), turn("answer", base + 60_000, "automation")],
-      activity: [
-        event(1, { detail: { kind: "tool", title: "Looking at the page" } }),
-        event(2, { detail: { kind: "note", title: "Putting the page back" } }),
-        event(3, { detail: { kind: "step", title: "Running step 1" } }),
-        event(4),
-        event(70, { detail: { kind: "tool", title: "After the answer" } })
-      ]
-    });
-    expect(stream.map((entry) => entry.kind === "turn" ? entry.turn.turnId : entry.group.rows.map((row) => row.sequence).join(","))).toEqual(["ask", "1,3", "answer", "70"]);
-    expect(stream[1]!.key).toBe("activity:1");
-  });
-
-  it("says how long a group's work took from its own timestamps", () => {
-    expect(conversationActivityDuration([event(1)])).toBeNull();
-    expect(conversationActivityDuration([event(1), event(41)])).toBe("40s");
-    expect(conversationActivityDuration([event(1), event(126)])).toBe("2m 5s");
   });
 });

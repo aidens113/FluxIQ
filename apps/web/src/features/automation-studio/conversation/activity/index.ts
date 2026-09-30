@@ -1,5 +1,5 @@
 // Live activity in the chat: what Core is doing now, read from `get-activity`,
-// and where its rows sit among the thread's turns.
+// held per unit of work, and told as FluxIQ's step messages among the turns.
 
 export {
   parseConversationActivitySnapshot,
@@ -11,14 +11,8 @@ export {
   type ConversationActivitySnapshot,
   type ConversationActivityStep
 } from "./contracts";
-export {
-  CONVERSATION_ACTIVITY_HELD,
-  conversationActivityPollOutcome,
-  conversationActivityStepText,
-  interleaveConversationActivity,
-  mergeConversationActivity,
-  type ConversationThreadEntry
-} from "./model";
+export { CONVERSATION_ACTIVITY_HISTORY_LIMITS, holdConversationActivity, type ConversationActivityHistoryLimits } from "./history";
+export { conversationActivityPollOutcome, conversationActivityStepText } from "./model";
 export { getConversationActivity, type ConversationActivityQuery, type ConversationActivityReadResult } from "./queries";
 export { useConversationActivity, type ConversationActivityState } from "./useConversationActivity";
 export { conversationActivityHeadline, conversationActivityOutcome, type ConversationActivityOutcome } from "./headline";
@@ -28,6 +22,15 @@ export {
   type ConversationActivityClock,
   type ConversationActivityDisplay
 } from "./pacer";
-export { conversationActivityDuration, conversationStream, type ConversationActivityGroup, type ConversationStreamEntry } from "./stream";
+export {
+  conversationActivityIsInternal,
+  conversationStepMessages,
+  conversationStepOutcomeWords,
+  type ConversationStepMessage,
+  type ConversationStepMessageKind,
+  type ConversationStepOutcome,
+  type ConversationStepOutcomeWords
+} from "./steps";
+export { conversationStream, type ConversationStreamEntry } from "./stream";
 export { usePacedConversationActivity } from "./usePacedConversationActivity";
 export { conversationActivitySentence, conversationActivityTextIsHuman } from "./wording";

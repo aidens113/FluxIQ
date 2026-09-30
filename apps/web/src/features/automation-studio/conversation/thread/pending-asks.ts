@@ -13,7 +13,8 @@
 
 import type { Conversation, ConversationTurn } from "./contracts";
 import { parseConversations } from "./contracts";
-import { conversationSubjectLabel, pendingConversationTurn } from "./model";
+import { pendingConversationTurn } from "./model";
+import { conversationSubjectLabel } from "./naming";
 
 /** How many dismissals are remembered, matching the pairing prompt's bound. */
 export const CONVERSATION_DISMISSED_LIMIT = 20;

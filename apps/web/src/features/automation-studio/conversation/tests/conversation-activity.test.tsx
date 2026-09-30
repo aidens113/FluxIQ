@@ -1,6 +1,6 @@
-// The chat's live activity: the status drawn in place under the turn, the
-// steps folded between the turns, and the backoff that keeps reading while
-// Core is working.
+// The chat's live activity: each step FluxIQ took as its own message with its
+// reason, placed among the turns and kept after Core's snapshot moves on, the
+// live line at the end while Core works, and the backoff that keeps reading.
 
 import React from "react";
 import { readFileSync } from "node:fs";
@@ -49,8 +49,13 @@ function event(sequence: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function commands(activity: unknown[] | null): ConversationCommands {
-  const loadActivity = vi.fn(async () => ({ ok: true, snapshot: parseConversationActivitySnapshot({ current: activity?.at(-1) ?? null, recent: activity ?? [] }) }));
+function commands(activity: unknown[] | null, ...later: unknown[][]): ConversationCommands {
+  const reads = [activity ?? [], ...later];
+  let read = 0;
+  const loadActivity = vi.fn(async () => {
+    const recent = reads[Math.min(read++, reads.length - 1)]!;
+    return { ok: true, snapshot: parseConversationActivitySnapshot({ current: recent.at(-1) ?? null, recent }) };
+  });
   return {
     listConversations: vi.fn(async () => ({ ok: true, payload: { conversations: [conversation] } })) as any,
     loadConversation: vi.fn(async () => ({ ok: true, page: conversationThreadPage({ conversation, turns, hasMore: false }) })) as any,
@@ -67,6 +72,9 @@ function commands(activity: unknown[] | null): ConversationCommands {
 function eventTarget() {
   const listeners = new Map<string, Set<() => void>>();
   return {
+    fire(name: string) {
+      for (const listener of listeners.get(name) ?? []) listener();
+    },
     addEventListener(name: string, listener: () => void) {
       listeners.set(name, (listeners.get(name) ?? new Set()).add(listener));
     },
@@ -77,6 +85,7 @@ function eventTarget() {
 }
 
 let delays: number[] = [];
+let page: ReturnType<typeof eventTarget> & { visibilityState: string };
 
 async function mount(api: ConversationCommands) {
   let renderer!: ReactTestRenderer;
@@ -97,7 +106,8 @@ function textOf(node: any): string {
 describe("the chat's live activity", () => {
   beforeEach(() => {
     delays = [];
-    vi.stubGlobal("document", { visibilityState: "visible", ...eventTarget() });
+    page = { visibilityState: "visible", ...eventTarget() };
+    vi.stubGlobal("document", page);
     vi.stubGlobal("window", {
       ...eventTarget(),
       // Recorded, never fired: the cases read which beat each poll chose.
@@ -132,28 +142,59 @@ describe("the chat's live activity", () => {
     for (const leak of ["core.run_node", "web.action", "Result:", "n3", "Status:"]) expect(text).not.toContain(leak);
   });
 
-  it("folds the rows between two turns into one quiet group and hides Core's bookkeeping", async () => {
+  it("shows each step as its own FluxIQ message with its reason, between the turns, with no fold", async () => {
+    const build = { activityId: "build.3", subject: { kind: "build", id: "build.3", projectId: "project.one" }, step: undefined };
     const renderer = await mount(commands([
-      event(1),
-      event(2, { label: "Clicking “Get a quote” — done", detail: { kind: "tool", title: "Clicking “Get a quote”", status: "succeeded" }, at: new Date(1_790_000_015_000).toISOString() }),
-      event(3, { label: "Putting the page back", detail: { kind: "note", title: "Putting the page back to where the Flow starts" } }),
-      event(4, { phase: "done", label: "Finished", final: true, detail: undefined })
+      event(1, { ...build, phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } }),
+      event(2, { ...build, phase: "exploring", label: "Clicking “Get a quote”", detail: { kind: "thought", title: "Clicking “Get a quote”", text: "The quote form is behind this button.", status: "succeeded" } }),
+      event(3, { ...build, phase: "exploring", label: "Clicking “Get a quote” — done", detail: { kind: "tool", title: "Clicking “Get a quote”", status: "succeeded", ref: "core.run_node" } }),
+      event(4, { ...build, label: "Putting the page back", detail: { kind: "note", title: "Putting the page back to where the Flow starts" } }),
+      event(5, { ...build, phase: "done", label: "Finished", final: true, detail: undefined })
     ]));
-    const items = renderer.root.findAllByType("li").filter((item) => item.props["data-turn-id"] || item.props["data-activity-group"]);
-    expect(items.map((item) => item.props["data-turn-id"] ?? "activity")).toEqual(["turn.1", "activity", "turn.2"]);
-    const fold = renderer.root.findByType("details");
-    expect(textOf(fold.findByType("summary").children)).toBe("Worked for 5s · 2 steps");
-    const steps = textOf(fold.findByType("ol").children);
-    expect(steps).toContain("Running step 2 of 5");
-    expect(steps).toContain("Clicking “Get a quote”");
-    expect(textOf(renderer.toJSON())).not.toContain("Putting the page back");
-    // Settled: the fold says how it went, and no live status is left behind.
+    const items = renderer.root.findAllByType("li").filter((item) => item.props["data-turn-id"] || item.props["data-step-key"]);
+    expect(items.map((item) => item.props["data-turn-id"] ?? item.props["data-step-key"])).toEqual(["turn.1", "step:build.3#2", "turn.2"]);
+    const step = textOf(items[1]!.children);
+    expect(step).toContain("Clicking “Get a quote”");
+    expect(step).toContain("The quote form is behind this button.");
+    expect(step).toContain("Done");
+    const all = textOf(renderer.toJSON());
+    for (const hidden of ["Putting the page back", "Deciding the next step", "steps", "Worked for"]) expect(all).not.toContain(hidden);
+    expect(renderer.root.findAllByType("details")).toHaveLength(0);
+    // Settled: no live line is left behind.
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
   });
 
-  it("leads a failed group with how it ended", async () => {
+  it("says how failed work ended as its own message", async () => {
     const renderer = await mount(commands([event(1), event(2, { phase: "failed", label: "The run stopped", final: true, detail: undefined })]));
-    expect(textOf(renderer.root.findByType("summary").children)).toBe("Run failed · 1 step");
+    const steps = renderer.root.findAllByType("li").filter((item) => item.props["data-step-key"]);
+    expect(steps.map((item) => textOf(item.children))).toEqual([expect.stringContaining("Opened the listing page"), expect.stringContaining("Run failed")]);
+  });
+
+  it("keeps every step of a long build after Core's snapshot has moved past them, each message in place", async () => {
+    const build = { activityId: "build.9", subject: { kind: "build", id: "build.9", projectId: "project.one" }, step: undefined, phase: "exploring" };
+    const decision = (sequence: number) => event(sequence, {
+      ...build,
+      label: `Clicking result ${sequence}`,
+      detail: { kind: "thought", title: `Clicking result ${sequence}`, text: `Result ${sequence} matches the request.`, status: "succeeded" },
+      at: new Date(1_790_000_001_000 + sequence * 100).toISOString()
+    });
+    const first = Array.from({ length: 60 }, (_, index) => decision(index + 1));
+    const second = [...Array.from({ length: 59 }, (_, index) => decision(index + 62)), event(121, { ...build, phase: "done", label: "Finished", final: true, detail: undefined, at: new Date(1_790_000_019_000).toISOString() })];
+    const renderer = await mount(commands(first, second));
+    const stepItems = () => renderer.root.findAllByType("li").filter((item) => item.props["data-step-key"]);
+    expect(stepItems()).toHaveLength(60);
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(1);
+    const firstMessage = stepItems()[0]!.instance;
+    await act(async () => { page.fire("visibilitychange"); });
+    for (let flush = 0; flush < 5; flush += 1) await act(async () => { await Promise.resolve(); });
+    const items = renderer.root.findAllByType("li").filter((item) => item.props["data-turn-id"] || item.props["data-step-key"]);
+    expect(items).toHaveLength(121);
+    expect(items[0]!.props["data-turn-id"]).toBe("turn.1");
+    expect(items.at(-1)!.props["data-turn-id"]).toBe("turn.2");
+    expect(textOf(items[1]!.children)).toContain("Result 1 matches the request.");
+    // The first message is the same element it was before the second read.
+    expect(stepItems()[0]!.instance).toBe(firstMessage);
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
   });
 
   it("keeps the status for its own thread", async () => {
@@ -174,7 +215,7 @@ describe("the chat's live activity", () => {
   it("shows no status and no steps where the surface cannot read activity", async () => {
     const renderer = await mount(commands(null));
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
-    expect(renderer.root.findAllByType("details")).toHaveLength(0);
+    expect(renderer.root.findAllByType("li").filter((item) => item.props["data-step-key"])).toHaveLength(0);
   });
 });
 
@@ -188,7 +229,8 @@ describe("the activity reader stays on the backoff poller", () => {
       "../activity/useConversationActivity.ts",
       "../activity/usePacedConversationActivity.ts",
       "../activity/pacer.ts",
-      "../components/ConversationActivityBlock.tsx",
+      "../components/ConversationStepMessage.tsx",
+      "../components/ConversationLiveLine.tsx",
       "../components/ConversationViewContent.tsx",
       "../components/ConversationThread.tsx"
     ]) {

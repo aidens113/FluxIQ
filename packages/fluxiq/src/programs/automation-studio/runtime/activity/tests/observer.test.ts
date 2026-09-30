@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
+import { automationStudioActivityDecisionReason } from "../decision-reason.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
 import { runWithAutomationStudioActivity } from "../scope.ts";
@@ -80,7 +81,43 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     const check = await inScope(async () => await observed.checkCompletion!({}, { steps: [] }));
     expect(check).toBe(refusal);
     expect(seen.map((event) => [event.phase, event.detail?.status])).toEqual([["verifying", "started"], ["verifying", "failed"]]);
-    expect(seen[1]!.detail?.text).toBe("core.plan.empty");
+    expect(seen[1]!.detail?.text).toBe("It needs changes before it can be used, and it goes back to be fixed. One thing needs fixing.");
+    expect(seen[1]!.detail?.text).not.toContain("core.plan.empty");
+  });
+
+  it("says the model's stated reason once decide returns, as a thought naming the action", async () => {
+    const decision = automationStudioActivityDecisionReason.attach(
+      { kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "web.output.dom-click", parameters: { element: { accessibleName: "Get a free quote" } } } },
+      "Clicking   the quote button to open the form the request asks about."
+    );
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => decision }));
+    const returned = await inScope(() => observed.decide(decideRequest));
+    expect(returned).toBe(decision);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", status: "started" } });
+    expect(seen[1]).toMatchObject({
+      phase: "exploring",
+      label: "Clicking “Get a free quote”",
+      detail: { kind: "thought", title: "Clicking “Get a free quote”", text: "Clicking the quote button to open the form the request asks about.", status: "succeeded" }
+    });
+  });
+
+  it("says building for a draft edit and verifying for a completion, with their reasons", async () => {
+    for (const [value, phase, title] of [
+      [{ kind: "amend_draft", amendments: [] }, "building", "Updating the draft Flow"],
+      [{ kind: "complete", result: {} }, "verifying", "Checking the Flow is finished"]
+    ] as const) {
+      seen = [];
+      const decision = automationStudioActivityDecisionReason.attach({ ...value }, "Because the draft now covers the request.");
+      await inScope(() => observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => decision })).decide(decideRequest));
+      expect(seen[1]).toMatchObject({ phase, label: title, detail: { kind: "thought", title, text: "Because the draft now covers the request.", status: "succeeded" } });
+    }
+  });
+
+  it("says no reason row when the decision carries none", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => ({ kind: "complete", result: {} }) }));
+    await inScope(() => observed.decide(decideRequest));
+    expect(seen.map((event) => event.phase)).toEqual(["thinking"]);
   });
 
   it("is silent outside a scope", async () => {

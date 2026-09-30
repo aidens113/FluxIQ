@@ -118,21 +118,51 @@
   padding-block: var(--space-sm);
 }
 
+/* The search is one field: a rounded box with the icon inside it, the input
+   borderless within it, and the match count at its end while searching. */
 .automation-project-search {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 360px) auto;
+  display: flex;
   align-items: center;
   gap: var(--space-sm);
-  min-width: min(100%, 260px);
+  flex: 0 1 360px;
+  min-width: min(100%, 220px);
+  height: var(--control-height-default);
+  padding: 0 var(--space-md);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
   color: var(--color-text-muted);
+  cursor: text;
+}
+
+.automation-project-search:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--surface-selected);
+}
+
+.automation-project-search > svg {
+  flex: 0 0 auto;
 }
 
 .automation-project-search input {
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--color-text);
+  appearance: none;
+}
+
+.automation-project-search input::placeholder {
+  color: var(--color-text-subtle);
 }
 
 .automation-project-search small {
+  flex: 0 0 auto;
   white-space: nowrap;
   font-size: var(--font-size-caption);
 }
@@ -297,7 +327,7 @@
   }
 
   .automation-project-search {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    flex: 0 0 auto;
     width: 100%;
   }
 

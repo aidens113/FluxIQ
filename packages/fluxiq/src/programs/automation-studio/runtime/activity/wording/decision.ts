@@ -1,0 +1,27 @@
+import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts";
+import { automationStudioActivityToolCall } from "./tool-call.ts";
+
+const COMPLETE = "Checking the Flow is finished";
+
+/**
+ * What a decision the model returned will do, said as the action a person
+ * reads, from the decision's own shape: a tool call is the call's action
+ * ("Clicking “Get a free quote”", `exploring`), a draft edit is "Updating the
+ * draft Flow" (`building`), and a completion is "Checking the Flow is
+ * finished" (`verifying`). Nothing for anything else, so an unreadable
+ * decision is not narrated.
+ */
+export function automationStudioActivityDecision(decision: unknown): { phase: ClientGatewayActivityPhase; title: string } | undefined {
+  if (!decision || typeof decision !== "object" || Array.isArray(decision)) return undefined;
+  const record = decision as { kind?: unknown; callId?: unknown; toolId?: unknown; input?: unknown };
+  if (record.kind === "tool_call" && typeof record.toolId === "string") {
+    const words = automationStudioActivityToolCall({ callId: typeof record.callId === "string" ? record.callId : "", toolId: record.toolId, value: record.input });
+    return { phase: words.phase, title: words.title };
+  }
+  if (record.kind === "amend_draft") {
+    return { phase: "building", title: automationStudioActivityToolCall({ callId: "", toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID }).title };
+  }
+  if (record.kind === "complete") return { phase: "verifying", title: COMPLETE };
+  return undefined;
+}

@@ -72,6 +72,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
 import type { AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
+import { automationStudioActivityDecisionReason } from "../../activity/index.ts";
 import type { AutomationStudioPermissionAsk } from "../../parking/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
@@ -422,7 +423,8 @@ async function explorationDecision(
     const codes = result.diagnostics.map((diagnostic) => diagnostic.code).join(", ");
     throw new Error(`The exploration decision call did not return a decision${codes ? `: ${codes}` : "."}`);
   }
-  return { ...result.response.decision, ...(result.usage ? { usage: result.usage } : {}) };
+  // The model's `summary` is its stated reason: kept beside the decision for the chat, never in it (`activity/decision-reason.ts`).
+  return automationStudioActivityDecisionReason.attach({ ...result.response.decision, ...(result.usage ? { usage: result.usage } : {}) }, result.response.summary);
 }
 
 /**

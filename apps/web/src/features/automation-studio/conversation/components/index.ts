@@ -1,9 +1,10 @@
-export { ConversationActivityBlock } from "./ConversationActivityBlock";
 export { ConversationAskForm } from "./ConversationAskForm";
 export { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
 export { ConversationComposer } from "./ConversationComposer";
 export { ConversationDock, conversationLauncherLabel, type ConversationDockProps } from "./ConversationDock";
+export { ConversationLiveLine } from "./ConversationLiveLine";
 export { ConversationOpeningMessage } from "./ConversationOpeningMessage";
+export { ConversationStepMessage } from "./ConversationStepMessage";
 export { ConversationText } from "./ConversationText";
 export { ConversationThread } from "./ConversationThread";
 export { ConversationTurn } from "./ConversationTurn";

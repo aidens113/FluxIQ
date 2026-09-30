@@ -8,9 +8,10 @@
 // channel is for, because it is the screen everyone sees first and most people
 // see only once.
 //
-// It is deliberately concrete. "FluxIQ will talk to you here" is a slogan; the
-// three things below are the three journeys that actually arrive in a thread,
-// named in the words the product uses for them elsewhere.
+// It is deliberately concrete and short: the three journeys that actually
+// arrive in a thread, one line each, and an invitation to write. It sits in
+// the middle of the empty window, the way a chat greets you, rather than as a
+// page of prose the composer has to push past.
 
 import { KeyRound, MessagesSquare, PenLine, Split } from "lucide-react";
 
@@ -19,19 +20,19 @@ const ARRIVALS = [
     id: "permission",
     icon: KeyRound,
     title: "Permission before anything lasting",
-    body: "FluxIQ does what you asked without checking first. When the next step would send, publish, pay, edit or delete something, it stops here, tells you exactly what the step would do, and waits for you rather than giving up."
+    body: "Before a step sends, publishes, pays or deletes something, FluxIQ stops here and asks. Everything else it just does."
   },
   {
     id: "choice",
     icon: Split,
     title: "A decision only you can make",
-    body: "When an instruction can be read two ways -- which listings count as recent, which of two buttons is the one you meant -- it puts both readings here and carries on with the one you pick."
+    body: "When an instruction can be read two ways, it shows both here and carries on with the one you pick."
   },
   {
     id: "report",
     icon: PenLine,
     title: "What it did, and what changed",
-    body: "Progress while a run works, and a proposed repair when a site changes under a Flow, arrive here with the change itself attached, so you can read it before it is applied."
+    body: "Progress while it works, and any repair it proposes when a site changes, with the change attached."
   }
 ] as const;
 
@@ -39,19 +40,16 @@ export function ConversationOpeningMessage() {
   return (
     <section aria-label="About this conversation" className="automation-conversation-opening">
       <header>
-        <MessagesSquare aria-hidden size={18} />
+        <span aria-hidden className="automation-conversation-opening-mark"><MessagesSquare size={20} /></span>
         <h3>This is where FluxIQ talks to you</h3>
+        <p>You can write here too. Tell it what you want in your own words, or correct something it got wrong.</p>
       </header>
-      <p>
-        One place for everything FluxIQ needs from you while it works, instead of a separate screen
-        for each kind of question.
-      </p>
       <ul>
         {ARRIVALS.map((arrival) => {
           const Icon = arrival.icon;
           return (
             <li key={arrival.id}>
-              <Icon aria-hidden size={14} />
+              <Icon aria-hidden size={15} />
               <div>
                 <strong>{arrival.title}</strong>
                 <span>{arrival.body}</span>
@@ -60,14 +58,6 @@ export function ConversationOpeningMessage() {
           );
         })}
       </ul>
-      <p className="automation-conversation-opening-reply">
-        You can write here too. Tell it what you actually wanted, correct something it got wrong, or
-        answer a question in your own words -- it reads the thread before its next move.
-      </p>
-      <p className="automation-conversation-opening-empty">
-        Nothing has been said yet. Write below to start one, or wait: a thread opens by itself the
-        moment a run, a build or a Flow has something to tell you.
-      </p>
     </section>
   );
 }

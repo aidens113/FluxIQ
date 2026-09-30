@@ -62,9 +62,11 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
       </header>
 
       <div aria-label="Project browser commands" className="automation-project-browser-toolbar" role="toolbar">
+        {/* One field: the icon sits inside it and the input carries its own
+            name. A second, visible "Search projects" label stood beside the
+            box because the class meant to hide it is not defined anywhere. */}
         <label className="automation-project-search">
           <Search size={15} aria-hidden />
-          <span className="sr-only">Search projects</span>
           <input
             aria-label="Search projects"
             onChange={(event) => setQuery(event.target.value)}

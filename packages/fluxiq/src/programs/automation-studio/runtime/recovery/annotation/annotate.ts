@@ -49,6 +49,7 @@ import {
   type AutomationStudioRuntimeSessionLlm
 } from "../../llm/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "../../live-patch.ts";
 import { flowRunSummaryWithInterventionSummaries } from "../../service/index.ts";
 import type {
@@ -382,6 +383,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     now,
     metadata: { source: "runRuntimeSession", expectedOutput: "diagnosis", ...executionPurpose }
   });
+  emitAutomationStudioActivityThought({ phase: "repairing", title: "Working out what went wrong", text: result.response?.kind === "diagnosis" ? result.response.summary : undefined, max: 480 });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
   const plannedBeforeLooking = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
   const explicitProposalRun = intent === "diagnose_and_adapt";
@@ -568,6 +570,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // of it. It proposes nothing and changes nothing, and is recorded beside the
   // patch attempts, where a reader asking what the recovery did will look.
   const declined = patchResult?.response?.kind === "no_repair" ? patchResult.response : undefined;
+  if (patchResult?.response) emitAutomationStudioActivityThought({ phase: "repairing", title: declined ? "Deciding the step can't be repaired" : "Deciding how to repair the step", text: patchResult.response.summary, max: 480 });
   // A patch call can end before it has a response (provider preflight, budget,
   // transport, or structured-output validation). That is a resolution-stage
   // failure, not the same outcome as a valid call that produced no change.

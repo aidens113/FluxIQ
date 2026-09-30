@@ -31,9 +31,11 @@ export function usePacedConversationActivity(current: ConversationActivity | nul
     };
   }, [projectId]);
 
+  // `projectId` too: a new project gets a new pacer, which has to be handed
+  // the event already in hand rather than wait for the next one.
   useEffect(() => {
     if (current) pacerRef.current?.accept(current);
-  }, [current]);
+  }, [current, projectId]);
 
   return display;
 }
