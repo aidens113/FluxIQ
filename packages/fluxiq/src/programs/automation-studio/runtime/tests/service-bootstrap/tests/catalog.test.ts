@@ -63,7 +63,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "pre_provider_validation",
       retryable: false,
       providerInvocation: "not_attempted",
-      providerResponse: "not_received"
+      providerResponse: "not_received",
+      // The binding read's own throw, by class and line (`generation-failure/thrown-issue-codes.ts`).
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.catalog\.test\.ts:\d+$/u)]
     });
     expect(resolver).not.toHaveBeenCalled();
   });

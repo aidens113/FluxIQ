@@ -90,6 +90,33 @@ describe("what the record says about the draft the model was shown", () => {
     expect(last!.bytes).toBeGreaterThan(256);
   });
 
+  // `run-mune0xh1-2470406a` ended its build with a bare `thrown.Error` the moment
+  // its draft outgrew the full entry while it held a refused press: the packed
+  // entry shows that step as `did_not_work`, and measuring the entry refused it
+  // (`../evidence-loop/draft-shown.ts`). Runs 6 and 7 of the live lane ended the same way.
+  it("goes on deciding once a draft holding a refused press has to be packed", async () => {
+    let call = 0;
+    const sometimesRefused = async () => {
+      call += 1;
+      return call % 3 === 0
+        ? { kind: "llm_evidence_tool_execution", evidence: { page: "unchanged", refused: `press ${call}` }, effectApplied: false }
+        : { kind: "llm_evidence_tool_execution", evidence: { page: `after ${call}` }, effectApplied: true };
+    };
+    const decide = vi.fn();
+    for (let index = 1; index <= 10; index += 1) decide.mockResolvedValueOnce(pressed(index, "v".repeat(240)));
+    decide.mockResolvedValue(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 12, maxToolCalls: 12, executeTool: sometimesRefused });
+
+    expect(result.ok).toBe(true);
+    const last = result.trace.at(-1)?.draft;
+    expect(last?.steps).toBe(10);
+    expect(last?.overBudget).toBeUndefined();
+    // Packed, which is the only shape the refusal could happen in. Read by the
+    // draft's own format, since the decision history beside it packs too.
+    const lastShown = (decide.mock.calls.at(-1)![0] as { evidence: { value: { format?: string } }[] }).evidence;
+    expect(lastShown.some((entry) => entry.value?.format === "step_rows_v1")).toBe(true);
+  });
+
   it("carries no draft for a loop that is not drafting at all", async () => {
     const result = await run(2, { draft: false });
     expect(result.ok).toBe(true);

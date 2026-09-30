@@ -59,6 +59,13 @@ export type AutomationStudioFlowScriptStep = {
    * happened to be left over.
    */
   routed?: true;
+  /**
+   * The draft step this step was written from, by its id. Never written by a
+   * model: set only when a draft is written down (`./draft-routing.ts`), so
+   * the plan node it becomes can be traced back to the step that made it
+   * rather than guessed from where it landed after routing added its joins.
+   */
+  draftStepId?: string;
   line: number;
 };
 
