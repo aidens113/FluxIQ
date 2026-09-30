@@ -16,10 +16,9 @@
 // all the surface explains what this is instead of showing an empty frame.
 
 import { useEffect } from "react";
-import { Button, InlineNotice, LoadingState } from "../../../programs/components";
-import { RefreshCw } from "lucide-react";
+import { InlineNotice, LoadingState } from "../../../programs/components";
 import type { ConversationCommands, ConversationViewHostCommands, ConversationViewHostModel } from "../conversation-host";
-import { conversationSubjectDetail, conversationSubjectLabel } from "../thread";
+import { conversationDisplayTitle, conversationSubjectLabel, type Conversation } from "../thread";
 import { useConversationThread } from "../useConversationThread";
 import { useConversationActivity, usePacedConversationActivity } from "../activity";
 import { ConversationComposer } from "./ConversationComposer";
@@ -31,6 +30,13 @@ export type ConversationViewProps = ConversationViewHostModel & ConversationView
   active?: boolean;
   /** Told how many threads are holding an unanswered question, so a collapsed shell can say so. */
   onWaitingChange?(waiting: number): void;
+  /**
+   * Told the chat's name ("Company website", "Nightly listings run"), so a
+   * shell with its own title bar can carry it there. When it is set, the view
+   * draws no name of its own; it still draws the thread picker when there is
+   * more than one thread.
+   */
+  onTitleChange?(title: string): void;
 };
 
 export function ConversationViewContent(props: ConversationViewProps & { commands: ConversationCommands }) {
@@ -50,6 +56,13 @@ export function ConversationViewContent(props: ConversationViewProps & { command
   }, [onWaitingChange, waiting]);
 
   const selected = thread.conversations.find((entry) => entry.conversationId === thread.selectedConversationId) ?? null;
+  const title = conversationDisplayTitle(selected, props.projectName);
+  const { onTitleChange } = props;
+  useEffect(() => {
+    onTitleChange?.(title);
+  }, [onTitleChange, title]);
+  const picker = thread.conversations.length > 1;
+  const ownTitle = !onTitleChange;
   // Live activity is per project, so it follows the open thread's project, or
   // the surface's when nothing is open. Without a project there is none to read.
   const activity = useConversationActivity({
@@ -59,9 +72,9 @@ export function ConversationViewContent(props: ConversationViewProps & { command
   });
   const activityProject = selected?.projectId ?? props.projectId;
   const paced = usePacedConversationActivity(activity.current, activityProject);
-  // The status is drawn in the stream only while the work is going or waits
-  // on the person, and only in the thread it belongs to; once it settles, the
-  // group's summary says how it went.
+  // The live line is drawn only while the work is going or waits on the
+  // person, and only in the thread it belongs to; once it settles, the step
+  // messages and the answer say how it went.
   const current = activity.current;
   const ownThread = !current?.conversationId || !thread.selectedConversationId || current.conversationId === thread.selectedConversationId;
   const live = paced && ownThread && (paced.outcome === null || paced.outcome === "waiting") ? paced : null;
@@ -74,35 +87,28 @@ export function ConversationViewContent(props: ConversationViewProps & { command
 
   return (
     <section aria-label="Conversation" className="automation-conversation-view">
-      <header className="automation-conversation-header">
-        {thread.conversations.length > 1 ? (
-          <label className="automation-conversation-picker">
-            <span>Thread</span>
-            <select
-              value={thread.selectedConversationId}
-              onChange={(event) => thread.selectConversation(event.target.value)}
-            >
-              {thread.conversations.map((conversation) => (
-                <option key={conversation.conversationId} value={conversation.conversationId}>
-                  {`${conversation.pendingAskCount > 0 ? "• " : ""}${conversationSubjectLabel(conversation)}`}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          // One thread needs no picker, but it still needs a name. Core's own
-          // title reads as something a person recognises ("Checkout run"); the
-          // subject underneath is the id, which is what they would quote in a
-          // bug report and nothing they should have to read first.
-          <div className="automation-conversation-title">
-            <strong>{selected ? conversationSubjectLabel(selected) : "Conversation"}</strong>
-            {selected ? <span>{conversationSubjectDetail(selected)}</span> : null}
-          </div>
-        )}
-        <Button aria-label="Refresh" className="automation-conversation-refresh" onClick={thread.refresh} size="compact" title="Read this thread again now" variant="ghost">
-          <RefreshCw aria-hidden size={13} />
-        </Button>
-      </header>
+      {picker || ownTitle ? (
+        <header className="automation-conversation-header">
+          {picker ? (
+            <label className="automation-conversation-picker">
+              <span className="automation-conversation-sr">Thread</span>
+              <select
+                value={thread.selectedConversationId}
+                onChange={(event) => thread.selectConversation(event.target.value)}
+              >
+                {threadOptions(thread.conversations).map((option) => (
+                  <option key={option.conversationId} value={option.conversationId}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            // The thread's name, never its id: Core's title, else the project's
+            // name (`thread/naming.ts`). The chat already polls and is pushed
+            // to, so there is no "Refresh" beside it.
+            <strong className="automation-conversation-title">{title}</strong>
+          )}
+        </header>
+      ) : null}
       {thread.error ? <InlineNotice message={thread.error} title="This thread could not be read" tone="error" /> : null}
       {nothingYet
         ? <ConversationOpeningMessage />
@@ -140,4 +146,21 @@ export function ConversationViewContent(props: ConversationViewProps & { command
       />
     </section>
   );
+}
+
+/**
+ * The picker's options: each thread's name, whether it is waiting on the
+ * person, and, where two threads would read the same, when each last moved.
+ */
+function threadOptions(conversations: readonly Conversation[]): Array<{ conversationId: string; label: string }> {
+  const labels = conversations.map((conversation) => conversationSubjectLabel(conversation));
+  return conversations.map((conversation, index) => {
+    const label = labels[index]!;
+    const repeated = labels.indexOf(label) !== labels.lastIndexOf(label);
+    const when = repeated
+      ? ` · ${new Date(conversation.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+      : "";
+    const waiting = conversation.pendingAskCount > 0 ? " (waiting on you)" : "";
+    return { conversationId: conversation.conversationId, label: `${label}${when}${waiting}` };
+  });
 }

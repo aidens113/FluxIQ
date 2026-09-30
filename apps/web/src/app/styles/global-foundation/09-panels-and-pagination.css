@@ -51,7 +51,9 @@
   box-shadow: none;
 }
 
-.visually-hidden {
+/* `sr-only` is the same rule under the name three automation-studio views use (sidebar, problems, router search labels). */
+.visually-hidden,
+.sr-only {
   position: absolute !important;
   width: 1px !important;
   height: 1px !important;

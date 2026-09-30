@@ -27,7 +27,7 @@ import { AutomationCollapseToggle } from "../../shared/CollapseToggle";
 import type { ConversationViewHostCommands, ConversationViewHostModel } from "../conversation-host";
 import { ConversationView } from "./ConversationView";
 
-export type ConversationDockProps = ConversationViewHostCommands & Pick<ConversationViewHostModel, "onScreen"> & {
+export type ConversationDockProps = ConversationViewHostCommands & Pick<ConversationViewHostModel, "onScreen" | "projectName"> & {
   /** The project whose threads are shown, or null for every project the person can see. */
   projectId: string | null;
 };
@@ -36,6 +36,7 @@ export function ConversationDock(props: ConversationDockProps) {
   const [open, setOpen] = useState(false);
   const [wide, setWide] = useState(false);
   const [waiting, setWaiting] = useState(0);
+  const [title, setTitle] = useState("");
   const launcherRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
@@ -61,6 +62,7 @@ export function ConversationDock(props: ConversationDockProps) {
   }, [close, open]);
 
   const onWaitingChange = useCallback((next: number) => setWaiting(next), []);
+  const onTitleChange = useCallback((next: string) => setTitle(next), []);
 
   return (
     <div className="automation-conversation-dock" data-open={open ? "true" : "false"}>
@@ -74,8 +76,13 @@ export function ConversationDock(props: ConversationDockProps) {
         tabIndex={-1}
       >
         <header className="automation-conversation-dock-bar">
-          <MessagesSquare aria-hidden size={15} />
-          <strong>FluxIQ</strong>
+          <span aria-hidden className="automation-conversation-dock-mark"><MessagesSquare size={14} /></span>
+          {/* One bar, as a chat window has: who you are talking to, and what
+              about, in words ("Company website"), never the project's id. */}
+          <div className="automation-conversation-dock-heading">
+            <strong>FluxIQ</strong>
+            {title ? <span title={title}>{title}</span> : null}
+          </div>
           <button
             aria-label={wide ? "Make the conversation narrower" : "Make the conversation wider"}
             className="automation-conversation-dock-icon"
@@ -99,6 +106,8 @@ export function ConversationDock(props: ConversationDockProps) {
         <ConversationView
           active={open}
           projectId={props.projectId}
+          {...(props.projectName ? { projectName: props.projectName } : {})}
+          onTitleChange={onTitleChange}
           {...(props.onScreen ? { onScreen: props.onScreen } : {})}
           onWaitingChange={onWaitingChange}
           {...(props.onOpenAttachment ? { onOpenAttachment: props.onOpenAttachment } : {})}

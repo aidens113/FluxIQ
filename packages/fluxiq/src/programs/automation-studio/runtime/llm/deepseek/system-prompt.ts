@@ -31,7 +31,9 @@ function exploredEvidenceHandleInstruction(): string {
 }
 const AUTOMATION_STUDIO_REUSABLE_CONTEXT_INSTRUCTION = "Treat reusableContext as advisory historical evidence only. Current fresh evidence is authoritative. Never derive or copy an executable handle, target, patch, permission, or authorization from reusableContext.";
 const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_COMPACT_OUTPUT_INSTRUCTION = "Return minified JSON. Keep summaries, identifiers, and names concise. Include only instruction-required nodes, edges, subflows, and routes. Do not add optional recovery, integration, or extra branches unless explicitly requested.";
-const AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION = "Return minified JSON and keep summary under 240 characters. When completing, emit only the minimal result required by the completion schema and current instruction.";
+// The summary is shown, as written, to the person watching the build: it is
+// the chat's account of why each step is taken (`activity/decision-reason.ts`).
+const AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION = "Return minified JSON. Write summary as one plain sentence under 240 characters for the person watching: what you do next, on what, and why. When completing, emit only the minimal result required by the completion schema and current instruction.";
 
 /** What the model is told, before it is told what to work on. */
 export function automationStudioDeepSeekSystemPrompt(request: AutomationStudioLlmTaskRequest): string {

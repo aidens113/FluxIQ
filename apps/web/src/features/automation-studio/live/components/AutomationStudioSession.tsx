@@ -677,6 +677,7 @@ export function AutomationStudioSession(props: {
         the recording bridge above reads it. */}
     <ConversationDock
       projectId={activeProject.id}
+      projectName={activeProject.name}
       onScreen={{
         ...(isAutomationTopLevelFlow(selectedFlow)
           ? { flowId: selectedFlow.flowId }

@@ -46,27 +46,30 @@ export class AutomationStudioProjectDatabasePool {
   async acquire(projectId: string): Promise<AutomationStudioProjectDatabaseLease> {
     if (this.closing) throw new Error("Automation Studio project database pool is closing.");
     const normalizedProjectId = normalizeProjectId(projectId);
-    let entryPromise = this.entries.get(normalizedProjectId);
-    if (!entryPromise) {
-      entryPromise = this.openEntry(normalizedProjectId);
-      this.entries.set(normalizedProjectId, entryPromise);
-      entryPromise.catch(() => {
-        if (this.entries.get(normalizedProjectId) === entryPromise) this.entries.delete(normalizedProjectId);
-      });
+    // The entry is awaited before the lease is counted, so the last lease may be
+    // released (closing the entry and removing it from the map) during that await.
+    // Only count a lease on an entry that is still the current one; otherwise open afresh.
+    let entryPromise = this.currentOrOpenEntry(normalizedProjectId);
+    let entry = await entryPromise;
+    while (this.entries.get(normalizedProjectId) !== entryPromise) {
+      if (this.closing) throw new Error("Automation Studio project database pool is closing.");
+      entryPromise = this.currentOrOpenEntry(normalizedProjectId);
+      entry = await entryPromise;
     }
-    const entry = await entryPromise;
-    entry.leases += 1;
+    const currentEntryPromise = entryPromise;
+    const currentEntry = entry;
+    currentEntry.leases += 1;
     let released = false;
     return {
       projectId: normalizedProjectId,
-      database: entry.database,
+      database: currentEntry.database,
       release: async () => {
         if (released) return;
         released = true;
-        entry.leases = Math.max(0, entry.leases - 1);
-        if (entry.leases || this.entries.get(normalizedProjectId) !== entryPromise) return;
+        currentEntry.leases = Math.max(0, currentEntry.leases - 1);
+        if (currentEntry.leases || this.entries.get(normalizedProjectId) !== currentEntryPromise) return;
         this.entries.delete(normalizedProjectId);
-        await entry.database.close();
+        await currentEntry.database.close();
       }
     };
   }
@@ -84,6 +87,17 @@ export class AutomationStudioProjectDatabasePool {
     const entries = [...this.entries.values()];
     this.entries.clear();
     await Promise.all(entries.map(async (entryPromise) => (await entryPromise).database.close()));
+  }
+
+  private currentOrOpenEntry(projectId: string): Promise<PoolEntry> {
+    const current = this.entries.get(projectId);
+    if (current) return current;
+    const entryPromise = this.openEntry(projectId);
+    this.entries.set(projectId, entryPromise);
+    entryPromise.catch(() => {
+      if (this.entries.get(projectId) === entryPromise) this.entries.delete(projectId);
+    });
+    return entryPromise;
   }
 
   private async openEntry(projectId: string): Promise<PoolEntry> {

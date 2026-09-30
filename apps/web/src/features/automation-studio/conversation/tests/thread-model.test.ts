@@ -91,10 +91,10 @@ describe("conversation turn contract", () => {
     });
     expect(conversation?.subject).toEqual({ kind: "run", id: "run.7" });
     expect(conversation?.pendingAskCount).toBe(1);
-    // Core's own title, which is a name a person recognises; the subject is
-    // still there underneath for a thread that was opened without one.
+    // Core's own title, which is a name a person recognises; a thread opened
+    // without one reads as a plain noun for its subject, never its id.
     expect(conversationSubjectLabel(conversation!)).toBe("Nightly listings run");
-    expect(conversationSubjectLabel({ ...conversation!, title: null })).toBe("Run run.7");
+    expect(conversationSubjectLabel({ ...conversation!, title: null })).toBe("This run");
     expect(parseConversation({
       conversationId: "conversation.1",
       projectId: "project.one",

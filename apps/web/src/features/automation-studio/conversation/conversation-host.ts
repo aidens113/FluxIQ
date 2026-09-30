@@ -38,6 +38,12 @@ import { getConversationActivity, type ConversationActivityQuery } from "./activ
 export type ConversationViewHostModel = {
   /** The project whose threads are listed, or null to list across every project the person can see. */
   projectId: string | null;
+  /**
+   * The open project's name, so the chat is headed by something a person
+   * recognises rather than the project's id. Optional: without it a thread
+   * Core did not title reads as a plain noun ("This project").
+   */
+  projectName?: string | null;
   /** Restored by whatever mounted the surface, so it reopens on the same thread. */
   requestedConversationId?: string;
   /**

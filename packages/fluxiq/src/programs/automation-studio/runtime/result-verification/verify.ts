@@ -54,6 +54,7 @@ import {
 } from "../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
+import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
@@ -135,7 +136,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
   const first = await askOnce(request, provider, 1);
   if (!automationStudioResultVerificationAskAgain(first.verification)) {
-    return { outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] };
+    return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
   }
   const second = await askOnce(request, provider, 2);
   // Two calls can finish within one millisecond of each other, and the
@@ -143,10 +144,17 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const secondIntervention = second.intervention.interventionId === first.intervention.interventionId
     ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
     : second.intervention;
-  return {
+  return said({
     outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification }), performed: true },
     interventions: [first.intervention, secondIntervention]
-  };
+  });
+}
+
+/** The check's verdict, said in the chat as the check that was started ends (`check-activity.ts`), and returned unchanged. */
+function said(report: AutomationStudioResultVerificationReport): AutomationStudioResultVerificationReport {
+  const words = automationStudioResultCheckActivity(report.outcome);
+  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, ...(words.text ? { text: words.text } : {}) } });
+  return report;
 }
 
 /**

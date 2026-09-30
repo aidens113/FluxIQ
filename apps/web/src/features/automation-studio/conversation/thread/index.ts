@@ -30,9 +30,6 @@ export {
   CONVERSATION_TAIL_SLACK_PX,
   CONVERSATION_VISIBLE_TURNS,
   conversationFollowsTail,
-  conversationSubjectDetail,
-  conversationSubjectFallbackLabel,
-  conversationSubjectLabel,
   latestConversationTurnId,
   mergeConversationTurns,
   pendingConversationTurn,
@@ -40,6 +37,7 @@ export {
   unansweredConversationCount,
   visibleConversationTurns
 } from "./model";
+export { conversationDisplayTitle, conversationSubjectFallbackLabel, conversationSubjectLabel } from "./naming";
 export {
   conversationAnswerNeedsReauthorization,
   conversationAnswerRequest,

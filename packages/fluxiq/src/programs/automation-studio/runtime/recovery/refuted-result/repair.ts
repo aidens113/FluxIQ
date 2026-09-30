@@ -45,8 +45,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor.ts";
-import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
-import { emitAutomationStudioActivity } from "../../activity/index.ts";
+import { automationStudioResultCheckActivity, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityThought } from "../../activity/index.ts";
 import { automationStudioRefutedResultAttempt } from "./attempt.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_MAX_ATTEMPTS,
@@ -157,6 +157,7 @@ export async function repairAutomationStudioRefutedRunResult(
   // re-author takes.
   await input.saveFlowRunDetail(refuted);
   emitAutomationStudioActivity({ phase: "repairing", label: `Repairing the Flow: the result check refuted its answer (attempt ${attemptNumber} of ${maxAttempts})`, detail: { kind: "step", title: "Result repair started", status: "started", ref: attempt.record.nodeId } });
+  emitAutomationStudioActivityThought({ phase: "repairing", title: "Fixing the Flow so its result answers the request", text: automationStudioResultCheckActivity(input.outcome).text, ref: attempt.record.nodeId, max: 600 });
   const repaired = await input.repair({
     detail: refuted,
     failedTraceAttempt: attempt.trace,

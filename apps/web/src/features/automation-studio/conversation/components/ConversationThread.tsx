@@ -10,35 +10,30 @@
 // are variable height and the fixed-row virtualiser the run log uses would
 // mis-measure every one of them.
 //
-// Core's live activity sits between the turns, folded into one quiet group per
-// stretch of work (`activity/stream.ts`). It is ephemeral -- the thread stays
-// the durable record -- so it is drawn here and never written into it. While
-// Core is working, the status line is drawn at the tail of the stream, in
-// place, under the message that asked for the work.
+// Core's work sits between the turns as FluxIQ's own step messages, one per
+// thing it decided, repaired or checked, with its reason (`activity/stream.ts`).
+// They come from Core's activity, not the thread, so they are drawn here and
+// never written into it. While Core is working, the live line is drawn after
+// the last message, in place.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, EmptyState } from "../../../programs/components";
 import { ArrowDown, MessagesSquare, TriangleAlert } from "lucide-react";
 import type { ConversationCommands } from "../conversation-host";
-import {
-  conversationActivityHeadline,
-  conversationActivityOutcome,
-  conversationStream,
-  type ConversationActivity,
-  type ConversationActivityDisplay
-} from "../activity";
+import { conversationStream, type ConversationActivity, type ConversationActivityDisplay } from "../activity";
 import {
   conversationFollowsTail,
   visibleConversationTurns,
   type ConversationAnswer,
   type ConversationTurn as ConversationTurnRecord
 } from "../thread";
-import { ConversationActivityBlock } from "./ConversationActivityBlock";
+import { ConversationLiveLine } from "./ConversationLiveLine";
+import { ConversationStepMessage } from "./ConversationStepMessage";
 import { ConversationTurn } from "./ConversationTurn";
 
 export function ConversationThread(props: {
   turns: readonly ConversationTurnRecord[];
-  /** Core's live activity for the project; the events with a detail become rows. */
+  /** Core's activity for the project, held per unit of work; it becomes the step messages. */
   activity?: readonly ConversationActivity[];
   /** The paced status while Core is working for this thread; drawn at the tail of the stream. */
   live?: ConversationActivityDisplay | null;
@@ -61,33 +56,36 @@ export function ConversationThread(props: {
   const lastCountRef = useRef(0);
   const [showAll, setShowAll] = useState(false);
   const [behind, setBehind] = useState(false);
-  const { turns: visible, hidden } = visibleConversationTurns(props.turns, showAll);
-  const entries = conversationStream({
+  const { turns: visible, hidden } = useMemo(() => visibleConversationTurns(props.turns, showAll), [props.turns, showAll]);
+  const activity = props.activity;
+  const earlierHidden = hidden > 0;
+  const entries = useMemo(() => conversationStream({
     turns: visible,
-    activity: props.activity ?? [],
-    earlierHidden: hidden > 0,
+    activity: activity ?? [],
+    earlierHidden,
     ...(props.conversationId ? { conversationId: props.conversationId } : {})
-  });
+  }), [activity, earlierHidden, props.conversationId, visible]);
   const live = props.live ?? null;
+  // The unit of work still running, whose newest message may say "Working on it".
+  const working = live && live.outcome === null ? live.activityId : null;
+  const entryCount = entries.length + (live ? 1 : 0);
+  // A message that gains its outcome line, or a live line that changes, grows
+  // the transcript without adding an entry; a reader at the bottom stays there.
   const tail = entries.at(-1);
-  const liveGroup = live && tail?.kind === "activity" ? tail.group.key : null;
-  // The live status needs no row yet: before Core has done anything with a
-  // detail, it still says what it is working on.
-  const entryCount = entries.length + (live && !liveGroup ? 1 : 0);
+  const tailChange = `${tail?.key ?? ""}:${tail?.kind === "step" ? tail.message.sequence : ""}:${live?.detail ?? ""}`;
 
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
     const grew = entryCount > lastCountRef.current;
     lastCountRef.current = entryCount;
-    if (!grew) return;
     if (followRef.current) {
       list.scrollTop = list.scrollHeight;
       setBehind(false);
       return;
     }
-    setBehind(true);
-  }, [entryCount]);
+    if (grew) setBehind(true);
+  }, [entryCount, tailChange]);
 
   // A collapsed surface has no layout, so the effect above measures a zero-height
   // list and the transcript opens at the top of the oldest turn the person has
@@ -163,13 +161,9 @@ export function ConversationThread(props: {
         onScroll={trackScroll}
         ref={listRef}
       >
-        {entries.map((entry) => entry.kind === "activity" ? (
-          <li data-activity-group={entry.key} key={entry.key}>
-            <ConversationActivityBlock
-              live={entry.key === liveGroup ? live : null}
-              rows={entry.group.rows}
-              settledHeadline={settledHeadline(props.activity ?? [], entry.group.activityId)}
-            />
+        {entries.map((entry) => entry.kind === "step" ? (
+          <li data-step-key={entry.key} key={entry.key}>
+            <ConversationStepMessage message={entry.message} working={entry.message.activityId === working} />
           </li>
         ) : (
           <li data-turn-id={entry.turn.turnId} key={entry.key}>
@@ -184,9 +178,9 @@ export function ConversationThread(props: {
             />
           </li>
         ))}
-        {live && !liveGroup ? (
-          <li data-activity-group="live" key="activity:live">
-            <ConversationActivityBlock live={live} rows={[]} />
+        {live ? (
+          <li data-live-line="true" key="activity:live">
+            <ConversationLiveLine live={live} />
           </li>
         ) : null}
       </ol>
@@ -200,15 +194,4 @@ export function ConversationThread(props: {
       ) : null}
     </div>
   );
-}
-
-/** How a group's work ended, when it ended badly or is waiting: the latest word Core said about that unit of work. */
-function settledHeadline(events: readonly ConversationActivity[], activityId: string): string | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]!;
-    if (event.activityId !== activityId) continue;
-    const outcome = conversationActivityOutcome(event);
-    return outcome === "failed" || outcome === "waiting" ? conversationActivityHeadline(event.subject.kind, outcome) : null;
-  }
-  return null;
 }

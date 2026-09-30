@@ -27,7 +27,7 @@ import { automationStudioRunState, type AutomationStudioRunState } from "./run-s
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { emitAutomationStudioActivity, emitAutomationStudioActivityStep } from "../activity/index.ts";
+import { automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -592,6 +592,7 @@ async function executeAutomationStudioGraph(
           }
         });
         const recoveryDecision = ladder.decision;
+        const choice = automationStudioActivityRecoveryChoice(ladder); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
         attempts[attemptIndex] = {
           ...attempts[attemptIndex]!,
           recoveryDecision

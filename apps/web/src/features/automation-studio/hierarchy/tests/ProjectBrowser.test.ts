@@ -47,6 +47,11 @@ describe("AutomationProjectBrowser", () => {
       onRenameProject: () => undefined
     }));
     expect(markup).toContain('aria-label="Search projects"');
+    // One search field: no second, visible "Search projects" text beside the
+    // box, and one input inside the one styled label.
+    expect(markup).not.toContain(">Search projects<");
+    expect(markup.match(/type="search"/gu)).toHaveLength(1);
+    expect(markup).toMatch(/<label class="automation-project-search"><svg[^]*?<input/u);
     expect(markup).toContain('class="automation-project-row"');
     expect(markup).toContain('aria-label="Invoice Flow actions"');
     expect(markup).not.toContain("automation-project-tile");

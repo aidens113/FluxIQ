@@ -158,11 +158,47 @@ describe("ConversationViewContent", () => {
     expect(api.listConversations).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }));
   });
 
-  it("names the open thread by Core's own title, with the subject underneath", async () => {
+  it("names the open thread by Core's own title, and never by an id", async () => {
     const renderer = await mount(commands());
     const text = textOf(renderer);
     expect(text).toContain("Nightly listings run");
-    expect(text).toContain("Run run.7");
+    expect(text).not.toContain("run.7");
+  });
+
+  it("heads a thread Core did not title with the project's name, not its id", async () => {
+    // The dock read "Project 820f86f0-..." twice, as the name and again as the
+    // subtitle, on every thread a person opened themselves.
+    const projectId = "820f86f0-ba20-4847-8631-ca4f85f6b97d";
+    const untitled = { ...conversation, projectId, subject: { kind: "project", id: projectId }, title: null };
+    const renderer = await mount(commands({ conversations: [untitled] }), { projectId, projectName: "Company website" });
+    const text = textOf(renderer);
+    expect(text).toContain("Company website");
+    expect(text).not.toContain(projectId);
+  });
+
+  it("hands its name to a shell with a title bar and draws no header of its own", async () => {
+    const titles: string[] = [];
+    const renderer = await mount(commands(), { onTitleChange: (title: string) => titles.push(title) });
+    expect(titles.at(-1)).toBe("Nightly listings run");
+    expect(renderer.root.findAll((node) => node.props.className === "automation-conversation-header")).toHaveLength(0);
+  });
+
+  it("has no Refresh control: the thread polls and is pushed to by itself", async () => {
+    const renderer = await mount(commands());
+    expect(button(renderer, "Refresh")).toBeUndefined();
+    expect(renderer.root.findAll((node) => node.props["aria-label"] === "Refresh")).toHaveLength(0);
+  });
+
+  it("tells two untitled threads apart in the picker without showing an id", async () => {
+    const untitled = { ...conversation, title: null };
+    const renderer = await mount(commands({
+      conversations: [untitled, { ...untitled, conversationId: "conversation.2", pendingAskCount: 1, updatedAt: 1_790_000_900_000 }]
+    }));
+    const options = renderer.root.findAllByType("option").map((option) => String(option.props.children));
+    expect(options).toHaveLength(2);
+    expect(new Set(options).size).toBe(2);
+    expect(options.every((label) => label.startsWith("This run") && !label.includes("run.7"))).toBe(true);
+    expect(options.filter((label) => label.includes("(waiting on you)"))).toHaveLength(1);
   });
 
   it("shows an ordered transcript with each turn's author and time", async () => {

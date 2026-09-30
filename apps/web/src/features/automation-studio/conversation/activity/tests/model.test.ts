@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  CONVERSATION_ACTIVITY_HELD,
-  conversationActivityPollOutcome,
-  conversationActivityStepText,
-  interleaveConversationActivity,
-  mergeConversationActivity,
-  parseConversationActivitySnapshot
-} from "..";
-import { parseConversationTurns } from "../../thread";
+import { conversationActivityPollOutcome, conversationActivityStepText, parseConversationActivitySnapshot } from "..";
 
 function wire(sequence: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -94,50 +86,5 @@ describe("how fast to read again", () => {
     expect(conversationActivityPollOutcome(snapshot([wire(1)]))).toBe("pending");
     expect(conversationActivityPollOutcome(snapshot([wire(1, { final: true, phase: "done" })]))).toBe("idle");
     expect(conversationActivityPollOutcome({ current: null, recent: [] })).toBe("idle");
-  });
-});
-
-describe("holding events across reads", () => {
-  it("keeps each event once by sequence, oldest first", () => {
-    const first = mergeConversationActivity([], snapshot([wire(1), wire(2)]));
-    const second = mergeConversationActivity(first, snapshot([wire(2), wire(3)]));
-    expect(second.map((event) => event.sequence)).toEqual([1, 2, 3]);
-  });
-
-  it("is bounded, dropping the oldest", () => {
-    const many = Array.from({ length: CONVERSATION_ACTIVITY_HELD + 10 }, (_, index) => wire(index + 1));
-    const held = mergeConversationActivity([], snapshot(many));
-    expect(held).toHaveLength(CONVERSATION_ACTIVITY_HELD);
-    expect(held[0]?.sequence).toBe(11);
-  });
-});
-
-describe("where a row sits among the turns", () => {
-  const turns = parseConversationTurns([
-    { turnId: "turn.1", conversationId: "conversation.1", author: "person", createdAt: 1_790_000_000_500, text: "Go." },
-    { turnId: "turn.2", conversationId: "conversation.1", author: "automation", createdAt: 1_790_000_002_500, text: "Done." }
-  ]);
-
-  it("orders rows and turns by time, and leaves a pure status change to the header", () => {
-    const activity = snapshot([wire(1), wire(2, { detail: undefined }), wire(3)]).recent;
-    const entries = interleaveConversationActivity({ turns, activity, conversationId: "conversation.1" });
-    expect(entries.map((entry) => entry.key)).toEqual(["turn:turn.1", "activity:1", "turn:turn.2", "activity:3"]);
-  });
-
-  it("leaves out an event that belongs to another conversation", () => {
-    const activity = snapshot([wire(1, { conversationId: "conversation.other" }), wire(3, { conversationId: "conversation.1" })]).recent;
-    const entries = interleaveConversationActivity({ turns, activity, conversationId: "conversation.1" });
-    expect(entries.filter((entry) => entry.kind === "activity").map((entry) => entry.key)).toEqual(["activity:3"]);
-  });
-
-  it("hides rows older than the first shown turn when earlier turns are hidden", () => {
-    const activity = snapshot([wire(1), wire(3)]).recent;
-    const entries = interleaveConversationActivity({ turns: turns.slice(1), activity, earlierHidden: true });
-    expect(entries.map((entry) => entry.key)).toEqual(["turn:turn.2", "activity:3"]);
-  });
-
-  it("shows rows on their own when the thread has said nothing yet", () => {
-    const activity = snapshot([wire(1)]).recent;
-    expect(interleaveConversationActivity({ turns: [], activity }).map((entry) => entry.key)).toEqual(["activity:1"]);
   });
 });

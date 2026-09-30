@@ -1,7 +1,8 @@
 "use client";
 
-// Reading a project's live activity for the chat: the latest event, and the
-// events held for the rows.
+// Reading a project's live activity for the chat: the latest event, and every
+// event held for the step messages, kept per unit of work (`history.ts`) so a
+// long build's first steps are still there after Core's snapshot moved on.
 //
 // It rides the thread's own backoff poller (`thread/poller.ts`), which is what
 // keeps the view awake while it is visible without a fixed interval: a fast
@@ -16,12 +17,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ConversationCommands } from "../conversation-host";
 import { createBackoffPoller } from "../thread";
 import type { ConversationActivity } from "./contracts";
-import { conversationActivityPollOutcome, mergeConversationActivity } from "./model";
+import { holdConversationActivity } from "./history";
+import { conversationActivityPollOutcome } from "./model";
 
 export type ConversationActivityState = {
   /** Core's latest event for the project, or null before it has said anything. */
   current: ConversationActivity | null;
-  /** Every event held, oldest first; the rows are the ones with a detail. */
+  /** Every event held, oldest first, per unit of work (`holdConversationActivity`). */
   events: ConversationActivity[];
 };
 
@@ -52,7 +54,7 @@ export function useConversationActivity(input: {
         const result = await load({ projectId });
         if (disposed || result.aborted) return "idle";
         if (!result.ok || !result.snapshot) return "failed";
-        const events = mergeConversationActivity(heldRef.current, result.snapshot);
+        const events = holdConversationActivity(heldRef.current, result.snapshot);
         heldRef.current = events;
         setState({ current: result.snapshot.current, events });
         return conversationActivityPollOutcome(result.snapshot);
