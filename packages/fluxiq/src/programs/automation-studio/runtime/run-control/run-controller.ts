@@ -7,16 +7,15 @@
 // finished.
 //
 // Holding touches nothing the run owns. The run's promise is still pending, so
-// its abort controller, its admission, the LLM grant held for it and the
-// grant's lease all stay exactly as they were: pausing neither releases them
-// nor extends them. Resuming goes on from the very node the run held before,
+// its abort controller, its admission and its run budget all stay exactly as
+// they were: pausing neither releases them nor extends them. Resuming goes on from the very node the run held before,
 // with its values, variables, loop positions and step budget untouched, so the
 // same run under the same inputs takes the same path whether or not it was
 // paused -- only the page may differ, if a person acted on it, and the next
 // node reads the page as it finds it.
 //
 // A held run is bounded. Past `maxPausedMs` it stops itself, cancelled, rather
-// than holding a browser, an admission and a grant for as long as nobody
+// than holding a browser and an admission for as long as nobody
 // comes back.
 
 import type {

@@ -20,7 +20,7 @@
 // may. Running a Flow, editing it, changing a setting,
 // rolling a version back and inspecting a run all simply happen: the person
 // asked for the panel to be operable from the chat window, and that ask is the
-// grant.
+// permission.
 //
 // The order is the order a tie breaks in, so the plainer request comes first.
 

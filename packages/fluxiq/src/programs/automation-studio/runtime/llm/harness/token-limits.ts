@@ -17,7 +17,7 @@ import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
  *
  * This was 50_000 and is the deepest of the seven places that held a ceiling of
  * this kind -- the Lab's default budget and contract cap, the Lab plan's bound,
- * the campaign's own arguments, this program's grant default, the API handler's
+ * the campaign's own arguments, this program's default, the API handler's
  * settings bound, and the provider's final check. Every one of them had to move
  * together: raising any single one was silently clamped by the next, which is
  * why the first attempt at this changed nothing observable.

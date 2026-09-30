@@ -67,8 +67,8 @@ export type AutomationStudioRuntimeRecoveryTraceInput = {
  * other outcome and nothing at all for this one, so "the loop declined to
  * repair this Flow" and "the loop ran and produced no change" were the same
  * silence. A Flow built from an instruction lands in exactly this case: it is
- * created with LLM intervention off and its playback carries no execution
- * grant, so the first failure it hits is refused here and says so nowhere.
+ * created with LLM intervention off, so the first failure it hits is refused
+ * here and says so nowhere.
  *
  * Every stage is `refused`, which is `trace.ts`'s own word for "something
  * declined to let it", and each carries Core's sentence for why. No provider

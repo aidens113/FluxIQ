@@ -452,9 +452,13 @@ describe("refuted-result service composition", () => {
       }
       const completed = await running;
       if (overlapFailure) throw overlapFailure;
-      expect(completed.status).toBe("failed");
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision"]);
+      // The other Flow's failed generation shares nothing with this run: no
+      // grant is held between them, so its failure neither revokes nor ends
+      // anything here, and the run's own repair finishes.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "loop_verification"]);
+      expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
+      expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
       expect(JSON.stringify(detail)).not.toContain("test-provider-secret");
       expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
     },

@@ -66,11 +66,9 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.provider_resolution_failed",
     "flow_bootstrap.provider_resolver_unavailable",
     "flow_bootstrap.provider_resolution_invalid"
-    // A build's model call needs no grant (2026-09-29): nothing is issued,
-    // held or refused before a call, so the four `execution_grant_*` refusals
-    // and `stale_grant_binding` that stood here and in pre-provider validation
-    // had no producer left and were removed. A resolver that cannot supply a
-    // provider is one of the three codes above.
+    // A build's model calls run on the caller's own key, so nothing is refused
+    // before a call: a resolver that cannot supply a provider is one of the
+    // three codes above.
   ],
   provider_request: [
     "flow_bootstrap.provider_request_failed",
@@ -88,8 +86,8 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // catch used it for every unrecognised throw -- so it read as "a request was
     // attempted and its answer is unknown" for failures where no request was
     // ever made. Four consecutive runs of the wrong-answer repair recorded it
-    // with no provider status, and it named nothing: the grant refusals were
-    // ruled out by giving them their own codes and the code did not change.
+    // with no provider status, and it named nothing: every refusal with its
+    // own code was ruled out and the code did not change.
     //
     // These three separate the kinds that remain. `aborted_or_timed_out` is a
     // DOMException, which is what an abort and a deadline both arrive as;
@@ -169,8 +167,8 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.evidence_unusable_decision",
     // Building the Flow needed an action with a lasting consequence the build
     // was not permitted. Not a failure of the build: the diagnostic carries
-    // the request a person grants or refuses, and a build whose grant holds
-    // what it asks for can take the action.
+    // the request a person allows or refuses, and a build permitted what it
+    // asks for can take the action.
     "flow_bootstrap.permission_required"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],

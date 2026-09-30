@@ -48,10 +48,6 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     handler: async (request) => {
       const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true } : {};
       if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      // Grants are gone (t186): a run's model calls need nothing issued or
-      // held. A caller still sending a grant id is refused rather than run
-      // without the thing it believes it is relying on.
-      if ((raw as Record<string, unknown>).llmExecutionGrantId !== undefined) return { ok: false, error: "LLM execution grants no longer exist; send runIntent alone." };
       const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, ...payload } = raw;
       // Every intent a runtime session runs under, named in one place, so
       // `explore_and_adapt` is reachable from a failed run rather than being a

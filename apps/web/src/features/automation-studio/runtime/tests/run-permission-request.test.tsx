@@ -27,7 +27,7 @@ import { RunPermissionRequest } from "../RunPermissionRequest";
  * creation and ordinary modification are not separately gated.
  *
  * This fixture asked about publishing until 2026-09-28, when Core stopped
- * gating sends on the rule that the person's instruction is itself the grant -
+ * gating sends on the rule that the person's instruction is itself the permission -
  * so a send no longer raises a request for the panel to render. Deleting and
  * moving money are the two classes left, and what these tests are about is what
  * the panel does with a request, not which class produced it.
@@ -160,7 +160,7 @@ describe("RunPermissionRequest", () => {
     }
   });
 
-  it("offers no Allow for a run that carried no grant, and says how to be asked again", async () => {
+  it("offers no Allow for a run that was permitted nothing, and says how to be asked again", async () => {
     const request = await coreRequest({ granted: [] });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(<RunPermissionRequest onDismiss={vi.fn()} runDetail={{ metadata: { permissionRequest: request } }} />); });

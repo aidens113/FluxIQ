@@ -156,7 +156,9 @@ describe("AutomationStudioService recording persistence", () => {
       flowId: "flow.target-proposal",
       metadata: {
         ...adaptive,
-        adaptationPolicySettings: { ...policy, allowModifyActionTargets: false, maxInterventionsPerRun: 1, maxEstimatedCostUsdPerRun: 0.001 },
+        // The Flow's cost ceiling is the run's purse (no grant carries one of
+        // its own), so it is the product default of $0.25.
+        adaptationPolicySettings: { ...policy, allowModifyActionTargets: false, maxInterventionsPerRun: 1, maxEstimatedCostUsdPerRun: 0.25 },
         trainingModeSettings: {
           ...training,
           budgets: { ...(training.budgets as JsonObject), maxInterventionsPerRun: 1, maxTokensPerRun: 3000 }

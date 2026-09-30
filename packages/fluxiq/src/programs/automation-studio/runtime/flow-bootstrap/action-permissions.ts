@@ -9,13 +9,13 @@
 // or had nobody stop it, and built a Flow that would take the action every time
 // it ran.
 //
-// This puts one gate in front of both. The grant a person issued for the build
-// says which consequences it may have. The domain declares, action by action,
+// This puts one gate in front of both. The consequences a person permitted the
+// build say which it may have. The domain declares, action by action,
 // which ones it would: for a step the build takes now while exploring, and for
 // a step the finished Flow would take each time it runs, as it resolves that
 // step's parameters. The first action the build does not hold ends it with
 // `flow_bootstrap.permission_required`, carrying the request, and a later
-// build's grant carries the person's answer.
+// build's permitted consequences carry the person's answer.
 //
 // **An exploration refusal is recoverable; a plan refusal ends the build.** The
 // two are not the same event and used to be treated as one. An exploration step
@@ -36,7 +36,7 @@
 // `requestId` (`runtime/conversations/ask.ts`), and a parking port that opens
 // one and holds the work in place until it is settled. This is the wiring
 // between them: the gate raises the request, the ask puts it in the Flow's
-// thread, and a grant widens what the build holds and lets the same action go
+// thread, and an answer that allows it widens what the build holds and lets the same action go
 // ahead. Nothing new was invented for it.
 //
 // That changes the model's incentive as much as its capability. While a
@@ -134,7 +134,7 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
 };
 
 export function automationStudioFlowBootstrapActionPermissions(input: {
-  /** From the build's grant. Absent permits nothing. */
+  /** The consequences the build was permitted. Absent permits nothing. */
   permittedConsequences: readonly string[] | undefined;
   /** The instructions the build carries out: the reason any action was wanted. */
   instructionIds: readonly string[];

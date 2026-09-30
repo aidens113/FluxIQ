@@ -104,7 +104,7 @@ export function automationStudioConversationWriter(input: {
 
 /**
  * The ask a permission request becomes. `askId` is the request's `requestId`,
- * `missing` is what a later grant must add, and the request travels whole so
+ * `missing` is what a later permission must add, and the request travels whole so
  * the reader shows exactly what Core built rather than a summary of it.
  */
 export function automationStudioConversationPermissionAsk(request: AutomationStudioActionPermissionRequest, options?: AutomationStudioConversationPermissionAskOptions): AutomationStudioConversationAskInput {

@@ -4,9 +4,9 @@
 import { automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
-// The most provider calls a Flow may pin. It was the grant service's call
-// backstop until grants went (t186); the number is unchanged, and the run's
-// own budget is what actually bounds spend.
+// The most provider calls a Flow may pin. The run's own budget, and the Flow's
+// `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what actually bound
+// spend.
 const FLOW_LLM_EXECUTION_MAX_CALLS = 64;
 
 export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {

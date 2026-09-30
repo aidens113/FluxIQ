@@ -421,7 +421,7 @@ async function apply(options: {
   /** The recovery's permission gate, and what the patch says it would lastingly do. */
   gate?: AutomationStudioActionPermissionGate;
   consequences?: AutomationStudioActionConsequence[];
-  /** The production default a granted run has: no external side effects, and none authorized. */
+  /** The production default a model-assisted run has: no external side effects, and none authorized. */
   sideEffectsWithheld?: true;
   /** The same patch this many times, in one answer. */
   repeat?: number;

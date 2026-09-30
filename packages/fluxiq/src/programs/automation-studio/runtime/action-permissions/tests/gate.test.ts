@@ -2,7 +2,7 @@
 // a request may carry out to a person.
 //
 // Two properties are load-bearing and each is a mutation this file must catch:
-// an absent grant never permits a consequence that cannot be taken back, and an
+// an absent permitted set never permits a consequence that cannot be taken back, and an
 // action the run does not hold never proceeds without a request being raised.
 //
 // `REFUND` declares money and an edit, and since 2026-09-26 only the first is
@@ -37,7 +37,7 @@ function gate(permittedConsequences?: readonly string[]) {
 }
 
 describe("the action permission gate", () => {
-  it("permits nothing it cannot take back when the grant says nothing, and asks instead", async () => {
+  it("permits nothing it cannot take back when the permitted set says nothing, and asks instead", async () => {
     const run = gate(undefined);
     const verdict = await run.checkFor(STEP)(REFUND);
 
@@ -58,7 +58,7 @@ describe("the action permission gate", () => {
     expect(run.signal.aborted).toBe(true);
   });
 
-  it("permits nothing it cannot take back on an empty grant either", async () => {
+  it("permits nothing it cannot take back on an empty permitted set either", async () => {
     expect((await gate([]).checkFor(STEP)(REFUND)).permitted).toBe(false);
   });
 
@@ -70,7 +70,7 @@ describe("the action permission gate", () => {
     expect(run.request?.sentence).toBe("To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money and delete or remove something. Neither its instruction nor a grant allows that, so it stopped to ask.");
   });
 
-  it("permits an action whose every consequence the grant holds, and raises nothing", async () => {
+  it("permits an action whose every consequence the run is permitted, and raises nothing", async () => {
     const run = gate(["move_money", "modify_existing"]);
 
     expect(await run.checkFor(STEP)(REFUND)).toEqual({ permitted: true });
@@ -78,10 +78,10 @@ describe("the action permission gate", () => {
     expect(run.signal.aborted).toBe(false);
   });
 
-  // Three classes, and three different reasons not to ask about one: the grant
+  // Three classes, and three different reasons not to ask about one: the run is permitted
   // holds `delete`, nobody is asked about `modify_existing` any more, and
   // `move_money` is neither -- so it is the only thing the request carries.
-  it("asks for exactly what the grant lacks, never what it already holds", async () => {
+  it("asks for exactly what the permitted set lacks, never what it already holds", async () => {
     const run = gate(["delete"]);
     const voidLine: AutomationStudioActionDeclaration = { consequences: ["move_money", "delete", "modify_existing"], control: { name: "Refund line 1", kind: "button" }, verb: "press" };
 
@@ -90,7 +90,7 @@ describe("the action permission gate", () => {
     expect(run.request?.consequences).toEqual(["move_money", "delete", "modify_existing"]);
   });
 
-  it("never reads a class it does not recognise as a grant", async () => {
+  it("never reads a class it does not recognise as permitted", async () => {
     const run = gate(["purchase", "refund", "*", "MOVE_MONEY"]);
 
     expect((await run.checkFor(STEP)({ consequences: ["move_money"], control: { name: "Refund line 1" }, verb: "press" })).permitted).toBe(false);
@@ -187,7 +187,7 @@ describe("the check an action gets with no run behind it", () => {
   });
 });
 
-describe("the permission set a grant carries", () => {
+describe("the permission set a run carries", () => {
   it("is empty when absent, and in Core's order without repeats when given", async () => {
     expect(parseAutomationStudioPermittedConsequences(undefined)).toEqual([]);
     expect(parseAutomationStudioPermittedConsequences(["create_new", "move_money", "create_new"])).toEqual(["move_money", "create_new"]);

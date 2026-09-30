@@ -95,7 +95,7 @@ describe("building a Flow that needs an action a person has not allowed", () => 
 });
 
 describe("the same build, when the instruction itself asks for it", () => {
-  it("goes ahead with no grant, and keeps what the instruction asked for with the proposal and the Flow", async () => {
+  it("goes ahead with nothing permitted, and keeps what the instruction asked for with the proposal and the Flow", async () => {
     const run = await build([pressDecision(REFUND.handle), complete(pressPlan(REFUND.handle))], undefined, [
       { consequence: "move_money", quote: "Refund the first line" },
       { consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }

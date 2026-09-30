@@ -185,7 +185,7 @@ describe("Automation Studio live patch testing", () => {
 
   // A recovery's permission gate is the authority over what a repair may
   // lastingly do. When it said yes -- nothing lasting declared, or every class
-  // allowed by the person's grant or instruction -- that is the explicit
+  // allowed by the person's permission or instruction -- that is the explicit
   // authorization both side-effect lines ask for, so neither applies. Every
   // other check still does.
   it("lets a patch the permission gate allowed past both side-effect lines, and nothing else", () => {

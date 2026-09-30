@@ -18,7 +18,7 @@
 // two consequence classes and means the person re-authorizes, not that the
 // panel is asking whether it may. Everything else runs: editing a Flow,
 // changing a setting, rolling a version back. The
-// person's instruction is the grant.
+// person's instruction is the permission.
 
 import {
   panelCapabilityAsksFirst,

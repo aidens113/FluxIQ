@@ -65,7 +65,7 @@ describe("only deleting and moving money stop for the person", () => {
   it("pins the classes that re-authorize to Core's own two", () => {
     // Widening this re-gates ordinary panel work, which is exactly what the
     // product owner ruled out: the person asking for the automation is the
-    // grant. Core decides this in runtime/action-permissions/destructive.ts;
+    // permission. Core decides this in runtime/action-permissions/destructive.ts;
     // this is the browser's copy of that decision and must not drift from it.
     expect([...PANEL_CAPABILITY_ASKING_CONSEQUENCES]).toEqual(["move_money", "delete"]);
   });

@@ -26,7 +26,7 @@ describe("the policy as a request describes it", () => {
     });
   });
 
-  it("says a run with no grant and no instructed set is permitted nothing lasting, and still asks rather than refuses", () => {
+  it("says a run with no permitted and no instructed set is permitted nothing lasting, and still asks rather than refuses", () => {
     const context = packAutomationStudioLlmContext({ ...diagnosis(), actionPermissions: { granted: [], instructed: [] } });
 
     expect(context.policyGates).toMatchObject({ actionPermissions: { permitted: [], granted: [], instructed: [] } });

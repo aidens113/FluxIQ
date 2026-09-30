@@ -2,20 +2,20 @@
 //
 // An evidence loop asks the provider what to do next, one call per decision. A
 // call can fail in two very different ways. It can fail because of the
-// authorization or the request itself -- the grant ended, the key was
-// rejected, Core refused to build the request -- and nothing about asking again
+// credential or the request itself -- the caller's key was rejected or is
+// gone, Core refused to build the request -- and nothing about asking again
 // changes that. Or it can fail because of the reply or the network -- a
 // malformed object, a reply that did not pass Core's checks, a timeout, a
 // moment of provider unavailability -- and the next call may well succeed. The
-// execution grant already draws exactly that line with the failure-disposition
-// table: the first kind ends the grant, the second only spends the call.
+// failure-disposition table draws exactly that line: the first kind ends the
+// model's calls, the second only spends the call.
 //
 // This module draws the same line for the loop. A caller whose decision call
 // failed the second way throws `AutomationStudioLlmUnusableDecisionError`, and
 // a loop configured for it spends that iteration and asks again rather than
-// ending. Whether a result is that kind of failure is read from the same table
-// the grant reads, so "a failure the grant survives" and "a decision worth
-// asking again" can never drift apart.
+// ending. Whether a result is that kind of failure is read from that table, so
+// "a failure that only spends the call" and "a decision worth asking again" can
+// never drift apart.
 //
 // Closed, and it fails closed. Every error the call ended with must be a
 // provider failure whose disposition is a spent call, or a finding in

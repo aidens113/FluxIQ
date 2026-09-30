@@ -51,7 +51,7 @@ export type AutomationStudioRunControlSnapshot = {
   step?: number;
   requestedAt?: number;
   pausedAt?: number;
-  /** When a held run stops itself rather than holding its grant and lease forever. */
+  /** When a held run stops itself rather than holding its browser and admission forever. */
   expiresAt?: number;
   reason?: string;
   /** The last node the run reached, paused or not. */

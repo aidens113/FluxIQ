@@ -246,7 +246,7 @@ describe("Automation Studio LLM execution API", () => {
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
-    for (const extra of [{ runId: "run.one" }, { authorizedExternalSideEffects: true }, { dryRunLlm: true }, { purpose: "diagnosis_only" }, { llmExecutionGrantId: "llm-grant:build" }]) {
+    for (const extra of [{ runId: "run.one" }, { authorizedExternalSideEffects: true }, { dryRunLlm: true }, { purpose: "diagnosis_only" }]) {
       const response = await registry.call({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
@@ -361,14 +361,13 @@ describe("Automation Studio LLM execution API", () => {
 
     expect(response).toMatchObject({ ok: true, payload: { adaptation: { adaptationId: "adaptation.bootstrap.long", status: "proposed", accounting } } });
   });
-  it("refuses an unsupported run intent, a leftover grant id, and an unknown consequence class", async () => {
+  it("refuses an unsupported run intent and an unknown consequence class", async () => {
     const runRuntimeSession = vi.fn();
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, { runRuntimeSession } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
     const call = (payload: Record<string, unknown>) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", ...payload } });
     await expect(call({ runIntent: "unbounded_build" })).resolves.toEqual({ ok: false, error: "The run intent is not one Core supports." });
-    await expect(call({ runIntent: "diagnosis_only", llmExecutionGrantId: "llm-grant:old" })).resolves.toEqual({ ok: false, error: "LLM execution grants no longer exist; send runIntent alone." });
     await expect(call({ runIntent: "explore_and_adapt", permittedConsequences: ["purchase"] })).resolves.toEqual({ ok: false, error: "The run's permitted consequences name a class Core does not recognise." });
     expect(runRuntimeSession).not.toHaveBeenCalled();
   });

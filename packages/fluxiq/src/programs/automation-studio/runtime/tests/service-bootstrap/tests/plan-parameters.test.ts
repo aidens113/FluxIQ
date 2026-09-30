@@ -219,9 +219,9 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   // It used to stop after three, and three was wrong: a model correcting one
   // mistake at a time is making progress, and the guard ended builds that were
   // working. It keeps asking now until what the build may spend runs out -- here
-  // the grant's own call count -- and still says which check refused the last
+  // the run's own call count -- and still says which check refused the last
   // plan and never creates anything.
-  it("keeps asking past three refused plans, spends what the grant allows, and says which check refused the last", async () => {
+  it("keeps asking past three refused plans, spends what the run allows, and says which check refused the last", async () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
@@ -251,7 +251,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", issueCodes: ["bootstrap.handle_resolution_unavailable"] });
   });
 
-  // The streak is never longer than the calls the grant allows, so a build
+  // The streak is never longer than the calls the run allows, so a build
   // whose every call was refused still ends under the refusal's name.
   it("names the last refusal when a build's calls all go on refused plans", async () => {
     const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)], { maxCallsPerRun: 2 });

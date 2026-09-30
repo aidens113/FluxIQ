@@ -21,7 +21,7 @@
 // Spending is read from each decision's reported usage. A decision the caller
 // could not use reports none, so it is counted at the loop's average; and one
 // decision's worth is held back for calls the loop cannot see that spend the
-// same grant, such as the build's one reading of its instructions.
+// same run budget, such as the build's one reading of its instructions.
 //
 // **The last decisions are for finishing, not only the very last one.** The
 // last decision used to be the only one offered completion alone, so a
@@ -44,9 +44,9 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS = 3;
 
 /** The bounds a loop is given, each optional. */
 export type AutomationStudioLlmEvidenceLoopBudget = {
-  /** The run's whole token budget, as the grant holds it. */
+  /** The run's whole token budget. */
   maxTotalTokens?: number;
-  /** The most one decision may use. A grant refuses a call once less than this is left. */
+  /** The most one decision may use. The run's budget refuses a call once less than this is left. */
   maxTokensPerDecision?: number;
   /** The run's cost ceiling, held against what decisions report having spent. */
   maxCostUsd?: number;
