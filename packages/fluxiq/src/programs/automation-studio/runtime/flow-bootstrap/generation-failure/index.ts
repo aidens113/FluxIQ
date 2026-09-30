@@ -25,3 +25,4 @@ export * from "./failure-state.ts";
 export * from "./harness-failure.ts";
 export * from "./harness-vocabulary.ts";
 export * from "./phase-failure.ts";
+export * from "./thrown-issue-codes.ts";

@@ -65,6 +65,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
@@ -349,7 +350,12 @@ function fromDraft(
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): AutomationStudioFlowBootstrapAcceptance {
-  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+  // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
+  // summary is one sentence about the Flow, and refusing a whole Flow because the
+  // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
+  // (`bootstrap.completion_profile_limit_exceeded`, `maxSummaryLength`).
+  const written = typeof result.summary === "string" ? result.summary.replace(/\s+/gu, " ").trim() : "";
+  const summary = (written || "Flow built from the steps that ran.").slice(0, AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength);
   const assembled = assembleAutomationStudioFlowDraftPlan({
     steps: steps.filter(automationStudioFlowDraftStepIsProposed),
     write: automationStudioFlowBootstrapDraftNodeStep,

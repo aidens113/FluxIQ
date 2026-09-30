@@ -112,7 +112,8 @@ describe("what the model was shown of its draft", () => {
     ["reordered fields", { format: "step_rows_v1", fields: [...PACKED_FIELDS].reverse(), steps: [] }],
     ["object lines", { format: "step_rows_v1", fields: PACKED_FIELDS, steps: [{ step: 1, input: {} }] }],
     ["a short row", { format: "step_rows_v1", fields: PACKED_FIELDS, steps: [[1, "press", {}, null, "yes", "kept"]] }],
-    ["an invalid input cell", { format: "step_rows_v1", fields: PACKED_FIELDS, steps: [[1, "press", "hidden", null, "yes", "kept", true]] }],
+    ["an unknown disposition", { format: "step_rows_v1", fields: PACKED_FIELDS, steps: [[1, "press", {}, null, "yes", "pending", true]] }],
+    ["an invalid input cell",{ format: "step_rows_v1", fields: PACKED_FIELDS, steps: [[1, "press", "hidden", null, "yes", "kept", true]] }],
     ["an extra column", { format: "step_rows_v1", fields: PACKED_FIELDS, steps: [[1, "press", {}, null, "yes", "kept", true, null, null, null, "extra"]] }]
   ])("fails closed on %s instead of reporting zero omissions", (_label, packed) => {
     expect(() => automationStudioLlmEvidenceLoopDraftShown({
@@ -120,6 +121,40 @@ describe("what the model was shown of its draft", () => {
       budget: 4_000,
       minBytes: FLOOR
     })).toThrow("Cannot measure malformed or unknown packed draft shape");
+  });
+
+  // `run-muncqlr0-3348202b`, `run-munda7ub-d9214e3b` and `run-mune0xh1-2470406a`
+  // each ended its build with a bare `thrown.Error` right after a tool call: the
+  // first packed entry of a draft holding a refused press. The draft shows such a
+  // step as `did_not_work` (`flow-draft/entry.ts`, `shownDisposition`), and this
+  // reader knew only the three dispositions a step keeps, so it refused the
+  // producer's own entry and the refusal ended the build. Every disposition the
+  // draft can show is built here, through the producer, with every draft state.
+  it("measures a packed entry whatever disposition each step is shown with", () => {
+    const shownAs = [
+      { disposition: "kept", effectApplied: true },
+      { disposition: "dropped", effectApplied: true },
+      { disposition: "exploratory", effectApplied: true },
+      { disposition: "kept", effectApplied: false },
+      { disposition: "dropped", effectApplied: false },
+      { disposition: "kept", effectApplied: undefined }
+    ] as const;
+    const draft = steps(12, "x".repeat(40)).map((line, index): AutomationStudioFlowDraftStep => {
+      const { effectApplied, disposition } = shownAs[index % shownAs.length]!;
+      const { effectApplied: _applied, ...rest } = line;
+      void _applied;
+      return { ...rest, disposition, ...(effectApplied === undefined ? {} : { effectApplied }) };
+    });
+    const ordinary = automationStudioFlowDraftEntry({ steps: draft, maxBytes: 100_000 })!.value;
+    const budget = Buffer.byteLength(JSON.stringify(ordinary), "utf8") - 1;
+    const entry = automationStudioFlowDraftEntry({ steps: draft, maxBytes: budget })!;
+    const rows = (entry.value as { format?: string; steps: unknown[][] });
+    expect(rows.format).toBe("step_rows_v1");
+    expect(new Set(rows.steps.map((row) => row[5]))).toEqual(new Set(["kept", "dropped", "exploratory", "did_not_work"]));
+
+    const measured = automationStudioLlmEvidenceLoopDraftShown({ value: entry.value, budget, minBytes: FLOOR });
+    expect(measured.steps).toBe(12);
+    expect(measured).not.toHaveProperty("withoutInput");
   });
 
   it("says the entry went over its budget rather than pretending it fitted", () => {

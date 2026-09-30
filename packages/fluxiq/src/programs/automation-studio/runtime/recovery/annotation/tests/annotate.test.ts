@@ -240,6 +240,25 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
   });
 
+  // The host's resolver declares no count since grants went; the Flow's own
+  // `llmExecutionSettings.maxCalls` is the count, read from the Flow the
+  // recovery already loads (`run-munnq7vz-98c3481c` ran past it in a build).
+  it("ends the exploration on the Flow's configured call count when the resolver declares none", async () => {
+    const executed: string[] = [];
+    const detail = await annotate({
+      executed,
+      maxCallsPerRun: "undeclared",
+      flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } }
+    });
+
+    expect(executed).toEqual(["test.inspect"]);
+    expect(explorationStage(detail)).toMatchObject({
+      status: "failed",
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
+    });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
+  });
+
   // The conflation this removed: an intervention limit counts interventions,
   // and it used to be read as a cap on provider calls, so a policy allowing one
   // intervention allowed one call and the exploration never began. With no

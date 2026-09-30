@@ -88,7 +88,7 @@ import {
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm } from "./llm/index.ts";
+import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmResolutionWithinFlowSettings, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { bindAutomationStudioActivityRun, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
@@ -1512,10 +1512,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         failureCode = "flow_bootstrap.provider_resolver_unavailable";
         if (!this.llmProviderResolver) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolver_unavailable");
         failureCode = "flow_bootstrap.provider_resolution_failed";
-        // The Flow's own settings name the model and the spend limit; the caller's key pays.
+        // The Flow's own settings name the model, the spend limit and the call-count and per-call cost limits (`llm/flow-execution-limits/`); the caller's key pays.
         const flowSettings = mergedFlowSettingsMetadata(parent.metadata);
         const modelId = typeof flowSettings.llmModel === "string" && flowSettings.llmModel.trim() ? flowSettings.llmModel.trim() : undefined;
-        const unresolvedProvider = await this.llmProviderResolver({ projectId, flowId, caller, ...(modelId ? { modelId } : {}) });
+        const unresolvedProvider = automationStudioLlmResolutionWithinFlowSettings(await this.llmProviderResolver({ projectId, flowId, caller, ...(modelId ? { modelId } : {}) }), parent.metadata);
         if (!unresolvedProvider || !("provider" in unresolvedProvider)) {
           throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_invalid");
         }
@@ -1591,7 +1591,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
                 expectedOutput: "evidence_tool_decision", ...(signal ? { signal } : {})
               });
-              estimatedInputTokens += decision.request.estimatedInputTokens;
+              estimatedInputTokens += decision.request.estimatedInputTokens; if (decision.ok) { failureStage = "provider_output_validation"; failureCode = "flow_bootstrap.provider_output_validation_failed"; } // A decision has come back, so a later throw is not "before the provider" (`run-muncqlr0-3348202b`).
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             }),
@@ -1679,7 +1679,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // Which kind of throw it was, where nothing above recognised it. This
       // outer fallback covers setup and later named phases; an exception from
       // the harness itself is converted at its scoped request boundary above.
-      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode));
+      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode), error);
     }
   };
   async createFlowBootstrapAdaptation(input: {
@@ -2583,7 +2583,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       scope,
       check: runResultCheck,
       // The caller who asked the model into this run wins: their key judges its answer.
-      ...(runCaller ? { resolveCallerProvider: async () => automationStudioResultVerificationProvider(await this.llmProviderResolver?.({ ...scope, providerId: "host", caller: runCaller })) } : {}),
+      ...(runCaller ? { resolveCallerProvider: async () => automationStudioResultVerificationProvider(automationStudioLlmResolutionWithinFlowSettings(await this.llmProviderResolver?.({ ...scope, providerId: "host", caller: runCaller }), canonical?.metadata)) } : {}),
       ...(this.resultCheckProviderResolver ? { resolveStandingProvider: async (request) => await this.resultCheckProviderResolver?.(request) } : {})
     }), ...(input.projectId && this.conversations.available ? { sayResultCheck: async (found) => await sayAutomationStudioResultCheck({ thread: this.conversations.writerFor({ projectId: input.projectId!, subject: { kind: "run", id: found.runId } }), found: { ...found, status: found.status as AutomationStudioResultVerificationStatus } }) } : {}), rerunRepairedFlow: async ({ detail, subflowId }) => {
       const session = input.projectId ? await this.getRuntimeSession(input.projectId, detail.summary.runId).catch(() => null) : null;

@@ -40,6 +40,7 @@ import {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,
+  automationStudioLlmResolutionWithinFlowSettings,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
@@ -195,6 +196,14 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       provider = authority.resolution.provider;
     }
   }
+  // The parent Flow, read once: where it is authored, which decides the
+  // exploration's options, what its build stored about what the person's
+  // instruction asks for, and the call-count and per-call cost limits
+  // its settings configure, which lower the resolution before the run budget is
+  // worked out from it (`llm/flow-execution-limits/`). The subflow graph that
+  // ran carries none of these.
+  const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
+  providerResolution = automationStudioLlmResolutionWithinFlowSettings(providerResolution, recoveryFlow?.metadata);
   const instructions = await ports.flowInstructionSet({
     projectId: input.context.projectId,
     flowId: input.context.flowId
@@ -273,10 +282,6 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       };
     }
   }
-  // The parent Flow, read once: where it is authored, which decides the
-  // exploration's options, and what its build stored about what the person's
-  // instruction asks for. The subflow graph that ran carries neither.
-  const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
   // One gate for the whole recovery, built once the provider has resolved,
   // over the consequences the run's caller already allowed.
   // Where a request this recovery raises reaches a person: the run's own

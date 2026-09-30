@@ -22,6 +22,8 @@ export type FluxIQClientGatewayWebSocketOptions = {
   url?: string;
   client: Omit<ClientGatewayClientHello, "token"> & { token?: string };
   WebSocketImpl?: FluxIQWebSocketConstructor;
+  /** How long `connect()` waits for the socket to open (default `CLIENT_GATEWAY_OPEN_TIMEOUT_MS`). */
+  openTimeoutMs?: number;
   tokenStorage?: {
     read(): string | undefined | Promise<string | undefined>;
     write(token: string): void | Promise<void>;

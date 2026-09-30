@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, automationStudioLlmResolutionWithinFlowSettings } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../recovery/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS, automationStudioFlowBootstrapEvidenceLoopLimits } from "../flow-bootstrap-evidence-loop.ts";
@@ -48,6 +48,20 @@ describe("the Flow Bootstrap budget", () => {
 
     expect(limits.loop.budget).toMatchObject({ maxCostUsd: 0.5 });
     expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(0.05, 9);
+  });
+
+  // `run-munnq7vz-98c3481c`: the Lab saved `maxCalls: 48`, the host's resolver
+  // declared no count, and the build ran to the loop's 64. The Flow's count,
+  // read into the resolution, is the loop's backstop.
+  it("stops a Flow configured for 48 calls at 48 decisions under the host's resolver defaults", () => {
+    const provider = { metadata: { provider: "mock", model: "mock" }, runTask: async () => ({}) };
+    const resolution = automationStudioLlmResolutionWithinFlowSettings({ provider, ...AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, tokenLimits: { ...AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits } }, {
+      llmExecutionSettings: { tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxCalls: 48, timeoutMs: 25_000, maxEstimatedCostUsd: 0.25, retryCount: 0 }
+    });
+
+    const limits = automationStudioFlowBootstrapEvidenceLoopLimits(resolution);
+    expect(limits.loop.maxIterations).toBe(48);
+    expect(limits.loop.maxToolCalls).toBe(49);
   });
 
   it("keeps the resolution's default total when the Flow sets no usable ceiling", () => {
