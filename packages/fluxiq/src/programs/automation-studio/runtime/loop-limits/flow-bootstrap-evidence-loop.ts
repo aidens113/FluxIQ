@@ -101,6 +101,13 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
    * underneath; this is the guard that stops a loop whose replies stay bad.
    */
   maxConsecutiveUnusableDecisions: number;
+  /**
+   * The call count the resolver or the Flow's settings declared, when one was:
+   * a budget the whole build is held to, repairs included
+   * (`runtime/flow-bootstrap/unfinished-build/`). Absent, the count is only the
+   * loop's backstop, which each phase of a build meets on its own.
+   */
+  declaredCalls?: number;
 };
 
 /**
@@ -142,7 +149,8 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
     // the run's deadline, all of which this function hands the loop as
     // its budget. This is only the stop for a build that has started repeating
     // itself and will not stop on its own.
-    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations)
+    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations),
+    ...(declared === undefined ? {} : { declaredCalls: declared })
   };
 }
 

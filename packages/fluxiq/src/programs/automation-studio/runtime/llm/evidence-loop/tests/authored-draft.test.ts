@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import { automationStudioLlmEvidenceParseDecision } from "../../evidence-loop-decision.ts";
-import { automationStudioLlmEvidenceAuthoredProgress } from "../authored-progress.ts";
+import { automationStudioLlmEvidenceAuthoredProgress } from "../../evidence-progress/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 
 const go = { toolId: "go", description: "Go or press.", inputSchema: { type: "object" }, effect: "mutate" as const };

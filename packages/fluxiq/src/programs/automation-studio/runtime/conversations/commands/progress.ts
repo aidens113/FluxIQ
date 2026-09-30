@@ -41,7 +41,12 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
  * than the sentence around them.
  */
 export function automationStudioConversationCallCause(what: string, response: AutomationStudioConversationCommandCallResult): string {
-  const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown } } | undefined)?.diagnostic;
+  const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown; ending?: { message?: unknown } } } | undefined)?.diagnostic;
+  // A build that could not finish carries a message written for the person --
+  // not doable and why, or the budget that ran out -- which says more than any
+  // code, so it is what they read (`flow-bootstrap/generation-failure/build-ending.ts`).
+  const ending = diagnostic?.ending?.message;
+  if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const detail = diagnostic && typeof diagnostic.code === "string"
     ? ` (${typeof diagnostic.stage === "string" ? `${diagnostic.stage}: ` : ""}${diagnostic.code})`
     : "";

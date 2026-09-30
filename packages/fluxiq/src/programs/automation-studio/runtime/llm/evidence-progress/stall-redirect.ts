@@ -55,7 +55,7 @@
 // is the same rule every evidence entry Core writes is held to.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
+import type { AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop/index.ts";
 
 /** The evidence entry the loop's no-progress redirection arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID = "core.no_progress";
@@ -132,9 +132,9 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
   };
 }
 
-/** The missing act ids that are ids, at most eight. */
+/** The missing act and choice ids that are ids, at most eight. */
 function actsMissing(input: AutomationStudioLlmEvidenceStallRedirectInput): string[] {
-  return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}$/u.test(id)))].slice(0, MAX_NAMED);
+  return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u.test(id)))].slice(0, MAX_NAMED);
 }
 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {

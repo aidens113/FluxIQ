@@ -21,3 +21,4 @@ export * from "./plan.ts";
 export * from "./reachability/index.ts";
 export * from "./review-projection.ts";
 export * from "./start-location.ts";
+export * from "./unfinished-build/index.ts";

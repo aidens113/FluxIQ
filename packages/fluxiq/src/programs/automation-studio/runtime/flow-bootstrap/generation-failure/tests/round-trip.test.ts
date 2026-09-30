@@ -22,7 +22,9 @@ const STAGES = Object.entries(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_COD
  * checked on its own below.
  */
 const PERMISSION_REQUIRED = "flow_bootstrap.permission_required";
-const EVERY_CODE = STAGES.flatMap(([stage, codes]) => codes.flatMap((code) => code === PERMISSION_REQUIRED ? [] : [[stage, code] as const]));
+/** The two endings a build that could not finish carries for the person, which only `flowBootstrapBuildEndingFailure` writes. */
+const ENDINGS: readonly string[] = ["flow_bootstrap.not_doable", "flow_bootstrap.evidence_budget_exhausted"];
+const EVERY_CODE = STAGES.flatMap(([stage, codes]) => codes.flatMap((code) => code === PERMISSION_REQUIRED || ENDINGS.includes(code) ? [] : [[stage, code] as const]));
 
 describe("Flow Bootstrap failure diagnostics round-trip", () => {
   // **The check that was missing.** `flowBootstrapPhaseFailure` wrote a

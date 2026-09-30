@@ -33,6 +33,18 @@ describe("the entry a continued build starts from", () => {
     });
   });
 
+  it("opens a repair with the judgement of the Flow as it stood, and says it is a repair", () => {
+    const judgement = { stopped: "iterations", test: "replay_failed", stepsThatDidNotWork: [2], stepsInFlow: 3, actsDone: 1, actsTodo: ["a1.quantity", "a2"] };
+    const entry = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "repeat_without_progress", outstandingIssueCodes: ["llm_evidence_loop.dry_run_refused"], judgement }, [step(1)]);
+    expect(entry.value).toMatchObject({
+      code: "llm_evidence_loop.repair",
+      stopped: "repeat_without_progress",
+      judgement,
+      instruction: expect.stringContaining("This is the repair of a Flow that was not finished")
+    });
+    expect(entry.value.instruction).toContain("complete only when every act and choice on the checklist is done");
+  });
+
   it("carries a stop for unusable decisions as it was given", () => {
     expect(automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "unusable_decisions", outstandingIssueCodes: [] }, []).value)
       .toMatchObject({ stopped: "unusable_decisions", draftSteps: 0, proposableSteps: 0, outstanding: [] });

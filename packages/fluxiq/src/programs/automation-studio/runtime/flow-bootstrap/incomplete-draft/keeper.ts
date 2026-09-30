@@ -39,8 +39,21 @@ export type AutomationStudioFlowBootstrapIncompleteDraftKeeper = {
    * never points at a record that does not exist.
    */
   exhausted<E>(result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, failure: (kept: AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined) => E): Promise<E>;
+  /**
+   * A build that ended after its Flow was tested, judged and repaired
+   * (`../unfinished-build/`): keep the draft its last round left, and return
+   * the pointer to it, or nothing when nothing was worth keeping or the write
+   * did not happen.
+   */
+  unfinished(stopped: AutomationStudioFlowBootstrapIncompleteDraft["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number): Promise<AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined>;
   /** The loop's stall failure, with the pointer to the draft it is about to keep. */
   stalled(error: AutomationStudioFlowBootstrapGenerationError): AutomationStudioFlowBootstrapGenerationError;
+  /**
+   * A stall that ends the build as it is (`../unfinished-build/`, an
+   * exploration with nothing in its Flow): the failure to throw, pointing at
+   * the draft kept for it once that is written, exactly as `settle` would.
+   */
+  stalledEnding(error: AutomationStudioFlowBootstrapGenerationError): Promise<unknown>;
   /** Awaits the loop, writing a stalled build's draft before its failure travels on. */
   settle<T>(loop: Promise<T>): Promise<T>;
   /** The build proposed a Flow: an incomplete draft of this Flow is no longer anything to continue. */
@@ -79,7 +92,7 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
   const kept = (stopped: AutomationStudioFlowBootstrapIncompleteDraft["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number) => input.enabled
     ? automationStudioFlowBootstrapIncompleteDraftKept({ projectId: input.projectId, flowId: input.flowId, baseDependencyDigest: input.baseDependencyDigest, sourceInstructionIds: input.sourceInstructionIds, stopped, outstandingIssueCodes: outstanding, completionAttempts, steps, ...(previous ? { previous } : {}), now: now() })
     : undefined;
-  return {
+  const keeper: AutomationStudioFlowBootstrapIncompleteDraftKeeper = {
     draft,
     attempted(steps) {
       attempts += 1;
@@ -96,6 +109,12 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
       }
       return failure({ revision: record.revision, steps: record.steps.length });
     },
+    async unfinished(stopped, outstanding, steps, completionAttempts) {
+      const record = kept(stopped, outstanding, steps, completionAttempts);
+      // Best-effort, as `exhausted` is: a write that failed leaves the ending as it is, only without a pointer to a record that does not exist.
+      const written = record ? await input.save(record).then(() => true, () => false) : false;
+      return record && written ? { revision: record.revision, steps: record.steps.length } : undefined;
+    },
     stalled(error) {
       const record = lastAttempt ? kept("unusable_decisions", error.diagnostic.issueCodes ?? [], lastAttempt, attempts) : undefined;
       if (!record || !error.diagnostic.evidenceLoop) return error;
@@ -105,6 +124,14 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
       });
       pending = { record, pointed, unpointed: error };
       return pointed;
+    },
+    async stalledEnding(error) {
+      try {
+        await keeper.settle(Promise.reject(keeper.stalled(error)));
+      } catch (thrown) {
+        return thrown;
+      }
+      return error;
     },
     async settle(loop) {
       try {
@@ -127,4 +154,5 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
       if (input.enabled && input.stored) await input.discard();
     }
   };
+  return keeper;
 }

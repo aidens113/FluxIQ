@@ -14,6 +14,7 @@ import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProvid
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
+import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
@@ -22,7 +23,7 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending"])) return null;
   if (typeof value.code !== "string") return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
   // code the taxonomy does not have belongs to none, and is not Core's.
@@ -53,6 +54,9 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   // say what threw: every other code already names its fault.
   const providerThrow = parseAutomationStudioFlowBootstrapProviderThrow(value.providerThrow);
   if (providerThrow === null || (providerThrow !== undefined && value.code !== PROVIDER_THROW_CODE)) return null;
+  // Required beside its two codes and refused beside any other, by the one parse its producer uses.
+  const ending = parseAutomationStudioFlowBootstrapBuildEnding(value.ending, value.code);
+  if (ending === null || (state.ending === "required") !== (ending !== undefined)) return null;
   return {
     code: value.code,
     stage,
@@ -63,7 +67,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(evidenceLoop ? { evidenceLoop } : {}),
     ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {}),
     ...(permissionRequest ? { permissionRequest } : {}),
-    ...(providerThrow ? { providerThrow } : {})
+    ...(providerThrow ? { providerThrow } : {}),
+    ...(ending ? { ending } : {})
   };
 }
 

@@ -95,10 +95,23 @@ const choosesItem = (kind: AutomationStudioInstructedActKind, verb: string): boo
 const TRAILING = /(?:[\s,;:(&"“—-]+|\s+(?:then|and|also|please|first|next|finally|now|just))+$/iu;
 
 /**
- * One way an act is asked for: a verb, and optionally what must follow it in
- * the same sentence (`after`, tested against the rest of the sentence).
+ * One way an act is asked for: a verb, optionally what must follow it in the
+ * same sentence (`after`, tested against the rest of the sentence), and
+ * optionally what must not (`unless`, tested against the verb as written and
+ * the rest of the sentence).
  */
-type ActPattern = { kind: AutomationStudioInstructedActKind; verb: RegExp; after?: RegExp };
+type ActPattern = { kind: AutomationStudioInstructedActKind; verb: RegExp; after?: RegExp; unless?: RegExp };
+
+/**
+ * Asking for the automation itself: "Create a deterministic Start to End
+ * Flow", "create an automation that ...". That is the instruction to FluxIQ,
+ * not a lasting act on the target, and read as one it refuses every Flow for
+ * a step no target could hold (t196's note: the service fixtures' instruction
+ * read as a `create`). Only `create` over the automation's
+ * own names, within the first seven words, so "Create a collection in my saved
+ * posts" stays an act.
+ */
+const THE_AUTOMATION_ITSELF = /^create(?:\s+\S+){0,6}?\s+(?:flows?|subflows?|automations?|workflows?)(?![A-Za-z])/iu;
 
 const word = (alternatives: string): RegExp => new RegExp(`(?<![A-Za-z'-])(?:${alternatives})(?![A-Za-z'-])`, "giu");
 
@@ -112,7 +125,7 @@ const PATTERNS: readonly ActPattern[] = [
   { kind: "open", verb: word("open|view|visit"), after: new RegExp(`^\\s+(?:up\\s+)?(?:my|the)\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
   { kind: "open", verb: word("go"), after: new RegExp(`^\\s+to\\s+(?:my|the)\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
   { kind: "open", verb: word("give|list|show|tell"), after: new RegExp(`^\\s+(?:me\\s+)?(?:\\S+\\s+){0,4}?(?:everything|what\\s+is|what's|whatever\\s+is|all)\\s+(?:that\\s+is\\s+|is\\s+)?(?:already\\s+|now\\s+)?(?:in|on)\\s+my\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
-  { kind: "submit", verb: word("book|buy|purchase|order|send|post|publish|create|confirm|withdraw|submit|reserve") },
+  { kind: "submit", verb: word("book|buy|purchase|order|send|post|publish|create|confirm|withdraw|submit|reserve"), unless: THE_AUTOMATION_ITSELF },
   { kind: "submit", verb: word("place"), after: /^\s+(?:a|an|my|the)\s+(?:[A-Za-z-]+\s+){0,2}?(?:bid|order|offer)(?![A-Za-z])/iu },
   { kind: "submit", verb: word("check\\s*out|checkout") },
   { kind: "submit", verb: word("ask"), after: /(?<![A-Za-z])for\s+(?:a|an)\s+(?:[A-Za-z-]+\s+){0,2}?(?:quote|estimate|call-?back)(?![A-Za-z])/iu },
@@ -133,6 +146,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
         const rest = sentence.slice(match.index + match[0].length);
         if (!commandPosition(sentence, match.index) || negated(sentence, match.index)) continue;
         if (pattern.after && !pattern.after.test(rest)) continue;
+        if (pattern.unless?.test(match[0] + rest)) continue;
         // One act of a kind per sentence: "Collect and use that store's coupon"
         // is one act asked for twice, not two.
         if (matched.some((act) => act.kind === pattern.kind)) continue;

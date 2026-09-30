@@ -6,6 +6,11 @@ import { runWithAutomationStudioActivity } from "./scope.ts";
  * Runs one Flow build as a unit of work: `building` when it starts, and
  * `done` or `failed` when it settles. A request without a usable project is
  * run unobserved, since there is no project to report it to.
+ *
+ * A build that could not finish says why in the chat (t208): "not doable"
+ * with its reason, or the budget that ran out, as the message Core wrote for
+ * the person (`../flow-bootstrap/generation-failure/build-ending.ts`) rather
+ * than the bare "Build failed" 30 live runs ended on (audit A3, cause 1).
  */
 export async function withAutomationStudioBuildActivity<T>(target: { projectId?: unknown; flowId?: unknown }, fn: () => Promise<T>): Promise<T> {
   if (typeof target.projectId !== "string" || !target.projectId) return await fn();
@@ -17,8 +22,25 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       emitAutomationStudioActivity({ phase: "done", label: "Build finished: a Flow is proposed", detail: { kind: "step", title: "Build finished", status: "succeeded" }, final: true });
       return built;
     } catch (error) {
-      emitAutomationStudioActivity({ phase: "failed", label: "Build failed", detail: { kind: "step", title: "Build failed", status: "failed" }, final: true });
+      const ending = buildEndingOf(error);
+      const title = ending ? ENDING_TITLES[ending.kind] : "Build failed";
+      emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(ending ? { text: ending.message } : {}) }, final: true });
       throw error;
     }
   });
+}
+
+const ENDING_TITLES = Object.freeze({
+  not_doable: "Not doable: this Flow could not be built",
+  budget_exhausted: "Build stopped: a budget ran out"
+});
+
+/**
+ * The ending a failed build carries for the person, read by shape: this module
+ * sits under the build and cannot import the failure's class without a cycle.
+ */
+function buildEndingOf(error: unknown): { kind: keyof typeof ENDING_TITLES; message: string } | undefined {
+  const ending = (error as { diagnostic?: { ending?: { kind?: unknown; message?: unknown } } } | null)?.diagnostic?.ending;
+  if (!ending || (ending.kind !== "not_doable" && ending.kind !== "budget_exhausted") || typeof ending.message !== "string" || !ending.message) return undefined;
+  return { kind: ending.kind, message: ending.message };
 }

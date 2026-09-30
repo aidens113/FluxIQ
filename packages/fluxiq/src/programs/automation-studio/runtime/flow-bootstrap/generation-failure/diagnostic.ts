@@ -13,6 +13,7 @@ import type { AutomationStudioActionPermissionRequest } from "../../action-permi
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
+import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
 
 export type AutomationStudioFlowBootstrapFailureDiagnostic = {
@@ -147,6 +148,13 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * own parse -- so a stored throw always reads back.
    */
   providerThrow?: AutomationStudioLlmProviderThrow;
+  /**
+   * Present exactly beside `flow_bootstrap.not_doable` and
+   * `flow_bootstrap.evidence_budget_exhausted`: what a build that could not
+   * finish tells the person, as a message they read in the chat, and the same
+   * facts as ids and counts (`./build-ending.ts`).
+   */
+  ending?: AutomationStudioFlowBootstrapBuildEnding;
 };
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;
