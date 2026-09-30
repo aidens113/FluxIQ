@@ -11,11 +11,17 @@
 // panel sat in, so the first thing anyone met was a box that would not take a
 // click and gave no reason. Now the box is only disabled when there is genuinely
 // nowhere to send -- and when it is, the reason sits above it in words.
+//
+// One rounded box at the foot of the window with the send arrow inside it,
+// the way every chat reads. The box grows with what is typed, up to six
+// lines, and says how much room is left only when little is.
 
 import { useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { Button } from "../../../programs/components";
 import { CONVERSATION_TEXT_MAX } from "../thread";
+
+const COMPOSER_ROWS_MAX = 6;
 
 export function ConversationComposer(props: {
   busy: boolean;
@@ -34,6 +40,7 @@ export function ConversationComposer(props: {
   }
 
   const remaining = CONVERSATION_TEXT_MAX - text.length;
+  const rows = Math.min(COMPOSER_ROWS_MAX, Math.max(1, text.split("\n").length));
   return (
     <form
       aria-label="Write to FluxIQ"
@@ -51,8 +58,8 @@ export function ConversationComposer(props: {
           aria-label="Message"
           disabled={props.disabled}
           maxLength={CONVERSATION_TEXT_MAX}
-          placeholder={props.disabled ? "" : "Tell FluxIQ what you want, or answer in your own words."}
-          rows={2}
+          placeholder={props.disabled ? "" : "Message FluxIQ"}
+          rows={rows}
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -61,18 +68,21 @@ export function ConversationComposer(props: {
             void send();
           }}
         />
-        <Button busy={props.busy} disabled={props.disabled || !text.trim()} type="submit" variant="primary">
-          <SendHorizontal aria-hidden size={14} />
-          Send
+        <Button
+          busy={props.busy}
+          className="automation-conversation-send"
+          disabled={props.disabled || !text.trim()}
+          title="Send (Enter). Shift and Enter start a new line."
+          type="submit"
+          variant="primary"
+        >
+          <ArrowUp aria-hidden size={16} />
+          <span className="automation-conversation-sr">Send</span>
         </Button>
       </div>
-      {props.disabled ? null : (
-        <p className="automation-conversation-composer-hint">
-          {remaining < 500
-            ? `${remaining.toLocaleString()} characters left.`
-            : "Enter sends. Shift and Enter start a new line."}
-        </p>
-      )}
+      {!props.disabled && remaining < 500 ? (
+        <p className="automation-conversation-composer-hint">{`${remaining.toLocaleString()} characters left.`}</p>
+      ) : null}
     </form>
   );
 }

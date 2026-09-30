@@ -50,7 +50,7 @@ describe("activity scope", () => {
     expect(seen.map((event) => event.label)).toEqual(["Run started", "Running step 2 of 5: Open list", "Running step 6"]);
     expect(seen.every((event) => event.activityId === "run:run-7")).toBe(true);
     expect(seen[1]!.step).toEqual({ index: 2, count: 5, nodeId: "n2", label: "Open list" });
-    expect(seen[2]!.detail).toMatchObject({ title: "n3", ref: "n3" });
+    expect(seen[2]!.detail).toMatchObject({ title: "Step 6", ref: "n3" });
   });
 });
 

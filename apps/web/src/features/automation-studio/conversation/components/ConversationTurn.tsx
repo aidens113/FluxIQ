@@ -9,8 +9,13 @@
 // and an ask that is still pending becomes a form. An ask already answered or
 // expired shows its outcome rather than a second set of buttons, because an
 // ask is answered once.
+//
+// It reads as a chat, not a log: the person's words sit on the right in a
+// bubble, FluxIQ's run the full width as formatted text (`ConversationText`),
+// and the panel's own records ("Started the run") are a quiet line. Who said
+// it and when stay in the turn for a screen reader and on hover, not as a
+// header over every message.
 
-import { Bot, User } from "lucide-react";
 import { formatRuntimeTimestamp } from "../../runtime";
 import {
   CONVERSATION_PANEL_RESULT_ATTACHMENT,
@@ -21,6 +26,7 @@ import {
 import type { ConversationCommands } from "../conversation-host";
 import { ConversationAskForm } from "./ConversationAskForm";
 import { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
+import { ConversationText } from "./ConversationText";
 
 export function ConversationTurn(props: {
   turn: ConversationTurnRecord;
@@ -37,15 +43,22 @@ export function ConversationTurn(props: {
   // would put words in the person's mouth.
   const panelRecord = turn.attachment?.kind === CONVERSATION_PANEL_RESULT_ATTACHMENT;
   const fromPerson = turn.author === "person" && !panelRecord;
-  const Icon = fromPerson ? User : Bot;
+  const author = fromPerson ? "You" : panelRecord ? "FluxIQ panel" : "FluxIQ";
+  const said = formatRuntimeTimestamp(turn.createdAt);
   return (
-    <article className={`automation-conversation-turn ${fromPerson ? "person" : "automation"}`}>
-      <header>
-        <Icon aria-hidden size={14} />
-        <strong>{fromPerson ? "You" : panelRecord ? "FluxIQ panel" : "FluxIQ"}</strong>
-        <time dateTime={new Date(turn.createdAt).toISOString()}>{formatRuntimeTimestamp(turn.createdAt)}</time>
+    <article
+      className={`automation-conversation-turn ${fromPerson ? "person" : "automation"}${panelRecord ? " panel-record" : ""}`}
+      title={said}
+    >
+      <header className="automation-conversation-turn-meta">
+        <strong>{author}</strong>
+        <time dateTime={new Date(turn.createdAt).toISOString()}>{said}</time>
       </header>
-      {turn.text ? <p>{turn.text}</p> : null}
+      {turn.text
+        ? fromPerson || panelRecord
+          ? <p className="automation-conversation-bubble">{turn.text}</p>
+          : <ConversationText text={turn.text} />
+        : null}
       {turn.attachment && !conversationAttachmentIsPanelRecord(turn.attachment.kind) ? (
         <ConversationAttachmentPanel
           attachment={turn.attachment}

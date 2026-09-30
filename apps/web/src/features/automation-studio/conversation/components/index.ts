@@ -1,10 +1,10 @@
-export { ConversationActivityHeader } from "./ConversationActivityHeader";
-export { ConversationActivityRow } from "./ConversationActivityRow";
+export { ConversationActivityBlock } from "./ConversationActivityBlock";
 export { ConversationAskForm } from "./ConversationAskForm";
 export { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
 export { ConversationComposer } from "./ConversationComposer";
 export { ConversationDock, conversationLauncherLabel, type ConversationDockProps } from "./ConversationDock";
 export { ConversationOpeningMessage } from "./ConversationOpeningMessage";
+export { ConversationText } from "./ConversationText";
 export { ConversationThread } from "./ConversationThread";
 export { ConversationTurn } from "./ConversationTurn";
 export { ConversationView } from "./ConversationView";
