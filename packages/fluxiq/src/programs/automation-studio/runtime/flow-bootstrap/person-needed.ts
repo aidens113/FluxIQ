@@ -32,31 +32,29 @@
 // **Bounded.** A build asks at most `maxAsks` times. A site that keeps putting
 // a check in front of every step is not one a build should keep a person
 // clearing, and past the bound the build ends with the same code.
+//
+// **Shared with recovery.** The question, the wait, the bound and the fresh
+// look are `../parking/person-needed-tool-calls.ts`, which a recovery's
+// exploration wraps its executor with too. What is the build's own is here:
+// the stage it asks from, what the person is shown while it waits, and the
+// `flow_bootstrap.user_intervention_required` ending.
 
 import { randomUUID } from "node:crypto";
-import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { JsonObject } from "../../../../core/index.ts";
 import { emitAutomationStudioActivity, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../llm/index.ts";
 import {
-  automationStudioAskedPersonNeeded,
-  automationStudioPersonNeededAsk,
-  automationStudioPersonNeededAskDraft,
-  type AutomationStudioParkingPort,
-  type AutomationStudioPersonNeededOutcome
+  AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
+  AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS,
+  automationStudioPersonNeededToolCalls,
+  type AutomationStudioParkingPort
 } from "../parking/index.ts";
 import { flowBootstrapUserInterventionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 
 /** How many times one build may put the question to a person. */
-export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERSON_NEEDED_MAX_ASKS = 3;
-
-/**
- * What the model is told in place of the call's own evidence, once the person
- * has completed the check. The fresh look travels beside it, under `now`.
- */
-const PERSON_COMPLETED_NOTE = "This step met a check only a person can complete. FluxIQ handed it to the person, who completed it and pressed Continue, so the step stands. `now` is a fresh look at the target as it is after that. Never press, type into or reload a check.";
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERSON_NEEDED_MAX_ASKS = AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS;
 
 type ExecuteTool = AutomationStudioLlmEvidenceLoopInput["executeTool"];
-type ToolCall = Parameters<ExecuteTool>[0];
 
 export type AutomationStudioFlowBootstrapPersonNeeded = {
   /** The executor the loop is handed: the inner one, with every person-needed result put to a person first. */
@@ -72,15 +70,6 @@ export type AutomationStudioFlowBootstrapPersonNeeded = {
     progress?: { trace: readonly AutomationStudioLlmEvidenceLoopTrace[]; accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting> },
     accounting?: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>
   ): AutomationStudioFlowBootstrapGenerationError | undefined;
-};
-
-/** Why a build stopped for a person, as the one issue code its ending carries. */
-const ISSUE_CODE: Readonly<Record<Exclude<AutomationStudioPersonNeededOutcome, "done"> | "asks_exhausted", string>> = {
-  stopped: "person_needed.stopped",
-  timed_out: "person_needed.timed_out",
-  unreachable: "person_needed.no_thread",
-  cancelled: "person_needed.cancelled",
-  asks_exhausted: "person_needed.asks_exhausted"
 };
 
 export function automationStudioFlowBootstrapPersonNeeded(input: {
@@ -103,118 +92,29 @@ export function automationStudioFlowBootstrapPersonNeeded(input: {
   maxAsks?: number;
   newAskId?: () => string;
 }): AutomationStudioFlowBootstrapPersonNeeded {
-  const stopped = new AbortController();
-  const maxAsks = input.maxAsks ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERSON_NEEDED_MAX_ASKS;
-  const newAskId = input.newAskId ?? (() => `person-needed.${randomUUID()}`);
-  const look = input.tools.find((tool) => tool.initialObservation);
-  let asks = 0;
-  let ended: keyof typeof ISSUE_CODE | undefined;
-
-  const end = (reason: keyof typeof ISSUE_CODE): never => {
-    ended ??= reason;
-    stopped.abort();
-    // Thrown, not returned: whatever this call answered is about a check, and
-    // the loop records a thrown call without showing a model any of it.
-    throw new Error(`The build stopped for a person (${ISSUE_CODE[ended]}).`);
-  };
-
-  /** Puts the question once, and says whether the person got past the check. */
-  const asked = async (call: ToolCall): Promise<void> => {
-    if (asks >= maxAsks) end("asks_exhausted");
-    asks += 1;
-    if (!input.ask) end("unreachable");
-    const ask = automationStudioPersonNeededAsk(
-      { ...automationStudioPersonNeededAskDraft({ timeoutMs: input.ask!.timeoutMs }), askId: newAskId() },
-      { stage: "authoring" }
-    );
-    emitAutomationStudioActivityWaitingOnAsk(ask);
-    const outcome = await automationStudioAskedPersonNeeded({ port: input.ask!.port, ...(input.signal ? { signal: input.signal } : {}), ...(input.ask!.now ? { now: input.ask!.now } : {}) }, ask);
-    if (outcome !== "done") end(outcome);
-    emitAutomationStudioActivity({ phase: "building", label: "The person completed the check; building goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } });
-  };
-
-  /** A fresh look at the target, or why there is none: no look to take, or one that threw. */
-  const freshLook = async (call: ToolCall): Promise<FreshLook> => {
-    if (!look) return { seen: false, why: "no_look" };
-    for (;;) {
-      let ran: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult;
-      try {
-        ran = await input.executeTool({ callId: `${call.callId}.look`, toolId: look.toolId, value: structuredClone(look.initialObservation!.input), maxEvidenceBytes: call.maxEvidenceBytes, ...(call.signal ? { signal: call.signal } : {}) });
-      } catch (error) {
-        // The build stopping is not a look that failed.
-        if (stopped.signal.aborted) throw error;
-        // The step stands either way: the model is told the look did not come
-        // back, and can take its own next turn.
-        return { seen: false, why: "look_threw" };
-      }
-      // The person said Continue and the check is still there, or another one
-      // came up: asked again, within the same bound.
-      if (personNeeded(ran)) {
-        await asked(call);
-        continue;
-      }
-      if (!executionResult(ran)) return { seen: true, evidence: ran };
-      const stateAfter = ran.stateDigests?.after ?? ran.stateDigests?.before;
-      return { seen: true, evidence: ran.evidence, ...(stateAfter ? { stateAfter } : {}) };
+  const calls = automationStudioPersonNeededToolCalls({
+    executeTool: input.executeTool,
+    tools: input.tools,
+    stage: "authoring",
+    subject: "build",
+    ask: input.ask,
+    signal: input.signal,
+    clearedResultCode: input.clearedResultCode,
+    maxAsks: input.maxAsks,
+    newAskId: input.newAskId ?? (() => `person-needed.${randomUUID()}`),
+    onAsk: (ask) => emitAutomationStudioActivityWaitingOnAsk(ask),
+    onCleared: (call) => emitAutomationStudioActivity({ phase: "building", label: "The person completed the check; building goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } })
+  });
+  return {
+    executeTool: calls.executeTool,
+    signal: calls.signal,
+    endedOnIntervention: (progress, accounting) => {
+      const ended = calls.ended();
+      return ended
+        ? flowBootstrapUserInterventionRequiredFailure(AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES[ended], progress ?? NO_LOOP_PROGRESS, accounting)
+        : undefined;
     }
   };
-
-  return {
-    executeTool: async (call) => {
-      const ran = await input.executeTool(call);
-      if (!personNeeded(ran)) return ran;
-      if (ended) end(ended);
-      await asked(call);
-      const now = await freshLook(call);
-      return standing(ran, now, input.clearedResultCode?.(call.value));
-    },
-    signal: stopped.signal,
-    endedOnIntervention: (progress, accounting) => ended
-      ? flowBootstrapUserInterventionRequiredFailure(ISSUE_CODE[ended], progress ?? NO_LOOP_PROGRESS, accounting)
-      : undefined
-  };
-}
-
-/** What the look after the person came back with. */
-type FreshLook = { seen: true; evidence: JsonValue; stateAfter?: string } | { seen: false; why: "no_look" | "look_threw" };
-
-/**
- * The call as it stands once the person has cleared the check.
- *
- * The caller's own statement about the step is kept -- what it ran, whether it
- * changed anything, which node it was -- because the caller wrote it describing
- * the step once cleared. Its code and reason are not: they describe the check,
- * which is behind the person now. `clearedCode` stands in for the code where
- * the call is read in a vocabulary of its own -- a replayed step, which the dry
- * run reads as `replayed`.
- */
-function standing(
-  ran: AutomationStudioLlmEvidenceToolExecutionResult,
-  now: FreshLook,
-  clearedCode: string | undefined
-): AutomationStudioLlmEvidenceToolExecutionResult {
-  const before = ran.stateDigests?.before;
-  const after = now.seen ? now.stateAfter : undefined;
-  const evidence: JsonObject = { personCompletedCheck: true, note: PERSON_COMPLETED_NOTE, ...(now.seen ? { now: now.evidence } : { lookUnavailable: now.why }) };
-  return {
-    kind: "llm_evidence_tool_execution",
-    evidence,
-    effectApplied: ran.effectApplied,
-    ...(ran.targetsUnchanged === undefined ? {} : { targetsUnchanged: ran.targetsUnchanged }),
-    ...(clearedCode ? { resultCode: clearedCode } : {}),
-    ...(ran.nodeId === undefined ? {} : { nodeId: ran.nodeId }),
-    ...(before !== undefined || after !== undefined ? { stateDigests: { ...(before === undefined ? {} : { before }), ...(after === undefined ? {} : { after }) } } : {}),
-    ...(ran.draft === undefined ? {} : { draft: ran.draft })
-  };
-}
-
-function executionResult(value: unknown): value is AutomationStudioLlmEvidenceToolExecutionResult {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && (value as { kind?: unknown }).kind === "llm_evidence_tool_execution";
-}
-
-/** Only the literal `true` on an execution result, as the loop's parser reads it. */
-function personNeeded(value: unknown): value is AutomationStudioLlmEvidenceToolExecutionResult & { personNeeded: true } {
-  return executionResult(value) && value.personNeeded === true;
 }
 
 /** What a build that ran no evidence loop has to show for itself: nothing, honestly. */

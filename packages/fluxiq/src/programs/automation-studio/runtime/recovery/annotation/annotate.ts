@@ -26,6 +26,12 @@
 // carries out to the person: raised while exploring, the patch call is not
 // made; raised by a patch that would lastingly act, that patch does not run.
 //
+// A check only a person can complete, met while exploring, is put to the
+// person through the run's thread (`../runtime-exploration.ts`) and never shown
+// to a model. When the person does not get past it, the recovery ends there
+// like a permission request does: no re-plan, no patch call, and the patch is
+// recorded skipped as `llm.runtime_patch_person_needed` at rung `exploration`.
+//
 // Every early return carries a `recoveryTrace`, and that is the property to
 // keep. A recovery that stopped at the gate, one whose provider would not
 // resolve and one that ran all four stages each describe themselves in the same
@@ -454,6 +460,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // made: a repair built without the step the person has not yet allowed would
   // be a guess, and the person's answer is what the next run needs.
   const permissionRequest = permissions?.gate.request;
+  // A check only a person can complete, which the person did not get past,
+  // ends the recovery as well. Neither the re-plan nor the patch is asked for:
+  // a repair model has nothing to act on while the check stands, and must
+  // never be the one to act on it.
+  const personStopped = exploration?.outcome === "user_intervention_required" && exploration.personNeeded?.ended !== undefined;
   // What the exploration saw, for whatever call comes next. Without this the
   // patch was shown the failure packet alone, and a control only the exploration
   // revealed could not be named in the repair. No packets, no slot: the request
@@ -467,7 +478,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // recovery on its own. A re-plan that comes back with nothing leaves the
   // original refusal standing, and the record then says the refusal was never
   // checked rather than that the look confirmed it.
-  const replan = refusalIsCheckable && !permissionRequest && provider && explorationEvidence
+  const replan = refusalIsCheckable && !permissionRequest && !personStopped && provider && explorationEvidence
     ? await replanAutomationStudioRecoveryAfterExploration({
       plan: plannedBeforeLooking,
       ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}),
@@ -529,9 +540,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         ? "resolution"
         : undefined;
   const heldForPermission = Boolean(permissionRequest && patchWillFollow);
-  const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : plannedPatchSkippedCode;
-  const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission ? "exploration" : plannedPatchSkippedRung;
-  const patchResult = patchWillFollow && !heldForPermission && provider && input.runtimeFlow && input.failedTraceAttempt
+  const heldForPerson = Boolean(personStopped && patchWillFollow && !heldForPermission);
+  const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : heldForPerson ? "llm.runtime_patch_person_needed" : plannedPatchSkippedCode;
+  const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission || heldForPerson ? "exploration" : plannedPatchSkippedRung;
+  const patchResult = patchWillFollow && !heldForPermission && !heldForPerson && provider && input.runtimeFlow && input.failedTraceAttempt
     ? await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
       projectId: input.context.projectId,
@@ -629,7 +641,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
-        ...(intentSkip ? { patchSkipped: intentSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(intentSkip ? { patchSkipped: intentSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : heldForPerson && exploration ? { patchSkipped: exploration.reason } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        // A check handed to the person while exploring: how often they were
+        // asked, and the person-needed code when the recovery ended on it.
+        ...(exploration?.personNeeded ? { personNeeded: { asks: exploration.personNeeded.asks, ...(exploration.personNeeded.ended ? { ended: exploration.endedBy } : {}) } } : {}),
         ...(patchSkippedCode ? { patchSkippedCode } : {}),
         // Which rung declined, beside the code for why. A run that repaired
         // nothing and named no rung is the silence this pair exists to end.

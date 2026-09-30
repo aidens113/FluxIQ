@@ -57,12 +57,30 @@
 // not failures to observe: each aborts the loop's signal first (the ledger's
 // own, and the gate's, joined), and a failure seen under an aborted signal
 // ends the loop as `cancelled`, which `classify` then names precisely.
+//
+// **A check only a person can complete is never shown to the model.** A domain
+// that meets one -- a robot check, in the web domain's words -- marks its call
+// `personNeeded`, and a repair model shown that call would try to act on it.
+// So every action runs through `../parking/person-needed-tool-calls.ts`, the
+// wrapper a build uses: the person-needed question goes to the same `ask` a
+// permission question does, raised at stage `recovery`, and the exploration
+// waits. On Continue the step stands with a fresh look in place of the check.
+// On Stop, nobody answering, no `ask` bound, or more questions than the bound
+// allows, the exploration ends `user_intervention_required` with the
+// person-needed code as `endedBy`, and the model is asked nothing further.
 
+import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
-import { observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
-import { automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityWaitingOnAsk, observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
+import {
+  AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
+  automationStudioAskedAndGranted,
+  automationStudioPersonNeededToolCalls,
+  type AutomationStudioPermissionAsk,
+  type AutomationStudioPersonNeededEnding
+} from "../parking/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioHarnessOptionLoopBinding,
@@ -156,6 +174,11 @@ export type AutomationStudioRuntimeExplorationInput = {
    * The gate it is used with must have been built with `endsOnRequest: false`,
    * or its own signal aborts the loop before an answer can arrive. A gate
    * built here is; a caller's own gate is the caller's to build that way.
+   *
+   * It is also where a check only a person can complete is handed to them
+   * (`personNeeded` on a call's result), with Core's own person-needed wait
+   * rather than this ask's `timeoutMs`. Absent, such a call ends the
+   * exploration `user_intervention_required` at once.
    */
   ask?: AutomationStudioPermissionAsk;
   /**
@@ -188,6 +211,12 @@ export type AutomationStudioRuntimeExploration = {
    * name it and why. What a person allows or refuses from.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
+  /**
+   * Present when a call met a check only a person can complete: how many
+   * times the person was asked, and -- when the exploration ended on it rather
+   * than going on after Continue -- which person-needed ending it was.
+   */
+  personNeeded?: { asks: number; ended?: AutomationStudioPersonNeededEnding };
   actions: number;
   observedActions: number;
   refusedActions: number;
@@ -238,10 +267,40 @@ export async function runAutomationStudioRuntimeExploration(
   // that is the only place that holds both the argument the loop discards and
   // the two moments either side of the step.
   const recorder = new AutomationStudioExplorationStateRecorder(input.captureStateDigest ? { digestSource: input.captureStateDigest } : {});
-  // The loop stops on whichever comes first: a limit the ledger refused, or the
-  // request the gate raised. With failures observed rather than ending the
-  // loop, the request has to stop it by signal as the ledger already does.
-  const stopSignal = AbortSignal.any([ledger.signal, gate.signal, permissionRefused.signal]);
+  // Every action goes to the domain through here, so a call that met a check
+  // only a person can complete is put to the person before the loop -- and so
+  // the model -- sees anything of it. The fresh look after Continue runs
+  // through the same executor, under its own call id, and is Core's look rather
+  // than the model's, so it is not charged to the ledger as an action.
+  const cancelled = [input.ask?.signal, input.signal].filter((signal): signal is AbortSignal => signal !== undefined);
+  const personNeeded = automationStudioPersonNeededToolCalls({
+    executeTool: (call) => input.loop.executeTool({
+      ...call,
+      permission: asking({
+        gate,
+        ...(input.ask ? { ask: input.ask } : {}),
+        action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
+        markAsked: () => { asked = true; },
+        alreadyAsked: () => asked,
+        refused: permissionRefused
+      })
+    }),
+    tools: input.loop.tools,
+    stage: "recovery",
+    subject: "exploration",
+    newAskId: () => `person-needed.${randomUUID()}`,
+    // The port a permission question goes through, and nothing else of that
+    // ask: a person completing a check is given Core's own person-needed wait.
+    ...(input.ask ? { ask: { port: input.ask.port, now: input.ask.now ?? now } } : {}),
+    ...(cancelled.length ? { signal: cancelled.length === 1 ? cancelled[0] : AbortSignal.any(cancelled) } : {}),
+    onAsk: (ask) => emitAutomationStudioActivityWaitingOnAsk(ask),
+    onCleared: (call) => emitAutomationStudioActivity({ phase: "repairing", label: "The person completed the check; the repair goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } })
+  });
+  // The loop stops on whichever comes first: a limit the ledger refused, the
+  // request the gate raised, or a check the person did not get past. With
+  // failures observed rather than ending the loop, each has to stop it by
+  // signal as the ledger already does.
+  const stopSignal = AbortSignal.any([ledger.signal, gate.signal, permissionRefused.signal, personNeeded.signal]);
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -276,16 +335,9 @@ export async function runAutomationStudioRuntimeExploration(
           // The state either side of the step, and the argument it was given,
           // recorded around the call itself. Deliberately not the evidence
           // digest below: that is what the step said, and a reduction needs
-          // what the world was.
-          const permission = asking({
-            gate,
-            ...(input.ask ? { ask: input.ask } : {}),
-            action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
-            markAsked: () => { asked = true; },
-            alreadyAsked: () => asked,
-            refused: permissionRefused
-          });
-          const execution = await recorder.around(call, () => input.loop.executeTool({ ...call, permission }));
+          // what the world was. The permission check is handed to the action
+          // underneath, by the person-needed wrapper above.
+          const execution = await recorder.around(call, () => personNeeded.executeTool(call));
           gate.observe(execution);
           const needsPermission = gate.raisedDuring(call.callId);
           // What the step asked for and what came back, recorded together. The
@@ -324,7 +376,7 @@ export async function runAutomationStudioRuntimeExploration(
         toolFailures: "observe",
         signal: stopSignal
       }));
-    return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
+    return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, personNeeded: { asks: personNeeded.asks(), ended: personNeeded.ended() }, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
   } finally {
     ledger.close();
   }
@@ -431,6 +483,9 @@ export function automationStudioExplorationTraceEvent(input: {
       // allow. Bounded and built by Core, with a control name only when the
       // model had already been shown it.
       ...(exploration.permissionRequest ? { permissionRequest: exploration.permissionRequest } : {}),
+      // A check handed to the person: how often they were asked, and the
+      // person-needed code when the exploration ended on it. Counts and a code.
+      ...(exploration.personNeeded ? { personNeeded: { asks: exploration.personNeeded.asks, ...(exploration.personNeeded.ended ? { ended: AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES[exploration.personNeeded.ended] } : {}) } } : {}),
       actions: exploration.actions,
       observedActions: exploration.observedActions,
       refusedActions: exploration.refusedActions,
@@ -465,6 +520,7 @@ function classify(input: {
   ledger: AutomationStudioExplorationBudgetLedger;
   recorder: AutomationStudioExplorationStateRecorder;
   permissionRequest: AutomationStudioActionPermissionRequest | undefined;
+  personNeeded: { asks: number; ended: AutomationStudioPersonNeededEnding | undefined };
   unusableDecisions: number;
   externallyCancelled: boolean;
   durationMs: number;
@@ -485,6 +541,9 @@ function classify(input: {
     steps: input.recorder.stepsAlongside(trace),
     stateDigestFailures: input.recorder.digestFailures,
     observedState: input.recorder.observesState,
+    ...(input.personNeeded.asks > 0 || input.personNeeded.ended
+      ? { personNeeded: { asks: input.personNeeded.asks, ...(input.personNeeded.ended ? { ended: input.personNeeded.ended } : {}) } }
+      : {}),
     durationMs: input.durationMs
   };
   // A request outranks every other ending. The exploration stopped because of
@@ -499,6 +558,18 @@ function classify(input: {
       endedBy: "operator_approval_required",
       stopReason: "operator_approval_required",
       permissionRequest: input.permissionRequest
+    };
+  }
+  // A check the person did not get past comes next, for the same reason: the
+  // exploration stopped there, and a clock that ran out while it waited on the
+  // person must not turn the ending into a number to raise. No stop reason:
+  // the budget did not end it.
+  if (input.personNeeded.ended) {
+    return {
+      ...base,
+      outcome: "user_intervention_required",
+      reason: PERSON_NEEDED_SENTENCE[input.personNeeded.ended],
+      endedBy: AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES[input.personNeeded.ended]
     };
   }
   const stopReason = input.ledger.stopReason;
@@ -553,6 +624,15 @@ const NO_PROGRESS_SENTENCE: Readonly<Record<AutomationStudioExplorationNoProgres
   repeated_evidence: "The exploration kept gathering evidence it already had, so it was stopped.",
   no_new_evidence: "The exploration kept taking steps that returned nothing new, so it was stopped.",
   unusable_decision: "The model kept answering with something the exploration could not use, so it was stopped."
+});
+
+/** How a check handed to the person ended the exploration, in Core's own words. */
+const PERSON_NEEDED_SENTENCE: Readonly<Record<AutomationStudioPersonNeededEnding, string>> = Object.freeze({
+  stopped: "The exploration met a check only a person can complete, and the person pressed Stop.",
+  timed_out: "The exploration met a check only a person can complete, and nobody completed it in time.",
+  unreachable: "The exploration met a check only a person can complete, and there was nowhere to ask the person.",
+  cancelled: "The exploration met a check only a person can complete, and was stopped while it waited for the person.",
+  asks_exhausted: "The exploration kept meeting checks only a person can complete, so it stopped asking the person and ended."
 });
 
 const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReason, string>> = Object.freeze({
