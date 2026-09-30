@@ -61,13 +61,14 @@ describe("every registered capability can be invoked from the conversation", () 
   });
 });
 
-describe("only deleting and moving money stop for the person", () => {
-  it("pins the classes that re-authorize to Core's own two", () => {
+describe("only moving money, deleting, and sending or publishing stop for the person", () => {
+  it("pins the classes that re-authorize to Core's own three", () => {
     // Widening this re-gates ordinary panel work, which is exactly what the
     // product owner ruled out: the person asking for the automation is the
-    // permission. Core decides this in runtime/action-permissions/destructive.ts;
-    // this is the browser's copy of that decision and must not drift from it.
-    expect([...PANEL_CAPABILITY_ASKING_CONSEQUENCES]).toEqual(["move_money", "delete"]);
+    // permission. Core decides this in runtime/action-permissions/destructive.ts,
+    // where the user's rule of 2026-09-30 gates money, delete and send/publish;
+    // the panel reads that table, and this pins it.
+    expect([...PANEL_CAPABILITY_ASKING_CONSEQUENCES]).toEqual(["move_money", "delete", "send_or_publish"]);
   });
 
   it("asks only where something is deleted", () => {
