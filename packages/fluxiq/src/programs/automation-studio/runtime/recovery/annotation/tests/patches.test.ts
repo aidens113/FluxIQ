@@ -243,7 +243,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
     expect(request.action).toEqual({ kind: "flow_step", id: "builtin.policy.action", ref: "recorded.press", verb: "press" });
     expect(request.control).toEqual({ name: "Add to queue", kind: "button" });
     expect(request.reason.stage).toBe("recovery");
-    expect(request.sentence).toBe("To repair the step that failed, the Flow would press \"Add to queue\" (button) each time it runs, which would spend, refund or move money and delete or remove something. A person has to allow that each time, even when the instruction asks for it, so the repair stopped to ask.");
+    expect(request.sentence).toBe("To fix the step that failed, the Flow would press \"Add to queue\" (button) each time it runs. That would spend, refund or move money and delete or remove something, and that always needs your permission, even when your instruction asks for it.");
     expect(outcome.attempts[0]?.issues).toEqual([`Permission required: ${request.sentence}`]);
     // What a person reads is exactly what Core built.
     expect(parseAutomationStudioActionPermissionRequest(JSON.parse(JSON.stringify(request)))).toEqual(request);
