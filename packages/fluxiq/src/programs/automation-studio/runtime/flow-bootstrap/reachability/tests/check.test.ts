@@ -78,6 +78,15 @@ describe("a build may not propose a Flow that cannot reach where it starts", () 
     expect(verdict.instruction).toContain("Run the node from your node library that goes to cannotReach.starts");
   });
 
+  it("says how many steps it withheld from a Flow too long to list", () => {
+    const verdict = check(planOf(...Array.from({ length: 120 }, () => READS)), START);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.cannotReach.steps).toHaveLength(100);
+    expect(verdict.cannotReach.stepsWithheld).toBe(20);
+  });
+
   // A build handed its target begins already there, which is the right shape
   // when a person is asking about what is in front of them.
   it("leaves a build that was given no start location alone", () => {
