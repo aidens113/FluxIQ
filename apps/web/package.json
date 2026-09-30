@@ -5,9 +5,9 @@
     "type":  "module",
     "scripts":  {
                     "dev":  "next dev --turbopack --hostname 127.0.0.1",
-                    "build":  "next build --turbopack",
+                    "build":  "node ../../scripts/build-cache/cli.mjs web:build -- \"next build --turbopack\"",
                     "start":  "next start --hostname 127.0.0.1",
-                    "check":  "tsc --noEmit",
+                    "check":  "node ../../scripts/build-cache/cli.mjs web:check -- \"tsc --noEmit\"",
                     "test":  "vitest run --passWithNoTests",
                     "test:e2e":  "playwright test",
                     "test:e2e:phase8":  "playwright test phase8- --workers=1 --timeout=180000",
