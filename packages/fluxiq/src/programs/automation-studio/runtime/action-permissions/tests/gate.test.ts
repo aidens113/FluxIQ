@@ -52,7 +52,7 @@ describe("the action permission gate", () => {
       missing: ["move_money"],
       reason: { stage: "authoring", instructionIds: ["instruction.refund"] },
       authority: { granted: [], instructed: [] },
-      sentence: "To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money. Neither its instruction nor a grant allows that, so it stopped to ask."
+      sentence: "To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money. A person has to allow that each time, even when the instruction asks for it, so it stopped to ask."
     });
     expect(run.raisedDuring("call.7")).toBe(true);
     expect(run.signal.aborted).toBe(true);
@@ -67,7 +67,7 @@ describe("the action permission gate", () => {
     await run.checkFor(STEP)({ consequences: ["delete", "move_money"], control: { name: "Refund line 1", kind: "button" }, verb: "press" });
 
     expect(run.request?.missing).toEqual(["move_money", "delete"]);
-    expect(run.request?.sentence).toBe("To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money and delete or remove something. Neither its instruction nor a grant allows that, so it stopped to ask.");
+    expect(run.request?.sentence).toBe("To build the Flow its instruction describes, the run needed to press \"Refund line 1\" (button), which would spend, refund or move money and delete or remove something. A person has to allow that each time, even when the instruction asks for it, so it stopped to ask.");
   });
 
   it("permits an action whose every consequence the run is permitted, and raises nothing", async () => {
@@ -111,7 +111,7 @@ describe("the action permission gate", () => {
     await run.checkFor({ kind: "flow_step", id: "demo.orders.press", ref: "main.s3" })(REFUND);
 
     expect(run.request?.action).toEqual({ kind: "flow_step", id: "demo.orders.press", ref: "main.s3", verb: "press" });
-    expect(run.request?.sentence).toBe("The Flow its instruction describes would press \"Refund line 1\" (button) each time it runs, which would spend, refund or move money. Neither its instruction nor a grant allows that, so the build stopped to ask.");
+    expect(run.request?.sentence).toBe("The Flow its instruction describes would press \"Refund line 1\" (button) each time it runs, which would spend, refund or move money. A person has to allow that each time, even when the instruction asks for it, so the build stopped to ask.");
   });
 
   it("refuses a declaration it cannot read, and the action with it", async () => {

@@ -9,12 +9,14 @@
 // not an integrity failure.
 //
 // The limits returned are defaults for one call and one run, not checks: the
-// run's own budget enforces them, and the Flow's configured cost ceiling
-// (`maxEstimatedCostUsdPerRun`) replaces the run default where it is set.
+// run's own budget enforces them. The run's total is the $0.25 run cost ceiling
+// (`flow-execution-limits/run-cost-ceiling.ts`), which the Flow's configured
+// `maxEstimatedCostUsdPerRun` may lower and never raise.
 
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
 
 /**
@@ -26,9 +28,10 @@ import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProvider
 export const AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS = Object.freeze({
   tokenLimits: Object.freeze({ maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }),
   timeoutMs: AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
-  maxEstimatedCostUsd: 0.25,
-  /** The run's default cost ceiling when the Flow configures none. */
-  maxTotalEstimatedCostUsd: 2
+  /** One call's worst case: never more than the whole run may spend. */
+  maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
+  /** The run's total: the run cost ceiling, which a Flow's own setting may only lower. */
+  maxTotalEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD
 });
 
 /**

@@ -182,6 +182,7 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   no_such_position: true,
   run_by_the_loop: true,
   no_step_before_it: true,
+  over_not_before: true,
   not_a_kept_step: true,
   did_not_work: true,
   already_in_flow: true,

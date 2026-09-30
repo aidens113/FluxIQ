@@ -100,13 +100,13 @@ export function automationStudioActionPermissionSentence(input: {
   const phrases = automationStudioConsequencesInOrder(input.missing).map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]);
   const would = phrases.length > 1 ? `${phrases.slice(0, -1).join(", ")} and ${phrases.at(-1)}` : phrases[0] ?? "";
   if (input.kind === "flow_step" && input.stage === "recovery") {
-    return `To repair the step that failed, the Flow would ${input.verb} ${target}${kind} each time it runs, which would ${would}. Neither its instruction nor a grant allows that, so the repair stopped to ask.`;
+    return `To repair the step that failed, the Flow would ${input.verb} ${target}${kind} each time it runs, which would ${would}. A person has to allow that each time, even when the instruction asks for it, so the repair stopped to ask.`;
   }
   if (input.kind === "flow_step") {
-    return `The Flow its instruction describes would ${input.verb} ${target}${kind} each time it runs, which would ${would}. Neither its instruction nor a grant allows that, so the build stopped to ask.`;
+    return `The Flow its instruction describes would ${input.verb} ${target}${kind} each time it runs, which would ${would}. A person has to allow that each time, even when the instruction asks for it, so the build stopped to ask.`;
   }
   const doing = input.stage === "authoring" ? "To build the Flow its instruction describes" : "To recover the step that failed";
-  return `${doing}, the run needed to ${input.verb} ${target}${kind}, which would ${would}. Neither its instruction nor a grant allows that, so it stopped to ask.`;
+  return `${doing}, the run needed to ${input.verb} ${target}${kind}, which would ${would}. A person has to allow that each time, even when the instruction asks for it, so it stopped to ask.`;
 }
 
 /**
@@ -146,8 +146,10 @@ export function parseAutomationStudioActionPermissionRequest(value: unknown): Au
       || !isId(entry.instructionId) || typeof entry.quote !== "string" || !entry.quote.length || entry.quote.length > 300) return null;
     instructed.push({ consequence: entry.consequence, instructionId: entry.instructionId, quote: entry.quote });
   }
-  // What the run held is never also what it lacked.
-  if (missing.some((consequence) => granted.includes(consequence) || instructed.some((entry) => entry.consequence === consequence))) return null;
+  // What the run was granted is never also what it lacked. An instructed class
+  // can be: since 2026-09-30 the instruction does not stand in for a person's
+  // permission on moving money, deleting, or sending or publishing.
+  if (missing.some((consequence) => granted.includes(consequence))) return null;
   return {
     schemaVersion: AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
     requestId: value.requestId as string,

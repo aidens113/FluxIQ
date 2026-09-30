@@ -138,6 +138,8 @@ export async function annotateRepair(options: { handles: Record<string, string>;
 
 type Options = {
   executed: string[];
+  /** What is left of a larger repair's purse, when the recovery is one part of one. */
+  costLeftUsd?: number;
   /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */
   maxCallsPerRun?: number | "undeclared";
   /** The parent Flow's stored metadata, as `flowForRecovery` reads it -- its `llmExecutionSettings` among it. */
@@ -181,7 +183,8 @@ export async function annotate(options: Options): Promise<AutomationStudioFlowRu
     ports: ports(options),
     detail: runDetail(),
     context: context(options, policy),
-    failedTraceAttempt: failedAttempt()
+    failedTraceAttempt: failedAttempt(),
+    ...(options.costLeftUsd === undefined ? {} : { costLeftUsd: options.costLeftUsd })
   });
 }
 
