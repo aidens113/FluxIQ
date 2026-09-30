@@ -201,13 +201,16 @@ import {
   AutomationStudioRecordingPaths,
   AutomationStudioRunDatasets,
   AutomationStudioServiceIndexes,
+  pipelineIndexWithoutRecording,
   type AutomationStudioProjectIndex,
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements
+  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements,
+  AutomationStudioRecordingEntryRemoval
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
+import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
 import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
@@ -374,6 +377,8 @@ export class AutomationStudioService {
   private llmEvidenceRuntime?: AutomationStudioServiceOptions["llmEvidenceRuntime"];
   private resultCheckProviderResolver?: AutomationStudioServiceOptions["resultCheckProviderResolver"];
   private readonly runtimeAbortControllers = new Map<string, AbortController>();
+  /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
+  readonly runControl = new AutomationStudioRunControlRegistry();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
   private reusableLlmContextEnabled: boolean;
   private reusableLlmContextContentProtection: AutomationStudioProjectContentProtection | undefined;
@@ -706,6 +711,9 @@ export class AutomationStudioService {
       return next;
     });
   }
+
+  // t182: undo one captured step of an open recording (`service/recordings/entry-removal-command.ts`). A collaborator, not a method: the ports run only when called.
+  readonly recordingEntryRemoval = new AutomationStudioRecordingEntryRemoval({ lock: (projectId, recordingId, run) => this.locks.withRecordingMutationLock(projectId, recordingId, run), read: (projectId, recordingId) => this.recordings.getRawRecordingSession(recordingId, projectId), save: async (projectId, recording) => { await this.repositories.recordingSessions.put(recording); await this.writeProjectRecordingSession(projectId, recording); await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline); } });
 
   summarizeRecordingSession(recording: RecordingSession): RecordingSession {
     return summaryRecordingSession(recording);
@@ -2407,6 +2415,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   // field the loop learned to read -- the result summary a refuted run is
   // repaired from -- reached the recovery only once this stopped listing them.
   private async maybeAnnotateRunDetailWithRuntimeLlm(input: Omit<AutomationStudioRuntimeRecoveryAnnotationInput, "ports">): Promise<AutomationStudioFlowRunDetail> {
+    automationStudioMarkRunAdapting(input.graphOptions?.runControl);
     return await annotateAutomationStudioRunDetailWithRuntimeLlm({
       ...input,
       ports: {
@@ -2614,6 +2623,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (adaptationContext) runResultCheck = automationStudioRunResultCheck({ context: adaptationContext, nowMs: Date.now() });
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
+      graphOptions.runControl = this.runControl.open(input.projectId, session.runId, abortController.signal);
       await this.writeRuntimeSession(input.projectId, {
         ...session,
         status: "running", startedAt: session.startedAt ?? startedAt,
@@ -2777,7 +2787,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // A run that throws before it records an outcome is ended failed, so it neither stays active nor holds off the next adaptive run.
       throw input.projectId && session ? await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended) }, input.projectId, session.runId, error) : error;
     } finally {
-      if (input.projectId && session) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
+      if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }
   }
 
@@ -4312,19 +4322,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await rm(recordingProposalRoot, { recursive: true, force: true });
     if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId));
     else await rm(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
-    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
-      pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
-      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.normalizationReviews.has(item.reviewId)),
-      miningRuns: (index.miningRuns ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.miningRuns.has(item.miningRunId)),
-      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceFacts.has(item.factId)),
-      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceObservations.has(item.observationId)),
-      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.stateActionCorrelations.has(item.correlationId)),
-      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceClaims.has(item.claimId)),
-      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.learnedTaskModels.has(item.learnedTaskModelId)),
-      policyProposals: (index.policyProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.policyProposals.has(item.proposalId)),
-      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.recordingFlowProposals.has(item.proposalId)),
-      replayResults: (index.replayResults ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.replayResults.has(item.replayId))
-    }));
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => pipelineIndexWithoutRecording(index, recordingId, artifactIds));
     await this.recordings.prunePhysicalPipelineIndex(projectId, recordingId, artifactIds);
   }
 
@@ -4373,6 +4371,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: no storage root, so the in-memory repository is the only copy
     await this.projects.ensureProjectStructure(projectId);
     const sessionDir = this.recordingPaths.recordingSessionDirectory(projectId, recording.recordingId);
     const recordingDocument = { ...recording, timeline: [] };
@@ -4397,6 +4396,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingIndexSummary(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     await this.projects.ensureProjectStructure(projectId);
     await this.recordings.ensureProjectRecordingPipeline(projectId, recording);
     await this.indexes.writeRecordingIndex(projectId, (index) => ({
@@ -4460,6 +4460,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRecordingTimeline(projectId: string, recordingId: string, timeline: RecordingSession["timeline"]): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
     await mkdir(path.dirname(filePath), { recursive: true });
     const text = timeline.map((entry) => JSON.stringify(entry)).join("\n");

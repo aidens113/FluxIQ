@@ -44,9 +44,9 @@ const CORE_ENDPOINTS_FILE = "packages/fluxiq/src/programs/automation-studio/api/
 const MUTATING_VERBS = [
   "answer-", "append-", "apply-", "approve-", "archive-", "cancel-", "capture-", "clear-", "convert-",
   "create-", "delete-", "deprecate-", "disable-", "duplicate-", "enable-", "execute-", "finalize-",
-  "generate-", "issue-", "learn-", "migrate-", "mine-", "mutate-", "normalize-", "open-", "pack-",
+  "generate-", "issue-", "learn-", "migrate-", "mine-", "mutate-", "normalize-", "open-", "pack-", "pause-",
   "process-", "propose-", "publish-", "purge-", "put-", "record-", "rename-", "reorder-", "repair-",
-  "replay-", "restore-", "review-", "revoke-", "rollback-", "run-", "save-", "seal-", "start-",
+  "replay-", "restore-", "resume-", "review-", "revoke-", "rollback-", "run-", "save-", "seal-", "start-",
   "stop-", "update-"
 ];
 

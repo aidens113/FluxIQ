@@ -150,6 +150,10 @@ async function runGraphToTrace(
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
   if (seed) seedRunState(runState, seed);
+  // Every run input is run-time data of unknown sensitivity whether or not a
+  // binding reads it, and a node may copy one into an output under another key.
+  // Recorded before the first node, so every dispatch is told to withhold it too.
+  withholding.supply(options.inputs ?? {}, options.declaredInputDefaults);
   recordDeclaredStateBindings(flow, options, withholding);
   const executed = await executeAutomationStudioGraph(flow, options, withholding, runState, seed);
   for (const attempt of executed.attempts) {
@@ -317,19 +321,19 @@ const MAXIMUM_INPUT_DEPTH = 64;
  * The trace with every run input withheld where this module saved it: in
  * `values`, and in each attempt's `inputs`, both seeded from `options.inputs`.
  *
- * A run input is run-time data of unknown sensitivity whether or not a node reads
- * it, but only an input a binding resolved is recorded for the value-based
- * rewrite, so one no binding reads was saved here in clear. It is found by
- * position and proved by identity: the entry still holds the value the caller
- * supplied, not a node output written over the same key.
+ * Every run input's texts and numbers are also recorded for the value-based
+ * rewrite (`runGraphToTrace`), which withholds a copy of one under any data key.
+ * This pass is kept because it is positional: an input is found at its own key
+ * and proved by identity -- the entry still holds the value the caller supplied,
+ * not a node output written over the same key -- and withheld whole, including
+ * a subtree deeper than the value walk collects.
  *
- * Not by value. A value the run computed can equal an input (5 + 0), and
- * withholding every equal value would make the saved trace misreport what the
- * run computed. The cost is a known gap: an input no binding reads, copied by a
- * node into an output under another key, stays in clear at that copy. Nothing
- * executes from this copy -- a Call Flow parent and a live-patch rerun are handed
- * the executed trace -- so the choice shapes only what is kept. A withheld input
- * keeps its shape, as everything else the trace withholds does.
+ * The value-based rewrite has a cost this pass does not: a value the run
+ * computed that equals an input (5 + 0) reads as withheld too, because a copy
+ * cannot be told from a computation by value. Nothing executes from the saved
+ * trace -- a Call Flow parent and a live-patch rerun are handed the executed
+ * trace -- so the choice shapes only what is kept. A withheld input keeps its
+ * shape, as everything else the trace withholds does.
  */
 function withholdRunInputs(trace: AutomationStudioGraphExecutionTrace, inputs: Record<string, JsonValue>): AutomationStudioGraphExecutionTrace {
   if (!Object.keys(inputs).length) return trace;
@@ -410,6 +414,15 @@ async function executeAutomationStudioGraph(
   for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+    }
+    // A pause holds here, before the node executes, and never inside it. The
+    // run resumes at this same node with everything it had computed.
+    const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
+    if (held) {
+      const released = await held;
+      if (released.outcome === "stop" || options.signal?.aborted) {
+        return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: released.outcome === "stop" ? released.message : "Run cancelled." };
+      }
     }
     const regionId = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
     const region = options.regionRuntime?.regions.find((candidate) => candidate.id === regionId);

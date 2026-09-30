@@ -5,10 +5,12 @@ import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../../lib/fluxiq"
 import {
   isPairedClientClassification,
   isPairedClientEndpoint,
+  narrowPairedClientRequest,
   pairedClientActor,
   pairedClientDomainScope,
   programDomainScope,
   programResponseStatus,
+  projectPairedClientResponse,
   readBearerToken,
   withProgramAuthSession,
 } from "../../../../../lib/program-route";
@@ -38,7 +40,9 @@ export async function GET(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
-  const response = await fluxiq.programs.api.call({ programId, endpoint, scope: caller.scope, actor: caller.actor });
+  const narrowed = caller.kind === "paired-client" ? narrowPairedClientRequest(programId, endpoint, undefined) : { ok: true as const, payload: undefined };
+  if (!narrowed.ok) return refuse(403, narrowed.error, narrowed.errorCode);
+  const response = await fluxiq.programs.api.call({ programId, endpoint, scope: caller.scope, actor: caller.actor, ...(narrowed.payload !== undefined ? { payload: narrowed.payload } : {}) });
   return respond(programId, endpoint, response, caller);
 }
 
@@ -48,12 +52,16 @@ export async function POST(request: Request, context: RouteParams) {
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
   const payload = await request.json().catch(() => undefined);
+  // A token call's body is narrowed before any handler sees it: a field that
+  // would reach an LLM, an inline Flow or another reviewer is refused by name.
+  const narrowed = caller.kind === "person" ? { ok: true as const, payload: withProgramAuthSession(programId, payload, caller.sessionId) } : narrowPairedClientRequest(programId, endpoint, withoutAuthSession(payload));
+  if (!narrowed.ok) return refuse(403, narrowed.error, narrowed.errorCode);
   const response = await fluxiq.programs.api.call({
     programId,
     endpoint,
     scope: caller.scope,
     actor: caller.actor,
-    payload: caller.kind === "person" ? withProgramAuthSession(programId, payload, caller.sessionId) : withoutAuthSession(payload),
+    payload: narrowed.payload,
   });
   return respond(programId, endpoint, response, caller);
 }
@@ -100,12 +108,12 @@ function withoutAuthSession(payload: unknown): unknown {
 }
 
 function respond(programId: string, endpoint: string, response: Awaited<ReturnType<FluxIQ["programs"]["api"]["call"]>>, caller: RouteCaller) {
-  const body = caller.kind === "person" ? withWebRuntimeStatus(programId, endpoint, response, caller.userId) : response;
+  const body = caller.kind === "person" ? withWebRuntimeStatus(programId, endpoint, response, caller.userId) : projectPairedClientResponse(programId, endpoint, response);
   return NextResponse.json(body, { status: programResponseStatus(response) });
 }
 
-function refuse(status: 401 | 403, error: string) {
-  return NextResponse.json({ ok: false, error }, { status });
+function refuse(status: 401 | 403, error: string, errorCode?: "authorization.forbidden") {
+  return NextResponse.json({ ok: false, error, ...(errorCode ? { errorCode } : {}) }, { status });
 }
 
 async function readSessionId(): Promise<string | undefined> {

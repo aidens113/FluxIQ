@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, CircleCheck, Info, RefreshCw, Search, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, CircleCheck, ClipboardCopy, Info, RefreshCw, Search, X } from "lucide-react";
 import { resolveProblemsHostState, type ProblemsViewHostProps } from "./problem-host";
 import {
   collectAutomationProblems,
@@ -12,6 +12,7 @@ import {
   type AutomationProblemSeverity,
   type AutomationProblemViewItem
 } from "./problem-model";
+import { buildCoreProblemReport } from "./diagnostic-report";
 
 const severityOrder: readonly AutomationProblemSeverity[] = ["error", "warning", "info"];
 
@@ -27,6 +28,7 @@ export function ProblemsView(props: ProblemsViewHostProps) {
   const [remotePage, setRemotePage] = useState<{ problems: any[]; total: number; counts: Record<AutomationProblemSeverity, number>; nextCursor: string | null; hasMore: boolean } | null>(null);
   const remoteRequestRef = useRef(0);
   const [selectedProblemKey, setSelectedProblemKey] = useState<string | null>(null);
+  const [reportStatus, setReportStatus] = useState<string | null>(null);
   const sourceProblems = remotePage?.problems ?? (props.projectId ? [] : props.problems);
   const collection = useMemo(() => collectAutomationProblems(sourceProblems), [sourceProblems]);
   const hostState = resolveProblemsHostState(props, props);
@@ -87,6 +89,17 @@ export function ProblemsView(props: ProblemsViewHostProps) {
     });
   };
 
+  // A redacted diagnostic bundle for a problem report (`diagnostic-report.ts`), copied for the person to paste.
+  const copyProblemReport = async () => {
+    const report = buildCoreProblemReport({ now: Date.now(), fluxiqVersion: props.fluxiqVersion, userAgent: navigator.userAgent, projectId: props.projectId, hostState, validatedAt: props.validation?.validatedAt, problems: collection.items, truncated: collection.truncated || remotePage?.hasMore === true });
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setReportStatus("Problem report copied. It holds codes and ids only, no messages or values.");
+    } catch (error) {
+      setReportStatus(`The problem report could not be copied: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const showStatePanel = hostState.status === "loading"
     || hostState.status === "error"
     || hostState.status === "permission-denied"
@@ -97,7 +110,9 @@ export function ProblemsView(props: ProblemsViewHostProps) {
       <header className="automation-problems-header">
         <div><AlertTriangle size={16} aria-hidden /><div><strong>Problems</strong><span>Validation, authoring, and runtime issues</span></div></div>
         <span aria-label={page.filteredCount + " problems"}>{page.filteredCount}</span>
+        <button className="automation-problems-report" onClick={() => void copyProblemReport()} title="Copy a diagnostic report without messages or values" type="button"><ClipboardCopy aria-hidden size={14} /> Report problem</button>
       </header>
+      {reportStatus ? <p className="automation-problems-scope" role="status">{reportStatus}</p> : null}
 
       {showStatePanel ? <ProblemsStatePanel
         canRefresh={hostState.canRequestValidation}

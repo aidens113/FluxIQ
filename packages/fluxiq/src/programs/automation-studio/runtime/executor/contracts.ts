@@ -10,6 +10,7 @@ import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, Aut
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
+import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
 
@@ -313,6 +314,13 @@ export type AutomationStudioRecordBatch = {
 export type AutomationStudioGraphExecutionOptions = {
   startNodeId?: string;
   inputs?: Record<string, JsonValue>;
+  /**
+   * The defaults the Flow's declared interface gives its inputs, when the caller
+   * filled `inputs` from them. An input still equal to its declared default is
+   * authored -- the published Flow holds it -- so the saved trace withholds it at
+   * its own position but not by value (`trace-withholding.ts`, `supply`).
+   */
+  declaredInputDefaults?: Record<string, JsonValue>;
   variables?: Record<string, JsonValue>;
   maxSteps?: number;
   random?: () => number;
@@ -382,4 +390,11 @@ export type AutomationStudioGraphExecutionOptions = {
    * about it.
    */
   parking?: AutomationStudioParkingPort;
+  /**
+   * Where a person pauses, takes over and resumes this run. The executor asks
+   * it once per step, before it executes a node, so a run is only ever held
+   * between two steps and never in the middle of one. Unbound, a run cannot be
+   * paused.
+   */
+  runControl?: AutomationStudioRunControlGate;
 };

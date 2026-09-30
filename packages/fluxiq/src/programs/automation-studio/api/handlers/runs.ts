@@ -29,8 +29,11 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
       if (typeof payload.search === "string") input.search = payload.search;
       if (payload.sort === "updated" || payload.sort === "started" || payload.sort === "duration" || payload.sort === "actions" || payload.sort === "status") input.sort = payload.sort;
       if (payload.direction === "asc" || payload.direction === "desc") input.direction = payload.direction;
-      const page = await service.listFlowRunSummaries(input);
-      return { ok: true, payload: { runs: page.runs, page } };
+      const listed = await service.listFlowRunSummaries(input);
+      // Every run answers whether it changed the Flow; a summary saved before
+      // the field existed never recorded that it did.
+      const runs = listed.runs.map((run) => ({ ...run, durableBehaviorChanged: run.durableBehaviorChanged === true }));
+      return { ok: true, payload: { runs, page: { ...listed, runs } } };
     }
   });
   registry.register({

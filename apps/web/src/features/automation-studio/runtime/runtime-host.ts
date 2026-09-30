@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
-import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, startRuntimeSession } from "./run-commands";
+import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunControl, pauseRuntimeSession, resumeRuntimeSession, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 import { generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, saveFlowGenerationInstruction } from "../authoring/authoring-commands";
 import { currentProgramDomainId, deleteRunDatasets, exportRunDataset, getRunDatasetPage, listRunDatasets, runDatasetDownloadHref, type RunDatasetCommands } from "../datasets";
@@ -55,6 +55,14 @@ export type RuntimeExecutionCommands = {
   saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string }): ReturnType<typeof saveFlowGenerationInstruction>;
   generateFromWebsite(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): ReturnType<typeof generateFlowFromWebsiteExplorationAdaptation>;
   cancel(payload: { projectId: string; runId: string }): ReturnType<typeof cancelRuntimeSession>;
+  /**
+   * Pause, take control, resume, and the live read behind them. Optional for
+   * the same reason `datasets` is: suites build this set as a literal, and the
+   * run controls are shown only when the host binds them.
+   */
+  pause?(payload: Parameters<typeof pauseRuntimeSession>[1]): ReturnType<typeof pauseRuntimeSession>;
+  resume?(payload: Parameters<typeof resumeRuntimeSession>[1]): ReturnType<typeof resumeRuntimeSession>;
+  readControl?(payload: Parameters<typeof getRuntimeRunControl>[1]): ReturnType<typeof getRuntimeRunControl>;
 };
 
 export function useRuntimeHistoryCommands(): RuntimeHistoryCommands {
@@ -96,6 +104,9 @@ export function useRuntimeExecutionCommands(): RuntimeExecutionCommands {
     generateBootstrap: (payload) => generateFlowBootstrapAdaptation(transport, payload),
     saveGenerationInstruction: (payload) => saveFlowGenerationInstruction(transport, payload),
     generateFromWebsite: (payload) => generateFlowFromWebsiteExplorationAdaptation(transport, payload),
-    cancel: (payload) => cancelRuntimeSession(transport, payload)
+    cancel: (payload) => cancelRuntimeSession(transport, payload),
+    pause: (payload) => pauseRuntimeSession(transport, payload),
+    resume: (payload) => resumeRuntimeSession(transport, payload),
+    readControl: (payload) => getRuntimeRunControl(transport, payload)
   }), [transport]);
 }

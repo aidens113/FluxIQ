@@ -43,20 +43,47 @@ describe("a run input no node reads, and the persisted trace", () => {
     expect(trace.values).toMatchObject(withheldInputs);
     expect(trace.attempts[0]?.inputs).toMatchObject(withheldInputs);
     expect(trace.effects[0]?.payload).toMatchObject({ outputId: "activate-element", parameters: { elementId: "confirm", retries: 3 } });
-    // No binding resolved it, so no dispatch is told to withhold it, and no command carries it.
-    expect(withheldTexts).toEqual([undefined]);
+    // Every run input is recorded before the first node, so each dispatch is told to withhold it.
+    expect(withheldTexts).toEqual([[SUPPLIED]]);
   });
 
-  it("keeps a value the run computed even when it equals an input", async () => {
+  it("withholds an input a node copied into an output under another key, while the node executed with the real value", async () => {
+    const handed: AutomationStudioGraphExecutionTrace[] = [];
+    const trace = await runAutomationStudioGraph({
+      ...authoredFlow,
+      flowId: "flow.copied-input",
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "copy", definitionId: "builtin.data.map-object", parameterValues: { mode: "pick", mapping: { copied: "secret", tally: "count" } } }
+      ],
+      edges: [{ id: "start.copy", sourceNodeId: "start", targetNodeId: "copy", sourcePortId: "success", targetPortId: "in" }]
+    }, { inputs: { object: { secret: SUPPLIED, count: SUPPLIED_NUMBER, flag: true } } }, (executed) => { handed.push(executed); });
+
+    expect(trace.status).toBe("succeeded");
+    const executedCopy = handed[0]?.attempts.find((attempt) => attempt.nodeId === "copy");
+    expect(executedCopy?.inputs.object).toEqual({ secret: SUPPLIED, count: SUPPLIED_NUMBER, flag: true });
+    expect(executedCopy?.outputs.object).toEqual({ copied: SUPPLIED, tally: SUPPLIED_NUMBER });
+
+    const savedCopy = trace.attempts.find((attempt) => attempt.nodeId === "copy");
+    expect(savedCopy?.inputs.object).toEqual({ secret: AUTOMATION_STUDIO_WITHHELD_VALUE, count: AUTOMATION_STUDIO_WITHHELD_VALUE, flag: true });
+    expect(savedCopy?.outputs.object).toEqual({ copied: AUTOMATION_STUDIO_WITHHELD_VALUE, tally: AUTOMATION_STUDIO_WITHHELD_VALUE });
+    expect(JSON.stringify(trace)).not.toContain(SUPPLIED);
+    expect(JSON.stringify(trace)).not.toContain(String(SUPPLIED_NUMBER));
+  });
+
+  it("withholds a value the run computed when it equals an input, and keeps it in the executed trace", async () => {
+    const handed: AutomationStudioGraphExecutionTrace[] = [];
     const trace = await runAutomationStudioGraph({
       ...authoredFlow,
       flowId: "flow.computed-equals-input",
       nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "sum", definitionId: "builtin.math.add", parameterValues: { precision: 0 } }],
       edges: [{ id: "start.sum", sourceNodeId: "start", targetNodeId: "sum", sourcePortId: "success", targetPortId: "in" }]
-    }, { inputs: { left: 5, right: 0 } });
+    }, { inputs: { left: 5, right: 0 } }, (executed) => { handed.push(executed); });
 
     expect(trace.status).toBe("succeeded");
-    expect(trace.values).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, result: 5 });
+    // A copy cannot be told from a computation by value, so the saved trace withholds both.
+    expect(trace.values).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, result: AUTOMATION_STUDIO_WITHHELD_VALUE });
+    expect(handed[0]?.values).toMatchObject({ left: 5, right: 0, result: 5 });
   });
 
   it("hands a caller that goes on executing the trace as the run executed it, beside the saved trace it returns", async () => {
