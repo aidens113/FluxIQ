@@ -11,8 +11,8 @@
   },
   "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
-    "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
-    "check": "tsc --noEmit",
+    "build": "node ../../scripts/build-cache/cli.mjs client-gateway-websocket:build -- \"tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist\"",
+    "check": "node ../../scripts/build-cache/cli.mjs client-gateway-websocket:check -- \"tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/fluxiq-build/check.tsbuildinfo\"",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
