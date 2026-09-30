@@ -24,6 +24,7 @@ import { registerAutomationStudioConversationEndpoints } from "./conversations.t
 import { registerRouterEndpoints } from "./router.ts";
 import { registerLlmGenerationEndpoints } from "./llm-generation.ts";
 import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
+import { registerRunControlEndpoints } from "./run-control.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService, llmExecutionGrants?: AutomationStudioLlmExecutionGrantService): void {
@@ -45,5 +46,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);
   registerRuntimeExecutionEndpoints(dependencies);
+  registerRunControlEndpoints(dependencies);
   registerClientGatewayEndpoints(dependencies);
 }

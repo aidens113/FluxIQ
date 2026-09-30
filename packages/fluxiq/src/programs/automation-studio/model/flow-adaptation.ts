@@ -260,6 +260,13 @@ export type AutomationStudioFlowRunSummary = {
   actionAttemptCount: number;
   interventionCount: number;
   adaptationCount: number;
+  /**
+   * Whether the run left the Flow behaving differently from now on
+   * (`automationStudioRunChangedDurableBehavior`). Set on every summary saved
+   * from a run detail; absent only on one saved before the field existed, which
+   * `list-flow-runs` answers as false.
+   */
+  durableBehaviorChanged?: boolean;
   tokenUsage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; estimatedCostUsd?: number };
   interventionSummaries?: AutomationStudioFlowInterventionSummary[];
   metadata?: JsonObject;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, FolderOpen, ListChecks, Play, Radio, Redo2, Save, SlidersHorizontal, Square, Undo2 } from "lucide-react";
+import { Bug, FolderOpen, ListChecks, Pause, Play, Radio, Redo2, Save, SlidersHorizontal, Square, Undo2 } from "lucide-react";
 import { memo, useEffect, useState, useSyncExternalStore } from "react";
 import { notifyGlobalAlert } from "../../../programs/shared-ui";
 import { dirtyViewRegistrySnapshot, saveDirtyAutomationViews, subscribeDirtyViewRegistry } from "../dirty-view-registry";
@@ -60,9 +60,9 @@ export const AutomationWorkspaceHeader = memo(function AutomationWorkspaceHeader
     window.addEventListener("keydown", onSaveShortcut);
     return () => window.removeEventListener("keydown", onSaveShortcut);
   }, [dirtyState.dirtyCount]);
-  // Pause is gone rather than disabled: the only registrar of runtime actions
-  // reports `canPause: false` unconditionally and its `pause()` returns
-  // undefined, so the button could never enable in any state of the product.
+  // Pause is shown only while a run panel is mounted, and enabled only while
+  // that panel's run can be held: the run panel reports `canPause` from Core's
+  // own run-control answer, so the button is never a control that cannot act.
   //
   // Play lied about its own state twice over: `canPlay === false` is false when
   // no run panel is mounted, so it rendered enabled, and clicking it then opened
@@ -82,6 +82,7 @@ export const AutomationWorkspaceHeader = memo(function AutomationWorkspaceHeader
           <button aria-keyshortcuts="Control+Y Meta+Shift+Z" aria-label="Redo action" className="icon-button" disabled={!actions.graph?.canRedo} onClick={() => invokeAutomationStudioGraphAction("redo")} title="Redo" type="button"><Redo2 aria-hidden size={15} /></button>
           <span aria-hidden className="automation-studio-control-divider" />
           <button aria-label={playLabel} className="icon-button" disabled={runtimeMounted && actions.runtime?.canPlay !== true} onClick={() => { if (!invokeAutomationStudioRuntimeAction("play")) props.commands.openRuntime(); }} title={playLabel} type="button"><Play aria-hidden size={15} /></button>
+          {runtimeMounted ? <button aria-label="Pause automation" className="icon-button" disabled={actions.runtime?.canPause !== true} onClick={() => invokeAutomationStudioRuntimeAction("pause")} title="Pause between steps" type="button"><Pause aria-hidden size={14} /></button> : null}
           <button aria-label="Stop automation" className="icon-button" disabled={!actions.runtime?.canStop} onClick={() => invokeAutomationStudioRuntimeAction("stop")} title="Stop" type="button"><Square aria-hidden size={14} /></button>
           <button aria-keyshortcuts="Control+S Meta+S" aria-label="Save entire project" className="button button-primary" disabled={saving} onClick={() => void requestProjectSave()} title="Save all project changes" type="button"><Save aria-hidden size={14} />{saving ? "Saving..." : "Save Project"}{dirtyState.dirtyCount ? <span className="automation-studio-dirty-count">{dirtyState.dirtyCount}</span> : null}</button>
         </div>
