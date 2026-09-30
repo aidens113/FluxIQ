@@ -48,6 +48,7 @@
 // repository): each consequential task yields its acts, and no extraction task
 // yields any. The tests pin both directions.
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActKind } from "./contracts.ts";
+import { automationStudioInstructedChoices } from "./instruction-choices.ts";
 
 const MAX_ACTS = 8;
 const MAX_QUOTE = 200;
@@ -83,6 +84,13 @@ const EVERY = /^(?:\s+\S+){0,3}?\s+(?<![0-9£$€¥¢]\S*\s+)(?:every(?:one|body
  */
 const PLURAL_KINDS: ReadonlySet<AutomationStudioInstructedActKind> = new Set(["save", "add_to", "claim", "move", "submit"]);
 
+/**
+ * The acts whose item may carry a quantity or a variant (`./instruction-choices.ts`):
+ * putting it somewhere, or buying it. Saving it, or submitting anything else, chooses nothing.
+ */
+const CHOOSING_BUYS = /^(?:buy|purchase|order)$/u;
+const choosesItem = (kind: AutomationStudioInstructedActKind, verb: string): boolean => kind === "add_to" || (kind === "submit" && CHOOSING_BUYS.test(verb));
+
 /** What only joins a quote to the next act, trimmed from its end. */
 const TRAILING = /(?:[\s,;:(&"“—-]+|\s+(?:then|and|also|please|first|next|finally|now|just))+$/iu;
 
@@ -115,7 +123,8 @@ const PATTERNS: readonly ActPattern[] = [
 /** The lasting acts the instruction asks for, in the order it asks. Nothing here calls a provider. */
 export function automationStudioInstructedActs(instructionText: string): AutomationStudioInstructedAct[] {
   const text = typeof instructionText === "string" ? instructionText : "";
-  const found: Array<Omit<AutomationStudioInstructedAct, "id"> & { at: number }> = [];
+  // `object` is the act's own words after its verb, which its choices are read from.
+  const found: Array<Omit<AutomationStudioInstructedAct, "id" | "requires"> & { at: number; object: string }> = [];
   for (const { sentence, start } of sentences(text)) {
     const matched: Array<{ kind: AutomationStudioInstructedActKind; index: number; written: string }> = [];
     for (const pattern of PATTERNS) {
@@ -138,10 +147,10 @@ export function automationStudioInstructedActs(instructionText: string): Automat
       const plural = PLURAL_KINDS.has(act.kind) && EVERY.test(rest) ? { plural: true as const } : {};
       const objects = act.kind === "add_to" || act.kind === "save" ? coordinatedObjects(rest) : undefined;
       if (!objects) {
-        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index, ...plural });
+        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index, object: rest, ...plural });
         return;
       }
-      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset, ...plural });
+      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset, object: ` ${object.quote}`, ...plural });
     });
   }
   // A build reads its instruction as its title, a newline, then its body
@@ -156,7 +165,11 @@ export function automationStudioInstructedActs(instructionText: string): Automat
     .filter((act) => !(titleEnd >= 0 && act.at < titleEnd && body.some((other) => other.kind === act.kind)))
     .sort((left, right) => left.at - right.at)
     .slice(0, MAX_ACTS)
-    .map((act, index) => ({ id: `a${index + 1}`, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}) }));
+    .map((act, index) => {
+      const id = `a${index + 1}`;
+      const requires = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : [];
+      return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}) };
+    });
 }
 
 /**

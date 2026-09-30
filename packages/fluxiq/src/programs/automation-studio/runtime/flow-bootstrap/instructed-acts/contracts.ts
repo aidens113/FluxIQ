@@ -62,6 +62,41 @@ export type AutomationStudioInstructedAct = {
    * does (`./check.ts`). Absent on every other act.
    */
   plural?: true;
+  /**
+   * Present, and never empty, when the instruction attaches to the item this
+   * act adds or buys a quantity above one or a named variant of it: "two
+   * packs", "in the 12 Double Rolls size" (`./instruction-choices.ts`). Each is
+   * a requirement of its own, claimed by a step of its own (`./check.ts`).
+   */
+  requires?: AutomationStudioInstructedChoice[];
+};
+
+/**
+ * What a choice of an item fixes. Closed, like the act kinds.
+ *
+ * - `quantity`: how many, where the instruction asks for more than one.
+ * - `variant`: which one of the item's sizes, colours, counts, packs,
+ *   flavours or versions.
+ */
+export type AutomationStudioInstructedChoiceKind = "quantity" | "variant";
+
+/**
+ * A choice the instruction attaches to the item an act adds, as its own
+ * requirement: a setting (`kind: "set"`) that the act's own press does not
+ * make. Run 28 (`run-munvvc3z-3eadc185`) kept these as quote text only, and a
+ * Flow that chose no size and set no quantity passed.
+ */
+export type AutomationStudioInstructedChoice = {
+  /** The act's id and what it fixes: `a2.quantity`, `a2.size`, `a3.colour`. */
+  id: string;
+  kind: "set";
+  /** The id of the act whose item it qualifies. */
+  of: string;
+  choice: AutomationStudioInstructedChoiceKind;
+  /** The person's own words for the value, as written: `two`, `3`, `12 Double Rolls`. */
+  value: string;
+  /** The person's own words that ask for it: `two packs`, `in the 12 Double Rolls size`. */
+  quote: string;
 };
 
 /** A model's claim that a draft step does an act. Both strings are the model's, bounded before use. */
@@ -95,14 +130,27 @@ export type AutomationStudioInstructedActMissingReason =
    * it neither repeats over a list nor lies inside a span that does
    * (`run-munnop9n-5475d593`, `./check.ts`).
    */
-  | "act_needs_repeat";
+  | "act_needs_repeat"
+  /**
+   * A choice was claimed by the step claimed for its own act -- the press that
+   * adds -- and nothing that step was given sets it. Pressing add chooses no
+   * size and sets no quantity (`run-munvvc3z-3eadc185`, `./check.ts`).
+   */
+  | "choice_is_the_act_step";
 
-/** An act with no step that does it, as the model is shown it. */
-export type AutomationStudioInstructedActMissing = AutomationStudioInstructedAct & {
+/** Why it has no step, and the step the claim named, where one did. */
+type AutomationStudioInstructedMissingWhy = {
   reason: AutomationStudioInstructedActMissingReason;
-  /** The step the claim named, where one did. */
   step?: string;
 };
+
+/**
+ * An act, or a choice of an act's item, with no step that does it, as the
+ * model is shown it. The two share `id`, `kind`, `quote` and `reason`.
+ */
+export type AutomationStudioInstructedActMissing =
+  | (AutomationStudioInstructedAct & AutomationStudioInstructedMissingWhy)
+  | (AutomationStudioInstructedChoice & AutomationStudioInstructedMissingWhy);
 
 /**
  * Whether every act has a step, or what the model is told instead. Like the

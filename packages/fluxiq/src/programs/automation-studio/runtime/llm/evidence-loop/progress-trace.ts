@@ -19,6 +19,10 @@
 // Run `run-munsxchc-15523952` ended on four `bootstrap.instructed_act_missing`
 // refusals and 13 amendments, and the log could say neither which act nor what
 // any amendment tried.
+//
+// The same wrapper feeds the full decision dump (`./decision-dump.ts`) when
+// `FLUXIQ_BUILD_DECISION_DUMP` is set; either switch alone turns the wrapper on.
+import { automationStudioLlmEvidenceDecisionDump } from "./decision-dump.ts";
 
 // Method signatures, so any loop input whose own requests carry more fields fits.
 type Traceable = {
@@ -27,10 +31,12 @@ type Traceable = {
   checkCompletion?: ((result: never, context: never) => unknown) | undefined;
 };
 
-/** The loop's input, with its two waits timed when the trace is switched on; the same object when it is not. */
+/** The loop's input, with its two waits timed when the trace or the dump is switched on; the same object when neither is. */
 export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable>(input: T, env: Readonly<Record<string, string | undefined>> = process.env, write: (line: string) => void = (line) => console.log(line)): T {
-  if (env.FLUXIQ_BUILD_PROGRESS_TRACE !== "1") return input;
-  const log = (line: string) => write(`[FluxIQ build-trace] ${new Date().toISOString()} ${line}`);
+  const tracing = env.FLUXIQ_BUILD_PROGRESS_TRACE === "1";
+  const dump = automationStudioLlmEvidenceDecisionDump(env);
+  if (!tracing && !dump) return input;
+  const log = (line: string) => { if (tracing) write(`[FluxIQ build-trace] ${new Date().toISOString()} ${line}`); };
   log("loop start");
   const decide = async (request: Parameters<T["decide"]>[0]) => {
     const started = Date.now();
@@ -38,6 +44,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     try {
       const decision = await input.decide(request);
       log(`decide end iteration=${request.iteration} ms=${Date.now() - started} kind=${codeOf((decision as { kind?: unknown } | undefined)?.kind)}${decisionDetail(decision)}`);
+      dump?.decision({ iteration: request.iteration, ms: Date.now() - started, evidence: (request as { evidence?: unknown }).evidence, decision });
       return decision;
     } catch (error) {
       log(`decide throw iteration=${request.iteration} ms=${Date.now() - started} ${errorCodes(error)}`);
@@ -50,6 +57,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     try {
       const result = await input.executeTool(request);
       log(`tool end toolId=${codeOf(request.toolId)} ms=${Date.now() - started} resultCode=${codeOf((result as { resultCode?: unknown } | undefined)?.resultCode)}`);
+      dump?.tool({ callId: request.callId, toolId: request.toolId, ms: Date.now() - started, request, result });
       return result;
     } catch (error) {
       log(`tool throw toolId=${codeOf(request.toolId)} ms=${Date.now() - started} ${errorCodes(error)}`);
@@ -61,6 +69,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     const verdict = await (check as (...inner: typeof args) => unknown).apply(input, args) as { ok?: unknown; issueCodes?: unknown; feedback?: unknown } | undefined;
     const issues = Array.isArray(verdict?.issueCodes) ? verdict.issueCodes.map(codeOf).join(",") || "-" : "-";
     log(`completion check ok=${verdict?.ok === true} issues=${issues}${missingActs(verdict?.feedback)}`);
+    dump?.check({ verdict });
     return verdict;
   };
   return { ...input, decide, executeTool, ...(checkCompletion ? { checkCompletion } : {}) } as T;
