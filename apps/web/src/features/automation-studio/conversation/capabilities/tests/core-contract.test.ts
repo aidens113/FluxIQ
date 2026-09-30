@@ -43,7 +43,7 @@ const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: strin
   // browser, and a Core with no evidence tools bound must refuse an
   // exploration rather than build from nothing, so this refusal is the correct
   // behaviour. It is Core's service refusing after the handler accepted the
-  // request, read every field and checked the grant; a request defect would be
+  // request and read every field; a request defect would be
   // refused earlier, in other words, and would still fail here.
   "flow.explore": {
     error: /^Flow Bootstrap generation failed \(flow_bootstrap\.evidence_runtime_unavailable\)\.$/u,
@@ -51,8 +51,7 @@ const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: strin
   },
   // Improving a Flow extends the steps it already has. The world's Flow has a
   // Router and Subflows but no steps in any of them, so after the handler has
-  // read every field -- `mode` among them -- and checked the grant the
-  // capability issued, the service refuses to extend a Flow with nothing to
+  // read every field -- `mode` among them -- the service refuses to extend a Flow with nothing to
   // amend. That is Core declining an empty Flow, not a request defect; a
   // malformed request would be refused by the handler instead.
   "flow.improve": {
@@ -70,7 +69,7 @@ const EXPECTED_REFUSALS: Readonly<Record<string, { error: RegExp; because: strin
 };
 
 const PLACEHOLDER_IDS: ContractWorld["ids"] = {
-  projectId: "p", flowId: "f", blankFlowId: "b", subflowId: "s", runId: "r", recordingId: "rec", adaptationId: "a", routeId: "rt", trustedClientId: "c", version: "v", llmExecutionGrantId: "g"
+  projectId: "p", flowId: "f", blankFlowId: "b", subflowId: "s", runId: "r", recordingId: "rec", adaptationId: "a", routeId: "rt", trustedClientId: "c", version: "v"
 };
 
 /** The variant labels, or the reason the capability cannot be exercised at all. */

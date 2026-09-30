@@ -2,8 +2,8 @@
 // named outcome at the end of it.
 //
 // **No loop is written here.** `AS/runtime/llm/evidence-loop.ts` already is
-// one, it is already domain-neutral, and Phase H gave it a registry, Core's own
-// neutral options and the grant that lets a failed run reach it. This is the
+// one, it is already domain-neutral, and Phase H gave it a registry and Core's
+// own neutral options. This is the
 // first caller to drive it at run time, and what it adds is the three things
 // that were missing around it: the budget is spent through a ledger, the loop's
 // signal is the ledger's, and every path out of here goes through one classifier.
@@ -34,9 +34,9 @@
 //
 // What happens next depends on whether there is anywhere to put it. With an
 // `ask` bound, the request goes to the run's own thread and the exploration
-// waits: a grant widens what the run holds, the same check is asked again --
+// waits: an answer that allows it widens what the run holds, the same check is asked again --
 // so nothing decides permission twice -- and the action goes ahead. Without
-// one, or when nobody granted it, the exploration stops there with
+// one, or when nobody allowed it, the exploration stops there with
 // `operator_approval_required`, carrying the request. Nothing else raises that
 // reason: a domain's own refusal code cannot, because a stop with no request in
 // hand would ask a person a question nobody can answer.
@@ -134,14 +134,14 @@ export type AutomationStudioRuntimeExplorationInput = {
    * The run's own permission gate, when the caller holds one. A recovery
    * builds one gate for the whole recovery, so the exploration and the patch
    * stage answer to one authority and end on one request. It is used as-is:
-   * its grant, the instructed set it was given, and what it was already shown.
+   * its permitted consequences, the instructed set it was given, and what it was already shown.
    * Passing it together with `permittedConsequences`, `instructionIds` or
    * `shownEvidence` throws, because those build a gate of their own, and two
    * sources for one answer is how they come to disagree.
    */
   gate?: AutomationStudioActionPermissionGate;
   /**
-   * The consequences the run's grant permits. Absent permits nothing: an
+   * The consequences the run is permitted. Absent permits nothing: an
    * action with a lasting consequence then ends the exploration with a
    * request, which is the fail-closed answer rather than a silent refusal.
    */
@@ -185,7 +185,7 @@ export type AutomationStudioRuntimeExploration = {
   /**
    * Present exactly when the exploration stopped on `operator_approval_required`:
    * the action it needed, its consequences, the control as a person would
-   * name it and why. What a person grants or refuses from.
+   * name it and why. What a person allows or refuses from.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
   actions: number;
@@ -333,7 +333,7 @@ export async function runAutomationStudioRuntimeExploration(
 /**
  * The gate's check, with the refusal it would return put to a person first.
  *
- * A grant is not answered from here: the same check is asked again, and the
+ * An allowed request is not answered from here: the same check is asked again, and the
  * gate recomputes what is missing against what it now holds. Without an ask,
  * or once one question has been asked, this is the gate's own check unchanged.
  */

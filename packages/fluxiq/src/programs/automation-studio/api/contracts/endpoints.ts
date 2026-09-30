@@ -139,8 +139,6 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   deleteFlowMapRoute: "delete-flow-map-route",
   startRuntimeSession: "start-runtime-session",
   getFlowBootstrapGenerationReadiness: "get-flow-bootstrap-generation-readiness",
-  preflightLlmExecution: "preflight-llm-execution",
-  issueLlmExecutionGrant: "issue-llm-execution-grant",
   generateFlowBootstrapAdaptation: "generate-flow-bootstrap-adaptation",
   saveFlowGenerationInstruction: "save-flow-generation-instruction",
   runRuntimeSession: "run-runtime-session",

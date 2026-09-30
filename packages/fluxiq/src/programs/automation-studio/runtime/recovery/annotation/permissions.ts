@@ -1,13 +1,13 @@
 // The permission gate for one recovery: what it may do that outlasts it, and
 // on whose authority.
 //
-// One gate per recovery, built once the provider has resolved -- the
-// resolution is where the grant's permitted set arrives -- and shared by every
+// One gate per recovery, built once the provider has resolved, over the
+// consequences the run's caller permitted, and shared by every
 // stage that can act. The exploration hands its check to each action; the
 // patch stage reads the same gate, so a request raised while exploring ends
 // the recovery there and the patch call is not made.
 //
-// **Two authorities, both the person's.** The grant's `permittedConsequences`
+// **Two authorities, both the person's.** The run's `permittedConsequences`
 // are what the person allowed this run. The instructed set is what the
 // person's own instruction already asks for, stored with the Flow when its
 // build read the instruction. A recovery never asks a model to read the
@@ -42,7 +42,7 @@ import {
 
 /** The recovery's authority, as classes only: what a run detail records and a reader compares. */
 export type AutomationStudioRecoveryPermissionSummary = {
-  /** What the grant allowed, in Core's order. Empty when it allowed nothing. */
+  /** What the person permitted this run, in Core's order. Empty when they permitted nothing. */
   granted: AutomationStudioActionConsequence[];
   /** What the person's instruction asks for, from the set stored with the Flow and still current. */
   instructed: AutomationStudioActionConsequence[];
@@ -57,7 +57,7 @@ export type AutomationStudioRecoveryPermissions = {
 };
 
 export function automationStudioRecoveryPermissionGate(input: {
-  /** From the provider resolution. Absent permits nothing. */
+  /** The run's `permittedConsequences`. Absent permits nothing. */
   granted: readonly string[] | undefined;
   /** The parent Flow's `metadata.bootstrapInstructedConsequences`, as stored. Anything unreadable is not an entry. */
   storedInstructed: unknown;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import { automationStudioRequestedRunId } from "../requested-run-id.ts";
 
@@ -15,10 +15,8 @@ describe("automationStudioRequestedRunId", () => {
   });
 
   it("refuses an id the project already holds, and says so before anything is written", async () => {
-    const refused = vi.fn();
-    const stored = { getRuntimeSession: async () => ({ runId: ID } as AutomationStudioRuntimeSession), refused };
+    const stored = { getRuntimeSession: async () => ({ runId: ID } as AutomationStudioRuntimeSession) };
     await expect(automationStudioRequestedRunId(stored, { projectId: "project.a", newRunId: ID })).rejects.toThrow(/already exists/u);
-    expect(refused).toHaveBeenCalledOnce();
   });
 
   it("refuses a new id beside an existing session, outside a project, or in any form but a UUID", async () => {
@@ -29,9 +27,7 @@ describe("automationStudioRequestedRunId", () => {
       [{ projectId: "project.a", newRunId: ID.toUpperCase() }, /lowercase UUID/u],
       [{ projectId: "project.a", newRunId: 7 }, /lowercase UUID/u],
     ] as const) {
-      const refused = vi.fn();
-      await expect(automationStudioRequestedRunId({ ...nothingStored, refused }, input)).rejects.toThrow(message);
-      expect(refused).toHaveBeenCalledOnce();
+      await expect(automationStudioRequestedRunId(nothingStored, input)).rejects.toThrow(message);
     }
   });
 });

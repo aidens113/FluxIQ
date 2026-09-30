@@ -66,7 +66,6 @@ import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from
 
 import {
   automationStudioRefutedResultFlowWasReauthored,
-  automationStudioRefutedResultReplayReady,
   automationStudioResultRepairSettled,
   repairAutomationStudioRefutedRunResult,
   type AutomationStudioRefutedResultRepairPort,
@@ -324,7 +323,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     // a row that changed nothing in the answer, is recorded and stops there
     // (`recovery/refuted-result/history.ts`).
     if (repaired && !repaired.stopped) {
-      const reauthored = automationStudioRefutedResultFlowWasReauthored(repaired.detail) && automationStudioRefutedResultReplayReady(repaired.detail);
+      const reauthored = automationStudioRefutedResultFlowWasReauthored(repaired.detail);
       const rerun = reauthored && input.ports.rerunRepairedFlow
         ? await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
         : undefined;

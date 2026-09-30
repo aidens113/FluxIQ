@@ -1,25 +1,22 @@
 // The limits one evidence-guided Flow Bootstrap runs its loop under.
 //
 // The loop used to be capped at `min(calls, 8)` iterations with a default of
-// four, and seven tool calls, and after that at the grant's call count: 26
+// four, and seven tool calls, and after that at a declared call count: 26
 // decisions by default, which the Week 2 realistic builds reached while still
 // making progress and ended `evidence_iteration_limit` with no Flow written
 // (`run-mubs2sme-75efe4a4`, `run-mubri4yg-10d01258`). The standing decision is
 // that a build iterates while it makes progress and stops on a bound that
-// means something. So the loop is now handed the run's own bounds as its
-// `budget` -- the grant's token budget and cost ceiling, and a deadline inside
-// the grant's run lease -- and works out from what it has actually spent how
-// many decisions it has left, tells the model so on every decision, and offers
-// its last one only completion (`runtime/llm/loop-budget.ts`). Under
-// those sit the loop's no-progress checks. The call count is only the
-// backstop: the grant's own count, configured by whoever issued it, since the
-// grant mints exactly that many calls, or the loop's ceiling when none is
-// declared.
+// means something. So the loop is handed the run's own bounds as its `budget`
+// -- the resolver's token budget, the run's cost ceiling (the Flow's configured
+// `maxEstimatedCostUsdPerRun` when set, else the resolver's default total), and
+// a deadline -- and works out from what it has actually spent how many
+// decisions it has left, tells the model so on every decision, and offers its
+// last one only completion (`runtime/llm/loop-budget.ts`). Under those sit the
+// loop's no-progress checks. The call count is only the backstop: the
+// resolver's declared count, or the loop's ceiling when none is declared.
 //
 // This module does arithmetic only. From `runtime/llm/` it reads the harness's
-// token constants and resolver; `llm/execution/grants.ts` would close a cycle
-// through the provider factory, so the two grant numbers used here are written
-// out and pinned by tests.
+// token constants.
 //
 // `maxEvidenceContextBytes` was 8,000, and the loop sizes each observation at
 // that figure less 512, so one observation could fill the window and leave 512
@@ -31,8 +28,8 @@
 // CONTEXT_BYTES` is sized instead for what a window has to hold at once: two
 // observations at a domain's largest packet, and the smaller results beside
 // them. It is far below a request's token ceiling -- the live builds spent
-// about 7,000 input tokens of the 48,000 their grant allowed -- so what bounds
-// a build stays the grant's cost, tokens and calls rather than this.
+// about 7,000 input tokens of the 48,000 a call allows -- so what bounds a
+// build stays its cost, tokens and calls rather than this.
 //
 // `maxEvidenceBytes`, the total a build may gather, was 64,000. A realistic
 // page costs 5 to 20 KB, so builds on the realistic sites ended
@@ -50,17 +47,8 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
 
 /**
- * The most tokens one Flow Bootstrap can record in its accounting: the largest
- * whole-run token budget a grant accepts, since the grant charges every call
- * against that budget and refuses the one that would exceed it.
- *
- * A grant's `maxTotalTokensPerRun` may be at most its calls times its per-call
- * limit (`llm/execution/grants.ts`, `preflight`), so the largest is the grant's
- * call backstop, 64 (`AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS`, written
- * out -- see above), at the per-request ceiling. It used to be read off the
- * loop's iteration ceiling, which happens to be the same number; the budget is
- * what bounds what a build records, so the budget is what it is read off now.
- * A test pins it to the grant's numbers.
+ * The most tokens one Flow Bootstrap can record in its accounting: 64 calls --
+ * the run-call backstop -- at the per-request ceiling.
  *
  * The recorded totals used to be held to 50,000 -- the ceiling on a single
  * request -- while an iterating build adds up every call it made, and a build
@@ -69,13 +57,9 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS = 64 * AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST;
 
 /**
- * How long a build's exploration may run: the grant's run lease less a minute.
- *
- * A claimed grant lives `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`,
- * 600,000 ms, from its claim (written out -- see above; a test pins it), and a
- * call after that is refused. The exploration's clock ends a minute before, so
- * the plan check, the build's reading of its instructions and persisting the
- * proposal still fall inside the lease.
+ * How long a build's exploration may run: nine minutes, so the plan check, the
+ * build's reading of its instructions and persisting the proposal still finish
+ * inside ten.
  */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS = 540_000;
 
@@ -94,20 +78,18 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
   loop: {
     minToolCalls: number;
-    /** The backstop: the grant's call count, or the loop's ceiling. */
+    /** The backstop: the resolver's declared call count, or the loop's ceiling. */
     maxIterations: number;
     maxToolCalls: number;
     maxEvidenceBytes: number;
     maxEvidenceContextBytes: number;
-    /** The bounds that decide: the grant's token budget and cost ceiling, and the deadline. */
+    /** The bounds that decide: the run's token budget and cost ceiling, and the deadline. */
     budget: AutomationStudioLlmEvidenceLoopBudget;
   };
   /**
-   * What one decision may reserve against the grant's cost total. A grant
-   * commits each call's reservation, not what it spent, so a share any larger
-   * than the total divided by the calls would have the grant refuse the last
-   * calls on cost while the run still had money. Absent when the resolution
-   * named no cost at all.
+   * What one decision may reserve against the run's cost total: the total
+   * divided by the calls, so the last calls are never refused on cost while
+   * the run still had money. Absent when the resolution named no cost at all.
    */
   maxEstimatedCostUsdPerCall?: number;
   /**
@@ -118,14 +100,20 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   maxConsecutiveUnusableDecisions: number;
 };
 
-/** The loop limits, budget and per-decision cost for one evidence-guided bootstrap. */
+/**
+ * The loop limits, budget and per-decision cost for one evidence-guided bootstrap.
+ *
+ * `flowMaxEstimatedCostUsdPerRun` is the Flow's configured spend limit
+ * (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`). Set, it is the
+ * build's total cost ceiling; unset, the resolver's default total is.
+ */
 export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   maxCallsPerRun?: number | undefined;
   maxEstimatedCostUsd?: number | undefined;
   maxTotalEstimatedCostUsd?: number | undefined;
   maxTotalTokensPerRun?: number | undefined;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
-}): AutomationStudioFlowBootstrapEvidenceLoopLimits {
+}, flowMaxEstimatedCostUsdPerRun?: number): AutomationStudioFlowBootstrapEvidenceLoopLimits {
   const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
   const declared = positive(resolution.maxCallsPerRun) ? Math.trunc(resolution.maxCallsPerRun) : undefined;
   const maxIterations = Math.min(declared ?? ceiling.maxIterations, ceiling.maxIterations);
@@ -134,10 +122,11 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   // calls never bind before the call count does.
   const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
   const perCall = resolution.maxEstimatedCostUsd;
-  const total = resolution.maxTotalEstimatedCostUsd;
+  const configured = typeof flowMaxEstimatedCostUsdPerRun === "number" && Number.isFinite(flowMaxEstimatedCostUsdPerRun) && flowMaxEstimatedCostUsdPerRun > 0 ? flowMaxEstimatedCostUsdPerRun : undefined;
+  const total = configured ?? resolution.maxTotalEstimatedCostUsd;
   const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;
   const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
-  // The most one decision may use, which the grant sets aside before each call.
+  // The most one decision may use, set aside before each call.
   const tokens = resolveAutomationStudioLlmTokenLimits(resolution.tokenLimits).limits;
   const budget: AutomationStudioLlmEvidenceLoopBudget = {
     ...(positive(resolution.maxTotalTokensPerRun) ? { maxTotalTokens: resolution.maxTotalTokensPerRun, maxTokensPerDecision: Math.min(tokens.maxTotalTokens, tokens.maxInputTokens + tokens.maxOutputTokens) } : {}),
@@ -151,8 +140,8 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
     // working: it is the loop's no-progress guard as well as its unusable-reply
     // guard, and a build that meets a setback, looks again and tries another way
     // has taken two steps that gathered nothing new while doing exactly the right
-    // thing. What bounds a build is what it spends -- the grant's cost, its
-    // tokens and the run's deadline, all of which this function hands the loop as
+    // thing. What bounds a build is what it spends -- its cost, its tokens and
+    // the run's deadline, all of which this function hands the loop as
     // its budget. This is only the stop for a build that has started repeating
     // itself and will not stop on its own.
     maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations)

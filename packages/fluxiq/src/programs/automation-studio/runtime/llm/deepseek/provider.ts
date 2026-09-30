@@ -105,8 +105,8 @@ async function runDeepSeekTask(input: {
     // request construction has the request in scope, so its text could carry a
     // page or a person's data -- but the constructor's name cannot, and without
     // it this arm says only that something went wrong while building a request,
-    // which is a whole class of defect wearing one code. Two live grant tests
-    // failed for a day on exactly this arm before anybody could say what threw.
+    // which is a whole class of defect wearing one code. Two live runs failed
+    // for a day on exactly this arm before anybody could say what threw.
     const kind = error instanceof Error && typeof error.name === "string" && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : "non_error";
     throw new AutomationStudioLlmProviderError("llm.provider_request_construction_failed", `DeepSeek request construction failed (${kind}).`);
   }

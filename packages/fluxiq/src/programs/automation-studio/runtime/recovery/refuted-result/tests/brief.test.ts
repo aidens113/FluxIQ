@@ -1,5 +1,5 @@
 // What the repair build is told. The defect it closes: run-mulwm2dc-0bd95f22's
-// re-author was given a Flow id, a mode and a grant, and rebuilt the same
+// re-author was given a Flow id and a mode, and rebuilt the same
 // unfiltered extraction the check had just refuted.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";

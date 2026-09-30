@@ -229,7 +229,7 @@ export type AutomationStudioFlowArtifact = {
  * repair itself, re-author a subflow, reroute, retarget an action, create a
  * recovery path or promote what it learned, and every proposal it did make waited
  * on a person. That is the automation's own work, and the product owner's rule is
- * that asking for the automation *is* the grant for it: only a delete or a
+ * that asking for the automation *is* the permission for it: only a delete or a
  * movement of money reaches a person, and those are gated per action by
  * `runtime/action-permissions/destructive.ts`, not by a standing setting here.
  *

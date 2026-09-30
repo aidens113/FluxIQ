@@ -18,7 +18,7 @@ import {
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { grant, mockProvider } from "./fixtures.ts";
+import { caller, mockProvider } from "./fixtures.ts";
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -187,7 +187,7 @@ describe("the Flow size setting, end to end", () => {
     });
     const { instance, project, flow, setMaxNodes } = await fixture({ provider, evidence: true });
     await setMaxNodes(150);
-    await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true }).catch(() => undefined);
+    await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true }).catch(() => undefined);
     // The draft completion asks only for a sentence; what grows with the Flow is
     // the plan schema in the Bootstrap context the model reads beside it.
     const context = requests.map((request) => (request.context as any).flowBootstrap).find(Boolean);

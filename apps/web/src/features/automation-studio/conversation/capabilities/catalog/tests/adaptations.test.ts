@@ -32,22 +32,18 @@ describe("improving a Flow from the conversation", () => {
       if (endpoint in overrides) return overrides[endpoint];
       if (endpoint === "get-flow-metadata-detail") return { ok: true, payload: { flow: detail } };
       if (endpoint === "save-flow-instruction") return { ok: true, payload: { instruction: { instructionId: "instruction.improvement.one", status: "active" } } };
-      if (endpoint === "issue-llm-execution-grant") return { ok: true, payload: { grant: { grantId: "grant.fresh" } } };
       return { ok: true, payload: { adaptation: { adaptationId: "adaptation.extend.one", status: "proposed" } } };
     });
     return { api: { get: vi.fn(), post } as unknown as ProgramCommandTransport, calls };
   }
 
-  it("saves what should change, then grants a run bound to the saved Flow, then asks Core for an evidence-guided extend", async () => {
+  it("saves what should change, then asks Core for an evidence-guided extend, with no grant step", async () => {
     const { api, calls } = improving();
     const dispatch = await dispatchPanelCapability(scope(api), { capabilityId: "flow.improve", arguments: { change: "Close the What's new announcement when it is showing." } });
     expect(dispatch.outcome.status).toBe("done");
-    // The grant comes after the save: saving changes the Flow's execution
-    // digest, and a grant issued before it is refused as no longer valid.
-    expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "save-flow-instruction", "issue-llm-execution-grant", "generate-flow-bootstrap-adaptation"]);
+    expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "save-flow-instruction", "generate-flow-bootstrap-adaptation"]);
     expect(calls[1]!.payload).toMatchObject({ projectId: "p1", flowId: "f1", body: "Close the What's new announcement when it is showing.", requirement: "required", tags: ["generation"] });
-    expect(calls[2]!.payload).toEqual({ purpose: "build_and_adapt", projectId: "p1", flowId: "f1", keyId: "key.one", provider: "deepseek", model: "deepseek-flash" });
-    expect(calls[3]!.payload).toEqual({ projectId: "p1", flowId: "f1", llmExecutionGrantId: "grant.fresh", evidenceGuided: true, mode: "extend" });
+    expect(calls[2]!.payload).toEqual({ projectId: "p1", flowId: "f1", evidenceGuided: true, mode: "extend" });
   });
 
   it("changes nothing when the Flow has no model key", async () => {

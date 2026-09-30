@@ -66,7 +66,7 @@ describe("a live run's pause, takeover and resume", () => {
     expect(run.pause().state).toBe("running");
   });
 
-  it("stops a run held past its limit rather than holding its grant and lease forever", async () => {
+  it("stops a run held past its limit rather than holding its browser and admission forever", async () => {
     vi.useFakeTimers();
     const { run, advance } = controller({ maxPausedMs: 60_000 });
     run.pause();

@@ -60,7 +60,7 @@ describe("AutomationStudioService recording persistence", () => {
     // used to be locked: it could not repair itself, re-author a subflow,
     // reroute, retarget an action, create a recovery path or keep what it
     // learned, and every proposal waited on a person. That is the automation's
-    // own work, and asking for the automation is the grant for it. The rule and
+    // own work, and asking for the automation is the permission for it. The rule and
     // the reasoning are pinned in
     // `programs/automation-studio/tests/permission-defaults.test.ts`.
     expect(flow.metadata).toMatchObject({

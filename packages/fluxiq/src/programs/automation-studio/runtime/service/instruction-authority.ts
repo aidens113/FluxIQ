@@ -1,11 +1,11 @@
 // Reading the person's instruction for what it already asks for, during a build.
 //
-// One bounded provider call, made through the build's own grant and harness,
+// One bounded provider call, made through the build's own provider and harness,
 // and only when the build first meets an action with a lasting consequence --
 // a read-only build never makes it. It is an evidence decision with no tools
 // and a completion shaped by `AUTOMATION_STUDIO_INSTRUCTED_CONSEQUENCES_SCHEMA`,
-// so it needs no task kind and no grant capability a build does not already
-// have. The provider runs it at temperature 0, like every DeepSeek call.
+// so it needs no task kind a build does not already have. The provider runs it
+// at temperature 0, like every DeepSeek call.
 //
 // Core keeps only claims whose quote is the person's own words; a failed call
 // claims nothing, and the run asks. What it spent is counted with the build.

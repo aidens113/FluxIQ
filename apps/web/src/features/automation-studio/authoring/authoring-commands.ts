@@ -3,11 +3,11 @@ import { saveFlowInstruction } from "../instructions";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
 import { improvementInstruction } from "./existing-flow-improvement";
 
-// A website exploration iterates for as long as Core's run lease allows, so the
-// browser waits out the grant's claim window, that whole lease, and the reply.
+// A website exploration iterates for as long as Core lets the run go on, so the
+// browser waits out the whole run and the reply.
 export const WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS = WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS;
 
-export function generateFlowBootstrapAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; llmExecutionGrantId: string }) {
+export function generateFlowBootstrapAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
   return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", payload);
 }
 
@@ -15,7 +15,7 @@ export function saveFlowGenerationInstruction(api: ProgramCommandTransport, payl
   return api.post<{ instruction?: { instructionId?: string; status?: string } }>("save-flow-generation-instruction", payload);
 }
 
-export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; llmExecutionGrantId: string }) {
+export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
   return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", {
     ...payload,
     evidenceGuided: true
@@ -30,7 +30,7 @@ export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommand
  * `extend`, so the Flow's own steps are the draft the model amends and its
  * Router, Subflow and node ids are kept.
  */
-export function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; llmExecutionGrantId: string }) {
+export function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
   return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", {
     ...payload,
     evidenceGuided: true,

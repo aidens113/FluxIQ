@@ -50,11 +50,11 @@ describe("applyAutomationStudioRuntimeRecoveryPatches", () => {
     expect((outcome.attempts[0]?.targetOverrideRefusal as JsonObject | undefined)).not.toHaveProperty("reason");
   });
 
-  // Without a proposal grant the override is executed, and that path never
+  // Outside a proposal-only run the override is executed, and that path never
   // consulted the domain, so its refusals held only on the proposal path.
-  it("without a proposal grant, executes an override only through the domain's check", async () => {
+  it("outside a proposal-only run, executes an override only through the domain's check", async () => {
     const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
-    const refused = await apply({ asked, answer: { status: "absent", reason: "action_not_repairable" }, explicitProposalGrant: false });
+    const refused = await apply({ asked, answer: { status: "absent", reason: "action_not_repairable" }, explicitProposalRun: false });
 
     expect(asked).toEqual([{ nodeId: "recorded.press", definitionId: "builtin.policy.action", outputId: "example.output.press" }]);
     expect(refused.attempts).toEqual([expect.objectContaining({
@@ -70,12 +70,12 @@ describe("applyAutomationStudioRuntimeRecoveryPatches", () => {
   });
 
   it("refuses an override on either path when there was no evidence for the domain to judge it against", async () => {
-    for (const explicitProposalGrant of [true, false]) {
+    for (const explicitProposalRun of [true, false]) {
       const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
-      const outcome = await apply({ asked, answer: { status: "resolved", target: { handles: { control: "candidate.2" } } }, explicitProposalGrant, failureEvidence: null });
+      const outcome = await apply({ asked, answer: { status: "resolved", target: { handles: { control: "candidate.2" } } }, explicitProposalRun, failureEvidence: null });
 
-      expect(asked, `grant: ${explicitProposalGrant}`).toEqual([]);
-      expect(outcome.attempts[0], `grant: ${explicitProposalGrant}`).toMatchObject({ preflightOk: false, executed: false, traceStatus: "not-run", targetOverrideRefusal: { status: "absent", reason: "domain_check_unavailable" } });
+      expect(asked, `proposal-only: ${explicitProposalRun}`).toEqual([]);
+      expect(outcome.attempts[0], `proposal-only: ${explicitProposalRun}`).toMatchObject({ preflightOk: false, executed: false, traceStatus: "not-run", targetOverrideRefusal: { status: "absent", reason: "domain_check_unavailable" } });
       expect(outcome.adaptationIds).toEqual([]);
     }
   });
@@ -90,16 +90,16 @@ describe("applyAutomationStudioRuntimeRecoveryPatches", () => {
   });
 
   // The plan narrows the patch kinds to the ones that could serve the failure,
-  // and nothing downstream read that list: under a `diagnose_and_adapt` grant
+  // and nothing downstream read that list: in a `diagnose_and_adapt` run
   // the model can only answer with a target override, and one was proposed for
   // a navigation failure whose plan allowed only a reroute or a recovery path
   // (live repair campaign, 2026-09-17).
-  it.each([true, false])("refuses a patch kind the plan did not allow, without asking the domain or proposing it (grant: %s)", async (explicitProposalGrant) => {
+  it.each([true, false])("refuses a patch kind the plan did not allow, without asking the domain or proposing it (proposal-only: %s)", async (explicitProposalRun) => {
     const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
     const outcome = await apply({
       asked,
       answer: { status: "resolved", target: { handles: { control: "candidate.2" } } },
-      explicitProposalGrant,
+      explicitProposalRun,
       allowedPatchKinds: ["temporary_reroute", "temporary_recovery_subflow_call", "temporary_action_sequence"]
     });
 
@@ -118,7 +118,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches", () => {
 
   it("refuses every patch when the plan allowed none", async () => {
     const asked: AutomationStudioRuntimeTargetOverrideFailedAction[] = [];
-    const outcome = await apply({ asked, answer: { status: "resolved", target: { handles: { control: "candidate.2" } } }, explicitProposalGrant: false, allowedPatchKinds: [] });
+    const outcome = await apply({ asked, answer: { status: "resolved", target: { handles: { control: "candidate.2" } } }, explicitProposalRun: false, allowedPatchKinds: [] });
 
     expect(asked).toEqual([]);
     expect(outcome.attempts[0]).toMatchObject({ preflightOk: false, issues: ["The recovery plan allows no target override for this failure."] });
@@ -215,15 +215,15 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with explored packets", ()
 // which every granted run does, and nobody was asked. It now says what pressing
 // its new target would lastingly do, and the recovery's one gate is asked: a
 // high-risk class nobody allowed becomes the request the recovery ends on.
-// Ordinary creation and editing run without a second grant; sending or
-// publishing still needs the person's instruction or grant authority. The
+// Ordinary creation and editing run without a second permission; sending or
+// publishing still needs the person's instruction or permitted consequences. The
 // policy's broad side-effect flags do not replace that class-specific gate.
 describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permission gate", () => {
   const RESOLVED: AutomationStudioRuntimeTargetOverrideEvidenceValidation = { status: "resolved", target: { handles: { control: "candidate.2" }, resolvedBy: "domain" }, control: { name: "Add to queue", kind: "button" } };
 
   it("turns a patch with a destructive class nobody allowed into the recovery's request, and runs nothing", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["delete", "move_money"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["delete", "move_money"], sideEffectsWithheld: true });
 
     expect(outcome.attempts).toEqual([expect.objectContaining({
       kind: "temporary_target_override",
@@ -252,12 +252,12 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
   // `send_or_publish` came off the gated list on 2026-09-28: a run that sends is
   // a run whose instruction asked for the sending, so a standing gate on it
   // asked permission for the request itself. A repair that would send therefore
-  // runs, with no grant and nothing derived from the instruction -- and what it
+  // runs, with nothing permitted and nothing derived from the instruction -- and what it
   // declared is still recorded, so the cross-check against the instruction still
   // sees it.
-  it("runs a send repair with no grant, and still records what it declared", async () => {
+  it("runs a send repair with nothing permitted, and still records what it declared", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({
@@ -282,9 +282,9 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
   // never run a repair live under `explore_and_adapt` at all. Creation is not a
   // gated consequence, so the permission gate supersedes the broad policy
   // refusal and the repair actually presses the control.
-  it("runs a create-only repair with no grant and the policy withholding side effects", async () => {
+  it("runs a create-only repair with nothing permitted and the policy withholding side effects", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["create_new"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["create_new"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "permitted", consequences: ["create_new"], preflightOk: true });
@@ -293,9 +293,9 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
     expect(outcome.adaptationIds).toHaveLength(1);
   });
 
-  it("runs a patch whose destructive class the grant allows, as explicitly authorized", async () => {
+  it("runs a patch whose destructive class the run permits, as explicitly authorized", async () => {
     const gate = recoveryGate(["delete"]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["delete", "modify_existing"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["delete", "modify_existing"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "permitted", consequences: ["delete", "modify_existing"], preflightOk: true });
@@ -305,7 +305,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("runs a patch that declares nothing lasting without asking", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: [], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: [], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "permitted", consequences: [], preflightOk: true });
@@ -313,7 +313,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("does not run a patch that did not say what it would do, and asks nobody", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts).toEqual([expect.objectContaining({ permissionOutcome: "undeclared", executed: false, preflightOk: false, verification: { status: "not_executed", reason: "consequences_undeclared" } })]);
@@ -323,7 +323,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("asks nobody about a patch that could not run whatever they said", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: { status: "absent", reason: "target_not_equivalent" }, explicitProposalGrant: false, gate, consequences: ["create_new"], sideEffectsWithheld: true });
+    const outcome = await apply({ asked: [], answer: { status: "absent", reason: "target_not_equivalent" }, explicitProposalRun: false, gate, consequences: ["create_new"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();
     expect(outcome.attempts[0]).toMatchObject({ permissionOutcome: "not_asked", preflightOk: false, targetOverrideRefusal: { status: "absent", reason: "target_not_equivalent" } });
@@ -332,7 +332,7 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("withholds a control name the model was never shown", async () => {
     const gate = recoveryGate([], { observed: false });
-    await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["delete"], sideEffectsWithheld: true });
+    await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["delete"], sideEffectsWithheld: true });
 
     expect(gate.request?.control).toEqual({ name: null, kind: "button" });
     expect(gate.request?.sentence).toContain("a control it cannot name here");
@@ -340,25 +340,25 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
 
   it("ends at the first request: no later patch is attempted", async () => {
     const gate = recoveryGate([]);
-    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, gate, consequences: ["delete"], sideEffectsWithheld: true, repeat: 2 });
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["delete"], sideEffectsWithheld: true, repeat: 2 });
 
     expect(outcome.attempts).toHaveLength(1);
     expect(outcome.attempts[0]).toMatchObject({ permissionRequired: true });
   });
 
-  it("leaves a proposal-only grant and a run with no gate exactly as they were", async () => {
+  it("leaves a proposal-only run and a run with no gate exactly as they were", async () => {
     const proposal = await apply({ asked: [], answer: RESOLVED, gate: recoveryGate([]), consequences: ["create_new"], sideEffectsWithheld: true });
     expect(proposal.attempts[0]).toMatchObject({ proposalOnly: true, preflightOk: true });
     expect(proposal.attempts[0]).not.toHaveProperty("permissionOutcome");
 
-    const ungated = await apply({ asked: [], answer: RESOLVED, explicitProposalGrant: false, consequences: ["create_new"], sideEffectsWithheld: true });
+    const ungated = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, consequences: ["create_new"], sideEffectsWithheld: true });
     expect(ungated.attempts[0]).toMatchObject({ preflightOk: false, traceStatus: "not-run" });
     expect(ungated.attempts[0]?.issues).toContain("External side effects are disabled by adaptation policy.");
     expect(ungated.attempts[0]).not.toHaveProperty("permissionOutcome");
   });
 });
 
-/** One recovery's gate, holding the grant's classes and, unless told otherwise, having shown the model the failure packet. */
+/** One recovery's gate, holding the permitted classes and, unless told otherwise, having shown the model the failure packet. */
 function recoveryGate(granted: AutomationStudioActionConsequence[], options: { observed?: boolean } = {}): AutomationStudioActionPermissionGate {
   const gate = new AutomationStudioActionPermissionGate({ permittedConsequences: granted, stage: "recovery", instructionIds: [], newRequestId: () => "permission-request:repair", now: () => 5 });
   if (options.observed !== false) gate.observe(FAILURE_PACKET);
@@ -409,7 +409,7 @@ async function apply(options: {
   /** The domain's check, when the test needs more than one fixed answer. */
   validate?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["validateTargetOverrideEvidence"]>;
   /** Default `true`: the Lab's `diagnose_and_adapt`. `false` executes the override. */
-  explicitProposalGrant?: boolean;
+  explicitProposalRun?: boolean;
   /** `null`: the domain captured no failure evidence. */
   failureEvidence?: JsonObject | null;
   explorationEvidence?: AutomationStudioLlmContextPacket["explorationEvidence"];
@@ -421,7 +421,7 @@ async function apply(options: {
   /** The recovery's permission gate, and what the patch says it would lastingly do. */
   gate?: AutomationStudioActionPermissionGate;
   consequences?: AutomationStudioActionConsequence[];
-  /** The production default a granted run has: no external side effects, and none authorized. */
+  /** The production default a model-assisted run has: no external side effects, and none authorized. */
   sideEffectsWithheld?: true;
   /** The same patch this many times, in one answer. */
   repeat?: number;
@@ -460,7 +460,7 @@ async function apply(options: {
     failedAttempt: failedAttempt(),
     patches: Array.from({ length: options.repeat ?? 1 }, () => patch),
     allowedPatchKinds: options.allowedPatchKinds ?? ["temporary_target_override", "temporary_wait_retry"],
-    explicitProposalGrant: options.explicitProposalGrant ?? true,
+    explicitProposalRun: options.explicitProposalRun ?? true,
     ...(options.failureEvidence === null ? {} : { failureEvidence: options.failureEvidence ?? FAILURE_PACKET }),
     ...(options.explorationEvidence ? { explorationEvidence: options.explorationEvidence } : {}),
     ...(options.gate ? { permissionGate: options.gate } : {}),

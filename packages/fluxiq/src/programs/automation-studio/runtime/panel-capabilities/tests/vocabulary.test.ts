@@ -45,7 +45,7 @@ describe("the panel capability vocabulary a model is given", () => {
     expect(text.match(/Running:/gu)).toHaveLength(1);
   });
 
-  // The standing rule: the person asking for the automation is the grant. A
+  // The standing rule: the person asking for the automation is the permission. A
   // model that asks whether it may edit a setting is the defect this default was
   // corrected to remove, so the instructions must never invite it to.
   it("tells the model not to ask whether it may proceed", () => {

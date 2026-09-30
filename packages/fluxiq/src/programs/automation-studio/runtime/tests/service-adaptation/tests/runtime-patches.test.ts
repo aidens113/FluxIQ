@@ -27,14 +27,12 @@ describe("AutomationStudioService recording persistence", () => {
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
-  it("rejects a non-target patch from an explicit diagnose_and_adapt grant without executing it", async () => {
+  it("rejects a non-target patch from an explicit diagnose_and_adapt run without executing it", async () => {
     const resolved: any[] = [];
-    const revoked: string[] = [];
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
-      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
       llmProviderResolver: (input) => {
         resolved.push(input);
         return {
@@ -71,7 +69,7 @@ describe("AutomationStudioService recording persistence", () => {
           { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
           // Was `unknown.confirmation`, which L5 now classifies as a graph
           // failure and refuses to ask a model about at all -- so this test,
-          // whose subject is the explicit grant's proposal path, never reached
+          // whose subject is the explicit run's proposal path, never reached
           // a provider. A node that exists and fails at run time keeps the
           // subject and leaves the graph refusal to its own test.
           { id: "broken", definitionId: "builtin.math.divide", parameterValues: {} },
@@ -83,13 +81,12 @@ describe("AutomationStudioService recording persistence", () => {
         ]
     });
 
-    const grant = { grantId: "llm-grant:diagnose-adapt", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" as const };
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant });
+    const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" as const };
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
-    expect(resolved).toEqual([expect.objectContaining({ executionGrant: grant })]);
-    expect(revoked).toEqual([grant.grantId]);
+    expect(resolved).toEqual([expect.objectContaining({ caller: { actorUserId: "user.test", actorSessionId: "session.test" } })]);
     expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
       kind: "temporary_reroute",
       proposalOnly: true,
@@ -159,7 +156,9 @@ describe("AutomationStudioService recording persistence", () => {
       flowId: "flow.target-proposal",
       metadata: {
         ...adaptive,
-        adaptationPolicySettings: { ...policy, allowModifyActionTargets: false, maxInterventionsPerRun: 1, maxEstimatedCostUsdPerRun: 0.001 },
+        // The Flow's cost ceiling is the run's purse (no grant carries one of
+        // its own), so it is the product default of $0.25.
+        adaptationPolicySettings: { ...policy, allowModifyActionTargets: false, maxInterventionsPerRun: 1, maxEstimatedCostUsdPerRun: 0.25 },
         trainingModeSettings: {
           ...training,
           budgets: { ...(training.budgets as JsonObject), maxInterventionsPerRun: 1, maxTokensPerRun: 3000 }
@@ -169,9 +168,9 @@ describe("AutomationStudioService recording persistence", () => {
     const subflowSummary = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).subflows[0]!;
     const subflow = (await service.getFlowSubflow(project.id, flow.flowId, subflowSummary.subflowId))!;
     const graphBefore = await service.getFlow(project.id, subflow.graphFlowId!);
-    const grant = { grantId: "llm-grant:target-proposal", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" as const };
+    const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" as const };
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: grant });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
@@ -219,7 +218,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(appliedGraph.nodes.find((node) => node.id === "divide")?.parameterValues?.target).toEqual(target);
   });
 
-  it("rejects multiple patches from an explicit diagnose_and_adapt grant without persisting proposals", async () => {
+  it("rejects multiple patches from an explicit diagnose_and_adapt run without persisting proposals", async () => {
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -257,7 +256,7 @@ describe("AutomationStudioService recording persistence", () => {
       projectId: project.id,
       flowId: flow.flowId,
       inputs: { numerator: 1, denominator: 0 },
-      llmExecution: { grantId: "llm-grant:multiple-targets", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" }
+      llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" }
     });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 

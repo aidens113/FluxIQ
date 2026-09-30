@@ -8,7 +8,6 @@ export async function POST() {
   const sessionId = cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
   if (sessionId) {
     const fluxiq = getFluxIQ();
-    fluxiq.programs.llmExecutionGrants.revokeForSession(sessionId);
     fluxiq.programs.secretKeys.revokeSessionUnlock(sessionId);
     await fluxiq.programs.identityAccess.revokeSession(sessionId);
   }

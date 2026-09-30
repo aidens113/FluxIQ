@@ -18,7 +18,7 @@ function createService(...args: ConstructorParameters<typeof AutomationStudioSer
   return service;
 }
 
-describe("AutomationStudioService recording persistence", () => {
+describe("a run a person asked the model into, with no grant", () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-service-"));
   });
@@ -29,10 +29,8 @@ describe("AutomationStudioService recording persistence", () => {
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
-  it("binds and revokes a diagnosis-only execution grant without persisting session identity", async () => {
+  it("calls the model for a diagnosis-only run with nothing issued or revoked, and persists no session identity", async () => {
     const resolved: unknown[] = [];
-    const revoked: string[] = [];
-    let grantServiceClosed = false;
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
@@ -40,43 +38,36 @@ describe("AutomationStudioService recording persistence", () => {
       llmProviderResolver: (input) => {
         resolved.push(input);
         return {
-          provider: { metadata: { provider: "mock", model: "grant-model" }, runTask: async (request) => { taskKinds.push(request.taskKind); expect(request).toMatchObject({ tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }); return { response: { kind: "diagnosis", summary: "safe" }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }; } },
+          provider: { metadata: { provider: "mock", model: "caller-model" }, runTask: async (request) => { taskKinds.push(request.taskKind); expect(request).toMatchObject({ tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }); return { response: { kind: "diagnosis", summary: "safe" }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }; } },
           tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
           maxCallsPerRun: 1,
           maxEstimatedCostUsd: 0.1,
           timeoutMs: 10000
         };
-      },
-      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
-      closeLlmExecutionGrants: () => { grantServiceClosed = true; }
+      }
     });
-    const project = await service.createProject({ name: "Grant diagnosis" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.grant-diagnosis", metadata: adaptiveTrainingMetadata() });
-    const grant = { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.sensitive", purpose: "diagnosis_only" as const };
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: grant });
+    const project = await service.createProject({ name: "Caller diagnosis" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.caller-diagnosis", metadata: adaptiveTrainingMetadata() });
+    const llmExecution = { actorUserId: "user.test", actorSessionId: "session.sensitive", intent: "diagnosis_only" as const };
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(detail?.actionAttempts).toEqual(expect.arrayContaining([expect.objectContaining({ nodeId: "divide", status: "failed" })]));
-    expect(resolved).toEqual([expect.objectContaining({ executionGrant: grant })]);
-    expect(revoked).toEqual(["llm-grant:test"]);
+    // The resolver is told who the call is for, and nothing that authorizes it.
+    expect(resolved).toEqual([expect.objectContaining({ caller: { actorUserId: "user.test", actorSessionId: "session.sensitive" } })]);
+    expect(resolved[0]).not.toHaveProperty("executionGrant");
     expect(detail?.adaptationIds).toEqual([]);
     expect(JSON.stringify(detail)).not.toContain("session.sensitive");
-    // **These three were refusals until t166, and each one threw the grant away
-    // with it.** A dry run, side-effect authorization and a named domain are
-    // statements about how the run executes, not about a lasting consequence: a
-    // grant gates money, a deletion or a publication, and those are still gated
-    // action by action by `permittedConsequences` and the action permission gate.
-    // Refusing the run here meant a caller whose repair needed to act on a page
-    // had to choose between acting and having its answer judged.
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).resolves.toMatchObject({ flowId: flow.flowId });
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).resolves.toMatchObject({ flowId: flow.flowId });
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).resolves.toMatchObject({ flowId: flow.flowId });
-    // Still refused, and not a permission: a grant is spent by the run it
-    // authorizes, so returning an earlier run under the same idempotency key
-    // would spend it on a run it never authorized.
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, idempotencyKey: "live-diagnosis" })).rejects.toThrow("does not accept idempotency");
-    await service.close();
-    expect(grantServiceClosed).toBe(true);
+    // A dry run, side-effect authorization and a named domain are statements
+    // about how the run executes, not about a lasting consequence: those are
+    // gated action by action by `permittedConsequences` and the action
+    // permission gate.
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution, dryRunLlm: true })).resolves.toMatchObject({ flowId: flow.flowId });
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution, authorizedExternalSideEffects: true })).resolves.toMatchObject({ flowId: flow.flowId });
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution, authorizedDomainIds: ["example"] })).resolves.toMatchObject({ flowId: flow.flowId });
+    // With no grant to spend, an idempotency key is accepted with a model run
+    // like with any other run.
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution, idempotencyKey: "live-diagnosis" })).resolves.toMatchObject({ flowId: flow.flowId });
   }, 60_000);
 
   it("executes the existing scoped domain action before diagnosis without LLM retry or mutation", async () => {
@@ -96,7 +87,6 @@ describe("AutomationStudioService recording persistence", () => {
           : { ok: true, domainId: "example", outputId: request.outputId, payload: { clicked: true } };
       }
     });
-    const revoked: string[] = [];
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -115,7 +105,7 @@ describe("AutomationStudioService recording persistence", () => {
             expect(request.context.recentActions?.[0]).not.toHaveProperty("message");
             expect(request.estimatedInputTokens).toBeLessThanOrEqual(request.tokenLimits.maxInputTokens);
             // The diagnosis is told what the recovery's permission gate permits --
-            // this resolver granted nothing -- not the side-effect flag the gate replaced.
+            // this run permitted nothing -- not the side-effect flag the gate replaced.
             expect(request.context.policyGates).toMatchObject({ allowModifyActionTargets: true, actionPermissions: { permitted: [] } });
             expect(request.context.policyGates).not.toHaveProperty("allowExternalSideEffects");
             return { response: { kind: "diagnosis", summary: "The recorded target drifted." }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
@@ -126,7 +116,6 @@ describe("AutomationStudioService recording persistence", () => {
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 10000
       }),
-      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
       hostRuntime: {
         capabilities: ["state-snapshot"],
         captureStateSnapshot: ({ node, attemptId, point }) => {
@@ -146,16 +135,15 @@ describe("AutomationStudioService recording persistence", () => {
       edges: [{ id: "start.click", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "click", targetPortId: "in" }]
     });
     const graphBefore = JSON.stringify(installed.graph);
-    const grant = { grantId: "llm-grant:causality", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
+    const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnosis_only" as const };
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, llmExecution: grant });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, llmExecution });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(run.status).toBe("failed");
     expect(dispatchCount).toBe(1);
     expect(sequence).toEqual(["action:1", "diagnosis"]);
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
-    expect(revoked).toEqual([grant.grantId]);
     expect(detail?.actionAttempts?.filter((attempt) => attempt.nodeId === "click")).toHaveLength(1);
     expect(hostPoints).toEqual(expect.arrayContaining(["click:before_action", "click:after_action"]));
     expect(detail?.actionAttempts?.find((attempt) => attempt.nodeId === "click")?.metadata).toMatchObject({ stateRefs: { beforeAction: { stateRef: expect.stringContaining("state://") }, afterAction: { stateRef: expect.stringContaining("state://") } } });
@@ -231,7 +219,7 @@ describe("AutomationStudioService recording persistence", () => {
     const run = await service.runRuntimeSession({
       projectId: project.id,
       flowId: configured.flowId,
-      llmExecution: { grantId: "llm-grant:native", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" }
+      llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnosis_only" }
     });
 
     expect(run.status).toBe("failed");
@@ -239,10 +227,9 @@ describe("AutomationStudioService recording persistence", () => {
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
   });
 
-  it("runs a granted session attached to a pre-staged one, exactly as an ungranted run of it would", async () => {
+  it("runs a model run attached to a pre-staged session exactly as a run with no model would", async () => {
     let dispatchCount = 0;
     let providerResolutionCount = 0;
-    const revoked: string[] = [];
     const io = new IoRegistry();
     io.registerOutput("example", {
       definition: { id: "click", title: "Click" },
@@ -258,42 +245,30 @@ describe("AutomationStudioService recording persistence", () => {
       llmProviderResolver: () => {
         providerResolutionCount += 1;
         return undefined;
-      },
-      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId)
+      }
     }).bindIoRuntime(io, "example");
-    const project = await service.createProject({ name: "Staged grant rejection", domainId: "example" });
-    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.staged-grant-rejection", name: "Staged grant rejection" });
+    const project = await service.createProject({ name: "Staged model run", domainId: "example" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.staged-model-run", name: "Staged model run" });
     const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, configured.flowId, {
       nodes: [{ id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "click", parameters: {} } }],
       edges: []
     });
     const queued = await service.startRuntimeSession({ projectId: project.id, flowId: configured.flowId, authorizedDomainIds: ["other-domain"] });
-    const grant = { grantId: "llm-grant:staged", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
+    const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnosis_only" as const };
 
-    // **Attaching used to be refused outright, with the grant revoked (t166).**
-    // The reason given was that a session somebody else staged carries
-    // authorizations the grant never saw -- but a domain authorization is not a
-    // lasting consequence, and the thing that actually stops an action a person
-    // did not allow is the action permission gate, which is untouched and still
-    // runs. Meanwhile the refusal made a repair unable to resume the run that
-    // failed, which is the only run worth repairing.
-    const attached = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant });
+    // A domain authorization another caller staged is not a lasting
+    // consequence; the action permission gate is what stops an action a person
+    // did not allow, and it still runs. So a model run may resume a staged run,
+    // which is the only run worth repairing.
+    const attached = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution });
     expect(attached.runId).toBe(queued.runId);
-    // The run now does what the same run with no grant at all does: it executes
-    // the Flow's action. That is the point -- holding a grant had made a run
-    // *more* restricted than holding none, which is the inversion this task
-    // removes. Note also what the old assertion did not prove:
-    // `authorizedDomainIds` is read by composition validation and never by the
-    // effect dispatcher, so the zero it asserted came from the refusal rather
-    // than from the domain list. What does stop an action nobody allowed is the
-    // action permission gate, and that is untouched.
+    // It executes the Flow's action, as the same run with no model would.
     expect(dispatchCount).toBe(1);
-    expect(revoked).toEqual([grant.grantId]);
   });
 
   // One call count still applies to a run: the one its provider resolver
-  // declares, because a grant mints exactly that many authorisations. The
+  // declares, as a plain budget limit. The
   // training settings' intervention limit used to be read as a provider-call
   // cap too, and no longer is -- it counts interventions -- so the single call
   // here is declared where a real host declares it.

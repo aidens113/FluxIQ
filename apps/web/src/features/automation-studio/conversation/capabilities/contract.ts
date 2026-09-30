@@ -114,7 +114,7 @@ export type PanelCapabilityArguments = Readonly<Record<string, PanelCapabilityAr
  * for the two consequence classes Core still asks a person about -- deleting
  * something and moving money -- and it means the panel needs the person to
  * prove who they are again before it sends. Everything else runs: the person
- * asking for the automation is the grant, and a capability that answered
+ * asking for the automation is the permission, and a capability that answered
  * "may I?" for ordinary work would be the defect, not the safeguard.
  */
 export type PanelCapabilityOutcome =

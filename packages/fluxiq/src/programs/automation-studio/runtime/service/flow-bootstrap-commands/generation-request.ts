@@ -1,75 +1,32 @@
 // What a Flow Bootstrap generation request must be before a build may start.
 //
-// Every field of the request and of the grant it carries, read and refused in
-// one place. It lived inline in `runtime/service.ts`, where twenty lines of
-// field checking sat between the method's signature and the first thing it
-// actually does; the checks are a cohesive job with one answer, so they are one
-// function, and the service is left with the build.
+// Every field of the request read and refused in one place, so the service is
+// left with the build. The caller turns any throw from here into
+// `flow_bootstrap.invalid_input` at the `pre_provider_validation` stage, which
+// is what a malformed request has always been answered with.
 //
-// Refusals are unchanged, word for word: the caller turns any throw from here
-// into `flow_bootstrap.invalid_input` at the `pre_provider_validation` stage,
-// which is what a malformed request has always been answered with.
+// A build needs no authorization for the model calls it makes. What it carries
+// is who it is made for (`caller`, whose unlocked key pays) and which lasting
+// consequences the person has already allowed its actions to have
+// (`permittedConsequences`); anything else consequential is asked about act by
+// act.
 
 import { automationStudioFlowStartLocation } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "../../flow-bootstrap/index.ts";
-import { parseAutomationStudioPermittedConsequences } from "../../action-permissions/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, type AutomationStudioBuildAndAdaptExecutionGrant, type AutomationStudioRuntimeSessionGrantPurpose } from "../../llm/index.ts";
-import {
-  assertExactObjectFields,
-  requiredBootstrapCommandId,
-  requiredBootstrapDigest,
-  requiredBootstrapSettingsRevision
-} from "./field-readings.ts";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
+import { assertExactObjectFields, requiredBootstrapCommandId } from "./field-readings.ts";
 
-/** The fields a generation request may carry, and the fields its grant may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode"] as const;
-const GRANT_FIELDS = ["grantId", "actorUserId", "actorSessionId", "purpose", "executionDigest", "settingsRevision", "permittedConsequences"] as const;
-
-/**
- * The grant purposes this entry point runs under, and why there are two.
- *
- * `build_and_adapt` is the person pressing build, and it is the only purpose a
- * `create` runs under: writing a Flow from nothing is its own act with its own
- * authorization.
- *
- * `explore_and_adapt` is accepted for an `extend`, and accepting it names the
- * grant that already buys these calls rather than widening one. That purpose is
- * by its own definition the iterating recovery that explores on its own
- * (`llm/runtime-session-grant.ts`); an extend build makes
- * `evidence_tool_decision` calls and nothing else, which the purpose already
- * permits; and what it produces is a proposal, reviewed and applied through the
- * same gates as any other. What such a grant does not carry is
- * `permittedConsequences`, so an extend entered this way permits no lasting
- * consequence at all and every consequential step raises the person's question.
- *
- * `diagnose_and_adapt` is deliberately not here. That grant buys one target
- * override under manual review and does not buy exploring, so a run holding it
- * may not be routed into a loop that explores -- which is the widening reverted
- * earlier in this task rather than something to reintroduce by another door.
- *
- * **None of this applies to the run's own repair.** A run whose answer was
- * refuted extends its Flow under whatever grant the run holds, whatever its
- * purpose (`runOwnedRepair` below). The person's instruction is the grant for
- * the automation's own work, and repairing is that work: gating it on the name
- * of a purpose is how the wrong-answer repair never ran once in five live runs,
- * when the gate asked for `explore_and_adapt` and every instruction-built Flow
- * ran under `build_and_adapt`. Every purpose iterates and admits every task
- * kind (`llm/grant-capabilities.ts`), so every grant carries what a build
- * spends; the build's own loop limits and stall guard bound it, and per-call
- * limits the grant does not state fall back to the harness defaults.
- */
-const GENERATION_GRANT_PURPOSES = ["build_and_adapt", "explore_and_adapt"] as const;
-
-/** A grant this entry point accepts: the build grant or the exploring recovery's from a caller, or any run's own grant for its repair. */
-export type AutomationStudioFlowBootstrapGenerationGrant =
-  Omit<AutomationStudioBuildAndAdaptExecutionGrant, "purpose">
-  & { purpose: AutomationStudioRuntimeSessionGrantPurpose };
+/** The fields a generation request may carry, and the fields its caller may carry. */
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode"] as const;
+const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
 export type AutomationStudioFlowBootstrapGenerationRequest = {
   projectId: string;
   flowId: string;
-  executionGrant: AutomationStudioFlowBootstrapGenerationGrant;
+  caller: AutomationStudioLlmModelCaller;
+  permittedConsequences: AutomationStudioActionConsequence[];
   /** Whether this build writes the Flow or adds to the one already there. */
   mode: AutomationStudioBootstrapAdaptationMode;
   startLocation?: string;
@@ -78,32 +35,21 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
 /**
  * Read one generation request, or throw naming what is wrong with it.
  *
- * `unsafeInput` and `unsafeGrant` are the caller's own untyped views of the
- * input: the method is reachable from an API handler, so what arrives is
- * whatever was sent rather than what the type says.
+ * `unsafeInput` is the caller's own untyped view of the input: the method is
+ * reachable from an API handler, so what arrives is whatever was sent rather
+ * than what the type says.
  */
-export function readAutomationStudioFlowBootstrapGenerationRequest(
-  unsafeInput: Record<string, unknown>,
-  unsafeGrant: Record<string, unknown> | undefined,
-  /** `runOwnedRepair`: the run's own repair of a refuted answer, which extends under the run's grant whatever its purpose. Never set from a caller's request. */
-  options: { runOwnedRepair?: boolean } = {}
-): AutomationStudioFlowBootstrapGenerationRequest {
+export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: Record<string, unknown>): AutomationStudioFlowBootstrapGenerationRequest {
   assertExactObjectFields(unsafeInput, REQUEST_FIELDS, "Flow Bootstrap generation input");
   if (unsafeInput.evidenceGuided !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Evidence-guided generation flag is invalid.");
   if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
   if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
   if (unsafeInput.mode !== undefined && unsafeInput.mode !== "create" && unsafeInput.mode !== "extend") throw new Error("Flow Bootstrap generation mode is invalid.");
   const mode: AutomationStudioBootstrapAdaptationMode = unsafeInput.mode === "extend" ? "extend" : "create";
-  if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
-  assertExactObjectFields(unsafeGrant, GRANT_FIELDS, "Flow Bootstrap execution grant");
-  const repair = options.runOwnedRepair === true && mode === "extend";
-  const purpose = repair
-    ? AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((granted) => granted === unsafeGrant.purpose)
-    : GENERATION_GRANT_PURPOSES.find((granted) => granted === unsafeGrant.purpose);
-  // An exploring recovery's grant reaches only the door it was argued for. A
-  // run's own repair is not a door a caller can argue for: any purpose Core
-  // issues is accepted, and only a value that is no purpose at all is refused.
-  if (!purpose || (mode === "create" && purpose !== "build_and_adapt")) throw new Error("Flow Bootstrap generation requires a build_and_adapt execution grant.");
+  const unsafeCaller = unsafeInput.caller;
+  if (!unsafeCaller || typeof unsafeCaller !== "object" || Array.isArray(unsafeCaller)) throw new Error("Flow Bootstrap generation requires the caller it is made for.");
+  const caller = unsafeCaller as Record<string, unknown>;
+  assertExactObjectFields(caller, CALLER_FIELDS, "Flow Bootstrap generation caller");
   // Where the Flow starts, when the caller named one, checked here so that
   // everything downstream is handed a value rather than a field
   // (`../../flow-bootstrap/start-location.ts`).
@@ -113,14 +59,10 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
     mode,
     ...(startLocation === undefined ? {} : { startLocation }),
-    executionGrant: {
-      grantId: requiredBootstrapCommandId(unsafeGrant.grantId, "execution grant"),
-      actorUserId: requiredBootstrapCommandId(unsafeGrant.actorUserId, "actor user"),
-      actorSessionId: requiredBootstrapCommandId(unsafeGrant.actorSessionId, "actor session"),
-      purpose,
-      executionDigest: requiredBootstrapDigest(unsafeGrant.executionDigest),
-      settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision),
-      permittedConsequences: parseAutomationStudioPermittedConsequences(unsafeGrant.permittedConsequences)
-    }
+    caller: {
+      actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
+      actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")
+    },
+    permittedConsequences: parseAutomationStudioPermittedConsequences(unsafeInput.permittedConsequences)
   };
 }

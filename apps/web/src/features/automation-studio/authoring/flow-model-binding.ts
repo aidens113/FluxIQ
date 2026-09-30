@@ -3,31 +3,19 @@ import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-mo
 /**
  * The part of a build request every build shares, whatever it does to the
  * Flow: the Flow must name a DeepSeek model and a turned-on key, and the
- * request carries both. Creating a Flow and improving one differ only in which
- * Flows they accept, so that rule is the caller's and this is the rest.
+ * request names the Flow. Creating a Flow and improving one differ only in
+ * which Flows they accept, so that rule is the caller's and this is the rest.
  */
 export type FlowModelBinding =
-  | { ok: true; payload: Record<string, any>; settings: Record<string, any> }
+  | { ok: true; payload: { projectId: string; flowId: string } }
   | { ok: false };
 
 export function flowModelBinding(projectId: string | null, flow: any): FlowModelBinding {
   const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
-  const settings = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
   if (!projectId || !flow?.flowId
     || metadata.llmProvider !== "deepseek" || !isAutomationStudioDeepSeekModel(metadata.llmModel)
     || typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false };
-  return {
-    ok: true,
-    settings,
-    payload: {
-      purpose: "build_and_adapt",
-      projectId,
-      flowId: flow.flowId,
-      keyId: metadata.llmSecretKeyId,
-      provider: "deepseek",
-      model: metadata.llmModel
-    }
-  };
+  return { ok: true, payload: { projectId, flowId: flow.flowId } };
 }
 
 /**

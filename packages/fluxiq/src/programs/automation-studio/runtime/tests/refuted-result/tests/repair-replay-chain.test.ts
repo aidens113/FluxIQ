@@ -4,10 +4,8 @@
 // the repaired Flow is re-run and judged right, and the persisted Flow then
 // replays the right dataset again and again with no provider call at all.
 //
-// The provider still reaches the service through today's grant registry, which
-// is the only resolution Core has. LLM call grants are being removed (lane
-// t186): the chain asserts nothing about grants, so only this harness's
-// resolver has to change when they go.
+// The provider reaches the service the way the host's does: on the caller's
+// own key, released per call to their session. A model call needs no grant.
 //
 // Every link of this chain has a unit test in the directory that owns it. None
 // of them had been seen to hold *together*, and the live runs that reached the
@@ -30,7 +28,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { decideAutomationStudioChangeConfidence } from "../../../flow-change/index.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../llm/index.ts";
+import { createAutomationStudioSessionKeyProviderResolver } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
@@ -144,21 +142,18 @@ async function createHarness() {
 
   /** Every provider request, in order, by task kind, with what it was sent. */
   const calls: Array<{ taskKind: string; sent: string }> = [];
-  const revokedGrantIds: string[] = [];
   let service: AutomationStudioService | undefined;
   let revealCount = 0;
   let decisions = 0;
   const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
 
-  const grants = new AutomationStudioLlmExecutionGrantService({
-    resolveExecutionDigest: async (projectId, flowId) => service!.getLlmExecutionBinding(projectId, flowId),
-    identityAccess: { validateSession: async () => ({ user: { id: ACTOR.actorUserId, passwordConfigured: true, pinConfigured: true }, session: {}, role: {} }) } as any,
-    secretKeys: {
-      getKeySummary: async () => ({ ...key }),
-      createSessionRevealAuthorization: async (input: { ttlMs?: number; nowMs: number }) => ({ authorizationId: `reveal-t176-${++revealCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: input.nowMs + (input.ttlMs ?? 60_000), remainingUses: 1 }),
-      revealKeyWithAuthorization: async () => ({ key: { ...key }, value: "test-provider-secret" }),
+  const resolveProvider = createAutomationStudioSessionKeyProviderResolver({
+    ports: {
+      snapshot: async () => ({ keys: [{ ...key }] }),
+      createSessionRevealAuthorization: async () => ({ authorizationId: `reveal-t176-${++revealCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs }),
+      revealKeyWithAuthorization: async () => ({ value: "test-provider-secret" }),
       revokeRevealAuthorization: () => undefined
-    } as any,
+    },
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
       const sent = body.messages?.find((message) => message.role === "user")?.content ?? "{}";
@@ -188,10 +183,7 @@ async function createHarness() {
   service = new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    llmProviderResolver: async (input) => input.executionGrant ? grants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId }) : undefined,
-    revokeLlmExecutionGrant: (grantId) => { revokedGrantIds.push(grantId); grants.revoke(grantId); },
-    continueLlmExecutionGrantAfterAppliedFlowAdaptation: (input) => grants.continueAfterAppliedFlowAdaptation(input),
-    closeLlmExecutionGrants: () => grants.close(),
+    llmProviderResolver: async (input) => resolveProvider(input),
     llmEvidenceRuntime: {
       domainId: DOMAIN,
       // The web domain's rule, which a seeded click step used to trip.
@@ -255,9 +247,7 @@ async function createHarness() {
     updatedAt: now
   });
 
-  const grant = await grants.issue({ ...ACTOR, keyId: KEY_ID, projectId: project.id, flowId: flow.flowId, provider: "deepseek", model: "deepseek-flash", purpose: "build_and_adapt", maxCalls: 12 });
-  await grants.holdForRun({ grantId: grant.grantId, ...ACTOR, projectId: project.id, flowId: flow.flowId, purpose: "build_and_adapt" });
-  return { service, grants, grant, projectId: project.id, flowId: flow.flowId, graphFlowId: subflow.graphFlowId!, calls, revokedGrantIds };
+  return { service, projectId: project.id, flowId: flow.flowId, graphFlowId: subflow.graphFlowId!, calls };
 }
 
 /**
@@ -288,7 +278,7 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     const run = await harness.service.runRuntimeSession({
       projectId: harness.projectId,
       flowId: harness.flowId,
-      llmExecution: { grantId: harness.grant.grantId, ...ACTOR, purpose: "build_and_adapt" }
+      llmExecution: { ...ACTOR, intent: "build_and_adapt" }
     });
     const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
 
@@ -302,7 +292,7 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     // The re-author was never shown the denied locator, and the Flow never lost it.
     for (const call of harness.calls) expect(call.sent).not.toContain(SELECTOR);
 
-    expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true, replayReady: true });
+    expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
     expect(JSON.stringify(detail?.metadata?.resultReauthor)).not.toContain("unexpected_error");
     expect(detail?.metadata?.resultRepair).toMatchObject({ attempted: true, attempts: 1, phase: "settled", outcome: "answered" });
     expect(run.status).toBe("succeeded");
@@ -316,7 +306,7 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     expect(byDefinition(EXTRACT_ID).map((node) => node.parameterValues?.where)).toEqual(["red"]);
     expect(byDefinition(CLICK_ID).map((node) => node.parameterValues?.selector)).toEqual([SELECTOR]);
 
-    // Deterministic replay: the persisted Flow, run again with no grant, twice,
+    // Deterministic replay: the persisted Flow, run again with no model taking part, twice,
     // returns the right dataset and asks no provider anything -- and says so,
     // with a zero accounting a reader can certify. Each replay is recorded on the
     // repair that wrote the Flow, which the second one makes `established`.

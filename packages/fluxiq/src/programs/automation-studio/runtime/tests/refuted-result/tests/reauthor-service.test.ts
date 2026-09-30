@@ -1,14 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import {
   AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
   type AutomationStudioNodeDefinition,
 } from "../../../../nodes/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, AutomationStudioLlmExecutionGrantService, type AutomationStudioRuntimeSessionGrantPurpose } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioRuntimeSessionLlmIntent } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import {
   AutomationStudioService,
@@ -106,22 +106,18 @@ function nativeRuntime(): AutomationStudioNativeNodeRuntime {
 
 interface ResolverObservation {
   input: AutomationStudioLlmProviderResolverInput;
-  binding: Awaited<
-    ReturnType<AutomationStudioService["getLlmExecutionBinding"]>
-  >;
 }
 
 interface TestHarness {
   service: AutomationStudioService;
-  grants: AutomationStudioLlmExecutionGrantService;
-  grant: { grantId: string };
   projectId: string;
   flowId: string;
   taskKinds: string[];
   /** What each build decision sent the provider, as the provider received it. */
   decisionPayloads: string[];
   resolverObservations: ResolverObservation[];
-  revokedGrantIds: string[];
+  /** How many times the caller's key was released: once per model call. */
+  reveals(): number;
   reauthorProviderStarted: Promise<void>;
   releaseReauthorProvider(): void;
 }
@@ -165,11 +161,9 @@ function jsonResponse(content: JsonObject): Response {
 
 async function createHarness(options: {
   failReauthorProvider: boolean;
-  failContinuation?: boolean;
-  failAppliedBindingRead?: boolean;
   pauseReauthorProvider?: boolean;
-  /** The run's grant purpose. Absent is `build_and_adapt` with four calls; present, the grant is issued with no call budget of its own. */
-  purpose?: AutomationStudioRuntimeSessionGrantPurpose;
+  /** The run's intent. Absent is `build_and_adapt` with four calls; present, the resolution states no call budget of its own. */
+  intent?: AutomationStudioRuntimeSessionLlmIntent;
 }): Promise<TestHarness> {
   const io = new IoRegistry();
   io.registerOutput("t240", {
@@ -186,59 +180,23 @@ async function createHarness(options: {
   });
   const taskKinds: string[] = [];
   const decisionPayloads: string[] = [];
-  const revokedGrantIds: string[] = [];
   let signalReauthorProviderStarted!: () => void;
   let releaseReauthorProvider!: () => void;
   const reauthorProviderStarted = new Promise<void>((resolve) => { signalReauthorProviderStarted = resolve; });
   const reauthorProviderRelease = new Promise<void>((resolve) => { releaseReauthorProvider = resolve; });
   let verificationCalls = 0;
-  let service: AutomationStudioService | undefined;
   let revealCount = 0;
-  const key = {
-    id: KEY_ID,
-    name: "DeepSeek",
-    kind: "llm",
-    provider: "deepseek",
-    scope: "global",
-    enabled: true,
-    createdAtMs: 1,
-    updatedAtMs: 1,
-    lastRotatedAtMs: 1,
-    metadata: { model: "deepseek-flash" },
-  };
-
-  const grants = new AutomationStudioLlmExecutionGrantService({
-    resolveExecutionDigest: async (projectId, flowId) =>
-      service!.getLlmExecutionBinding(projectId, flowId),
-    identityAccess: {
-      validateSession: async () => ({
-        user: {
-          id: ACTOR.actorUserId,
-          passwordConfigured: true,
-          pinConfigured: true,
-        },
-        session: {},
-        role: {},
-      }),
-    } as any,
-    secretKeys: {
-      getKeySummary: async () => ({ ...key }),
-      createSessionRevealAuthorization: async (input: {
-        ttlMs?: number;
-        nowMs: number;
-      }) => ({
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
+    ports: {
+      snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
+      createSessionRevealAuthorization: async (input) => ({
         authorizationId: `reveal-t240-${++revealCount}`,
-        keyId: key.id,
-        keyUpdatedAtMs: key.updatedAtMs,
-        expiresAtMs: input.nowMs + (input.ttlMs ?? 60_000),
-        remainingUses: 1,
+        keyId: input.id,
+        keyUpdatedAtMs: 1,
       }),
-      revealKeyWithAuthorization: async () => ({
-        key: { ...key },
-        value: "test-provider-secret",
-      }),
+      revealKeyWithAuthorization: async () => ({ value: "test-provider-secret" }),
       revokeRevealAuthorization: () => undefined,
-    } as any,
+    },
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         messages?: Array<{ role?: string; content?: string }>;
@@ -299,31 +257,17 @@ async function createHarness(options: {
   });
   const resolverObservations: ResolverObservation[] = [];
 
-  service = new AutomationStudioService({
+  const service = new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    llmProviderResolver: async (input) => {
-      resolverObservations.push({
-        input,
-        binding: await service!.getLlmExecutionBinding(
-          input.projectId,
-          input.flowId,
-        ),
-      });
-      return input.executionGrant
-        ? grants.resolve({
-            ...input.executionGrant,
-            projectId: input.projectId,
-            flowId: input.flowId,
-          })
-        : undefined;
+    // The host's resolver: the caller's own key, released per call. Nothing is
+    // issued before the run, held during it, continued after an apply, or revoked.
+    llmProviderResolver: (input) => {
+      resolverObservations.push({ input });
+      const resolution = resolveForCaller(input);
+      if (!resolution) return undefined;
+      return options.intent ? resolution : { ...resolution, maxCallsPerRun: 4 };
     },
-    revokeLlmExecutionGrant: (grantId) => { revokedGrantIds.push(grantId); grants.revoke(grantId); },
-    continueLlmExecutionGrantAfterAppliedFlowAdaptation: (input) => {
-      if (options.failContinuation) grants.revoke(input.grantId);
-      return grants.continueAfterAppliedFlowAdaptation(input);
-    },
-    closeLlmExecutionGrants: () => grants.close(),
     llmEvidenceRuntime: {
       domainId: "t240",
       deniedEvidenceKeys: [],
@@ -343,24 +287,6 @@ async function createHarness(options: {
     .bindIoRuntime(io, "t240")
     .bindNativeNodeRuntime(nativeRuntime());
   services.add(service);
-  if (options.failAppliedBindingRead) {
-    const readAdaptation = service.getFlowBootstrapAdaptation.bind(service);
-    const readBinding = service.getLlmExecutionBinding.bind(service);
-    let failNextBindingRead = false;
-    vi.spyOn(service, "getFlowBootstrapAdaptation").mockImplementation(async (...args) => {
-      const found = await readAdaptation(...args);
-      if (found?.status === "validated") failNextBindingRead = true;
-      return found;
-    });
-    vi.spyOn(service, "getLlmExecutionBinding").mockImplementation(async (...args) => {
-      if (failNextBindingRead) {
-        failNextBindingRead = false;
-        throw new Error("authoritative binding read detail must not escape");
-      }
-      return await readBinding(...args);
-    });
-  }
-
   const project = await service.createProject({
     name: "t240 project",
     domainId: "t240",
@@ -460,33 +386,14 @@ async function createHarness(options: {
     updatedAt: now,
   });
 
-  const grant = await grants.issue({
-    ...ACTOR,
-    keyId: KEY_ID,
-    projectId: project.id,
-    flowId: flow.flowId,
-    provider: "deepseek",
-    model: "deepseek-flash",
-    ...(options.purpose ? { purpose: options.purpose } : { purpose: "build_and_adapt", maxCalls: 4 }),
-  });
-  await grants.holdForRun({
-    grantId: grant.grantId,
-    ...ACTOR,
-    projectId: project.id,
-    flowId: flow.flowId,
-    purpose: options.purpose ?? "build_and_adapt",
-  });
-
   return {
     service,
-    grants,
-    grant,
     projectId: project.id,
     flowId: flow.flowId,
     taskKinds,
     decisionPayloads,
     resolverObservations,
-    revokedGrantIds,
+    reveals: () => revealCount,
     reauthorProviderStarted,
     releaseReauthorProvider,
   };
@@ -494,55 +401,50 @@ async function createHarness(options: {
 
 describe("refuted-result service composition", () => {
   // The supervisor's ruling, 2026-09-28: repairing is the automation's own work
-  // and no grant purpose may refuse it. This gate is how the wrong-answer repair
-  // never ran once across five live runs (it asked for `explore_and_adapt`,
-  // every instruction-built Flow ran under `build_and_adapt`), so every purpose
-  // Core issues is driven through the real service and the real grant registry
-  // here, with a grant that states no call budget of its own.
-  it.each(AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.filter((purpose) => purpose !== "build_and_adapt"))(
-    "reaches the re-author and applies its edit under a %s grant",
+  // and nothing about why a run was asked for may refuse it. The wrong-answer
+  // repair once never ran across five live runs because a grant's purpose
+  // refused it, so every intent is driven through the real service and the
+  // host's own resolver here, with a resolution that states no call budget.
+  it.each(AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS.filter((intent) => intent !== "build_and_adapt"))(
+    "reaches the re-author and applies its edit on a %s run, with no grant",
     { timeout: 60_000 },
-    async (purpose) => {
-      const harness = await createHarness({ failReauthorProvider: false, purpose });
+    async (intent) => {
+      const harness = await createHarness({ failReauthorProvider: false, intent });
       const run = await harness.service.runRuntimeSession({
         projectId: harness.projectId,
         flowId: harness.flowId,
-        llmExecution: { grantId: harness.grant.grantId, ...ACTOR, purpose },
+        llmExecution: { ...ACTOR, intent },
       });
       const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
-      // The build ran: its decision reached the provider, under the run's own grant and purpose.
+      // The build ran: its decision reached the provider, for the run's own caller.
       expect(harness.taskKinds).toContain("evidence_tool_decision");
-      const build = harness.resolverObservations.find((observation) => {
-        const grant = observation.input.executionGrant;
-        return Boolean(grant && "executionDigest" in grant);
-      });
-      expect(build?.input.executionGrant).toMatchObject({ grantId: harness.grant.grantId, purpose });
+      expect(harness.resolverObservations.length).toBeGreaterThan(0);
+      for (const observation of harness.resolverObservations) {
+        expect(observation.input.caller).toEqual(ACTOR);
+        expect(observation.input).not.toHaveProperty("executionGrant");
+      }
       expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
-      expect(JSON.stringify(detail?.metadata?.resultReauthor)).not.toContain("execution_grant_purpose_invalid");
       expect(run.status).toBe("succeeded");
     },
   );
 
   it(
-    "does not leak private retention to a same-grant public generation on another Flow",
+    "does not leak private retention to a same-caller generation on another Flow",
     { timeout: 60_000 },
     async () => {
       const harness = await createHarness({ failReauthorProvider: false, pauseReauthorProvider: true });
       const running = harness.service.runRuntimeSession({
         projectId: harness.projectId, flowId: harness.flowId,
-        llmExecution: { grantId: harness.grant.grantId, ...ACTOR, purpose: "build_and_adapt" },
+        llmExecution: { ...ACTOR, intent: "build_and_adapt" },
       });
       await harness.reauthorProviderStarted;
       let overlapFailure: unknown;
       try {
         const other = await harness.service.createFlow({ projectId: harness.projectId, flowId: "flow.public-concurrent", name: "Public concurrent" });
-        const binding = await harness.service.getLlmExecutionBinding(harness.projectId, other.flowId);
         await expect(harness.service.generateFlowBootstrapAdaptation({
           projectId: harness.projectId, flowId: other.flowId,
-          executionGrant: { grantId: harness.grant.grantId, ...ACTOR, purpose: "build_and_adapt", ...binding },
+          caller: ACTOR,
         })).rejects.toThrow(/generation failed/);
-        expect(harness.revokedGrantIds).toEqual([harness.grant.grantId]);
-        expect(harness.grants.activeGrantCount()).toBe(0);
       } catch (error) {
         overlapFailure = error;
       } finally {
@@ -550,28 +452,27 @@ describe("refuted-result service composition", () => {
       }
       const completed = await running;
       if (overlapFailure) throw overlapFailure;
-      expect(completed.status).toBe("failed");
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision"]);
+      // The other Flow's failed generation shares nothing with this run: no
+      // grant is held between them, so its failure neither revokes nor ends
+      // anything here, and the run's own repair finishes.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "loop_verification"]);
+      expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
+      expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
       expect(JSON.stringify(detail)).not.toContain("test-provider-secret");
       expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
-      expect(harness.grants.activeGrantCount()).toBe(0);
     },
   );
 
   it(
-    "uses an admitted build-and-adapt grant for verification, extend, approval, and apply",
+    "uses the run's caller for verification, extend, approval, and apply",
     { timeout: 60_000 },
     async () => {
       const harness = await createHarness({ failReauthorProvider: false });
       const run = await harness.service.runRuntimeSession({
         projectId: harness.projectId,
         flowId: harness.flowId,
-        llmExecution: {
-          grantId: harness.grant.grantId,
-          ...ACTOR,
-          purpose: "build_and_adapt",
-        },
+        llmExecution: { ...ACTOR, intent: "build_and_adapt" },
       });
       const detail = await harness.service.getFlowRunDetail(
         harness.projectId,
@@ -580,7 +481,6 @@ describe("refuted-result service composition", () => {
       expect(detail?.metadata?.resultReauthor).toMatchObject({
         routed: true,
         applied: true,
-        replayReady: true,
       });
 
       expect(harness.taskKinds).toEqual([
@@ -597,29 +497,15 @@ describe("refuted-result service composition", () => {
         "loop_verification",
       ]);
 
-      const scope = harness.resolverObservations.find(
-        (observation) => {
-          const grant = observation.input.executionGrant;
-          return Boolean(
-            grant &&
-              "executionDigest" in grant &&
-              typeof grant.executionDigest === "string",
-          );
-        },
-      );
-      expect(scope?.input).toMatchObject({
-        projectId: harness.projectId,
-        flowId: harness.flowId,
-        executionGrant: {
-          grantId: harness.grant.grantId,
-          ...ACTOR,
-          purpose: "build_and_adapt",
-        },
-      });
-      expect(scope?.input.executionGrant).toMatchObject({
-        executionDigest: scope?.binding.executionDigest,
-        settingsRevision: scope?.binding.settingsRevision,
-      });
+      // Every model call -- the checks, the re-author's build, the re-check --
+      // was resolved for the run's caller and nothing else, and each released
+      // the caller's key for itself alone.
+      expect(harness.resolverObservations.length).toBeGreaterThan(0);
+      for (const observation of harness.resolverObservations) {
+        expect(observation.input).toMatchObject({ projectId: harness.projectId, flowId: harness.flowId, caller: ACTOR });
+        expect(observation.input).not.toHaveProperty("executionGrant");
+      }
+      expect(harness.reveals()).toBe(harness.taskKinds.length);
 
       expect(detail?.metadata?.resultReauthor).toMatchObject({
         routed: true,
@@ -636,7 +522,6 @@ describe("refuted-result service composition", () => {
           reauthor!.adaptationId!,
         ),
       ).resolves.toMatchObject({ mode: "extend", status: "applied" });
-      expect(harness.grants.activeGrantCount()).toBe(0);
 
       // run-mulwm2dc-0bd95f22: the re-author was called with a Flow id, a mode
       // and a grant, and the check's refutation went no further. The build's own
@@ -661,90 +546,6 @@ describe("refuted-result service composition", () => {
   );
 
   it(
-    "keeps durable applied provenance and skips replay when the applied binding cannot be read",
-    { timeout: 60_000 },
-    async () => {
-      const harness = await createHarness({
-        failReauthorProvider: false,
-        failAppliedBindingRead: true,
-      });
-      const run = await harness.service.runRuntimeSession({
-        projectId: harness.projectId,
-        flowId: harness.flowId,
-        llmExecution: { grantId: harness.grant.grantId, ...ACTOR, purpose: "build_and_adapt" },
-      });
-
-      expect(run.status).toBe("failed");
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision"]);
-      const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
-      expect(detail?.metadata?.resultReauthor).toMatchObject({
-        routed: true, applied: true, replayReady: false,
-        code: "llm.execution_grant_no_longer_valid", stage: "grant_continuation",
-        retryable: false, providerInvocation: "not_attempted", providerResponse: "not_received",
-      });
-      const reauthor = detail?.metadata?.resultReauthor as { adaptationId?: string } | undefined;
-      await expect(harness.service.getFlowBootstrapAdaptation(harness.projectId, harness.flowId, reauthor!.adaptationId!))
-        .resolves.toMatchObject({ mode: "extend", status: "applied" });
-      expect(JSON.stringify(detail)).not.toContain("authoritative binding read detail must not escape");
-      expect(harness.grants.activeGrantCount()).toBe(0);
-    },
-  );
-
-  it(
-    "keeps a durable applied adaptation but refuses replay when grant continuation closes",
-    { timeout: 60_000 },
-    async () => {
-      const harness = await createHarness({
-        failReauthorProvider: false,
-        failContinuation: true,
-      });
-      const run = await harness.service.runRuntimeSession({
-        projectId: harness.projectId,
-        flowId: harness.flowId,
-        llmExecution: {
-          grantId: harness.grant.grantId,
-          ...ACTOR,
-          purpose: "build_and_adapt",
-        },
-      });
-
-      expect(run.status).toBe("failed");
-      expect(harness.taskKinds).toEqual([
-        "loop_verification",
-        "loop_verification",
-        "evidence_tool_decision",
-      ]);
-      const detail = await harness.service.getFlowRunDetail(
-        harness.projectId,
-        run.runId,
-      );
-      expect(detail?.metadata?.resultReauthor).toMatchObject({
-        routed: true,
-        applied: true,
-        replayReady: false,
-        code: "llm.execution_grant_unavailable",
-        stage: "grant_continuation",
-        retryable: false,
-        providerInvocation: "not_attempted",
-        providerResponse: "not_received",
-      });
-      const reauthor = detail?.metadata?.resultReauthor as
-        | { adaptationId?: string }
-        | undefined;
-      expect(reauthor?.adaptationId).toEqual(expect.any(String));
-      await expect(
-        harness.service.getFlowBootstrapAdaptation(
-          harness.projectId,
-          harness.flowId,
-          reauthor!.adaptationId!,
-        ),
-      ).resolves.toMatchObject({ mode: "extend", status: "applied" });
-      expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
-      expect(harness.grants.activeGrantCount()).toBe(0);
-    },
-  );
-
-  it(
     "preserves a structured reauthor failure without provider response text",
     { timeout: 60_000 },
     async () => {
@@ -752,11 +553,7 @@ describe("refuted-result service composition", () => {
       const run = await harness.service.runRuntimeSession({
         projectId: harness.projectId,
         flowId: harness.flowId,
-        llmExecution: {
-          grantId: harness.grant.grantId,
-          ...ACTOR,
-          purpose: "build_and_adapt",
-        },
+        llmExecution: { ...ACTOR, intent: "build_and_adapt" },
       });
 
       expect(run.status).toBe("failed");
@@ -787,7 +584,6 @@ describe("refuted-result service composition", () => {
       ]);
       expect(detail?.metadata?.resultRepair).toMatchObject({ phase: "settled", outcome: "not_rerun" });
       expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
-      expect(harness.grants.activeGrantCount()).toBe(0);
     },
   );
 });

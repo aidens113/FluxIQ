@@ -15,7 +15,6 @@
 
 import { flowModelBinding, flowModelFromDetail, generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, improveFlowFromWebsiteAdaptation, saveFlowGenerationInstruction, saveFlowImprovementInstruction } from "../../../authoring";
 import { saveFlowInstruction } from "../../../instructions";
-import { issueLlmExecutionGrant } from "../../../runtime";
 import { loadFlowSettingsDetail } from "../../../settings";
 import { automationStudioViewId } from "../../../views";
 import { definePanelCapability, panelCapabilityResult, type PanelCapability } from "../contract";
@@ -63,10 +62,10 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     phrases: ["build the flow", "generate the flow", "create the steps", "make it", "author the flow"],
     control: { view: automationStudioViewId.flowEditor, label: "Build from instruction" },
     endpoints: ["generate-flow-bootstrap-adaptation"],
-    arguments: [PROJECT, FLOW, { name: "llmExecutionGrantId", kind: "id", describe: "The model-run grant to spend; `permission.allowModelRun` issues one.", required: true }],
+    arguments: [PROJECT, FLOW],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
-      await generateFlowBootstrapAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId"), llmExecutionGrantId: str(args, "llmExecutionGrantId") }),
+      await generateFlowBootstrapAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") }),
       "Building the Flow from its instruction.",
       "The Flow could not be built."
     )
@@ -79,10 +78,10 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     phrases: ["explore the site", "try it on the website", "work it out live", "build it by exploring"],
     control: { view: automationStudioViewId.flowEditor, label: "Explore and build" },
     endpoints: ["generate-flow-bootstrap-adaptation"],
-    arguments: [PROJECT, FLOW, { name: "llmExecutionGrantId", kind: "id", describe: "The model-run grant to spend.", required: true }],
+    arguments: [PROJECT, FLOW],
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
-      await generateFlowFromWebsiteExplorationAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId"), llmExecutionGrantId: str(args, "llmExecutionGrantId") }),
+      await generateFlowFromWebsiteExplorationAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") }),
       "Exploring the site and building the Flow from what worked.",
       "The exploration could not be started."
     )
@@ -94,20 +93,17 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     group: "Flows",
     phrases: ["improve the flow", "change what it does", "make it also handle", "it should also", "fix it so that", "teach it to"],
     control: { view: automationStudioViewId.flowEditor, label: "Improve automation" },
-    endpoints: ["get-flow-metadata-detail", "save-flow-instruction", "issue-llm-execution-grant", "generate-flow-bootstrap-adaptation"],
+    endpoints: ["get-flow-metadata-detail", "save-flow-instruction", "generate-flow-bootstrap-adaptation"],
     arguments: [
       PROJECT,
       FLOW,
       { name: "change", kind: "text", describe: "What the Flow should do differently, in plain words.", required: true }
     ],
     consequences: ["modify_existing"],
-    // It issues its own grant, and only after saving. The words are saved
-    // first because the build reads the Flow's active instructions and nothing
-    // else; saving changes the Flow's execution digest, so a grant issued
-    // before the save -- by `permission.allowModelRun` -- is stale by the time
-    // the build claims it, and Core refuses it ("LLM execution grant is no
-    // longer valid."). The Flow is read through its metadata detail because the
-    // browser may not read a whole Flow document (`data-request-policy.ts`).
+    // The words are saved first because the build reads the Flow's active
+    // instructions and nothing else. The Flow is read through its metadata
+    // detail because the browser may not read a whole Flow document
+    // (`data-request-policy.ts`).
     invoke: async (context, args) => {
       const projectId = str(args, "projectId");
       const flowId = str(args, "flowId");
@@ -117,11 +113,8 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
       if (!binding.ok) return { status: "failed", summary: "This Flow has no DeepSeek model key chosen. Choose one in the Flow's settings first.", error: "This Flow has no DeepSeek model key chosen." };
       const saved = await saveFlowImprovementInstruction(context.transport, { projectId, flowId, instruction: str(args, "change") });
       if (!saved.ok) return panelCapabilityResult(saved, "", "What should change could not be saved, so nothing was built.");
-      const issued = await issueLlmExecutionGrant(context.transport, binding.payload);
-      const grantId = issued.ok ? issued.payload?.grant?.grantId : undefined;
-      if (!issued.ok || typeof grantId !== "string" || !grantId) return panelCapabilityResult(issued.ok ? { ok: false, error: "Core issued no grant." } : issued, "", "The model run could not be allowed, so nothing was built.");
       return panelCapabilityResult(
-        await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId, llmExecutionGrantId: grantId }),
+        await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId }),
         "Worked out the change on the website. It is waiting in Suggested changes for you to accept or reject.",
         "The improvement could not be worked out."
       );

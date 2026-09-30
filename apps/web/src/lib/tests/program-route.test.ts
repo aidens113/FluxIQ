@@ -142,7 +142,7 @@ describe("a paired client on the program route", () => {
     expect(narrow({ projectId: "p" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run must name a saved Flow by a string flowId." });
     expect(narrow({ projectId: "p", flowId: 7 })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    for (const field of ["flow", "llmExecutionGrantId", "runIntent", "dryRunLlm", "useReusableContext", "inputs"]) {
+    for (const field of ["flow", "runIntent", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"]) {
       expect(narrow({ flowId: "flow.one", [field]: "secret-value" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's run may not carry ${field}.` });
     }
     expect(narrow({ flowId: "flow.one", authorizedExternalSideEffects: true })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry authorizedExternalSideEffects." });
@@ -152,7 +152,7 @@ describe("a paired client on the program route", () => {
   });
 
   it("never names a refused field's value", () => {
-    const refused = narrowPairedClientRequest("automation-studio", "run-runtime-session", { flowId: "flow.one", llmExecutionGrantId: "llm-grant:do-not-echo" });
+    const refused = narrowPairedClientRequest("automation-studio", "run-runtime-session", { flowId: "flow.one", runIntent: "run-intent:do-not-echo" });
     expect(JSON.stringify(refused)).not.toContain("do-not-echo");
   });
 

@@ -3,16 +3,16 @@ import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, automationStudioFlowMaxNodesPerSub
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { stableJson } from "../stable-json.ts";
 
-// A stable revision number over the settings an execution grant is bound to,
-// so a changed setting invalidates the grant.
+// A stable revision number over the settings a Flow's execution depends on, so
+// a proposal written against one revision is known stale once they change.
 //
 // The Flow size setting is one of them: it bounds how many nodes a build may
 // write into a Subflow (and the edges, depth and bytes derived from it), the
 // same kind of limit on what a build or adaptation may produce as the policy
 // settings beside it. It is stated only when it differs from the default, so
 // every Flow saved before the setting existed -- which reads the default --
-// and every new Flow, which stores it, keep the revision they had; a binding
-// already recorded against one of them stays valid.
+// and every new Flow, which stores it, keep the revision they had; a proposal
+// already written against one of them stays current.
 
 export function automationStudioFlowSettingsFingerprint(flow: AutomationStudioFlowArtifact): number {
   const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};

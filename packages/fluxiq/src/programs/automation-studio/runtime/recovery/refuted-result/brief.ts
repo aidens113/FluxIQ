@@ -3,7 +3,7 @@
 // **The defect.** `run-mulwm2dc-0bd95f22`: the check refuted a twelve-row
 // answer and said exactly what was wrong -- a column held a link address where
 // the title was asked for, and the rows were neither filtered, deduplicated nor
-// sorted. The re-author was then called with the Flow's id, a mode and a grant,
+// sorted. The re-author was then called with the Flow's id and a mode,
 // and nothing else (`runtime/service.ts`, the `repairRefutedResult` port). Its
 // model was shown the same instruction and the same catalog as the first build,
 // including the extraction node's own advice to "omit it, keep every item,

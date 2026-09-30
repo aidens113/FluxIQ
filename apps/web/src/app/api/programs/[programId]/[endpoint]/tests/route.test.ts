@@ -286,11 +286,11 @@ describe("a paired client's bearer token", () => {
   });
 
   it("refuses a run body that would reach an LLM, naming the field and never its value, before any handler runs", async () => {
-    const response = await POST(tokenRequest("run-runtime-session", { body: { projectId: "p", flowId: "f", llmExecutionGrantId: "llm-grant:do-not-echo" } }), params("run-runtime-session"));
+    const response = await POST(tokenRequest("run-runtime-session", { body: { projectId: "p", flowId: "f", runIntent: "run-intent:do-not-echo" } }), params("run-runtime-session"));
 
     expect(response.status).toBe(403);
     const answer = await response.text();
-    expect(JSON.parse(answer)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry llmExecutionGrantId." });
+    expect(JSON.parse(answer)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry runIntent." });
     expect(answer).not.toContain("do-not-echo");
     expect(call).not.toHaveBeenCalled();
   });

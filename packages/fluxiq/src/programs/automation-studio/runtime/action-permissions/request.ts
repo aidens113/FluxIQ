@@ -2,8 +2,8 @@
 // was not allowed to.
 //
 // **It ends the run; it does not park it.** The run stops with this request
-// in hand, FluxIQ asks the person, and a later run carries their answer as the
-// `permittedConsequences` of an ordinary execution grant. There is no pending
+// in hand, FluxIQ asks the person, and a later run carries their answer as its
+// `permittedConsequences`. There is no pending
 // request store and no resumable run, deliberately (the user's decision). But
 // the payload is written so that parking can be added without changing it:
 // `requestId` is the key a store would hold it under, and nothing in it
@@ -12,7 +12,7 @@
 // repeat the project, Flow or run it travels inside.
 //
 // **Enough to act on, and nothing past the evidence boundary.** A person can
-// grant or refuse from this alone: what the run was about to do, to what, the
+// allow or refuse from this alone: what the run was about to do, to what, the
 // consequences that would have, which of those it lacked, and why it wanted to.
 // The control's name is carried only when it appeared in evidence the model had
 // already been shown (`gate.ts`), so a request never takes out of the domain
@@ -60,12 +60,12 @@ export type AutomationStudioActionPermissionRequest = {
   control: { name: string | null; kind: string | null };
   /** Every lasting consequence the domain declared for the action, in Core's order. */
   consequences: AutomationStudioActionConsequence[];
-  /** Those the run was not permitted: exactly what a later run's grant must add. Never empty. */
+  /** Those the run was not permitted: exactly what a later run's permission must add. Never empty. */
   missing: AutomationStudioActionConsequence[];
   /** Why the run wanted it: what it was doing, and the instructions it was carrying out. */
   reason: { stage: AutomationStudioActionPermissionStage; instructionIds: string[] };
   /**
-   * What the run already held, and why: the classes a grant gave it, and the
+   * What the run already held, and why: the classes a person permitted, and the
    * classes the person's own instruction asked for, each with their words.
    * `missing` is what neither covers.
    */

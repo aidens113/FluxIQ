@@ -4,7 +4,7 @@
 // **Classes of consequence, never of control.** Nothing here says what a
 // control looks like, what it is called or where it sits. A domain looks at the
 // thing it is about to do and says which of these it would cause; Core decides,
-// from the set a person granted, whether the run may. So the web domain can
+// from the set a person permitted, whether the run may. So the web domain can
 // read a "Refund" button as `move_money` and a mail domain can read "Send" as
 // `send_or_publish`, and neither teaches Core a word of its medium.
 //
@@ -32,8 +32,8 @@
 // **What is not a consequence.** Moving about, opening, expanding, filtering,
 // choosing a row, typing into a field that is not yet submitted -- anything a
 // person could undo by looking away -- needs no permission, and a domain asks
-// for none. A permission a person has to grant for looking would be one they
-// learn to grant without reading.
+// for none. A permission a person has to give for looking would be one they
+// learn to give without reading.
 //
 // **One action may have several.** A refund moves money and changes an
 // existing order. The domain declares every class that applies, and the run
@@ -77,15 +77,15 @@ export function isAutomationStudioActionConsequence(value: unknown): value is Au
 }
 
 /**
- * The consequences a run is permitted, read from a grant request or a grant.
+ * The consequences a run is permitted, read from a request or a stored permission.
  *
- * Fail closed in both directions. **Absent is the empty set**: a grant that
+ * Fail closed in both directions. **Absent is the empty set**: a permission that
  * says nothing permits nothing, and there is no default that a forgotten field
  * could fall back to. **Anything unrecognised refuses the whole set**, rather
  * than being dropped: a caller that asked for `purchase` meant something, and
- * issuing a grant that quietly holds less than was asked for would leave the
+ * permitting a set that quietly holds less than was asked for would leave the
  * run to discover the gap by stopping. The answer is deduplicated and in
- * Core's order, so two grants holding the same set compare equal.
+ * Core's order, so two permissions holding the same set compare equal.
  */
 export function parseAutomationStudioPermittedConsequences(value: unknown): AutomationStudioActionConsequence[] {
   if (value === undefined) return [];

@@ -29,10 +29,7 @@ const builtFlow = {
   metadata: { flowRepresentationVersion: 1, flowRepresentationKind: "orchestration", llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: "key.deepseek" }
 };
 const built: BlankFlowAuthoringReadiness = { loading: false, instructions: [{ instructionId: "instruction.generation", status: "active" }], router: { routerId: "router.one" }, subflowTotal: 1, error: "" };
-const improvementPayload = {
-  purpose: "build_and_adapt", projectId: "project.one", flowId: "flow.week-ahead", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-flash",
-  tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 560_000, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0
-};
+const improvementPayload = { projectId: "project.one", flowId: "flow.week-ahead" };
 const CHANGE = "Sometimes a What's new announcement covers the queue. When it is showing, close it first; when it is not, go straight to the queue.";
 
 function button(renderer: ReactTestRenderer, text: string) {
@@ -45,8 +42,6 @@ function renderedText(value: any): string {
 }
 function commands(overrides: Record<string, unknown> = {}) {
   return {
-    preflightLlm: vi.fn(async () => ({ ok: true, payload: { preflight: { purpose: "build_and_adapt", tokenLimits: { maxTotalTokens: 56_000 }, maxTotalTokensPerRun: 90_000 } } })),
-    issueLlmGrant: vi.fn(async () => ({ ok: true, payload: { grant: { grantId: "grant.improve.one" } } })),
     saveImprovementInstruction: vi.fn(async () => ({ ok: true, payload: { instruction: { instructionId: "instruction.improvement.one", status: "active" } } })),
     improveFromWebsite: vi.fn(async () => ({ ok: true, payload: { adaptation: { projectId: "project.one", flowId: builtFlow.flowId, adaptationId: "adaptation.extend.one", status: "proposed" } } })),
     ...overrides
@@ -95,10 +90,10 @@ describe("improving a Flow that already has steps", () => {
     const api = { get: vi.fn(), post } as any;
     await saveFlowImprovementInstruction(api, { projectId: "p", flowId: "f", instruction: CHANGE });
     await saveFlowImprovementInstruction(api, { projectId: "p", flowId: "f", instruction: "Reworded.", instructionId: "instruction.improvement.one" });
-    await improveFlowFromWebsiteAdaptation(api, { projectId: "p", flowId: "f", llmExecutionGrantId: "g" });
+    await improveFlowFromWebsiteAdaptation(api, { projectId: "p", flowId: "f" });
     expect(post.mock.calls[0]).toEqual(["save-flow-instruction", { projectId: "p", flowId: "f", ...improvementInstruction(CHANGE) }]);
     expect(post.mock.calls[1]).toEqual(["save-flow-instruction", { projectId: "p", flowId: "f", instructionId: "instruction.improvement.one", ...improvementInstruction("Reworded.") }]);
-    expect(post.mock.calls[2]).toEqual(["generate-flow-bootstrap-adaptation", { projectId: "p", flowId: "f", llmExecutionGrantId: "g", evidenceGuided: true, mode: "extend" }, { policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS } }]);
+    expect(post.mock.calls[2]).toEqual(["generate-flow-bootstrap-adaptation", { projectId: "p", flowId: "f", evidenceGuided: true, mode: "extend" }, { policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS } }]);
   });
 
   it("is not offered for a blank Flow", async () => {
@@ -106,27 +101,28 @@ describe("improving a Flow that already has steps", () => {
     expect(renderer.toJSON()).toBeNull();
   });
 
-  it("saves, authorizes, builds the extend and opens the suggested change, in that order", async () => {
+  it("saves, builds the extend and opens the suggested change, in that order, with no grant step", async () => {
     const improvementCommands = commands();
     const { renderer, onOpenAdaptation } = await mount(improvementCommands);
     await ask(renderer);
     expect(improvementCommands.saveImprovementInstruction).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.week-ahead", instruction: CHANGE });
-    expect(improvementCommands.preflightLlm).toHaveBeenCalledWith(improvementPayload);
-    expect(improvementCommands.issueLlmGrant).toHaveBeenCalledWith({ ...improvementPayload, ttlMs: 60_000 });
-    expect(improvementCommands.improveFromWebsite).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.week-ahead", llmExecutionGrantId: "grant.improve.one" });
-    expect(improvementCommands.saveImprovementInstruction.mock.invocationCallOrder[0]).toBeLessThan(improvementCommands.preflightLlm.mock.invocationCallOrder[0]);
+    expect(improvementCommands.improveFromWebsite).toHaveBeenCalledWith(improvementPayload);
+    expect(improvementCommands.improveFromWebsite.mock.calls[0]?.[0]).not.toHaveProperty("llmExecutionGrantId");
+    expect(improvementCommands.saveImprovementInstruction.mock.invocationCallOrder[0]).toBeLessThan(improvementCommands.improveFromWebsite.mock.invocationCallOrder[0]);
     expect(onOpenAdaptation).toHaveBeenCalledWith("flow.week-ahead", "adaptation.extend.one");
     expect(renderedText(renderer.toJSON())).toContain("Nothing has changed yet.");
   });
 
-  it("asks before a large run, and a retry of the same words does not save a second instruction", async () => {
-    const improvementCommands = commands({ preflightLlm: vi.fn(async () => ({ ok: true, payload: { preflight: { maxTotalTokensPerRun: 560_000, tokenLimits: { maxTotalTokens: 56_000 } } } })) });
+  it("never asks to confirm a large run, and a retry of the same words does not save a second instruction", async () => {
+    const improveFromWebsite = vi.fn()
+      .mockResolvedValueOnce({ ok: false, payload: { diagnostic: { code: "flow_bootstrap.provider_timeout" } } })
+      .mockResolvedValue({ ok: true, payload: { adaptation: { flowId: builtFlow.flowId, adaptationId: "adaptation.extend.one", status: "proposed" } } });
+    const improvementCommands = commands({ improveFromWebsite });
     const { renderer } = await mount(improvementCommands);
     await ask(renderer);
-    expect(improvementCommands.issueLlmGrant).not.toHaveBeenCalled();
-    expect(renderer.root.findByProps({ "aria-label": "Confirm a large model run" })).toBeTruthy();
-    await act(async () => { await button(renderer, "Continue")!.props.onClick(); });
-    expect(improvementCommands.issueLlmGrant).toHaveBeenCalledWith({ ...improvementPayload, highTokenConfirmation: true, ttlMs: 60_000 });
+    expect(renderer.root.findAllByProps({ "aria-label": "Confirm a large model run" })).toHaveLength(0);
+    await ask(renderer);
+    expect(improveFromWebsite).toHaveBeenCalledTimes(2);
     expect(improvementCommands.saveImprovementInstruction).toHaveBeenCalledTimes(1);
   });
 
@@ -167,7 +163,8 @@ describe("improving a Flow that already has steps", () => {
     await ask(renderer);
     expect(renderer.root.findByProps({ "aria-label": "Confirm what the change may do" })).toBeTruthy();
     await act(async () => { await button(renderer, "Allow and continue")!.props.onClick(); });
-    expect(improvementCommands.issueLlmGrant).toHaveBeenLastCalledWith({ ...improvementPayload, permittedConsequences: ["modify_existing"], ttlMs: 60_000 });
+    expect(improveFromWebsite.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
+    expect(improveFromWebsite).toHaveBeenLastCalledWith({ ...improvementPayload, permittedConsequences: ["modify_existing"] });
     expect(onOpenAdaptation).toHaveBeenCalledWith("flow.week-ahead", "adaptation.extend.two");
   });
 });

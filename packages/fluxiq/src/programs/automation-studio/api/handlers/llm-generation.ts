@@ -1,14 +1,17 @@
-// Live LLM work: bootstrap-generation readiness, execution preflight and
-// grants, generation instructions, and the generated adaptation itself.
+// Live LLM work: bootstrap-generation readiness, generation instructions, and
+// the generated adaptation itself. A build's model calls need no grant: the
+// build runs for the signed-in actor, whose unlocked Secret Keys key pays, and
+// only a lasting consequence of one of its actions is asked about
+// (`permittedConsequences`).
 
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type AutomationStudioLlmExecutionGrantRequest, type AutomationStudioLlmExecutionPreflightRequest, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioLlmExecutionGrantService, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApiDependencies): void {
-  const { registry, service, llmExecutionGrants } = dependencies;
+  const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
@@ -19,43 +22,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       if (payload !== undefined && (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0)) {
         return { ok: false, error: "Flow bootstrap readiness does not accept request fields." };
       }
-      return { ok: true, payload: { readiness: flowBootstrapGenerationReadiness(service, llmExecutionGrants) } };
-    }
-  });
-  registry.register({
-    programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution,
-    permission: "runtime.control",
-    classification: "read",
-    handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionPreflightRequest> & Record<string, unknown> : {};
-      if (payload.purpose === "build_and_adapt") {
-        const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
-        if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
-      }
-      if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
-      return { ok: true, payload: { preflight: await llmExecutionGrants.preflight({ keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["preflight"]>[0]) } };
-    }
-  });
-  registry.register({
-    programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant,
-    permission: "runtime.control",
-    classification: "authoring",
-    handler: async (request) => {
-      if (!request.actor) return { ok: false, error: "LLM execution is unavailable." };
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionGrantRequest> & Record<string, unknown> : {};
-      if (payload.purpose === "build_and_adapt") {
-        const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
-        if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
-      }
-      if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
-      if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
-      try {
-        return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxTotalTokensPerRun: payload.maxTotalTokensPerRun, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses, permittedConsequences: payload.permittedConsequences } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
-      } catch (error) {
-        return { ok: false, error: llmExecutionGrantIssueCode(error) };
-      }
+      return { ok: true, payload: { readiness: flowBootstrapGenerationReadiness(service) } };
     }
   });
   registry.register({
@@ -98,39 +65,27 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       let startLocation: string | undefined;
       try { startLocation = automationStudioFlowStartLocation(payload.startLocation); }
       catch { return { ok: false, error: "Flow bootstrap generation request contains an invalid start location." }; }
-      const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
+      const readiness = flowBootstrapGenerationReadiness(service);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
-      if (!llmExecutionGrants) return { ok: false, error: "Flow bootstrap generation is unavailable." };
-
+      // What the person allowed the build's actions to do. Absent is nothing;
+      // a class Core does not know refuses the request rather than being
+      // dropped, so a build never runs holding less than was asked for.
+      let permittedConsequences: AutomationStudioActionConsequence[];
+      try { permittedConsequences = parseAutomationStudioPermittedConsequences(payload.permittedConsequences); }
+      catch { return { ok: false, error: "Flow bootstrap generation request contains invalid permitted consequences." }; }
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
       const projectId = boundedIdentifier(payload.projectId, "Project");
       const flowId = boundedIdentifier(payload.flowId, "Flow");
-      const grantId = boundedIdentifier(payload.llmExecutionGrantId, "LLM execution grant");
-      const grant = await llmExecutionGrants.inspectAvailable({
-        grantId,
-        actorUserId: request.actor.userId,
-        actorSessionId: request.actor.sessionId,
-        projectId,
-        flowId,
-        purpose: "build_and_adapt"
-      });
-      if (grant.purpose !== "build_and_adapt" || grant.settingsRevision === undefined) throw new Error("A valid build_and_adapt grant is required.");
       let generated: GenerateFlowBootstrapAdaptationResponse;
       try {
         generated = await service.generateFlowBootstrapAdaptation({
           projectId,
           flowId,
-          executionGrant: {
-            grantId,
-            actorUserId: request.actor.userId,
-            actorSessionId: request.actor.sessionId,
-            purpose: "build_and_adapt",
-            executionDigest: grant.executionDigest,
-            settingsRevision: grant.settingsRevision,
-            // What the person allowed the build's actions to do, carried from
-            // the grant they issued. A build whose grant holds none asks.
-            permittedConsequences: grant.permittedConsequences
-          },
+          // Whose key pays for the build's model calls. Not an authorization.
+          caller: { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId },
+          // A build that meets an act outside these asks the person; empty
+          // permits nothing lasting.
+          permittedConsequences,
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
           ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
@@ -162,22 +117,18 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
 const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "projectId",
   "flowId",
-  "llmExecutionGrantId",
   "authSessionId",
+  "permittedConsequences",
   "evidenceGuided",
   "useReusableContext",
   "startLocation",
   "mode"
 ]);
 
-function flowBootstrapGenerationReadiness(
-  service: AutomationStudioService,
-  llmExecutionGrants: AutomationStudioLlmExecutionGrantService | undefined
-) {
+function flowBootstrapGenerationReadiness(service: AutomationStudioService) {
   const runtime = service.getFlowBootstrapGenerationRuntimeReadiness();
   const readiness = structuredClone(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS);
   readiness.runtime = {
-    llmExecutionGrantsConfigured: Boolean(llmExecutionGrants),
     providerResolverConfigured: runtime.providerResolverConfigured,
     nativeNodeRegistryConfigured: runtime.nativeNodeRegistryConfigured
   };
@@ -253,20 +204,4 @@ function boundedAccountingInteger(value: unknown, label: string): number {
 function boundedAccountingCost(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10) throw new Error("Flow bootstrap generation cost accounting is invalid.");
   return value;
-}
-
-function llmExecutionGrantIssueCode(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  if (/actor session is unavailable/iu.test(message)) return "llm_grant.actor_session_unavailable";
-  if (/High-token LLM execution requires explicit confirmation/iu.test(message)) return "llm_grant.high_token_confirmation_required";
-  if (/Secret key session unlock is unavailable/iu.test(message)) return "llm_grant.key_session_locked";
-  if (/Secret reveal authorization was refused/iu.test(message)) return "llm_grant.reveal_authorization_refused";
-  if (/Secret reveal authorization TTL is invalid/iu.test(message)) return "llm_grant.reveal_authorization_ttl_invalid";
-  if (/key changed during grant authorization/iu.test(message)) return "llm_grant.key_changed";
-  if (/Flow or settings changed during grant authorization/iu.test(message)) return "llm_grant.binding_changed";
-  if (/token limit is invalid/iu.test(message)) return "llm_grant.token_limit_invalid";
-  if (/call limit is invalid/iu.test(message)) return "llm_grant.call_limit_invalid";
-  if (/estimated-cost limit is invalid/iu.test(message)) return "llm_grant.cost_limit_invalid";
-  if (/timeout limit is invalid/iu.test(message)) return "llm_grant.timeout_invalid";
-  return "llm_grant.issue_failed";
 }

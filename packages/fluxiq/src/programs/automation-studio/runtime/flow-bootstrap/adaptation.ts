@@ -140,8 +140,8 @@ export type AutomationStudioBootstrapAdaptation = {
    * routes around it and may still propose a Flow. The request it raised comes
    * with the proposal, because the person has still not answered it, and a
    * replay runs with no gate at all -- so nothing here may be approved or
-   * applied while it is present. Answering it means issuing the next build's
-   * grant with the classes it lists as `missing`.
+   * applied while it is present. Answering it means permitting the next build
+   * the classes it lists as `missing`.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
   buildPlan: AutomationStudioFlowBuildPlan;
@@ -348,8 +348,8 @@ export function upgradeAutomationStudioBootstrapAdaptation(adaptation: Automatio
  * `answer` is how the ask the build opened was settled, which is where the
  * person's word actually lives: the request's own `requestId` is the ask's id,
  * so the question the build asked is the question that releases it. Nothing,
- * or a refusal, holds the adaptation; the way past it is then a new build under
- * a grant carrying the missing classes, not an approval that skips the
+ * or a refusal, holds the adaptation; the way past it is then a new build
+ * permitted the missing classes, not an approval that skips the
  * question.
  */
 export function assertAutomationStudioBootstrapPermissionRequestAnswered(

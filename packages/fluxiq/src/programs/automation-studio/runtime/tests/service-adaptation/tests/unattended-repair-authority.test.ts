@@ -3,16 +3,15 @@
 // This is the gate *before* the one `unattended-retry-verification.test.ts`
 // holds. That file proves a repair's product is judged; it can only prove it
 // because it binds `llmProviderResolver` directly, so a model is available to
-// every task kind whether or not a person granted one. The shipped host does
-// not do that. `_shared/runtime.ts` binds
+// every task kind whether or not a person asked for the run. The shipped host
+// does not do that. `_shared/runtime.ts` binds the session-key resolver
+// (`createAutomationStudioSessionKeyProviderResolver`), which answers
+// `undefined` when the call is made for no caller -- there is no unlocked
+// session whose key could pay. So in the product, as opposed to in that test's
+// harness, a run nobody is watching could not obtain a model to *produce* a
+// repair at all.
 //
-//     (input) => input.executionGrant ? llmExecutionGrants.resolve(...) : undefined
-//
-// and `AutomationStudioLlmExecutionGrantService.issue` refuses without a live
-// actor session. So in the product, as opposed to in that test's harness, a run
-// nobody is watching could not obtain a model to *produce* a repair at all.
-//
-// Every harness below therefore resolves nothing without a grant, exactly as
+// Every harness below therefore resolves nothing without a caller, exactly as
 // the host does. What funds the repair instead is the Flow's standing
 // authorization -- the same record that already funds the unattended check,
 // extended with its own repair clause, its own ceiling and the same expiry.
@@ -23,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioRuntimeSessionGrant } from "../../../llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { automationStudioRecoveryPermissionGate } from "../../../recovery/index.ts";
 import { AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES } from "../../../result-check-authorization/index.ts";
@@ -116,8 +115,8 @@ type Harness = {
   standingRequests: Array<{ keyId: string; maxEstimatedCostUsd: number; authorizedByUserId: string }>;
   /** The task kinds the standing provider was actually asked to run. */
   standingCalls: string[];
-  /** The task kinds the *grant* resolver was asked for, and whether a grant came with each. */
-  grantedCalls: Array<{ taskKind: string; hasGrant: boolean }>;
+  /** The task kinds the *caller's* resolver was asked for, and whether a caller came with each. */
+  callerCalls: Array<{ taskKind: string; hasCaller: boolean }>;
 };
 
 async function harness(options: {
@@ -126,7 +125,7 @@ async function harness(options: {
 } = {}): Promise<Harness> {
   const standingRequests: Harness["standingRequests"] = [];
   const standingCalls: string[] = [];
-  const grantedCalls: Harness["grantedCalls"] = [];
+  const callerCalls: Harness["callerCalls"] = [];
   let addRepairedStep: (() => Promise<void>) | undefined;
 
   const io = new IoRegistry();
@@ -188,25 +187,25 @@ async function harness(options: {
   const service = new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    // Exactly what `_shared/runtime.ts` binds: nothing without a person's grant,
-    // because the grant service refuses without a live actor session.
-    llmProviderResolver: (resolverInput) => resolverInput.executionGrant
+    // Exactly what `_shared/runtime.ts` binds: nothing without a caller,
+    // because only a caller's unlocked session has a key to pay with.
+    llmProviderResolver: (resolverInput) => resolverInput.caller
       ? {
         provider: {
-          metadata: { provider: "mock", model: "granted" },
+          metadata: { provider: "mock", model: "caller" },
           runTask: async (request) => {
-            grantedCalls.push({ taskKind: request.taskKind, hasGrant: true });
+            callerCalls.push({ taskKind: request.taskKind, hasCaller: true });
             if (request.taskKind === "runtime_patch") {
               await addRepairedStep?.();
               return {
-                response: { kind: "runtime_patch", summary: "Granted repair.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 100, reason: "Granted." }] },
+                response: { kind: "runtime_patch", summary: "Caller's repair.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 100, reason: "Caller's repair." }] },
                 usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16, estimatedCostUsd: 0.002 }
               };
             }
             if (request.taskKind === "loop_verification") {
-              return { response: { kind: "diagnosis", summary: "Judged by the grant.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
+              return { response: { kind: "diagnosis", summary: "Judged for the caller.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
             }
-            return { response: { kind: "diagnosis", summary: "Granted diagnosis." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
+            return { response: { kind: "diagnosis", summary: "Caller's diagnosis." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
           }
         }
       }
@@ -272,19 +271,19 @@ async function harness(options: {
     });
   };
 
-  return { service, projectId: project.id, flowId: created.flowId, standingRequests, standingCalls, grantedCalls };
+  return { service, projectId: project.id, flowId: created.flowId, standingRequests, standingCalls, callerCalls };
 }
 
 
 describe("a run that fails with nobody watching", () => {
-  it("obtains a model, repairs itself, retries, and has that retry judged -- with no grant and no actor session", { timeout: 180_000 }, async () => {
+  it("obtains a model, repairs itself, retries, and has that retry judged -- with no caller and no actor session", { timeout: 180_000 }, async () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    // Nothing in this chain was granted. The host resolver was never asked for
-    // anything, because it answers nothing without a grant and there is none.
-    expect(found.grantedCalls).toEqual([]);
+    // Nobody asked for this run. The host resolver was never asked for
+    // anything, because it answers nothing without a caller and there is none.
+    expect(found.callerCalls).toEqual([]);
 
     // The whole loop, in the order it happened: diagnose, patch, then judge the
     // retry's own product. Before this change the first two never happened and
@@ -439,15 +438,15 @@ describe("a repair the standing authorization paid for", () => {
   });
 });
 
-describe("a person's own grant", () => {
-  const grant: AutomationStudioRuntimeSessionGrant = { grantId: "llm-grant:verify", actorUserId: "user.aiden", actorSessionId: "session.live", purpose: "verify_result" };
+describe("a run a person asked the model into", () => {
+  const llmExecution: AutomationStudioRuntimeSessionLlm = { actorUserId: "user.aiden", actorSessionId: "session.live", intent: "verify_result" };
 
   it("still judges a clean run's result itself, and the standing authorization is never reached", { timeout: 180_000 }, async () => {
     const found = await harness({ clean: true });
-    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: grant });
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
 
     expect(run.status).toBe("succeeded");
-    expect(found.grantedCalls).toEqual([{ taskKind: "loop_verification", hasGrant: true }]);
+    expect(found.callerCalls).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
     expect(found.standingRequests).toEqual([]);
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
@@ -455,15 +454,15 @@ describe("a person's own grant", () => {
 
   it("keeps the configured automatic mode without consulting standing authority", { timeout: 180_000 }, async () => {
     const found = await harness();
-    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...grant, grantId: "llm-grant:adapt", purpose: "diagnose_and_adapt" } });
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...llmExecution, intent: "diagnose_and_adapt" } });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    // The instruction's grant no longer forces the run into manual review.
+    // A run a person asked for is not forced into manual review.
     // This fixture's unsupported patch still does not produce a retry.
     expect(run.status).toBe("failed");
     expect(detail?.metadata?.adaptiveRetry).toBeUndefined();
     expect((detail?.metadata?.runtimeAdaptationContext as { approvalMode?: string } | undefined)?.approvalMode).toBe("auto");
-    expect(found.grantedCalls.every((call) => call.hasGrant === true)).toBe(true);
+    expect(found.callerCalls.every((call) => call.hasCaller === true)).toBe(true);
     expect(found.standingRequests).toEqual([]);
     expect((detail?.metadata?.llmGate as { repairAuthority?: unknown } | undefined)?.repairAuthority).toBeUndefined();
   });

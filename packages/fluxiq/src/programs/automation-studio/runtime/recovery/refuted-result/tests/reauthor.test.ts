@@ -6,7 +6,7 @@
 // says so on the record.
 //
 // What used to be asserted here, and is now asserted the other way round, is
-// that a grant's purpose and a training setting could close the route. Both
+// that a run's purpose and a training setting could close the route. Both
 // were permission questions asked about repairing a Flow, which is not a risky
 // act, and both are gone (t166).
 
@@ -44,11 +44,11 @@ describe("whether a refuted run re-enters the build loop", () => {
       .toEqual({ route: false, refusal: "not_a_wrong_answer" });
   });
 
-  it("routes a wrong answer whatever grant the run happens to hold", () => {
-    // **The old assertion was the bug.** The route tested the grant's purpose
+  it("routes a wrong answer whatever purpose the run happens to have", () => {
+    // **The old assertion was the bug.** The route tested the run's purpose
     // against a set, so a Flow built from an instruction -- which runs under
-    // `build_and_adapt` -- and a run holding a narrower grant were both refused
-    // `grant_does_not_buy_exploration` and stopped. Across five live runs the
+    // `build_and_adapt` -- and a run with a narrower purpose were both refused
+    // for it and stopped. Across five live runs the
     // wrong-answer repair therefore never executed once: `run-muhnh0s5-98a27f42`
     // stored eight rows where thirteen were expected, was correctly refuted, and
     // recorded no patch attempt, no adaptation and no change proposal. Nothing
@@ -124,7 +124,7 @@ describe("building the edit and putting it on the Flow", () => {
     // flow_bootstrap.provider_request_failed — the default code for the whole
     // provider_request stage, which says a request was attempted and its answer
     // is unknown and nothing more. A timeout, a transport error, a refused
-    // grant and a provider status are all that one word, and the diagnostic
+    // credential and a provider status are all that one word, and the diagnostic
     // that told them apart was parsed and discarded.
     const step = steps();
     const result = await automationStudioReauthorRefutedResult({

@@ -57,14 +57,14 @@ import {
   type AutomationStudioResultRepairHistoryEntry,
   type AutomationStudioResultRepairStop
 } from "./history.ts";
-import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultReplayReady } from "./reauthor.ts";
+import { automationStudioRefutedResultFlowWasReauthored } from "./reauthor.ts";
 
 /**
  * The recovery, as the verification reaches it.
  *
  * A port rather than a direct call, for the reason `annotation/ports.ts`
- * states: the recovery needs a provider resolution, a graph binding, an
- * execution grant and an adaptation context, all of which the run service holds
+ * states: the recovery needs a provider resolution, a graph binding and an
+ * adaptation context, all of which the run service holds
  * and none of which belongs in the verification. It answers the annotated run
  * detail, or nothing when it declined to annotate at all.
  */
@@ -168,7 +168,7 @@ export async function repairAutomationStudioRefutedRunResult(
     maxAttempts
   });
   const after = repaired ?? refuted;
-  const rerunning = input.willRerun === true && automationStudioRefutedResultFlowWasReauthored(after) && automationStudioRefutedResultReplayReady(after);
+  const rerunning = input.willRerun === true && automationStudioRefutedResultFlowWasReauthored(after);
   // The marker as this pass wrote it, not as the port answered it: a port that
   // rebuilt the detail from its own reads may carry an older one.
   const saved = withRepairMarker(after, {

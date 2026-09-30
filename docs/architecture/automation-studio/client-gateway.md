@@ -305,11 +305,12 @@ A token call's request is also narrowed (`narrowPairedClientRequest`), and a
 refusal is 403 with a sentence naming the field, never its value:
 
 - `run-runtime-session` must name a saved Flow by `flowId`, and may not carry an
-  inline `flow`, `inputs`, `llmExecutionGrantId`, `runIntent`, `dryRunLlm`,
+  inline `flow`, `inputs`, `runIntent`, `permittedConsequences`, `dryRunLlm`,
   `useReusableContext`, or `authorizedExternalSideEffects` other than `false`.
   Its `adaptiveMode` must be `no_llm_intervention` or `deterministic`; an absent
   mode, which would mean fully adaptive, is set to `no_llm_intervention`. A
-  paired token therefore never holds an LLM grant. One LLM call remains
+  paired token therefore never asks the model into a run, and never allows a
+  consequence on the person's behalf. One LLM call remains
   possible: a Flow's standing result check, which the person authorized on
   that Flow in the web panel, runs on a token run as on any other.
 - `generate-recording-proposal` may not be `llm_assisted` and may not carry

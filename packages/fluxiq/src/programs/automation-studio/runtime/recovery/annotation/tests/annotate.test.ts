@@ -19,10 +19,6 @@ import type {
 } from "../../../training-modes.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
-import {
-  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES,
-  AutomationStudioLlmExecutionGrantRefusal
-} from "../../../llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 import {
   adaptationPolicy,
@@ -228,9 +224,8 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     }
   });
 
-  // A resolver that says how many calls it will authorise is taken at its word
-  // -- a grant mints exactly that many, so a call past it would fail anyway --
-  // and reaching it is a limit being reached, not the loop breaking. Two calls
+  // A resolver that says how many calls a run makes is taken at its word, and
+  // reaching it is a limit being reached, not the loop breaking. Two calls
   // buy the diagnosis and one look, and the exploration then stops on the
   // run's call count, named as such.
   it("ends the exploration in budget exhaustion when the resolver's own call count runs out", async () => {
@@ -323,21 +318,21 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
     expect(run.detail.metadata?.llmGate).not.toHaveProperty("explorationEvidence");
   });
 
-  // A `diagnose_and_adapt` grant buys one target override and nothing else, so
+  // A `diagnose_and_adapt` run asks for one target override and nothing else, so
   // for a failure whose plan allows no target override the patch call can only
   // produce a substitute: the live repair campaign's guarded link and retired
   // page (2026-09-17) each proposed one against the page the run landed on.
   //
   // The same clause refuses every run that executed cleanly and answered
   // wrongly (`recovery_path_or_reroute`, run-mufvlasz-c83071f7). Widening the
-  // grant is not the fix for that: a Flow missing a step needs editing, not a
+  // intent is not the fix for that: a Flow missing a step needs editing, not a
   // runtime patch, and that failure belongs in the authoring loop.
   it.each([
-    ["navigation_unexpected", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a navigation unexpected failure, so no patch was requested."],
-    ["page_changed", "The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a page changed failure, so no patch was requested."],
+    ["navigation_unexpected", "A diagnose_and_adapt run asks for only a target override, and the recovery plan allows none for a navigation unexpected failure, so no patch was requested."],
+    ["page_changed", "A diagnose_and_adapt run asks for only a target override, and the recovery plan allows none for a page changed failure, so no patch was requested."],
     // Refused before the plan: Core's own diagnosis already says a person must act.
     ["blocked_by_capability_or_policy", undefined]
-  ] as const)("under a proposal grant, makes no patch call for a %s failure, and says why", async (category, reason) => {
+  ] as const)("in a proposal-only run, makes no patch call for a %s failure, and says why", async (category, reason) => {
     const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: category });
 
     expect(run.patchRequest).toBeUndefined();
@@ -369,25 +364,25 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
   });
 
   // A tie between equal candidates is the one target failure a model cannot
-  // resolve from the page the matcher already read, and under this grant the
+  // resolve from the page the matcher already read, and in this run the
   // only answer it could give is one of the two (`ambiguous-targets-refuse-unnamed-continue`).
-  it("under a proposal grant, makes no patch call for a tie between equal candidates", async () => {
+  it("in a proposal-only run, makes no patch call for a tie between equal candidates", async () => {
     const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: "target_ambiguous" });
 
     expect(run.patchRequest).toBeUndefined();
     expect(run.detail.metadata).not.toHaveProperty("runtimePatchAttempts");
     expect(run.detail.changeProposalIds).toEqual([]);
-    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.patchSkipped).toBe("The diagnose_and_adapt grant buys only a target override, and several things answer to the step's own description and nothing tells them apart, so no patch was requested.");
+    expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.patchSkipped).toBe("A diagnose_and_adapt run asks for only a target override, and several things answer to the step's own description and nothing tells them apart, so no patch was requested.");
   });
 
-  it("under a proposal grant, explores nothing for a failure it will make no patch call for", async () => {
+  it("in a proposal-only run, explores nothing for a failure it will make no patch call for", async () => {
     const run = await annotateRepair({ handles: { control: "candidate.2" }, failure: "navigation_unexpected" });
 
     expect(run.executed).toEqual([]);
     expect(run.patchRequest).toBeUndefined();
   });
 
-  it("under a proposal grant, still makes the patch call for a target that was not found", async () => {
+  it("in a proposal-only run, still makes the patch call for a target that was not found", async () => {
     const run = await annotateRepair({ handles: { control: "candidate.2" }, explorationNeeded: false, failure: "target_not_found" });
 
     expect(run.patchRequest).toBeDefined();
@@ -396,8 +391,8 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
 });
 
 // The early return that used to leave no trace. A Flow built from an instruction
-// is created with LLM intervention off and its playback carries no execution
-// grant, so its first failure -- in the live corpus, a retryable
+// is created with LLM intervention off and nobody asks the model into its
+// playback, so its first failure -- in the live corpus, a retryable
 // `web.target.not_found` -- stops here. It wrote an `llmGate` and nothing else,
 // which read exactly like a recovery that ran and found nothing to change. Each
 // test fails if the trace is dropped from this return again.
@@ -408,26 +403,14 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm, from exploration to r
 // and nearly all of its purse unspent, and the record said only that provider
 // resolution had failed.
 describe("a repair whose provider will not resolve", () => {
-  it("names Core's own grant refusal as the cause, beside the step that failed", async () => {
-    const detail = await annotateUnresolvable(new AutomationStudioLlmExecutionGrantRefusal(
-      AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid,
-      "LLM execution grant is no longer valid."
-    ));
-
-    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm.provider_resolution_failed", cause: "llm.execution_grant_no_longer_valid" });
-    expect(detail.interventions.at(-1)?.validation?.issues).toEqual([
-      "llm.provider_resolution_failed: LLM provider resolution failed.",
-      "llm.execution_grant_no_longer_valid: the execution grant would not be claimed."
-    ]);
-  });
-
-  // A thrown value from further down may carry anything, so its message never
-  // travels. The absence of a cause is itself the finding: the refusal came from
-  // somewhere Core does not yet name.
-  it("carries no cause, and no provider text, for a refusal Core does not own", async () => {
+  // A thrown value from the resolver may carry anything, so its message never
+  // travels: the run records that the provider would not resolve, beside the
+  // step that failed.
+  it("records the resolution failure, and no provider text", async () => {
     const detail = await annotateUnresolvable(new Error("deepseek says: key sk-PRIVATE rejected"));
 
     expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm.provider_resolution_failed" });
+    expect(detail.interventions.at(-1)?.validation?.issues).toEqual(["llm.provider_resolution_failed: LLM provider resolution failed."]);
     expect(detail.metadata?.llmGate).not.toHaveProperty("cause");
     expect(JSON.stringify(detail)).not.toContain("sk-PRIVATE");
   });

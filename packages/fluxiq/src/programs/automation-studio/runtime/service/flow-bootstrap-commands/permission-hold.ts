@@ -21,7 +21,7 @@ export type AutomationStudioBootstrapAskReader = {
  *
  * A store that cannot be read is not caught here. "The answer could not be
  * read" and "there is no answer" are different facts, and reading the second
- * out of the first would tell a person their grant had not registered; the
+ * out of the first would tell a person their answer had not registered; the
  * store's own error says what actually went wrong. Either way nothing is
  * released, which is the direction that matters.
  */

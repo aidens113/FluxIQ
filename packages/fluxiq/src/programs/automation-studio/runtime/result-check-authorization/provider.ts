@@ -1,15 +1,16 @@
 // The model a redeemed standing authorization actually buys.
 //
-// It exists because the execution grant service cannot make this call. `issue`
-// requires a live actor session ("LLM execution actor session is unavailable")
-// and `inspectAvailable` re-validates it on every call, so a Flow replaying at
-// three in the morning could never obtain a model however narrow its purpose.
+// It exists because an unattended replay has nobody signed in. A model call
+// ordinarily runs on the key of the person it is made for, released per call
+// to that person's own unlocked session (`llm/session-key-provider.ts`), so a
+// Flow replaying at three in the morning has no session to release one to,
+// however narrow its purpose.
 //
-// Going around the grant service is deliberate and is what the design asked
-// for: a grant purpose issuable without a session would let unattended work
-// reach `diagnose_and_adapt` and `explore_and_adapt` too, and the repair a
-// refutation triggers is a separate authorization question with a separate
-// answer. Nothing here can name a purpose at all. It resolves one provider, for
+// This path is deliberately narrow: a way to call the model without a session
+// that served any purpose would let unattended work reach `diagnose_and_adapt`
+// and `explore_and_adapt` too, and the repair a refutation triggers is a
+// separate authorization question with a separate answer. Nothing here can
+// name a purpose at all. It resolves one provider, for
 // one key, bounded by the ceiling the redemption already worked out, and
 // `run-outcome.ts` only ever asks it for `loop_verification`.
 //

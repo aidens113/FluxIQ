@@ -11,7 +11,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowBootstrapIncompleteDraftStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../service/index.ts";
-import { blankFixture, expectNoTopology, grant, mockProvider, plan, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, mockProvider, plan, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -62,7 +62,7 @@ describe("a Flow build that runs out, and the build after it", () => {
     const { project, flow } = await blankFixture(instance, "active", "example");
 
     // The first build never finishes.
-    const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, executionGrant: await grant(instance, project.id, flow.flowId) }));
+    const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
     const kept = diagnostic.evidenceLoop?.incompleteDraft;
     expect(kept?.revision).toBe(1);
@@ -78,7 +78,7 @@ describe("a Flow build that runs out, and the build after it", () => {
     // The next build starts from it, is told so, and finishes.
     continuedAt = call;
     const before = requests.length;
-    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, executionGrant: await grant(instance, project.id, flow.flowId) });
+    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
     expect(result.status).toBe("proposed");
     const firstLook = requests[before]?.context.evidenceLoop?.evidence ?? [];
     expect(firstLook.find((entry) => entry.toolId === "core.resumed")?.value).toMatchObject({ code: "llm_evidence_loop.resumed", revision: 1, draftSteps: kept!.steps, proposableSteps: kept!.steps });

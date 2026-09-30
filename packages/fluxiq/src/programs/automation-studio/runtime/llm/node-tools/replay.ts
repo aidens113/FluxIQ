@@ -15,7 +15,8 @@
 // is already on that path and already right there: the permission gate wraps
 // every call the loop makes (`flow-bootstrap/action-permissions.ts`), so a
 // replay cannot do something the person has not permitted, and it cannot do it
-// by accident either -- the same `checkFor` runs, with the same grant. A second
+// by accident either -- the same `checkFor` runs, with the same permitted
+// consequences. A second
 // seam would have been a second place for that gate to be forgotten.
 //
 // **Why the reserved key rather than a tool of its own.** A tool the host has

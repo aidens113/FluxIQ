@@ -21,7 +21,7 @@
 // and what it can check is a claim: that the step the model says does an act
 // exists, is kept, changed something, and is not also claimed for another act.
 // It is not a permission question -- saving is the automation's own work and
-// the instruction is the grant -- it is a completeness one, fed back at
+// the instruction is the permission -- it is a completeness one, fed back at
 // `complete` like every other correctable refusal.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
