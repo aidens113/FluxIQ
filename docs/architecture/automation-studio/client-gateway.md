@@ -337,6 +337,63 @@ looked up. A valid login cookie always takes precedence over a bearer header.
 The token is never logged or echoed, and the actor's session ID names the
 gateway session (`client-gateway:<sessionId>`), never the token.
 
+### The chat runs capabilities in Core (conversation commands)
+
+`append-turn` with `capabilities` reads the person's message and writes Core's
+answer into the thread. When the decision is to run one of the capabilities
+Core itself executes, the handler also runs it, for whichever client sent the
+message (`runtime/conversations/commands/`). This is how the extension's chat
+builds and runs automations. It is also how the web panel's chat now runs the
+same capabilities. The ids are:
+
+| Id | What Core does |
+| --- | --- |
+| `flow.createHere` | `create-flow`, `save-flow-generation-instruction`, then `generate-flow-bootstrap-adaptation` (evidence-guided, `startLocation` = the page on screen), then `review-flow-adaptation` `approve` and `apply`. The new Flow is blank, so applying replaces nothing. |
+| `flow.describe` | `save-flow-generation-instruction` |
+| `flow.explore` | Saves an instruction if one is given, then builds. It applies only a create build onto a blank Flow. |
+| `flow.improve` | `save-flow-instruction`, then an `extend` build, then a confirm ask (`conversation-command.<uuid>`, attachment `conversation-command`) asking to apply it. A grant on `answer-ask` applies the change (`adaptation.apply`). A deny rejects it (`adaptation.reject`), because a change left waiting would refuse the Flow's next build with `flow_bootstrap.pending_adaptation_exists`. |
+| `run.execute` | `run-runtime-session` |
+| `ask.answer` | Answers the thread's pending ask from the person's words (grant, deny, choice or text) through `answer-ask`. |
+
+- **Descriptors.** For these ids, Core's descriptor replaces whatever the client
+  sent, so a client may send ids only. The extension does.
+- **Calls are made in process.** The command calls the registry with the
+  request's own actor and scope, so each endpoint's permission and handler
+  checks apply as they would to the same call from a control. It reaches only
+  endpoints classified `read` or `authoring`: deletes and payments keep their
+  PIN. A token still cannot call a build endpoint directly, because the HTTP
+  allowlist above is unchanged. Only Core's own command, building its own
+  payload, reaches one.
+- **Long commands run in the background.** These are create-here, explore,
+  improve and run. The answer carries
+  `response.execution = { capabilityId, status: "started", summary }` at once.
+  The result arrives later as an automation turn with attachment
+  `panel-capability-result` (ref = the capability id).
+  - A failed result says why it stopped and which steps had already landed.
+  - While the command runs, an ambient conversation context
+    (`runtime/conversations/context/`) makes any ask the build or run raises
+    land in the chat thread instead of the Flow's own. It also stamps the
+    thread's id on activity events, so the chat refreshes.
+  - A quick command answers `done` or `failed` in the same response.
+  - `execution` is null when Core does not execute the chosen id; the client
+    then runs it itself, as the web panel still does for its other capabilities.
+- **The page is the start.** `onScreen.pageUrl` (http or https, at most 2048
+  characters, no whitespace or control characters) becomes the build's
+  `startLocation`. The chat model is shown only its origin and path.
+- **A Flow's thread means that Flow.** With no `onScreen.flowId`, a thread whose
+  subject is a Flow supplies it. So "run it" in an automation's own chat runs
+  that automation.
+- **A paired client spends its person's key.** A `client-gateway:` caller is
+  mapped to the approving person's live unlocked session
+  (`SecretKeysService.unlockedSessionFor`: the latest-expiring unlock that
+  opens at least one key). That mapping applies to the chat model and to every
+  registry call a command makes. Permissions stay the paired set. With no
+  unlocked session, a model call fails and the thread says the key is locked
+  and how far the command got.
+  - This deliberately changes the rule above that a token never reaches the
+    model. The product direction is that the extension's chat builds and runs
+    automations (2026-09-30, t198).
+
 Start/stop recording and action execution are privileged operations and use
 shared PIN authorization. Client-initiated pairing requests can create pending
 display references without PIN because the client still cannot pair until a

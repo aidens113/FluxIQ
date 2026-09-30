@@ -111,6 +111,9 @@ describe("a paired client on the program route", () => {
 
   it("acts as the approving person, with only the permissions the allowlist uses", () => {
     expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:owner" }, directory)).toEqual({
+      // Core recognises a paired caller by this prefix and maps it to the person's
+      // unlocked session (`AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX`,
+      // packages/fluxiq/.../runtime/conversations/commands/caller.ts). Change both or neither.
       sessionId: "client-gateway:g1",
       userId: "user:owner",
       roleId: "role:admin",

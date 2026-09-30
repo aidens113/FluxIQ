@@ -24,6 +24,13 @@ export type AutomationStudioConversationOnScreen = {
   subflowId?: string;
   runId?: string;
   recordingId?: string;
+  /**
+   * The page the person has open in their browser, when the client is one
+   * (the paired extension): an http or https address of at most 2,048
+   * characters. A build Core runs from the chat starts there; the model is
+   * shown only its origin and path.
+   */
+  pageUrl?: string;
 };
 
 /** A capability to run, with everything Core could fill in already filled. */
