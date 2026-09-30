@@ -1,5 +1,6 @@
 /* The conversation overlay: the launcher that is always on screen, the panel
-   it opens, and the opening message an empty thread shows.
+   it opens, the opening message an empty thread shows, and Core's work
+   folded under the turn.
    Role tokens only -- no literal surface colours -- and no letter-spacing. */
 
 .automation-conversation-dock {
@@ -145,14 +146,11 @@
 .automation-conversation-opening {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-sm);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-panel);
-  background: var(--surface-tool);
+  padding: var(--space-xl) var(--space-lg) var(--space-md);
 }
 
 .automation-conversation-opening > header {
@@ -242,4 +240,144 @@
     height: var(--control-height-default);
     padding: 0 var(--space-sm);
   }
+}
+
+/* Core's work under the turn: the live status drawn in place, and the steps
+   folded behind one quiet line. */
+.automation-conversation-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-compact);
+  min-width: 0;
+  font-size: var(--font-size-body-small);
+}
+
+.automation-conversation-activity-live {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-conversation-activity-live > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.automation-conversation-activity-live span {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.automation-conversation-activity-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text);
+  animation: automation-conversation-breathe 1.6s var(--motion-easing) infinite;
+}
+
+.automation-conversation-activity-live[data-outcome="waiting"] .automation-conversation-activity-mark {
+  background: var(--color-warning);
+  animation: none;
+}
+
+@keyframes automation-conversation-breathe {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .automation-conversation-activity-mark { animation: none; }
+}
+
+.automation-conversation-activity-steps {
+  max-width: 100%;
+}
+
+.automation-conversation-activity-live + .automation-conversation-activity-steps {
+  margin-left: calc(8px + var(--space-sm));
+}
+
+.automation-conversation-activity-steps > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xxs) var(--space-sm);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.automation-conversation-activity[data-live="true"] .automation-conversation-activity-steps > summary {
+  padding-inline: 0;
+  background: transparent;
+}
+
+.automation-conversation-activity-steps > summary::-webkit-details-marker {
+  display: none;
+}
+
+.automation-conversation-activity-steps > summary::after {
+  content: "›";
+  display: inline-block;
+  font-size: 1.2em;
+  line-height: 1;
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+
+.automation-conversation-activity-steps[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.automation-conversation-activity-steps > summary:hover {
+  color: var(--color-text);
+}
+
+.automation-conversation-activity-steps > ol {
+  list-style: none;
+  margin: var(--space-sm) 0 0 var(--space-xs);
+  padding: 0 0 0 var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  border-left: var(--border-width-strong) solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.automation-conversation-activity-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-compact);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.automation-conversation-activity-step-mark {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.automation-conversation-activity-steps li[data-status="succeeded"] .automation-conversation-activity-step-mark {
+  color: var(--color-success);
+}
+
+.automation-conversation-activity-steps li[data-status="failed"] .automation-conversation-activity-step-mark {
+  color: var(--color-danger);
+}
+
+.automation-conversation-activity-step-dot {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 5px;
+  height: 5px;
+  margin-inline: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
 }
