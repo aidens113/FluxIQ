@@ -29,6 +29,12 @@ export type AutomationStudioRuntimeRecoveryRung = "diagnosis" | "plan" | "explor
  * silence it is here to end.
  */
 export const AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES = Object.freeze({
+  /**
+   * No failed attempt reached the recovery, so nothing was classified and no
+   * patch could be applied to anything. Decided before any provider call: a
+   * diagnosis of nothing is spend with no rung after it (t193 wK, C9).
+   */
+  no_failed_attempt: "llm.runtime_patch_no_failed_attempt",
   /** No diagnosis call was made, so there is no answer to continue from. */
   no_diagnosis_requested: "llm.runtime_patch_no_diagnosis_requested",
   /** The diagnosis call itself failed: provider, budget, transport or output validation. */

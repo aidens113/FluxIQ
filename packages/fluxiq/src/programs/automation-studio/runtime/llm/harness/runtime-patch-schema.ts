@@ -112,20 +112,34 @@ function targetOverridePatchSchema(executes: boolean): JsonSchema {
   };
 }
 
-/** Any patch kind a recovery may run, each acting kind saying what it would lastingly do. */
-const GENERIC_RUNTIME_PATCH_ITEM_SCHEMA = {
-  oneOf: [
-    runtimePatchVariant("temporary_action_sequence", ["targetNodeId", "steps", "consequences"], {
-      targetNodeId: boundedStringSchema(), steps: INSERTED_STEPS_SCHEMA, consequences: CONSEQUENCES_SCHEMA
-    }),
-    runtimePatchVariant("temporary_wait_retry", ["targetNodeId"], {
-      targetNodeId: boundedStringSchema(), timeoutMs: { type: "integer", minimum: 0 }, retryCount: { type: "integer", minimum: 0 }
-    }),
-    targetOverridePatchSchema(true),
-    runtimePatchVariant("temporary_recovery_subflow_call", ["subflowId"], { subflowId: boundedStringSchema() }),
-    runtimePatchVariant("temporary_reroute", ["fromNodeId", "toNodeId"], { fromNodeId: boundedStringSchema(), toNodeId: boundedStringSchema() })
-  ]
-} as const;
+/** Every patch kind a recovery may run, each acting kind saying what it would lastingly do, keyed by kind. */
+const RUNTIME_PATCH_VARIANTS: Readonly<Record<string, JsonSchema>> = Object.freeze({
+  temporary_action_sequence: runtimePatchVariant("temporary_action_sequence", ["targetNodeId", "steps", "consequences"], {
+    targetNodeId: boundedStringSchema(), steps: INSERTED_STEPS_SCHEMA, consequences: CONSEQUENCES_SCHEMA
+  }),
+  temporary_wait_retry: runtimePatchVariant("temporary_wait_retry", ["targetNodeId"], {
+    targetNodeId: boundedStringSchema(), timeoutMs: { type: "integer", minimum: 0 }, retryCount: { type: "integer", minimum: 0 }
+  }),
+  temporary_target_override: targetOverridePatchSchema(true),
+  temporary_recovery_subflow_call: runtimePatchVariant("temporary_recovery_subflow_call", ["subflowId"], { subflowId: boundedStringSchema() }),
+  temporary_reroute: runtimePatchVariant("temporary_reroute", ["fromNodeId", "toNodeId"], { fromNodeId: boundedStringSchema(), toNodeId: boundedStringSchema() })
+});
+
+/**
+ * The patch kinds this schema offers, narrowed to the recovery plan's allowed
+ * kinds when the request declares them.
+ *
+ * The model was shown all five whatever the plan allowed, and live runs wrote a
+ * kind the plan refuses -- a target override for an `output_not_observed`
+ * failure whose plan allows a reroute, a subflow call or an action sequence --
+ * and spent the call on a patch that could not land (t193 wK, C3). A kind the
+ * plan would refuse is now a kind the model is never shown. Undeclared means
+ * every kind, which is what a request with no plan behind it has always seen.
+ */
+function runtimePatchVariantsFor(allowedKinds: readonly string[] | undefined): JsonSchema[] {
+  const kinds = allowedKinds === undefined ? Object.keys(RUNTIME_PATCH_VARIANTS) : Object.keys(RUNTIME_PATCH_VARIANTS).filter((kind) => allowedKinds.includes(kind));
+  return kinds.map((kind) => RUNTIME_PATCH_VARIANTS[kind]!);
+}
 
 /** The declined answer, with its reason from Core's closed list. */
 const NO_REPAIR_OUTPUT_SCHEMA = {
@@ -148,9 +162,13 @@ const NO_REPAIR_OUTPUT_SCHEMA = {
  * is how every refusal task of the 2026-09-17 live campaign came back with one.
  *
  * `proposalOnly` is a `diagnose_and_adapt` run: exactly one target override,
- * proposed and never run, so it carries no `consequences`.
+ * proposed and never run, so it carries no `consequences`. `allowedKinds` is
+ * the recovery plan's allowed patch kinds; absent, every kind is offered. When
+ * it leaves no kind at all, the only shape offered is `no_repair`.
  */
-export function automationStudioRuntimePatchOutputSchema(input: { proposalOnly: boolean }): JsonSchema {
+export function automationStudioRuntimePatchOutputSchema(input: { proposalOnly: boolean; allowedKinds?: readonly string[] | undefined }): JsonSchema {
+  const variants = runtimePatchVariantsFor(input.allowedKinds);
+  if (!input.proposalOnly && variants.length === 0) return { oneOf: [NO_REPAIR_OUTPUT_SCHEMA] };
   return {
     oneOf: [
       {
@@ -162,7 +180,7 @@ export function automationStudioRuntimePatchOutputSchema(input: { proposalOnly: 
           summary: boundedStringSchema(),
           patches: input.proposalOnly
             ? { type: "array", minItems: 1, maxItems: 1, items: targetOverridePatchSchema(false) }
-            : { type: "array", minItems: 1, maxItems: 100, items: GENERIC_RUNTIME_PATCH_ITEM_SCHEMA },
+            : { type: "array", minItems: 1, maxItems: 100, items: { oneOf: variants } },
           riskLevel: { enum: ["low", "medium", "high", "destructive"] },
           metadata: JSON_METADATA_SCHEMA
         }

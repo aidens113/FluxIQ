@@ -28,13 +28,8 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
-import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import {
-  AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
   automationStudioReauthorBrief,
-  automationStudioReauthorRefutedResult,
   automationStudioRefutedResultDegraded,
   automationStudioRefutedResultReauthorDecision,
   automationStudioRefutedResultReauthored,
@@ -44,16 +39,15 @@ import {
   automationStudioResultRepairPurseLeftUsd,
   automationStudioResultRepairPurseRefused,
   automationStudioResultRepairWithPurse,
-  type AutomationStudioRefutedResultFailure,
   type AutomationStudioRefutedResultRepairPort,
   type AutomationStudioResultRepairPurse
 } from "../../recovery/refuted-result/index.ts";
-import type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
+import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
 
 /** What the service lends the port: its reads, its build, and its review. */
-export type AutomationStudioRefutedResultRepairPortDependencies = {
+export type AutomationStudioRefutedResultRepairPortDependencies = AutomationStudioReauthorBuildDependencies & {
   projectId?: string | null | undefined;
   /** The Flow the run executed, when the adaptation context named it. Read when the port is called, because the context is resolved after the port is built. */
   flowId(): string | null | undefined;
@@ -63,10 +57,6 @@ export type AutomationStudioRefutedResultRepairPortDependencies = {
    * purse and never raises it.
    */
   maxCostUsd?: (() => number | undefined) | undefined;
-  /** The person the run was made for, whose key the build pays with too. Absent for a run nobody asked the model into. */
-  caller?: AutomationStudioLlmModelCaller | undefined;
-  /** The lasting consequences the run's caller already allowed, carried into the build. */
-  permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   /**
    * The ladder's annotation, for a refutation the route does not take and for
    * a re-author that built nothing. `costLeftUsd` is what is left of the
@@ -74,33 +64,8 @@ export type AutomationStudioRefutedResultRepairPortDependencies = {
    * holds every call to.
    */
   annotate(request: RepairRequest, costLeftUsd: number): Promise<AutomationStudioFlowRunDetail>;
-  /**
-   * The build, run-owned, with the brief beside the Flow's own instructions.
-   * `costLeftUsd` is what is left of the repair's purse, always above zero: the
-   * build's total, which its loop budget holds it to.
-   */
-  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
-  approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
-  /** Applies the approved adaptation; the run then replays the Flow it produced. */
-  apply(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   now?: () => number;
 };
-
-/** The actor every re-author is reviewed and applied as. */
-const REPAIR_ACTOR = "runtime.result_repair";
-
-type Built = Awaited<ReturnType<typeof automationStudioReauthorRefutedResult>>;
-
-/**
- * A build the purse had nothing left for. It was never started, so no request
- * went out, and another attempt would meet the same empty purse.
- */
-const COST_BOUND_FAILURE: AutomationStudioRefutedResultFailure = Object.freeze({
-  code: AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
-  retryable: false,
-  providerInvocation: "not_attempted",
-  providerResponse: "not_received"
-});
 
 /** The port the verification calls for a refuted run. */
 export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRefutedResultRepairPortDependencies): AutomationStudioRefutedResultRepairPort {
@@ -109,64 +74,23 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     const flowId = deps.flowId();
     // Opened where an earlier pass of this run's repair left it, so a re-run
     // refuted again spends from the same total rather than a fresh one.
-    let purse = automationStudioResultRepairPurse(refuted.detail, deps.maxCostUsd?.());
+    const opened = automationStudioResultRepairPurse(refuted.detail, deps.maxCostUsd?.());
     const decision = automationStudioRefutedResultReauthorDecision({ detail: refuted.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
     if (!decision.route) {
-      const laddered = await patchLadder(deps, refuted, refuted.detail, purse);
+      const laddered = await patchLadder(deps, refuted, refuted.detail, opened);
       return automationStudioResultRepairWithPurse(automationStudioRefutedResultReauthored({ detail: laddered.detail, decision, attempt: refuted.current.attempt }), laddered.purse);
     }
     const brief = automationStudioReauthorBrief({ projectId: decision.projectId, flowId: decision.flowId, current: refuted.current, history: refuted.history, maxAttempts: refuted.maxAttempts, now: now() });
-    const build = async (): Promise<Built> => {
-      if (!automationStudioResultRepairPurseAllowsPart(purse)) {
-        purse = automationStudioResultRepairPurseRefused(purse, "reauthor");
-        return { failure: COST_BOUND_FAILURE, durationMs: 0 };
-      }
-      const costLeftUsd = automationStudioResultRepairPurseLeftUsd(purse);
-      const built = await automationStudioReauthorRefutedResult({
-        now,
-        generate: async () => {
-          // Repairing is the automation's own work, so the build needs nothing
-          // but somebody's key to pay with: the run's own caller's. A run nobody
-          // asked the model into has none, and that is named rather than thrown
-          // plainly.
-          const caller = deps.caller;
-          if (!caller) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_failed");
-          const generated = await deps.generate({
-            projectId: decision.projectId, flowId: decision.flowId, mode: "extend", evidenceGuided: true,
-            caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
-            ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
-          }, brief, costLeftUsd);
-          return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
-        },
-        approve: (adaptationId) => deps.approve({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR }),
-        apply: (adaptationId) => deps.apply({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR }),
-        failureCode: (error) => automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "pre_provider_validation"))
-      });
-      // A build that made an edit called the model; a failed one says whether
-      // its request went out, and its loop how many decisions it made. Either
-      // is charged what it reported.
-      purse = automationStudioResultRepairPurseCharged(purse, {
-        costUsd: (built.accounting ?? built.failure?.accounting)?.estimatedCostUsd,
-        calls: built.failure?.evidenceLoop?.decisionCount,
-        reachedProvider: built.adaptationId !== undefined || (built.failure?.providerInvocation !== undefined && built.failure.providerInvocation !== "not_attempted")
-      });
-      return built;
-    };
-    const record = (detail: AutomationStudioFlowRunDetail, built: Built) => automationStudioRefutedResultReauthored({
-      detail,
-      decision,
-      ...built,
-      attempt: refuted.current.attempt,
-      brief: briefRecord(refuted, brief)
+    const { detail: repaired, built, purse } = await automationStudioReauthorBuild({
+      deps, projectId: decision.projectId, flowId: decision.flowId, brief, purse: opened, detail: refuted.detail, now,
+      record: (detail: AutomationStudioFlowRunDetail, attempt: AutomationStudioReauthorBuilt) => automationStudioRefutedResultReauthored({
+        detail,
+        decision,
+        ...attempt,
+        attempt: refuted.current.attempt,
+        brief: briefRecord(refuted, brief)
+      })
     });
-    let built = await build();
-    let repaired = record(refuted.detail, built);
-    // A build that failed for a reason that may pass is built again once, and
-    // both builds are on the run. The second is handed only what the first left.
-    if (!built.adaptationId && built.failure?.retryable === true) {
-      built = await build();
-      repaired = record(repaired, built);
-    }
     // A build that produced no edit at all degrades to the smaller repair --
     // the patch ladder a refutation the route does not take is given -- rather
     // than ending the repair with nothing tried (`run-mulxk0ro-36bf090d`).
@@ -230,40 +154,6 @@ async function degradeToPatchLadder(
   } catch {
     return { detail: automationStudioRefutedResultDegraded(repaired, { to: "patch_ladder", afterCode, failed: true }), purse };
   }
-}
-
-/**
- * A failed build, as the run records it: the code and its closed facts, the
- * build's accounting without the provider's own words, and the loop's decision
- * rows, so a re-author that failed part way can be walked decision by decision.
- */
-function automationStudioRefutedResultFailureOf(diagnostic: AutomationStudioFlowBootstrapFailureDiagnostic): AutomationStudioRefutedResultFailure {
-  const accounting = diagnostic.accounting;
-  return {
-    code: diagnostic.code,
-    stage: diagnostic.stage,
-    retryable: diagnostic.retryable,
-    providerInvocation: diagnostic.providerInvocation,
-    providerResponse: diagnostic.providerResponse,
-    ...(accounting?.providerStatus === undefined ? {} : { providerStatus: accounting.providerStatus }),
-    // Numbers and identifiers only. `providerRefusal` carries the provider's
-    // own sentence, which a run record never holds.
-    ...(accounting ? { accounting: numericAccounting(accounting) } : {}),
-    ...(diagnostic.evidenceLoop ? { evidenceLoop: JSON.parse(JSON.stringify(diagnostic.evidenceLoop)) as JsonObject } : {})
-  };
-}
-
-function numericAccounting(accounting: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>): JsonObject {
-  return {
-    requestId: accounting.requestId,
-    estimatedInputTokens: accounting.estimatedInputTokens,
-    ...(accounting.provider ? { provider: accounting.provider } : {}),
-    ...(accounting.model ? { model: accounting.model } : {}),
-    ...(accounting.inputTokens === undefined ? {} : { inputTokens: accounting.inputTokens }),
-    ...(accounting.outputTokens === undefined ? {} : { outputTokens: accounting.outputTokens }),
-    ...(accounting.totalTokens === undefined ? {} : { totalTokens: accounting.totalTokens }),
-    ...(accounting.estimatedCostUsd === undefined ? {} : { estimatedCostUsd: accounting.estimatedCostUsd })
-  };
 }
 
 /** What the build was told, as the run keeps it: which refutation it answered, and how big the brief was. Never the brief's text, which carries the check's prose. */

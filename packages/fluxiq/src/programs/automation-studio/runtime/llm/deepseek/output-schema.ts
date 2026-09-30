@@ -58,7 +58,13 @@ export function automationStudioDeepSeekOutputSchema(request: AutomationStudioLl
   };
   if (request.taskKind !== "runtime_patch") return request.taskKind === "flow_bootstrap" ? automationStudioFlowBootstrapOutputSchema(automationStudioFlowBootstrapSizeLimitsOfContext(request.context.flowBootstrap)) : undefined;
   // Two shapes, always: a patch, or the answer that there is no repair (`harness/runtime-patch-schema.ts`).
-  return automationStudioRuntimePatchOutputSchema({ proposalOnly: request.metadata?.executionPurpose === "diagnose_and_adapt" });
+  // The patch offers only the kinds the recovery plan allows, when the request declares them.
+  return automationStudioRuntimePatchOutputSchema({ proposalOnly: request.metadata?.executionPurpose === "diagnose_and_adapt", allowedKinds: declaredAllowedPatchKinds(request.metadata?.allowedPatchKinds) });
+}
+
+/** The plan's allowed patch kinds as the request declared them, or undefined when it declared none. */
+function declaredAllowedPatchKinds(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((kind): kind is string => typeof kind === "string") : undefined;
 }
 
 /** The answer a task kind declares, which the request must agree with. */

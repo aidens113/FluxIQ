@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
-import { AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE, flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../index.ts";
+import { AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE, flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../index.ts";
 
 describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
   it("reads recordCount from the $dataset marker a saved trace holds in place of the captured rows", () => {
@@ -85,16 +85,19 @@ describe("runtimeSessionToFlowRunDetail known adaptation matching", () => {
 // what", when nothing had rejected anything. The mutation this is written
 // against is putting the sentence back without its code.
 describe("runtimeSessionToFlowRunDetail ladder diagnosis intervention", () => {
-  it("states a code for the ladder's unanswered diagnosis rung, in the shape a reader extracts", () => {
+  it("states a code for the ladder selecting its model rung, in the shape a reader extracts", () => {
     const detail = runtimeSessionToFlowRunDetail(session([ladderAttempt()]), "project.conversions");
     const issues = detail.interventions?.[0]?.validation?.issues ?? [];
 
     expect(detail.interventions).toHaveLength(1);
     expect(detail.interventions?.[0]?.kind).toBe("diagnosis");
-    expect(detail.interventions?.[0]?.validation?.ok).toBe(false);
+    // Informational: nothing was called and nothing failed (t193 wK, K7). An
+    // `ok: false` here read as a failed diagnosis call in every step-failure run.
+    expect(detail.interventions?.[0]?.validation?.ok).toBe(true);
+    expect(AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE).toBe("recovery.ladder_model_rung_selected");
     expect(issues).toHaveLength(1);
     // A reader takes the leading token up to the first colon; a sentence yields none.
-    expect(/^([a-z][a-z0-9_.-]{1,127})(?::|$)/u.exec(issues[0] ?? "")?.[1]).toBe(AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE);
+    expect(/^([a-z][a-z0-9_.-]{1,127})(?::|$)/u.exec(issues[0] ?? "")?.[1]).toBe(AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE);
     // It is the rung being recorded, not a claim about the deployment: in the
     // run above a provider was configured and answered moments later.
     expect(issues[0]).not.toMatch(/not configured/u);

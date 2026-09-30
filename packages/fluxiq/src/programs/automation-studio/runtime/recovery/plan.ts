@@ -105,7 +105,7 @@ const AUTOMATION_STUDIO_PATCH_KINDS_FOR_CANDIDATE: Readonly<Record<AutomationStu
 /** Stage B: the whole plan, from the diagnosis and the policy, with no provider call. */
 export function planAutomationStudioRuntimeRecovery(input: AutomationStudioRuntimeRecoveryPlanInput): AutomationStudioRuntimeRecoveryPlan {
   const chain = decideAutomationStudioRuntimePatchRequest(input.result);
-  if (!input.deterministic) return unclassifiedPlan(chain);
+  if (!input.deterministic) return unclassifiedPlan();
   const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({ deterministic: input.deterministic, ...(input.result ? { result: input.result } : {}) });
   const { allowed, refusals } = patchKindsForPlan(diagnosis.candidateKind, input.policy);
   const patchRequest = decidePatchRequest({ chain, diagnosis, allowed, resolution: input.deterministic.resolution });
@@ -195,7 +195,14 @@ function decidePatchRequest(input: {
   if (input.diagnosis.stillAchievable === "no") {
     return { request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested.", code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.goal_unachievable, rung: "plan" };
   }
-  if (!input.diagnosis.patchNeeded && !input.diagnosis.explorationNeeded) {
+  // "A deterministic recovery exists, nothing to patch or explore" cannot be
+  // carried out as it reads. `model_required` above already means the
+  // deterministic rungs ran and failed, so the only deterministic recovery left
+  // to this loop is one a patch writes down. Live run munzl2eh answered
+  // yes/yes/false/false and the ladder stopped with the model's own recovery in
+  // hand (t193 wK, C6). A patch is asked for when the policy permits a kind.
+  const deterministicRecoveryNamed = input.diagnosis.deterministicRecoveryPossible === "yes" && input.allowed.length > 0;
+  if (!input.diagnosis.patchNeeded && !input.diagnosis.explorationNeeded && !deterministicRecoveryNamed) {
     return { request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested.", code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.diagnosis_asked_for_none, rung: "plan" };
   }
   if (!input.allowed.length) {
@@ -226,8 +233,17 @@ function planSteps(input: {
   return steps;
 }
 
-/** No failed attempt was classified, so there is nothing to plan from. */
-function unclassifiedPlan(chain: AutomationStudioRuntimePatchRequestDecision): AutomationStudioRuntimeRecoveryPlan {
+/**
+ * No failed attempt was classified, so there is nothing to plan from.
+ *
+ * It refuses under its own code at the `diagnosis` rung, whatever the diagnosis
+ * call answered. It used to hand the diagnosis chain's decision straight
+ * through, which was `request: true` whenever a diagnosis validated, and the
+ * recovery then ended `llm.runtime_patch_unavailable` at `resolution` because
+ * there was no attempt to patch -- a billed diagnosis followed by a refusal
+ * that named the wrong rung (t193 wK, C9, live run munyzo8z).
+ */
+function unclassifiedPlan(): AutomationStudioRuntimeRecoveryPlan {
   return {
     schemaVersion: "automation-studio.recovery-plan.v1",
     loopStage: "plan",
@@ -249,6 +265,11 @@ function unclassifiedPlan(chain: AutomationStudioRuntimePatchRequestDecision): A
     allowedPatchKinds: [],
     policyRefusals: [],
     explorationRequested: false,
-    patchRequest: chain
+    patchRequest: {
+      request: false,
+      reason: "No failed attempt reached the diagnosis, so no patch was requested.",
+      code: AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.no_failed_attempt,
+      rung: "diagnosis"
+    }
   };
 }
