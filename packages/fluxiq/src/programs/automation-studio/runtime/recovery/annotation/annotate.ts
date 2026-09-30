@@ -43,7 +43,6 @@ import type { AutomationStudioUnattendedRepairRedemption } from "../../result-ch
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
-  AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,
   automationStudioLlmResolutionWithinFlowSettings,
@@ -286,11 +285,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const requestedTokenLimits = providerResolution?.tokenLimits;
   let failureEvidence: JsonObject | undefined;
   if (provider && failedAttempt && ports.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
-    const resolvedTokenLimits = resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits;
-    const maxEvidenceBytes = Math.max(1, Math.min(
-      AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
-      Math.floor(resolvedTokenLimits.maxInputTokens * 3 * FAILURE_EVIDENCE_INPUT_SHARE)
-    ));
+    // The whole capture, with no byte allowance: the model sees the whole page.
+    // Only a denied key or a value that is not JSON makes it unavailable.
     try {
       const captured = await ports.llmEvidenceRuntime.captureSanitizedFailureEvidence({
         projectId: input.context.projectId,
@@ -303,15 +299,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
           status: failedAttempt.status,
           ...(failedAttempt.route ? { route: failedAttempt.route } : {})
         },
-        maxEvidenceBytes,
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
       });
       if (captured !== undefined) {
-        const sanitized = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured, ports.llmEvidenceRuntime?.deniedEvidenceKeys);
-        if (Buffer.byteLength(JSON.stringify(sanitized), "utf8") > maxEvidenceBytes) {
-          throw new Error("Sanitized failure evidence exceeds the dynamic request allowance.");
-        }
-        failureEvidence = sanitized;
+        failureEvidence = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured, ports.llmEvidenceRuntime?.deniedEvidenceKeys);
       }
     } catch {
       return {
@@ -439,7 +430,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     // patch that could follow adds one for itself.
     const reservedCalls = (refusalIsCheckable ? 1 : 0) + (patchCouldFollow ? 1 : 0);
     const patchReserve = scope && reservedCalls > 0
-      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall, reservedCalls })
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall, reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
       : undefined;
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
@@ -487,10 +478,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const personStopped = exploration?.outcome === "user_intervention_required" && exploration.personNeeded?.ended !== undefined;
   // What the exploration saw, for whatever call comes next. Without this the
   // patch was shown the failure packet alone, and a control only the exploration
-  // revealed could not be named in the repair. No packets, no slot: the request
-  // is the one it always was.
+  // revealed could not be named in the repair. Every packet, with no share of
+  // the input allowance: the model sees every page it looked at. No packets, no
+  // slot: the request is the one it always was.
   const explorationEvidence = explorationResult && explorationResult.explored.length > 0
-    ? { packets: explorationResult.explored, maxBytes: Math.max(1, Math.floor(resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens * 3 * EXPLORATION_EVIDENCE_INPUT_SHARE)) }
+    ? { packets: explorationResult.explored }
     : undefined;
   // Stage B again, now that there is a page to weigh the refusal against. Only
   // on a refusal a look could overturn, only when the look actually returned
@@ -682,7 +674,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         ...(permissions ? { permissions: permissions.summary() } : {}),
         ...(declined ? { patchDeclined: declined.reason } : {}),
         ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
-        ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length, withheldPackets: patchResult.request.context.explorationEvidence.withheldPackets } } : {}),
+        ...(patchResult?.request.context.explorationEvidence ? { explorationEvidence: { carriedPackets: patchResult.request.context.explorationEvidence.packets.length } } : {}),
         recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
         diagnostics: [...result.diagnostics, ...(replan?.result.diagnostics ?? []), ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
         ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
@@ -731,22 +723,8 @@ function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosi
   return undefined;
 }
 
-/**
- * At most half of what a patch request may carry goes to explored packets.
- * The packet builder also holds them to the room the rest of the request left,
- * so this share bounds what exploring adds to a patch call's cost, not whether
- * the call fits.
- */
-/**
- * A quarter of what a call may carry goes to the page the run failed on. At the
- * default 8,000-token input allowance that is Core's whole 6,000-byte ceiling,
- * which is the point: a repair sees what authoring sees. A smaller allowance
- * scales it down rather than overshooting the gate.
- */
 /** Why a recovery with nothing left of its repair's purse asked no model: the run ledger's own code for a total that cannot take another call. */
 const RECOVERY_COST_BOUND_CODE: Extract<AutomationStudioLlmRunBudgetDiagnostic["code"], "llm_budget.run_cost_limit"> = "llm_budget.run_cost_limit";
-const FAILURE_EVIDENCE_INPUT_SHARE = 0.25;
-const EXPLORATION_EVIDENCE_INPUT_SHARE = 0.375;
 
 /** A configured string, or the fallback when the setting is absent or blank. */
 function settingString(value: unknown, fallback: string): string {

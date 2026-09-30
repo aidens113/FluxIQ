@@ -60,8 +60,7 @@ describe("no request body carries a way to address an element", () => {
     const withExploredPacket = packAutomationStudioLlmContext({
       ...harnessInput("runtime_patch"),
       explorationEvidence: {
-        packets: [{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "web.recovery.inspect", packet: { schemaVersion: "web-llm-evidence.v2", note: "//button[@id='pay']" } }],
-        maxBytes: 4_000
+        packets: [{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "web.recovery.inspect", packet: { schemaVersion: "web-llm-evidence.v2", note: "//button[@id='pay']" } }]
       }
     });
     expect(locatorShapedStrings(withExploredPacket as unknown as JsonValue)).not.toEqual([]);
@@ -96,13 +95,12 @@ function harnessInput(taskKind: "runtime_diagnosis" | "runtime_patch"): Automati
     runDetail: detail,
     deniedEvidenceKeys: DENIED_EVIDENCE_KEYS,
     failureEvidence: failurePacket(),
-    recoveryContext: buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt(), byteBudget: 16_000 }),
+    recoveryContext: buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt() }),
     ...(taskKind === "runtime_patch"
       ? {
         diagnosis: { expected: "The recorded control ends the edit.", observed: "Nothing matched.", stillAchievable: "unknown" as const },
         explorationEvidence: {
-          packets: [{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "web.recovery.inspect", packet: exploredPacket() }],
-          maxBytes: 4_000
+          packets: [{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "web.recovery.inspect", packet: exploredPacket() }]
         }
       }
       : {})

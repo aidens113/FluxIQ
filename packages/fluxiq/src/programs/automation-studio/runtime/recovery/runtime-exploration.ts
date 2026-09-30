@@ -361,11 +361,10 @@ export async function runAutomationStudioRuntimeExploration(
         },
         // The ledger is the binding limit on actions and provider calls, so it
         // can name which one was hit; the loop keeps Core's ceilings underneath
-        // as the backstop. Evidence bytes stay the loop's, which already
-        // enforces them per call and reports `evidence_limit`.
+        // as the backstop. No evidence-bytes total and no evidence window is
+        // passed: the exploration's pages reach the model whole.
         maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
-        maxEvidenceBytes: input.budget.maxEvidenceBytes,
         // Recovery's own no-progress streak, named rather than inherited. The
         // loop's default became a far backstop when Flow creation stopped being
         // ended by three non-productive steps; a recovery is a different job

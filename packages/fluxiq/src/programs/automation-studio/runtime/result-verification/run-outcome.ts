@@ -80,7 +80,7 @@ import { automationStudioResultVerificationFailsRun, type AutomationStudioResult
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
 import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
+import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
@@ -117,7 +117,7 @@ export type AutomationStudioResultVerificationPorts = {
    * records that rather than a verdict.
    */
   listRunDatasets?: ((input: { projectId: string; runId: string }) => Promise<AutomationStudioRunDatasetSummary[]>) | undefined;
-  getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;
+  getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown; cursor?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;
   flowInstructionSet(input: { projectId: string; flowId: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]>;
   getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
   saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
@@ -575,13 +575,10 @@ function costCeiling(
 }
 
 /**
- * The run's stored record sets, each with the rows Core checks for required
- * values and, of those, the first few a sample may be drawn from.
- *
- * One read serves both: the check needs more rows than a sample does, and a
- * sample is the head of the same page. The sample keeps its own, smaller
- * source, so what the model may be shown -- and whether the summary calls
- * itself partial -- is exactly what it was before the check read further.
+ * The run's stored record sets, every one, each with every stored row: the
+ * store is read page by page until it says there are no more (2026-09-30, "the
+ * model sees the whole page"). The same rows serve the required-value check and
+ * the summary the model is shown.
  */
 async function readRecordSets(
   ports: AutomationStudioResultVerificationPorts,
@@ -590,18 +587,27 @@ async function readRecordSets(
 ): Promise<AutomationStudioResultRecordSetInput[]> {
   if (!ports.listRunDatasets) return [];
   const readPage = ports.getRunDatasetPage;
-  const limits = AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS;
   const summaries = await ports.listRunDatasets({ projectId, runId });
-  const listed = summaries.slice(0, limits.maxRecordSets);
-  return await Promise.all(listed.map(async (summary) => {
-    const page = readPage && summary.recordCount > 0
-      ? await readPage({ projectId, runId, datasetId: summary.datasetId, limit: limits.maxRowsCheckedPerSet })
-      : null;
+  return await Promise.all(summaries.map(async (summary) => {
+    if (!readPage || summary.recordCount <= 0) return { summary };
+    let page = await readPage({ projectId, runId, datasetId: summary.datasetId, limit: RECORD_PAGE_SIZE });
     if (!page) return { summary };
-    const checkedRows = page.rows.slice(0, limits.maxRowsCheckedPerSet);
-    return { summary, schema: page.schema, rows: checkedRows.slice(0, limits.maxSampleRowsPerSet), checkedRows };
+    const schema = page.schema;
+    const rows = [...page.rows];
+    const cursors = new Set<string>();
+    // A cursor the store already handed back would read the same page again;
+    // the loop ends there rather than going round forever.
+    while (page?.nextCursor && !cursors.has(page.nextCursor)) {
+      cursors.add(page.nextCursor);
+      page = await readPage({ projectId, runId, datasetId: summary.datasetId, limit: RECORD_PAGE_SIZE, cursor: page.nextCursor });
+      if (page) rows.push(...page.rows);
+    }
+    return { summary, schema, rows, checkedRows: rows };
   }));
 }
+
+/** The store's largest page. A read size, not a limit on what is read: every page is read. */
+const RECORD_PAGE_SIZE = 200;
 
 function unreadableResult(error: unknown): AutomationStudioResultVerificationOutcome {
   const code = "core.result.unreadable";

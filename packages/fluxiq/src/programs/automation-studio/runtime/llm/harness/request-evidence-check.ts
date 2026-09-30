@@ -19,7 +19,6 @@
 // Each slot refuses with its own pre-flight code and a code only. The refused
 // value is never read into an error.
 
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioLocatorShapedText } from "./locator-text.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
@@ -97,8 +96,9 @@ function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, de
 }
 
 /**
- * A result summary small enough to send, free of the declared keys where the
- * domain's own values sit, and free of credentials anywhere.
+ * A result summary that serializes, free of the declared keys where the
+ * domain's own values sit, and free of credentials anywhere. There is no size
+ * bound: the summary carries every row the run stored.
  *
  * The declared keys are looked for in the sampled rows and nowhere else: a
  * sampled row's keys are the record schema's field ids, which come from the
@@ -118,7 +118,7 @@ function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKe
   if (!credentialFree(summary)) return false;
   const sampled = summary.recordSets.flatMap((set) => set.sampleRows ?? []);
   if (screenAutomationStudioLlmEvidence(sampled, deniedKeys).deniedKey) return false;
-  return serializedBytes(summary) <= AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes;
+  return Number.isFinite(serializedBytes(summary));
 }
 
 /** The tasks whose request may carry a recovery context. The packet builder's own rule, restated on the way out. */

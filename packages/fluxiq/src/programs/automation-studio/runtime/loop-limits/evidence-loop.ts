@@ -1,6 +1,6 @@
 // The hard ceilings on a bounded evidence loop.
 //
-// These three numbers are Core's, not the harness's and not recovery's. Two
+// These numbers are Core's, not the harness's and not recovery's. Two
 // directories are bounded by them and neither owns them: `runtime/llm/` runs
 // the loop and refuses a configuration that asks for more, and
 // `runtime/recovery/` spends the same budget through its exploration ledger.
@@ -24,10 +24,17 @@
 // exploration that is still learning has to be able to keep going, and a
 // ceiling of sixteen would simply have become the next hard limit underneath
 // the ones that were removed.
+//
+// `maxEvidenceBytes` is no longer a limit on anything. It was a 1 MiB backstop
+// on everything a loop gathered, which ended a loop `evidence_limit`; a
+// whole-page packet can be that size on its own, and the model is now shown
+// every entry with the model's context window as the only bound on a request
+// (`../llm/context-window.ts`). It stays, at the largest safe integer, only
+// because readers of a recorded trace hold an accounted byte count to it.
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
   maxIterations: 64,
   maxToolCalls: 64,
-  maxEvidenceBytes: 1_048_576
+  maxEvidenceBytes: Number.MAX_SAFE_INTEGER
 } as const;
 
 // How many decisions in a row may come back unusable -- a malformed reply, a

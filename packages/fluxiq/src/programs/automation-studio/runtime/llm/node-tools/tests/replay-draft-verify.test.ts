@@ -64,7 +64,7 @@ function host(answers: { verify?: Answer; step?: (value: JsonObject) => Answer }
 }
 
 const replay = (steps: AutomationStudioFlowDraftStep[], executeTool: ReturnType<typeof host>["executeTool"]) =>
-  replayAutomationStudioFlowDraft({ steps, attempt: 1, maxEvidenceBytes: 10_000, executeTool });
+  replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool });
 
 const readFails = (node: string) => (value: JsonObject): Answer => (value.node === node ? { code: "core.replay.changed" } : { code: "core.replay.replayed", effectApplied: true });
 

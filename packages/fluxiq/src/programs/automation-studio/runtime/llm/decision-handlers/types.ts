@@ -66,7 +66,7 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   draftSteps: AutomationStudioFlowDraftStep[];
   amendmentMemory: AutomationStudioLlmEvidenceAmendmentMemory;
   noProgress: AutomationStudioLlmEvidenceNoProgress;
-  /** Everything gathered; each decision is shown a window of it. */
+  /** Everything gathered; each decision is shown all of it. */
   evidence: AutomationStudioLlmEvidenceEntry[];
   /**
    * Every decision and what the loop answered it (`../decision-context/`):
@@ -108,8 +108,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   recordRow(row: AutomationStudioLlmEvidenceLoopTrace, transition?: AutomationStudioLlmEvidenceRowTransition): void;
   /** Appends a step to the draft; answers whether the shown draft changed. */
   draftRecord(step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">): boolean;
-  /** Counts evidence the loop itself adds against the byte limit: its bytes, or nothing when it does not fit. */
-  reserveEvidence(value: JsonValue): number | undefined;
+  /** Counts evidence the loop itself adds in the accounting, and returns its bytes. A count, never a limit. */
+  accountEvidence(value: JsonValue): number;
   /** One more unusable decision: the error that ends the loop once a guard is reached, or nothing. */
   unusable(step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: AutomationStudioLlmEvidenceRowTransition): { error: unknown } | undefined;
   /** The draft's dry-run gate (`../node-tools/dry-run-gate.ts`). */

@@ -24,7 +24,13 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
   /** The no-progress guard tripped: the loop kept repeating itself. */
   | "llm_evidence_loop.repeat_without_progress"
   | "llm_evidence_loop.tool_failed"
-  /** What was gathered in total reached the far backstop, `maxEvidenceBytes`. */
+  /**
+   * No longer produced. It was the ending of a loop whose gathered evidence
+   * reached a byte backstop, and no loop is ended on bytes any more
+   * (`../context-window.ts`). Kept, like the two above, because the outcome
+   * tables callers key by this union still name it, and a stored result may
+   * carry it.
+   */
   | "llm_evidence_loop.evidence_limit"
   /**
    * The loop ran out of turns: iterations, the run's decision budget, or tool

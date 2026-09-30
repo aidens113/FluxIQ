@@ -348,15 +348,17 @@ describe("route-state captures per recorded build", () => {
       rows[name] = { decisions: decisions.length, before, afterReported: 0, afterUnreported, callsBeforeUnseen };
     }
     console.table(rows);
-    // The old trigger is a high-water mark on the shown count, which stops growing once the window is full:
-    // it fired rarely, and missed most of the states these builds reached.
+    // The old trigger is a high-water mark on the shown count. While the window was capped it stopped
+    // growing once the window was full and missed most of the states these builds reached; with every
+    // evidence entry shown (2026-09-30) it grows with the evidence, and still misses a call whose
+    // evidence did not add an entry.
     expect(rows).toEqual({
       // A completion the check refuses is no longer tested (2026-09-30; `recorded-runs.ts` says why), so
       // the decisions after bigbox's 22 and 26, crossborder's 19 and run 4's 40, 44 and 46 have no dry-run
-      // calls before them: 15/12, 10/7 and 29/25 where the logged runs gave 17/13, 11/8 and 32/28.
-      "bigbox-run6": { decisions: 37, before: 6, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 12 },
-      crossborder: { decisions: 22, before: 5, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 7 },
-      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 29, callsBeforeUnseen: 25 }
+      // calls before them: 15, 10 and 29 unreported captures where the logged runs gave 17, 11 and 32.
+      "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 4 },
+      crossborder: { decisions: 22, before: 12, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 1 },
+      "everything-store-run4": { decisions: 48, before: 29, afterReported: 0, afterUnreported: 29, callsBeforeUnseen: 3 }
     });
   });
 

@@ -53,7 +53,7 @@ describe("the explored-packet label", () => {
       flowId: "flow.one",
       instructions: [],
       deniedEvidenceKeys: [],
-      explorationEvidence: { maxBytes: 8_000, packets: [{ evidenceId, toolId: "web.recovery.reveal", packet: page }] }
+      explorationEvidence: { packets: [{ evidenceId, toolId: "web.recovery.reveal", packet: page }] }
     });
     for (const evidenceId of [automationStudioExploredEvidenceLabel(1), automationStudioExploredEvidenceLabel(64)]) {
       const carried = pack(evidenceId).explorationEvidence?.packets[0]?.evidenceId;

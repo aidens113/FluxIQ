@@ -1,34 +1,21 @@
-// The draft as one evidence entry, and why it is never chosen by the window.
+// The draft as one evidence entry, always shown whole.
 //
-// The window that decides what a decision is shown keeps the newest result of
-// each tool first and then fills the remaining bytes newest first. That is the
-// right rule for results -- an older page superseded by a newer one is worth
-// less than the newer one -- and it is the wrong rule for a record of what was
-// done, because every action of one kind arrives under one tool id and the rule
-// keeps exactly one of them. A build that pressed five controls kept the fifth.
-//
-// So the draft is not an evidence record and does not compete for the window's
-// bytes. The loop reserves room for this entry, asks the window for what is
-// left, and places this beside it -- the same way the budget entry is placed --
-// so however long the exploration runs, the list of what it did is in front of
-// the model when it writes the result.
+// The draft is not an evidence record: it is the model's own list of what it
+// did, placed beside the evidence the way the budget entry is, so however long
+// the exploration runs, the list of what it did is in front of the model when
+// it writes the result.
 //
 // **Nothing here is page content.** Every field is either Core's own
 // bookkeeping or the argument the model itself wrote when it asked for the
-// action. A result the window evicted is not smuggled back in by this entry;
-// what comes back is the model's own record of having acted.
+// action.
 //
-// Trimming order, when even the reserved room is not enough: repeated field
-// names go first through a self-describing row format, then the instruction is
-// told shorter because the amendment schema carries its grammar too. Only then
-// are arguments withheld, oldest first; a step without its argument still says
-// the step happened, and a step not listed at all says nothing. Once the telling
-// is as short as it goes, the oldest steps themselves are dropped and counted
-// rather than silently absent.
-//
-// Whatever went, the entry says so. A shrunken draft is still a draft: there is
-// no budget at which this gives back nothing for a draft that has steps in it,
-// because a model shown no draft does not know it has one, and amends by guess.
+// Every step is listed, with the argument it ran with, and the guidance is
+// told in full. There used to be a ladder here that shrank the entry to a byte
+// budget -- packed rows, shorter guidance, arguments over 512 bytes replaced
+// by a marker, arguments withheld oldest first, and finally the oldest steps
+// counted instead of listed. It is gone (2026-09-30): the only bound on a
+// request is the model's context window, enforced loudly before the request
+// is sent, and nothing is trimmed to fit (`../llm/context-window.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
@@ -41,253 +28,58 @@ import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with, whether or not its result is still shown. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept, then repeat it over the listing step: the Flow does the rest, so never act on the others yourself. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
+const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept, then repeat it over the listing step: the Flow does the rest, so never act on the others yourself. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
 
-// The same instruction told shorter, for when telling it in full would cost the
-// entry the steps it exists to list.
-//
-// The full telling is a fixed thousand bytes that every draft pays for however
-// long or short it is, and a draft budget is a few thousand -- so past a couple
-// of dozen steps the guidance competes for room with the record it is guidance
-// about. The record wins that contest: the amend_draft schema, which every
-// decision that may amend already carries, states the grammar again, while the
-// list of what the build actually ran is carried by nothing else at all. What no
-// telling drops is the two things the model cannot act without: that the list is
-// the Flow in order, and that amend_draft is how it is corrected -- and, since
-// 2026-09-30, that amend_draft repeat is how one act is done to every listed
-// item: in live run `run-munnop9n-5475d593` the telling shrank to a size that
-// named no amendment word, and the model confirmed one friend request of four.
-const DRAFT_INSTRUCTION_BRIEF = "The Flow you are building, in the order you built it: every step here is something you actually ran. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down or confirm. A did_not_work step is already out; only rerun changes it. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To act on every item of a list, list them with a where keeping only those to act on, act on one item it kept, then amend_draft repeat over the listing step through the act's last step. Getting to the page is part of the work: a step the Flow cannot start without is not exploratory. A step you want and have not run yet is run, not written.";
-const DRAFT_INSTRUCTION_MINIMAL = "What you have built, in the order you built it. Every step whose inResult is true is a step of the finished Flow. Correct it, or repeat an act per listed item, with amend_draft.";
-
-/** Longest first: the telling only gets shorter once the room has run out. */
-const DRAFT_INSTRUCTIONS = [DRAFT_INSTRUCTION, DRAFT_INSTRUCTION_BRIEF, DRAFT_INSTRUCTION_MINIMAL];
-
-// The same three tellings where the model authors its draft (user, 2026-09-30:
-// "IT SHOULD ONLY ADD STEPS IN A WAY THAT MAKE AN INTELLIGENT FLOW!"): a step
-// that ran is evidence, marked `taken`, and is in the Flow only once the model
-// adds it (`./step.ts`). The acts checklist beside it (`acts`) is what "ready"
-// means (audit A1, cause 1), so every telling names it.
+// The same draft where the model authors it (user, 2026-09-30: "IT SHOULD
+// ONLY ADD STEPS IN A WAY THAT MAKE AN INTELLIGENT FLOW!"): a step that ran is
+// evidence, marked `taken`, and is in the Flow only once the model adds it
+// (`./step.ts`). The acts checklist beside it (`acts`) is what "ready" means
+// (audit A1, cause 1), so the telling names it.
 const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. To do one act to every item of a list, add the step listing them with a where keeping only those to act on, add the act done to one item, then amend_draft repeat over the listing step. For something only sometimes there, add it and mark it optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. The Flow is ready only when every act shows done: complete then, not before. A did_not_work step can only be rerun.";
-const AUTHORED_INSTRUCTION_BRIEF = "The Flow you are authoring. Steps you run are evidence (taken) until you add them: add true on the call, or amend_draft add. inResult true is a step of the Flow. Add only what the Flow needs, in order: never a look, a failed try, a detour or a duplicate. Say which act a step does with act; acts shows each act done or todo. Repeat one act over a list with amend_draft repeat over the listing step. Complete only when every act is done.";
-const AUTHORED_INSTRUCTION_MINIMAL = "Your Flow: only steps you added (inResult true). Add with add on a call or amend_draft add, naming the act. Complete when every act in acts is done.";
-const AUTHORED_INSTRUCTIONS = [AUTHORED_INSTRUCTION, AUTHORED_INSTRUCTION_BRIEF, AUTHORED_INSTRUCTION_MINIMAL];
-
-const DRAFT_STEP_ROW_FORMAT = "step_rows_v1";
-const DRAFT_STEP_ROW_FIELDS = [
-  "step",
-  "actionId",
-  "input",
-  "resultCode",
-  "changed",
-  "disposition",
-  "inResult",
-  "replayed",
-  "runs",
-  "settings"
-] as const;
-
-/** What one step's argument may cost before it is left out of the entry. */
-const MAX_STEP_INPUT_BYTES = 512;
-
-/** One entry the ladder below offers: which steps, how much of them, told how. */
-type DraftEntryShape = {
-  steps: readonly AutomationStudioFlowDraftStep[];
-  /** How many of the newest steps carry the argument they ran with. */
-  withInput: number;
-  instruction: string;
-};
 
 /**
  * The draft as one entry, or nothing when the draft holds no step a result
- * could be made of.
- *
- * A draft that holds one always comes back. `maxBytes` decides how much of it
- * is shown -- repeated names and guidance, then arguments, then the oldest
- * steps -- and a budget too small for even the least entry gets that entry
- * anyway rather than nothing, because the record is the point of it.
+ * could be made of. Every step is listed with its argument.
  */
 export function automationStudioFlowDraftEntry(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
-  maxBytes: number;
-  /** Whether the model authors the draft; absent, the transcript tellings (`./step.ts`, `taken`). */
+  /** Whether the model authors the draft; absent, the transcript telling (`./step.ts`, `taken`). */
   authored?: boolean | undefined;
-  /** The acts checklist, carried whole on every entry and never trimmed. */
+  /** The acts checklist, carried whole on every entry. */
   acts?: JsonValue | undefined;
 }): { callId: string; toolId: string; value: JsonValue } | undefined {
-  const tellings = input.authored ? AUTHORED_INSTRUCTIONS : DRAFT_INSTRUCTIONS;
-  const acts = input.acts;
-  // The checklist's own room is taken first: the steps and the guidance share what is left.
-  const room = acts === undefined ? input.maxBytes : input.maxBytes - serializedBytes({ acts });
-  const withActs = (value: JsonObject): { callId: string; toolId: string; value: JsonValue } => entry(acts === undefined ? value : { code: value.code!, acts, ...value });
-  const shaped = draftShape({ steps: input.steps, maxBytes: room, tellings });
-  if (shaped) return withActs(shaped);
-  // No step yet, and still a checklist: the model is shown what it is to do from the first decision.
-  return acts === undefined ? undefined : withActs({ code: DRAFT_CODE, steps: [], instruction: tellings[0]! });
-}
-
-/** The draft's own value within `maxBytes`, or nothing when it holds no step a result could be made of. */
-function draftShape(input: { steps: readonly AutomationStudioFlowDraftStep[]; maxBytes: number; tellings: readonly string[] }): JsonObject | undefined {
-  const [full, brief, minimal] = input.tellings as [string, string, string];
   // Every step that could be in the result, whether or not it is: an
   // extraction changes nothing on the page and is the whole point of a
   // scraping Flow, so "did it mutate" is not the question. A step the model
   // withdrew stays listed, because the receipt is what makes the draft
   // checkable -- `inResult` on each line says which way it went.
   const listed = input.steps.filter(automationStudioFlowDraftStepIsAction);
-  if (!listed.length) return undefined;
-
-  // Keep the established representation byte-for-byte when it can carry the
-  // complete draft. Packing is only a recovery from the information loss the
-  // old ladder would otherwise introduce.
-  const complete = entryValue({ steps: listed, withInput: listed.length, instruction: full }, 0, full);
-  if (serializedBytes(complete) <= input.maxBytes) return complete;
-
-  // A packed row removes repeated field names, not values. Only use it when
-  // every argument can be carried: an argument rejected by the per-step bound
-  // needs the existing `inputTooLarge` object line, not a null that could be
-  // mistaken for budget trimming.
-  const allInputsBounded = listed.every((step) => boundedInput(step.input) !== undefined);
-  if (allInputsBounded) {
-    for (const attempt of packedTrimmings(listed, input.tellings)) {
-      const value = packedEntryValue(attempt, listed.length - attempt.steps.length, full);
-      if (serializedBytes(value) <= input.maxBytes) return value;
-    }
-  } else {
-    for (const attempt of objectTrimmings(listed, brief, minimal)) {
-      const value = entryValue(attempt, listed.length - attempt.steps.length, full);
-      if (serializedBytes(value) <= input.maxBytes) return value;
-    }
-  }
-  // Not one rung fitted, so `maxBytes` cannot hold a single step and the
-  // shortest instruction. The least entry -- the newest step, no bounded
-  // argument (or an oversized marker), and the shortest telling -- goes anyway,
-  // over budget and saying what it left out.
-  //
-  // Giving back nothing here is how a long build could be shown no draft at
-  // all: the budget bought a thousand bytes of guidance, had nothing left for
-  // the steps, and returned the same `undefined` that means "this build has not
-  // done anything yet". The caller cannot tell those apart, so it would show
-  // the model nothing and the model would amend a Flow it could not read.
-  const newest = listed.slice(-1);
-  const newestInputRejected = boundedInput(newest[0]!.input) === undefined;
-  return entryValue({ steps: newest, withInput: newestInputRejected ? 1 : 0, instruction: minimal }, listed.length - 1, full);
-}
-
-function entry(value: JsonObject): { callId: string; toolId: string; value: JsonValue } {
+  const acts = input.acts;
+  // No step yet, and still a checklist: the model is shown what it is to do
+  // from the first decision.
+  if (!listed.length && acts === undefined) return undefined;
+  const value: JsonObject = {
+    code: DRAFT_CODE,
+    ...(acts === undefined ? {} : { acts }),
+    steps: listed.map((step) => stepLine(step, listed)),
+    instruction: input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION
+  };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
 }
 
-/**
- * Object-form fallbacks for a draft that cannot use packed rows. Shorten the
- * telling while every eligible argument and oversized marker remains, then
- * withhold arguments oldest first under the minimal telling. Only after no
- * all-step candidate fits are the oldest steps removed.
- */
-function* objectTrimmings(steps: readonly AutomationStudioFlowDraftStep[], brief: string, minimal: string): Generator<DraftEntryShape> {
-  yield { steps, withInput: steps.length, instruction: brief };
-  yield { steps, withInput: steps.length, instruction: minimal };
-  for (let withInput = steps.length - 1; withInput >= 0; withInput -= 1) {
-    yield { steps, withInput, instruction: minimal };
-  }
-  for (let dropped = 1; dropped < steps.length; dropped += 1) {
-    yield { steps: steps.slice(dropped), withInput: 0, instruction: minimal };
-  }
-}
-
-/**
- * Lossless-first packing: try every telling with every argument, then use only
- * the minimal telling while giving up oldest arguments. Step removal remains
- * the final trade and keeps the newest contiguous suffix.
- */
-function* packedTrimmings(steps: readonly AutomationStudioFlowDraftStep[], tellings: readonly string[]): Generator<DraftEntryShape> {
-  const minimal = tellings[tellings.length - 1]!;
-  for (const instruction of tellings) {
-    yield { steps, withInput: steps.length, instruction };
-  }
-  for (let withInput = steps.length - 1; withInput >= 0; withInput -= 1) {
-    yield { steps, withInput, instruction: minimal };
-  }
-  for (let dropped = 1; dropped < steps.length; dropped += 1) {
-    yield { steps: steps.slice(dropped), withInput: 0, instruction: minimal };
-  }
-}
-
-/**
- * The entry's JSON. `unlisted` is how many older steps are counted rather than
- * shown, and `omitted` names what shrinking cost, so nothing is missing without
- * the entry saying that it is.
- */
-function entryValue(shape: DraftEntryShape, unlisted: number, full: string): JsonObject {
-  const from = shape.steps.length - shape.withInput;
-  const left = omitted(shape, full);
-  return {
-    code: DRAFT_CODE,
-    ...(unlisted > 0 ? { unlisted } : {}),
-    ...(left.length ? { omitted: left } : {}),
-    steps: shape.steps.map((step, index) => stepLine(step, index >= from, shape.steps)),
-    instruction: shape.instruction
-  };
-}
-
-/** The same draft values with repeated step-field names paid once. */
-function packedEntryValue(shape: DraftEntryShape, unlisted: number, full: string): JsonObject {
-  const from = shape.steps.length - shape.withInput;
-  const left = omitted(shape, full);
-  return {
-    code: DRAFT_CODE,
-    format: DRAFT_STEP_ROW_FORMAT,
-    fields: [...DRAFT_STEP_ROW_FIELDS],
-    ...(unlisted > 0 ? { unlisted } : {}),
-    ...(left.length ? { omitted: left } : {}),
-    steps: shape.steps.map((step, index) => stepRow(step, index >= from, shape.steps)),
-    instruction: shape.instruction
-  };
-}
-
-/**
- * What this entry left out to fit, in the model's own terms.
- *
- * A step with no `input` must not read as a step that ran with no argument, and
- * a shortened instruction must not read as the whole of what the draft can be
- * told to do. How many steps are not listed at all is `unlisted` instead, a
- * count rather than a sentence because a reader of the run compares it.
- *
- * Each note is a few words, on the same reasoning that keeps the shortened
- * telling short: this is paid for by every entry that had to shrink, and it is
- * the entries that had to shrink that can least afford a sentence. A hundred
- * bytes of explanation here costs the draft a step it would otherwise list.
- */
-function omitted(shape: DraftEntryShape, full: string): string[] {
-  const without = shape.steps.length - shape.withInput;
-  const notes: string[] = [];
-  if (without > 0) {
-    notes.push(without === shape.steps.length
-      ? "the argument each step ran with"
-      : `the argument of the ${without} oldest steps`);
-  }
-  if (shape.instruction !== full) notes.push("most of the guidance on amending a draft");
-  return notes;
-}
-
-function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
-  const argument = withInput ? boundedInput(step.input) : undefined;
+function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
   return {
     step: step.position,
     actionId: step.actionId,
-    ...(argument ? { input: argument } : {}),
-    // The argument was there and was too big to show. Said on the line rather
-    // than left blank, so the model reruns the step with a corrected argument
-    // instead of concluding that it ran without one.
-    ...(withInput && !argument ? { inputTooLarge: true } : {}),
+    input: step.input,
     ...(step.resultCode ? { resultCode: step.resultCode } : {}),
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),
     inResult: automationStudioFlowDraftStepIsProposed(step),
     // How it answered the last time the draft was run as a Flow. It sits on
     // the step rather than only in the refusal that reported it, because a
-    // refusal is one entry the window may evict and the draft is the one thing
-    // always in front of the model (`./dry-run.ts`). It is deliberately not
+    // refusal is one entry a newer refusal supersedes and the draft is the one
+    // thing always in front of the model (`./dry-run.ts`). It is deliberately not
     // explained in the instruction above: the word only appears once a replay
     // has happened, and the refusal that put it there explains itself in full.
     // Spending two hundred bytes of every draft entry on a sentence about a
@@ -306,27 +98,6 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: 
     ...(step.routing ? { runs: routingLine(step.routing, all) } : {}),
     ...(step.settings ? { settings: step.settings } : {})
   };
-}
-
-/** One self-describing packed row, with optional trailing values only as far as needed. */
-function stepRow(step: AutomationStudioFlowDraftStep, withInput: boolean, all: readonly AutomationStudioFlowDraftStep[]): JsonValue[] {
-  const values: JsonValue[] = [
-    step.position,
-    step.actionId,
-    withInput ? step.input : null,
-    step.resultCode ?? null,
-    step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
-    shownDisposition(step),
-    automationStudioFlowDraftStepIsProposed(step)
-  ];
-  const optional: JsonValue[] = [
-    step.replayed ? automationStudioFlowDraftReplayOutcomeWord(step.replayed) : null,
-    step.routing ? routingLine(step.routing, all) : null,
-    step.settings ?? null
-  ];
-  let last = optional.length - 1;
-  while (last >= 0 && optional[last] === null) last -= 1;
-  return [...values, ...optional.slice(0, last + 1)];
 }
 
 /**
@@ -354,13 +125,4 @@ function routingLine(routing: AutomationStudioFlowDraftStepRouting, all: readonl
   if (routing.kind === "only_if") return `only if step ${at(routing.check)} succeeded`;
   if (routing.kind === "on_failed") return `on failure, step ${at(routing.to)} runs instead`;
   return `repeats through step ${at(routing.through)}, over step ${at(routing.over)}`;
-}
-
-/** The argument when it is small enough to carry, and nothing when it is not. */
-function boundedInput(value: JsonObject): JsonObject | undefined {
-  return serializedBytes(value) <= MAX_STEP_INPUT_BYTES ? value : undefined;
-}
-
-function serializedBytes(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }

@@ -247,11 +247,10 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     await verify(context, { flow: withParameters, session: session({ flow: withParameters }) });
     const shape = context.requests[0]?.context.resultSummary?.flowShape ?? [];
     expect(shape[0]?.label).toBe("Open the directory");
-    expect(shape[0]?.parameters).toEqual({ url: "https://members.test" });
+    expect(shape[0]?.parameters).toEqual({ url: "https://members.test/list?team=ops" });
     expect(shape[1]?.parameters).toEqual({ maxRows: 25, secret: null });
     expect(shape[1]?.parametersWithheld).toEqual(["secret"]);
     expect(JSON.stringify(context.requests[0]?.context)).not.toContain("hunter2");
-    expect(JSON.stringify(context.requests[0]?.context)).not.toContain("team=ops");
   });
 
   it("fails a run whose every row was refused, without spending a call", async () => {
@@ -364,7 +363,7 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(context.saved.at(-1)?.metadata?.resultVerificationFailure).toEqual({ category: "output_not_observed", code: "core.result.required_values_missing" });
   });
 
-  it("reads a full page of rows to check, and still shows the model only a few", async () => {
+  it("reads every row to check, and shows the model every one of them", async () => {
     const pageLimits: unknown[] = [];
     const rows = Array.from({ length: 30 }, (_row, index) => ({ name: `Hollis ${index}`, role: "admin" }));
     const context = harness({ answer: ANSWER.yes, rows, pageLimits });
@@ -372,7 +371,7 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(pageLimits).toEqual([200]);
     const sent = context.requests[0]?.context.resultSummary?.recordSets[0];
     expect(sent?.rowsChecked).toBe(30);
-    expect(sent?.sampleRows?.length).toBeLessThanOrEqual(4);
+    expect(sent?.sampleRows).toEqual(rows);
   });
 
   it("records a result nobody judged as unverified, never as confirmed", async () => {

@@ -138,8 +138,11 @@ describe("what bounds a recovery", () => {
       status: "failed",
       detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_total_limit" }
     });
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 9, explorationCalls: 7 });
-    expect(run.executed).toHaveLength(7);
+    // Each call is reserved at its own measured size, not its token limit
+    // (2026-09-30), so the same 30,000 tokens admit more decisions than the
+    // seven they did when every call was held at its limit.
+    expect(costAccounting(run.detail)).toMatchObject({ calls: 17, explorationCalls: 15 });
+    expect(run.executed).toHaveLength(15);
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     expect(budgetCodes(run.detail)).toEqual([]);
   });

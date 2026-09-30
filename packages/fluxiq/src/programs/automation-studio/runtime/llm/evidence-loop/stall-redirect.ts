@@ -60,8 +60,8 @@ import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerabili
 /** The evidence entry the loop's no-progress redirection arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID = "core.no_progress";
 
-/** The most repeating tools, and the most issue codes, one redirection names. */
-const MAX_NAMED = 8;
+// Every repeating tool and every issue code is named: no count limit on what
+// the model is shown (`../context-window.ts`).
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
@@ -113,7 +113,7 @@ const RECORDS_MISSING = "Your last attempt to finish was refused because the ins
  */
 export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudioLlmEvidenceStallRedirectInput): JsonObject {
   const stepsLeft = Math.max(0, input.maxStepsWithoutProgress - input.stepsWithoutProgress);
-  const issueCodes = [...new Set(input.lastIssueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_NAMED);
+  const issueCodes = [...new Set(input.lastIssueCodes.filter((code) => ISSUE_CODE.test(code)))];
   const stillMissing = automationStudioLlmEvidenceStillMissing(input.answerability);
   return {
     ok: false,
@@ -121,7 +121,7 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
     stepsLeftBeforeStopping: stepsLeft,
-    repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))].slice(0, MAX_NAMED),
+    repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))],
     draftStepsSoFar: input.proposableSteps,
     completionAttempts: input.completionAttempts,
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
@@ -132,9 +132,9 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
   };
 }
 
-/** The missing act ids that are ids, at most eight. */
+/** Every missing act id that is an id. */
 function actsMissing(input: AutomationStudioLlmEvidenceStallRedirectInput): string[] {
-  return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}$/u.test(id)))].slice(0, MAX_NAMED);
+  return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}$/u.test(id)))];
 }
 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {

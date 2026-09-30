@@ -66,7 +66,6 @@ export type AutomationStudioHarnessOptionExecution = {
   callId: string;
   optionId: string;
   value: JsonObject;
-  maxEvidenceBytes: number;
   signal?: AbortSignal;
   /**
    * Ask before doing anything that outlasts the action. An option whose action

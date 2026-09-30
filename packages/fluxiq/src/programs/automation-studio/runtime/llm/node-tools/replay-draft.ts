@@ -45,14 +45,12 @@ import {
   automationStudioNodeReplayVerifyCall
 } from "./replay.ts";
 
-/** What the caller has to lend a replay: the executor, and how to bound it. */
+/** What the caller has to lend a replay: the executor. */
 export type AutomationStudioFlowDraftReplayInput = {
   steps: readonly AutomationStudioFlowDraftStep[];
   /** 1 for the first replay of this build. */
   attempt: number;
-  /** What one replayed step's evidence may cost, the same bound a tool call gets. */
-  maxEvidenceBytes: number;
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   signal?: AbortSignal;
 };
 
@@ -63,9 +61,8 @@ export type AutomationStudioFlowDraftReplayResult = {
    * What the first step that did not replay left behind, when it left anything.
    *
    * One, not all of them: the first failure is what has to be understood, the
-   * rest are usually its consequences, and the model is about to be asked
-   * again with a window that has to hold everything else it knows. This is the
-   * page as it was *when the replay broke*, which is what a correction needs.
+   * rest are usually its consequences. This is the page as it was *when the
+   * replay broke*, which is what a correction needs.
    */
   evidence?: { callId: string; toolId: string; value: JsonValue };
 };
@@ -184,7 +181,7 @@ async function call(
   value: JsonObject
 ): Promise<ReplayAnswer> {
   try {
-    const ran = await input.executeTool({ callId, toolId, value, maxEvidenceBytes: input.maxEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) });
+    const ran = await input.executeTool({ callId, toolId, value, ...(input.signal ? { signal: input.signal } : {}) });
     const result = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
     return result ? { readable: true, result } : { readable: false };
   } catch (error) {

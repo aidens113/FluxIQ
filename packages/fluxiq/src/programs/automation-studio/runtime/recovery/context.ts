@@ -1,5 +1,8 @@
-// `recoveryContext`: the one bounded, domain-neutral description of a runtime
-// failure that the model is asked to repair.
+// `recoveryContext`: the one domain-neutral description of a runtime failure
+// that the model is asked to repair. Every section is carried whole: there is
+// no byte budget, no per-section item limit and no trim ladder (2026-09-30,
+// "the model sees the whole page"). Only secret-shaped values, locator-shaped
+// text and the raw-payload keys below are withheld.
 //
 // Core's harness packet has had slots for most of this since it was written,
 // and the one runtime caller filled four of them -- instructions, recent
@@ -68,26 +71,20 @@
 // which removes what is shaped like a way to address an element and leaves the
 // rest of the sentence standing.
 //
-// **The priority is fixed, and it is a list rather than a score.** A ranking
+// **The order is fixed, and it is a list rather than a score.** A ranking
 // computed per failure would make the context's shape depend on the failure,
 // and two runs of the same Flow would hand the model different evidence for
 // reasons no reader could reconstruct. `AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS`
-// is that list, most important first, and it is also the drop order read
-// backwards.
+// is that list. It orders the sections; it never decides which are shown.
 //
-// **An empty section and a dropped section are different facts.** This is the
+// **An empty section and a withheld section are different facts.** This is the
 // whole point of the `omitted` list. A context that had no state diff because
-// the host captured none, and a context whose state diff the byte budget forced
-// out, must not read alike -- to the model or to whoever reads the run a week
-// later. So every section named in the list appears in exactly one of
-// `included` or `omitted`, always, and an omission says which of the two it
-// was. `included.length + omitted.length` is the section count, and a test
-// holds that.
-//
-// **The bookkeeping is never the thing that gets dropped.** Trimming measures
-// the whole object, including the `omitted` entries it is adding, so the
-// budget covers the record of what was withheld rather than being overrun by
-// it.
+// the host captured none, and a context whose state diff Core refused to carry,
+// must not read alike -- to the model or to whoever reads the run a week later.
+// So every section named in the list appears in exactly one of `included` or
+// `omitted`, always, and an omission says which of the two it was.
+// `included.length + omitted.length` is the section count, and a test holds
+// that.
 //
 // Recent browser events are deliberately not here. Nothing in the system
 // captures them, adding a capture means an extension change, and the Week 2
@@ -101,12 +98,10 @@ import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
-import { fitAutomationStudioRecoveryContextToBudget } from "./context-budget/index.ts";
 
 /**
- * Every section, most important first. The order is the contract: it is the
- * order a reader may assume, and reversed it is the order the byte budget drops
- * them in.
+ * Every section, in the order the context carries them. The order is the
+ * contract: it is the order a reader may assume. Nothing is dropped for size.
  *
  * `recent_nodes` overlaps the packet's own `recentActions`, deliberately. The
  * packet's list is the last twelve *attempts* with their statuses and failure
@@ -155,24 +150,23 @@ export type AutomationStudioRecoveryContextSection = typeof AUTOMATION_STUDIO_RE
  * Why a section is not in the context.
  *
  * `absent` means the run never produced it -- no state diff was captured, the
- * failure was not inside a subflow, no adaptation matched. `byte_budget` means
- * it existed, was built, and was dropped to fit. `withheld` means it existed
- * and did not pass the bound a domain-supplied value is held to, so Core
- * refused to carry it.
+ * failure was not inside a subflow, no adaptation matched. `withheld` means it
+ * existed and carried a secret-shaped value or a raw-payload key, so Core
+ * refused to carry it. There is no size reason: no section is dropped to fit.
  *
- * Three reasons rather than one flag, because collapsing any two of them makes
+ * Two reasons rather than one flag, because collapsing them makes
  * a context that lost its evidence indistinguishable from one that never had
  * any -- which is the failure this whole record exists to prevent. In
  * particular a refusal must never read as an absence: "the host captured no
  * state diff" and "the state diff carried something Core will not pass on" are
  * different problems with different answers.
  */
-export type AutomationStudioRecoveryContextOmissionReason = "absent" | "byte_budget" | "withheld";
+export type AutomationStudioRecoveryContextOmissionReason = "absent" | "withheld";
 
 export type AutomationStudioRecoveryContextOmission = {
   section: AutomationStudioRecoveryContextSection;
   reason: AutomationStudioRecoveryContextOmissionReason;
-  /** What the section would have cost. Zero for `absent` and for `withheld`; the real serialized size for `byte_budget`. */
+  /** Always zero: an absent section cost nothing and a withheld one is not measured. */
   byteCount: number;
 };
 
@@ -180,17 +174,12 @@ export type AutomationStudioRuntimeRecoveryContext = {
   schemaVersion: "automation-studio.recovery-context.v1";
   /** Only the sections that made it. Keyed by section name so a reader never positionally indexes them. */
   sections: Partial<Record<AutomationStudioRecoveryContextSection, JsonObject>>;
-  /**
-   * The included sections in priority order, with what each one costs.
-   * `trimmedFromByteCount` is present only on a section the byte budget made
-   * smaller rather than dropped (`context-budget/fit.ts`), and says what it cost
-   * as built.
-   */
-  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number; trimmedFromByteCount?: number }>;
+  /** The included sections in order, with what each one costs. */
+  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number }>;
   /** Every other section, with the reason. `included` and `omitted` together name every section, always. */
   omitted: AutomationStudioRecoveryContextOmission[];
+  /** The whole context's serialized size. A measurement, never a limit. */
   byteCount: number;
-  byteBudget: number;
 };
 
 export type AutomationStudioRuntimeRecoveryContextInput = {
@@ -218,58 +207,7 @@ export type AutomationStudioRuntimeRecoveryContextInput = {
   deniedEvidenceKeys?: readonly string[] | undefined;
   subflowId?: string;
   adaptations?: AutomationStudioFlowAdaptation[];
-  byteBudget?: number;
 };
-
-/**
- * The default budget, in bytes.
- *
- * It sits beside the failure-evidence packet -- 6,000 bytes at its ceiling --
- * under the same per-call input allowance, and a runtime diagnosis defaults to
- * 10,000 total tokens for the whole run, of which 8,000 may be input. 4,000
- * bytes was roughly 1,300 tokens: enough for every section a typical *step*
- * failure produces, and small enough that the page evidence and the
- * instructions still fit beside it. It was not reduced when the page allowance
- * went up, because the measured diagnosis request is about 13,000 bytes against
- * an allowance of roughly 32,000; the request that is actually near its limit
- * is the patch, and what gives there is the explored packets' share, not this.
- *
- * **It is 8,000 now, and the arithmetic is the same arithmetic.** A Flow's
- * graph and its step chain are two sections a step failure did not have, and
- * they are not small: 24 nodes and 32 edges is roughly 2,000 bytes, twelve
- * steps with their screened parameters another 1,200. Left at 4,000 they would
- * have been carried by pushing out the state diff, the failed target and the
- * route context -- the drop order would have done it silently and correctly,
- * and the repair would have been worse off than before. Against the measured
- * 13,000-byte diagnosis and its ~32,000-byte allowance, +4,000 is headroom that
- * exists. On the patch, which is the tight one, the explored packets yield by
- * exactly this much, and that is the trade: the model is shown one fewer
- * explored page and is shown the graph it is being asked to rewire.
- *
- * **The estimate above was low, and the budget did not move; the trim did.**
- * Live run `run-munnhi5q-4867dabe` (2026-09-29) measured an eleven-node
- * bootstrap Flow's graph at about 5,000 bytes and its step chain at about 5,000
- * more -- real ids are long, and every action has a `failed` edge beside its
- * `success` one -- beside a 3,300-byte refuted-result failure record. Dropped
- * whole, lowest first, that left the failure record alone. Raising the budget
- * would have moved the cliff, not removed it, and the patch request is the tight
- * one. So the essential sections are now trimmed, largest first, before any of
- * them is dropped (`context-budget/fit.ts`): the graph keeps the failing node and
- * the edges either side of it, and the step chain keeps the failing step's
- * parameters, at every rung.
- */
-export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES = 8_000;
-
-/**
- * The floor. The `omitted` record for the contract's sections costs roughly
- * 850 bytes on its own, and that record is the one thing the budget may never
- * squeeze out, so a caller cannot ask for a budget that could not hold it.
- */
-const MINIMUM_RECOVERY_CONTEXT_BYTES = 1_500;
-const MAXIMUM_RECOVERY_CONTEXT_BYTES = 16_000;
-
-/** How many items each list section carries. Small on purpose: this is orientation, not a history. */
-const SECTION_ITEM_LIMIT = 8;
 
 /**
  * What a section builder returns when the section existed and Core refused to
@@ -281,7 +219,6 @@ const WITHHELD_SECTION = "withheld" as const;
 type AutomationStudioRecoveryContextSectionValue = JsonObject | typeof WITHHELD_SECTION;
 
 export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStudioRuntimeRecoveryContextInput): AutomationStudioRuntimeRecoveryContext {
-  const byteBudget = Math.min(MAXIMUM_RECOVERY_CONTEXT_BYTES, Math.max(MINIMUM_RECOVERY_CONTEXT_BYTES, Math.trunc(input.byteBudget ?? AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES)));
   const record = failedActionRecord(input.detail);
   const built = recoveryContextSections(input, record);
   const context: AutomationStudioRuntimeRecoveryContext = {
@@ -289,8 +226,7 @@ export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStu
     sections: {},
     included: [],
     omitted: [],
-    byteCount: 0,
-    byteBudget
+    byteCount: 0
   };
   for (const section of AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS) {
     const value = built[section];
@@ -317,12 +253,12 @@ export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStu
     }
     // Screened here rather than inside each builder, so the rule covers every
     // section at once and a section added later cannot forget it. Redaction
-    // changes sizes, so it happens before anything is measured or trimmed.
+    // changes sizes, so it happens before anything is measured.
     const screened = automationStudioWithoutLocators(value);
     context.sections[section] = screened;
     context.included.push({ section, byteCount: serializedByteCount(screened) });
   }
-  fitAutomationStudioRecoveryContextToBudget(context, AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS, record?.nodeId);
+  context.byteCount = serializedByteCount(context);
   return context;
 }
 
@@ -350,8 +286,8 @@ function recoveryContextSections(
       definitionId: comparison.expected.definitionId,
       expectedRoute: comparison.expected.expectedRoute,
       expectedStatus: comparison.expected.expectedStatus,
-      expectedOutputIds: Object.keys(comparison.expected.expectedOutputs ?? {}).slice(0, SECTION_ITEM_LIMIT),
-      expectedEffectTypes: (comparison.expected.expectedEffects ?? []).map((effect) => effect.type).slice(0, SECTION_ITEM_LIMIT),
+      expectedOutputIds: Object.keys(comparison.expected.expectedOutputs ?? {}),
+      expectedEffectTypes: (comparison.expected.expectedEffects ?? []).map((effect) => effect.type),
       // Authored document data, not a resolved value. Without it the model is
       // told what failed and never what was supposed to happen -- so it is
       // carried, screened rather than refused, with every path it could not
@@ -368,8 +304,8 @@ function recoveryContextSections(
       comparisonStatus: comparison.status,
       // Ids and types only: `actual.outputs` and the effect payloads beside
       // them are live values of unknown sensitivity.
-      actualOutputIds: Object.keys(comparison.actual.outputs).slice(0, SECTION_ITEM_LIMIT),
-      actualEffectTypes: comparison.actual.effects.map((effect) => effect.type).slice(0, SECTION_ITEM_LIMIT),
+      actualOutputIds: Object.keys(comparison.actual.outputs),
+      actualEffectTypes: comparison.actual.effects.map((effect) => effect.type),
       diffSummary: comparison.diffSummary as unknown as JsonValue
     }) : undefined,
     flow_graph: automationStudioFlowGraphSection({
@@ -378,7 +314,7 @@ function recoveryContextSections(
       ...(record?.nodeId ? { failedNodeId: record.nodeId } : {})
     }),
     step_parameters: stepParametersSection(input),
-    state_diff: boundedDomainSection(metadata?.stateRefs),
+    state_diff: domainStateDiffSection(metadata?.stateRefs),
     failed_target: targetResolutionSection(metadata?.targetResolution),
     recovery_candidates: recoveryCandidatesSection(input.failedAttempt),
     recovered_failures: recoveredFailuresSection(input.detail, record),
@@ -488,7 +424,7 @@ function recoveryCandidatesSection(attempt: AutomationStudioNodeAttemptTrace | u
   const decision = attempt?.recoveryDecision;
   if (!decision?.candidates.length) return undefined;
   return boundedSection({
-    candidates: decision.candidates.slice(0, SECTION_ITEM_LIMIT).map((candidate) => ({
+    candidates: decision.candidates.map((candidate) => ({
       kind: candidate.kind,
       priority: candidate.priority,
       label: candidate.label,
@@ -502,7 +438,7 @@ function recoveryCandidatesSection(attempt: AutomationStudioNodeAttemptTrace | u
 }
 
 function subflowSection(input: AutomationStudioRuntimeRecoveryContextInput): JsonObject | undefined {
-  const entries = input.detail.subflows.slice(-SECTION_ITEM_LIMIT).map((entry) => ({
+  const entries = input.detail.subflows.map((entry) => ({
     subflowId: entry.subflowId,
     status: entry.status,
     completed: entry.exitedAt !== undefined
@@ -514,12 +450,12 @@ function subflowSection(input: AutomationStudioRuntimeRecoveryContextInput): Jso
 function routeContextSection(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {
   if (!detail.routeDecisions.length) return undefined;
   return boundedSection({
-    decisions: detail.routeDecisions.slice(-SECTION_ITEM_LIMIT).map((decision) => ({
+    decisions: detail.routeDecisions.map((decision) => ({
       routerId: decision.routerId,
       ...(decision.selectedRuleId ? { selectedRuleId: decision.selectedRuleId } : {}),
       ...(decision.selectedSubflowId ? { selectedSubflowId: decision.selectedSubflowId } : {}),
       ...(decision.fallbackUsed ? { fallbackUsed: true } : {}),
-      ...(decision.rejectedRuleIds?.length ? { rejectedRuleIds: decision.rejectedRuleIds.slice(0, SECTION_ITEM_LIMIT) } : {})
+      ...(decision.rejectedRuleIds?.length ? { rejectedRuleIds: [...decision.rejectedRuleIds] } : {})
     }))
   });
 }
@@ -548,8 +484,8 @@ function routeContextSection(detail: AutomationStudioFlowRunDetail): JsonObject 
  * failure category, the offset from the run's start that makes a timing pattern
  * legible, and -- where a recovery record matches it -- how many candidates the
  * ladder had and which rung resolved it. The attempt under repair is excluded:
- * it is the `failure` section, and repeating it here would spend the byte budget
- * saying the same thing twice.
+ * it is the `failure` section, and repeating it here would say the same thing
+ * twice.
  *
  * Names, statuses and Core's own clock only, like every section here. The
  * ladder's `reason` is free text a domain may have written, so it travels the
@@ -564,7 +500,7 @@ function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record:
   // entries rather than a wall-clock instant they have to subtract by hand.
   const startedAt = detail.summary.startedAt ?? attempts[0]?.startedAt;
   const recoveries = new Map((detail.recoveryAttempts ?? []).map((recovery) => [recovery.attemptId, recovery]));
-  const entries = survived.slice(-SECTION_ITEM_LIMIT).map((attempt) => {
+  const entries = survived.map((attempt) => {
     const recovery = recoveries.get(attempt.attemptId);
     const offsetMs = typeof startedAt === "number" && Number.isSafeInteger(attempt.startedAt) ? attempt.startedAt - startedAt : undefined;
     // Stored records are parsed again, as everywhere else that reads one, and
@@ -584,9 +520,8 @@ function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record:
       } : {})
     };
   });
-  // How many failures the run absorbed in total, beside the ones that fit. A
-  // node that failed nine times and a node that failed twice are different
-  // pages, and the slice alone cannot tell them apart.
+  // How many failures the run absorbed in total, and on how many nodes. Every
+  // entry is listed; the totals are a reader's summary of them.
   return boundedSection({
     entries,
     totalFailuresSurvived: survived.length,
@@ -598,7 +533,6 @@ function recentNodesSection(detail: AutomationStudioFlowRunDetail, record: Autom
   const order = record?.order ?? Number.MAX_SAFE_INTEGER;
   const succeeded = (detail.actionAttempts ?? [])
     .filter((attempt) => attempt.status === "succeeded" && attempt.order < order)
-    .slice(-SECTION_ITEM_LIMIT)
     .map((attempt) => ({ nodeId: attempt.nodeId, definitionId: attempt.definitionId, order: attempt.order, ...(attempt.route ? { route: attempt.route } : {}) }));
   return succeeded.length ? boundedSection({ succeeded }) : undefined;
 }
@@ -611,7 +545,7 @@ function recentNodesSection(detail: AutomationStudioFlowRunDetail, record: Autom
  */
 function matchingAdaptations(adaptations: AutomationStudioFlowAdaptation[] | undefined, record: AutomationStudioFlowRunActionAttemptRecord | undefined): AutomationStudioFlowAdaptation[] {
   if (!adaptations?.length || !record) return [];
-  return adaptations.filter((adaptation) => isJsonRecordValue(adaptation.failedAction) && adaptation.failedAction.nodeId === record.nodeId).slice(0, SECTION_ITEM_LIMIT);
+  return adaptations.filter((adaptation) => isJsonRecordValue(adaptation.failedAction) && adaptation.failedAction.nodeId === record.nodeId);
 }
 
 function compactAdaptation(adaptation: AutomationStudioFlowAdaptation): JsonObject {
@@ -628,7 +562,7 @@ function compactAdaptation(adaptation: AutomationStudioFlowAdaptation): JsonObje
 }
 
 function recordingContextSection(adaptations: AutomationStudioFlowAdaptation[]): JsonObject | undefined {
-  const recordingIds = [...new Set(adaptations.flatMap((adaptation) => adaptation.sourceRecordingIds ?? []))].slice(0, SECTION_ITEM_LIMIT);
+  const recordingIds = [...new Set(adaptations.flatMap((adaptation) => adaptation.sourceRecordingIds ?? []))];
   return recordingIds.length ? boundedSection({ recordingIds }) : undefined;
 }
 
@@ -636,30 +570,32 @@ function recordingContextSection(adaptations: AutomationStudioFlowAdaptation[]):
  * A section built from a value a domain supplied -- today the host's state
  * diff, read off the persisted run record rather than the live trace.
  *
- * It is not run through `sanitizeAutomationStudioLlmFailureEvidence`: that gate
- * is task-scoped, demands a schema version, and refuses anything over the
- * 3,000-byte failure-evidence limit, none of which is the question here. What
- * is asked instead is the part that matters for a value Core does not own --
- * is it serializable JSON, is it bounded, and does it carry a key that means
- * "page source" -- and the byte budget above does the rest.
+ * Carried whole: no string, item, entry or byte bound (2026-09-30). What is
+ * still asked is the part that matters for a value Core does not own -- is it
+ * acyclic JSON, and does it carry a key that means "page source" -- and the
+ * credential screen every section passes does the rest.
  */
-function boundedDomainSection(stateRefs: JsonValue | undefined): AutomationStudioRecoveryContextSectionValue | undefined {
+function domainStateDiffSection(stateRefs: JsonValue | undefined): AutomationStudioRecoveryContextSectionValue | undefined {
   if (!isJsonRecordValue(stateRefs) || !isJsonRecordValue(stateRefs.stateDiff)) return undefined;
-  return boundedDomainValue(stateRefs.stateDiff, 0) ? { stateDiff: stateRefs.stateDiff } : WITHHELD_SECTION;
+  return carriableDomainValue(stateRefs.stateDiff, 0, new Set()) ? { stateDiff: stateRefs.stateDiff } : WITHHELD_SECTION;
 }
 
 const FORBIDDEN_DOMAIN_SECTION_KEYS = new Set(["html", "innerhtml", "outerhtml", "pagesource", "snapshot", "cookies", "headers", "selector", "selectors"]);
 
-function boundedDomainValue(value: JsonValue, depth: number): boolean {
-  if (value === null || typeof value === "boolean") return true;
+/** The recursion guard every JSON walk shares. Not a size bound: no real state diff nests this deep. */
+const DOMAIN_VALUE_MAX_DEPTH = 64;
+
+function carriableDomainValue(value: JsonValue, depth: number, seen: Set<object>): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value === "string") return value.length <= 1_000;
-  if (depth > 8) return false;
-  if (Array.isArray(value)) return value.length <= 64 && value.every((item) => boundedDomainValue(item, depth + 1));
-  const entries = Object.entries(value);
-  if (entries.length > 64) return false;
-  return entries.every(([key, item]) =>
-    key.length <= 100 && !FORBIDDEN_DOMAIN_SECTION_KEYS.has(key.replace(/[_-]/gu, "").toLowerCase()) && boundedDomainValue(item, depth + 1));
+  if (depth > DOMAIN_VALUE_MAX_DEPTH || seen.has(value)) return false;
+  seen.add(value);
+  const carriable = Array.isArray(value)
+    ? value.every((item) => carriableDomainValue(item, depth + 1, seen))
+    : Object.entries(value).every(([key, item]) =>
+      !FORBIDDEN_DOMAIN_SECTION_KEYS.has(key.replace(/[_-]/gu, "").toLowerCase()) && carriableDomainValue(item, depth + 1, seen));
+  seen.delete(value);
+  return carriable;
 }
 
 /**
@@ -708,7 +644,7 @@ function withoutEmptySections(
 
 function boundedStringList(value: JsonValue | undefined): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const items = value.filter((item): item is string => typeof item === "string" && item.length <= 60).slice(0, SECTION_ITEM_LIMIT);
+  const items = value.filter((item): item is string => typeof item === "string");
   return items.length ? items : undefined;
 }
 

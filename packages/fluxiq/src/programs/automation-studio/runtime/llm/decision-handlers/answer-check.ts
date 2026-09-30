@@ -83,7 +83,7 @@ export function automationStudioLlmEvidenceShowVerifiedRepeat(
     ...(context.lastAction ? { lastActionBefore: context.lastAction } : {}),
     pageUnchanged: true
   });
-  if (context.reserveEvidence(note) === undefined) return;
+  context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID}.${input.iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, value: note });
 }

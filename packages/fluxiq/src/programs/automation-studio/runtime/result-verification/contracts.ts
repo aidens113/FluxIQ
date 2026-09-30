@@ -222,6 +222,10 @@ export type AutomationStudioRunResultSummary = {
    * on its defaults" from "there was no room left to say", and the general
    * `withheld` flag -- which a cut column list or an unsampled row also sets --
    * cannot tell them apart.
+   *
+   * Set only by summaries written before 2026-09-30: a summary no longer has a
+   * byte budget, so no step's parameters are left out for want of room. Kept
+   * so a stored summary still reads.
    */
   flowParametersWithheld?: boolean;
   /** True when a record set, a row sample, a column list, a read's condition wording or the Flow shape was cut to fit. */

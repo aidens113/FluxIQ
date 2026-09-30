@@ -141,7 +141,7 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   /** Keys the active domain has declared may never appear in evidence or in
    * reusable context, because for its medium they carry raw payload or
    * something directly executable. Core holds no such list of its own: it
-   * enforces the domain's, and bounds shape and size regardless.
+   * enforces the domain's.
    *
    * Optional only for a request that carries no evidence and no reusable
    * context, which is most of them. Omitting it on a request that carries
@@ -153,15 +153,14 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
   failureEvidence?: JsonObject;
-  /** The packets a bounded exploration returned before a runtime patch was
-   * asked for, oldest first, and the most bytes they may take. Runtime patch
-   * only: any other task carrying them is refused when the packet is built.
-   * The packet carries the newest that fit and counts the rest as withheld, so
-   * what the model was shown -- `context.explorationEvidence` -- is the only
-   * list a handle may be checked against. Requires `deniedEvidenceKeys`. */
+  /** The packets an exploration returned before a runtime patch was asked
+   * for, oldest first. Runtime patch and re-planning diagnosis only: any other
+   * task carrying them is refused when the packet is built. The packet carries
+   * every one of them, and what the model was shown --
+   * `context.explorationEvidence` -- is the only list a handle may be checked
+   * against. Requires `deniedEvidenceKeys`. */
   explorationEvidence?: {
     packets: readonly AutomationStudioLlmExploredEvidencePacket[];
-    maxBytes: number;
   };
   /** The standardized recovery context for this failure, already built and
    * budgeted by the caller. It reaches the packet only for a runtime task. */

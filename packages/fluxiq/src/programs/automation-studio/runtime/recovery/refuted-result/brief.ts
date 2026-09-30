@@ -41,11 +41,6 @@ import { automationStudioResultRepairUnchangedInARow } from "./history.ts";
 /** The id every repair brief carries, so a reader can tell it from an instruction a person wrote. */
 export const AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID = "core.result_repair.brief";
 
-/** The most characters the brief spends, so the person's own instructions keep their room in the instruction budget. */
-const MAX_BRIEF_CHARS = 6_000;
-/** How much of any one earlier attempt is carried. The newest attempts are kept whole first. */
-const MAX_HISTORY_ENTRY_CHARS = 1_400;
-
 /**
  * The brief for one repair build.
  *
@@ -76,7 +71,8 @@ export function automationStudioReauthorBrief(input: {
     "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
     "5. Change only what the findings require; keep the steps that reach the page as they are unless the findings say they are wrong."
   ];
-  const body = lines.join("\n").slice(0, MAX_BRIEF_CHARS);
+  // Whole: no character cap on the brief or on any earlier attempt in it.
+  const body = lines.join("\n");
   return {
     schemaVersion: "0.1",
     instructionId: AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID,
@@ -119,7 +115,7 @@ function historySection(history: readonly AutomationStudioResultRepairHistoryEnt
       `- Attempt ${before.attempt} repaired the answer below and its Flow then produced ${producedText(after)}${unchanged ? " -- exactly the same answer as before the repair, so that edit changed nothing that matters" : ""}.`,
       ...refutationLines(before).map((line) => `  ${line}`)
     ].join("\n");
-    lines.push(text.slice(0, MAX_HISTORY_ENTRY_CHARS));
+    lines.push(text);
   }
   if (automationStudioResultRepairUnchangedInARow(entries) > 0) {
     lines.push("- The last repair did not change the answer. Make a different change this time: the parameters of the step that reads the items are the place to look.");

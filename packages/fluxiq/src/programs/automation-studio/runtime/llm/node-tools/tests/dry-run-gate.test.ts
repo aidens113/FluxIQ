@@ -65,9 +65,8 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
   const gate = automationStudioFlowDraftDryRunGate({
     enabled: true,
     steps,
-    maxEvidenceBytes: 10_000,
     executeTool,
-    reserveEvidence: (value) => JSON.stringify(value).length,
+    accountEvidence: (value) => JSON.stringify(value).length,
     showEvidence: (entry) => { shown.push(entry); },
     targetMoved: () => {},
     reusedClean: () => { reused += 1; }
@@ -203,9 +202,8 @@ function gate(steps: AutomationStudioFlowDraftStep[], reusedClean?: () => void) 
   const dryRun = automationStudioFlowDraftDryRunGate({
     enabled: true,
     steps,
-    maxEvidenceBytes: 8_000,
     executeTool,
-    reserveEvidence: () => 1,
+    accountEvidence: () => 1,
     showEvidence: (entry) => shown.push(entry.callId),
     targetMoved,
     ...(reusedClean ? { reusedClean } : {})

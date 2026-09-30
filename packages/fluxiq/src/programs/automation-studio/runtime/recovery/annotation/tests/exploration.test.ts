@@ -152,19 +152,19 @@ describe("runAutomationStudioRecoveryExploration", () => {
     expect(explored).toEqual([{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "test.inspect", packet: page }]);
   });
 
-  it("returns no packet the loop refused, and none when the exploration never ran", async () => {
+  it("carries a large page whole, and returns no packet when the exploration never ran", async () => {
     const calls: string[] = [];
-    const oversized = { schemaVersion: "test.page.v1", text: "x".repeat(5_000) };
-    const refused = await runAutomationStudioRecoveryExploration({
+    // Over the 4,096 bytes a budget used to be able to hold an exploration to.
+    const large = { schemaVersion: "test.page.v1", text: "x".repeat(5_000) };
+    const carried = await runAutomationStudioRecoveryExploration({
       ...base(calls),
-      binding: pagesBinding(calls, { "test.inspect": oversized }),
+      binding: pagesBinding(calls, { "test.inspect": large }),
       provider: sequenceProvider(calls, ["test.inspect"]),
       recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() }),
-      budget: resolveAutomationStudioExplorationBudget({ maxEvidenceBytes: 4_096 })
+      budget: resolveAutomationStudioExplorationBudget()
     });
-    expect(calls).toEqual(["provider", "test.inspect"]);
-    expect(refused.exploration.outcome).not.toBe("evidence_gathered");
-    expect(refused.explored).toEqual([]);
+    expect(calls.slice(0, 2)).toEqual(["provider", "test.inspect"]);
+    expect(carried.explored.map((entry) => entry.packet)).toContainEqual(large);
 
     const notRun = await runAutomationStudioRecoveryExploration({
       ...base([]),

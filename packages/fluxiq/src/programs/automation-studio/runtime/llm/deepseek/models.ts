@@ -16,8 +16,9 @@
 // DeepSeek's own price list, https://api-docs.deepseek.com/quick_start/pricing/,
 // on 2026-09-23, and both must be re-read when DeepSeek changes its line-up.
 //
-// The file deliberately imports nothing, so a browser surface can list the
-// permitted models without pulling the runtime in behind them.
+// The file deliberately imports nothing but the model limits, a leaf that
+// imports no value (`../model-limits/`), so a browser surface can list the permitted
+// models without pulling the runtime in behind them.
 
 /** Every model id Core will accept. DeepSeek's current line, newest first. */
 export const AUTOMATION_STUDIO_DEEPSEEK_MODELS = ["deepseek-flash", "deepseek-v4-pro"] as const;
@@ -32,23 +33,9 @@ export type AutomationStudioDeepSeekModel = (typeof AUTOMATION_STUDIO_DEEPSEEK_M
  */
 export const AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL: AutomationStudioDeepSeekModel = "deepseek-flash";
 
-/**
- * What each model can actually carry, as DeepSeek publishes it.
- *
- * These are the provider's numbers, not Core's budget. Core holds a single
- * request to `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`,
- * which is its own choice and is far below either figure here; see that
- * constant for why it is where it is and what moving it would cost.
- */
-export const AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS: Readonly<Record<AutomationStudioDeepSeekModel, {
-  /** The model's own context window, input and output together. */
-  contextTokens: number;
-  /** The most the model will generate in one reply. */
-  maxOutputTokens: number;
-}>> = Object.freeze({
-  "deepseek-flash": Object.freeze({ contextTokens: 1_000_000, maxOutputTokens: 384_000 }),
-  "deepseek-v4-pro": Object.freeze({ contextTokens: 1_000_000, maxOutputTokens: 384_000 })
-});
+// What each model can carry, and the largest window of them: a leaf of their
+// own so the harness can read them at module evaluation (`../model-limits/`).
+export { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "../model-limits/index.ts";
 
 /**
  * Ids DeepSeek has withdrawn or superseded, and what replaced each one.

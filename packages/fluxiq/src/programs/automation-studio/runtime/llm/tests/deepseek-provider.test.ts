@@ -90,7 +90,11 @@ describe("Automation Studio DeepSeek provider", () => {
     // keys, which a harness-built request carries beside its context, and by
     // Core's credential shapes. `deepseek-evidence-preflight.test.ts` covers
     // the keys, the shapes and the other evidence slots.
-    await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_failure_evidence_invalid");
+    // No string in failure evidence is too long to send (2026-09-30, the model
+    // sees the whole page): a 2,001-character note, once refused, is sent whole.
+    outboundBody = "";
+    await expect(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } }))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
+    expect(outboundBody).toContain("P".repeat(2_001));
     await expectProviderError(provider.runTask(request({ deniedEvidenceKeys, context: { ...context, failureEvidence: { ...context.failureEvidence, elements: [{ target: "target.1", innerHTML: "PRIVATE_RAW_SNAPSHOT" }] } } })), "llm.provider_failure_evidence_invalid");
     await expectProviderError(provider.runTask(request({ context })), "llm.provider_failure_evidence_invalid");
   });

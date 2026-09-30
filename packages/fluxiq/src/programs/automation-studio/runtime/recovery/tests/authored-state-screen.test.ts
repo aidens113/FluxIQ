@@ -17,7 +17,7 @@ import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 /** A bearer credential an author could have typed into a condition. Shaped, not real. */
 const BEARER = "Bearer aG9sZGVyLXRva2VuLTk5ODgtYWJjZGVm";
 
-/** Ordinary authored prose, at and past the bound. One base string, so length is the only difference. */
+/** Ordinary authored prose, short and long. One base string, so length is the only difference. */
 const BANNER = "Thank you, your order has been placed and a confirmation email is on its way. ".repeat(4);
 const BANNER_AT_BOUND = BANNER.slice(0, 240);
 
@@ -63,7 +63,7 @@ describe("expected_transition discloses authored state under the same guards as 
     expect(context.omitted.find((entry) => entry.section === "expected_transition")).toBeUndefined();
   });
 
-  it("carries an authored sentence at the bound and withholds the one past it, naming only the second", () => {
+  it("carries an authored sentence of any length, with nothing withheld", () => {
     const section = expectedTransitionFor({
       conditions: [
         { assert: { kind: "text", expected: BANNER_AT_BOUND } },
@@ -73,10 +73,10 @@ describe("expected_transition discloses authored state under the same guards as 
     expect(section.expectedState).toEqual({
       conditions: [
         { assert: { kind: "text", expected: BANNER_AT_BOUND } },
-        { assert: { kind: "text", expected: null } }
+        { assert: { kind: "text", expected: BANNER } }
       ]
     });
-    expect(section.expectedStateWithheld).toEqual(["expectedState.conditions.1.assert.expected"]);
+    expect(section.expectedStateWithheld).toBeUndefined();
   });
 
   it("carries a condition's numbers and flags whole, since no page and no person is in them", () => {

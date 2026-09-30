@@ -292,7 +292,7 @@ function webBinding(): AutomationStudioLlmEvidenceRuntimeBinding {
     harnessOptions: webHarnessOptions(),
     executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); },
     captureSanitizedFailureEvidence: async (input) => {
-      const evidence = webPagePacket(input.maxEvidenceBytes, "Place order");
+      const evidence = webPagePacket(input.maxEvidenceBytes ?? 6_000, "Place order");
       return evidence;
     }
   };

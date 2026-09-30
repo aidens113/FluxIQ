@@ -74,7 +74,6 @@ export type AutomationStudioHarnessOptionLoopBinding = {
     callId: string;
     toolId: string;
     value: JsonObject;
-    maxEvidenceBytes: number;
     signal?: AbortSignal;
     /**
      * The run's permission check for this one action, from the run's
@@ -200,14 +199,13 @@ export class AutomationStudioHarnessOptionRegistry {
   ): AutomationStudioHarnessOptionLoopBinding {
     return {
       tools: this.tools(resolution),
-      executeTool: ({ callId, toolId, value, maxEvidenceBytes, signal, permission }) => this.execute({
+      executeTool: ({ callId, toolId, value, signal, permission }) => this.execute({
         projectId: context.projectId,
         flowId: context.flowId,
         ...(context.runId !== undefined ? { runId: context.runId } : {}),
         callId,
         optionId: toolId,
         value,
-        maxEvidenceBytes,
         ...(signal !== undefined ? { signal } : {}),
         ...(permission !== undefined ? { permission } : {})
       }, resolution)

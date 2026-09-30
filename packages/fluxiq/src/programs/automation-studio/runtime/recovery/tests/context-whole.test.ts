@@ -9,12 +9,9 @@ import { automationStudioRefutedResultAttempt } from "../refuted-result/index.ts
 // Live run `run-munnhi5q-4867dabe` (2026-09-29), stage 6. The Flow's answer was
 // refuted as `core.result.does_not_answer_request` -- an extract_list read the
 // whole unfiltered list a second time -- and the runtime diagnosis was handed
-// `failure` and nothing else. `flow_graph`, `step_parameters`, `subflow`,
-// `route_context` and `recent_nodes` all existed and were all dropped for
-// `byte_budget`, because the trim dropped whole sections lowest priority first
-// and the refuted result's failure section, carrying the judge's directive
-// twice over, left no room for the graph behind it. The repair was asked to fix
-// a wrong filter without being shown the Flow or a single parameter.
+// `failure` and nothing else: every other section was dropped for a byte
+// budget. There is no budget now (2026-09-30, "the model sees the whole page"),
+// and these tests hold that every section arrives whole.
 //
 // The fixture is that run's shape: an 11-node bootstrap Flow with its real id
 // scheme, eight actions, two extractions, a Subflow and a router, and a
@@ -25,12 +22,11 @@ const node = (step: string) => `node.bootstrap.${HASH}.main.${step}`;
 const FAILED = node("s11");
 const DENIED = ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"];
 
-describe("a refuted result's recovery context inside the byte budget", () => {
+describe("a refuted result's recovery context, whole", () => {
   it("keeps the Flow graph with the failing node in it, and the failing step's parameters", () => {
     const { detail, trace } = refutedRun();
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main" });
 
-    expect(context.byteCount).toBeLessThanOrEqual(context.byteBudget);
     const included = context.included.map((entry) => entry.section);
     expect(included).toEqual(expect.arrayContaining(["failure", "flow_graph", "step_parameters"]));
 
@@ -49,8 +45,8 @@ describe("a refuted result's recovery context inside the byte budget", () => {
     expect(edges.some((edge) => edge.from === node("s9") && edge.to === node("s10"))).toBe(true);
     expect(edges.some((edge) => edge.from === node("s10") && edge.to === FAILED)).toBe(true);
 
-    // The judge's directive still reaches the repair, bounded rather than
-    // dropped, and its advice keeps the clauses that say what to change.
+    // The judge's directive reaches the repair whole, with the clauses that say
+    // what to change.
     const failure = (context.sections.failure as JsonObject).failure as JsonObject;
     expect(failure).toMatchObject({ code: "core.result.does_not_answer_request", repair: { findings: expect.arrayContaining([expect.objectContaining({ code: "result.counts_look_right" })]) } });
     const advice = String(((failure.repair as JsonObject).judgement as JsonObject).advice);
@@ -58,66 +54,45 @@ describe("a refuted result's recovery context inside the byte budget", () => {
     expect(advice).toContain("rating at least 4.0, price under $50");
   });
 
-  it("drops the failure record's restatement of the directive before it shortens the directive", () => {
+  it("carries every section it built, untrimmed, and drops none for size", () => {
+    const { detail, trace } = refutedRun();
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main" });
+
+    expect(context.included.map((entry) => entry.section)).toEqual(expect.arrayContaining(["failure", "flow_graph", "step_parameters", "subflow", "route_context", "recent_nodes"]));
+    expect(context.omitted.every((entry) => entry.reason === "absent" || entry.reason === "withheld")).toBe(true);
+    expect(JSON.stringify(context.sections)).not.toContain("trimmedToFit");
+    expect(context.byteCount).toBe(Buffer.byteLength(JSON.stringify({ ...context, byteCount: 0 }), "utf8"));
+    expect(context.included.length + context.omitted.length).toBe(AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.length);
+    // The neighbouring extraction's filter is shown beside the failing one:
+    // there is no budget to trade it away for.
+    const s9 = ((context.sections.step_parameters as JsonObject).steps as JsonObject[]).find((step) => step.nodeId === node("s9"))!;
+    expect(JSON.stringify(s9.parameters)).toContain("notContains");
+    const summary = summarizeAutomationStudioRuntimeRecoveryContext(context);
+    expect(summary.included).toEqual(context.included);
+  });
+
+  it("carries the failure record's own expected and actual texts beside the directive", () => {
     const { detail, trace } = refutedRun();
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main" });
     const failure = (context.sections.failure as JsonObject).failure as JsonObject;
 
-    expect(failure.expected).toBeUndefined();
-    expect(failure.expectedIsRepair).toBe(true);
+    expect(failure.expected).toEqual(expect.any(String));
     expect(failure.actual).toEqual(expect.stringContaining("55 records stored"));
   });
 
-  it("trims the largest essential section before it drops one, and says which were trimmed and from what", () => {
+  it("carries a large state diff, every list entry and every recovered failure whole", () => {
     const { detail, trace } = refutedRun();
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main" });
-    const trimmed = context.included.filter((entry) => entry.trimmedFromByteCount !== undefined);
-
-    expect(trimmed.length).toBeGreaterThan(0);
-    for (const entry of trimmed) {
-      expect(entry.trimmedFromByteCount!).toBeGreaterThan(entry.byteCount);
-      expect(context.sections[entry.section]).toMatchObject({ trimmedToFit: true });
-    }
-    // Only the lower-priority sections the essential ones outrank are dropped.
-    const dropped = context.omitted.filter((entry) => entry.reason === "byte_budget").map((entry) => entry.section);
-    expect(dropped).not.toContain("failure");
-    expect(dropped).not.toContain("flow_graph");
-    expect(dropped).not.toContain("step_parameters");
-    const summary = summarizeAutomationStudioRuntimeRecoveryContext(context);
-    expect(summary.included.filter((entry) => entry.trimmedFromByteCount !== undefined).length).toBe(trimmed.length);
-    expect(context.included.length + context.omitted.length).toBe(AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.length);
-  });
-
-  it("spends the budget it has: a larger one gives back the neighbouring extraction's parameters", () => {
-    const { detail, trace } = refutedRun();
-    const s9 = (budget: number) => {
-      const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main", byteBudget: budget });
-      expect(context.byteCount).toBeLessThanOrEqual(budget);
-      return ((context.sections.step_parameters as JsonObject).steps as JsonObject[]).find((step) => step.nodeId === node("s9"))!;
+    const failing = detail.actionAttempts!.find((attempt) => attempt.attemptId === trace.attemptId) ?? detail.actionAttempts![detail.actionAttempts!.length - 1]!;
+    const stateDiff: JsonObject = {
+      schemaVersion: "web-state-diff.v2",
+      added: Array.from({ length: 300 }, (_, index) => ({ label: `Row ${index} ${"description ".repeat(40)}`, index })),
+      note: "n".repeat(5_000)
     };
-    // At the default the comparison extraction is named and said to be trimmed;
-    // with room for it, its filter is shown beside the failing one.
-    expect(s9(8_000)).toMatchObject({ definitionId: "web.dom.extract_list", parametersTrimmed: true });
-    expect(JSON.stringify(s9(10_000).parameters)).toContain("notContains");
-  });
+    failing.metadata = { ...(failing.metadata ?? {}), stateRefs: { stateDiff } };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main" });
 
-  it("leaves a context that already fits exactly as it was built", () => {
-    const { detail, trace } = refutedRun();
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main", byteBudget: 16_000 });
-
-    expect(context.included.every((entry) => entry.trimmedFromByteCount === undefined)).toBe(true);
-    expect(context.omitted.every((entry) => entry.reason !== "byte_budget")).toBe(true);
-    expect(JSON.stringify(context.sections)).not.toContain("trimmedToFit");
-  });
-
-  it("still ends inside a budget too small for the essentials, dropping them lowest priority first", () => {
-    const { detail, trace } = refutedRun();
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: trace, flow: flow(), routers: [router()], deniedEvidenceKeys: DENIED, subflowId: "subflow.main", byteBudget: 2_500 });
-
-    expect(context.byteCount).toBeLessThanOrEqual(context.byteBudget);
-    const droppedPositions = context.omitted.filter((entry) => entry.reason === "byte_budget").map((entry) => AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(entry.section));
-    const keptPositions = context.included.map((entry) => AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(entry.section));
-    expect(Math.min(...droppedPositions)).toBeGreaterThan(Math.max(-1, ...keptPositions));
+    expect(context.sections.state_diff).toEqual({ stateDiff });
+    expect(context.byteCount).toBeGreaterThan(100_000);
   });
 });
 

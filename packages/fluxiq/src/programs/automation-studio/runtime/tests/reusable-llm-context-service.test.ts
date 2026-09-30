@@ -62,7 +62,8 @@ describe("AutomationStudioService reusable LLM context", () => {
     expect(summaries[0]).not.toHaveProperty("promptProjection");
     await expect(service.getReusableLlmContext({ projectId: project.id, recordId: "context.success", now: 2_000 })).resolves.toMatchObject({ promptProjection: { facts: ["success"] } });
     const packed = await service.packReusableLlmContexts({ projectId: project.id, flowId: "flow.one", domainId: "domain.one", evidenceKind: "exploration", evidenceSchemaVersion: "evidence.v1", sanitizerVersion: "sanitizer.v1", compatibilityTags: [{ name: "environment", value: "same" }], maxInputTokens: 8_000, actorId: "user.one", now: 2_000 });
-    expect(packed.selectedRecordIds).toEqual(["context.success", "context.failed"]);
+    // Made at the same moment, so the record id breaks the tie: no outcome ranks first.
+    expect(packed.selectedRecordIds).toEqual(["context.failed", "context.success"]);
     const pool = new AutomationStudioProjectDatabasePool({ rootDir: automationRoot });
     const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: project.id, enabled: true, contentProtection });
     await expect(store.listAudit({ flowId: "flow.one" })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ eventType: "packed", actorId: "user.one", detail: expect.objectContaining({ selectedCount: 2 }) })]));

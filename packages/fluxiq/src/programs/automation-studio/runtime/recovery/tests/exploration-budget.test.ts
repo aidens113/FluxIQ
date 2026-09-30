@@ -26,13 +26,12 @@ describe("resolveAutomationStudioExplorationBudget", () => {
     expect(budget.maxDurationMs).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
   });
 
-  // The total gathered was a 262,144-byte cap that twenty-four calls at the web
-  // domain's 12,000-byte packet could reach first. The loop's window bounds each
-  // request; the total is only the backstop, at its ceiling.
-  it("holds the evidence an exploration gathers only to the loop's backstop", () => {
-    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxEvidenceBytes).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxEvidenceBytes);
-    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxProviderCalls * 12_000).toBeLessThan(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxEvidenceBytes);
-    expect(resolveAutomationStudioExplorationBudget({ maxEvidenceBytes: 8_192 }).maxEvidenceBytes).toBe(8_192);
+  // The model sees every page an exploration looks at (2026-09-30): the budget
+  // has no evidence-bytes stop, only counts, the clock and the run's cost.
+  it("has no evidence-bytes stop", () => {
+    expect("maxEvidenceBytes" in AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS).toBe(false);
+    expect("maxEvidenceBytes" in AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS).toBe(false);
+    expect("maxEvidenceBytes" in resolveAutomationStudioExplorationBudget()).toBe(false);
   });
 
   // The three ceilings that bound the loop are Core's own, written out in the
@@ -42,7 +41,6 @@ describe("resolveAutomationStudioExplorationBudget", () => {
   it("keeps its loop ceilings equal to the evidence loop's own limits", () => {
     expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls);
     expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
-    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxEvidenceBytes).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes);
   });
 
   // Clamped downwards, never upwards, and never thrown: a recovery is already a
@@ -52,7 +50,6 @@ describe("resolveAutomationStudioExplorationBudget", () => {
       maxDurationMs: 9_000_000,
       maxActions: 400,
       maxProviderCalls: 400,
-      maxEvidenceBytes: 99_000_000,
       maxRefusedActions: 0,
       maxRepeatsPerAction: Number.NaN
     });
@@ -60,7 +57,6 @@ describe("resolveAutomationStudioExplorationBudget", () => {
     expect(budget.maxDurationMs).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
     expect(budget.maxActions).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions);
     expect(budget.maxProviderCalls).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls);
-    expect(budget.maxEvidenceBytes).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxEvidenceBytes);
     expect(budget.maxRefusedActions).toBe(1);
     expect(budget.maxRepeatsPerAction).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxRepeatsPerAction);
   });

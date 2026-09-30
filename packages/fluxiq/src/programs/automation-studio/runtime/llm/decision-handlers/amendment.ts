@@ -113,7 +113,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
       refusals, applied: amended.applied, steps: draftSteps, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
       ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs })
     });
-    if (context.reserveEvidence(amendmentFeedback) === undefined) return end("llm_evidence_loop.evidence_limit");
+    context.accountEvidence(amendmentFeedback);
     automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID);
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });
   }

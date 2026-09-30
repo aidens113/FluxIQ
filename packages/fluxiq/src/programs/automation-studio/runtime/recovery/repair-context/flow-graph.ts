@@ -31,87 +31,40 @@ import type {
 } from "../../../model/index.ts";
 
 /**
- * How much of a graph the section carries. Small enough to sit beside the
- * failure inside one byte budget (`../context.ts`, at most sixteen kilobytes).
- *
- * **A prompt window, not a cap on Flows.** A Flow may hold far more nodes than
- * this (`model/flow-size/`), and scaling the window with the Flow's setting
- * would spend the whole repair budget on node names. So the window stays
- * fixed, says the true counts beside it, and is placed around the failing node:
- * a repair of node thirty of a long Subflow is shown node thirty and its
- * neighbours, not the first twenty-four nodes and none of the failure.
- */
-export const AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS = Object.freeze({
-  maxNodes: 24,
-  maxEdges: 32,
-  maxRouters: 2,
-  maxRulesPerRouter: 12,
-  maxLabelLength: 60
-});
-
-/**
  * The Flow's structure, or nothing when neither a Flow document nor a router
  * was available -- a repair driven from a run whose Flow could not be read.
+ *
+ * The whole graph (2026-09-30, "the model sees the whole page"): every node,
+ * every edge in authored order, every router and every rule, with labels and
+ * names at their full length. There is no window around the failing node and
+ * no count standing in for what was left out, because nothing is left out.
  */
 export function automationStudioFlowGraphSection(input: {
   flow?: AutomationStudioFlowDocument | undefined;
   routers?: readonly AutomationStudioFlowRouter[] | undefined;
   failedNodeId?: string | undefined;
 }): JsonObject | undefined {
-  const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
-  const routers = (input.routers ?? []).slice(0, limits.maxRouters).map(compactRouter);
+  const routers = (input.routers ?? []).map(compactRouter);
   if (!input.flow && !routers.length) return undefined;
-  const allNodes = input.flow?.nodes ?? [];
-  const firstShown = windowStart(allNodes.findIndex((node) => node.id === input.failedNodeId), allNodes.length, limits.maxNodes);
-  const shownNodes = allNodes.slice(firstShown, firstShown + limits.maxNodes);
-  const nodes = shownNodes
-    .map((node) => compact({
-      nodeId: node.id,
-      definitionId: node.definitionId,
-      ...(node.label ? { label: node.label.slice(0, limits.maxLabelLength) } : {})
-    }));
-  const edges = windowEdges(input.flow?.edges ?? [], firstShown > 0 ? new Set(shownNodes.map((node) => node.id)) : undefined)
-    .slice(0, limits.maxEdges)
-    .map((edge) => compact({
-      edgeId: edge.id,
-      from: edge.sourceNodeId,
-      to: edge.targetNodeId,
-      ...(edge.sourcePortId ? { fromPort: edge.sourcePortId } : {}),
-      ...(edge.targetPortId ? { toPort: edge.targetPortId } : {})
-    }));
+  const nodes = (input.flow?.nodes ?? []).map((node) => compact({
+    nodeId: node.id,
+    definitionId: node.definitionId,
+    ...(node.label ? { label: node.label } : {})
+  }));
+  const edges = (input.flow?.edges ?? []).map((edge) => compact({
+    edgeId: edge.id,
+    from: edge.sourceNodeId,
+    to: edge.targetNodeId,
+    ...(edge.sourcePortId ? { fromPort: edge.sourcePortId } : {}),
+    ...(edge.targetPortId ? { toPort: edge.targetPortId } : {})
+  }));
   return compact({
     ...(input.flow ? { flowId: input.flow.flowId } : {}),
     ...(nodes.length ? { nodes } : {}),
-    ...((input.flow?.nodes.length ?? 0) > nodes.length ? { nodeCount: input.flow!.nodes.length } : {}),
-    // The authored position, from 1, of the first node shown, when the window
-    // was moved to reach the failing node; absent when it starts at the first.
-    ...(firstShown > 0 ? { firstNodePosition: firstShown + 1 } : {}),
     ...(edges.length ? { edges } : {}),
-    ...((input.flow?.edges.length ?? 0) > edges.length ? { edgeCount: input.flow!.edges.length } : {}),
     ...(routers.length ? { routers } : {}),
     ...(failingNode(input.flow, input.failedNodeId) ?? {})
   });
-}
-
-/**
- * Where the node window starts: at the first node, unless the failing node
- * would fall outside it, in which case the window is centred on the failing
- * node and kept inside the Flow.
- */
-function windowStart(failedIndex: number, nodeCount: number, windowSize: number): number {
-  if (failedIndex < windowSize) return 0;
-  return Math.max(0, Math.min(nodeCount - windowSize, failedIndex - Math.floor(windowSize / 2)));
-}
-
-/**
- * The edges in authored order, or, when the window was moved, the edges that
- * touch a shown node first and the rest after them: an edge between two nodes
- * the repair cannot see says less than one into the failing node.
- */
-function windowEdges<Edge extends { sourceNodeId: string; targetNodeId: string }>(edges: readonly Edge[], shown: ReadonlySet<string> | undefined): readonly Edge[] {
-  if (!shown) return edges;
-  const touches = (edge: Edge) => shown.has(edge.sourceNodeId) || shown.has(edge.targetNodeId);
-  return [...edges.filter(touches), ...edges.filter((edge) => !touches(edge))];
 }
 
 /**
@@ -127,8 +80,8 @@ function failingNode(flow: AutomationStudioFlowDocument | undefined, nodeId: str
   if (!nodeId) return undefined;
   if (!flow) return { failingNode: { nodeId } };
   const present = flow.nodes.some((node) => node.id === nodeId);
-  const incoming = flow.edges.filter((edge) => edge.targetNodeId === nodeId).map((edge) => edge.id).slice(0, 8);
-  const outgoing = flow.edges.filter((edge) => edge.sourceNodeId === nodeId).map((edge) => edge.id).slice(0, 8);
+  const incoming = flow.edges.filter((edge) => edge.targetNodeId === nodeId).map((edge) => edge.id);
+  const outgoing = flow.edges.filter((edge) => edge.sourceNodeId === nodeId).map((edge) => edge.id);
   return {
     failingNode: compact({
       nodeId,
@@ -140,13 +93,11 @@ function failingNode(flow: AutomationStudioFlowDocument | undefined, nodeId: str
 }
 
 function compactRouter(router: AutomationStudioFlowRouter): JsonObject {
-  const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
   const rules = [...router.rules]
     .sort((left, right) => left.order - right.order)
-    .slice(0, limits.maxRulesPerRouter)
     .map((rule) => compact({
       ruleId: rule.ruleId,
-      name: rule.name.slice(0, limits.maxLabelLength),
+      name: rule.name,
       order: rule.order,
       status: rule.status,
       target: rule.target as unknown as JsonValue,
@@ -155,10 +106,9 @@ function compactRouter(router: AutomationStudioFlowRouter): JsonObject {
     }));
   return compact({
     routerId: router.routerId,
-    name: router.name.slice(0, limits.maxLabelLength),
+    name: router.name,
     status: router.status,
     ...(rules.length ? { rules } : {}),
-    ...(router.rules.length > rules.length ? { ruleCount: router.rules.length } : {}),
     ...(router.fallback ? { fallback: router.fallback as unknown as JsonValue } : {})
   });
 }

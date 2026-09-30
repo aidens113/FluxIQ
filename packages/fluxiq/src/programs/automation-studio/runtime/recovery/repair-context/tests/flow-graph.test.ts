@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../../../model/index.ts";
-import { AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS, automationStudioFlowGraphSection } from "../flow-graph.ts";
+import { automationStudioFlowGraphSection } from "../flow-graph.ts";
 
 // A repair that can only see a straight line cannot author a branch and cannot
 // tell that one is there. These are the three things a graph is -- nodes,
@@ -52,66 +52,25 @@ describe("automationStudioFlowGraphSection", () => {
     expect(automationStudioFlowGraphSection({ failedNodeId: "n.2" })).toBeUndefined();
   });
 
-  it("bounds what it carries and reports the true counts beside it", () => {
-    const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
-    const wide: AutomationStudioFlowDocument = {
-      ...flow(),
-      nodes: Array.from({ length: limits.maxNodes + 4 }, (_, index) => ({ id: `n.${index}`, definitionId: "web.dom.click" })),
-      edges: Array.from({ length: limits.maxEdges + 5 }, (_, index) => ({ id: `e.${index}`, sourceNodeId: `n.${index}`, targetNodeId: `n.${index + 1}` }))
-    };
-    const section = automationStudioFlowGraphSection({ flow: wide });
-    expect((section?.nodes as unknown[]).length).toBe(limits.maxNodes);
-    expect(section?.nodeCount).toBe(limits.maxNodes + 4);
-    expect((section?.edges as unknown[]).length).toBe(limits.maxEdges);
-    expect(section?.edgeCount).toBe(limits.maxEdges + 5);
-  });
-
-  // The window is a prompt budget, not a cap on Flows: a Flow may hold far
-  // more nodes than it shows. What it must not do is show the first nodes of a
-  // long Subflow and none of the failure -- node thirty of the repaired
-  // Subflow was invisible to its own repair.
-  it("moves the window to the failing node of a long Subflow and names where it starts", () => {
-    const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
+  // Nothing capped (2026-09-30, "the model sees the whole page"): every node,
+  // every edge, every router and rule, every label at its full length.
+  it("carries the whole graph of a long Flow, with no window and no counts in place of what was left out", () => {
+    const longLabel = "Open the store and ".repeat(20);
     const long: AutomationStudioFlowDocument = {
       ...flow(),
-      nodes: Array.from({ length: 150 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
+      nodes: Array.from({ length: 150 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click", ...(index === 0 ? { label: longLabel } : {}) })),
       edges: Array.from({ length: 149 }, (_, index) => ({ id: `e.${index + 1}`, sourceNodeId: `n.${index + 1}`, targetNodeId: `n.${index + 2}` }))
     };
-    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.30" });
-    const nodeIds = (section?.nodes as Array<{ nodeId: string }>).map((node) => node.nodeId);
-    const edgeIds = (section?.edges as Array<{ edgeId: string }>).map((edge) => edge.edgeId);
+    const rules = Array.from({ length: 20 }, (_, index) => ({ ...router().rules[1]!, ruleId: `rule.${index}`, order: index + 1 }));
+    const routers = Array.from({ length: 3 }, (_, index) => ({ ...router(), routerId: `router.${index}`, rules }));
+    const section = automationStudioFlowGraphSection({ flow: long, routers, failedNodeId: "n.30" });
 
-    expect(nodeIds).toHaveLength(limits.maxNodes);
-    expect(nodeIds).toEqual(expect.arrayContaining(["n.29", "n.30", "n.31"]));
-    expect(section?.firstNodePosition).toBe(Number(nodeIds[0]!.slice(2)));
-    expect(section?.nodeCount).toBe(150);
-    expect(edgeIds).toEqual(expect.arrayContaining(["e.29", "e.30"]));
+    expect((section?.nodes as unknown[]).length).toBe(150);
+    expect((section?.edges as unknown[]).length).toBe(149);
+    expect((section?.nodes as Array<{ label?: string }>)[0]?.label).toBe(longLabel);
+    expect((section?.routers as Array<{ rules: unknown[] }>).map((entry) => entry.rules.length)).toEqual([20, 20, 20]);
+    for (const key of ["nodeCount", "edgeCount", "firstNodePosition"]) expect(section).not.toHaveProperty(key);
     expect(section?.failingNode).toEqual({ nodeId: "n.30", incomingEdgeIds: ["e.29"], outgoingEdgeIds: ["e.30"] });
-  });
-
-  it("keeps the window inside the Flow when the failing node is its last", () => {
-    const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
-    const long: AutomationStudioFlowDocument = {
-      ...flow(),
-      nodes: Array.from({ length: 100 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
-      edges: []
-    };
-    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.100" });
-    const nodeIds = (section?.nodes as Array<{ nodeId: string }>).map((node) => node.nodeId);
-    expect(nodeIds).toHaveLength(limits.maxNodes);
-    expect(nodeIds.at(-1)).toBe("n.100");
-    expect(section?.firstNodePosition).toBe(100 - limits.maxNodes + 1);
-  });
-
-  it("starts at the first node when the failing node is already inside the window", () => {
-    const long: AutomationStudioFlowDocument = {
-      ...flow(),
-      nodes: Array.from({ length: 100 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
-      edges: []
-    };
-    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.3" });
-    expect((section?.nodes as Array<{ nodeId: string }>)[0]?.nodeId).toBe("n.1");
-    expect(section).not.toHaveProperty("firstNodePosition");
   });
 });
 

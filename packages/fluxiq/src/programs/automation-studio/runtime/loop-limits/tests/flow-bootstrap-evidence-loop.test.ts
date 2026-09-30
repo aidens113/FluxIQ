@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, automationStudioLlmResolutionWithinFlowSettings } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, automationStudioLlmResolutionWithinFlowSettings } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../recovery/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS, automationStudioFlowBootstrapEvidenceLoopLimits } from "../flow-bootstrap-evidence-loop.ts";
@@ -97,7 +97,7 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
   it("lets a 26-call resolution iterate 26 times, past the old cap of eight", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes, maxEvidenceContextBytes: 24_000, budget: { maxCostUsd: 0.25, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, budget: { maxCostUsd: 0.25, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
   });
 
   it("falls back to the loop's own ceiling, not to a small default, when nothing is declared", () => {
@@ -111,17 +111,21 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
     }
   });
 
-  // The total was 64,000 bytes, and realistic builds reached it in ten to
-  // fifteen calls (`run-mubpn1ga-8ae8fdc5`: 63,982 bytes, fourteen calls). It is
-  // now only a backstop: a build carrying a 20 KB page on every one of its
-  // calls, the largest measured, still ends on its calls before it.
-  it("holds the total only to a backstop no measured build reaches before its calls", () => {
-    const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26 });
-    const largestMeasuredPage = 20_000;
+  // The total was 64,000 bytes, then a 1 MiB backstop, and each decision was
+  // shown a 24,000-byte window. Since 2026-09-30 the build hands the loop no
+  // byte limit at all: every evidence entry is shown whole, and the only bound
+  // on a request is the model's context window.
+  // The one per-request ceiling is the model's context window, derived from the
+  // model limits rather than restated (2026-09-30).
+  it("holds a request only to the largest model context window", () => {
+    expect(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST).toBe(Math.max(...Object.values(AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS).map((limits) => limits.contextTokens)));
+    expect(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST).toBe(1_000_000);
+  });
 
-    expect(limits.loop.maxEvidenceBytes).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes);
-    expect(limits.loop.maxToolCalls * largestMeasuredPage).toBeLessThan(limits.loop.maxEvidenceBytes);
-    expect(limits.loop.maxEvidenceContextBytes).toBeLessThan(limits.loop.maxEvidenceBytes);
+  it("hands the loop no evidence byte limit", () => {
+    const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26 });
+    expect(limits.loop).not.toHaveProperty("maxEvidenceBytes");
+    expect(limits.loop).not.toHaveProperty("maxEvidenceContextBytes");
   });
 
   it("never configures more than the loop accepts", () => {

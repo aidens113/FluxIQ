@@ -8,13 +8,15 @@ import {
 // The numbers one recovery runs under. These are the answer to "what is the
 // most one recovery can cost", so they are pinned rather than inferred.
 describe("resolveAutomationStudioRecoveryRunBudget", () => {
-  it("bounds a recovery nobody asked for by $0.25 and 144,000 tokens, with the call count only a backstop", () => {
+  // Core's own default token pot (6,000 per share, 144,000 in all) is gone:
+  // it refused a whole page's diagnosis outright. The purse binds.
+  it("bounds a recovery nobody asked for by $0.25 and the per-call limit times the shares, with the call count only a backstop", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false });
 
     expect(budget.ledger).toEqual({
       maxCallsPerRun: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
-      maxTotalTokensPerRun: 144_000,
-      maxOutputTokensPerRun: 144_000,
+      maxTotalTokensPerRun: 10_000 * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
+      maxOutputTokensPerRun: 10_000 * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
       maxEstimatedCostUsdPerRun: 0.25
     });
     expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(0.25 / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 8);
@@ -34,7 +36,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   it("takes a resolver's declared call count at its word and sizes the purse to it", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, resolution: { maxCallsPerRun: 2 } });
 
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 2, maxTotalTokensPerRun: 12_000, maxOutputTokensPerRun: 12_000, maxEstimatedCostUsdPerRun: 0.25 });
+    expect(budget.ledger).toEqual({ maxCallsPerRun: 2, maxTotalTokensPerRun: 20_000, maxOutputTokensPerRun: 20_000, maxEstimatedCostUsdPerRun: 0.25 });
     expect(budget.maxEstimatedCostUsdPerCall).toBe(0.125);
     // Said, so a stage may plan by it; the backstop is never offered as one.
     expect(budget.declaredCallsPerRun).toBe(2);
@@ -182,5 +184,39 @@ describe("a recovery call's reservation", () => {
     expect(spent).toBeLessThanOrEqual(0.25);
     expect(ledger.snapshot("run-2")).toMatchObject({ budgetBreaches: 0 });
     expect(spent).toBeGreaterThan(0.25 - 2 * budget.maxEstimatedCostUsdPerCall);
+  });
+});
+
+// 2026-09-30: the per-request limits are the model's whole window (992,000 /
+// 8,000 / 1,000,000). A call's worst case at that size is the whole $0.25
+// purse, so the ledger must be charged each request's own measured size, not
+// the window, or it admits one call and refuses the rest.
+describe("a recovery at the window profile", () => {
+  const WINDOW = { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 };
+  const price = (inputTokens: number, outputTokens: number) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, "deepseek-flash");
+
+  it.each([true, false])("admits call after call when each reserves its own size under the ceiling (explicit: %s)", (explicitRunBudget) => {
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: { tokenLimits: WINDOW, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 }, model: "deepseek-flash" });
+    // The ceiling is the whole purse at this profile ...
+    expect(budget.maxEstimatedCostUsdPerCall).toBe(0.25);
+    // ... and the pot holds whole-page calls: no Core default below the window.
+    expect(budget.ledger.maxTotalTokensPerRun).toBe(1_000_000 * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
+    const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+    // Ten 30,000-token calls, each reserved at its own priced size, as the
+    // harness reserves them (`../../../llm/harness/run.ts`).
+    for (let call = 0; call < 10; call += 1) {
+      const reserved = ledger.reserve({ runId: "run.window", requestId: `call-${call}`, estimatedInputTokens: 30_000, maxOutputTokens: WINDOW.maxOutputTokens, maxEstimatedCostUsd: Math.min(budget.maxEstimatedCostUsdPerCall, price(30_000, WINDOW.maxOutputTokens)) });
+      expect(reserved.ok, `call ${call}`).toBe(true);
+      if (!reserved.ok) return;
+      reserved.lease.complete({ inputTokens: 25_000, outputTokens: 1_000, totalTokens: 26_000, estimatedCostUsd: price(25_000, 1_000) });
+    }
+    expect(ledger.snapshot("run.window")).toMatchObject({ calls: 10, budgetBreaches: 0 });
+    // Reserved at the window instead, the second call is refused on cost.
+    const windowLedger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+    const first = windowLedger.reserve({ runId: "run.window", requestId: "first", estimatedInputTokens: WINDOW.maxInputTokens, maxOutputTokens: WINDOW.maxOutputTokens, maxEstimatedCostUsd: budget.maxEstimatedCostUsdPerCall });
+    expect(first.ok).toBe(true);
+    if (first.ok) first.lease.complete({ inputTokens: 25_000, outputTokens: 1_000, totalTokens: 26_000, estimatedCostUsd: price(25_000, 1_000) });
+    const second = windowLedger.reserve({ runId: "run.window", requestId: "second", estimatedInputTokens: WINDOW.maxInputTokens, maxOutputTokens: WINDOW.maxOutputTokens, maxEstimatedCostUsd: budget.maxEstimatedCostUsdPerCall });
+    expect(second.ok).toBe(false);
   });
 });

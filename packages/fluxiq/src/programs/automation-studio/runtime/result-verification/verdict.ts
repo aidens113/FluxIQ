@@ -40,13 +40,6 @@ import { automationStudioResultReadSentence } from "./read-account/index.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 
 /**
- * Steps named in the one-line observation. The whole shape goes to the model;
- * this is the part a person reads on a failed run, and the failure record it
- * lands in bounds its own text.
- */
-const MAX_OBSERVED_STEPS = 12;
-
-/**
  * Core's codes for a verdict a model call reached, or failed to. The last two
  * are for a first answer other than `yes` that a second call with the same
  * evidence did not settle (`agreement.ts`): one of the two said `yes`, or
@@ -149,13 +142,14 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   const stored = `${summary.totalRecordCount} record${summary.totalRecordCount === 1 ? "" : "s"} stored`;
   const refused = summary.totalRefusedCount > 0 ? `, ${summary.totalRefusedCount} refused by record validation` : "";
   const sets = `, across ${summary.recordSetCount} record set${summary.recordSetCount === 1 ? "" : "s"}`;
-  const listed = summary.flowShape.slice(0, MAX_OBSERVED_STEPS).map((step) => step.definitionId);
-  const rest = summary.flowShape.length > listed.length ? `, and ${summary.flowShape.length - listed.length} more` : "";
-  const shape = listed.length > 0 ? `; the Flow's steps were ${listed.join(", ")}${rest}` : "";
-  const cut = summary.withheld ? "; part of the summary was withheld to fit the call" : "";
+  // Every step, named: the observation reaches the repair, which is shown the
+  // whole Flow.
+  const listed = summary.flowShape.map((step) => step.definitionId);
+  const shape = listed.length > 0 ? `; the Flow's steps were ${listed.join(", ")}` : "";
+  const cut = summary.withheld ? "; some of it was withheld: a value secret-shaped or under a denied key, a set the store reported truncated, or a read left unaccounted" : "";
   // How each read went, ahead of the step list: this line becomes the failure
-  // record's bounded `actual`, and a read's pages, stop and rejections are what
-  // a repair acts on, where a definition id only says the step exists.
+  // record's `actual`, and a read's pages, stop and rejections are what a
+  // repair acts on, where a definition id only says the step exists.
   const reads = (summary.reads ?? []).map((read) => `; ${automationStudioResultReadSentence(read, "brief")}`).join("");
   return `${stored}${refused}${sets}${reads}${shape}${cut}.`;
 }
