@@ -22,6 +22,8 @@ async function pass(context: AutomationNodeExecutionContext): Promise<Automation
 describe("builtin.control.for-each", () => {
   it("declares body and done branches, item, index, and count data outputs, and its limits", () => {
     expect(forEachNode.outputs.map((port) => [port.id, port.role])).toEqual([["body", "branch"], ["done", "branch"], ["item", "data"], ["index", "data"], ["count", "data"]]);
+    // Several steps of one body may each take the row a pass is on.
+    expect(forEachNode.outputs.filter((port) => port.multiple === true).map((port) => port.id)).toEqual(["item"]);
     expect(forEachNode.inputs.find((port) => port.id === "items")).toMatchObject({ valueType: "array", required: true });
     expect(forEachNode.parameters.find((parameter) => parameter.id === "maxIterations")).toMatchObject({ defaultValue: 100, constraints: { minimum: 1, maximum: 10_000, integer: true } });
     expect(forEachNode.parameters.find((parameter) => parameter.id === "maxStepsPerIteration")).toMatchObject({ defaultValue: 50, allowStateBinding: false });

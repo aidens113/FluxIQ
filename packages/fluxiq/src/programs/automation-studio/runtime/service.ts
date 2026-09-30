@@ -1591,7 +1591,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
                 expectedOutput: "evidence_tool_decision", ...(signal ? { signal } : {})
               });
-              estimatedInputTokens += decision.request.estimatedInputTokens;
+              estimatedInputTokens += decision.request.estimatedInputTokens; if (decision.ok) { failureStage = "provider_output_validation"; failureCode = "flow_bootstrap.provider_output_validation_failed"; } // A decision has come back, so a later throw is not "before the provider" (`run-muncqlr0-3348202b`).
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             }),
@@ -1679,7 +1679,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // Which kind of throw it was, where nothing above recognised it. This
       // outer fallback covers setup and later named phases; an exception from
       // the harness itself is converted at its scoped request boundary above.
-      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode));
+      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode), error);
     }
   };
   async createFlowBootstrapAdaptation(input: {

@@ -11,10 +11,25 @@ export const AUTOMATION_STUDIO_FAILURE_STAGES = Object.freeze([
 
 export type AutomationStudioFailureStage = (typeof AUTOMATION_STUDIO_FAILURE_STAGES)[number];
 
+/**
+ * What a failure says about the act itself, when the producer can say.
+ *
+ * `unacted`: the producer states the act demonstrably did not happen -- the page
+ * or service refused it and said so -- so making the same request again is not
+ * a second act. `ambiguous`: it may have happened and only the answer is known
+ * to be missing. A record without one says nothing, and Core reads its stage and
+ * category instead.
+ */
+export const AUTOMATION_STUDIO_FAILURE_EFFECTS = Object.freeze(["unacted", "ambiguous"] as const);
+
+export type AutomationStudioFailureEffect = (typeof AUTOMATION_STUDIO_FAILURE_EFFECTS)[number];
+
 /** Bounds `parseAutomationStudioFailureRecord` enforces; a record that exceeds them is dropped, not truncated. */
 export const AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS = Object.freeze({
   codeMaxLength: 200,
-  textMaxLength: 1024
+  textMaxLength: 1024,
+  /** An hour. The runtime honours far less than this; the bound only keeps a nonsense value off the record. */
+  retryAfterMsMax: 3_600_000
 });
 
 /**
@@ -37,4 +52,16 @@ export type AutomationStudioFailureRecord = {
   actual?: string;
   /** Lowercase SHA-256 hex digest of the failure evidence packet captured with this failure. */
   evidenceDigest?: string;
+  /**
+   * The producer's statement about the act (`AUTOMATION_STUDIO_FAILURE_EFFECTS`):
+   * `unacted` when it demonstrably did not happen, so a node that acts on the
+   * world may still be repeated.
+   */
+  effect?: AutomationStudioFailureEffect;
+  /**
+   * How long the source said to wait before the same request is made again, in
+   * whole milliseconds: a page's "try again in 12 seconds". Only on a retryable
+   * record; the runtime bounds what it honours.
+   */
+  retryAfterMs?: number;
 };

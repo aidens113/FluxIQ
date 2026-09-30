@@ -453,11 +453,18 @@ function joins(key: string, definitions: ReadonlyMap<string, AutomationStudioNod
  * A named port is taken as written and still marked used, so two edges naming
  * the same single-connection port are caught by validation rather than
  * silently redirected to another port that happened to be free.
+ *
+ * A port that declares `role: "data"` is reached only by name. It carries a
+ * value, not the path -- a loop's current row, say -- and an edge that fell
+ * into it because the control input was already taken would hand the node
+ * a success signal where it expects a row, and leave the node with no way in.
  */
 function targetPort(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>, used: Map<string, Set<string>>, asked?: string): string | undefined {
   const inputs = definitions.get(key)?.inputs ?? [];
   const taken = used.get(key) ?? new Set<string>();
-  const port = asked ? inputs.find((candidate) => candidate.id === asked) : inputs.find((candidate) => candidate.multiple === true || !taken.has(candidate.id));
+  const port = asked
+    ? inputs.find((candidate) => candidate.id === asked)
+    : inputs.find((candidate) => candidate.role !== "data" && (candidate.multiple === true || !taken.has(candidate.id)));
   if (!port) return undefined;
   taken.add(port.id);
   used.set(key, taken);

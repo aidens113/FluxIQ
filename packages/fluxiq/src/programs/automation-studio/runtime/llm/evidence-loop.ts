@@ -48,7 +48,7 @@ import {
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress,
-  automationStudioLlmEvidenceUnusedCallId,
+  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopAnswerability,
@@ -167,9 +167,9 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type Automa
  * callbacks that already own those responsibilities.
  */
 export async function runAutomationStudioLlmEvidenceLoop(
-  input: AutomationStudioLlmEvidenceLoopInput
+  untraced: AutomationStudioLlmEvidenceLoopInput
 ): Promise<AutomationStudioLlmEvidenceLoopResult> {
-  const limits = resolveLimits(input);
+  const input = automationStudioLlmEvidenceLoopProgressTrace(untraced); const limits = resolveLimits(input);
   const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
   /**
    * One row of the record, stamped with the moment it was recorded.
