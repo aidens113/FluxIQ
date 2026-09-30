@@ -37,7 +37,7 @@ export class AutomationStudioProjectArtifactStore {
   ) {}
 
   async deleteProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deleteOwnedArtifacts?: boolean }): Promise<{ deleted: boolean; projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deletedArtifactIds: string[] }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
     const artifactId = input.artifactId.trim();
     if (!artifactId) throw new Error(`${input.kind} ID is required.`);

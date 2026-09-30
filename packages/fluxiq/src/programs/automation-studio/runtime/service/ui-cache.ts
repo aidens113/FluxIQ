@@ -20,7 +20,7 @@ export class AutomationStudioServiceUiCache {
   ) {}
 
   async getProjectUiCache(input: { projectId: string; userId: string; cacheKeys: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">>; missingKeys: string[] }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const cacheKeys = normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
     const entries = await this.store.get({ projectId: input.projectId, userId, cacheKeys });
@@ -32,7 +32,7 @@ export class AutomationStudioServiceUiCache {
   }
 
   async saveProjectUiCache(input: { projectId: string; userId: string; entries: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">> }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const entries = normalizeUiCachePutEntryBatch(input.entries);
     const saved = await this.store.putBatch({ projectId: input.projectId, userId, entries });
@@ -40,7 +40,7 @@ export class AutomationStudioServiceUiCache {
   }
 
   async deleteProjectUiCache(input: { projectId: string; userId: string; cacheKeys?: unknown }): Promise<{ deleted: number }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const cacheKeys = input.cacheKeys === undefined || input.cacheKeys === null ? undefined : normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
     return await this.store.delete({ projectId: input.projectId, userId, ...(cacheKeys ? { cacheKeys } : {}) });
@@ -49,7 +49,7 @@ export class AutomationStudioServiceUiCache {
   async listProjectUiCacheStats(input: { projectId?: unknown; userId: string }): Promise<{ stats: Array<Omit<AutomationStudioUiCacheStats, "userId"> & { entryCount: number; totalBytes: number; updatedAt: number | null }> }> {
     const userId = normalizeUiCacheUserId(input.userId);
     const projectId = typeof input.projectId === "string" && input.projectId.trim() ? input.projectId.trim() : undefined;
-    if (projectId) await this.projects.findProject(projectId);
+    if (projectId) await this.projects.requireProject(projectId);
     const stats = await this.store.stats({ userId, ...(projectId ? { projectId } : {}) });
     return {
       stats: stats.map(({ userId: _userId, ...entry }) => ({

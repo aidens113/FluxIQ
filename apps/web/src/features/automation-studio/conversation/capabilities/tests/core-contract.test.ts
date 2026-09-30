@@ -24,11 +24,12 @@
 // missing.
 
 import { afterAll, describe, expect, it } from "vitest";
+import type { ProgramEndpointClassification } from "../../../../../../../../packages/fluxiq/src/programs/_shared/api.ts";
 import { panelCapabilityAsksFirst, type PanelCapability } from "../contract";
 import { dispatchPanelCapability } from "../dispatch";
 import { PANEL_ENDPOINTS_WITHOUT_A_CAPABILITY, panelCapabilities } from "../registry";
 import { contractOverrideIds, contractVariants } from "./core-contract-arguments";
-import { CONTRACT_PIN, openContractWorld, type ContractExchange, type ContractWorld } from "./core-contract-world";
+import { CONTRACT_PIN, closeContractSeed, contractClassifications, openContractWorld, type ContractExchange, type ContractWorld } from "./core-contract-world";
 
 /**
  * A refusal the contract world cannot get past, and why.
@@ -115,7 +116,8 @@ function exchangeProblems(capability: PanelCapability, exchange: ContractExchang
 }
 
 describe("every chat capability sends a request Core accepts", () => {
-  afterAll(() => {
+  afterAll(async () => {
+    await closeContractSeed();
     const passed = results.filter((result) => result.verdict === "accepted").length;
     const lines = results.map((result) => `${result.verdict === "accepted" ? "PASS" : "FAIL"} ${result.capability} [${result.variant}] -> ${result.endpoints}${result.verdict === "accepted" ? "" : ` :: ${result.verdict}`}`);
     console.log([`capability contract: ${passed}/${results.length} variants accepted by Core across ${panelCapabilities().length} capabilities`, ...lines].join("\n"));
@@ -179,12 +181,10 @@ describe("every chat capability sends a request Core accepts", () => {
 });
 
 describe("the capability catalog agrees with Core's own classification", () => {
-  let world: ContractWorld;
-  const classified = async () => {
-    world ??= await openContractWorld();
-    return world.classifications;
-  };
-  afterAll(async () => { await world?.close(); });
+  // Classifications come from registering the handlers, which reads no data,
+  // so these no longer open a seeded world.
+  let classifications: Promise<ReadonlyMap<string, ProgramEndpointClassification>> | undefined;
+  const classified = async () => await (classifications ??= contractClassifications());
 
   it("declares only endpoints Core has a handler for", async () => {
     const known = await classified();

@@ -15,102 +15,102 @@ export class AutomationStudioServiceIndexes {
   ) {}
 
   async readFlowIndex(projectId: string): Promise<AutomationStudioFlowSummaryIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.paths.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).read();
   }
 
   async writeFlowIndex(projectId: string, mutator: (index: AutomationStudioFlowSummaryIndex) => AutomationStudioFlowSummaryIndex): Promise<AutomationStudioFlowSummaryIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.paths.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).update(mutator);
   }
 
   async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<RecordingIndex>(this.paths.projectFile(projectId, "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).read();
   }
 
   async writeRecordingIndex(projectId: string, mutator: (index: RecordingIndex) => RecordingIndex): Promise<RecordingIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<RecordingIndex>(this.paths.projectFile(projectId, "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).update(mutator);
   }
 
   async readFlowRouterIndex(projectId: string): Promise<FlowRouterIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowRouterIndex>(this.paths.flowRouterIndexFile(projectId), emptyFlowRouterIndex).read();
   }
 
   async writeFlowRouterIndex(projectId: string, mutator: (index: FlowRouterIndex) => FlowRouterIndex): Promise<FlowRouterIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowRouterIndex>(this.paths.flowRouterIndexFile(projectId), emptyFlowRouterIndex).update((index) => sortFlowRouterIndex(mutator(index)));
   }
 
   async readFlowSubflowIndex(projectId: string): Promise<FlowSubflowIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowSubflowIndex>(this.paths.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).read();
   }
 
   async writeFlowSubflowIndex(projectId: string, mutator: (index: FlowSubflowIndex) => FlowSubflowIndex): Promise<FlowSubflowIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowSubflowIndex>(this.paths.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).update((index) => sortFlowSubflowIndex(mutator(index)));
   }
 
   async readFlowInstructionIndex(projectId: string): Promise<FlowInstructionIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowInstructionIndex>(this.paths.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).read();
   }
 
   async writeFlowInstructionIndex(projectId: string, mutator: (index: FlowInstructionIndex) => FlowInstructionIndex): Promise<FlowInstructionIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowInstructionIndex>(this.paths.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).update((index) => sortFlowInstructionIndex(mutator(index)));
   }
 
   async readFlowChangeProposalIndex(projectId: string): Promise<FlowChangeProposalIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowChangeProposalIndex>(this.paths.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).read();
   }
 
   async writeFlowChangeProposalIndex(projectId: string, mutator: (index: FlowChangeProposalIndex) => FlowChangeProposalIndex): Promise<FlowChangeProposalIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowChangeProposalIndex>(this.paths.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).update((index) => sortFlowChangeProposalIndex(mutator(index)));
   }
 
   async readFlowRunIndex(projectId: string): Promise<FlowRunIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowRunIndex>(this.paths.flowRunIndexFile(projectId), emptyFlowRunIndex).read();
   }
 
   async writeFlowRunIndex(projectId: string, mutator: (index: FlowRunIndex) => FlowRunIndex): Promise<FlowRunIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowRunIndex>(this.paths.flowRunIndexFile(projectId), emptyFlowRunIndex).update((index) => sortFlowRunIndex(mutator(index)));
   }
 
   async readFlowAdaptationIndex(projectId: string): Promise<FlowAdaptationIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowAdaptationIndex>(this.paths.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).read();
   }
 
   async writeFlowAdaptationIndex(projectId: string, mutator: (index: FlowAdaptationIndex) => FlowAdaptationIndex): Promise<FlowAdaptationIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowAdaptationIndex>(this.paths.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).update((index) => sortFlowAdaptationIndex(mutator(index)));
   }
 
   async readFlowAdaptationPolicyIndex(projectId: string): Promise<FlowAdaptationPolicyIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.paths.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).read();
   }
 
   async writeFlowAdaptationPolicyIndex(projectId: string, mutator: (index: FlowAdaptationPolicyIndex) => FlowAdaptationPolicyIndex): Promise<FlowAdaptationPolicyIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.paths.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).update((index) => sortFlowAdaptationPolicyIndex(mutator(index)));
   }
 
   async readRuntimeIndex(projectId: string): Promise<RuntimeIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<RuntimeIndex>(this.paths.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).read();
   }
 
   async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await new ProgramJsonStore<PipelineIndex>(this.paths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).read();
   }
 }

@@ -13,7 +13,7 @@
 // fields, so a field the capability sends and Core never looks at shows up as
 // a field Core dropped rather than as a success.
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { withProgramAuthSession } from "../../../../../lib/program-route";
@@ -150,61 +150,59 @@ const SCRIPTED_MODEL = {
   timeoutMs: 20_000
 };
 
-export async function openContractWorld(): Promise<ContractWorld> {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-capability-contract-"));
-  const service = new AutomationStudioService({
-    dataDir: path.join(rootDir, ".fluxiq", "data"),
+type ContractSeed = { rootDir: string; ids: ContractWorld["ids"] };
+
+// The seeded data is built once per test file and copied into each world. A
+// world used to seed its own -- fifteen Core operations on a fresh project --
+// for every one of about eighty variants. That was most of the file's 440-629 s,
+// and on a loaded machine it pushed single variants past their timeout. Each
+// world still gets its own copy and its own service, so no variant sees
+// another's writes.
+let seeding: Promise<ContractSeed> | undefined;
+
+function contractService(dataDir: string): AutomationStudioService {
+  return new AutomationStudioService({
+    dataDir,
     seedFixture: false,
     llmProviderResolver: async () => SCRIPTED_MODEL as never
   }).bindNativeNodeRuntime(buildNodeRuntime());
-  const identityAccess = {
-    authorizeSessionPin: async (input: { sessionId?: string; pin?: string }) => {
-      if (input.sessionId !== SESSION_ID || input.pin !== CONTRACT_PIN) throw new Error("The PIN was not accepted.");
-      return { authorized: true };
-    }
-  };
-  // The client gateway is the one collaborator faked: a paired browser cannot
-  // be conjured in a test, and revoking one needs nothing but its id.
-  const revoked = new Set<string>();
-  const clientGateway = {
-    revokeTrustedClient: async (trustedClientId: string) => {
-      if (trustedClientId !== TRUSTED_CLIENT_ID || revoked.has(trustedClientId)) return false;
-      revoked.add(trustedClientId);
-      return true;
-    }
-  };
+}
+
+const identityAccess = {
+  authorizeSessionPin: async (input: { sessionId?: string; pin?: string }) => {
+    if (input.sessionId !== SESSION_ID || input.pin !== CONTRACT_PIN) throw new Error("The PIN was not accepted.");
+    return { authorized: true };
+  }
+};
+
+/** Core's registry with the Automation Studio API registered on `service`, and each endpoint's classification. */
+function contractRegistry(service: AutomationStudioService, clientGateway: unknown) {
   const registry = new GlobalProgramApiRegistry({ identityAccess: identityAccess as never });
   registerAutomationStudioApi(registry, service, identityAccess as never, undefined, clientGateway as never);
   const endpoints = registry.endpoints().filter((entry) => entry.programId === "automation-studio");
   const classifications = new Map(endpoints.map((entry) => [entry.endpoint, entry.classification]));
-  const actor: ProgramApiActor = {
-    sessionId: SESSION_ID,
-    userId: "user.contract",
-    roleId: "admin",
-    permissions: [...new Set(endpoints.map((entry) => entry.permission))]
-  };
+  return { registry, endpoints, classifications };
+}
 
-  const exchanges: ContractExchange[] = [];
-  const call = async <T>(endpoint: string, payload: JsonObject | undefined): Promise<ApiResponse<T>> => {
-    const sent = payload === undefined ? undefined : JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
-    const reads = new Set<string>();
-    const routed = sent === undefined ? undefined : withProgramAuthSession("automation-studio", sent, SESSION_ID);
-    const response = await registry.call({ programId: "automation-studio", endpoint, scope: {}, actor, payload: traced(routed, "", reads) });
-    exchanges.push({ endpoint, sent, reads, response });
-    const wire = JSON.parse(JSON.stringify(response)) as typeof response;
-    return wire.ok
-      ? { ok: true, status: 200, ...(wire.payload === undefined ? {} : { payload: wire.payload as T }) }
-      : { ok: false, status: 400, retryable: false, error: wire.error ?? "Refused.", ...(wire.errorCode ? { code: wire.errorCode } : {}) };
-  };
-  const transport: ProgramCommandTransport = {
-    get: (endpoint) => call(endpoint, undefined),
-    post: (endpoint, payload) => call(endpoint, payload)
-  };
-
-  const close = async () => {
+/**
+ * Core's classification of every Automation Studio endpoint. Registering the
+ * handlers reads no data, so this needs no seeded world. It used to open one,
+ * and on a loaded machine the seeding alone outran the five-second timeout.
+ */
+export async function contractClassifications(): Promise<ReadonlyMap<string, ProgramEndpointClassification>> {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-capability-classes-"));
+  const service = contractService(path.join(rootDir, ".fluxiq", "data"));
+  try {
+    return contractRegistry(service, { revokeTrustedClient: async () => false }).classifications;
+  } finally {
     await service.close();
     await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
-  };
+  }
+}
+
+async function seedContractData(): Promise<ContractSeed> {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-capability-contract-seed-"));
+  const service = contractService(path.join(rootDir, ".fluxiq", "data"));
   try {
     const project = await service.createProject({ name: "Contract project" });
     const created = await service.createFlow({ projectId: project.id, name: "Contract Flow" });
@@ -247,11 +245,9 @@ export async function openContractWorld(): Promise<ContractWorld> {
     const blankCreated = await service.createFlow({ projectId: project.id, name: "Contract blank Flow" });
     await service.saveFlow({ projectId: project.id, flow: withModelKey(blankCreated) as never });
     await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: blankCreated.flowId, instruction: "Create a deterministic Start to End Flow." });
+    await service.close();
     return {
-      service,
-      transport,
-      exchanges,
-      classifications,
+      rootDir,
       ids: {
         projectId: project.id,
         flowId: flow.flowId,
@@ -263,11 +259,66 @@ export async function openContractWorld(): Promise<ContractWorld> {
         routeId,
         trustedClientId: TRUSTED_CLIENT_ID,
         version
-      },
-      close
+      }
     };
   } catch (error) {
-    await close();
+    await service.close();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
     throw error;
   }
+}
+
+/** Removes the seeded data the worlds were copied from. Call it once, after every world has closed. */
+export async function closeContractSeed(): Promise<void> {
+  const seed = await seeding?.catch(() => undefined);
+  seeding = undefined;
+  if (seed) await rm(seed.rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+}
+
+export async function openContractWorld(): Promise<ContractWorld> {
+  seeding ??= seedContractData();
+  const seed = await seeding;
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-capability-contract-"));
+  await cp(seed.rootDir, rootDir, { recursive: true });
+  const service = contractService(path.join(rootDir, ".fluxiq", "data"));
+  // The client gateway is the one collaborator faked: a paired browser cannot
+  // be conjured in a test, and revoking one needs nothing but its id.
+  const revoked = new Set<string>();
+  const clientGateway = {
+    revokeTrustedClient: async (trustedClientId: string) => {
+      if (trustedClientId !== TRUSTED_CLIENT_ID || revoked.has(trustedClientId)) return false;
+      revoked.add(trustedClientId);
+      return true;
+    }
+  };
+  const { registry, endpoints, classifications } = contractRegistry(service, clientGateway);
+  const actor: ProgramApiActor = {
+    sessionId: SESSION_ID,
+    userId: "user.contract",
+    roleId: "admin",
+    permissions: [...new Set(endpoints.map((entry) => entry.permission))]
+  };
+
+  const exchanges: ContractExchange[] = [];
+  const call = async <T>(endpoint: string, payload: JsonObject | undefined): Promise<ApiResponse<T>> => {
+    const sent = payload === undefined ? undefined : JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    const reads = new Set<string>();
+    const routed = sent === undefined ? undefined : withProgramAuthSession("automation-studio", sent, SESSION_ID);
+    const response = await registry.call({ programId: "automation-studio", endpoint, scope: {}, actor, payload: traced(routed, "", reads) });
+    exchanges.push({ endpoint, sent, reads, response });
+    const wire = JSON.parse(JSON.stringify(response)) as typeof response;
+    return wire.ok
+      ? { ok: true, status: 200, ...(wire.payload === undefined ? {} : { payload: wire.payload as T }) }
+      : { ok: false, status: 400, retryable: false, error: wire.error ?? "Refused.", ...(wire.errorCode ? { code: wire.errorCode } : {}) };
+  };
+  const transport: ProgramCommandTransport = {
+    get: (endpoint) => call(endpoint, undefined),
+    post: (endpoint, payload) => call(endpoint, payload)
+  };
+
+  const close = async () => {
+    await service.close();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  };
+  return { service, transport, exchanges, classifications, ids: { ...seed.ids }, close };
 }

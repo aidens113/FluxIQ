@@ -21,6 +21,7 @@ const FLOW_ID = "flow.incomplete";
 
 const projects = {
   findProject: async () => ({ id: PROJECT_ID }),
+  requireProject: async () => undefined,
   ensureProjectStructure: async () => undefined
 } as unknown as AutomationStudioProjectStore;
 

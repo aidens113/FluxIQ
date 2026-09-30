@@ -47,7 +47,7 @@ export class AutomationStudioObjectDocuments {
   ) {}
 
   async readProjectObjectAsset(projectId: string, sha256: string): Promise<AutomationStudioObjectAsset> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
     const asset = await this.objectStore.readProjectObject(projectId, sha256);
     if (!asset.mediaType.startsWith("image/") && asset.mediaType !== "application/octet-stream") {
@@ -57,7 +57,7 @@ export class AutomationStudioObjectDocuments {
   }
 
   async writeProjectObjectAsset(input: AutomationStudioWriteProjectObjectAssetInput): Promise<AutomationStudioWriteProjectObjectAssetResult> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
     if (!isAutomationStudioRenderableAssetMediaType(input.mediaType)) {
       throw new Error("Automation Studio state assets must be PNG, JPEG, WebP, or GIF images.");

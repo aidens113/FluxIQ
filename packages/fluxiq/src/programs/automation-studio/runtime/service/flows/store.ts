@@ -50,7 +50,7 @@ export class AutomationStudioFlowStore {
   ) {}
 
   async listFlowMetadataPage(input: { projectId: string; limit?: number; cursor?: string | null; status?: string }): Promise<AutomationStudioFlowResourcePage<AutomationStudioSqlFlowRecord>> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false, limit: Math.max(1, Math.min(500, Math.trunc(input.limit ?? 50))) };
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId: input.projectId });
     try {
@@ -61,7 +61,7 @@ export class AutomationStudioFlowStore {
   }
 
   async getFlowMetadataDetail(projectId: string, flowId: string): Promise<AutomationStudioSqlFlowDetail | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.projectDatabasePool) return null;
     const canonical = await this.getFlow(projectId, flowId).catch(() => null);
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
@@ -82,7 +82,7 @@ export class AutomationStudioFlowStore {
   // nothing by itself, and the next ordinary save persists what it produced.
   // Metadata a person configured does not match the block and is untouched.
   async getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     await this.loadProjectFlow(projectId, flowId);
     const flow = await this.repositories.flows.get(flowId);
     if (!flow || flow.projectId !== projectId) throw new Error(`Unknown Automation Studio Flow: ${flowId}`);
@@ -92,13 +92,13 @@ export class AutomationStudioFlowStore {
   }
 
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRouterFile(projectId, flowId), () => ({})).read();
     return typeof stored.routerId === "string" ? stored as unknown as AutomationStudioFlowRouter : null;
   }
 
   async getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
     if (typeof stored.subflowId === "string") return stored as unknown as AutomationStudioFlowSubflow;
     return await this.readSqlFlowSubflow(projectId, flowId, subflowId);
@@ -138,7 +138,7 @@ export class AutomationStudioFlowStore {
   }
 
   async listProjectChangeFeed(input: { projectId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioProjectChangeFeedPage> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
     const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
     if (!this.paths.root || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
@@ -245,7 +245,7 @@ export class AutomationStudioFlowStore {
   async tryWithFlowResourceRepository<T>(projectId: string, operation: (repository: AutomationStudioProjectFlowResourceRepository) => Promise<T>): Promise<T | null> {
     if (!this.projectDatabasePool || !this.paths.root) return null;
     try {
-      await this.projects.findProject(projectId);
+      await this.projects.requireProject(projectId);
       const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
       try {
         return await operation(repository);

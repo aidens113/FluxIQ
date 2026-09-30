@@ -35,7 +35,7 @@ export class AutomationStudioFlowGraphPatch {
     replayed: boolean;
     flow?: AutomationStudioFlowArtifact & { graphRevision: number };
   }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
     const canonical = await this.facade.getFlow(input.projectId, input.flowId);
     await this.assertFlowGraphMutationAllowed(input.projectId, canonical);
