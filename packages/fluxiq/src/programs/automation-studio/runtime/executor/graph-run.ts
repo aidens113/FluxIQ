@@ -26,6 +26,7 @@ import { automationStudioRunState, type AutomationStudioRunState } from "./run-s
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityStep } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -438,6 +439,7 @@ async function executeAutomationStudioGraph(
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
+      emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label });
       const executed = remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
         : await executeWithRegionTimeout(
@@ -499,6 +501,7 @@ async function executeAutomationStudioGraph(
           return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
         }
         if (ask.parks) {
+          emitAutomationStudioActivity({ phase: "waiting_permission", label: "Waiting for an answer before going on", detail: { kind: "ask", title: `Asked a question (${ask.kind})`, status: "started", ref: currentNode.id } });
           const settlement = await settleAskInPlace(options, parked);
           if (!settlement) {
             return { status: "waiting", startedAt, currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, parked, ...(attempt.message ? { message: attempt.message } : {}) };
@@ -537,6 +540,7 @@ async function executeAutomationStudioGraph(
         // whichever way the ladder goes.
         const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
         const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
+        emitAutomationStudioActivity({ phase: "repairing", label: `Recovering from a failed step${failedNode.label?.trim() ? `: ${failedNode.label.trim()}` : ""}`, detail: { kind: "step", title: "Recovery started", status: "started", ref: failedNode.id } });
         const ladder = await runAutomationStudioRecoveryLadder({
           flow,
           node: failedNode,

@@ -1,6 +1,7 @@
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
+  ClientGatewayActivity,
   ClientGatewayClientHello,
   ClientGatewayClientMessage,
   ClientGatewayEventHandler,
@@ -13,6 +14,7 @@ import type {
 import type { JsonObject } from "../core/index.ts";
 import {
   ClientGatewayAccess,
+  ClientGatewayActivityPublisher,
   ClientGatewayAuditLog,
   ClientGatewayCommands,
   ClientGatewayEventBus,
@@ -58,6 +60,7 @@ export class ClientGatewayService {
   private readonly inbound: ClientGatewayInbound;
   private readonly commands: ClientGatewayCommands;
   private readonly audit: ClientGatewayAuditLog;
+  private readonly activity: ClientGatewayActivityPublisher;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -87,6 +90,7 @@ export class ClientGatewayService {
     this.commands = commands;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands });
+    this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
   }
 
@@ -179,6 +183,16 @@ export class ClientGatewayService {
 
   markActiveRecording(sessionId: string, input: { recordingId: string; projectId?: string | null }): void {
     this.commands.markActiveRecording(sessionId, input);
+  }
+
+  /**
+   * Pushes `server.activity` to every ready session that advertised the
+   * activity capability and is bound to `target.projectId` or to no project.
+   * The message skips the outbound queue and is dropped on a closed socket.
+   * Returns how many sessions it was sent to.
+   */
+  publishActivity(activity: ClientGatewayActivity, target: { projectId: string }): number {
+    return this.activity.publish(activity, target);
   }
 
   /**

@@ -77,6 +77,40 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     });
   });
 
+  it("emits server.activity as a typed activity event", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const client = new FluxIQClientGatewayWebSocketClient({
+      client: { clientId: "extension.activity", clientType: "extension", name: "Activity extension" },
+      WebSocketImpl: class extends FakeWebSocket {
+        constructor(url: string) {
+          super(url);
+          sockets.push(this);
+        }
+      }
+    });
+    const phases: string[] = [];
+    const other: string[] = [];
+    client.on("activity", (event) => {
+      phases.push(`${event.message.payload.phase}:${event.message.payload.sequence}`);
+    });
+    client.on("execute_action", () => {
+      other.push("execute_action");
+    });
+    await client.connect();
+
+    sockets[0]!.receive(serverMessage("server.activity", {
+      activityId: "build.1",
+      sequence: 4,
+      subject: { kind: "build", id: "build.1", projectId: "project.1" },
+      phase: "thinking",
+      label: "Deciding the next step",
+      at: "2026-09-29T00:00:00.000Z"
+    }));
+
+    expect(phases).toEqual(["thinking:4"]);
+    expect(other).toEqual([]);
+  });
+
   it("mirrors Automation Studio recording methods over websocket messages", async () => {
     const sockets: FakeWebSocket[] = [];
     const client = new FluxIQAutomationStudioWebSocketClient({
