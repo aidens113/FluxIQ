@@ -26,6 +26,18 @@ describe("trusted-local native node runtime", () => {
     expect(trace.attempts[0]?.logs).toEqual([{ level: "info", message: "done", data: { token: "[REDACTED]", visible: "yes" } }]);
   });
 
+  it("fills a declared port from the Flow's inputs, never from a bare key another node left behind", async () => {
+    const source = node({ id: "example.source", source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: "source" }, inputs: [], outputs: [{ id: "in", label: "In", valueType: "number" }] });
+    const seen: Record<string, unknown>[] = [];
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([node(), source]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { source: () => ({ outputs: { in: 99 } }), transform: ({ inputs }) => { seen.push(inputs); return { outputs: { result: 1 } }; } } });
+    const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.native.leak", ownerKind: "policy", ownerId: "flow.native.leak", name: "Leak", nodes: [{ id: "source", definitionId: "example.source" }, { id: "native", definitionId: "example.transform" }], edges: [{ id: "source.native", sourceNodeId: "source", sourcePortId: "success", targetNodeId: "native", targetPortId: "in" }], createdAt: 1, updatedAt: 1 };
+    const withInput = await runAutomationStudioGraph(flow, { inputs: { in: 4, ambientSecret: "must-not-cross" }, nativeNodeExecutor: ({ node: instance, inputs, signal }) => runtime.execute(instance, inputs, signal) });
+    const withoutInput = await runAutomationStudioGraph(flow, { nativeNodeExecutor: ({ node: instance, inputs, signal }) => runtime.execute(instance, inputs, signal) });
+    expect(withInput.status).toBe("succeeded"); expect(withoutInput.status).toBe("succeeded");
+    expect(withInput.values.in).toBe(99);
+    expect(seen).toEqual([{ in: 4 }, {}]);
+  });
+
   it("projects defensive registry resolution from the runtime grants", () => {
     const runtime = new AutomationStudioNativeNodeRuntime({
       permissions: ["native.execute"],
