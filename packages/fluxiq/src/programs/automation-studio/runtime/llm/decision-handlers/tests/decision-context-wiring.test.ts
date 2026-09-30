@@ -1,7 +1,7 @@
 // How the loop answers the model now that every answer is recorded: the
 // decision history beside the window, superseded Core notes leaving it, an
-// answered repeat saying what it repeats (and checked against the page when it
-// can be), the second answer from one result redirected at once, and a
+// answered repeat saying what it repeats (and looked at once more when it can
+// be checked), the second answer from one result redirected at once, and a
 // completion resent over the same draft marked as such.
 import { describe, expect, it, vi } from "vitest";
 // The loop first: `runtime/loop-limits/` imports back into the llm directory.
@@ -115,53 +115,58 @@ describe("a request answered from memory", () => {
   });
 });
 
-describe("a look answered from memory, when the page can be digested", () => {
-  it("is answered saying the page is unchanged when a fresh digest matches", async () => {
+describe("a look asked again, when the caller digests its state", () => {
+  it("is run once more and, finding the page exactly as before, replaces the answering result with a note saying so", async () => {
     const decide = vi.fn().mockResolvedValueOnce(look("call.1")).mockResolvedValueOnce(look("call.2")).mockResolvedValueOnce({ kind: "complete", result: {} });
     const executeTool = vi.fn(async (_call: { callId: string }) => ({ page: 1 }));
     const captureStateDigest = vi.fn(async (_input: { callId: string }) => "state.a");
 
     await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest });
 
-    expect(executeTool).toHaveBeenCalledTimes(1);
-    // Before and after call.1, then the check at iteration 2 under a call id of the loop's own.
-    expect(captureStateDigest.mock.calls.map(([input]) => input.callId)).toEqual(["call.1", "call.1", "core.answer_check.2"]);
-    const note = ofTool(shownAt(decide, 2), "core.request_check")[0]!.value;
-    expect(note).toMatchObject({ pageUnchanged: true });
-    expect(note.instruction).toContain("unchanged");
+    // Asked again for the first time: run once more, with no digest of the loop's own beside it.
+    expect(executeTool.mock.calls.map(([input]) => input.callId)).toEqual(["call.1", "call.2"]);
+    expect(captureStateDigest.mock.calls.map(([input]) => input.callId)).toEqual(["call.1", "call.1", "call.2", "call.2"]);
+    const shown = shownAt(decide, 2);
+    expect(ofTool(shown, "inspect").map((entry) => entry.callId)).toEqual(["call.2"]);
+    const note = ofTool(shown, "core.request_check")[0]!.value;
+    expect(note).toMatchObject({ code: "llm_evidence_loop.looked_again_unchanged", answeredByCallId: "call.2", pageUnchanged: true, timesAsked: 2, askedAt: [1, 2] });
+    expect(note.instruction).toContain("Core looked again just now and the page is exactly as before.");
   });
 
-  it("is run instead when the page moved by itself, and only once for one request", async () => {
+  it("is an ordinary look when the page moved by itself, and every later ask is answered from memory with no digest", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(look("call.1")).mockResolvedValueOnce(look("call.2")).mockResolvedValueOnce(look("call.3"))
       .mockResolvedValueOnce({ kind: "complete", result: {} });
-    const executeTool = vi.fn(async (_call: { callId: string }) => ({ page: 1 }));
+    const executeTool = vi.fn(async ({ callId }: { callId: string }) => ({ page: 1, seenBy: callId }));
     // A page that never settles: every digest differs from the last.
     let digests = 0;
     const captureStateDigest = vi.fn(async () => `state.${digests += 1}`);
 
-    await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest, maxStepsWithoutProgress: 6 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest, maxStepsWithoutProgress: 6 });
 
-    // call.1 ran; call.2 was run because the page had moved; call.3 was answered, unverified.
+    // call.1 ran; call.2 was run once more and the page had moved; call.3 was answered, with no digest taken for it.
     expect(executeTool.mock.calls.map(([input]) => input.callId)).toEqual(["call.1", "call.2"]);
+    expect(captureStateDigest).toHaveBeenCalledTimes(4);
+    const two = shownAt(decide, 2);
+    expect(ofTool(two, "inspect").map((entry) => entry.callId)).toEqual(["call.1", "call.2"]);
+    expect(ofTool(two, "core.request_check")).toEqual([]);
+    expect(result.trace.find((row) => row.iteration === 2)).toMatchObject({ callId: "call.2", progress: { pageState: "changed" } });
     const note = ofTool(shownAt(decide, 3), "core.request_check")[0]!.value;
     expect(note).toMatchObject({ code: "llm_evidence_loop.already_answered", answeredByCallId: "call.2" });
     expect(note).not.toHaveProperty("pageUnchanged");
   });
 
-  it("is answered as before when the digest throws", async () => {
+  it("is answered from memory as before when the answering call recorded no state", async () => {
     const decide = vi.fn().mockResolvedValueOnce(look("call.1")).mockResolvedValueOnce(look("call.2")).mockResolvedValueOnce({ kind: "complete", result: {} });
     const executeTool = vi.fn(async () => ({ page: 1 }));
-    const captureStateDigest = vi.fn(async ({ callId }: { callId: string }) => {
-      if (callId.startsWith("core.answer_check")) throw new Error("page unreadable");
-      return "state.a";
-    });
+    const captureStateDigest = vi.fn(async () => undefined);
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest });
 
     expect(result).toMatchObject({ ok: true });
     expect(executeTool).toHaveBeenCalledTimes(1);
-    expect(ofTool(shownAt(decide, 2), "core.request_check")[0]!.value).not.toHaveProperty("pageUnchanged");
+    expect(captureStateDigest).toHaveBeenCalledTimes(2);
+    expect(ofTool(shownAt(decide, 2), "core.request_check")[0]!.value).toMatchObject({ code: "llm_evidence_loop.already_answered" });
   });
 });
 

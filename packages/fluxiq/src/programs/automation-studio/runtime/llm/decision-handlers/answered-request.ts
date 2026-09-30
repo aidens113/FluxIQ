@@ -17,12 +17,13 @@ import {
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopTrace
 } from "../evidence-loop/index.ts";
+import { automationStudioLlmEvidenceAskedAgain } from "./look-withdrawal.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /**
  * Answers one tool call from what the loop already holds: the loop ends, or
- * asks again. `pageUnchanged` when the loop has just digested the page and
- * found it as the answering call left it (`./answer-check.ts`).
+ * asks again. It takes no digest (`./answer-check.ts`), and an answer given
+ * right after a redirect withdraws looks (`./look-withdrawal.ts`).
  */
 export function automationStudioLlmEvidenceHandleAnsweredRequest(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -31,8 +32,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   code: AutomationStudioLlmEvidenceAnsweredRequestCode,
   answeredByCallId: string,
   /** The request as the repeat policy keys it (`../repeat-policy.ts`): the same one the answering call was recorded under. */
-  requestSignature: string,
-  pageUnchanged = false
+  requestSignature: string
 ): Exclude<AutomationStudioLlmEvidenceDecisionNext, { kind: "rerun" }> {
   const { limits, trace, accounting, draftSteps, noProgress, evidence, history } = context;
   const end = (endCode: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, endCode, trace, accounting) });
@@ -52,8 +52,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
     code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
     ...(repeat ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     ...(answering ? { answeredAt: answering.iteration } : {}),
-    ...(context.lastAction ? { lastActionBefore: context.lastAction } : {}),
-    ...(pageUnchanged ? { pageUnchanged: true as const } : {})
+    ...(context.lastAction ? { lastActionBefore: context.lastAction } : {})
   });
   const answeredTool = context.toolsById.get(decision.toolId);
   const draftChanged = context.draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, proposes: false, resultCode: code });
@@ -70,6 +69,8 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   // After the note, so the redirection is the newest thing the model reads;
   // at once from the second answer out of the same result.
   const answeredAgain = records.filter((record) => record.decision.kind === "answered" && record.decision.signature === signature && record.decision.answeredByCallId === answeredByCallId).length;
+  // Asked again straight after a redirect: looking is withdrawn until an action runs.
+  automationStudioLlmEvidenceAskedAgain(context, iteration);
   noProgress.redirect(iteration, answeredAgain >= 2);
   return { kind: "continue" };
 }

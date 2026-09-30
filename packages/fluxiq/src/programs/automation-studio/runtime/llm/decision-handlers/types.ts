@@ -23,6 +23,7 @@ import type {
 } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, EvidenceLoopLimits } from "../loop-configuration.ts";
 import type { AutomationStudioFlowDraftDryRunRefusal } from "../node-tools/index.ts";
+import type { AutomationStudioLlmEvidenceLookWithdrawal } from "./look-withdrawal.ts";
 
 /** What a recorded row changed, beside the row itself: the loop turns it into the row's `progress`. */
 export type AutomationStudioLlmEvidenceRowTransition = {
@@ -83,11 +84,19 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
    */
   dryRunSeen: { ran: boolean; verdict?: JsonValue };
   /**
-   * Requests run again because the page had moved since the call that
-   * answered them. Keyed on the request's signature, which carries its epoch,
-   * so each is run again at most once per epoch.
+   * Requests already asked again once, and run then to see whether the page
+   * was as the answering call left it (`./answer-check.ts`). Keyed on the
+   * request's signature, which carries its epoch, so each is run again at most
+   * once per epoch and every later ask is answered from memory.
    */
-  pageMovedReruns: Set<string>;
+  reaskedRequests: Set<string>;
+  /**
+   * The state each call left, by call id, where the call reported one or the
+   * caller's digest hook gave one: what a look asked again is compared with.
+   */
+  callStates: Map<string, string>;
+  /** Looks withdrawn after an ignored redirect (`./look-withdrawal.ts`). */
+  looks: AutomationStudioLlmEvidenceLookWithdrawal;
   toolIds: ReadonlySet<string>;
   toolsById: ReadonlyMap<string, AutomationStudioLlmEvidenceTool>;
   /** Whether a failed call is shown to the model rather than ending the loop. */

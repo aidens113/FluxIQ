@@ -19,11 +19,17 @@ import {
 // holds -- each handed the loop's state as one context object
 // (`decision-handlers/`).
 import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
+  automationStudioLlmEvidenceAskedAgain,
   automationStudioLlmEvidenceHandleAmendment,
   automationStudioLlmEvidenceHandleAnsweredRequest,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
+  automationStudioLlmEvidenceLookWithdrawal,
+  automationStudioLlmEvidenceReaskOutcome,
+  automationStudioLlmEvidenceShowVerifiedRepeat,
+  type AutomationStudioLlmEvidenceAnswerCheckOutcome,
   type AutomationStudioLlmEvidenceDecisionHandlerContext,
   type AutomationStudioLlmEvidenceLoopCounters,
   type AutomationStudioLlmEvidenceRowTransition as RowTransition
@@ -259,8 +265,18 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // taken inside the same attempt as the call it brackets, so a hook that
   // throws makes the step a recorded failure the model and the reader can both
   // see, rather than a step that quietly has no digests.
+  const hook = input.captureStateDigest;
   const digest = async (callId: string, toolId: string): Promise<string | undefined> =>
-    input.captureStateDigest ? input.captureStateDigest({ callId, toolId, ...(input.signal ? { signal: input.signal } : {}) }) : undefined;
+    hook ? hook({ callId, toolId, ...(input.signal ? { signal: input.signal } : {}) }) : undefined;
+  // The states either side of a call: the hook's, when the caller offered one,
+  // otherwise the ones the call reported from its own captures -- never both at
+  // one point (`loop-configuration.ts`, `captureStateDigest`). Reading them off
+  // the result is what keeps a look at one capture rather than three.
+  const statesOf = (execution: { stateDigests?: { before?: string; after?: string } }, before: string | undefined, after: string | undefined): { before: string | undefined; after: string | undefined } =>
+    hook ? { before, after } : { before: execution.stateDigests?.before, after: execution.stateDigests?.after };
+  // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
+  // only where a decision can be refused without ending the loop.
+  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined });
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting();
   if (!limits || !automationStudioLlmEvidenceValidTools(input.tools)) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
@@ -312,7 +328,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
       completionAttempts: counters.completionAttempts,
       canComplete: offeredCompletion,
-      answerability: previousAnswerability
+      answerability: previousAnswerability,
+      looksWithdrawn: looks.active(counters.attemptEpoch)
     }),
     // Dropped rather than ending anything when it will not fit.
     show: (iteration: number, note: JsonObject) => {
@@ -320,6 +337,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
       evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, value: note });
       history.record(iteration, { kind: "redirect", ...(typeof note.code === "string" ? { code: note.code } : {}) });
+      looks.redirectShown(iteration);
     }
   });
   // Counts evidence the loop itself adds against the byte limit. Returns its
@@ -347,6 +365,25 @@ export async function runAutomationStudioLlmEvidenceLoop(
       return undefined;
     }
     return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
+  };
+  // An unusable decision, answered: recorded, then either told to the model as
+  // evidence before it is asked again, or the error that ends the loop.
+  const refuseDecision = (
+    iteration: number,
+    issueCodes: readonly string[],
+    offers: { tools: boolean; complete: boolean; amend: boolean },
+    usage?: AutomationStudioLlmEvidenceLoopTrace["usage"]
+  ): "ask_again" | "evidence_limit" | { error: unknown } => {
+    const resultCode = issueCodes[0];
+    history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
+    const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(usage ? { usage } : {}) }, issueCodes);
+    if (stalled) return stalled;
+    // The model is told what was wrong, as evidence, before it is asked again.
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers });
+    if (reserveEvidence(feedback) === undefined) return "evidence_limit";
+    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
+    evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
+    return "ask_again";
   };
   // **A loop that ran out of turns ends as that, whatever its last decision
   // was** (`./evidence-loop/exhaustion.ts` says what the other reading cost and
@@ -392,7 +429,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, pageMovedReruns: new Set(),
+    history, draftRevision: () => draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), looks,
     recordRow, draftRecord, reserveEvidence, unusable, dryRun
   };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
@@ -408,6 +445,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       stateBefore = await digest(callId, initialTool.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), maxEvidenceBytes: limits.toolEvidenceBytes, ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
       stateAfter = await digest(callId, initialTool.toolId);
+      if (execution) ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
     } catch {
       execution = "threw";
     }
@@ -430,7 +468,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
         answeredRequests.set(automationStudioLlmEvidenceCanonicalJson([counters.mutationEpoch, initialTool.toolId, initialInput]), callId);
         observationEpochs.set(initialTool.toolId, counters.attemptEpoch);
         latestObservations.set(initialTool.toolId, callId);
+        if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
       }
+      const initialRecord = callRecord(initialTool, initialInput, execution);
+      if (initialRecord.effect === "observe" && initialRecord.proposes === false) looks.sawLook(initialTool.toolId, initialRecord.actionId);
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence });
       const lookRefusedItself = typeof execution.evidence === "object" && execution.evidence !== null && !Array.isArray(execution.evidence) && execution.evidence.ok === false;
       history.record(0, { kind: "look", callId, toolId: initialTool.toolId, resultCode: execution.resultCode ?? "ok", ...(lookRefusedItself ? { refused: true } : {}) });
@@ -438,7 +479,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // so a first decision that asks for it again and gets the same bytes back
       // is a step without progress rather than the loop's first step.
       noProgress.answered(initialTool.toolId, JSON.stringify(execution.evidence));
-      const draftChanged = draftRecord({ iteration: 0, callId, ...callRecord(initialTool, initialInput, execution), effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
+      const draftChanged = draftRecord({ iteration: 0, callId, ...initialRecord, effect: "observe", effectApplied: false, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}) });
       const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
         ? "unobserved"
         : stateBefore === stateAfter ? "unchanged" : "changed";
@@ -464,9 +505,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // is never a repeat however identical it looks, and the step it replaces.
     let rerunning = false;
     let rerunReplaces: AutomationStudioFlowDraftStep | undefined;
-    const eligibleTools = input.tools.filter((tool) =>
+    // A look asked again for the first time, run to see whether the page is as its answer left it (`decision-handlers/answer-check.ts`).
+    let verifying: Extract<AutomationStudioLlmEvidenceAnswerCheckOutcome, { kind: "verify" }> | undefined;
+    // What may be offered, with looks withdrawn after an ignored redirect.
+    const eligibleTools = looks.offer(input.tools.filter((tool) =>
       !automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== counters.attemptEpoch
-    );
+    ), counters.attemptEpoch);
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
     const canComplete = accounting.toolCalls - counters.failedToolCalls >= limits.minToolCalls;
     offeredCompletion = canComplete;
@@ -506,18 +550,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
-        const resultCode = thrown.issueCodes[0];
-        history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes: thrown.issueCodes }), issueCodes: thrown.issueCodes });
-        const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}) }, thrown.issueCodes);
-        if (!stalled) {
-          // The model is told what was wrong, as evidence, before it is asked again.
-          const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: thrown.issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers: { tools: offered.length > 0, complete: canComplete, amend: canAmend } });
-          if (reserveEvidence(feedback) === undefined) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
-          automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
-          evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
-          continue;
-        }
-        error = stalled.error;
+        const refused = refuseDecision(iteration, thrown.issueCodes, { tools: offered.length > 0, complete: canComplete, amend: canAmend });
+        if (refused === "ask_again") continue;
+        if (refused === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
+        error = refused.error;
       }
       if (input.propagateDecisionErrors) throw error;
     }
@@ -543,6 +579,30 @@ export async function runAutomationStudioLlmEvidenceLoop(
       rerunReplaces = next.replaces;
       decision = next.decision;
     }
+    // A look withdrawn after an ignored redirect, asked for anyway: refused as
+    // an unusable decision -- never run, and never answered from memory, which
+    // is the move being taken away (`decision-handlers/look-withdrawal.ts`).
+    const asked = rerunning ? undefined : toolsById.get(decision.toolId);
+    if (asked && looks.refuses(asked, decision.input, counters.attemptEpoch)) {
+      const issueCodes = [AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE];
+      // Registered first, so it is always one more step of the run without
+      // progress it belongs to rather than the first step of a new one.
+      noProgress.sameIssuesAgain(automationStudioLlmUnusableDecisionIssueSet(issueCodes));
+      // The one that reaches the no-progress guard ends the loop as the repeat
+      // it is -- the ending the answers from memory before it were heading for
+      // -- rather than as a stalled run of replies Core could not read.
+      if (noProgress.steps + 1 >= limits.maxStepsWithoutProgress) {
+        history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
+        noProgress.stepped();
+        recordRow({ iteration, decision: "unusable", resultCode: issueCodes[0]!, ...(decision.usage ? { usage: decision.usage } : {}) });
+        return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      }
+      const refused = refuseDecision(iteration, issueCodes, { tools: offered.length > 0, complete: canComplete, amend: canAmend }, decision.usage);
+      if (refused === "ask_again") continue;
+      if (refused === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
+      if (input.propagateDecisionErrors) throw refused.error;
+      return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+    }
     counters.unusableInARow = 0;
     // The last decision the budget allowed was offered only completion, and was
     // spent on something else. The budget is still what ran out.
@@ -559,15 +619,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (!rerunning && (answeredBy !== undefined || reobservation || wrappingUp)) {
       const code = wrappingUp ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
       const by = wrappingUp ? latestObservations.get(decision.toolId) ?? "" : answeredBy ?? latestObservations.get(decision.toolId)!;
-      // A look is answered from memory only while the page is as the answering
-      // call left it, when the caller can say so; one that moved by itself is
-      // run instead (`decision-handlers/answer-check.ts`).
-      const check = wrappingUp ? undefined : await automationStudioLlmEvidenceAnswerCheck(handling, { iteration, toolId: decision.toolId, answeredByCallId: by, requestSignature: toolRequestSignature });
-      if (check !== "run") {
-        const next = automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, code, by, toolRequestSignature, check === "unchanged");
+      // A look asked again for the first time is run once more, to see whether
+      // the page is as its answer left it; every other repeat is answered from
+      // memory, with no capture (`decision-handlers/answer-check.ts`).
+      const check: AutomationStudioLlmEvidenceAnswerCheckOutcome = wrappingUp ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: by, requestSignature: toolRequestSignature });
+      if (check.kind === "answer") {
+        const next = automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, code, by, toolRequestSignature);
         if (next.kind === "end") return next.result;
         continue;
       }
+      verifying = check;
     }
     // A call id the model already used names a different request here, so the
     // loop gives it one of its own rather than ending: the ids are the model's
@@ -599,6 +660,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (next.kind === "end") return next.result;
       continue;
     }
+    ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
     const { evidence: value, effectApplied, resultCode } = execution;
     const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
     if (accounting.evidenceBytes + evidenceBytes > limits.maxEvidenceBytes) return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
@@ -613,6 +675,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // either shut answers the retry from a refusal carrying nothing.
     const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
     if (lookRefused) answeredRequests.delete(toolRequestSignature);
+    if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
+    // An action this build saw only look and propose nothing: what withdrawal withholds.
+    if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
@@ -654,13 +719,20 @@ export async function runAutomationStudioLlmEvidenceLoop(
       mutated: record.effect === "mutate" && effectApplied,
       ...(execution.repeatedAnswer === undefined ? {} : { repeatedAnswer: execution.repeatedAnswer })
     });
-    if (!repeated && !automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied })) {
+    // A look asked again and run once more: the same page is a step without
+    // progress whatever its bytes, and a page that moved by itself is progress.
+    const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
+    if (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated))) {
       // Progress: a redirect about steps without it no longer holds.
       noProgress.cleared();
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
     } else {
       noProgress.stepped(decision.toolId);
       if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      if (reask === "repeat") {
+        automationStudioLlmEvidenceShowVerifiedRepeat(handling, { iteration, callId, toolId: decision.toolId, answeredByCallId: verifying!.answeredByCallId, requestSignature: toolRequestSignature });
+        automationStudioLlmEvidenceAskedAgain(handling, iteration);
+      }
       noProgress.redirect(iteration);
     }
   }

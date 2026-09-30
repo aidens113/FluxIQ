@@ -60,9 +60,9 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; nodeId?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "nodeId", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "nodeId", "stateDigests", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
@@ -91,11 +91,25 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       ...(typeof value.repeatedAnswer === "number" && Number.isInteger(value.repeatedAnswer) && value.repeatedAnswer >= 2
         ? { repeatedAnswer: value.repeatedAnswer } : {}),
       ...(closedCode(value.nodeId) ? { nodeId: value.nodeId as string } : {}),
+      // The states the call saw, from its own captures. Dropped side by side
+      // rather than fatal: a malformed digest leaves that side unobserved, and
+      // the call it describes still happened.
+      ...(stateDigestsOf(value.stateDigests) ? { stateDigests: stateDigestsOf(value.stateDigests)! } : {}),
       ...(draft ? { draft } : {})
     };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };
+}
+
+/** The code-shaped digests a call reported, or nothing when it reported none that are. */
+function stateDigestsOf(value: unknown): { before?: string; after?: string } | undefined {
+  if (!isRecord(value)) return undefined;
+  const digests = {
+    ...(closedCode(value.before) ? { before: value.before as string } : {}),
+    ...(closedCode(value.after) ? { after: value.after as string } : {})
+  };
+  return Object.keys(digests).length ? digests : undefined;
 }
 
 /** Whether a value is a code or a resolved identifier, and so may travel onto a row a reader keeps. */
@@ -343,6 +357,7 @@ export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlm
     && typeof tool.description === "string" && tool.description.length > 0 && tool.description.length <= 2_000 && isJsonObject(tool.inputSchema)
     && (tool.effect === undefined || tool.effect === "observe" || tool.effect === "mutate")
     && (tool.perCallEffect === undefined || typeof tool.perCallEffect === "boolean")
+    && (tool.actionInputKey === undefined || (typeof tool.actionInputKey === "string" && /^[a-z][a-z0-9_]{0,63}$/i.test(tool.actionInputKey)))
     && (tool.repeatPolicy === undefined || (tool.repeatPolicy === "after_mutation" && tool.effect === "observe"))
     // A first look is free only where it is a look. That is a tool that only
     // observes -- or one whose calls declare their own effect, whose initial
