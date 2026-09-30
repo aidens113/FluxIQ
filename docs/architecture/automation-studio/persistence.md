@@ -116,24 +116,21 @@ different graph. Persisted selections are validated before hydration publishes
 them. Pointer-hover state, open overlays, and hydrated domain documents are not
 part of the workspace record.
 
-LLM execution grants and Secret Keys reveal authorizations are process-local
-capabilities, not project artifacts. Their opaque metadata may be returned to
-an authorized caller, but login credentials, password-derived reveal keys,
-and resolved provider secrets are never written to Flow/run/cache/database
-storage. The LLM grant stores only opaque Secret Keys authorization IDs, one per
-authorized call, and exchanges one for a fresh ID when a claimed run outlives
-it (see [LLM execution grant lifetime](../automation-studio.md#llm-execution-grant-lifetime));
-Secret Keys owns and zeroes the derived key on one-use consumption, failure,
-key update/rotation/delete, active expiry, or shutdown. When Secret Keys
-re-seals a key, it swaps the held derived keys and zeroes the old buffers. A
-re-seal that upgrades an older seal replaces the key for every holder. A re-seal
-after the key owner's own password change replaces it only in that user's
-sessions and revokes every other holder, including an outstanding reveal
-authorization and so any LLM grant built on one. The production web
-owner closes the old framework instance on reload and closes the active
-instance on SIGINT/SIGTERM, which drains Automation Studio grants and Secret
+Model calls persist nothing that authorizes them. A call is made for a caller
+(`actorUserId`, `actorSessionId`) and releases that person's key through a
+one-use Secret Keys session reveal authorization, which is a process-local
+capability, not a project artifact. Login credentials, password-derived reveal
+keys, and resolved provider secrets are never written to Flow/run/cache/database
+storage. Secret Keys owns and zeroes the derived key on one-use consumption,
+failure, key update/rotation/delete, active expiry, or shutdown. When Secret
+Keys re-seals a key, it swaps the held derived keys and zeroes the old buffers.
+A re-seal that upgrades an older seal replaces the key for every holder. A
+re-seal after the key owner's own password change replaces it only in that
+user's sessions and revokes every other holder, including an outstanding reveal
+authorization. The production web owner closes the old framework instance on
+reload and closes the active instance on SIGINT/SIGTERM, which drains Secret
 Keys authorizations. A process restart therefore invalidates every outstanding
-capability.
+reveal authorization and session unlock.
 
 Neither cache owns Flow, run, recording, instruction, adaptation, or State
 truth. Warm mounted views may preserve local component state during a session,
@@ -541,7 +538,7 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `cancel-runtime-session`, and `export-flow-run-audit`.
 The legacy `get-flow-router` read is retained for runtime/mutation
 compatibility and is not an ordinary browser data source.
-Flow Settings persists the DeepSeek provider, the chosen model from Core's configured set (`deepseek-flash` by default), opaque llmSecretKeyId, and bounded llmExecutionSettings containing input/output/total token limits, max calls, timeout, max estimated cost, and retry count. The same execution object is projected into the SQL-backed Flow settings llm.execution detail and restored into the editable form. The settings endpoint validates the immutable 50,000-token hard ceiling, a call limit from one through the 64-call execution-grant backstop, and the zero-retry policy before the canonical Flow save. llmSecretKeyId is an opaque reference to an encrypted record owned by the global Secret Keys program; Automation Studio never persists, requests, or renders the decrypted value. Settings discovery uses only metadata returned by secret-keys/snapshot and filters it by enabled state, provider, and global/Flow scope. Canonical settings saves also persist typed Flow interface ports, code-source publication pins, execution timeout/concurrency/domain grants, and nested training recovery budgets. Recovery-budget defaults are framework-owned (1 retry per action, 2 recovery attempts per subflow, and 2 reroutes per run); metadata overrides are merged per field and passed into graph execution. Visual Flow dependencies remain graph-derived from Call Flow nodes instead of duplicated settings state. Interactive Settings writes are sparse for framework-owned defaults: default-valued controlled keys are removed from Flow metadata and executionDefaults, while unrelated metadata and execution grants are retained. This makes reset-to-default durable and keeps effective-source labels truthful for both new and historically materialized defaults.
+Flow Settings persists the DeepSeek provider, the chosen model from Core's configured set (`deepseek-flash` by default), opaque llmSecretKeyId, and bounded llmExecutionSettings containing input/output/total token limits, max calls, timeout, max estimated cost, and retry count. The same execution object is projected into the SQL-backed Flow settings llm.execution detail and restored into the editable form. The settings endpoint validates the immutable 50,000-token hard ceiling, a call limit from one through the 64-call backstop, and the zero-retry policy before the canonical Flow save. llmSecretKeyId is an opaque reference to an encrypted record owned by the global Secret Keys program; Automation Studio never persists, requests, or renders the decrypted value. Settings discovery uses only metadata returned by secret-keys/snapshot and filters it by enabled state, provider, and global/Flow scope. Canonical settings saves also persist typed Flow interface ports, code-source publication pins, execution timeout/concurrency/domain grants, and nested training recovery budgets. Recovery-budget defaults are framework-owned (1 retry per action, 2 recovery attempts per subflow, and 2 reroutes per run); metadata overrides are merged per field and passed into graph execution. Visual Flow dependencies remain graph-derived from Call Flow nodes instead of duplicated settings state. Interactive Settings writes are sparse for framework-owned defaults: default-valued controlled keys are removed from Flow metadata and executionDefaults, while unrelated metadata and execution grants are retained. This makes reset-to-default durable and keeps effective-source labels truthful for both new and historically materialized defaults.
 
 Instruction summaries are synchronized to flow.instructions SQLite records with an explicit summary migration version. List reads filter and page compact title/scope/status/requirement/priority metadata in SQL; instruction bodies remain in JSON detail and are loaded only by ID. Unsaved instruction edits are non-canonical recovery records in browser storage, keyed by project, Flow, and instruction ID (or new). Writes are debounced, successful saves and explicit discards remove the record, and restoration always requires a user action.
 Canonical Flow publication is exposed through `publish-flow`,

@@ -17,7 +17,7 @@
 // **Only deleting and moving money stop.** `asks` is returned for exactly those
 // two consequence classes and means the person re-authorizes, not that the
 // panel is asking whether it may. Everything else runs: editing a Flow,
-// changing a setting, granting a model run, rolling a version back. The
+// changing a setting, rolling a version back. The
 // person's instruction is the grant.
 
 import {

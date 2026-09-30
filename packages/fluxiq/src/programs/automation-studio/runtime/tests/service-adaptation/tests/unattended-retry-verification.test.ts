@@ -4,24 +4,24 @@
 // retry succeeds, and the retried session's *result* is then checked -- so a
 // repair that produced a second wrong answer is noticed rather than reported as
 // a success. It was believed to be unreachable, and the reasoning was a circle:
-// a verification only resolved a model from a person's execution grant, a run
-// carrying any grant is forced to `manual_approval`, manual approval makes the
+// a verification only resolved a model from a person's execution grant (since
+// removed), a run carrying any grant was forced to `manual_approval`, manual approval makes the
 // promotion gate record `autoApply: false`, and
 // `decideAutomationStudioAdaptiveRetry` only asks for a retry from an attempt
-// whose `autoApply` is true. A granted run never retried; an ungranted retry
-// never asked a model.
+// whose `autoApply` is true. A run a person asked for never retried; a retry
+// nobody asked for never asked a model.
 //
 // What breaks the circle is the standing result-check authorization
 // (`runtime/result-check-authorization/`): a Flow-scoped permission naming one
 // key, one ceiling and one expiry, redeemable for `loop_verification` and
-// nothing else. It is not a grant. Nothing about it reaches `input.llmExecution`
+// nothing else. It is not a caller. Nothing about it reaches `input.llmExecution`
 // and so nothing about it implies `manual_approval` -- which is the link these
 // tests are here to hold open, because it is invisible at the one edit that
 // would close it again.
 //
-// Every assertion below is on a run carrying no grant at all, except the last
-// two, which exist to pin a person's grant behaving exactly as it did before
-// any of this.
+// Every assertion below is on a run nobody asked the model into, except the
+// last two, which pin a run a person asked for behaving as it did before any
+// of this.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -30,7 +30,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
-import type { AutomationStudioRuntimeSessionGrant } from "../../../llm/index.ts";
+import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
@@ -126,8 +126,8 @@ type Harness = {
   standingRequests: Array<{ keyId: string; maxEstimatedCostUsd: number; authorizedByUserId: string }>;
   /** The task kinds the standing provider was actually asked to run. */
   standingCalls: string[];
-  /** The task kinds the *grant* provider was asked to run, and whether a grant came with each. */
-  grantedCalls: Array<{ taskKind: string; hasGrant: boolean }>;
+  /** The task kinds the repair provider was asked to run, and whether a caller came with each. */
+  callerCalls: Array<{ taskKind: string; hasCaller: boolean }>;
 };
 
 async function harness(options: {
@@ -139,7 +139,7 @@ async function harness(options: {
 } = {}): Promise<Harness> {
   const standingRequests: Harness["standingRequests"] = [];
   const standingCalls: string[] = [];
-  const grantedCalls: Harness["grantedCalls"] = [];
+  const callerCalls: Harness["callerCalls"] = [];
   let addRepairedStep: (() => Promise<void>) | undefined;
 
   const io = new IoRegistry();
@@ -172,8 +172,8 @@ async function harness(options: {
   );
 
   // What the standing authorization buys: one model, for one key, bounded by
-  // the ceiling the redemption worked out. It is never handed a grant, because
-  // there is none to hand it.
+  // the ceiling the redemption worked out. It is never handed a caller, because
+  // nobody asked for the run.
   const judge: AutomationStudioLlmProvider = {
     metadata: { provider: "mock", model: "standing-judge" },
     runTask: async (request) => {
@@ -189,11 +189,11 @@ async function harness(options: {
     dataDir: tempRoot,
     seedFixture: false,
     // The repair's own model, bound at construction and carrying no actor
-    // session. A grant, when a test passes one, arrives here as `executionGrant`.
+    // session. A caller, when a test passes one, arrives here as `caller`.
     llmProviderResolver: (resolverInput) => ({
       metadata: { provider: "mock", model: "repair" },
       runTask: async (request) => {
-        grantedCalls.push({ taskKind: request.taskKind, hasGrant: Boolean(resolverInput.executionGrant) });
+        callerCalls.push({ taskKind: request.taskKind, hasCaller: Boolean(resolverInput.caller) });
         if (request.taskKind === "runtime_patch") {
           // A structural repair stands in for what a real one does: the stored
           // document differs from the one the service read when the run started.
@@ -209,7 +209,7 @@ async function harness(options: {
           };
         }
         if (request.taskKind === "loop_verification") {
-          return { response: { kind: "diagnosis", summary: "Judged by the grant.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
+          return { response: { kind: "diagnosis", summary: "Judged for the caller.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
         }
         return { response: { kind: "diagnosis", summary: "The drift action needs a retry setting." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
       }
@@ -275,11 +275,11 @@ async function harness(options: {
     });
   };
 
-  return { service, projectId: project.id, flowId: created.flowId, standingRequests, standingCalls, grantedCalls };
+  return { service, projectId: project.id, flowId: created.flowId, standingRequests, standingCalls, callerCalls };
 }
 
 describe("a repaired run's result, with nobody watching", () => {
-  it("is judged under the Flow's standing authorization, spending a call with no grant anywhere", { timeout: 180_000 }, async () => {
+  it("is judged under the Flow's standing authorization, spending a call with no caller anywhere", { timeout: 180_000 }, async () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
 
@@ -287,10 +287,10 @@ describe("a repaired run's result, with nobody watching", () => {
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
     expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
 
-    // A model was obtained, and one verification call was made, without a grant.
+    // A model was obtained, and one verification call was made, with no caller.
     expect(found.standingRequests).toEqual([{ keyId: "key.deepseek", maxEstimatedCostUsd: 0.05, authorizedByUserId: "user.aiden" }]);
     expect(found.standingCalls).toEqual(["loop_verification"]);
-    expect(found.grantedCalls.every((call) => call.hasGrant === false)).toBe(true);
+    expect(found.callerCalls.every((call) => call.hasCaller === false)).toBe(true);
     expect(run.metadata?.resultVerification).toMatchObject({ status: "confirmed", performed: true, verdict: "answers", basis: "model" });
 
     // And the check is on the record, at this run's epoch, with the reason it
@@ -305,7 +305,7 @@ describe("a repaired run's result, with nobody watching", () => {
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
     // The three links of the old circle, each read where it is written. A grant
-    // would have forced `manual_approval`, which sets `proposalMode: "manual"`,
+    // once forced `manual_approval`, which sets `proposalMode: "manual"`,
     // which makes the gate refuse, which makes the retry decision `null`.
     const attempts = detail?.metadata?.runtimePatchAttempts as Array<{ approvalDecision?: { mode?: string; autoApply?: boolean; requiresManualApproval?: boolean } }> | undefined;
     expect(attempts?.[0]?.approvalDecision).toMatchObject({ mode: "auto", autoApply: true, requiresManualApproval: false });
@@ -364,26 +364,26 @@ describe("a repaired run's result, with nobody watching", () => {
   });
 });
 
-describe("a person's own grant", () => {
-  const grant: AutomationStudioRuntimeSessionGrant = { grantId: "llm-grant:verify", actorUserId: "user.aiden", actorSessionId: "session.live", purpose: "verify_result" };
+describe("a run a person asked the model into", () => {
+  const llmExecution: AutomationStudioRuntimeSessionLlm = { actorUserId: "user.aiden", actorSessionId: "session.live", intent: "verify_result" };
 
   it("still judges the result itself, and the standing authorization is never reached", { timeout: 180_000 }, async () => {
     const found = await harness({ clean: true });
-    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: grant });
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
 
     expect(run.status).toBe("succeeded");
-    expect(found.grantedCalls).toEqual([{ taskKind: "loop_verification", hasGrant: true }]);
+    expect(found.callerCalls).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
     expect(found.standingRequests).toEqual([]);
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
   });
 
-  it("keeps the configured automatic mode on a granted run", { timeout: 180_000 }, async () => {
+  it("keeps the configured automatic mode on a run a person asked for", { timeout: 180_000 }, async () => {
     const found = await harness();
-    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...grant, grantId: "llm-grant:adapt", purpose: "diagnose_and_adapt" } });
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution: { ...llmExecution, intent: "diagnose_and_adapt" } });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    // The grant no longer forces manual review. This fixture's unsupported
+    // Asking for the run does not force manual review. This fixture's unsupported
     // patch still does not produce a retry, and standing authority stays out.
     expect(run.status).toBe("failed");
     expect(detail?.metadata?.adaptiveRetry).toBeUndefined();

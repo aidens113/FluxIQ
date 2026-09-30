@@ -1,26 +1,26 @@
 // The model a run nobody is watching repairs itself with, and the record of why
 // it had none.
 //
-// The gap this closes was measured rather than reasoned about. `_shared/runtime.ts`
-// binds `llmProviderResolver` as `(input) => input.executionGrant ? ... :
-// undefined`, and `AutomationStudioLlmExecutionGrantService.issue` refuses
-// without a live actor session, so an unattended failed run resolved no model
-// at all: on 2026-09-23 such a run recorded `llmGate.providerConfigured: false`
+// The gap this closes was measured rather than reasoned about. The host's
+// `llmProviderResolver` pays with the caller's own key, released only to their
+// live unlocked session, and resolves nothing without a caller, so an
+// unattended failed run resolved no model at all: on 2026-09-23 such a run
+// recorded `llmGate.providerConfigured: false`
 // and `llm.provider_missing`, with no diagnosis, no patch, no retry and no
 // `resultCheck` -- while the gate *after* this one, which judges a repair's own
 // product, was already working. Judging a repair worked; making one did not.
 //
-// **It is reached only where the old path resolved nothing.** The person's
-// grant is asked first and is untouched; so is any host that resolves a model
-// without one. This is the last authority a run has, not the first, which is
-// what makes "a person's own grant behaves exactly as it does today" true by
-// construction rather than by a test that has to notice a change.
+// **It is reached only where the caller's key resolved nothing.** The run's
+// own caller is asked first and is untouched; so is any host that resolves a
+// model without one. This is the last authority a run has, not the first,
+// which is what makes "a person's own key behaves exactly as it does today"
+// true by construction rather than by a test that has to notice a change.
 //
 // **What is handed over is the key and a ceiling.** Never the authorization
-// record, never a purpose, and deliberately no `permittedConsequences`: paying
+// record, never an intent, and deliberately no consequence permission: paying
 // for the model is not permission to act, so a repair that wants to press
 // something with a lasting consequence meets the recovery's permission gate
-// with nothing granted and raises a request for the person.
+// with nothing permitted and raises a request for the person.
 
 import { redeemAutomationStudioUnattendedRepairAuthorization, type AutomationStudioUnattendedRepairRedemption } from "../../result-check-authorization/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderResolution } from "../../llm/index.ts";
@@ -90,7 +90,7 @@ export async function resolveAutomationStudioUnattendedRepairAuthority(input: {
       maxTotalEstimatedCostUsd: Math.min(resolved.maxEstimatedCostUsd ?? redemption.maxEstimatedCostUsdPerRun, redemption.maxEstimatedCostUsdPerRun),
       ...(resolved.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
       ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {})
-      // No `permittedConsequences`. See the file comment: this buys a model, not
+      // No consequence permission. See the file comment: this buys a model, not
       // a permission, and the gate reads an absent set as permitting nothing.
     }
   };

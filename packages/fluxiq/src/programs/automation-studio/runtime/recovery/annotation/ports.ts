@@ -51,11 +51,11 @@ export type AutomationStudioRuntimeRecoveryPorts = {
    * watching, redeemed.
    *
    * Asked **only** when the resolver above produced nothing, which in the
-   * shipped host is every run carrying no execution grant: `_shared/runtime.ts`
-   * resolves nothing without one, and the grant service refuses to issue one
-   * without a live actor session. So a run nobody was watching could obtain no
-   * model to produce a repair with, and a Flow that failed at three in the
-   * morning stayed broken however capable the rest of the loop was.
+   * shipped host is every run no person asked the model into: the host's
+   * resolver pays with the caller's own unlocked key and resolves nothing
+   * without a caller. So a run nobody was watching could obtain no model to
+   * produce a repair with, and a Flow that failed at three in the morning
+   * stayed broken however capable the rest of the loop was.
    *
    * It answers with the redemption whether or not a model came of it, because a
    * refusal has to be recorded: "nobody authorized repairing this Flow", "the

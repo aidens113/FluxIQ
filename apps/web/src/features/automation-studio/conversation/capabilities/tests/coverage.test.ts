@@ -156,7 +156,7 @@ describe("every panel capability has a conversational path", () => {
     for (const id of [
       "flow.create", "flow.describe", "flow.build", "flow.settings",
       "run.execute", "run.inspect",
-      "permission.allowModelRun", "permission.revokeClient",
+      "permission.revokeClient",
       "version.rollBack", "version.publish"
     ]) {
       expect(ids, `"${id}" is the kind of thing this requirement exists for.`).toContain(id);

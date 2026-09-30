@@ -22,7 +22,7 @@ import { validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstr
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, expectNoTopology, grant, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
 const TYPE_ID = "domain.example.type";
 /** The one field the stand-in domain showed the model, and what it really is. */
@@ -139,12 +139,10 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
   });
-  const revoke = vi.fn();
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: options.maxCallsPerRun ?? 6 })) as never,
-    llmEvidenceRuntime: options.binding ?? typingBinding(),
-    revokeLlmExecutionGrant: revoke
+    llmEvidenceRuntime: options.binding ?? typingBinding()
   }).bindNativeNodeRuntime(typingRuntime());
   services.add(instance);
   const { project, flow } = await blankFixture(instance, "active", "example");
@@ -154,9 +152,9 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
     projectId: project.id,
     flowId: flow.flowId,
     evidenceGuided: true,
-    executionGrant: await grant(instance, project.id, flow.flowId)
+    caller: caller()
   });
-  return { instance, project, flow, requests, revoke, generation };
+  return { instance, project, flow, requests, generation };
 }
 
 /** The refusal the model was shown before the n-th decision, if any. */
@@ -177,7 +175,6 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const graphNode = stored!.topology.subflows[0]!.graphFlow.nodes.find((item) => item.definitionId === TYPE_ID);
     expect(graphNode?.parameterValues).toMatchObject({ selector: NAME_FIELD.locator, text: "Ada" });
     expect(JSON.stringify(stored)).not.toContain("\"handle\"");
-    expect(run.revoke).toHaveBeenCalledTimes(1);
   });
 
   it("builds a node whose handle carries the location it was seen at", async () => {
@@ -237,7 +234,6 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
     await expect(run.instance.listFlowAdaptationSummaries({ projectId: run.project.id, limit: 10, offset: 0 })).resolves.toMatchObject({ total: 0 });
-    expect(run.revoke).toHaveBeenCalledTimes(1);
   });
 
   it("stops on a handle the domain never issued, with the domain's code, and creates nothing", async () => {

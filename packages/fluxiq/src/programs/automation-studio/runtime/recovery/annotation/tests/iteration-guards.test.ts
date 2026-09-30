@@ -168,19 +168,19 @@ describe("what bounds a recovery", () => {
     expect(run.detail.metadata?.runtimePatchAttempts).toBeDefined();
   });
 
-  // A person who authorized an exploring recovery said what it may spend. The
-  // run is held to that grant -- twenty-six calls, 100,000 tokens, $2.00 --
-  // rather than to the $0.25 the training settings allow a run nobody
-  // authorized, and the training budget being spent does not stop it.
-  it("holds an explore_and_adapt recovery to its grant, not to the no-grant training budget", async () => {
+  // A person who asked the model into an exploring recovery is held to the
+  // run's own budget -- twenty-six calls, 100,000 tokens, $2.00 from the
+  // resolver -- rather than to the $0.25 the training settings allow a run
+  // nobody asked for, and the training budget being spent does not stop it.
+  it("holds an explore_and_adapt recovery to the run's budget, not to the training budget", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const run = await annotate({
       looks: 40,
       spendMostOfReservation: true,
       trainingBudgetExhausted: true,
       requests,
-      grant: {
-        purpose: "explore_and_adapt",
+      asked: {
+        intent: "explore_and_adapt",
         resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 } }
       }
     });
@@ -189,12 +189,12 @@ describe("what bounds a recovery", () => {
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     const spent = costAccounting(run.detail);
     expect(spent).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
-    // Far past the $0.25 an ungranted run may spend, and inside the grant.
+    // Far past the $0.25 a run nobody asked for may spend, and inside the run's budget.
     expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(0.25);
     expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(2);
-    // Every call reserved its share of the grant's purse, not of $0.25.
+    // Every call reserved its share of the run's purse, not of $0.25.
     for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(2 / 26, 8);
-    // The diagnosis and the patch say which grant they run under.
+    // The diagnosis and the patch say which intent they run for.
     expect(requests.filter((request) => request.taskKind !== "evidence_tool_decision").map((request) => request.metadata?.executionPurpose)).toEqual(["explore_and_adapt", "explore_and_adapt"]);
     expect(budgetCodes(run.detail)).toEqual([]);
   });
@@ -208,11 +208,11 @@ type Options = {
   /** Each call reports spending 98% of the cost it reserved. */
   spendMostOfReservation?: boolean;
   maxTokensPerRun?: number;
-  /** A call count the resolver declares, as a grant does. */
+  /** A call count the resolver declares. */
   maxCallsPerRun?: number;
-  /** An explicit grant, and what its resolver says the run may spend. */
-  grant?: { purpose: "diagnose_and_adapt" | "explore_and_adapt"; resolution: Omit<AutomationStudioLlmProviderResolution, "provider"> };
-  /** The training settings say the no-grant budget is already spent. */
+  /** A person asked the model into the run, and what its resolver says the run may spend. */
+  asked?: { intent: "diagnose_and_adapt" | "explore_and_adapt"; resolution: Omit<AutomationStudioLlmProviderResolution, "provider"> };
+  /** The training settings say their budget is already spent. */
   trainingBudgetExhausted?: boolean;
   /** Every request the provider was sent, in order. */
   requests?: AutomationStudioLlmTaskRequest[];
@@ -235,7 +235,7 @@ async function annotate(options: Options): Promise<Run> {
     context: context(options),
     runtimeFlow: runtimeFlow(),
     failedTraceAttempt: failedAttempt(),
-    ...(options.grant ? { executionGrant: { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.test", purpose: options.grant.purpose } } : {})
+    ...(options.asked ? { llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: options.asked.intent } } : {})
   });
   return { detail, taskKinds, executed };
 }
@@ -272,7 +272,7 @@ function ports(options: Options, taskKinds: string[], executed: string[]): Autom
     resolveLlmProvider: () => ({
       provider: provider(options, taskKinds),
       ...(options.maxCallsPerRun === undefined ? {} : { maxCallsPerRun: options.maxCallsPerRun }),
-      ...(options.grant?.resolution ?? {})
+      ...(options.asked?.resolution ?? {})
     }),
     llmEvidenceRuntime: binding(options, executed),
     reusableLlmContextEnabled: false,

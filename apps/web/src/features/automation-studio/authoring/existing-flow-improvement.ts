@@ -1,4 +1,4 @@
-import { WEBSITE_EXPLORATION_LIMITS, type BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
+import type { BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
 import { flowModelBinding, isEmptyOrchestrationParent } from "./flow-model-binding";
 
 /**
@@ -17,23 +17,10 @@ import { flowModelBinding, isEmptyOrchestrationParent } from "./flow-model-bindi
  * as one immediately before the build, and the Flow's existing instructions
  * stay in force beside it.
  */
-export function existingFlowImprovementRequest(projectId: string | null, flow: any, readiness: BlankFlowAuthoringReadiness): { ok: true; payload: Record<string, any> } | { ok: false } {
+export function existingFlowImprovementRequest(projectId: string | null, flow: any, readiness: BlankFlowAuthoringReadiness): { ok: true; payload: { projectId: string; flowId: string } } | { ok: false } {
   if (readiness.loading || readiness.error || !readiness.router || readiness.subflowTotal < 1 || !isEmptyOrchestrationParent(flow)) return { ok: false };
   const base = flowModelBinding(projectId, flow);
-  if (!base.ok) return { ok: false };
-  const limits = WEBSITE_EXPLORATION_LIMITS;
-  return {
-    ok: true,
-    payload: {
-      ...base.payload,
-      tokenLimits: { ...limits.tokenLimits },
-      maxTotalTokensPerRun: limits.maxTotalTokensPerRun,
-      timeoutMs: limits.timeoutMs,
-      maxEstimatedCostUsd: limits.maxEstimatedCostUsd,
-      maxTotalEstimatedCostUsd: limits.maxTotalEstimatedCostUsd,
-      providerRetryCount: limits.providerRetryCount
-    }
-  };
+  return base.ok ? { ok: true, payload: base.payload } : { ok: false };
 }
 
 /** The longest improvement Core stores as one instruction body. */

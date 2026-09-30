@@ -21,7 +21,7 @@ import { RunPermissionRequest } from "../RunPermissionRequest";
 
 /**
  * A request built by Core's own gate, the way a recovery raises one, and then
- * sent through JSON as it reaches the panel. The grant carried
+ * sent through JSON as it reaches the panel. The run was permitted
  * `modify_existing`; the exploration was about to press a control that would
  * also delete something and create something new. Only the delete is missing:
  * creation and ordinary modification are not separately gated.
@@ -75,15 +75,12 @@ const flow = {
 };
 
 function commands(overrides: Record<string, unknown> = {}) {
-  let grants = 0;
   let runs = 0;
   return {
     loadReadiness: vi.fn(async () => ({ loading: false, instructions: [{ status: "active" }], router: null, subflowTotal: 0, error: "" })),
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.queued" } } })),
     execute: vi.fn(async () => { runs += 1; return { ok: true, payload: { runtimeSession: { runId: `run.${runs}`, flowId: flow.flowId, status: "failed" } } }; }),
     cancel: vi.fn(async () => ({ ok: true })),
-    preflightLlm: vi.fn(async () => ({ ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 3000 } } } })),
-    issueLlmGrant: vi.fn(async () => { grants += 1; return { ok: true, payload: { grant: { grantId: `grant.${grants}` } } }; }),
     ...overrides
   } as any;
 }
@@ -177,19 +174,16 @@ describe("RunPermissionRequest", () => {
 });
 
 describe("Run and test permission request from a run", () => {
-  it("runs Explore and adapt on an exact-purpose grant and shows the request its run detail carries", async () => {
+  it("runs Explore and adapt with its intent and no grant, and shows the request its run detail carries", async () => {
     const request = await coreRequest();
     const runtimeCommands = commands();
     const loadRunDetail = detailLoader(request);
     const renderer = await mount(runtimeCommands, loadRunDetail);
     await runExploreAndAdapt(renderer);
 
-    expect(runtimeCommands.preflightLlm).toHaveBeenCalledWith(expect.objectContaining({ purpose: "explore_and_adapt" }));
-    expect(runtimeCommands.preflightLlm.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
-    expect(runtimeCommands.preflightLlm.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).toMatchObject({ purpose: "explore_and_adapt", ttlMs: 300_000 });
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
-    expect(runtimeCommands.execute).toHaveBeenCalledWith(expect.objectContaining({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.1", adaptiveMode: "manual_approval" }));
+    expect(runtimeCommands.execute).toHaveBeenCalledWith(expect.objectContaining({ runIntent: "explore_and_adapt", adaptiveMode: "manual_approval" }));
+    expect(runtimeCommands.execute.mock.calls[0]?.[0]).not.toHaveProperty("llmExecutionGrantId");
+    expect(runtimeCommands.execute.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
     expect(runtimeCommands.start).not.toHaveBeenCalled();
     expect(loadRunDetail).toHaveBeenCalledWith({ projectId: "project.one", runId: "run.1", compact: true });
     const rendered = JSON.stringify(renderer.toJSON());
@@ -205,19 +199,16 @@ describe("Run and test permission request from a run", () => {
     await runExploreAndAdapt(renderer);
     await act(async () => button(renderer, "Allow and run again")!.props.onClick());
 
-    expect(runtimeCommands.preflightLlm).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.preflightLlm.mock.calls[1]?.[0]).toMatchObject({ purpose: "explore_and_adapt", permittedConsequences: ["delete"] });
-    const grant = runtimeCommands.issueLlmGrant.mock.calls[1]?.[0];
-    expect(grant).toMatchObject({ projectId: "project.one", flowId: flow.flowId, keyId: "key.deepseek", purpose: "explore_and_adapt" });
-    expect(grant.permittedConsequences).toEqual(["delete"]);
-    expect(grant.permittedConsequences).not.toContain("modify_existing");
-    expect(grant.permittedConsequences).not.toContain("create_new");
-    expect(grant).not.toHaveProperty("maxCalls");
-    expect(grant).not.toHaveProperty("authorizedExternalSideEffects");
     expect(runtimeCommands.execute).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.execute).toHaveBeenLastCalledWith(expect.objectContaining({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.2", adaptiveMode: "manual_approval" }));
-    expect(runtimeCommands.execute).toHaveBeenLastCalledWith(expect.not.objectContaining({ runId: expect.anything(), permittedConsequences: expect.anything() }));
+    const rerun = runtimeCommands.execute.mock.calls[1]?.[0];
+    expect(rerun).toMatchObject({ projectId: "project.one", flowId: flow.flowId, runIntent: "explore_and_adapt", adaptiveMode: "manual_approval" });
+    expect(rerun.permittedConsequences).toEqual(["delete"]);
+    expect(rerun.permittedConsequences).not.toContain("modify_existing");
+    expect(rerun.permittedConsequences).not.toContain("create_new");
+    expect(rerun).not.toHaveProperty("llmExecutionGrantId");
+    expect(rerun).not.toHaveProperty("maxCalls");
+    expect(rerun).not.toHaveProperty("authorizedExternalSideEffects");
+    expect(rerun).not.toHaveProperty("runId");
     // The second run asked for nothing, so the question is gone.
     expect(JSON.stringify(renderer.toJSON())).not.toContain("This run stopped to ask for permission.");
     await act(async () => renderer.unmount());
@@ -230,8 +221,6 @@ describe("Run and test permission request from a run", () => {
     await runExploreAndAdapt(renderer);
     await act(async () => button(renderer, "Don't allow")!.props.onClick());
 
-    expect(runtimeCommands.preflightLlm).toHaveBeenCalledTimes(1);
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(1);
     expect(runtimeCommands.execute).toHaveBeenCalledTimes(1);
     expect(runtimeCommands.start).not.toHaveBeenCalled();
     expect(JSON.stringify(renderer.toJSON())).not.toContain("This run stopped to ask for permission.");
@@ -247,7 +236,6 @@ describe("Run and test permission request from a run", () => {
     await act(async () => stepLimit.props.onChange({ target: { value: "12" } }));
     await act(async () => button(renderer, "Allow and run again")!.props.onClick());
 
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(1);
     expect(runtimeCommands.execute).toHaveBeenCalledTimes(1);
     const rendered = JSON.stringify(renderer.toJSON());
     expect(rendered).toContain("The Flow or its run inputs changed since this run asked.");
@@ -255,25 +243,7 @@ describe("Run and test permission request from a run", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("keeps the allowed classes through a high-token confirmation", async () => {
-    const request = await coreRequest();
-    const runtimeCommands = commands({
-      preflightLlm: vi.fn(async (payload: Record<string, unknown>) => ({ ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: payload.permittedConsequences ? 100_001 : 3000 } } } }))
-    });
-    const renderer = await mount(runtimeCommands, detailLoader(request));
-    await runExploreAndAdapt(renderer);
-    await act(async () => button(renderer, "Allow and run again")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain("more than 100,000 tokens");
-
-    await act(async () => button(renderer, "Continue high-token execution")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(2);
-    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0]).toMatchObject({ highTokenConfirmation: true, purpose: "explore_and_adapt", permittedConsequences: ["delete"] });
-    expect(runtimeCommands.execute).toHaveBeenLastCalledWith(expect.objectContaining({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.2" }));
-    await act(async () => renderer.unmount());
-  });
-
-  it("shows a request from a run without a grant, but offers no grant to widen", async () => {
+  it("shows a request from a run that was permitted nothing, but offers nothing to widen", async () => {
     const request = await coreRequest({ granted: [] });
     const runtimeCommands = commands({
       start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.1" } } })),
@@ -283,7 +253,7 @@ describe("Run and test permission request from a run", () => {
     await act(async () => button(renderer, "Run")!.props.onClick());
 
     expect(runtimeCommands.start).toHaveBeenCalledTimes(1);
-    expect(runtimeCommands.issueLlmGrant).not.toHaveBeenCalled();
+    expect(runtimeCommands.execute.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
     expect(JSON.stringify(renderer.toJSON())).toContain("This run stopped to ask for permission.");
     expect(button(renderer, "Allow and run again")).toBeUndefined();
     await act(async () => renderer.unmount());
@@ -312,8 +282,8 @@ describe("Run and test run whose request was cut short", () => {
     expect(rendered).not.toContain("could not be completed");
 
     await act(async () => button(renderer, "Allow and run again")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant.mock.calls[1]?.[0].permittedConsequences).toEqual(["delete"]);
-    expect(runtimeCommands.execute.mock.calls[1]?.[0]).toMatchObject({ runIntent: "explore_and_adapt", llmExecutionGrantId: "grant.2" });
+    expect(runtimeCommands.execute.mock.calls[1]?.[0]).toMatchObject({ runIntent: "explore_and_adapt", permittedConsequences: ["delete"] });
+    expect(runtimeCommands.execute.mock.calls[1]?.[0]).not.toHaveProperty("llmExecutionGrantId");
     expect(runtimeCommands.execute.mock.calls[1]?.[0].newRunId).not.toBe(newRunId);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2_300)); });
     await act(async () => renderer.unmount());
@@ -326,7 +296,7 @@ describe("Run and test run whose request was cut short", () => {
     const renderer = await mount(runtimeCommands, loadRunDetail);
     await runExploreAndAdapt(renderer);
     const rendered = JSON.stringify(renderer.toJSON());
-    expect(rendered).toContain("The authorized LLM run could not be completed.");
+    expect(rendered).toContain("The LLM-assisted run could not be completed.");
     expect(rendered).not.toContain("private-run-error");
     expect(loadRunDetail).not.toHaveBeenCalled();
     await act(async () => renderer.unmount());

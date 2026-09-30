@@ -1,24 +1,19 @@
-import type { AutomationStudioActionPermissionRequest } from "../../runtime/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../runtime/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
 
 export type AutomationStudioFlowBootstrapGenerationReadiness = {
-  contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v1";
+  contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v2";
   schemaVersion: "0.1";
   supported: boolean;
   generationEndpoint: "generate-flow-bootstrap-adaptation";
-  preflightEndpoint: "preflight-llm-execution";
-  issueGrantEndpoint: "issue-llm-execution-grant";
   reviewEndpoint: "review-flow-adaptation";
   runtime: {
-    llmExecutionGrantsConfigured: boolean;
     providerResolverConfigured: boolean;
     nativeNodeRegistryConfigured: boolean;
   };
   capabilities: {
-    grantPurpose: "build_and_adapt";
     taskKind: "flow_bootstrap";
     expectedOutput: "flow_bootstrap";
-    canonicalBindingFields: readonly ["executionDigest", "settingsRevision"];
     requiresNativeNodeRegistryContext: true;
     structuredFailureDiagnostics: {
       version: "automation-studio.flow-bootstrap-failure.v1";
@@ -31,23 +26,18 @@ export type AutomationStudioFlowBootstrapGenerationReadiness = {
 };
 
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS: AutomationStudioFlowBootstrapGenerationReadiness = {
-  contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v1",
+  contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v2",
   schemaVersion: "0.1",
   supported: true,
   generationEndpoint: "generate-flow-bootstrap-adaptation",
-  preflightEndpoint: "preflight-llm-execution",
-  issueGrantEndpoint: "issue-llm-execution-grant",
   reviewEndpoint: "review-flow-adaptation",
   runtime: {
-    llmExecutionGrantsConfigured: true,
     providerResolverConfigured: true,
     nativeNodeRegistryConfigured: true
   },
   capabilities: {
-    grantPurpose: "build_and_adapt",
     taskKind: "flow_bootstrap",
     expectedOutput: "flow_bootstrap",
-    canonicalBindingFields: ["executionDigest", "settingsRevision"],
     requiresNativeNodeRegistryContext: true,
     structuredFailureDiagnostics: {
       version: "automation-studio.flow-bootstrap-failure.v1",
@@ -62,25 +52,21 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS: AutomationSt
 export function parseAutomationStudioFlowBootstrapGenerationReadiness(
   value: unknown
 ): AutomationStudioFlowBootstrapGenerationReadiness | null {
-  if (!readinessRecord(value) || !readinessExactKeys(value, ["contractVersion", "schemaVersion", "supported", "generationEndpoint", "preflightEndpoint", "issueGrantEndpoint", "reviewEndpoint", "runtime", "capabilities"])) return null;
+  if (!readinessRecord(value) || !readinessExactKeys(value, ["contractVersion", "schemaVersion", "supported", "generationEndpoint", "reviewEndpoint", "runtime", "capabilities"])) return null;
   const expected = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS;
   if (value.contractVersion !== expected.contractVersion
     || value.schemaVersion !== expected.schemaVersion
     || typeof value.supported !== "boolean"
     || value.generationEndpoint !== expected.generationEndpoint
-    || value.preflightEndpoint !== expected.preflightEndpoint
-    || value.issueGrantEndpoint !== expected.issueGrantEndpoint
     || value.reviewEndpoint !== expected.reviewEndpoint) return null;
-  if (!readinessRecord(value.runtime) || !readinessExactKeys(value.runtime, ["llmExecutionGrantsConfigured", "providerResolverConfigured", "nativeNodeRegistryConfigured"])) return null;
-  if (![value.runtime.llmExecutionGrantsConfigured, value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => typeof item === "boolean")) return null;
-  if (value.supported !== [value.runtime.llmExecutionGrantsConfigured, value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => item === true)) return null;
-  if (!readinessRecord(value.capabilities) || !readinessExactKeys(value.capabilities, ["grantPurpose", "taskKind", "expectedOutput", "canonicalBindingFields", "requiresNativeNodeRegistryContext", "structuredFailureDiagnostics"])) return null;
+  if (!readinessRecord(value.runtime) || !readinessExactKeys(value.runtime, ["providerResolverConfigured", "nativeNodeRegistryConfigured"])) return null;
+  if (![value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => typeof item === "boolean")) return null;
+  if (value.supported !== [value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => item === true)) return null;
+  if (!readinessRecord(value.capabilities) || !readinessExactKeys(value.capabilities, ["taskKind", "expectedOutput", "requiresNativeNodeRegistryContext", "structuredFailureDiagnostics"])) return null;
   const expectedCapabilities = expected.capabilities;
-  if (value.capabilities.grantPurpose !== expectedCapabilities.grantPurpose
-    || value.capabilities.taskKind !== expectedCapabilities.taskKind
+  if (value.capabilities.taskKind !== expectedCapabilities.taskKind
     || value.capabilities.expectedOutput !== expectedCapabilities.expectedOutput
-    || value.capabilities.requiresNativeNodeRegistryContext !== true
-    || !readinessStringArray(value.capabilities.canonicalBindingFields, expectedCapabilities.canonicalBindingFields)) return null;
+    || value.capabilities.requiresNativeNodeRegistryContext !== true) return null;
   const failure = value.capabilities.structuredFailureDiagnostics;
   const expectedFailure = expectedCapabilities.structuredFailureDiagnostics;
   if (!readinessRecord(failure) || !readinessExactKeys(failure, ["version", "stages", "providerInvocationStates", "providerResponseStates", "accountingFields"])) return null;
@@ -107,7 +93,17 @@ function readinessStringArray(value: unknown, expected: readonly string[]): bool
 
 export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   authSessionId: string;
-  llmExecutionGrantId: string;
+  /**
+   * The lasting consequences the build's actions may have: `move_money`,
+   * `delete`, `send_or_publish`, `modify_existing`, `create_new`. Absent is
+   * none. A class Core does not recognise refuses the request rather than
+   * being dropped. This is how a person's answer to a permission request
+   * reaches the next build: send what the request listed as `missing`.
+   *
+   * The model call itself needs nothing: the build runs for the signed-in
+   * actor, whose unlocked Secret Keys key pays for it.
+   */
+  permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
   useReusableContext?: true;
   /**
@@ -151,9 +147,9 @@ export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {
   };
   /**
    * Present exactly when `code` is `flow_bootstrap.permission_required`: the
-   * build needed an action with a lasting consequence its grant did not
-   * permit. Ask the person with it, and issue the next build's grant with the
-   * consequences it lists as `missing` if they agree.
+   * build needed an action with a lasting consequence its request did not
+   * permit. Ask the person with it, and send the next build's
+   * `permittedConsequences` with the classes it lists as `missing` if they agree.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
 };
@@ -178,10 +174,10 @@ export type GenerateFlowBootstrapAdaptationResponse = {
     estimatedCostUsd?: number;
   };
   /**
-   * Present when the build met an action its grant did not permit and finished
-   * anyway. The proposal is real and is stored, and nothing may be approved or
-   * applied until the person has answered this: issue the next build's grant
-   * with the classes it lists as `missing`.
+   * Present when the build met an action its request did not permit and
+   * finished anyway. The proposal is real and is stored, and nothing may be
+   * approved or applied until the person has answered this: send the next
+   * build's `permittedConsequences` with the classes it lists as `missing`.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
 };

@@ -106,8 +106,8 @@ async function repairedRun(): Promise<{ service: AutomationStudioService; projec
     flowId: "flow.annotated-repair",
     metadata: { ...adaptive, adaptationPolicySettings: { ...policy, allowModifyActionTargets: false } }
   });
-  const grant = { grantId: "llm-grant:annotated-repair", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" as const };
-  const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: grant });
+  const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" as const };
+  const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution });
   const annotation = annotationOf(await service.getFlowRunDetail(project.id, run.runId));
   expect(providerCalls).toEqual(["runtime_diagnosis", "runtime_patch"]);
   // The provider audit and the usage are what went missing live.

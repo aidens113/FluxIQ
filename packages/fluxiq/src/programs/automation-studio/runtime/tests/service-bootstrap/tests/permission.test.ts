@@ -6,7 +6,7 @@
 // `generateFlowBootstrapAdaptation` with a scripted provider and a stand-in
 // domain that asks Core before a press that would refund -- once while
 // exploring, and once as a step of the Flow it is resolving -- and then the
-// same build again carrying the grant a person would give.
+// same build again carrying the consequences a person allowed.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -18,7 +18,7 @@ import type { AutomationStudioActionConsequence } from "../../../action-permissi
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, expectNoTopology, grant, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
 const PRESS_ID = "domain.example.press";
 const REFUND = { handle: "c4", name: "Refund line 1" };
@@ -66,7 +66,6 @@ describe("building a Flow that needs an action a person has not allowed", () => 
     await expect(run.instance.reviewFlowBootstrapAdaptation({ projectId: run.project.id, flowId: run.flow.flowId, adaptationId: result.adaptationId, action: "approve" }))
       .rejects.toThrow(/FLOW_BOOTSTRAP_PERMISSION_REQUIRED/);
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
-    expect(run.revoke).toHaveBeenCalledTimes(1);
   });
 
   it("ends the build when the Flow it wrote would take the action, rather than building a Flow that would", async () => {
@@ -150,7 +149,7 @@ describe("the same build, carrying what the person allowed", () => {
     expect(stored!.buildPlan.plan.subflows[0]!.nodes.find((node) => node.key === "press")?.parameters).toEqual({ control: REFUND.name });
   });
 
-  it("still asks for the money when the grant names only a class nobody is asked about", async () => {
+  it("still asks for the money when the request permits only a class nobody is asked about", async () => {
     const run = await build([pressDecision(REFUND.handle)], ["modify_existing"]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
@@ -158,7 +157,7 @@ describe("the same build, carrying what the person allowed", () => {
     expect(run.pressed).toEqual([]);
   });
 
-  it("refuses a grant that names a class Core does not recognise, before any call is made", async () => {
+  it("refuses a permitted consequence Core does not recognise, before any call is made", async () => {
     const run = await build([pressDecision(REFUND.handle)], ["purchase"] as unknown as AutomationStudioActionConsequence[]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
@@ -188,25 +187,23 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
   });
-  const revoke = vi.fn();
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
-    llmEvidenceRuntime: refundingBinding(pressed),
-    revokeLlmExecutionGrant: revoke
+    llmEvidenceRuntime: refundingBinding(pressed)
   }).bindNativeNodeRuntime(pressRuntime());
   services.add(instance);
   const { project, flow } = await blankFixture(instance, "active", "example");
   const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
   await instance.saveFlowInstruction(project.id, { ...instruction!, body: "Refund the first line of Ada Lovelace's order.", updatedAt: Date.now() });
-  const executionGrant = await grant(instance, project.id, flow.flowId);
   const generation = instance.generateFlowBootstrapAdaptation({
     projectId: project.id,
     flowId: flow.flowId,
     evidenceGuided: true,
-    executionGrant: permittedConsequences ? { ...executionGrant, permittedConsequences } : executionGrant
+    caller: caller(),
+    ...(permittedConsequences ? { permittedConsequences } : {})
   });
-  return { instance, project, flow, requests, authorityRequests, pressed, revoke, generation };
+  return { instance, project, flow, requests, authorityRequests, pressed, generation };
 }
 
 /**

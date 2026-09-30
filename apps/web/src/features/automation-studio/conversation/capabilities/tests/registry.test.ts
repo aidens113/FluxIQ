@@ -84,8 +84,8 @@ describe("only deleting and moving money stop for the person", () => {
     ]);
   });
 
-  it("never stops for editing, running, granting or rolling back", () => {
-    for (const id of ["flow.settings", "flow.build", "run.execute", "permission.allowModelRun", "version.rollBack", "subflow.turnOn"]) {
+  it("never stops for editing, building, running or rolling back", () => {
+    for (const id of ["flow.settings", "flow.build", "run.execute", "version.rollBack", "subflow.turnOn"]) {
       const capability = panelCapability(id);
       expect(capability, `${id} should exist.`).not.toBeNull();
       expect(panelCapabilityAsksFirst(capability!), `${id} must not ask a person for permission to do ordinary work.`).toBe(false);

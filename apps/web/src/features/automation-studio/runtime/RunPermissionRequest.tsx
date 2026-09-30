@@ -6,11 +6,12 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActi
 
 /**
  * The question a run brings back when its recovery needed to do something
- * lasting that neither the run's grant nor the Flow's instruction allowed.
+ * lasting that neither the run's permitted consequences nor the Flow's
+ * instruction allowed.
  *
  * The run has already ended with the request in hand; Core keeps no pending
  * request and no parked run. So the answer is a new run: **Allow and run
- * again** hands the parsed request back, and the caller issues a grant whose
+ * again** hands the parsed request back, and the caller starts a new run whose
  * permitted consequences are exactly the request's `missing` classes, for the
  * same run intent. **Don't allow** only dismisses it: nothing is sent, and the
  * Flow and page stay as the run left them.
@@ -21,8 +22,8 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActi
  * not say. A request from the build (stage `authoring`) belongs to the
  * authoring panel and is not shown here.
  *
- * `onAllow` is absent when the run carried no grant: without a run intent
- * there is no grant to widen, so the person is told how to be asked again.
+ * `onAllow` is absent when the run named no model-assisted run intent: there
+ * is no such run to start again, so the person is told how to be asked again.
  */
 export function RunPermissionRequest(props: {
   runDetail: unknown;
@@ -42,8 +43,8 @@ export function RunPermissionRequest(props: {
         <ul aria-label="Consequences requiring approval">{request.missing.map((consequence) => <li key={consequence}>{AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]}</li>)}</ul>
         {granted.length ? <small>{`Already allowed for this run: ${granted.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]).join("; ")}.`}</small> : null}
         {props.onAllow
-          ? <small>The run did not do this, and no repair was proposed. Allowing starts a new run whose grant permits only the consequences listed above.</small>
-          : <small>The run did not do this. It ran without an LLM grant, so there is no grant to extend: run the Flow again with Explore and adapt to allow it.</small>}
+          ? <small>The run did not do this, and no repair was proposed. Allowing starts a new run that is permitted only the consequences listed above.</small>
+          : <small>The run did not do this. It ran without the model's help, so there is nothing to widen: run the Flow again with Explore and adapt to allow it.</small>}
       </div>
       <div>
         <button className="button" disabled={props.busy} onClick={props.onDismiss} type="button">Don&apos;t allow</button>

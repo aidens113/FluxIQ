@@ -24,7 +24,7 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
 
     // 26 declared, 1 spent on the diagnosis, 1 held for the patch.
     expect(reserve.explorationBudget).toMatchObject({ maxProviderCalls: 24, maxActions: 25 });
-    // A larger grant raises the exploration with it, up to Core's ceiling. No
+    // A larger budget raises the exploration with it, up to Core's ceiling. No
     // call has been spent on this run yet, so only the patch's is taken off.
     const wide = holdAutomationStudioRecoveryPatchReserve({ runBudget: ledger(64), runId: "run.two", declaredCallsPerRun: 64, maxEstimatedCostUsd: 0.01 });
     expect(wide.explorationBudget).toMatchObject({ maxProviderCalls: 63, maxActions: AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions });

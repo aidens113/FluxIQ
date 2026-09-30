@@ -9,7 +9,7 @@ import { jsonObjectFromUnknown } from "../json-values.ts";
 // no repair, no re-authoring a subflow, no rerouting, no retargeting a failed
 // action, no recovery path, nothing learned kept, and every proposal waiting on
 // a person. That is the automation's own work, and the product owner's rule is
-// that asking for the automation is itself the grant for it. The default was
+// that asking for the automation is itself the permission for it. The default was
 // corrected on 2026-09-28, but a default is only what gets *written*: every
 // Flow created before that carries those settings explicitly, in its own
 // metadata, and goes on reading exactly as it did. A person who created a Flow

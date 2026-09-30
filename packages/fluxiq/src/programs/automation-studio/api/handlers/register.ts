@@ -4,7 +4,7 @@
 
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
-import type { AutomationStudioLlmExecutionGrantService, AutomationStudioService } from "../../runtime/index.ts";
+import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
 import type { AutomationStudioClientGatewayBridge } from "../../client-gateway/index.ts";
 import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
@@ -26,8 +26,8 @@ import { registerLlmGenerationEndpoints } from "./llm-generation.ts";
 import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 
-export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService, llmExecutionGrants?: AutomationStudioLlmExecutionGrantService): void {
-  const dependencies: AutomationStudioApiDependencies = { registry, service, identityAccess, clientGatewayBridge, clientGateway, llmExecutionGrants };
+export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
+  const dependencies: AutomationStudioApiDependencies = { registry, service, identityAccess, clientGatewayBridge, clientGateway };
   registerProjectEndpoints(dependencies);
   registerCacheEndpoints(dependencies);
   registerWorkspaceEndpoints(dependencies);

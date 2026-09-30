@@ -1,13 +1,13 @@
-// Creating a Flow survives a bad reply, under a real grant and the real adapter.
+// Creating a Flow survives a bad reply, for a caller, through the real adapter.
 //
 // A runtime recovery already did: a malformed reply or a timeout spends one
-// call, the grant carries on, and the exploration asks again. Flow creation did
+// call, the run carries on, and the exploration asks again. Flow creation did
 // not. Its exploration propagated the first bad decision and ended, so one
-// malformed object from the model ended the whole creation -- and the grant was
-// revoked with it. These drive `generateFlowBootstrapAdaptation` the way the
-// host binds it (`programs/_shared/runtime.ts`): a person's `build_and_adapt`
-// grant, resolved for exactly the task kinds creation may spend it on, into
-// the real `createAutomationStudioDeepSeekProvider`. Only the network and the
+// malformed object from the model ended the whole creation. These drive
+// `generateFlowBootstrapAdaptation` the way the host binds it
+// (`programs/_shared/runtime.ts`): the session-key resolver, which needs no
+// grant -- the caller's own key is released per call -- into the real
+// `createAutomationStudioDeepSeekProvider`. Only the network and the
 // credential store are stand-ins.
 
 import { randomUUID } from "node:crypto";
@@ -23,7 +23,7 @@ import {
   parseAutomationStudioFlowBootstrapGenerationError,
   type AutomationStudioFlowBootstrapFailureDiagnostic
 } from "../flow-bootstrap/index.ts";
-import { AutomationStudioLlmExecutionGrantService, AutomationStudioLlmProviderError, type AutomationStudioLlmEvidenceRuntimeBinding } from "../llm/index.ts";
+import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { AutomationStudioService } from "../service.ts";
 
@@ -58,8 +58,6 @@ type Creation = {
   sentIterations: number[];
   observations: DecisionObservation[];
   revealed: string[];
-  revoked: string[];
-  activeGrantsAfter: number;
   result?: Awaited<ReturnType<AutomationStudioService["generateFlowBootstrapAdaptation"]>>;
   failure?: AutomationStudioFlowBootstrapFailureDiagnostic;
   stored?: Awaited<ReturnType<AutomationStudioService["getFlowBootstrapAdaptation"]>>;
@@ -141,11 +139,11 @@ function answeringCompletion(): JsonObject {
   return { kind: "complete", result: { summary: "Open, filter, and extract the catalog rows.", plan: recordsPlan(true) } };
 }
 
-/** One evidence-guided creation under a real grant, answering each decision call with `reply(call)`. */
+/** One evidence-guided creation for a caller, answering each decision call with `reply(call)`. */
 async function create(options: {
   maxCalls: number;
   reply: (call: number, iteration: number) => Reply;
-  /** What the provider bills each call, and the per-call and run token limits the grant carries. */
+  /** What the provider bills each call, and the per-call and run token limits the resolution carries. */
   billed?: { promptTokens: number; completionTokens: number };
   tokenLimits?: { maxInputTokens: number; maxOutputTokens: number; maxTotalTokens: number };
   maxTotalTokensPerRun?: number;
@@ -155,7 +153,6 @@ async function create(options: {
   const sentIterations: number[] = [];
   const observations: DecisionObservation[] = [];
   const revealed: string[] = [];
-  const revoked: string[] = [];
   const service = new AutomationStudioService({ dataDir: tempRoot });
   if (options.webRegistry) service.bindNativeNodeRuntime(webRuntime());
   const registeredRecordProducerIds = new Set(
@@ -165,22 +162,26 @@ async function create(options: {
           .map((definition) => definition.id)
       : []
   );
-  const grants = grantService(
-    service,
-    endpoint(options.reply, sentIterations, observations, registeredRecordProducerIds, options.billed),
-    revealed
-  );
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
+    ports: sessionKeyPorts(revealed),
+    fetchImpl: endpoint(options.reply, sentIterations, observations, registeredRecordProducerIds, options.billed)
+  });
   const tokenLimits = options.tokenLimits ?? { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 };
-  service.bindLlmExecutionProvider(
-    (input) => input.executionGrant
-      ? grants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId }, { allowedTaskKinds: ["flow_bootstrap", "evidence_tool_decision"] })
-      : undefined,
-    (grantId) => {
-      revoked.push(grantId);
-      grants.revoke(grantId);
-    },
-    () => grants.close()
-  );
+  // The host's resolver, with the per-call and run limits each case sets as
+  // budget defaults on the resolution. Nothing is issued or checked first.
+  service.bindLlmExecutionProvider((input) => {
+    const resolution = resolveForCaller(input);
+    if (!resolution) return undefined;
+    return {
+      ...resolution,
+      maxCallsPerRun: options.maxCalls,
+      tokenLimits,
+      maxTotalTokensPerRun: options.maxTotalTokensPerRun ?? tokenLimits.maxTotalTokens * options.maxCalls,
+      timeoutMs: 25_000,
+      maxEstimatedCostUsd: 0.25,
+      maxTotalEstimatedCostUsd: 2
+    };
+  });
   service.bindLlmEvidenceRuntime(lookBinding(options.webRegistry ? "web-automation" : "demo", options.webRegistry === true));
   try {
     const project = await service.createProject({ name: "Bootstrap exploration", ...(options.webRegistry ? { domainId: "web-automation" } : {}) });
@@ -198,30 +199,13 @@ async function create(options: {
       createdAt: now,
       updatedAt: now
     });
-    const binding = await service.getLlmExecutionBinding(project.id, flow.flowId);
-    const grant = await grants.issue({
-      ...ACTOR,
-      keyId: KEY_ID,
-      projectId: project.id,
-      flowId: flow.flowId,
-      provider: "deepseek",
-      model: "deepseek-flash",
-      purpose: "build_and_adapt",
-      maxCalls: options.maxCalls,
-      tokenLimits,
-      maxTotalTokensPerRun: options.maxTotalTokensPerRun ?? tokenLimits.maxTotalTokens * options.maxCalls,
-      highTokenConfirmation: true,
-      timeoutMs: 25_000,
-      maxEstimatedCostUsd: 0.25,
-      maxTotalEstimatedCostUsd: 2
-    });
-    const creation: Creation = { sentIterations, observations, revealed, revoked, activeGrantsAfter: -1, adaptationCount: 0 };
+    const creation: Creation = { sentIterations, observations, revealed, adaptationCount: 0 };
     try {
       creation.result = await service.generateFlowBootstrapAdaptation({
         projectId: project.id,
         flowId: flow.flowId,
         evidenceGuided: true,
-        executionGrant: { grantId: grant.grantId, ...ACTOR, purpose: "build_and_adapt", executionDigest: binding.executionDigest, settingsRevision: binding.settingsRevision }
+        caller: ACTOR
       });
       creation.stored = await service.getFlowBootstrapAdaptation(project.id, flow.flowId, creation.result.adaptationId);
     } catch (error) {
@@ -229,11 +213,9 @@ async function create(options: {
       if (!failure) throw error;
       creation.failure = failure;
     }
-    creation.activeGrantsAfter = grants.activeGrantCount();
     creation.adaptationCount = (await service.listFlowAdaptationSummaries({ projectId: project.id, limit: 10, offset: 0 })).total;
     return creation;
   } finally {
-    grants.close();
     await service.close();
   }
 }
@@ -281,29 +263,21 @@ function webRuntime(): AutomationStudioNativeNodeRuntime {
   });
 }
 
-/** The grant service with Identity Access and Secret Keys stood in. */
-function grantService(service: AutomationStudioService, fetchImpl: typeof fetch, revealed: string[]): AutomationStudioLlmExecutionGrantService {
-  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
+/** Secret Keys stood in: one enabled DeepSeek key, released per call to the caller's session. */
+function sessionKeyPorts(revealed: string[]): AutomationStudioSessionKeyPorts {
   let minted = 0;
-  const secretKeys = {
-    getKeySummary: async () => ({ ...key }),
-    createSessionRevealAuthorization: async (input: { ttlMs?: number; nowMs?: number }) => {
+  return {
+    snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
+    createSessionRevealAuthorization: async (input) => {
       minted += 1;
-      return { authorizationId: `secret-reveal:${minted}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: (input.nowMs ?? Date.now()) + (input.ttlMs ?? 60_000), remainingUses: 1 };
+      return { authorizationId: `secret-reveal:${minted}`, keyId: input.id, keyUpdatedAtMs: 1 };
     },
-    revealKeyWithAuthorization: async (input: { id: string }) => {
+    revealKeyWithAuthorization: async (input) => {
       revealed.push(input.id);
-      return { key: { ...key }, value: "test-deepseek-credential" };
+      return { value: "test-deepseek-credential" };
     },
     revokeRevealAuthorization: () => {}
   };
-  const identityAccess = { validateSession: async () => ({ user: { id: ACTOR.actorUserId }, session: {}, role: {} }) };
-  return new AutomationStudioLlmExecutionGrantService({
-    identityAccess: identityAccess as unknown as ConstructorParameters<typeof AutomationStudioLlmExecutionGrantService>[0]["identityAccess"],
-    secretKeys: secretKeys as unknown as ConstructorParameters<typeof AutomationStudioLlmExecutionGrantService>[0]["secretKeys"],
-    resolveExecutionDigest: async (projectId, flowId) => await service.getLlmExecutionBinding(projectId, flowId),
-    fetchImpl
-  });
 }
 
 /** DeepSeek's endpoint, answering the n-th decision call as the case says. */
@@ -484,13 +458,13 @@ describe("draft observation discriminator", () => {
   });
 });
 
-describe("creating a Flow through an exploration, under a real grant", () => {
-  it("asks again after a malformed decision, keeps the grant, and creates the Flow", async () => {
+describe("creating a Flow through an exploration, with no grant", () => {
+  it("asks again after a malformed decision, carries on, and creates the Flow", async () => {
     const run = await create({ maxCalls: 6, reply: (call, iteration) => call === 1 ? "malformed" : iteration === 2 ? look(2) : complete() });
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
-    // The same grant paid for all three: the bad reply did not end it.
+    // The caller's key paid for all three, one release per call: the bad reply did not end the build.
     expect(run.sentIterations).toEqual([1, 2, 3]);
     expect(run.revealed).toHaveLength(3);
     expect(run.stored?.evidenceTrace?.map((step) => step.decision)).toEqual(["unusable", "tool_call", "complete"]);
@@ -504,15 +478,10 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.stored?.evidenceTrace?.[0]?.at).toEqual(expect.any(Number));
     expect(run.stored?.evidenceTrace?.[1]).toMatchObject({ iteration: 2, callId: "call.2", toolId: LOOK_TOOL_ID });
     expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, decisionCount: 3, toolCallCount: 1 });
-    // Released when creation ended, not before.
-    expect(run.revoked).toEqual([expect.stringMatching(/^llm-grant:/)]);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 60_000);
 
-  // The fake endpoint is entered only after the grant released the credential,
-  // so this timeout is deterministically a spent provider call. A real timer
-  // here used to race the grant's authorization work under root-suite load and
-  // sometimes revoked the grant before the endpoint was reached.
+  // The fake endpoint is entered only after the key was released for the call,
+  // so this timeout is deterministically a spent provider call.
   it("asks again after a provider decision reaches its deadline", async () => {
     const run = await create({ maxCalls: 6, reply: (call, iteration) => call === 1 ? "timeout_after_send" : iteration === 2 ? look(2) : complete() });
 
@@ -520,8 +489,6 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.result).toMatchObject({ status: "proposed" });
     expect(run.sentIterations).toEqual([1, 2, 3]);
     expect(run.revealed).toHaveLength(3);
-    expect(run.revoked).toHaveLength(1);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 30_000);
 
   // **The guard stops this, and until 2026-09-28 it could not.** It used to stop
@@ -529,12 +496,12 @@ describe("creating a Flow through an exploration, under a real grant", () => {
   // make the guard twenty-four -- which is at or above `maxIterations` on every
   // run anybody makes, because the guard is held to the iterations and a build
   // is given 12, 26 or 48 calls. So this run of eleven identical malformed
-  // replies was ended by the *grant's call count*, published as "the loop ran
+  // replies was ended by the *run's call count*, published as "the loop ran
   // out of turns", and no stall could ever be reported as a stall. Eight is read
   // off two live traces (`runtime/loop-limits/evidence-loop.ts`), and the
   // difference is visible here: the same script now stops at eight of twelve,
   // four calls unspent, and says what actually happened.
-  it("stops on the no-progress guard while the grant still has calls, with a named outcome, and releases the grant", async () => {
+  it("stops on the no-progress guard while the run still has calls, with a named outcome", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
     expect(run.sentIterations).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
@@ -567,8 +534,6 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     // one's facts: nothing ran out here.
     expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");
     expect(run.adaptationCount).toBe(0);
-    expect(run.revoked).toHaveLength(1);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 60_000);
 
   it("does not count bad replies across a good one", async () => {
@@ -581,14 +546,12 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.sentIterations).toEqual([1, 2, 3, 4, 5, 6, 7]);
   }, 60_000);
 
-  it("still ends at once, and revokes, when the provider rejects the credential", async () => {
+  it("still ends at once when the provider rejects the credential", async () => {
     const run = await create({ maxCalls: 6, reply: () => "unauthorized" });
 
     expect(run.sentIterations).toEqual([1]);
     expect(run.failure).toMatchObject({ code: "flow_bootstrap.provider_auth_failed", stage: "provider_request", providerInvocation: "attempted" });
     expect(run.adaptationCount).toBe(0);
-    expect(run.revoked).toHaveLength(1);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 60_000);
 
   // The loop's ceiling rose from sixteen, but the trace kept for a created Flow
@@ -607,11 +570,11 @@ describe("creating a Flow through an exploration, under a real grant", () => {
   }, 120_000);
 
   // The build's recorded totals were held to 50,000 -- one request's ceiling --
-  // so a build its grant allowed 100,000 tokens failed after using 60,000, with
+  // so a build its budget allowed 100,000 tokens failed after using 60,000, with
   // every call already paid for.
-  it("records a build's token totals past one request's ceiling when its grant allows them", async () => {
+  it("records a build's token totals past one request's ceiling when its budget allows them", async () => {
     const run = await create({
-      // Nine calls at 12,000 is what lets a grant authorise a 100,000 run.
+      // Nine calls at 12,000 is what lets a run's budget reach 100,000.
       maxCalls: 9,
       tokenLimits: { maxInputTokens: 10_000, maxOutputTokens: 2_000, maxTotalTokens: 12_000 },
       maxTotalTokensPerRun: 100_000,
@@ -633,7 +596,6 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     // the wrap-up and the twentieth the last, none of which offers a tool, so a
     // look asked for on them anyway is not run (t057, `llm/loop-budget.ts`).
     expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 17 } });
-    expect(run.activeGrantsAfter).toBe(0);
   }, 120_000);
 
   it("reproduces the measured 26-decision creation exhaustion with exact feedback, trace, and accounting", async () => {
@@ -724,8 +686,6 @@ describe("creating a Flow through an exploration, under a real grant", () => {
     expect(run.result).toBeUndefined();
     expect(run.stored).toBeUndefined();
     expect(run.adaptationCount).toBe(0);
-    expect(run.revoked).toEqual([expect.stringMatching(/^llm-grant:/)]);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 180_000);
 
   it("converges from the same prefix when the corrected plan retains the record-producing node", async () => {
@@ -766,7 +726,5 @@ describe("creating a Flow through an exploration, under a real grant", () => {
       expect.objectContaining({ iteration: 10, decision: "unusable", resultCode: "bootstrap.cannot_answer_instruction" }),
       expect.objectContaining({ iteration: 11, decision: "complete" })
     ]));
-    expect(run.revoked).toEqual([expect.stringMatching(/^llm-grant:/)]);
-    expect(run.activeGrantsAfter).toBe(0);
   }, 180_000);
 });

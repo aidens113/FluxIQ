@@ -1,19 +1,14 @@
-// Running a Flow, seeing what a run did, and the grants a run spends.
+// Running a Flow, seeing what a run did, and the trust a paired browser holds.
 //
 // The inspections are here rather than in a reading of their own because
 // "why did it fail" is asked in the same breath as "run it", and a person
 // switching between the two should not be switching vocabularies.
 
-import { flowModelFromDetail } from "../../../authoring";
-import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunDetail, issueLlmExecutionGrant, listRuntimeRunActions, listRuntimeRuns, preflightLlmExecution, startRuntimeSession } from "../../../runtime";
-import { loadFlowSettingsDetail } from "../../../settings";
+import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRuns, startRuntimeSession } from "../../../runtime";
 import { automationStudioViewId } from "../../../views";
-import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityArgument, type PanelCapabilityContext } from "../contract";
+import { definePanelCapability, panelCapabilityResult, type PanelCapability } from "../contract";
 import { PROJECT, FLOW, RUN } from "./argument";
 import { str } from "./value";
-
-/** What a model run is for. Left out, Core applies its own default. */
-const PURPOSE: PanelCapabilityArgument = { name: "purpose", kind: "text", describe: "What the model run is for, such as `build_and_adapt`.", required: false };
 
 export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
@@ -137,56 +132,6 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     )
   }),
   definePanelCapability({
-    id: "permission.allowModelRun",
-    title: "Allow a model run",
-    summary: "Issues the grant a build or a repair spends, so the model can do the work you asked for, on the model key chosen in the Flow's settings.",
-    group: "Permissions",
-    phrases: ["allow the model", "grant it", "give it permission", "let it use the model", "authorise the model"],
-    control: { view: automationStudioViewId.flowEditor, label: "Allow model run" },
-    endpoints: ["get-flow-metadata-detail", "issue-llm-execution-grant"],
-    arguments: [PROJECT, FLOW, PURPOSE],
-    consequences: ["create_new"],
-    invoke: async (context, args) => {
-      const model = await flowModelKey(context.transport, str(args, "projectId"), str(args, "flowId"));
-      if (!model.ok) return { status: "failed", summary: "The grant could not be issued.", error: model.error, ...(model.retryable ? { retryable: true } : {}) };
-      return panelCapabilityResult(
-        await issueLlmExecutionGrant(context.transport, {
-          projectId: str(args, "projectId"),
-          flowId: str(args, "flowId"),
-          ...model.request,
-          ...(args.purpose ? { purpose: str(args, "purpose") } : {})
-        }),
-        "The model may run.",
-        "The grant could not be issued."
-      );
-    }
-  }),
-  definePanelCapability({
-    id: "permission.check",
-    title: "Check what a model run needs",
-    summary: "Says what a build or a repair would need before you start it, without starting it.",
-    group: "Permissions",
-    phrases: ["what does it need", "check permissions", "preflight", "is it ready to build"],
-    control: { view: automationStudioViewId.flowEditor, label: "Check readiness" },
-    endpoints: ["get-flow-metadata-detail", "preflight-llm-execution"],
-    arguments: [PROJECT, FLOW, PURPOSE],
-    consequences: [],
-    invoke: async (context, args) => {
-      const model = await flowModelKey(context.transport, str(args, "projectId"), str(args, "flowId"));
-      if (!model.ok) return { status: "failed", summary: "The check could not be made.", error: model.error, ...(model.retryable ? { retryable: true } : {}) };
-      return panelCapabilityResult(
-        await preflightLlmExecution(context.transport, {
-          projectId: str(args, "projectId"),
-          flowId: str(args, "flowId"),
-          ...model.request,
-          ...(args.purpose ? { purpose: str(args, "purpose") } : {})
-        }),
-        "Here is what a model run would need.",
-        "The check could not be made."
-      );
-    }
-  }),
-  definePanelCapability({
     id: "permission.revokeClient",
     title: "Revoke a paired browser's trust",
     summary: "Takes a paired browser off the trusted list so it can no longer act.",
@@ -206,38 +151,3 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     )
   })
 ];
-
-type FlowModelKey =
-  | { ok: true; request: { keyId: string; provider?: string; model?: string } }
-  | { ok: false; error: string; retryable?: boolean };
-
-/**
- * The model key, provider and model chosen in the Flow's settings.
- *
- * Core's grant service refuses a request with no `keyId` ("An enabled LLM key
- * is required."), and a person asking the chat to "allow the model" never names
- * a key. The panel's own build button takes it from the Flow's
- * `metadata.llmSecretKeyId`, so this reads the same choice rather than asking.
- *
- * It reads the Flow's metadata detail, never `get-flow`: the browser refuses
- * whole-document reads (`data-request-policy.ts`,
- * `AUTOMATION_STUDIO_BROWSER_BLOCKED_LEGACY_ENDPOINTS`), so a `get-flow` here
- * threw in the real chat window before any grant could be issued, and chat
- * build and explore had no way to get one. The detail keeps the choice in
- * `settings.llm` (`flowModelFromDetail`).
- */
-async function flowModelKey(transport: PanelCapabilityContext["transport"], projectId: string, flowId: string): Promise<FlowModelKey> {
-  const read = await loadFlowSettingsDetail(transport, { projectId, flowId });
-  if (!read.ok) return { ok: false, error: read.error ?? "The Flow could not be read.", ...((read as { retryable?: boolean }).retryable ? { retryable: true } : {}) };
-  const metadata = flowModelFromDetail(read.payload?.flow).metadata;
-  const keyId = typeof metadata.llmSecretKeyId === "string" ? metadata.llmSecretKeyId : "";
-  if (!keyId) return { ok: false, error: "This Flow has no model key chosen. Choose one in the Flow's settings first." };
-  return {
-    ok: true,
-    request: {
-      keyId,
-      ...(typeof metadata.llmProvider === "string" && metadata.llmProvider ? { provider: metadata.llmProvider } : {}),
-      ...(typeof metadata.llmModel === "string" && metadata.llmModel ? { model: metadata.llmModel } : {})
-    }
-  };
-}

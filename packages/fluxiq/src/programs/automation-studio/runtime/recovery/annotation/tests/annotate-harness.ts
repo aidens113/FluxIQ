@@ -28,10 +28,6 @@ import type {
 } from "../../../training-modes.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../../../result-check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../service.ts";
-import {
-  AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES,
-  AutomationStudioLlmExecutionGrantRefusal
-} from "../../../llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";
 
@@ -46,7 +42,7 @@ export async function annotateUnresolvable(thrown: unknown): Promise<AutomationS
   });
 }
 
-/** A failed run the gate refuses: settings with LLM intervention off, or a spent training budget, and no grant. */
+/** A failed run the gate refuses: settings with LLM intervention off, or a spent training budget, and nobody asked the model in. */
 export async function annotateRefused(options: { taskKinds: string[]; invokeLlm: boolean; exhausted?: string[] }): Promise<AutomationStudioFlowRunDetail> {
   const base: Options = { executed: [], taskKinds: options.taskKinds };
   const policy = adaptationPolicy(false);
@@ -77,7 +73,7 @@ type RepairRun = {
 };
 
 /**
- * One recovery under a `diagnose_and_adapt` grant, whose patch names `handles`,
+ * One recovery in a `diagnose_and_adapt` run, whose patch names `handles`,
  * of an action whose target was not found unless `failure` says otherwise.
  */
 export async function annotateRepair(options: { handles: Record<string, string>; explorationNeeded?: boolean; failure?: AutomationStudioAdaptiveFailureClass; decline?: string }): Promise<RepairRun> {
@@ -135,7 +131,7 @@ export async function annotateRepair(options: { handles: Record<string, string>;
     context: { ...context(base, policy), behavior: { ...behavior(), createAdaptations: true } },
     runtimeFlow: { schemaVersion: "0.1", flowId: "flow.recovery", ownerKind: "policy", ownerId: "project.recovery", name: "Recovery flow", nodes: [{ id: "node.action", definitionId: "builtin.policy.action" }], edges: [], createdAt: 1, updatedAt: 1 },
     failedTraceAttempt: { ...failedAttempt(), failure: { category: options.failure ?? "target_not_found", code: `test.${options.failure ?? "target_not_found"}`, retryable: false } },
-    executionGrant: { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" }
+    llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" }
   });
   return run;
 }

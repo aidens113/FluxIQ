@@ -136,7 +136,7 @@ describe("AutomationStudioService recording persistence", () => {
       sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"], ttlMs: 10_000
     } });
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, useReusableContext: true, llmExecution: { grantId: "grant.failure-evidence", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" } });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, useReusableContext: true, llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(captures).toHaveLength(1);
@@ -252,7 +252,7 @@ describe("AutomationStudioService recording persistence", () => {
     const project = await service.createProject({ name: "Absent target evidence" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.absent-target-evidence", metadata: adaptiveTrainingMetadata() });
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: { grantId: "grant.absent-evidence", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" } });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnose_and_adapt" } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(detail?.adaptationIds).toEqual([]);

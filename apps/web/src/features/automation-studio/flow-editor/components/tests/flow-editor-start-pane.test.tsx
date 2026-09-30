@@ -19,8 +19,6 @@ vi.mock("../../../data/use-program-transport", async (importOriginal) => ({
 const transport = { get: vi.fn(), post: vi.fn() };
 const runtimeCommands = {
   loadReadiness,
-  preflightLlm: vi.fn(async () => ({ ok: false })),
-  issueLlmGrant: vi.fn(),
   generateBootstrap: vi.fn(),
   saveGenerationInstruction: vi.fn(),
   generateFromWebsite: vi.fn()

@@ -3,8 +3,8 @@ import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { stableJson } from "../stable-json.ts";
 
-// A stable revision number over the settings an execution grant is bound to,
-// so a changed setting invalidates the grant.
+// A stable revision number over the settings a Flow's execution depends on, so
+// a proposal written against one revision is known stale once they change.
 
 export function automationStudioFlowSettingsFingerprint(flow: AutomationStudioFlowArtifact): number {
   const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
