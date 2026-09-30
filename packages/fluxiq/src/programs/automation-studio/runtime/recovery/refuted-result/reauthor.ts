@@ -247,11 +247,13 @@ export function automationStudioRefutedResultReauthored(input: {
  * never silently ended. The retry is recorded as a second attempt; this is the
  * degradation, on the same marker, so a reader sees "the build failed under
  * this code, and the patch ladder was run instead" rather than a routed repair
- * that simply stopped. `failed` says the fallback itself threw.
+ * that simply stopped. `failed` says the fallback itself threw. `bound: "cost"`
+ * says it was never run: the repair's purse had nothing left for it
+ * (`purse.ts`), so no model was asked.
  */
 export function automationStudioRefutedResultDegraded(
   detail: AutomationStudioFlowRunDetail,
-  input: { to: "patch_ladder"; afterCode: string; failed?: true | undefined }
+  input: { to: "patch_ladder"; afterCode: string; failed?: true | undefined; bound?: "cost" | undefined }
 ): AutomationStudioFlowRunDetail {
   const marker = reauthorMarker(detail) ?? {};
   return {
@@ -260,7 +262,7 @@ export function automationStudioRefutedResultDegraded(
       ...(detail.metadata ?? {}),
       [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: {
         ...marker,
-        degraded: { to: input.to, afterCode: input.afterCode, ...(input.failed ? { failed: true } : {}) }
+        degraded: { to: input.to, afterCode: input.afterCode, ...(input.failed ? { failed: true } : {}), ...(input.bound ? { bound: input.bound } : {}) }
       }
     }
   };

@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS,
   AutomationStudioLlmRunBudgetLedger
 } from "../llm/index.ts";
@@ -16,7 +17,6 @@ import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
   AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
-  AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN,
   holdAutomationStudioRecoveryPatchReserve,
   resolveAutomationStudioRecoveryRunBudget
 } from "../recovery/index.ts";
@@ -28,7 +28,7 @@ describe("the limits a caller's default resolution and a recovery share", () => 
   // decisions that still fit.
   it("gives a default run a diagnosis, a patch and decisions left over to explore with", () => {
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
-    expect(defaults.maxTotalEstimatedCostUsd).toBeLessThanOrEqual(AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN);
+    expect(defaults.maxTotalEstimatedCostUsd).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
 
     const budget = resolveAutomationStudioRecoveryRunBudget({
       explicitRunBudget: true,
@@ -64,8 +64,16 @@ describe("the limits a caller's default resolution and a recovery share", () => 
       if (!reservation.ok) break;
       decisions += 1;
     }
-    // Every share of the pot but the one held for the patch.
-    expect(decisions).toBe(AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES - 1);
+    // Each reservation is one call's worst case at the default model's peak
+    // rates, never less than an even share of the pot, so this counts the calls
+    // that fit if every one spent its worst case: what the pot holds beside
+    // the patch's reserve. An even share alone ($0.25 / 24) sat below that worst
+    // case, so a call could report more than it reserved and be counted a
+    // budget breach (`run-munutuvf-6a1c548a`); real calls come in far under the
+    // worst case and are charged what they used, so a real recovery makes more.
+    expect(budget.maxEstimatedCostUsdPerCall).toBeGreaterThanOrEqual(budget.ledger.maxEstimatedCostUsdPerRun / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
+    expect(decisions).toBe(Math.floor(budget.ledger.maxEstimatedCostUsdPerRun / budget.maxEstimatedCostUsdPerCall) - 1);
+    expect(decisions).toBeGreaterThanOrEqual(8);
   });
 
   // Twenty-six calls at a few seconds each is longer than two minutes, so a

@@ -30,7 +30,7 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
 
   it("lowers the call count and per-call cost, and never raises either", () => {
     const narrowed = automationStudioLlmResolutionWithinFlowSettings({ ...sessionKeyResolution(), maxCallsPerRun: 10, maxEstimatedCostUsd: 0.05 }, flow({ maxCalls: 20, maxEstimatedCostUsd: 0.1 }));
-    expect(narrowed).toMatchObject({ maxCallsPerRun: 10, maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: 2 });
+    expect(narrowed).toMatchObject({ maxCallsPerRun: 10, maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd });
 
     const lowered = automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), flow({ maxCalls: 20, maxEstimatedCostUsd: 0.1 }));
     expect(lowered).toMatchObject({ maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 });
