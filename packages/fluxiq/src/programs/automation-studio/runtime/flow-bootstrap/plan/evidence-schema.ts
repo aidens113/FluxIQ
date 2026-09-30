@@ -14,13 +14,24 @@
 // plan, and that plan goes through the same parser, the same registry
 // validation and the same record-set contract as before. Nothing a created
 // Flow may contain was widened.
+//
+// How long a written Flow may be is the Flow's size setting
+// (`./size-limits.ts`), so each schema is built for a Flow's bounds, and each
+// constant is the schema at the setting's default.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "./flow-script-format.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { automationStudioEvidenceFlowBootstrapLimitsExceeded } from "./profile-limits.ts";
+import { automationStudioFlowBootstrapSizeLimits, type AutomationStudioFlowBootstrapSizeLimits } from "./size-limits.ts";
 
-/** The most lasting actions one completion may account for. */
+/**
+ * The most lasting actions one completion may account for. It bounds the acts
+ * an instruction asks for -- a save, an add to cart, a post -- one claim each,
+ * not the steps of the Flow, so it does not grow with the size setting: a
+ * Flow of a hundred steps still carries out the handful of acts one sentence
+ * of instruction names.
+ */
 const MAX_ACT_CLAIMS = 16;
 
 /**
@@ -32,21 +43,28 @@ const MAX_ACT_CLAIMS = 16;
  * It is no longer advertised, because advertising it is what made it the shape
  * models reached for.
  */
-export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonObject = {
-  type: "object",
-  additionalProperties: false,
-  required: ["flow"],
-  description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}`,
-  properties: {
-    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
-    flow: {
-      type: "string",
-      minLength: 1,
-      maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxResultBytes,
-      description: "The Flow as plain lines, one `key: value` per line, in the order the steps run."
+export function automationStudioEvidenceFlowBootstrapCompletionSchema(
+  size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits()
+): JsonObject {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["flow"],
+    description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}`,
+    properties: {
+      summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
+      flow: {
+        type: "string",
+        minLength: 1,
+        maxLength: size.maxResultBytes,
+        description: "The Flow as plain lines, one `key: value` per line, in the order the steps run."
+      }
     }
-  }
-};
+  };
+}
+
+/** The completion schema at the setting's default. */
+export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonObject = automationStudioEvidenceFlowBootstrapCompletionSchema();
 
 /**
  * The completion a build returns when its Flow is the draft it accrued.
@@ -81,41 +99,54 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonOb
  * Nothing here is a requirement: a step with one condition still finishes, and
  * the repair is what improves it.
  */
-export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA: JsonObject = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary"],
-  description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs."
-    + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
-    + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later."
-    + " Where the instruction asks for something to be done -- saved, added to a cart or list, a coupon collected, a store, filter or setting changed, a page opened to read from, something booked, bought, sent, posted, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
-  properties: {
-    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." },
-    // Why the model names the step rather than Core finding it
-    // (`../instructed-acts/`): a draft step is opaque to Core by design, so only
-    // the model can say which press was the save, and Core checks the claim.
-    acts: {
-      type: "array",
-      maxItems: MAX_ACT_CLAIMS,
-      description: "One entry for each thing the instruction asks to be done, naming the draft step that does it. Leave it out when the instruction only asks for something to be read.",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["action", "step"],
-        properties: {
-          action: { type: "string", minLength: 1, maxLength: 200, description: "The act, in the instruction's words or by the id a refusal gave it, such as a1." },
-          step: { type: "string", minLength: 1, maxLength: 16, description: "The id of the kept draft step that does it, such as d7." }
+export function automationStudioEvidenceFlowBootstrapDraftCompletionSchema(
+  // Taken so every completion schema is asked for the same way. Nothing in this
+  // one grows with a Flow: it asks for a sentence and the acts the instruction
+  // names, and the steps are the draft's, which the build already bounded.
+  _size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits()
+): JsonObject {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary"],
+    description: "Finish. The Flow is the list of steps you ran and kept -- it is already written, so there is nothing to write here but one sentence saying what it does. Correct the list with amend_draft before you finish, and run any step it still needs."
+      + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
+      + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later."
+      + " Where the instruction asks for something to be done -- saved, added to a cart or list, a coupon collected, a store, filter or setting changed, a page opened to read from, something booked, bought, sent, posted, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
+    properties: {
+      summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." },
+      // Why the model names the step rather than Core finding it
+      // (`../instructed-acts/`): a draft step is opaque to Core by design, so only
+      // the model can say which press was the save, and Core checks the claim.
+      acts: {
+        type: "array",
+        maxItems: MAX_ACT_CLAIMS,
+        description: "One entry for each thing the instruction asks to be done, naming the draft step that does it. Leave it out when the instruction only asks for something to be read.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["action", "step"],
+          properties: {
+            action: { type: "string", minLength: 1, maxLength: 200, description: "The act, in the instruction's words or by the id a refusal gave it, such as a1." },
+            step: { type: "string", minLength: 1, maxLength: 16, description: "The id of the kept draft step that does it, such as d7." }
+          }
         }
       }
     }
-  }
-};
+  };
+}
+
+/** The draft completion schema at the setting's default. */
+export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA: JsonObject = automationStudioEvidenceFlowBootstrapDraftCompletionSchema();
 
 /**
  * Whether a model-written result is within the reply's limits. Which limit a
  * result exceeded, and the limits a Core-assembled plan is held to instead, are
  * `./profile-limits.ts`'s.
  */
-export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(value: { summary: string; plan: AutomationStudioFlowBootstrapPlan }): boolean {
-  return automationStudioEvidenceFlowBootstrapLimitsExceeded(value, "reply").length === 0;
+export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(
+  value: { summary: string; plan: AutomationStudioFlowBootstrapPlan },
+  size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits()
+): boolean {
+  return automationStudioEvidenceFlowBootstrapLimitsExceeded(value, "reply", size).length === 0;
 }

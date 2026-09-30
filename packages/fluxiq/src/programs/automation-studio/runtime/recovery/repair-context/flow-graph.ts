@@ -30,7 +30,17 @@ import type {
   AutomationStudioFlowRouter
 } from "../../../model/index.ts";
 
-/** How much of a graph the section carries. Small enough to sit beside the failure inside one byte budget. */
+/**
+ * How much of a graph the section carries. Small enough to sit beside the
+ * failure inside one byte budget (`../context.ts`, at most sixteen kilobytes).
+ *
+ * **A prompt window, not a cap on Flows.** A Flow may hold far more nodes than
+ * this (`model/flow-size/`), and scaling the window with the Flow's setting
+ * would spend the whole repair budget on node names. So the window stays
+ * fixed, says the true counts beside it, and is placed around the failing node:
+ * a repair of node thirty of a long Subflow is shown node thirty and its
+ * neighbours, not the first twenty-four nodes and none of the failure.
+ */
 export const AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS = Object.freeze({
   maxNodes: 24,
   maxEdges: 32,
@@ -51,13 +61,17 @@ export function automationStudioFlowGraphSection(input: {
   const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
   const routers = (input.routers ?? []).slice(0, limits.maxRouters).map(compactRouter);
   if (!input.flow && !routers.length) return undefined;
-  const nodes = (input.flow?.nodes ?? []).slice(0, limits.maxNodes)
+  const allNodes = input.flow?.nodes ?? [];
+  const firstShown = windowStart(allNodes.findIndex((node) => node.id === input.failedNodeId), allNodes.length, limits.maxNodes);
+  const shownNodes = allNodes.slice(firstShown, firstShown + limits.maxNodes);
+  const nodes = shownNodes
     .map((node) => compact({
       nodeId: node.id,
       definitionId: node.definitionId,
       ...(node.label ? { label: node.label.slice(0, limits.maxLabelLength) } : {})
     }));
-  const edges = (input.flow?.edges ?? []).slice(0, limits.maxEdges)
+  const edges = windowEdges(input.flow?.edges ?? [], firstShown > 0 ? new Set(shownNodes.map((node) => node.id)) : undefined)
+    .slice(0, limits.maxEdges)
     .map((edge) => compact({
       edgeId: edge.id,
       from: edge.sourceNodeId,
@@ -69,11 +83,35 @@ export function automationStudioFlowGraphSection(input: {
     ...(input.flow ? { flowId: input.flow.flowId } : {}),
     ...(nodes.length ? { nodes } : {}),
     ...((input.flow?.nodes.length ?? 0) > nodes.length ? { nodeCount: input.flow!.nodes.length } : {}),
+    // The authored position, from 1, of the first node shown, when the window
+    // was moved to reach the failing node; absent when it starts at the first.
+    ...(firstShown > 0 ? { firstNodePosition: firstShown + 1 } : {}),
     ...(edges.length ? { edges } : {}),
     ...((input.flow?.edges.length ?? 0) > edges.length ? { edgeCount: input.flow!.edges.length } : {}),
     ...(routers.length ? { routers } : {}),
     ...(failingNode(input.flow, input.failedNodeId) ?? {})
   });
+}
+
+/**
+ * Where the node window starts: at the first node, unless the failing node
+ * would fall outside it, in which case the window is centred on the failing
+ * node and kept inside the Flow.
+ */
+function windowStart(failedIndex: number, nodeCount: number, windowSize: number): number {
+  if (failedIndex < windowSize) return 0;
+  return Math.max(0, Math.min(nodeCount - windowSize, failedIndex - Math.floor(windowSize / 2)));
+}
+
+/**
+ * The edges in authored order, or, when the window was moved, the edges that
+ * touch a shown node first and the rest after them: an edge between two nodes
+ * the repair cannot see says less than one into the failing node.
+ */
+function windowEdges<Edge extends { sourceNodeId: string; targetNodeId: string }>(edges: readonly Edge[], shown: ReadonlySet<string> | undefined): readonly Edge[] {
+  if (!shown) return edges;
+  const touches = (edge: Edge) => shown.has(edge.sourceNodeId) || shown.has(edge.targetNodeId);
+  return [...edges.filter(touches), ...edges.filter((edge) => !touches(edge))];
 }
 
 /**

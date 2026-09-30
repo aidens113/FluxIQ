@@ -1,5 +1,5 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import { parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
@@ -31,7 +31,7 @@ export function parseAutomationStudioLlmProviderResult(
   }
   rejectUnexpectedFields(value, ["response", "usage", "diagnostics"], "providerResult", diagnostics);
   const responseDiagnostics: AutomationStudioLlmDiagnostic[] = [];
-  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics);
+  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, flowBootstrap?.size);
   diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
   if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
@@ -45,7 +45,7 @@ export function parseAutomationStudioLlmProviderResult(
   };
 }
 
-function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmStructuredResponse | undefined {
+function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[], size?: AutomationStudioFlowBootstrapSizeLimits): AutomationStudioLlmStructuredResponse | undefined {
   if (!isRecord(value)) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_response", message: "LLM response must be an object.", path: "response" });
     return undefined;
@@ -70,7 +70,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_summary", message: "LLM response summary must be a bounded string.", path: "response.summary" });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "LLM response metadata must be a JSON object.", path: "response.metadata" });
   if (kind === "flow_bootstrap") {
-    const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan);
+    const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
     validateUnknownEvidenceToolDecision(value.decision, diagnostics);

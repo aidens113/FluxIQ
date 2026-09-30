@@ -65,6 +65,54 @@ describe("automationStudioFlowGraphSection", () => {
     expect((section?.edges as unknown[]).length).toBe(limits.maxEdges);
     expect(section?.edgeCount).toBe(limits.maxEdges + 5);
   });
+
+  // The window is a prompt budget, not a cap on Flows: a Flow may hold far
+  // more nodes than it shows. What it must not do is show the first nodes of a
+  // long Subflow and none of the failure -- node thirty of the repaired
+  // Subflow was invisible to its own repair.
+  it("moves the window to the failing node of a long Subflow and names where it starts", () => {
+    const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
+    const long: AutomationStudioFlowDocument = {
+      ...flow(),
+      nodes: Array.from({ length: 150 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
+      edges: Array.from({ length: 149 }, (_, index) => ({ id: `e.${index + 1}`, sourceNodeId: `n.${index + 1}`, targetNodeId: `n.${index + 2}` }))
+    };
+    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.30" });
+    const nodeIds = (section?.nodes as Array<{ nodeId: string }>).map((node) => node.nodeId);
+    const edgeIds = (section?.edges as Array<{ edgeId: string }>).map((edge) => edge.edgeId);
+
+    expect(nodeIds).toHaveLength(limits.maxNodes);
+    expect(nodeIds).toEqual(expect.arrayContaining(["n.29", "n.30", "n.31"]));
+    expect(section?.firstNodePosition).toBe(Number(nodeIds[0]!.slice(2)));
+    expect(section?.nodeCount).toBe(150);
+    expect(edgeIds).toEqual(expect.arrayContaining(["e.29", "e.30"]));
+    expect(section?.failingNode).toEqual({ nodeId: "n.30", incomingEdgeIds: ["e.29"], outgoingEdgeIds: ["e.30"] });
+  });
+
+  it("keeps the window inside the Flow when the failing node is its last", () => {
+    const limits = AUTOMATION_STUDIO_REPAIR_CONTEXT_GRAPH_LIMITS;
+    const long: AutomationStudioFlowDocument = {
+      ...flow(),
+      nodes: Array.from({ length: 100 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
+      edges: []
+    };
+    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.100" });
+    const nodeIds = (section?.nodes as Array<{ nodeId: string }>).map((node) => node.nodeId);
+    expect(nodeIds).toHaveLength(limits.maxNodes);
+    expect(nodeIds.at(-1)).toBe("n.100");
+    expect(section?.firstNodePosition).toBe(100 - limits.maxNodes + 1);
+  });
+
+  it("starts at the first node when the failing node is already inside the window", () => {
+    const long: AutomationStudioFlowDocument = {
+      ...flow(),
+      nodes: Array.from({ length: 100 }, (_, index) => ({ id: `n.${index + 1}`, definitionId: "web.dom.click" })),
+      edges: []
+    };
+    const section = automationStudioFlowGraphSection({ flow: long, failedNodeId: "n.3" });
+    expect((section?.nodes as Array<{ nodeId: string }>)[0]?.nodeId).toBe("n.1");
+    expect(section).not.toHaveProperty("firstNodePosition");
+  });
 });
 
 function flow(): AutomationStudioFlowDocument {

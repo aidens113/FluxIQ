@@ -1,4 +1,5 @@
 import type { FlowSettingsDraft } from "./flow-settings-model";
+import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 import type { SubflowSettingsDraft } from "./subflow-settings-model";
 
 /**
@@ -127,6 +128,7 @@ const FLOW_SETTINGS_LABELS: Partial<Record<keyof FlowSettingsDraft, string>> = {
   maxRetriesPerAction: "Retries per action",
   maxRecoveryAttemptsPerSubflow: "Recovery attempts per subflow",
   maxReroutesPerRun: "Reroutes per run",
+  maxNodesPerSubflow: FLOW_SIZE_SETTING.label,
   interfaceInputs: "Flow inputs",
   interfaceOutputs: "Flow outputs",
   dependencyPins: "Dependencies",
