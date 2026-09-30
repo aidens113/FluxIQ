@@ -262,8 +262,10 @@ describe("bigbox-run6: the answered repeats are caught and shown", () => {
         // The executed call counts as the first ask.
         const askedAt = range(answeredAt, iteration);
         expect(value, `core.request_check.${iteration}`).toMatchObject({
-          answeredByCallId: answeredBy, timesAsked: askedAt.length, askedAt, answeredAt, lastActionBefore: lastAction, pageUnchanged: true
+          answeredByCallId: answeredBy, timesAsked: askedAt.length, askedAt, answeredAt, lastActionBefore: lastAction
         });
+        // An answer from memory takes no digest, so it never claims to have seen the page (t196).
+        expect(value).not.toHaveProperty("pageUnchanged");
         expect(value.instruction).toContain(`It was answered at iteration ${answeredAt} and no action has run since.`);
         expect(value.instruction).toContain(`This is the ${ordinal(askedAt.length)} time you have asked it`);
       }

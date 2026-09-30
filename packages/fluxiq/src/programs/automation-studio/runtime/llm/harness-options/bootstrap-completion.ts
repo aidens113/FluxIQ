@@ -65,6 +65,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
@@ -86,7 +87,9 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
+import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
+import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
@@ -254,7 +257,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         flowId: input.flowId,
         binding: input.binding,
         handlesIssued: true,
-        permissionFor: input.permissionFor
+        permissionFor: input.permissionFor,
+        inheritedNodeRefs: drafted?.inheritedNodeRefs
       });
       if (!resolved.ok) {
         failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
@@ -291,12 +295,15 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   }
   // Read off the draft rather than the plan, so it is asked even of a draft
   // whose plan did not assemble. Only a Flow built from the draft has steps a
-  // claim can name.
-  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
+  // claim can name. Where the build starts goes with it: a step that only
+  // arrives there does no act but opening (`run-munoeac4-33c17306`).
+  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined, startLocation: input.startLocation });
   if (!acts.ok) {
     // Filed under the cannot-answer code: a Flow that does not do what it was
     // told cannot answer the instruction, and the issue code says which way.
-    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: acts.missingActs, instruction: acts.instruction } });
+    // An act that needs a repeat is told the one amendment that gives it one (`./repeat-suggestion.ts`).
+    const repeat = drafted && draftSteps ? automationStudioRepeatSuggestion({ missingActs: acts.missingActs, draftSteps, registry: input.registry, resolution: input.resolution }) : undefined;
+    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: repeat ? { ...acts.missingActs, repeatWith: repeat.amendment } : acts.missingActs, instruction: `${acts.instruction}${repeat?.instruction ?? ""}` } });
   }
   const restoredField = restoredStep ? { restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {
@@ -348,8 +355,13 @@ function fromDraft(
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
-): AutomationStudioFlowBootstrapAcceptance {
-  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
+  // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
+  // summary is one sentence about the Flow, and refusing a whole Flow because the
+  // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
+  // (`bootstrap.completion_profile_limit_exceeded`, `maxSummaryLength`).
+  const written = typeof result.summary === "string" ? result.summary.replace(/\s+/gu, " ").trim() : "";
+  const summary = (written || "Flow built from the steps that ran.").slice(0, AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength);
   const assembled = assembleAutomationStudioFlowDraftPlan({
     steps: steps.filter(automationStudioFlowDraftStepIsProposed),
     write: automationStudioFlowBootstrapDraftNodeStep,
@@ -360,7 +372,10 @@ function fromDraft(
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };
   }
-  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE };
+  // The steps the Flow being extended already runs, untouched, which the gate
+  // has nothing new to ask about (`./inherited-plan-nodes.ts`).
+  const inheritedNodeRefs = automationStudioInheritedPlanNodeRefs({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs };
 }
 
 /**

@@ -67,8 +67,8 @@ their own: they run on the caller's own unlocked Secret Keys key. The domain
 declares, action by action, what one would do --
 for a step the build takes now while exploring, and for a step the finished Flow
 would take each time it runs -- and
-`AutomationStudioActionPermissionGate` answers from `permittedConsequences` and
-from what the person's own instruction already asks for. An action whose consequences the
+`AutomationStudioActionPermissionGate` answers from `permittedConsequences`, which a
+person's answer to the gate's question extends. An action whose gated consequences the
 build does not hold raises an
 `automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
 
@@ -77,13 +77,17 @@ build does not hold raises an
 `delete`, and `send_or_publish` (`action-permissions/destructive.ts`): completing
 a purchase or checkout, moving money, deleting, and sending or publishing on the
 person's behalf. `modify_existing` and `create_new` do not cause an authoring
-permission question solely from their class. The derivation in
-`instructed.ts` authorises a high-risk act the person's instruction did ask for;
-it needs a provider call, the model has to name the class, and a claim survives
-only where its quote is the person's own words. Every class is still declared,
-kept in the declaration record, and compared with the instruction below. Only an
-uncovered high-risk subset produces an
-`automation-studio.action-permission-request.v1`.
+permission question solely from their class. **The instruction authorises none of
+the three** (the user's rule, `docs/working/mvp-today-plan.md:150` in the web
+extension repository: these acts independently require a person's authority, so
+each is asked about even when the instruction asked for it; restored 2026-09-30
+after the gate had let an instructed class through unasked and never gated
+sends). The derivation in `instructed.ts` still reads which of them the
+instruction asks for: the answer travels in the request's
+`authority.instructed`, is stored with the Flow, and feeds the cross-check
+below. Every class is still declared, kept in the declaration record, and
+compared with the instruction. Only a gated subset no person has permitted
+produces an `automation-studio.action-permission-request.v1`.
 
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask
@@ -752,19 +756,44 @@ its repeat-policy request signature, which carries the epoch it was asked in),
 newest action that ran before it. Its instruction says that no action has run
 since it was answered (for a tool that acts and is keyed on what has changed,
 that no action has changed anything), and from the second ask that this is the
-Nth time and it will be answered the same way until an action runs. Before a look is answered,
-when the host supplies `captureStateDigest` and the answering call recorded the
-state it left, Core takes one fresh digest under a call id of its own
-(`core.answer_check.<iteration>`). An equal digest answers the request with
-`pageUnchanged: true`. A different one means the page moved with no action, so
-the request is run instead, at most once per request signature and epoch. A
-digest that throws, or no digest, leaves the answer as it was. The second time
+Nth time and it will be answered the same way until an action runs. An answer
+from memory takes no capture of any kind. The first time one request is asked
+again in the same epoch, and the call that answered it recorded the state it
+left, the request is run once more for real -- for a look that is the look's own
+single capture -- and the two after-digests are compared: equal is a verified
+repeat (a step without progress; the fresh result replaces the answering entry,
+and its note, `llm_evidence_loop.looked_again_unchanged`, says Core looked again
+and the page is exactly as before), different is a page that moved by itself
+and counts as an ordinary look. Every later ask of that request in that epoch is
+answered from memory. The second time
 one request is answered from the same result, the no-progress redirect is given
 at once, below `redirectAt`. A completion refused for the same issue codes over
 the same draft revision as an earlier one -- whatever its summary said, since
 that is prose the model rewords -- is still checked and replayed; its
 `core.completion_check` feedback gains `sameAsIteration` and `timesSent` unless
 the check already wrote those keys.
+
+An ignored redirect withdraws looking. When a no-progress redirect was shown and
+the next decision again asks for what the loop holds (answered from memory, or a
+verified repeat), looks are withdrawn from the following decision until an action
+runs and the attempt epoch moves: an observe-only tool is not offered, and a tool
+that runs many actions and names the input that picks one (`actionInputKey`,
+`node` on `core.run_node`) is offered with that input's enum narrowed to exclude
+the actions this build saw report `effect: "observe"` and `proposes: false`. The
+key itself is never sent to a provider. A withdrawn look asked for anyway is
+refused as the unusable decision `llm_evidence_loop.look_withdrawn` -- never
+answered from memory, never run -- and counts toward the no-progress stop. The
+decision history lists the withdrawal among its redirects. Only loops that can
+refuse a decision (`unusableDecisions`) withdraw looks.
+
+The state digests a build records come from the calls themselves. A binding that
+sets `stateDigestsOnCalls` reports on every execution result the digests of the
+state the call found and left (`stateDigests`), taken from the captures the call
+already made: a look's one capture is both, an action's read before acting and
+its read after. The build then passes the loop no `captureStateDigest` hook at
+all (`runtime/service/flow-bootstrap-commands/state-digest.ts`), so no step costs
+an extra capture on either side. A binding that does not set it keeps the hook,
+asked before and after each call as before.
 The coordinator canonicalizes each tool ID and JSON input and terminates with
 a closed `evidence_duplicate_tool_request` diagnostic before executing the
 same effective request twice, even when a provider changes only the call ID.

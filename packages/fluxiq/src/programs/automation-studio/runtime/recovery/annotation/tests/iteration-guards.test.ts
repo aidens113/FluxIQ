@@ -169,9 +169,9 @@ describe("what bounds a recovery", () => {
   });
 
   // A person who asked the model into an exploring recovery is held to the
-  // run's own budget -- twenty-six calls, 100,000 tokens, $2.00 from the
-  // resolver -- rather than to the $0.25 the training settings allow a run
-  // nobody asked for, and the training budget being spent does not stop it.
+  // run's own budget -- twenty-six calls, 100,000 tokens, and the $0.25 run
+  // cost ceiling, which the resolver's $2 cannot raise -- and the training
+  // budget being spent does not stop it.
   it("holds an explore_and_adapt recovery to the run's budget, not to the training budget", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const run = await annotate({
@@ -189,11 +189,11 @@ describe("what bounds a recovery", () => {
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     const spent = costAccounting(run.detail);
     expect(spent).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
-    // Far past the $0.25 a run nobody asked for may spend, and inside the run's budget.
-    expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(0.25);
-    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(2);
-    // Every call reserved its share of the run's purse, not of $0.25.
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(2 / 26, 8);
+    // Nearly all of the run's $0.25, and never past it.
+    expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(0.2);
+    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(0.25);
+    // Every call reserved its share of the run's $0.25, not the resolver's $2.
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(0.25 / 26, 8);
     // The diagnosis and the patch say which intent they run for.
     expect(requests.filter((request) => request.taskKind !== "evidence_tool_decision").map((request) => request.metadata?.executionPurpose)).toEqual(["explore_and_adapt", "explore_and_adapt"]);
     expect(budgetCodes(run.detail)).toEqual([]);

@@ -481,7 +481,7 @@ history fail closed until divergence detection provides that history.
 
 `state.*` is what the host observes where the run starts, not what a caller
 passed. Before routing, `runRuntimeSession` asks the bound host runtime's
-optional `observeRouteState` for the state (`runtime/route-state.ts`), but only
+optional `observeRouteState` for the state (`runtime/route-state/`), but only
 when an active rule reads a `state.*` path; keys the host returns replace the
 same keys in a caller's `inputs.state`. A host declares the paths it fills in
 `routeStatePaths`, so a model can write a condition on a path that is absent
@@ -505,6 +505,29 @@ the router decides, the Flow's current structure, every path a condition can
 test with its description, and the distinct states the host observed -- where
 a run starts, then after each exploration step -- screened with the domain's
 denied evidence keys, with credential-shaped values left out.
+A build learns those states from its own calls. An execution result may carry
+`routeState`, the route state of the page the call left, which the web domain
+projects from the capture the call already took exactly as `observeRouteState`
+projects a fresh one; the build routing (`runtime/route-state/build-routing.ts`)
+records it from every call it is handed, dry-run replay steps included, and
+before a decision records the newest call's state when a call ran since the
+last one -- Core's own notes and a shifting window record nothing. It asks the
+host for a capture only when the newest call carried none. An evidence-guided
+build takes the start state from its free first look (captured right after it
+only when the look carried none); a build that writes its Flow in one reply
+observes the start before anything runs.
+
+A draft step that repeats a span over a list
+(`runtime/flow-bootstrap/authoring/draft-routing.ts`) is wired through
+`builtin.control.for-each`: the list step's array output goes to For Each's
+`items`, and For Each's `item` output (which declares `multiple`) goes to every
+step of the span whose node declares an input `item`. A node that can act on
+"the current row of an enclosing loop" declares that input as
+`{ id: "item", valueType: "any", role: "data", required: false }` after its
+control input `in`, and receives each pass's row as `inputs.item`. A span that
+repeats while a check holds has no rows and gets no `item` edges. The assembler
+reaches a `role: "data"` input only through a branch that names it; an edge
+that names no port never falls into one.
 
 When a canonical Flow has a saved router, `runRuntimeSession` evaluates the
 router before graph execution. A matching route executes the selected subflow's
@@ -1066,17 +1089,18 @@ read the instruction again.
 **Only a high-risk real-world consequence reaches that gate as something
 refusable.** The gate is defined in `action-permissions/destructive.ts`:
 `move_money`, `delete`, and `send_or_publish` are the classes the run's
-`permittedConsequences` or the instruction has to authorise. `modify_existing`
+`permittedConsequences` or a person's answer has to authorise; the instruction
+asking for one does not (restored 2026-09-30). `modify_existing`
 and `create_new` do not prompt merely because of their class. All five classes
 remain on declarations and in the instruction/consequence cross-check, so the
 narrow prompt gate does not erase an under- or over-declaration. On the repair
 path the narrow gate is what makes a live repair possible at all: a target
 override the gate permits carries `sideEffectPermission: "permitted"`, which is
 the authorization both of the policy's side-effect lines ask for, so a repair
-under `explore_and_adapt` may press a control that makes or sends something even
+under `explore_and_adapt` may press a control that makes or edits something even
 though `policy.allowExternalSideEffects` is `false` on every default policy. A
-destructive repair the person neither permitted nor instructed stops and asks
-(`permission_required`).
+repair that would move money, delete, or send or publish, with no person's
+permission for it, stops and asks (`permission_required`).
 
 **`policy.allowExternalSideEffects` is no longer read on the recovery
 exploration path.** The exploration is offered the domain's `mutate` options

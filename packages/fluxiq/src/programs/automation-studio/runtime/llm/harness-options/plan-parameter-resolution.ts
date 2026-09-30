@@ -24,6 +24,10 @@
 // run is not permitted comes back `needs_permission`: an issue of its own, not
 // one of the model's mistakes, because no rewrite of the plan can answer it.
 // Only a person can, and the gate has already raised the request that asks.
+//
+// The one node it does not ask about is a step the Flow being extended already
+// runs, carried over untouched and declaring nothing (`./inherited-plan-nodes.ts`):
+// it names no handle and adds nothing to what the Flow does, so it stands.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -76,14 +80,23 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
    * behind it has nobody to ask, so no step with a lasting consequence passes.
    */
   permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
+  /**
+   * The nodes, by `<subflow key>.<node key>`, that the Flow being extended
+   * already contains and the build left exactly as they were
+   * (`./inherited-plan-nodes.ts`). One that declared nothing and names no
+   * handle stands as the Flow holds it: it is not a step this build adds, so
+   * there is nothing new to put to the gate.
+   */
+  inheritedNodeRefs?: ReadonlySet<string> | undefined;
 }): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const resolvedNodeKeys: string[] = [];
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
-      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref: `${subflow.key}.${node.key}` }) ?? automationStudioActionPermissionDenied;
-      const outcome = await resolveNode(node, input, permission);
+      const ref = `${subflow.key}.${node.key}`;
+      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref }) ?? automationStudioActionPermissionDenied;
+      const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true);
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
       if (outcome.status === "needs_permission") {
         // Not the model's mistake and not the model's to correct: the gate has
@@ -127,7 +140,8 @@ type NodeOutcome =
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
   input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean },
-  permission: AutomationStudioActionPermissionCheck
+  permission: AutomationStudioActionPermissionCheck,
+  inherited: boolean
 ): Promise<NodeOutcome> {
   // The declaration comes off first, so nothing downstream -- the handle
   // search, the domain, the registry -- ever sees a parameter no node declares.
@@ -138,6 +152,13 @@ async function resolveNode(
   if (found.malformed) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.malformed);
   const namesHandle = found.sites.length > 0;
   if (namesHandle && !input.handlesIssued) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notIssued);
+  // A step the Flow already runs, untouched: its parameters are the ones the
+  // Flow persisted, so there is no handle to resolve, and it is not a step
+  // this build adds, so there is nothing new to permit. Asking the domain would
+  // refuse a press for a declaration the model never wrote and cannot write
+  // for a step it did not take (`./inherited-plan-nodes.ts`). A step that
+  // declared anything, or names a handle, is the build's own and goes on.
+  if (inherited && step.declared === undefined && !namesHandle) return stripped(step, parameters);
   const resolver = input.binding?.resolvePlanNodeParameters;
   if (typeof resolver !== "function") {
     if (namesHandle) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported);

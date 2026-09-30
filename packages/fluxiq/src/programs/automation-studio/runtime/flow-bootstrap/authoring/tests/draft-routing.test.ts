@@ -5,12 +5,14 @@
 // which node is in the plan, which port each edge leaves and arrives at -- and
 // never a field copied back out of the statement that asked for it.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import type { JsonValue } from "../../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../../flow-draft/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
 import { runAutomationStudioGraph } from "../../../executor/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../assemble-draft.ts";
 
 // The real library: Core's built-ins, which is where the join and the list
@@ -181,6 +183,119 @@ describe("a span that repeats", () => {
 
     expect(validated.issues.filter((issue) => issue.severity === "error")).toEqual([]);
     expect(validated.ok).toBe(true);
+  });
+});
+
+// A step whose node can act on "the row this pass is on" declares an optional
+// `item` input after its way in. The web domain's nodes gain it downstream, so
+// here the library is the real one with that input added to the nodes named.
+const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
+
+function rowRegistry(...ids: string[]): { registry: AutomationStudioNodeRegistry; definitions: AutomationStudioNodeDefinition[] } {
+  const definitions = webDomainNodeDefinitionsFixture().map((definition) => ids.includes(definition.id) ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition);
+  const rowed = new AutomationStudioNodeRegistry();
+  for (const definition of definitions) rowed.register(definition);
+  return { registry: rowed, definitions };
+}
+
+function assembleWith(rowed: AutomationStudioNodeRegistry, steps: AutomationStudioFlowDraftStep[]) {
+  return assembleAutomationStudioFlowDraftPlan({ steps, write, registry: rowed, resolution, summary: "Open each result in turn" });
+}
+
+describe("a span that repeats over rows hands each pass's row on", () => {
+  const LIST_LOOP = [
+    step(1, "read", { target: ".row" }),
+    step(2, "press", { target: ".row-open" }, { kind: "repeat", through: "d4", over: "d1" }),
+    step(3, "look", { target: ".row-detail" }),
+    step(4, "press", { target: ".row-back" }),
+    step(5, "press", { target: "#done" })
+  ];
+
+  it("to every step of the span whose node takes a row, and to no other step", () => {
+    const { registry: rowed } = rowRegistry("web.output.dom-click");
+    const assembled = assembleWith(rowed, LIST_LOOP);
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const subflow = assembled.plan!.subflows[0]!;
+    expect(subflow.nodes.map((node) => node.definitionId)).toEqual([
+      "web.output.dom-extract_list", "builtin.control.merge", "builtin.control.for-each",
+      "web.output.dom-click", "web.output.dom-wait_for_selector", "web.output.dom-click",
+      "builtin.control.merge", "web.output.dom-click"
+    ]);
+    const rowEdges = subflow.edges.filter((edge) => edge.source.portId === "item" || edge.target.portId === "item");
+    // Both clicks inside the span take the row; the wait declares no row, and
+    // the click after the loop is not in it.
+    expect(rowEdges.map((edge) => `${edge.source.nodeKey}:${edge.source.portId} -> ${edge.target.nodeKey}:${edge.target.portId}`)).toEqual([
+      `${subflow.nodes[2]!.key}:item -> ${subflow.nodes[3]!.key}:item`,
+      `${subflow.nodes[2]!.key}:item -> ${subflow.nodes[5]!.key}:item`
+    ]);
+    // The row is a value, not the path: every click is still entered by its way in.
+    for (const index of [3, 5, 7]) expect(subflow.edges.filter((edge) => edge.target.nodeKey === subflow.nodes[index]!.key && edge.target.portId === "in")).toHaveLength(1);
+  });
+
+  it("produces a plan the validator accepts when several steps take the one row", () => {
+    const { registry: rowed } = rowRegistry("web.output.dom-click");
+    const assembled = assembleWith(rowed, LIST_LOOP);
+    const validated = validateAutomationStudioFlowBootstrapPlan({ plan: assembled.plan!, registry: rowed, resolution });
+
+    expect(validated.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(validated.ok).toBe(true);
+  });
+
+  it("hands no row to a span that repeats while a check holds, which has none to hand", () => {
+    const { registry: rowed } = rowRegistry("web.output.dom-click", "web.output.dom-wait_for_selector");
+    const assembled = assembleWith(rowed, [
+      step(1, "look", { target: ".next-page" }),
+      step(2, "press", { target: ".next-page" }, { kind: "repeat", through: "d2", over: "d1" }),
+      step(3, "press", { target: "#done" })
+    ]);
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.plan!.subflows[0]!.edges.filter((edge) => edge.source.portId === "item" || edge.target.portId === "item")).toEqual([]);
+  });
+
+  it("gives the step's own implementation the row of each pass in turn when the Flow runs", async () => {
+    const { registry: rowed, definitions } = rowRegistry("web.output.dom-click");
+    const assembled = assembleWith(rowed, [
+      step(1, "read", { target: ".row" }),
+      step(2, "press", { target: ".row-open" }, { kind: "repeat", through: "d3", over: "d1" }),
+      step(3, "look", { target: ".row-detail" }),
+      // After the loop, and a node that takes a row: it must be handed none.
+      step(4, "press", { target: "#done" })
+    ]);
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    // The row reaches the click by an edge of the graph, not only by name.
+    expect(wiring(assembled.plan!)).toContain("builtin.control.for-each:item -> web.output.dom-click:item");
+
+    const rows: JsonValue[] = [{ name: "synthetic-first" }, { name: "synthetic-second" }, { name: "synthetic-third" }];
+    const clicked: Array<Record<string, unknown>> = [];
+    const waited: Array<Record<string, unknown>> = [];
+    const used = new Set(["web.output.dom-extract_list", "web.output.dom-click", "web.output.dom-wait_for_selector"]);
+    const runtime = new AutomationStudioNativeNodeRuntime({ permissions: ["web-automation.action"], runtimeCapabilities: ["web.actions"] }).register(
+      { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "@fluxiq-web-extension/domain", packageVersion: "1.0.0", domainId: "web-automation", nodes: definitions.filter((definition) => used.has(definition.id)) },
+      {
+        packageId: "@fluxiq-web-extension/domain",
+        packageVersion: "1.0.0",
+        implementations: {
+          "web.dom.extract_list": () => ({ status: "success", route: "success", outputs: { records: rows } }),
+          "web.dom.click": ({ inputs }) => { clicked.push({ ...inputs }); return { status: "success", route: "success", outputs: {} }; },
+          "web.dom.wait_for_selector": ({ inputs }) => { waited.push({ ...inputs }); return { status: "success", route: "success", outputs: {} }; }
+        }
+      }
+    );
+
+    const trace = await runAutomationStudioGraph(flowDocument(assembled.plan!), {
+      nativeNodeExecutor: ({ node, inputs, signal }) => runtime.execute(node, inputs, signal)
+    });
+
+    expect(trace.status).toBe("succeeded");
+    // One click per row, each handed the row its pass is on; the step that
+    // declares no row is handed none, and nor is the click after the loop,
+    // although the run still holds the last row under the bare name `item`
+    // (worker t195-w4's probe gave it that row).
+    expect(clicked.map((inputs) => inputs.item)).toEqual([...rows, undefined]);
+    expect(waited).toHaveLength(3);
+    expect(waited.every((inputs) => !("item" in inputs))).toBe(true);
   });
 });
 

@@ -240,6 +240,25 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
   });
 
+  // The host's resolver declares no count since grants went; the Flow's own
+  // `llmExecutionSettings.maxCalls` is the count, read from the Flow the
+  // recovery already loads (`run-munnq7vz-98c3481c` ran past it in a build).
+  it("ends the exploration on the Flow's configured call count when the resolver declares none", async () => {
+    const executed: string[] = [];
+    const detail = await annotate({
+      executed,
+      maxCallsPerRun: "undeclared",
+      flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } }
+    });
+
+    expect(executed).toEqual(["test.inspect"]);
+    expect(explorationStage(detail)).toMatchObject({
+      status: "failed",
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
+    });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
+  });
+
   // The conflation this removed: an intervention limit counts interventions,
   // and it used to be read as a cap on provider calls, so a policy allowing one
   // intervention allowed one call and the exploration never began. With no
@@ -445,5 +464,32 @@ describe("a recovery the Flow's settings refuse", () => {
       ["exploration", "refused", reason],
       ["resolution", "refused", reason]
     ]);
+  });
+});
+
+// A recovery that is one part of a refuted result's repair spends from that
+// repair's one purse (`../../refuted-result/purse.ts`). Handed nothing, it used
+// to take the whole $0.25 ceiling, because a total of zero is ignored as no
+// limit at all.
+describe("a recovery that is part of a repair whose purse is spent", () => {
+  it("asks no model, and names the cost bound as why", async () => {
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed: [], taskKinds, costLeftUsd: 0 });
+    const stages = (detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages ?? [];
+
+    expect(taskKinds).toEqual([]);
+    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm_budget.run_cost_limit", bound: "cost" });
+    expect(stages.map((stage) => [stage.stage, stage.status, stage.providerCalled])).toEqual([
+      ["diagnosis", "refused", false],
+      ["recovery_plan", "refused", false],
+      ["exploration", "refused", false],
+      ["resolution", "refused", false]
+    ]);
+  });
+
+  it("still asks the model when some of the purse is left", async () => {
+    const taskKinds: string[] = [];
+    await annotate({ executed: [], taskKinds, costLeftUsd: 0.05 });
+    expect(taskKinds.at(0)).toBe("runtime_diagnosis");
   });
 });

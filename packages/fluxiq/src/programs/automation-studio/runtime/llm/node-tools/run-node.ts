@@ -61,7 +61,13 @@ const DESCRIPTION = [
   "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"}, and leave every other way of naming it out. Never write a locator, a description or a guess of your own -- you have not been shown one, and a step that names something you did not observe is refused.",
   "A node that reads a repeating list names that list the same way: its request is {\"handle\": \"<the handle the detection tool issued>\"} with the fields you want beside it, never a locator of your own. Detect the list first, then run the node and read the rows it really returned.",
   "A node that runs and succeeds becomes a step of the Flow you are building, with the parameters it ran with, and you never write it down again.",
-  "A node that fails comes back with what went wrong and the state as it now is: read it, change something, and run again. A failure ends nothing.",
+  // A check is not a failure to try again. "Run again. A failure ends nothing"
+  // is what a build read as permission to knock on a robot check until the
+  // site locked it out (`run-munp80f5-c31ea417`); a page that needs a person
+  // is now handed to one (`../../flow-bootstrap/person-needed.ts`), so the
+  // model is told never to act on a check at all. Six characters under the
+  // bound below.
+  "A failed node says what went wrong and how things now stand. A page that needs a person goes to the person: never press, type into or reload a check.",
   "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are; run one that acts to make the page do what the instruction needs.",
   // "only reads" earns its eight characters: a build that had to collect a
   // page of products into a table read "leaves nothing behind" as a question
@@ -69,7 +75,7 @@ const DESCRIPTION = [
   // reads the list, and stopped to ask permission to read
   // (`run-mueozmp8-348a2057`). The gate now disregards that answer; this is so
   // it is not reached for. There was no room for a sentence: the description is
-  // 1,990 of the 2,000 characters a provider accepts, and a build whose first
+  // 1,996 of the 2,000 characters a provider accepts, and a build whose first
   // request is refused runs nothing at all (`tests/run-node.test.ts`).
   `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] when it only reads or leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
   `Judge this node, not the Flow: in one Flow the press that applies a filter is [] and the press that submits the post is ${PUBLISHING}.`,
@@ -103,6 +109,9 @@ export function automationStudioLlmRunNodeTool(input: {
     // says for itself what it actually did.
     effect: "mutate",
     perCallEffect: true,
+    // Which node a call runs, so the loop can withdraw the looks among them
+    // without withdrawing the library (`../decision-handlers/look-withdrawal.ts`).
+    actionInputKey: "node",
     inputSchema: {
       type: "object",
       additionalProperties: false,

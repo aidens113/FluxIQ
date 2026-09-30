@@ -50,6 +50,14 @@ describe("the run-node tool's declaration", () => {
     expect(node.node.enum).toEqual(["builtin.logic.and", "web.output.dom-click"]);
   });
 
+  it("hands a check to the person rather than inviting another try at it", () => {
+    // "Run again. A failure ends nothing" read, to a build facing a robot
+    // check, as "knock again" -- until the site locked it out.
+    const description = tool()!.description;
+    expect(description).not.toContain("A failure ends nothing");
+    expect(description).toContain("A page that needs a person goes to the person: never press, type into or reload a check.");
+  });
+
   it("is nothing at all when the library is empty", () => {
     expect(automationStudioLlmRunNodeTool({ nodeIds: [] })).toBeUndefined();
   });

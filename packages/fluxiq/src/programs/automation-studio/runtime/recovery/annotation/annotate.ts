@@ -40,10 +40,12 @@ import {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,
+  automationStudioLlmResolutionWithinFlowSettings,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmProvider,
+  type AutomationStudioLlmRunBudgetDiagnostic,
   type AutomationStudioRuntimeSessionLlm
 } from "../../llm/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
@@ -96,6 +98,13 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
    * result to summarize.
    */
   resultSummary?: AutomationStudioRunResultSummary | undefined;
+  /**
+   * What is left of the repair's purse, when this recovery is one part of a
+   * refuted result's repair (`../refuted-result/purse.ts`). It is this
+   * recovery's total, and with nothing left the model is not asked at all.
+   * Absent for a recovery that is a whole repair of its own.
+   */
+  costLeftUsd?: number | undefined;
 };
 
 /** One failed run, taken through the loop's four stages at the failure entry point. */
@@ -128,6 +137,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       metadata: {
         ...(input.detail.metadata ?? {}),
         llmGate: { invoked: false, code: trainingRefused ? "llm.gate.training_mode" : "llm.gate.training_budget_exhausted", reason: refusal },
+        recoveryTrace: automationStudioRuntimeRecoveryRefusedTrace(refusal) as unknown as JsonObject
+      }
+    };
+  }
+  // A recovery that is one part of a repair whose purse is spent asks no model.
+  // Handed on, a total of zero would be ignored as no limit at all and the
+  // recovery would take the whole ceiling, so it stops here and says why.
+  if (input.costLeftUsd !== undefined && !(input.costLeftUsd > 0)) {
+    const refusal = "The repair's cost ceiling is spent, so no model was asked.";
+    return {
+      ...input.detail,
+      metadata: {
+        ...(input.detail.metadata ?? {}),
+        llmGate: { invoked: false, code: RECOVERY_COST_BOUND_CODE, bound: "cost", reason: refusal },
         recoveryTrace: automationStudioRuntimeRecoveryRefusedTrace(refusal) as unknown as JsonObject
       }
     };
@@ -195,6 +218,14 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       provider = authority.resolution.provider;
     }
   }
+  // The parent Flow, read once: where it is authored, which decides the
+  // exploration's options, what its build stored about what the person's
+  // instruction asks for, and the call-count and per-call cost limits
+  // its settings configure, which lower the resolution before the run budget is
+  // worked out from it (`llm/flow-execution-limits/`). The subflow graph that
+  // ran carries none of these.
+  const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
+  providerResolution = automationStudioLlmResolutionWithinFlowSettings(providerResolution, recoveryFlow?.metadata);
   const instructions = await ports.flowInstructionSet({
     projectId: input.context.projectId,
     flowId: input.context.flowId
@@ -222,7 +253,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     explicitRunBudget,
     resolution: providerResolution,
     maxTokensPerRun: input.context.settings.budgets?.maxTokensPerRun,
-    policyMaxEstimatedCostUsdPerRun: input.context.policy.maxEstimatedCostUsdPerRun
+    policyMaxEstimatedCostUsdPerRun: input.context.policy.maxEstimatedCostUsdPerRun,
+    costLeftUsd: input.costLeftUsd,
+    model: provider?.metadata.model
   });
   const maxEstimatedCostUsdPerCall = budget.maxEstimatedCostUsdPerCall;
   const requestedTokenLimits = providerResolution?.tokenLimits;
@@ -273,10 +306,6 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       };
     }
   }
-  // The parent Flow, read once: where it is authored, which decides the
-  // exploration's options, and what its build stored about what the person's
-  // instruction asks for. The subflow graph that ran carries neither.
-  const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
   // One gate for the whole recovery, built once the provider has resolved,
   // over the consequences the run's caller already allowed.
   // Where a request this recovery raises reaches a person: the run's own
@@ -675,6 +704,8 @@ function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosi
  * which is the point: a repair sees what authoring sees. A smaller allowance
  * scales it down rather than overshooting the gate.
  */
+/** Why a recovery with nothing left of its repair's purse asked no model: the run ledger's own code for a total that cannot take another call. */
+const RECOVERY_COST_BOUND_CODE: Extract<AutomationStudioLlmRunBudgetDiagnostic["code"], "llm_budget.run_cost_limit"> = "llm_budget.run_cost_limit";
 const FAILURE_EVIDENCE_INPUT_SHARE = 0.25;
 const EXPLORATION_EVIDENCE_INPUT_SHARE = 0.375;
 

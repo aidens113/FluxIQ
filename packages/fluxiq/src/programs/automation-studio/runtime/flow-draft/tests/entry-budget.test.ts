@@ -118,6 +118,19 @@ describe("what the draft's guidance costs", () => {
   // to correct it. Today that costs 1,256. If the guidance grows past the floor,
   // the floor is a lie -- a budget at it would be accepted by `resolveLimits` and
   // still be told short -- so the two move together or not at all.
+  // Live run `run-munnop9n-5475d593` (lane t195): the telling shrank until it
+  // named no amendment word, and a build told to confirm every qualifying
+  // request pressed one Confirm and never said repeat.
+  it("says how to do one act to every listed item at every length it is told", () => {
+    expect(FULL_INSTRUCTION).toMatch(/every item of a list[^.]*repeat/u);
+    const brief = entry(built(12), 2_300).value.instruction;
+    expect(brief).not.toBe(FULL_INSTRUCTION);
+    expect(brief).toMatch(/every item of a list[^.]*repeat/u);
+    const minimal = entry(built(1), 700).value.instruction;
+    expect(minimal.length).toBeLessThan(200);
+    expect(minimal).toMatch(/repeat an act per listed item/u);
+  });
+
   it("makes the floor under a draft budget true", () => {
     const measured = entry(built(1), AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES);
     expect(measured.value.instruction).toBe(FULL_INSTRUCTION);

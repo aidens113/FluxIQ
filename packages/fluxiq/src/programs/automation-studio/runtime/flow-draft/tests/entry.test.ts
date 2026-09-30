@@ -132,7 +132,9 @@ describe("the draft entry a decision is shown", () => {
     expect(value).not.toHaveProperty("format");
   });
 
-  it.each([1_711, 1_343])("shortens the object instruction before suppressing a bounded input or oversized marker at %i bytes", (maxBytes) => {
+  // 1_678 is ten bytes under the full entry for these two steps (1,688 since the
+  // telling gained the per-item repeat sentence and lost as much elsewhere).
+  it.each([1_678, 1_343])("shortens the object instruction before suppressing a bounded input or oversized marker at %i bytes", (maxBytes) => {
     const steps = [
       step(1, "enter", { value: "b".repeat(400) }),
       step(2, "enter", { value: "o".repeat(900) })

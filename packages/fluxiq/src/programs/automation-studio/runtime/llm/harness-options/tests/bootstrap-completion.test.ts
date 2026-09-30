@@ -333,10 +333,10 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
       input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition
     });
-    // A navigation the model dropped, restored, and the result then refused for a summary over its limit.
+    // A navigation the model dropped, restored, and the result then refused for a step the writer cannot write down.
     const refused = await checkAutomationStudioFlowBootstrapCompletion({
-      result: { summary: "Scrape the products. ".repeat(400) }, projectId: "project.1", flowId: "flow.1", registry, resolution,
-      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "dropped"), step(2, "web.browser.navigate", { url: "https://elsewhere.invalid/next" }, "kept")],
+      result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
+      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "dropped"), step(2, "web.not.a_registered_node", {}, "kept")],
       startLocation: START_LOCATION
     });
     expect(refused.ok).toBe(false);
@@ -346,6 +346,22 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "kept")], startLocation: START_LOCATION
     });
     expect(plain.check.restoredStep).toBeUndefined();
+  });
+
+  // `run-muncqlr0-3348202b`: a draft built by the steps that ran was refused
+  // outright because the model's one-line summary ran past 240 characters.
+  it("bounds a draft's summary as a written plan's is bounded, rather than refusing the Flow for it", async () => {
+    const draftSteps: AutomationStudioFlowDraftStep[] = [
+      { position: 1, id: "d1", iteration: 1, actionId: "web.browser.navigate", toolId: "core.run_node", input: { node: "web.browser.navigate", parameters: { url: START_LOCATION }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 2, id: "d2", iteration: 2, actionId: "web.dom.extract_list", toolId: "core.run_node", input: { node: "web.dom.extract_list", parameters: { extractList }, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true }
+    ];
+    const long = "Open the store,   pick the Millbrook store for pickup, and read every towel on the page. ".repeat(4);
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result: { summary: long }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, startLocation: START_LOCATION });
+
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.summary.length).toBe(240);
+    expect(verdict.summary).not.toMatch(/\s{2}/u);
   });
 
   it("never reaches the check for a build that was given no start location", async () => {
@@ -489,6 +505,42 @@ describe("a completed draft that does not do what the instruction asks", () => {
       ran(7, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe")
     ];
     const verdict = await complete(didTheJob, [{ action: "put the kettles in my cart", step: "d4" }, { action: "move the phone case", step: "d6" }, { action: "give", step: "d5" }]);
+
+    expect(verdict.ok).toBe(true);
+  });
+});
+
+// `run-munoeac4-33c17306` (run 15): the Flow accepted on the build's second
+// completion was two navigations to its start location, named for the add to
+// cart and the coupon. Completion hands the check where the build starts, so a
+// step that only arrives there is not taken for either.
+describe("a completed draft whose acts are named for arriving where it starts", () => {
+  const START = "http://127.0.0.1:59512";
+  const HUBS = "Put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart, and collect that store's coupon.";
+  const ran = (position: number, node: string, parameters: JsonObject): AutomationStudioFlowDraftStep => ({
+    position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
+    input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept"
+  });
+  const arrivals = [ran(1, "web.browser.navigate", { url: START }), ran(2, "web.browser.navigate", { url: START })];
+  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
+    result: { summary: "Puts the hubs in the cart.", acts },
+    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: HUBS, startLocation: START
+  });
+
+  it("is refused, naming each act as only arrived at", async () => {
+    const verdict = await complete(arrivals, [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }]);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[] } };
+    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_only_arrives"], ["a2", "step_only_arrives"]]);
+    expect(feedback.instruction).toContain("does not do the act");
+  });
+
+  it("is accepted once each act is named for a press after the arrival", async () => {
+    const pressed = [...arrivals, ran(3, "web.dom.click", { selector: "#add-to-cart" }), ran(4, "web.dom.click", { selector: "#collect-coupon" })];
+    const verdict = await complete(pressed, [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }]);
 
     expect(verdict.ok).toBe(true);
   });

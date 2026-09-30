@@ -173,6 +173,16 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     startLocation?: string;
     signal?: AbortSignal;
   }): Promise<string | undefined>;
+  /**
+   * True when every execution result this binding returns reports the state it
+   * found and left on `stateDigests`, digested from the captures the call
+   * itself took (`../evidence-loop/tool-execution.ts`). A build loop then never
+   * asks `captureStateDigest` around a call: that question used to cost the web
+   * domain a whole extra page capture on each side of every step.
+   * `captureStateDigest` stays for the callers that ask about a moment no call
+   * brackets.
+   */
+  stateDigestsOnCalls?: true;
   captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
   /**
    * Judge a repair target against one packet this domain issued, and resolve it.
@@ -375,6 +385,7 @@ function scopedOption(tool: AutomationStudioLlmEvidenceTool, domainId: string): 
     inputSchema: tool.inputSchema,
     ...(tool.effect !== undefined ? { effect: tool.effect } : {}),
     ...(tool.perCallEffect === true ? { perCallEffect: true as const } : {}),
+    ...(tool.actionInputKey !== undefined ? { actionInputKey: tool.actionInputKey } : {}),
     ...(tool.repeatPolicy !== undefined ? { repeatPolicy: tool.repeatPolicy } : {}),
     ...(tool.initialObservation !== undefined ? { initialObservation: tool.initialObservation } : {}),
     availability: { kind: "domain", domainId },

@@ -40,8 +40,15 @@ import type {
  * result; nothing said the converse, that a refusal here is not a refusal
  * there. Offered only tools that decline to act, and refused when it asked one
  * to, the model read the whole exercise as "acting is unavailable" and wrote
- * the only shape it had seen accepted. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, and never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+ * the only shape it had seen accepted.
+ *
+ * The "unless the result is a Flow built from the steps you run" clause was
+ * added 2026-09-30 (lane t195). A draft is the steps the build ran, so "never
+ * mutate to perform a workflow step" told a drafting model not to build its
+ * Flow, and "never repeat a successful mutation" read as "act on one row
+ * only": live run `run-munnop9n-5475d593` pressed one Confirm of four and
+ * never said repeat. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run: then run each step it needs once, and to do one act to every item of a list do it to one item and state repeat, rather than doing it to each; never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
 
 /** How many steps one amendment decision may edit at once. */
 const MAX_AMENDMENTS_PER_DECISION = 16;
@@ -60,9 +67,9 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; nodeId?: string; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "nodeId", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
@@ -90,12 +97,33 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       // the first answer of a run is not a repeat of anything.
       ...(typeof value.repeatedAnswer === "number" && Number.isInteger(value.repeatedAnswer) && value.repeatedAnswer >= 2
         ? { repeatedAnswer: value.repeatedAnswer } : {}),
+      // The caller saying only a person can get past what this call met. Kept
+      // only as the literal `true`, like the flag it is: anything else is
+      // dropped rather than fatal, and the call reads as the ordinary result it
+      // then is. Reading it is not acting on it -- the build's wrapper
+      // (`../flow-bootstrap/person-needed.ts`) is what puts the question to the
+      // person before any of this reaches the model.
+      ...(value.personNeeded === true ? { personNeeded: true as const } : {}),
       ...(closedCode(value.nodeId) ? { nodeId: value.nodeId as string } : {}),
+      // The states the call saw, from its own captures. Dropped side by side
+      // rather than fatal: a malformed digest leaves that side unobserved, and
+      // the call it describes still happened.
+      ...(stateDigestsOf(value.stateDigests) ? { stateDigests: stateDigestsOf(value.stateDigests)! } : {}),
       ...(draft ? { draft } : {})
     };
   }
   if (!isJsonValue(value)) return undefined;
   return { evidence: value, effectApplied: effect !== "mutate" };
+}
+
+/** The code-shaped digests a call reported, or nothing when it reported none that are. */
+function stateDigestsOf(value: unknown): { before?: string; after?: string } | undefined {
+  if (!isRecord(value)) return undefined;
+  const digests = {
+    ...(closedCode(value.before) ? { before: value.before as string } : {}),
+    ...(closedCode(value.after) ? { after: value.after as string } : {})
+  };
+  return Object.keys(digests).length ? digests : undefined;
 }
 
 /** Whether a value is a code or a resolved identifier, and so may travel onto a row a reader keeps. */
@@ -343,6 +371,7 @@ export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlm
     && typeof tool.description === "string" && tool.description.length > 0 && tool.description.length <= 2_000 && isJsonObject(tool.inputSchema)
     && (tool.effect === undefined || tool.effect === "observe" || tool.effect === "mutate")
     && (tool.perCallEffect === undefined || typeof tool.perCallEffect === "boolean")
+    && (tool.actionInputKey === undefined || (typeof tool.actionInputKey === "string" && /^[a-z][a-z0-9_]{0,63}$/i.test(tool.actionInputKey)))
     && (tool.repeatPolicy === undefined || (tool.repeatPolicy === "after_mutation" && tool.effect === "observe"))
     // A first look is free only where it is a look. That is a tool that only
     // observes -- or one whose calls declare their own effect, whose initial

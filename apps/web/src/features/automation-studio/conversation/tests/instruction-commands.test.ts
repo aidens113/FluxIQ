@@ -77,9 +77,57 @@ describe("the composer sends an instruction, not a remark", () => {
     expect(calls.map((call) => call.endpoint)).toEqual(["append-turn"]);
   });
 
+  it("runs nothing here when Core ran the capability itself", async () => {
+    for (const status of ["done", "started", "failed"] as const) {
+      const { api, calls } = transport({
+        ok: true,
+        payload: {
+          ...RUN_KETTLE.payload,
+          response: { ...RUN_KETTLE.payload.response, execution: { capabilityId: "run.execute", status, summary: "Running the kettle Flow.", error: status === "failed" ? "No browser." : undefined, runId: "run.1" } }
+        }
+      });
+      const result = await sendConversationInstruction(api, { projectId: "project.home", conversationId: "c1", text: "run my kettle flow" });
+      expect(result.dispatch).toBeNull();
+      expect(result.execution).toEqual({
+        capabilityId: "run.execute",
+        status,
+        summary: "Running the kettle Flow.",
+        ...(status === "failed" ? { error: "No browser." } : {})
+      });
+      expect(result.decision).toMatchObject({ kind: "invoke", capabilityId: "run.execute", runNow: true });
+      expect(calls.map((call) => call.endpoint)).toEqual(["append-turn"]);
+    }
+  });
+
+  it("runs here what Core did not execute, when it answered with a null execution", async () => {
+    const { api, calls } = transport({ ok: true, payload: { ...RUN_KETTLE.payload, response: { ...RUN_KETTLE.payload.response, execution: null } } });
+    const result = await sendConversationInstruction(api, { projectId: "project.home", conversationId: "c1", text: "run my kettle flow" });
+    expect(result.execution).toBeNull();
+    expect(result.dispatch?.capability?.id).toBe("run.execute");
+    expect(calls.some((call) => call.endpoint === "run-runtime-session")).toBe(true);
+  });
+
+  it("treats an unreadable execution as none, and runs the capability here", async () => {
+    const unreadable: unknown[] = [
+      "done",
+      [],
+      { status: "done", summary: "x" },
+      { capabilityId: "", status: "done" },
+      { capabilityId: "run.execute", status: "finished", summary: "x" },
+      { capabilityId: "run.execute" }
+    ];
+    for (const execution of unreadable) {
+      const { api, calls } = transport({ ok: true, payload: { ...RUN_KETTLE.payload, response: { ...RUN_KETTLE.payload.response, execution } } });
+      const result = await sendConversationInstruction(api, { projectId: "project.home", conversationId: "c1", text: "run my kettle flow" });
+      expect(result.execution).toBeNull();
+      expect(result.dispatch?.capability?.id).toBe("run.execute");
+      expect(calls.some((call) => call.endpoint === "run-runtime-session")).toBe(true);
+    }
+  });
+
   it("keeps the message when it could not be stored, and says so when only the answer could not be written", async () => {
     const refused = await sendConversationInstruction(transport({ ok: false, error: "Conversations require project storage." }).api, { projectId: "p", conversationId: "c", text: "hi" });
-    expect(refused).toEqual({ ok: false, error: "Conversations require project storage.", problem: null, decision: null, dispatch: null });
+    expect(refused).toEqual({ ok: false, error: "Conversations require project storage.", problem: null, decision: null, execution: null, dispatch: null });
 
     const halfway = await sendConversationInstruction(transport({ ok: true, payload: { response: null, problem: "Your message was saved, but my answer could not be written into the thread: disk full" } }).api, { projectId: "p", conversationId: "c", text: "hi" });
     expect(halfway).toMatchObject({ ok: true, decision: null, problem: expect.stringContaining("Your message was saved") });

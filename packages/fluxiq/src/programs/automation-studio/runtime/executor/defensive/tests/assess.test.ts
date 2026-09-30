@@ -152,6 +152,33 @@ describe("a retry must not become a second act", () => {
   });
 });
 
+describe("a press the page refused and said so", () => {
+  // social-network-feed: a fourth Confirm inside the page's rolling window opens
+  // "You're going too fast ... try again in 12 seconds" and confirms nothing. The
+  // record says the act did not happen and how long to wait; without both the
+  // Flow read three accepted of four.
+  const refused: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted", retryAfterMs: 12_500 };
+
+  it("is repeated on a node that acts on the world, after the wait the page asked for", () => {
+    const assessed = automationStudioAssessAttemptFault(attempt({ failure: refused }), node({ metadata: { destructive: true } }), 0);
+
+    expect(assessed).toMatchObject({ disposition: "retry", effect: "unacted", code: "web.action.rate_limited", hintedWaitMs: 12_500 });
+  });
+
+  it("stays refused on such a node when the producer states nothing about the act", () => {
+    const silent: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", retryAfterMs: 12_500 };
+    const assessed = automationStudioAssessAttemptFault(attempt({ failure: silent }), node({ metadata: { destructive: true } }), 0);
+
+    expect(assessed).toMatchObject({ disposition: "refuse", effect: "ambiguous" });
+  });
+
+  it("holds the page's wait to the runtime's own bound", () => {
+    const assessed = automationStudioAssessAttemptFault(attempt({ failure: { ...refused, retryAfterMs: 600_000 } }), node(), 0);
+
+    expect(assessed?.hintedWaitMs).toBe(60_000);
+  });
+});
+
 describe("a delay stated in what the node returned", () => {
   it("is carried onto the assessment so the wait can honour it", () => {
     const assessed = automationStudioAssessAttemptFault(attempt({ failure: TIMEOUT, outputs: { retryAfter: 2 } }), node(), 0);

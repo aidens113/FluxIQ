@@ -138,8 +138,12 @@ export async function annotateRepair(options: { handles: Record<string, string>;
 
 type Options = {
   executed: string[];
+  /** What is left of a larger repair's purse, when the recovery is one part of one. */
+  costLeftUsd?: number;
   /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */
   maxCallsPerRun?: number | "undeclared";
+  /** The parent Flow's stored metadata, as `flowForRecovery` reads it -- its `llmExecutionSettings` among it. */
+  flowMetadata?: JsonObject;
   /** The policy's and the settings' intervention limit, when one is set. */
   maxInterventionsPerRun?: number;
   /** The tool ids the model was offered, one entry per exploration decision. */
@@ -179,7 +183,8 @@ export async function annotate(options: Options): Promise<AutomationStudioFlowRu
     ports: ports(options),
     detail: runDetail(),
     context: context(options, policy),
-    failedTraceAttempt: failedAttempt()
+    failedTraceAttempt: failedAttempt(),
+    ...(options.costLeftUsd === undefined ? {} : { costLeftUsd: options.costLeftUsd })
   });
 }
 
@@ -206,7 +211,7 @@ function ports(options: Options): AutomationStudioRuntimeRecoveryPorts {
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
     reusableLlmContextForFreshEvidence: async () => undefined,
-    flowForRecovery: async () => scope ? { scope } : undefined,
+    flowForRecovery: async () => scope ? { scope, ...(options.flowMetadata ? { metadata: options.flowMetadata } : {}) } : undefined,
     saveFlowChangeProposal: async (proposal) => proposal,
     saveFlowAdaptation: async (adaptation) => adaptation,
     promoteRuntimeAdaptation: async (input) => input.adaptation

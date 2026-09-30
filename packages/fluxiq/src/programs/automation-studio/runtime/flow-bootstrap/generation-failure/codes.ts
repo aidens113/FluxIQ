@@ -169,7 +169,15 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // was not permitted. Not a failure of the build: the diagnostic carries
     // the request a person allows or refuses, and a build permitted what it
     // asks for can take the action.
-    "flow_bootstrap.permission_required"
+    "flow_bootstrap.permission_required",
+    // The build met something only a person can get past -- a robot check, in
+    // the web domain's words -- and the person did not get it past: they
+    // pressed Stop, nobody answered in time, there was no thread to ask in, or
+    // the build had already asked as many times as it may. FluxIQ never
+    // presses, types into or solves a check, so there is nothing to retry as it
+    // stands; the issue codes say which of those it was
+    // (`../person-needed.ts`).
+    "flow_bootstrap.user_intervention_required"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]

@@ -199,9 +199,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   });
 
   // The loop used to stop at `min(calls, 8)` decisions. The resolution's call
-  // count is now what bounds it, each decision reserves an even share of the
-  // run's purse so every call it allows can be paid for, and a model that never
-  // finishes is still stopped at that count.
+  // count is now what bounds it, and a model that never finishes is still
+  // stopped at that count.
   it.each([
     { looks: 10, calls: 11, finishes: true },
     // Never finishing: stopped at the resolution's twelve, not at eight and not later.
@@ -236,14 +235,13 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       await expect(generation).rejects.toThrow();
     }
     expect(requests).toHaveLength(calls);
-    // Each decision reserved an even share of the run's purse, not the $0.25
-    // per-call cap, at which the purse would refuse a late decision on cost.
-    // The purse is the Flow's own configured ceiling -- a new Flow's settings
-    // carry `adaptationPolicySettings.maxEstimatedCostUsdPerRun: 1` -- which
-    // wins over the resolution's $2 default total.
+    // A new Flow's settings carry the $0.25 run cost ceiling, and the build's
+    // total is that ceiling, which the resolution's $2 cannot raise. A build has
+    // no ledger, so its requests no longer carry an even share of the total
+    // that nothing checked: each carries the harness's own per-request default.
     const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
-    expect(configured?.maxEstimatedCostUsdPerRun).toBe(1);
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(1 / 12, 8);
+    expect(configured?.maxEstimatedCostUsdPerRun).toBe(0.25);
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBe(0.25);
   });
 
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {

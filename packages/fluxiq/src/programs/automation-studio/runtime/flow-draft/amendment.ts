@@ -92,7 +92,7 @@ export type AutomationStudioFlowDraftAmendment = {
 /** Why one amendment changed nothing. */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
-  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out";
+  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out";
 };
 
 /** What the model is shown of the amendment shape, as a decision variant's schema. */
@@ -104,7 +104,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     step: { type: "integer", minimum: 1, description: "The step number shown in the draft." },
     change: {
       enum: [...AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES],
-      description: "drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again. reorder: move it to the position given by to. rerun: do it again with the argument given by input, which replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding."
+      description: "drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again. reorder: move it to the position given by to. rerun: do it again with the argument given by input, which replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item: first rerun the listing with a where that keeps only the items to act on (every row it returns is acted on), do the act to one row it kept (never to a row it leaves out), then repeat with over that listing, right before this one; each pass acts on its own row. Drop any other step that does the same act to a single row."
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "reorder: the position to move the step to. on_failed: the step to run when this one fails. Counting from 1." },
@@ -225,7 +225,11 @@ function routeStep(
     const over = named(amendment.over) ?? before();
     if (!over) return { ok: false, reason: amendment.over === undefined ? "no_step_before_it" : "no_such_step" };
     if (!automationStudioFlowDraftStepIsProposed(through) || !automationStudioFlowDraftStepIsProposed(over)) return { ok: false, reason: "not_a_kept_step" };
-    if (through.position < step.position || over.position >= step.position) return { ok: false, reason: "no_such_position" };
+    // `repeat` goes on the act and `over` names the listing before it. A model
+    // that put it on the listing -- `repeat` on step 15 `over` 15, live run
+    // `run-munuj2os-c205ee3a` -- is told that, not that a position is missing.
+    if (over.position >= step.position) return { ok: false, reason: "over_not_before" };
+    if (through.position < step.position) return { ok: false, reason: "no_such_position" };
     routing = { kind: "repeat", through: automationStudioFlowDraftStepId(through), over: automationStudioFlowDraftStepId(over) };
   }
   if (same(step.routing, routing) && amendment.settings === undefined) return { ok: false, reason: "already_so" };
