@@ -9,10 +9,14 @@
 // names a step it dropped, names a look, or names one press for two acts is
 // caught here, while it can still act on it.
 //
-// **Forgiving in what it reads.** The model may name an act by the id a refusal
-// gave it (`a2`), by the verb, by its kind, or not at all -- claims left over
-// after the named ones are matched in order -- and a step by its id (`d7`) or
-// its position (`7`). Only the step has to be right.
+// **Forgiving in how an act is named, never in whether it is.** The model may
+// name an act by the id a refusal gave it (`a2`), by a word of the person's
+// own that only that act's quote holds among acts of its kind ("napkins", where
+// two acts add different things), by the verb, or by its kind; and a step by
+// its id (`d7`) or its position (`7`). A claim that names no act answers none.
+// They were once matched to acts in order, and `run-muncqlr0-3348202b` passed
+// this check with a consent-dialog click and a store-chip click given as a
+// store switch and an add to cart, because nothing held a claim to its act.
 //
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
@@ -32,7 +36,10 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.in
 
 const MAX_CLAIMS = 16;
 const MAX_CLAIM_TEXT = 200;
-const MAX_LISTED_STEPS = 32;
+/** Steps listed as nameable. A Flow holds at most a hundred nodes per Subflow. */
+const MAX_LISTED_STEPS = 100;
+/** The shortest word that can tell one act's object from another's. */
+const MIN_DISTINCTIVE_WORD = 4;
 
 /** Words a claim may use to name each kind, beside its verb and id. */
 const KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonly string[]>> = Object.freeze({
@@ -48,7 +55,8 @@ const KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonl
 const INSTRUCTION = "Nothing was created and this build is still open. "
   + "missingActs.acts are things the person's instruction asks to be done -- each quote is their own words -- that no kept step of your draft is named as doing, and reason says why. "
   + "For each one: if a kept step already does it, name that step's id in acts; if none does, run the node that does it (press the control, set the option, open the page), keep it, and name it. "
-  + "Then complete again with acts listing every act and its step. Each act needs a step of its own, and it must be one that changed something.";
+  + "Then complete again with acts listing every act by its id (a1, a2 ...) and its step, e.g. [{\"action\": \"a1\", \"step\": \"d7\"}]. A claim that names no act answers none. "
+  + "Each act needs a step of its own, and it must be one that changed something.";
 
 /** Every act, and whether the draft has a step for each. Nothing here calls a provider. */
 export function checkAutomationStudioInstructedActs(input: {
@@ -94,7 +102,9 @@ export function checkAutomationStudioInstructedActs(input: {
     missingActs: {
       acts: missing.map((act) => ({ id: act.id, kind: act.kind, verb: act.verb, quote: act.quote, reason: act.reason, ...(act.step ? { step: act.step } : {}) })),
       // The steps that could be named: kept, and changed something.
-      stepsThatChangedSomething: kept.slice(0, MAX_LISTED_STEPS).map((step) => step.id ?? `${step.position}`)
+      stepsThatChangedSomething: kept.slice(0, MAX_LISTED_STEPS).map((step) => step.id ?? `${step.position}`),
+      // Said rather than hidden, so a model does not take a cut list for all of them.
+      ...(kept.length > MAX_LISTED_STEPS ? { stepsWithheld: kept.length - MAX_LISTED_STEPS } : {})
     },
     instruction: INSTRUCTION
   };
@@ -122,7 +132,11 @@ function readClaims(value: unknown): AutomationStudioInstructedActClaim[] {
   return claims;
 }
 
-/** Which claim answers which act: named ones first, the rest in order. */
+/**
+ * Which claim answers which act. Only a claim that names an act answers it:
+ * by id, then by a word only its quote holds among acts of its kind, then by
+ * verb, then by kind. A claim that names none is left unassigned.
+ */
 function assign(acts: readonly AutomationStudioInstructedAct[], claims: readonly AutomationStudioInstructedActClaim[]): Map<string, AutomationStudioInstructedActClaim> {
   const assigned = new Map<string, AutomationStudioInstructedActClaim>();
   const free = [...claims];
@@ -132,10 +146,29 @@ function assign(acts: readonly AutomationStudioInstructedAct[], claims: readonly
     if (index >= 0) assigned.set(act.id, free.splice(index, 1)[0]!);
   };
   for (const act of acts) take(act, (action) => action === act.id);
+  for (const act of acts) {
+    const own = distinctiveWords(act, acts);
+    if (own.length) take(act, (action) => own.some((ownWord) => containsWord(action, ownWord)));
+  }
   for (const act of acts) take(act, (action) => containsWord(action, act.verb));
   for (const act of acts) take(act, (action) => KIND_WORDS[act.kind].some((kindWord) => containsWord(action, kindWord)) || action === act.kind);
-  for (const act of acts) take(act, () => true);
   return assigned;
+}
+
+/**
+ * The words of an act's quote that no other act of its kind quotes, where
+ * another shares its kind: "napkins" in "add the dinner napkins" beside "add
+ * the paper towels". An act alone of its kind has none; its verb and kind name it.
+ */
+function distinctiveWords(act: AutomationStudioInstructedAct, acts: readonly AutomationStudioInstructedAct[]): string[] {
+  const siblings = acts.filter((other) => other !== act && other.kind === act.kind);
+  if (!siblings.length) return [];
+  const theirs = new Set(siblings.flatMap((other) => wordsOf(other.quote)));
+  return [...new Set(wordsOf(act.quote))].filter((ownWord) => !theirs.has(ownWord));
+}
+
+function wordsOf(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+/gu) ?? []).filter((found) => found.length >= MIN_DISTINCTIVE_WORD);
 }
 
 /** A step by its id (`d7`), or by its position (`7`, `step 7`, `#7`). */

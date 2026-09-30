@@ -15,7 +15,6 @@ import {
   runtimeFlowInputPorts,
   runtimeFlowReadinessIssues,
   runtimeLlmAdaptationEvents,
-  runtimeLlmExecutionRequestFromFlow,
   runtimeRecoveryRoutingEvents,
   runtimeRunEffects,
   runtimeRunStateEvidence,
@@ -394,59 +393,17 @@ describe("Automation Runtime workspace", () => {
     expect(source).not.toContain("setInterval");
   });
 
-  it("maps saved diagnosis limits and uses authenticated-session authorization in Run and test", () => {
-    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
-      flowId: "flow.one",
-      metadata: {
-        llmSecretKeyId: "key.deepseek",
-        llmExecutionSettings: {
-          tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 },
-          maxCalls: 1,
-          timeoutMs: 15000,
-          maxEstimatedCostUsd: 0.1,
-          retryCount: 0
-        }
-      }
-      // A Flow that names no model does not have one chosen for it here: the
-      // request leaves `model` out and Core resolves its configured default,
-      // which is what makes the model a setting rather than a constant repeated
-      // in every surface that builds a request.
-    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", purpose: "diagnosis_only", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
-    // A Flow that does name one carries it through untouched.
-    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
-      flowId: "flow.one",
-      metadata: { llmSecretKeyId: "key.deepseek", llmModel: "deepseek-v4-pro", llmExecutionSettings: { maxCalls: 1 } }
-    })).toMatchObject({ ok: true, payload: { model: "deepseek-v4-pro" } });
-    // One DeepSeek retired is not quietly sent on.
-    const retired = runtimeLlmExecutionRequestFromFlow("project.one", {
-      flowId: "flow.one",
-      metadata: { llmSecretKeyId: "key.deepseek", llmModel: "deepseek-chat", llmExecutionSettings: { maxCalls: 1 } }
-    });
-    expect(retired.ok && retired.payload).not.toHaveProperty("model");
-    const adapting = runtimeLlmExecutionRequestFromFlow("project.one", {
-      flowId: "flow.one",
-      metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }
-    }, "diagnose_and_adapt");
-    // Saved `maxCalls: 1` does not pin an adapting run: it names no count and
-    // Core applies its own iterating default.
-    expect(adapting).toMatchObject({ ok: true, payload: { purpose: "diagnose_and_adapt" } });
-    expect(adapting.ok && adapting.payload).not.toHaveProperty("maxCalls");
-    // Exploring iterates too, and is its own purpose rather than an adapt run.
-    const exploring = runtimeLlmExecutionRequestFromFlow("project.one", {
-      flowId: "flow.one",
-      metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }
-    }, "explore_and_adapt");
-    expect(exploring).toMatchObject({ ok: true, payload: { purpose: "explore_and_adapt" } });
-    expect(exploring.ok && exploring.payload).not.toHaveProperty("maxCalls");
-    expect(exploring.ok && exploring.payload).not.toHaveProperty("permittedConsequences");
+  it("runs a model-assisted mode straight away, with no preflight, grant or token confirmation", () => {
     const source = FlowRunViewContent.toString();
-    expect(source).toContain("commands.preflightLlm");
-    expect(source).toContain("commands.issueLlmGrant");
+    expect(source).not.toContain("preflightLlm");
+    expect(source).not.toContain("issueLlmGrant");
+    expect(source).not.toContain("llmExecutionGrantId");
+    expect(source).not.toContain("highTokenConfirmation");
     expect(source).not.toContain("authorizationPassword");
     expect(source).not.toContain("authorizationPin");
     expect(source).toContain("runIntent: mode");
+    expect(source).toContain("permittedConsequences");
     expect(source).toContain("isAutomationRuntimeExplicitLlmRunMode");
-    expect(source).toContain("llmRequestRequiresHighTokenWarning");
     expect(source).not.toContain("authorizedExternalSideEffects");
   });
   it("queues runs before execution so active runs can be stopped", () => {

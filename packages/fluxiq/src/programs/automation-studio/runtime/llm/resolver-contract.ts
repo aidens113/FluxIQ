@@ -1,33 +1,20 @@
 // The contract between Automation Studio and the host's LLM provider
-// resolver: what a run asks the resolver for, the provider and limits it gets
-// back, and the build grant a Flow Bootstrap request carries.
+// resolver: what a run asks the resolver for, and the provider and default
+// limits it gets back. Nothing here authorizes spending: the resolver hands
+// back a provider on the caller's own key, and the run's budget bounds it.
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../action-permissions/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "./harness.ts";
-import type { AutomationStudioRuntimeSessionGrant } from "./runtime-session-grant.ts";
+import type { AutomationStudioLlmModelCaller } from "./model-caller.ts";
 
 export type AutomationStudioLlmProviderResolution = {
   provider: AutomationStudioLlmProvider;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   maxCallsPerRun?: number;
-  /** The whole run's token budget, when the resolver was issued for one. It caps the run however many calls it may make. */
+  /** The whole run's token budget, when the resolver sets one. It caps the run however many calls it may make. */
   maxTotalTokensPerRun?: number;
   maxEstimatedCostUsd?: number;
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
-  /**
-   * How many times one call may be re-sent after a temporary fault. Each
-   * attempt spends one of the grant's calls, so a loop sized to the call count
-   * alone asks for calls the grant no longer has (`run-munaiz76-7026748c`).
-   */
-  providerRetryCount?: number;
-  /**
-   * The lasting consequences the person allowed the run's actions to have, as
-   * the grant the resolver was issued for holds them. Absent permits none: a
-   * resolver that says nothing about permission has granted nothing, and a
-   * recovery then asks rather than acts.
-   */
-  permittedConsequences?: readonly AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioLlmProviderResolverInput = {
@@ -36,16 +23,6 @@ export type AutomationStudioLlmProviderResolverInput = {
   providerId?: string;
   modelId?: string;
   metadata?: JsonObject;
-  executionGrant?: AutomationStudioRuntimeSessionGrant | AutomationStudioBuildAndAdaptExecutionGrant;
-};
-
-export type AutomationStudioBuildAndAdaptExecutionGrant = {
-  grantId: string;
-  actorUserId: string;
-  actorSessionId: string;
-  purpose: "build_and_adapt";
-  executionDigest: string;
-  settingsRevision: number;
-  /** The lasting consequences the person allowed this build's actions. Absent permits none. */
-  permittedConsequences?: AutomationStudioActionConsequence[];
+  /** The person the call is made for, whose unlocked key pays. Absent for a run nobody is watching. */
+  caller?: AutomationStudioLlmModelCaller;
 };

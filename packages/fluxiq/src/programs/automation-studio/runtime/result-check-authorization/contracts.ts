@@ -1,11 +1,10 @@
 // The standing authorization that lets a run nobody is watching obtain a model
 // to judge its own result.
 //
-// Why this exists at all. Every provider call in Core needs a person's grant,
-// and `AutomationStudioLlmExecutionGrantService.issue` refuses without a live
-// actor session: "LLM execution actor session is unavailable." A Flow replayed
-// on a schedule at three in the morning has no such session, so as the code
-// stood its result could never be judged -- and checking runs nobody is
+// Why this exists at all. A model call is paid with a person's own key, which
+// the host releases only to that person's live, unlocked session. A Flow
+// replayed on a schedule at three in the morning has no such session, so
+// without this its result could never be judged -- and checking runs nobody is
 // watching is the entire point of the schedule beside this.
 //
 // The user settled the shape directly, on being shown the recommendation:
@@ -22,9 +21,9 @@
 //     spending without a limit the person set;
 //   * an expiry, after which checking stops until the person renews it.
 //
-// It is deliberately NOT a loosening of the grant service. A grant purpose that
-// could be issued without a session would let unattended work reach
-// `explore_and_adapt` and the Flow-building kinds as well.
+// It is deliberately NOT a way to reach a person's session key without them.
+// A key released without a session would let unattended work reach exploring
+// and the Flow-building kinds as well.
 //
 // **The repair clause.** That paragraph used to end "and the repair a
 // refutation triggers is a separate authorization question with a separate
@@ -139,7 +138,7 @@ export type AutomationStudioResultCheckRedemption =
  * 2026-09-21), so the default total covers well over six hundred checks -- more
  * than the default schedule reaches in a Flow's first several thousand runs --
  * while still being a number a person can reason about. The per-call ceiling is
- * far above the measured call and far below the grant service's own $0.25, so a
+ * far above the measured call and far below a recovery's own $0.25, so a
  * verification whose packet grew unexpectedly is refused rather than billed.
  */
 export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.freeze({
@@ -148,9 +147,9 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.free
   ttlMs: 90 * 24 * 60 * 60 * 1000,
   /**
    * What one unattended repair may spend when the person turning repair on
-   * names no number. $0.25 is Core's own ceiling for a recovery nobody granted
-   * anything for (`run-budget.ts`), so this default authorizes the repair a
-   * granted run would have made and nothing wider. Note it is **not** a default
+   * names no number. $0.25 is Core's own ceiling for a recovery nobody asked
+   * the model into (`run-budget.ts`), so this default authorizes the repair such
+   * a run would have made and nothing wider. Note it is **not** a default
    * for `enabled`: repair stays off until somebody turns it on.
    */
   repairMaxCostUsdPerRun: 0.25

@@ -12,7 +12,7 @@ describe("Automation Studio intervention mode compatibility", () => {
   // with manual proposals, which meant it could not repair itself, re-author a
   // subflow or keep what it learned until somebody went and switched it on.
   // Repairing and re-authoring are the automation's own work, and asking for the
-  // automation is the grant for it; a person who wants it narrower still says
+  // automation is the permission for it; a person who wants it narrower still says
   // so, and every row below shows that their saying so is still honoured. The
   // rule itself is pinned in `programs/automation-studio/tests/permission-defaults.test.ts`.
   it("defaults new Flows to adapting themselves, with proposals applied automatically", () => {

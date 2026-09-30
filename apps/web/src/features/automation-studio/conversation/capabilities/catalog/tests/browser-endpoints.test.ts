@@ -1,11 +1,10 @@
 // The chat window runs capabilities through the browser's program API, and
 // that transport refuses the retired whole-document endpoints
 // (`assertAutomationStudioBrowserEndpointAllowed`). The contract test talks to
-// Core directly and never meets that guard, so `permission.allowModelRun` read
-// its key with `get-flow` and passed there while throwing in the real chat
-// window: chat build and explore could never get a grant. This file puts the
-// guard in front of every capability's declaration, and drives the two grant
-// capabilities through a transport that enforces it.
+// Core directly and never meets that guard, so a capability that read a Flow
+// with `get-flow` passed there while throwing in the real chat window. This
+// file puts the guard in front of every capability's declaration, and drives
+// the builds through a transport that enforces it.
 
 import { describe, expect, it, vi } from "vitest";
 import type { ProgramCommandTransport } from "../../../../data/program-transport";
@@ -20,8 +19,8 @@ function browserTransport() {
     assertAutomationStudioBrowserEndpointAllowed(endpoint);
     calls.push({ endpoint, payload });
     if (endpoint === "get-flow-metadata-detail") return { ok: true, payload: { flow: { flowId: "f1", settings: { llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.one" } } } } };
-    if (endpoint === "issue-llm-execution-grant") return { ok: true, payload: { grant: { grantId: "grant.one" } } };
-    return { ok: true, payload: { preflight: { purpose: "build_and_adapt" } } };
+    if (endpoint === "save-flow-instruction") return { ok: true, payload: { instruction: { instructionId: "instruction.one", status: "active" } } };
+    return { ok: true, payload: { adaptation: { adaptationId: "adaptation.one", status: "proposed" } } };
   });
   return { api: { get: vi.fn(), post } as unknown as ProgramCommandTransport, calls };
 }
@@ -33,28 +32,30 @@ describe("capabilities use only endpoints the browser allows", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("issues a model-run grant from the key chosen in the Flow's settings", async () => {
+  it("builds on one call, with no grant or preflight endpoint", async () => {
     const { api, calls } = browserTransport();
-    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, { capabilityId: "permission.allowModelRun", arguments: { purpose: "build_and_adapt" } });
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, { capabilityId: "flow.build" });
     expect(dispatch.outcome.status).toBe("done");
-    expect(calls).toEqual([
-      { endpoint: "get-flow-metadata-detail", payload: { projectId: "p1", flowId: "f1" } },
-      { endpoint: "issue-llm-execution-grant", payload: { projectId: "p1", flowId: "f1", keyId: "key.one", provider: "deepseek", model: "deepseek-flash", purpose: "build_and_adapt" } }
-    ]);
+    expect(calls).toEqual([{ endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: "p1", flowId: "f1" } }]);
   });
 
-  it("checks what a model run needs the same way", async () => {
-    const { api, calls } = browserTransport();
-    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, { capabilityId: "permission.check" });
-    expect(dispatch.outcome.status).toBe("done");
-    expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "preflight-llm-execution"]);
-    expect(calls[1]!.payload).toMatchObject({ keyId: "key.one" });
+  it("declares no grant or preflight endpoint and no model-run permission capability", () => {
+    const endpoints = panelCapabilities().flatMap((capability) => capability.endpoints);
+    expect(endpoints).not.toContain("issue-llm-execution-grant");
+    expect(endpoints).not.toContain("preflight-llm-execution");
+    const ids = panelCapabilities().map((capability) => capability.id);
+    expect(ids).not.toContain("permission.allowModelRun");
+    expect(ids).not.toContain("permission.check");
   });
 
-  it("still says so when no key is chosen", async () => {
+  it("improves through the metadata detail the browser allows, and still says so when no key is chosen", async () => {
+    const { api, calls } = browserTransport();
+    const dispatch = await dispatchPanelCapability({ transport: api, projectId: "p1", flowId: "f1" }, { capabilityId: "flow.improve", arguments: { change: "Close the banner first." } });
+    expect(dispatch.outcome.status).toBe("done");
+    expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "save-flow-instruction", "generate-flow-bootstrap-adaptation"]);
     const post = vi.fn(async () => ({ ok: true, payload: { flow: { flowId: "f1", settings: { llm: {} } } } }));
-    const dispatch = await dispatchPanelCapability({ transport: { get: vi.fn(), post } as unknown as ProgramCommandTransport, projectId: "p1", flowId: "f1" }, { capabilityId: "permission.allowModelRun" });
-    expect(dispatch.outcome).toMatchObject({ status: "failed", error: expect.stringContaining("no model key chosen") });
+    const refused = await dispatchPanelCapability({ transport: { get: vi.fn(), post } as unknown as ProgramCommandTransport, projectId: "p1", flowId: "f1" }, { capabilityId: "flow.improve", arguments: { change: "x" } });
+    expect(refused.outcome).toMatchObject({ status: "failed", error: expect.stringContaining("no DeepSeek model key chosen") });
     expect(post).toHaveBeenCalledTimes(1);
   });
 });

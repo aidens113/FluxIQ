@@ -314,10 +314,9 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     }).bindNativeNodeRuntime(readyNativeRuntime());
     services.add(instance);
     const { project, flow, rejectedFlow, rejectedCandidate, binding } = bridgeSeed;
-    const grants = { inspectAvailable: vi.fn(async () => ({ purpose: "build_and_adapt", ...binding })) };
     const identityAccess = { authorizeSessionPin: vi.fn(async () => ({ id: "user.reviewer" })) };
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, instance, identityAccess as any, undefined, undefined, grants as any);
+    registerAutomationStudioApi(registry, instance, identityAccess as any);
     const actor: ProgramApiActor = {
       sessionId: "session.reviewer",
       userId: "user.reviewer",
@@ -329,8 +328,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     const generated = await call(AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, {
       projectId: project.id,
       flowId: flow.flowId,
-      authSessionId: actor.sessionId,
-      llmExecutionGrantId: "llm-grant:bridge"
+      authSessionId: actor.sessionId
     }) as any;
     expect(generated.ok, generated.error).toBe(true);
     expect(generated).toMatchObject({ payload: { adaptation: { status: "proposed", accounting: { inputTokens: 900, totalTokens: 1000 } } } });

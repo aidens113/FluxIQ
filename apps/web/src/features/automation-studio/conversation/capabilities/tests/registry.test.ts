@@ -65,7 +65,7 @@ describe("only deleting and moving money stop for the person", () => {
   it("pins the classes that re-authorize to Core's own two", () => {
     // Widening this re-gates ordinary panel work, which is exactly what the
     // product owner ruled out: the person asking for the automation is the
-    // grant. Core decides this in runtime/action-permissions/destructive.ts;
+    // permission. Core decides this in runtime/action-permissions/destructive.ts;
     // this is the browser's copy of that decision and must not drift from it.
     expect([...PANEL_CAPABILITY_ASKING_CONSEQUENCES]).toEqual(["move_money", "delete"]);
   });
@@ -84,8 +84,8 @@ describe("only deleting and moving money stop for the person", () => {
     ]);
   });
 
-  it("never stops for editing, running, granting or rolling back", () => {
-    for (const id of ["flow.settings", "flow.build", "run.execute", "permission.allowModelRun", "version.rollBack", "subflow.turnOn"]) {
+  it("never stops for editing, building, running or rolling back", () => {
+    for (const id of ["flow.settings", "flow.build", "run.execute", "version.rollBack", "subflow.turnOn"]) {
       const capability = panelCapability(id);
       expect(capability, `${id} should exist.`).not.toBeNull();
       expect(panelCapabilityAsksFirst(capability!), `${id} must not ask a person for permission to do ordinary work.`).toBe(false);

@@ -45,7 +45,7 @@ export const AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES = Object.freeze({
   unresolved: "bootstrap.handle_unresolved",
   /** The step declared consequences Core could not read as its own classes. */
   consequences: "bootstrap.step_consequences_invalid",
-  /** The step would do something lasting that neither the instruction nor the grant allows. */
+  /** The step would do something lasting that neither the instruction nor the person's permission allows. */
   permission: "bootstrap.step_permission_required"
 } as const);
 
@@ -168,7 +168,7 @@ async function resolveNode(
     const missing = Array.isArray(answer.missing) ? answer.missing.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)).slice(0, MAX_REFUSAL_CODES) : [];
     const requestId = typeof answer.requestId === "string" && ISSUE_CODE.test(answer.requestId) ? answer.requestId : null;
     // A domain that says "not permitted" and names nothing has not said which
-    // classes a person would have to grant, which is the whole of the answer.
+    // classes a person would have to permit, which is the whole of the answer.
     return missing.length ? { status: "needs_permission", missing, requestId } : refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.refused);
   }
   let outcome: NodeOutcome;
@@ -203,7 +203,7 @@ function parameterIssue(code: string, path: string): AutomationStudioFlowBootstr
 
 /**
  * A step nobody permitted. The classes and the request id are Core's own, so
- * the message says which grant would answer it without carrying anything out
+ * the message says which permission would answer it without carrying anything out
  * of the domain.
  */
 function permissionIssue(outcome: { missing: string[]; requestId: string | null }, path: string): AutomationStudioFlowBootstrapIssue {

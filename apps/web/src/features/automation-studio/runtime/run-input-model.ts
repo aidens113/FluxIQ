@@ -1,8 +1,7 @@
-import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-models";
 export type AutomationRuntimeRunMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
 /**
- * The run modes a person authorizes one grant for. Each is also the run's
- * intent: Core accepts the grant only for a run of the same purpose.
+ * The run modes that ask the model to take part. Each is sent as the run's
+ * `runIntent`.
  * `explore_and_adapt` is the recovery that explores the page to find a repair,
  * and the one that can stop to ask for a permission it was not given.
  */
@@ -101,35 +100,4 @@ export function updateRuntimeRunInputText(inputText: string, key: string, value:
   } catch { parsed = {}; }
   if (value === undefined) delete parsed[key]; else parsed[key] = value;
   return JSON.stringify(parsed);
-}
-
-export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flow: any, purpose: AutomationRuntimeExplicitLlmRunMode = "diagnosis_only"): { ok: true; payload: Record<string, any> } | { ok: false; error: string } {
-  const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
-  const settings = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
-  const tokenLimits = settings.tokenLimits && typeof settings.tokenLimits === "object" ? settings.tokenLimits : {};
-  if (!projectId || !flow?.flowId) return { ok: false, error: "Select a Flow before authorizing LLM assistance." };
-  if (typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false, error: "Configure an enabled DeepSeek key in Flow Settings first." };
-  return {
-    ok: true,
-    payload: {
-      projectId,
-      flowId: flow.flowId,
-      keyId: metadata.llmSecretKeyId,
-      provider: "deepseek",
-      ...(isAutomationStudioDeepSeekModel(metadata.llmModel) ? { model: metadata.llmModel } : {}),
-      purpose,
-      tokenLimits: {
-        maxInputTokens: tokenLimits.maxInputTokens ?? 8000,
-        maxOutputTokens: tokenLimits.maxOutputTokens ?? 2000,
-        maxTotalTokens: tokenLimits.maxTotalTokens ?? 10000
-      },
-      // A single question is one call. An adapting run iterates, so it names no
-      // count and Core applies its own default. The Flow's saved `maxCalls` is
-      // not used here: it is written as 1 by the authoring defaults, and
-      // honouring it would pin every adapting run to a single call.
-      ...(purpose === "diagnosis_only" ? { maxCalls: 1 } : {}),
-      timeoutMs: settings.timeoutMs ?? 20000,
-      maxEstimatedCostUsd: settings.maxEstimatedCostUsd ?? 0.25
-    }
-  };
 }

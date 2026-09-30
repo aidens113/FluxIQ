@@ -36,7 +36,7 @@ export type AutomationStudioLlmRunBudgetAllowance = "run" | "exploration";
  * for the case none of those catch -- a loop that makes free, instant, ever
  * different calls forever -- and it is set where a working loop never meets it.
  *
- * It is deliberately not a per-mode constant. A host, a grant or a setting that
+ * It is deliberately not a per-mode constant. A host or a setting that
  * wants to allow fewer calls says so through `maxCallsPerRun`; nothing here
  * infers a count from what kind of run it is.
  */

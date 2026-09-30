@@ -108,7 +108,7 @@ export type AutomationStudioRuntimePatchExecutionInput = {
   authorizedExternalSideEffects?: boolean;
   /**
    * The run's permission gate answered for this patch's lasting consequences:
-   * it declared none, or the person's grant or instruction allows every one it
+   * it declared none, or the person's permission or instruction allows every one it
    * declared. That is the explicit authorization the policy's two side-effect
    * lines ask for, so neither applies. Only a caller that asked a gate sets it
    * (`recovery/annotation/patches.ts`); every other caller is judged by the

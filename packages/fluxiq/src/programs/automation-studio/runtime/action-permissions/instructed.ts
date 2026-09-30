@@ -1,7 +1,7 @@
 // What the person's own instruction already asks for, as consequence classes.
 //
 // The user's rule: nothing destructive "without explicit instructions". So an
-// instruction is itself a grant. "Refund order 1042" asks for money to move;
+// instruction is itself a permission. "Refund order 1042" asks for money to move;
 // "Schedule a post for Friday" asks for something to be created and published;
 // "Extract the posts due this week" asks for neither, and a run that reached
 // for a delete or a send while doing it has to ask.

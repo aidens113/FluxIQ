@@ -53,17 +53,14 @@ export {
   type AutomationStudioDeepSeekPanelCommandOptions,
   type AutomationStudioPanelCommandKeyPorts
 } from "./deepseek/index.ts";
-export * from "./execution/index.ts";
-export * from "./grant-refusal/index.ts";
-// The grant's authorization table. Only the names `execution/grants.ts` used to
-// publish itself are exported; the checks the grant runs stay internal.
-export {
-  automationStudioLlmExecutionGrantTaskKinds,
-  type AutomationStudioLlmExecutionGrantPurpose,
-  type AutomationStudioLlmExecutionGrantResolvePolicy
-} from "./grant-capabilities.ts";
+export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
+// The decision history: every decision a loop made and what it answered, the
+// entry that shows it beside the window, and what one decision is shown
+// (`decision-context/`). Public because a caller reading a run's evidence has
+// to be able to name the entry and read its rows.
+export * from "./decision-context/index.ts";
 // What the model is told when the draft refuses one of its amendments, and the
 // entry it arrives under. Published beside the loop for the same reason the
 // decision and completion feedback are: a caller reading a run's evidence has
@@ -87,5 +84,9 @@ export type {
   AutomationStudioLlmRunCallOutcome,
   AutomationStudioLlmRunCallRecord
 } from "./run-call-record.ts";
-export * from "./runtime-session-grant.ts";
+export * from "./model-caller.ts";
+export * from "./runtime-session-llm.ts";
+// The host's provider for calls made on a person's behalf: their own key,
+// released per call to their unlocked session (`session-key-provider.ts`).
+export * from "./session-key-provider.ts";
 export * from "./resolver-contract.ts";

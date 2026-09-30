@@ -81,8 +81,13 @@ export type AutomationStudioLlmEvidenceNoProgress = {
   completionRefused(issueCodes: readonly string[]): void;
   /** The last refusal to finish, until the model tries to finish again: what a continuation still owes. */
   readonly outstanding: readonly string[];
-  /** Say plainly that this is going nowhere, when saying so is due. */
-  redirect(iteration: number): void;
+  /**
+   * Say plainly that this is going nowhere, when saying so is due. `now` says
+   * it below `redirectAt`: a request answered from memory a second time has
+   * already shown what the count would take more steps to learn: run 6 of
+   * 2026-09-28 asked the same look eleven times, answered alike each time.
+   */
+  redirect(iteration: number, now?: boolean): void;
 };
 
 export function automationStudioLlmEvidenceNoProgress(input: {
@@ -149,8 +154,8 @@ export function automationStudioLlmEvidenceNoProgress(input: {
       lastRefusal = [...issueCodes];
     },
     get outstanding() { return [...lastRefusal]; },
-    redirect(iteration) {
-      if (steps < input.redirectAt || steps >= input.max) return;
+    redirect(iteration, now) {
+      if ((!now && steps < input.redirectAt) || steps >= input.max) return;
       input.show(iteration, automationStudioLlmEvidenceStallRedirect({
         stepsWithoutProgress: steps,
         maxStepsWithoutProgress: input.max,

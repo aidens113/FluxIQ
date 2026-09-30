@@ -20,6 +20,21 @@
 //   - **A negation just before it drops it**: "and do not check out", "Do not
 //     buy anything", "don't send any other message".
 //
+// **Each act quotes its own clause, and a verb over several counted objects is
+// one act per object.** Run 6 (`run-muncqlr0-3348202b`) asked to "add two
+// packs of the ... Paper Towels ... and one pack of the ... Dinner Napkins ...
+// to my cart"; read as one `add` quoting the whole sentence, it let a Flow that
+// added only the towels pass, and showed the model one quote for two acts. So:
+//
+//   - An act's quote runs from its verb to the next act's verb in the sentence
+//     (or the sentence's end), joining words and trailing punctuation trimmed.
+//   - An `add_to` or `save` whose objects are joined by "and", each beginning
+//     with a count ("two packs", "one pack", "a", "an", digits), all before the
+//     place they go ("to my cart"), is one act per object, each quoting its
+//     verb, its own object and that place. Only counted objects split, so "the
+//     kettle and the toaster" stays one act, and coordinated verbs over one
+//     object ("Collect and use that store's coupon") stay one act as before.
+//
 // Every pattern was checked against the forty-odd instructions of the ten
 // realistic sites (`apps/scenario-lab/src/scenarios/*/live-tasks.ts` in the web
 // repository): each consequential task yields its acts, and no extraction task
@@ -35,6 +50,17 @@ const NEGATION = /(?<![A-Za-z])(?:not|don't|dont|never|without|nor|no)(?![A-Za-z
 
 const PLACE = "(?:saved\\s+items|saved\\s+jobs|saved\\s+posts|saved\\s+searches|saved|watch\\s*list|wish\\s*list|cart|basket|bag|trolley|orders|order\\s+history|inbox|collections?|favou?rites|bookmarks)";
 
+/** Where an added or saved thing goes: "to my cart", "in the basket", "onto my saved jobs". */
+const DESTINATION = new RegExp(`(?<![A-Za-z])(?:to|in|into|onto|on)\\s+(?:my|the|your|our)\\s+(?:[A-Za-z'-]+\\s+){0,2}?${PLACE}(?![A-Za-z])`, "iu");
+
+/** A count that begins a coordinated object: "two packs", "one pack", "a", "an", "3". Not "a few", "a half". */
+const COUNT = "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\\d+)\\s+(?!(?:half|quarter|few|bit|lot|little|while|moment)(?![A-Za-z]))[A-Za-z0-9]";
+const COUNTED_OBJECT = new RegExp(`^\\s+${COUNT}`, "iu");
+const OBJECT_JOIN = new RegExp(`(?:,\\s*|\\s+)and\\s+(?=${COUNT})`, "giu");
+
+/** What only joins a quote to the next act, trimmed from its end. */
+const TRAILING = /(?:[\s,;:(&"“—-]+|\s+(?:then|and|also|please|first|next|finally|now|just))+$/iu;
+
 /**
  * One way an act is asked for: a verb, and optionally what must follow it in
  * the same sentence (`after`, tested against the rest of the sentence).
@@ -45,7 +71,7 @@ const word = (alternatives: string): RegExp => new RegExp(`(?<![A-Za-z'-])(?:${a
 
 const PATTERNS: readonly ActPattern[] = [
   { kind: "save", verb: word("save|bookmark") },
-  { kind: "add_to", verb: word("add|put"), after: new RegExp(`(?<![A-Za-z])(?:to|in|into|onto|on)\\s+(?:my|the|your|our)\\s+(?:[A-Za-z'-]+\\s+){0,2}?${PLACE}(?![A-Za-z])`, "iu") },
+  { kind: "add_to", verb: word("add|put"), after: DESTINATION },
   { kind: "claim", verb: word("collect|claim|clip|redeem|use"), after: /^(?:\s+\S+){0,6}?\s+(?:coupons?|vouchers?|promo(?:tion)?(?:\s+codes?)?|discount(?:\s+codes?)?)(?![A-Za-z])/iu },
   { kind: "set", verb: word("switch|change|set"), after: /^(?:\s+\S+){0,4}?\s+(?:store|location|radius|address|region|country|currency|language|filters?|sort|distance)(?![A-Za-z])/iu },
   { kind: "set", verb: word("narrow|filter|sort"), after: /^(?:\s+\S+){0,2}?\s+(?:results?|search|list|listings?|them|by)(?![A-Za-z])/iu },
@@ -64,8 +90,9 @@ const PATTERNS: readonly ActPattern[] = [
 /** The lasting acts the instruction asks for, in the order it asks. Nothing here calls a provider. */
 export function automationStudioInstructedActs(instructionText: string): AutomationStudioInstructedAct[] {
   const text = typeof instructionText === "string" ? instructionText : "";
-  const found: Array<Omit<AutomationStudioInstructedAct, "id"> & { at: number; sentence: number }> = [];
-  sentences(text).forEach(({ sentence, start }, sentenceIndex) => {
+  const found: Array<Omit<AutomationStudioInstructedAct, "id"> & { at: number }> = [];
+  for (const { sentence, start } of sentences(text)) {
+    const matched: Array<{ kind: AutomationStudioInstructedActKind; index: number; written: string }> = [];
     for (const pattern of PATTERNS) {
       pattern.verb.lastIndex = 0;
       for (let match = pattern.verb.exec(sentence); match; match = pattern.verb.exec(sentence)) {
@@ -74,11 +101,23 @@ export function automationStudioInstructedActs(instructionText: string): Automat
         if (pattern.after && !pattern.after.test(rest)) continue;
         // One act of a kind per sentence: "Collect and use that store's coupon"
         // is one act asked for twice, not two.
-        if (found.some((act) => act.sentence === sentenceIndex && act.kind === pattern.kind)) continue;
-        found.push({ kind: pattern.kind, verb: match[0].replace(/\s+/gu, " ").toLowerCase(), quote: sentence.replace(/\s+/gu, " ").trim().slice(0, MAX_QUOTE), at: start + match.index, sentence: sentenceIndex });
+        if (matched.some((act) => act.kind === pattern.kind)) continue;
+        matched.push({ kind: pattern.kind, index: match.index, written: match[0] });
       }
     }
-  });
+    matched.sort((left, right) => left.index - right.index);
+    matched.forEach((act, order) => {
+      // The act's own clause: its verb up to the next act's verb, or the sentence's end.
+      const rest = sentence.slice(act.index + act.written.length, matched[order + 1]?.index ?? sentence.length);
+      const verb = act.written.replace(/\s+/gu, " ").toLowerCase();
+      const objects = act.kind === "add_to" || act.kind === "save" ? coordinatedObjects(rest) : undefined;
+      if (!objects) {
+        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index });
+        return;
+      }
+      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset });
+    });
+  }
   // A build reads its instruction as its title, a newline, then its body
   // (`service.ts`), and a title restates the task: "Save cheap tables" above
   // "Save the three cheapest dining tables ..." is one save, not two, and a
@@ -92,6 +131,34 @@ export function automationStudioInstructedActs(instructionText: string): Automat
     .sort((left, right) => left.at - right.at)
     .slice(0, MAX_ACTS)
     .map((act, index) => ({ id: `a${index + 1}`, kind: act.kind, verb: act.verb, quote: act.quote }));
+}
+
+/**
+ * The objects of one verb, when there are several and each is unambiguous:
+ * every one begins with a count, they are joined by "and", and all of them
+ * stand before the place they go. Each quotes its own object and that place.
+ * Anything less certain is one act, as before.
+ */
+function coordinatedObjects(rest: string): Array<{ quote: string; offset: number }> | undefined {
+  if (!COUNTED_OBJECT.test(rest)) return undefined;
+  const destination = DESTINATION.exec(rest);
+  if (!destination) return undefined;
+  const place = rest.slice(destination.index).trim();
+  const bounds: Array<{ from: number; to: number }> = [];
+  let from = 0;
+  OBJECT_JOIN.lastIndex = 0;
+  for (let join = OBJECT_JOIN.exec(rest); join && join.index < destination.index; join = OBJECT_JOIN.exec(rest)) {
+    bounds.push({ from, to: join.index });
+    from = join.index + join[0].length;
+  }
+  if (bounds.length === 0) return undefined;
+  bounds.push({ from, to: destination.index });
+  return bounds.map((bound) => ({ quote: `${rest.slice(bound.from, bound.to).trim()} ${place}`, offset: bound.from }));
+}
+
+/** A quote in the person's words: whitespace folded, what only joins it to the next act trimmed, bounded. */
+function bounded(quote: string): string {
+  return quote.replace(/\s+/gu, " ").trim().replace(TRAILING, "").slice(0, MAX_QUOTE).trimEnd();
 }
 
 /**

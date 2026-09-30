@@ -74,7 +74,7 @@ describe("an evidence loop given a budget", () => {
     expect(budgetOf(last.evidence)).toMatchObject({ decisionsLeft: 1, instruction: expect.stringContaining("last decision") });
   });
 
-  it("ends iteration_limit, never at the grant, once nothing is left", async () => {
+  it("ends iteration_limit, never at a budget refusal, once nothing is left", async () => {
     const decide = vi.fn().mockResolvedValue(look(1, 30_000));
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 20, maxToolCalls: 20, budget: { maxTotalTokens: 10_000, maxTokensPerDecision: 20_000 }, executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });

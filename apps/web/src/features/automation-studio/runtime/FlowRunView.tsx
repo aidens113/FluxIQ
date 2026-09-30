@@ -1,6 +1,6 @@
 "use client";
 
-import { DataTable, Modal, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
+import { DataTable, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CircleCheck } from "lucide-react";
 import type { AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
@@ -17,12 +17,10 @@ import {
   parseRuntimeRunInputDocument,
   runtimeFlowInputPorts,
   runtimeFlowReadinessIssues,
-  runtimeLlmExecutionRequestFromFlow,
   runtimeRunInputValues,
   runtimeTypedInputError,
   runtimeTypedInputErrors,
   updateRuntimeRunInputText,
-  type AutomationRuntimeExplicitLlmRunMode,
   type AutomationRuntimeRunMode,
   type AutomationRuntimeUiRunMode,
   type RuntimeReadinessIssue
@@ -30,7 +28,7 @@ import {
 import { useRuntimeDetailCommands, useRuntimeExecutionCommands, type RuntimeDetailCommands, type RuntimeExecutionCommands } from "./runtime-host";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { registerAutomationStudioRuntimeActions, updateAutomationStudioRuntimeActions } from "../workspace/studio-action-registry";
-import { AUTOMATION_LLM_PROGRESS_LABELS, llmRequestRequiresHighTokenWarning } from "../authoring/blank-flow-authoring-model";
+import { AUTOMATION_LLM_PROGRESS_LABELS } from "../authoring/blank-flow-authoring-model";
 export type FlowRunViewProps = {
   projectId: string | null;
   /**
@@ -51,8 +49,8 @@ export type FlowRunViewProps = {
 };
 /**
  * The run a permission request came back from, and what it ran with. Allowing
- * is honoured only while all of it still holds: a grant answers the question
- * this run asked, not one a changed Flow or changed inputs might ask.
+ * is honoured only while all of it still holds: the permission answers the
+ * question this run asked, not one a changed Flow or changed inputs might ask.
  */
 type RunPermissionContext = {
   projectId: string;
@@ -68,14 +66,6 @@ type RunPermissionContext = {
 const RUN_READ_BACK_LIMIT_MS = 15 * 60_000;
 const RUN_READ_BACK_INTERVAL_MS = 2_000;
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
-/**
- * How long a run's grant may wait to be claimed. A runtime run claims it when
- * its recovery first calls the provider, after the Flow has run up to the step
- * that failed, so Core's default minute left any Flow failing later than that
- * with a recovery that could not use its grant (`llm.provider_resolution_failed`).
- * Five minutes is the longest claim window Core issues.
- */
-const RUNTIME_GRANT_CLAIM_WINDOW_MS = 300_000;
 
 /** The request timed out on its way back; the run it started is not known to have stopped. */
 function requestWasCutShort(result: { status?: number; code?: string }): boolean {
@@ -116,12 +106,6 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [activeRunStartedAt, setActiveRunStartedAt] = useState<number | null>(null);
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [lastMode, setLastMode] = useState<AutomationRuntimeUiRunMode>("fully_adaptive");
-  const [llmAuthorizationMode, setLlmAuthorizationMode] = useState<AutomationRuntimeExplicitLlmRunMode | null>(null);
-  const [llmAuthorizationError, setLlmAuthorizationError] = useState("");
-  const [llmAuthorizing, setLlmAuthorizing] = useState(false);
-  // The consequences a high-token confirmation is holding for: set only while
-  // an Allow waits on that confirmation, so the confirmed grant carries them.
-  const [llmAuthorizationPermitted, setLlmAuthorizationPermitted] = useState<AutomationStudioActionPermissionRequest["missing"] | undefined>(undefined);
   const [runPermission, setRunPermission] = useState<RunPermissionContext | null>(null);
   const runGenerationRef = useRef(0);
   const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
@@ -161,12 +145,6 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
       flowId: props.flow.flowId
     });
   }, [loadReadiness, props.flow?.flowId, props.projectId]);
-  const closeLlmAuthorization = () => {
-    if (llmAuthorizing) return;
-    setLlmAuthorizationError("");
-    setLlmAuthorizationMode(null);
-    setLlmAuthorizationPermitted(undefined);
-  };
   // A run that stopped to ask carries the question in its run detail, not in
   // the execute answer. The compact detail keeps the run's metadata, which is
   // where Core writes it. A later run, or another Flow, supersedes the read.
@@ -205,7 +183,14 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     }
     return null;
   };
-  const runFlow = async (mode: AutomationRuntimeUiRunMode, llmExecutionGrantId?: string) => {
+  /**
+   * `permittedConsequences` is present only when a person allowed a run's
+   * request, and is then exactly that request's `missing` classes: the run is
+   * permitted what was asked and nothing more. A run started any other way
+   * carries none. A model-assisted run needs nothing else: pressing Run calls
+   * the endpoint.
+   */
+  const runFlow = async (mode: AutomationRuntimeUiRunMode, permittedConsequences?: AutomationStudioActionPermissionRequest["missing"]) => {
     const explicitLlmMode = isAutomationRuntimeExplicitLlmRunMode(mode);
     const runtimeMode: AutomationRuntimeRunMode = explicitLlmMode ? "manual_approval" : mode;
     const generation = ++runGenerationRef.current;
@@ -220,11 +205,12 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     setLastMode(mode);
     if (explicitLlmMode) {
       // Named here rather than by Core, so the run can be read back if this
-      // request is cut short (Core's `newRunId`; a granted run takes no `runId`).
+      // request is cut short (Core's `newRunId`).
       const newRunId = globalThis.crypto.randomUUID();
       const result = await props.commands.execute({
         ...payload.payload,
-        ...(llmExecutionGrantId ? { runIntent: mode, llmExecutionGrantId } : {}),
+        runIntent: mode,
+        ...(permittedConsequences?.length ? { permittedConsequences: [...permittedConsequences] } : {}),
         newRunId
       });
       const runId = result.payload?.runtimeSession?.runId;
@@ -237,7 +223,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         await readRunPermission(generation, { ...ranWith, runId });
         return;
       }
-      if (!requestWasCutShort(result)) { setRunningMode(null); setRunError("The authorized LLM run could not be completed."); return; }
+      if (!requestWasCutShort(result)) { setRunningMode(null); setRunError("The LLM-assisted run could not be completed."); return; }
       rememberLocalRun(newRunId);
       setLiveRunId(newRunId);
       const runDetail = await readRunBack(generation, newRunId);
@@ -271,58 +257,9 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     setLastRun(result.payload);
     await readRunPermission(generation, { ...ranWith, runId });
   };
-  const requestRun = (mode: AutomationRuntimeUiRunMode) => {
-    if (!isAutomationRuntimeExplicitLlmRunMode(mode)) { void runFlow(mode); return; }
-    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
-    if (!request.ok) { setRunError(request.error); return; }
-    setLlmAuthorizationError("");
-    void authorizeLlm(mode, false);
-  };
-  /**
-   * `permittedConsequences` is present only when a person allowed a run's
-   * request, and is then exactly that request's `missing` classes: the grant
-   * permits what was asked and nothing more. A run started any other way
-   * carries none.
-   */
-  const authorizeLlm = async (mode: AutomationRuntimeExplicitLlmRunMode, highTokenConfirmation = false, permittedConsequences?: AutomationStudioActionPermissionRequest["missing"]) => {
-    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
-    if (!request.ok) { setLlmAuthorizationError(request.error); return; }
-    const grantRequest = permittedConsequences ? { ...request.payload, permittedConsequences: [...permittedConsequences] } : request.payload;
-    setLlmAuthorizing(true);
-    setLlmAuthorizationError("");
-    try {
-      const preflight = await props.commands.preflightLlm(grantRequest);
-      if (!preflight.ok) {
-        const message = "LLM execution preflight was rejected. Review the saved Flow limits and key selection.";
-        setLlmAuthorizationError(message);
-        setRunError(message);
-        return;
-      }
-      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setLlmAuthorizationPermitted(permittedConsequences); setLlmAuthorizationMode(mode); return; }
-      // Uses are not restated here: Core issues one use per authorized call, so
-      // an adapting run gets as many as the call limit it resolved.
-      const issued = await props.commands.issueLlmGrant({ ...grantRequest, ttlMs: RUNTIME_GRANT_CLAIM_WINDOW_MS, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}) });
-      const grantId = issued.payload?.grant?.grantId;
-      if (!issued.ok || !grantId) {
-        const message = "LLM execution authorization failed. Verify your session and enabled key.";
-        setLlmAuthorizationError(message);
-        setRunError(message);
-        return;
-      }
-      setLlmAuthorizationMode(null);
-      setLlmAuthorizationPermitted(undefined);
-      setLlmAuthorizationError("");
-      await runFlow(mode, grantId);
-    } catch {
-      const message = "LLM execution authorization could not be completed.";
-      setLlmAuthorizationError(message);
-      setRunError(message);
-    } finally {
-      setLlmAuthorizing(false);
-    }
-  };
-  // Allow and run again: the same run intent, a new grant for exactly the
-  // missing classes, and only while the Flow and inputs are the ones the run
+  const requestRun = (mode: AutomationRuntimeUiRunMode) => { void runFlow(mode); };
+  // Allow and run again: the same run intent, permitted exactly the missing
+  // classes, and only while the Flow and inputs are the ones the run
   // asked with. Don't allow sends nothing and only forgets the question.
   const allowRunPermission = (request: AutomationStudioActionPermissionRequest) => {
     const pending = runPermission;
@@ -333,7 +270,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
       return;
     }
     setRunError("");
-    void authorizeLlm(pending.mode, false, request.missing);
+    void runFlow(pending.mode, request.missing);
   };
   const stopRun = async () => {
     if (!props.projectId || !activeRunId) return;
@@ -393,11 +330,10 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
       {runError ? <p className="automation-runtime-message" role="alert">{runError}</p> : null}
       {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} {...(runPermission && runPermission.runId === lastRun.runtimeSession?.runId ? { permission: {
         runDetail: runPermission.runDetail,
-        busy: llmAuthorizing || Boolean(runningMode),
+        busy: Boolean(runningMode),
         onDismiss: () => setRunPermission(null),
         ...(isAutomationRuntimeExplicitLlmRunMode(runPermission.mode) ? { onAllow: allowRunPermission } : {})
       } } : {})} /> : null}
-      {llmAuthorizationMode ? <Modal busy={llmAuthorizing} closeOnEscape={!llmAuthorizing} title="Confirm high-token LLM Execution" onClose={closeLlmAuthorization}><div className="automation-modal-form"><p className="automation-router-modal-intro">This request can use more than 100,000 tokens. Review the configured limits before continuing.</p>{llmAuthorizationError ? <p className="automation-runtime-message" role="alert">{llmAuthorizationError}</p> : null}<div className="modal-actions"><button className="button" disabled={llmAuthorizing} onClick={closeLlmAuthorization} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={llmAuthorizing} onClick={() => void authorizeLlm(llmAuthorizationMode, true, llmAuthorizationPermitted)} type="button">{llmAuthorizing ? "Starting..." : "Continue high-token execution"}</button></div></div></Modal> : null}
       <RuntimeHistoryAndReplays
         flowId={props.flow?.flowId}
         focusRunId={liveRunId ?? lastRun?.runtimeSession?.runId}

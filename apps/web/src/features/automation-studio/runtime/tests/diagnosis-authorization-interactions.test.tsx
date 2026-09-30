@@ -46,8 +46,6 @@ function commands(overrides: Record<string, unknown> = {}) {
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.one" } } })),
     execute: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.one", status: "failed" } } })),
     cancel: vi.fn(async () => ({ ok: true })),
-    preflightLlm: vi.fn(async () => ({ ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 3000 } } } })),
-    issueLlmGrant: vi.fn(async () => ({ ok: true, payload: { grant: { grantId: "grant.one" } } })),
     ...overrides
   } as any;
 }
@@ -94,29 +92,22 @@ describe("Run and test mounted diagnosis authorization", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("uses the authenticated session and scopes grant and intent to diagnosis_only", async () => {
+  it("runs a diagnosis on one press, naming its intent and no grant", async () => {
     const runtimeCommands = commands();
     const renderer = await mount(runtimeCommands);
     await runDiagnosis(renderer);
 
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({
-      keyId: "key.deepseek",
-      purpose: "diagnosis_only",
-      maxCalls: 1
-    }));
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxUses");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
-    expect(runtimeCommands.preflightLlm).toHaveBeenCalledWith(expect.not.objectContaining({
-      authorizationPassword: expect.anything(),
-      authorizationPin: expect.anything()
-    }));
+    expect(runtimeCommands.execute).toHaveBeenCalledTimes(1);
     expect(runtimeCommands.execute).toHaveBeenNthCalledWith(1, expect.objectContaining({
       runIntent: "diagnosis_only",
-      llmExecutionGrantId: "grant.one",
       adaptiveMode: "manual_approval"
     }));
-    expect(runtimeCommands.execute).toHaveBeenNthCalledWith(1, expect.not.objectContaining({ runId: expect.anything() }));
+    const sent = runtimeCommands.execute.mock.calls[0]?.[0];
+    expect(sent).not.toHaveProperty("llmExecutionGrantId");
+    expect(sent).not.toHaveProperty("permittedConsequences");
+    expect(sent).not.toHaveProperty("authorizationPassword");
+    expect(sent).not.toHaveProperty("authorizationPin");
+    expect(sent).not.toHaveProperty("runId");
     expect(runtimeCommands.start).not.toHaveBeenCalled();
 
     await act(async () => button(renderer, "No LLM intervention")!.props.onClick());
@@ -134,7 +125,7 @@ describe("Run and test mounted diagnosis authorization", () => {
     await act(async () => renderer.unmount());
   });
 
-  it("issues a two-call exact-purpose grant and starts a fresh manual-review adaptation run", async () => {
+  it("starts a fresh manual-review adaptation run with its intent and no grant", async () => {
     const runtimeCommands = commands({
       execute: vi.fn(async () => ({
         ok: true,
@@ -150,24 +141,12 @@ describe("Run and test mounted diagnosis authorization", () => {
     const renderer = await mount(runtimeCommands, onOpenAdaptation);
     await runAdaptation(renderer);
 
-    // An adapting run iterates: it names no call count, even though the Flow's
-    // saved settings say 1, and leaves the number to Core.
-    expect(runtimeCommands.preflightLlm).toHaveBeenCalledWith(expect.objectContaining({
-      purpose: "diagnose_and_adapt"
-    }));
-    expect(runtimeCommands.preflightLlm.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({
-      purpose: "diagnose_and_adapt"
-    }));
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("maxUses");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
-    expect(runtimeCommands.issueLlmGrant.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
     expect(runtimeCommands.execute).toHaveBeenCalledWith(expect.objectContaining({
       runIntent: "diagnose_and_adapt",
-      llmExecutionGrantId: "grant.one",
       adaptiveMode: "manual_approval"
     }));
+    expect(runtimeCommands.execute.mock.calls[0]?.[0]).not.toHaveProperty("llmExecutionGrantId");
+    expect(runtimeCommands.execute.mock.calls[0]?.[0]).not.toHaveProperty("maxCalls");
     expect(runtimeCommands.execute).toHaveBeenCalledWith(expect.not.objectContaining({
       runId: expect.anything(),
       authorizedExternalSideEffects: expect.anything()
@@ -205,42 +184,25 @@ describe("Run and test mounted diagnosis authorization", () => {
     await act(async () => renderer.unmount());
   });
 
-  it.each([
-    {
-      name: "preflight rejection",
-      overrides: { preflightLlm: vi.fn(async () => ({ ok: false, error: "private-preflight-error" })) },
-      expectedError: "LLM execution preflight was rejected. Review the saved Flow limits and key selection.",
-      issueCalls: 0
-    },
-    {
-      name: "grant rejection",
-      overrides: { issueLlmGrant: vi.fn(async () => ({ ok: false, error: "private-grant-error" })) },
-      expectedError: "LLM execution authorization failed. Verify your session and enabled key.",
-      issueCalls: 1
-    }
-  ])("renders only fixed errors after $name", async ({ overrides, expectedError, issueCalls }) => {
-    const runtimeCommands = commands(overrides);
+  it("renders only a fixed error when a model-assisted run fails", async () => {
+    const runtimeCommands = commands({ execute: vi.fn(async () => ({ ok: false, error: "private-provider-error" })) });
     const renderer = await mount(runtimeCommands);
     await runDiagnosis(renderer);
 
     const rendered = JSON.stringify(renderer.toJSON());
-    expect(rendered).toContain(expectedError);
-    expect(rendered).not.toContain("private-preflight-error");
-    expect(rendered).not.toContain("private-grant-error");
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledTimes(issueCalls);
+    expect(rendered).toContain("The LLM-assisted run could not be completed.");
+    expect(rendered).not.toContain("private-provider-error");
     expect(runtimeCommands.start).not.toHaveBeenCalled();
-    expect(runtimeCommands.execute).not.toHaveBeenCalled();
     await act(async () => renderer.unmount());
   });
 
-  it("asks for confirmation only above 100,000 tokens", async () => {
-    const runtimeCommands = commands({ preflightLlm: vi.fn(async () => ({ ok: true, payload: { preflight: { tokenLimits: { maxTotalTokens: 100_001 } } } })) });
+  it("never asks to confirm a high-token run", async () => {
+    const runtimeCommands = commands();
     const renderer = await mount(runtimeCommands);
     await runDiagnosis(renderer);
-    expect(JSON.stringify(renderer.toJSON())).toContain("more than 100,000 tokens");
-    expect(runtimeCommands.issueLlmGrant).not.toHaveBeenCalled();
-    await act(async () => button(renderer, "Continue high-token execution")!.props.onClick());
-    expect(runtimeCommands.issueLlmGrant).toHaveBeenCalledWith(expect.objectContaining({ highTokenConfirmation: true, maxCalls: 1 }));
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("more than 100,000 tokens");
+    expect(button(renderer, "Continue high-token execution")).toBeUndefined();
+    expect(runtimeCommands.execute).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
   });
 });

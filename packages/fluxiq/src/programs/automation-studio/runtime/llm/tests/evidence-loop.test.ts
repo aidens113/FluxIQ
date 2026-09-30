@@ -7,6 +7,17 @@ import { automationStudioLlmTokenBudgetBytes } from "../token-estimation.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 
+// The decision history sits beside the window, after it, from the model's
+// first decision on (`../decision-context/`): one row per decision and what
+// the loop answered it.
+const historyEntry = (rows: unknown[]) => ({
+  callId: AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID,
+  toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID,
+  value: expect.objectContaining({ code: "llm_evidence_loop.decision_history", rows })
+});
+const withoutHistory = <Entry extends { toolId: string }>(evidence: readonly Entry[]) => evidence.filter((entry) => entry.toolId !== AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID);
+const requestCheck = (evidence: ReadonlyArray<{ toolId: string; value: unknown }>) => evidence.find((entry) => entry.toolId === "core.request_check")?.value as { stepsWithoutProgress: number } | undefined;
+
 describe("Automation Studio LLM evidence loop", () => {
   it("runs allowlisted tools and returns a candidate with sanitized trace accounting", async () => {
     const decide = vi.fn()
@@ -20,7 +31,10 @@ describe("Automation Studio LLM evidence loop", () => {
 
     expect(result).toMatchObject({ ok: true, result: { candidateId: "candidate.1" }, accounting: { iterations: 2, toolCalls: 1, inputTokens: 22, outputTokens: 7, totalTokens: 29, estimatedCostUsd: 0.002 } });
     expect(executeTool).toHaveBeenCalledWith({ callId: "call.1", toolId: "inspect", value: { scope: "current" }, maxEvidenceBytes: 63_488 });
-    expect(decide.mock.calls[1]?.[0].evidence).toEqual([{ callId: "call.1", toolId: "inspect", value: { facts: ["ready"] } }]);
+    expect(decide.mock.calls[1]?.[0].evidence).toEqual([
+      { callId: "call.1", toolId: "inspect", value: { facts: ["ready"] } },
+      historyEntry([[1, "call", "inspect", null, "call.1", "ok", "no"]])
+    ]);
     // The trace is still ids and counts. `steps` is the one place what the
     // model asked for survives the loop, and it survives on purpose: a result
     // written from the record of what was done cannot lose a step the window
@@ -89,7 +103,8 @@ describe("Automation Studio LLM evidence loop", () => {
       { callId: "call.observe.1", toolId: "inspect", value: { observed: true } },
       { callId: "core.request_check.2", toolId: "core.request_check", value: expect.objectContaining({
         ok: false, code: "llm_evidence_loop.already_observed", toolId: "inspect", answeredByCallId: "call.observe.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
-      }) }
+      }) },
+      historyEntry([[1, "call", "inspect", null, "call.observe.1", "ok", "no"], [2, "answered", "inspect", null, "call.observe.1", "llm_evidence_loop.already_observed"]])
     ]);
     // Every row carries the moment it was recorded, which is what lets a reader
     // put a stall on a clock instead of inferring it from one undivided gap.
@@ -304,10 +319,13 @@ describe("the total the loop gathers", () => {
     expect(new Set(offered)).toEqual(new Set([24_000 - 512]));
     for (const evidence of shown) expect(Buffer.byteLength(JSON.stringify(evidence), "utf8")).toBeLessThanOrEqual(24_000);
     const last = shown.at(-1)!;
-    expect(last.at(-1)).toMatchObject({ callId: "call.20", value: { page: 20 } });
-    const history = last.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as { calls: Array<{ callId: string; changed: string }> };
-    expect(history.calls.map((line) => line.callId)).toEqual(Array.from({ length: 18 }, (_, index) => `call.${index + 1}`));
-    expect(history.calls.every((line) => line.changed === "no")).toBe(true);
+    // The newest page is the window's last entry; the history follows it and
+    // records every call, including the pages the window no longer carries.
+    expect(last.at(-2)).toMatchObject({ callId: "call.20", value: { page: 20 } });
+    expect(last.at(-1)!.toolId).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID);
+    const rows = (last.at(-1)!.value as { rows: unknown[][] }).rows;
+    expect(rows.map((row) => row[4])).toEqual(Array.from({ length: 20 }, (_, index) => `call.${index + 1}`));
+    expect(rows.every((row) => row[1] === "call" && row[6] === "no")).toBe(true);
   });
 
   it("offers each tool the window's bound however much has been gathered, and ends evidence_limit at the backstop, never tool_failed", async () => {
@@ -366,16 +384,25 @@ describe("a tool request the loop has already answered", () => {
       code: "llm_evidence_loop.already_answered",
       toolId: "inspect",
       answeredByCallId: "call.1",
+      // What it repeats: asked at 1 and again at 2, answered at 1, nothing run since.
+      timesAsked: 2,
+      askedAt: [1, 2],
+      answeredAt: 1,
       stepsWithoutProgress: 1,
       maxStepsWithoutProgress: 3,
       instruction: expect.stringContaining("already answered")
     };
     expect(decide.mock.calls[2]?.[0].evidence).toEqual([
       { callId: "call.1", toolId: "inspect", value: { facts: ["ready"] } },
-      { callId: "core.request_check.2", toolId: "core.request_check", value: note }
+      { callId: "core.request_check.2", toolId: "core.request_check", value: note },
+      historyEntry([[1, "call", "inspect", null, "call.1", "ok", "no"], [2, "answered", "inspect", null, "call.1", "llm_evidence_loop.already_answered", null, null, 1]])
     ]);
-    const noteBytes = Buffer.byteLength(JSON.stringify(decide.mock.calls[2]?.[0].evidence[1].value), "utf8");
-    expect(noteBytes).toBeLessThan(512);
+    const shownNote = decide.mock.calls[2]?.[0].evidence[1].value as { instruction: string };
+    expect(shownNote.instruction).toContain("no action has run since");
+    expect(shownNote.instruction).toContain("2nd time");
+    const noteBytes = Buffer.byteLength(JSON.stringify(shownNote), "utf8");
+    // Larger than it was (it now says what it repeats), still a note and not a page.
+    expect(noteBytes).toBeLessThan(768);
     expect(result.accounting.evidenceBytes).toBe(Buffer.byteLength(JSON.stringify({ facts: ["ready"] }), "utf8") + noteBytes);
     expect(result.trace[1]).toEqual({
       iteration: 2, decision: "tool_call", toolId: "inspect", resultCode: "llm_evidence_loop.already_answered",
@@ -393,41 +420,44 @@ describe("a tool request the loop has already answered", () => {
       .mockResolvedValueOnce(page(3))
       .mockResolvedValueOnce({ ...page(1), callId: "call.4" })
       .mockResolvedValueOnce({ kind: "complete", result: {} });
+    // The production window, and pages large enough that only one fits in it
+    // beside the decision history.
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxEvidenceBytes: 20_000, maxEvidenceContextBytes: 2_048,
-      executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
+      tools, decide, maxEvidenceBytes: 200_000, maxEvidenceContextBytes: 24_000,
+      executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(12_000) })
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
-    // Out of the window, call.1 is a line in the history, not a result.
+    // Out of the window, call.1 is a row of the history beside it, not a result.
     const beforeRepeat = decide.mock.calls[3]?.[0].evidence;
-    expect(beforeRepeat.map((item: { callId: string }) => item.callId)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, "call.3"]);
-    expect(beforeRepeat[0].value.calls.map((call: { callId: string }) => call.callId)).toEqual(["call.1", "call.2"]);
+    expect(beforeRepeat.map((item: { callId: string }) => item.callId)).toEqual(["call.3", AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID]);
+    expect(JSON.stringify(beforeRepeat[1].value)).toContain('"call.1"');
     const afterRepeat = decide.mock.calls[4]?.[0].evidence;
-    expect(afterRepeat.map((item: { callId: string }) => item.callId)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, "call.1", "core.request_check.4"]);
-    expect(afterRepeat[1].value).toMatchObject({ page: 1 });
-    expect(afterRepeat[0].value.calls.map((call: { callId: string }) => call.callId)).toEqual(["call.2", "call.3"]);
-    expect(Buffer.byteLength(JSON.stringify(afterRepeat), "utf8")).toBeLessThanOrEqual(2_048);
+    expect(afterRepeat.map((item: { callId: string }) => item.callId)).toEqual(["call.1", "core.request_check.4", AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID]);
+    expect(afterRepeat[0].value).toMatchObject({ page: 1 });
+    expect(Buffer.byteLength(JSON.stringify(afterRepeat), "utf8")).toBeLessThanOrEqual(24_000);
   });
 
-  // The window lists results it no longer carries and says to ask again for
-  // one still needed. A live auction build did, three times, and the guard
-  // ended the build as repeating itself (`run-mubrqhvc-91d1f227`).
+  // The history lists every call, and the window carries only whole results,
+  // so asking again for one that left is how the model sees it again. A live
+  // auction build did, three times, and the guard ended the build as repeating
+  // itself (`run-mubrqhvc-91d1f227`).
   it("does not count bringing a result back into view against the guard, once per result until a tool runs", async () => {
     const page = (number: number, callId = `call.${number}`) => ({ kind: "tool_call", callId, toolId: "inspect", input: { page: number } });
     const decide = vi.fn()
       .mockResolvedValueOnce(page(1)).mockResolvedValueOnce(page(2)).mockResolvedValueOnce(page(3))
       .mockResolvedValueOnce(page(1, "again.1")).mockResolvedValueOnce(page(2, "again.2"))
       .mockResolvedValueOnce(page(1, "again.3")).mockResolvedValueOnce(page(1, "again.4")).mockResolvedValueOnce(page(1, "again.5"));
+    // As above: the production window, one page at a time beside the history.
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 20_000, maxEvidenceContextBytes: 2_048, maxStepsWithoutProgress: 3,
-      executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
+      tools, decide, maxIterations: 12, maxToolCalls: 12, maxEvidenceBytes: 200_000, maxEvidenceContextBytes: 24_000, maxStepsWithoutProgress: 3,
+      executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(12_000) })
     });
 
     // Each of call.1 and call.2 had left the window, so the first ask for each is free; asking again is not.
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { iterations: 8, toolCalls: 3 } });
-    const notes = decide.mock.calls.slice(4).map((call) => call[0].evidence.at(-1).value);
-    expect(notes.map((note: { stepsWithoutProgress: number }) => note.stepsWithoutProgress)).toEqual([0, 0, 1, 2]);
+    const notes = decide.mock.calls.slice(4).map((call) => requestCheck(call[0].evidence));
+    expect(notes.map((note) => note?.stepsWithoutProgress)).toEqual([0, 0, 1, 2]);
   });
 
   it("ends the loop with no progress once repeats run to the guard", async () => {
@@ -466,8 +496,8 @@ describe("a tool request the loop has already answered", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async ({ value }) => ({ page: value.page ?? null }) });
 
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 7, toolCalls: 2 } });
-    expect(decide.mock.calls[5]?.[0].evidence.at(-1).value).toMatchObject({ stepsWithoutProgress: 1 });
-    expect(decide.mock.calls[6]?.[0].evidence.at(-1).value).toMatchObject({ stepsWithoutProgress: 2 });
+    expect(requestCheck(decide.mock.calls[5]?.[0].evidence)).toMatchObject({ stepsWithoutProgress: 1 });
+    expect(requestCheck(decide.mock.calls[6]?.[0].evidence)).toMatchObject({ stepsWithoutProgress: 2 });
   });
 
   it("answers a request repeated word for word, call id included", async () => {
@@ -516,7 +546,7 @@ describe("a tool request the loop has already answered", () => {
     const callIds = executeTool.mock.calls.map(([call]) => (call as unknown as { callId: string }).callId);
     expect(callIds).toEqual(["call.1", "call.1.2", "call.1.3", "call.1.2.2"]);
     expect(new Set(callIds).size).toBe(4);
-    expect(decide.mock.calls[4]?.[0].evidence.map((item: { callId: string; value: { page: number } }) => [item.callId, item.value.page])).toEqual([
+    expect(withoutHistory(decide.mock.calls[4]?.[0].evidence as Array<{ callId: string; toolId: string; value: { page: number } }>).map((item) => [item.callId, item.value.page])).toEqual([
       ["call.1", 1], ["call.1.2", 2], ["call.1.3", 3], ["call.1.2.2", 4]
     ]);
     expect(result.trace.slice(0, 4).map((step) => step.callId)).toEqual(callIds);

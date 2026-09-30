@@ -206,7 +206,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
 function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
   const body = payloadRecord(payload);
   if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
-  for (const field of ["flow", "llmExecutionGrantId", "runIntent", "dryRunLlm", "useReusableContext", "inputs"] as const) {
+  for (const field of ["flow", "runIntent", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"] as const) {
     if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
   }
   if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {

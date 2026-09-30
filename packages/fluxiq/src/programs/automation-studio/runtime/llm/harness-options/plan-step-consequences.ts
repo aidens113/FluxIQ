@@ -2,7 +2,7 @@
 //
 // The permission seam points one way (`action-permissions/declaration.ts`):
 // the domain, which alone knows what a control is, names it and the verb; Core,
-// which alone holds the person's grant, answers. Neither of them knows what a
+// which alone holds the person's permission, answers. Neither of them knows what a
 // *step* would cause -- only the model does, having explored the page. So the
 // model declares it, step by step, exactly as it already declares the
 // consequences of a press it makes while exploring.

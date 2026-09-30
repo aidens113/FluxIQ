@@ -4,8 +4,8 @@
 // The check itself is not new and nothing here changes it.
 // `verifyAutomationStudioRuntimeSessionResult` already runs at the end of every
 // finished run and already asks the user's question in the user's terms; what
-// was conditional was the *provider*, wired only when a person handed the run
-// an execution grant. So this is the whole of the change: a Flow replaying at
+// was conditional was the *provider*, wired only when a person asked the model
+// into the run with their own key. So this is the whole of the change: a Flow replaying at
 // three in the morning, with no actor session anywhere, now reaches a model
 // when its schedule says to and its authorization covers it.
 //
@@ -144,9 +144,9 @@ function scheduleFallback(shape: AutomationStudioRuntimeAdaptationContext["resul
  * The model that judges this run's result, from whichever authority this run
  * actually has -- and nothing when it has neither.
  *
- * Two authorities, in order, and they are not interchangeable. A person's
- * execution grant is a button they just pressed, so it wins and behaves exactly
- * as it did before this existed. The standing authorization is the new path and
+ * Two authorities, in order, and they are not interchangeable. A person who
+ * asked the model into this run pays with their own key, so that wins and
+ * behaves exactly as it did before this existed. The standing authorization is the new path and
  * is the narrower of the two: it names one key, one call ceiling, and the one
  * task kind, and it is reached only after the schedule has already said this
  * run is checked.
@@ -159,11 +159,12 @@ function scheduleFallback(shape: AutomationStudioRuntimeAdaptationContext["resul
 export async function resolveAutomationStudioResultCheckProvider(input: {
   scope: { projectId: string; flowId: string };
   check: AutomationStudioRunResultCheck | null;
-  resolveGrantedProvider?: (() => Promise<AutomationStudioResultCheckProviderResolution | undefined>) | undefined;
+  /** The run's own caller's provider, when a person asked the model into this run. */
+  resolveCallerProvider?: (() => Promise<AutomationStudioResultCheckProviderResolution | undefined>) | undefined;
   resolveStandingProvider?: ((request: AutomationStudioResultCheckProviderRequest) => Promise<AutomationStudioResultCheckProviderResolution | undefined>) | undefined;
 }): Promise<AutomationStudioResultCheckProviderResolution | undefined> {
-  const granted = await input.resolveGrantedProvider?.();
-  if (granted) return granted;
+  const callers = await input.resolveCallerProvider?.();
+  if (callers) return callers;
   const check = input.check;
   if (!check?.checked || !check.keyId || !check.unlockSessionId || !check.authorizedByUserId || check.maxEstimatedCostUsd === undefined || !input.resolveStandingProvider) return undefined;
   const resolved = await input.resolveStandingProvider({ ...input.scope, keyId: check.keyId, unlockSessionId: check.unlockSessionId, authorizedByUserId: check.authorizedByUserId, maxEstimatedCostUsd: check.maxEstimatedCostUsd });

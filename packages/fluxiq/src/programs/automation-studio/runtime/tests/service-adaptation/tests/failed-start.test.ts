@@ -7,8 +7,8 @@ import { adaptiveTrainingMetadata, createRunnableCanonicalFlow } from "../../ser
 
 // A run whose start throws must not stay active. A `queued` or `running`
 // session counts as an active adaptive run, which holds the project's next
-// adaptive run off until somebody cancels it; and an explicit LLM grant the run
-// was handed must not outlive it. The reads a run's start makes are strict: a
+// adaptive run off until somebody cancels it. A run a person asked the model
+// into fails the same way, with nothing to revoke. The reads a run's start makes are strict: a
 // failed read refuses the run rather than being taken as "nothing there".
 
 let tempRoot: string;
@@ -37,7 +37,7 @@ async function adaptiveFlow(service: AutomationStudioService): Promise<{ project
   return { projectId: project.id, flowId: flow.flowId };
 }
 
-const grant = { grantId: "llm-grant:failed-start", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
+const llmExecution = { actorUserId: "user.test", actorSessionId: "session.test", intent: "diagnosis_only" as const };
 
 describe("a run whose start throws", () => {
   it("is ended as failed with its reason, and does not hold off the next adaptive run", async () => {
@@ -89,27 +89,22 @@ describe("a run whose start throws", () => {
     expect(cancelled?.metadata).not.toHaveProperty("runFailure");
   });
 
-  it("revokes the explicit LLM grant it was handed", async () => {
-    const revoked: string[] = [];
-    const service = createService({ revokeLlmExecutionGrant: (grantId) => revoked.push(grantId) });
+  it("ends a model run as failed too, with nothing issued to revoke", async () => {
+    const service = createService();
     const { projectId, flowId } = await adaptiveFlow(service);
     vi.spyOn(service, "listFlowRunSummaries").mockRejectedValueOnce(new Error("database is locked"));
 
-    await expect(service.runRuntimeSession({ projectId, flowId, llmExecution: grant })).rejects.toThrow("database is locked");
+    await expect(service.runRuntimeSession({ projectId, flowId, llmExecution })).rejects.toThrow("database is locked");
 
-    expect(revoked).toEqual([grant.grantId]);
     await expect(service.listRuntimeSessions(projectId)).resolves.toEqual([expect.objectContaining({ status: "failed" })]);
   });
 
-  it("revokes the explicit LLM grant when another adaptive run keeps it from being admitted", async () => {
-    const revoked: string[] = [];
-    const service = createService({ revokeLlmExecutionGrant: (grantId) => revoked.push(grantId) });
+  it("refuses a model run another adaptive run keeps from being admitted", async () => {
+    const service = createService();
     const { projectId, flowId } = await adaptiveFlow(service);
     await service.startRuntimeSession({ projectId, flowId, metadata: { adaptiveRuntime: true } });
 
-    await expect(service.runRuntimeSession({ projectId, flowId, llmExecution: grant })).rejects.toThrow("Only one adaptive runtime run can be active per project.");
-
-    expect(revoked).toEqual([grant.grantId]);
+    await expect(service.runRuntimeSession({ projectId, flowId, llmExecution })).rejects.toThrow("Only one adaptive runtime run can be active per project.");
   });
 });
 

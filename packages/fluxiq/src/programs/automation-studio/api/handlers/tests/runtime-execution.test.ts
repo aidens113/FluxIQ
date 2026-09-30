@@ -24,35 +24,39 @@ async function runWith(getFlowRunDetail: () => Promise<unknown>) {
   return { response, runRuntimeSession };
 }
 
-// A granted run holds its grant from the moment it starts, so a Flow whose
-// step fails after the grant's claim window still has its recovery.
-describe("the run endpoint and a run's grant", () => {
-  const granted = { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt", llmExecutionGrantId: "llm-grant:one" };
+// A run the model takes part in needs no grant (t186): its intent and the
+// signed-in person are enough, and nothing is held or checked before it starts.
+describe("the run endpoint and a run's model intent", () => {
+  /** The run endpoint's handler, called directly so a request with no actor reaches it. */
+  function runHandler(service: object) {
+    const handlers = new Map<string, (request: unknown) => unknown>();
+    registerAutomationStudioApi({ register: (registration: { endpoint: string; handler: (request: unknown) => unknown }) => { handlers.set(registration.endpoint, registration.handler); } } as any, service as any);
+    return handlers.get(AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession)!;
+  }
 
-  it("holds the grant for the run before the run starts", async () => {
-    const order: string[] = [];
-    const grants = { holdForRun: vi.fn(async () => { order.push("hold"); }), revoke: vi.fn() };
-    const runRuntimeSession = vi.fn(async () => { order.push("run"); return { runId: "run.one", status: "failed" }; });
+  it("makes the run's llmExecution from runIntent and the signed-in actor, with nothing held first", async () => {
+    const runRuntimeSession = vi.fn(async () => ({ runId: "run.one", status: "failed" }));
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })) } as any, undefined, undefined, undefined, grants as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })) } as any);
 
-    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: granted });
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt" } });
 
     expect(response).toMatchObject({ ok: true });
-    expect(grants.holdForRun).toHaveBeenCalledWith({ grantId: "llm-grant:one", actorUserId: "user.one", actorSessionId: "session.one", purpose: "explore_and_adapt", projectId: "project.one", flowId: "flow.one" });
-    expect(order).toEqual(["hold", "run"]);
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" } });
   });
 
-  it("refuses the run, and runs nothing, when its grant cannot be held", async () => {
-    const grants = { holdForRun: vi.fn(async () => { throw new Error("LLM execution grant is unavailable."); }), revoke: vi.fn() };
+  it("refuses a run intent with no signed-in person, and runs nothing", async () => {
     const runRuntimeSession = vi.fn();
-    const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession } as any, undefined, undefined, undefined, grants as any);
+    const handler = runHandler({ runRuntimeSession });
 
-    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: granted });
-
-    expect(response).toEqual({ ok: false, error: "LLM execution grant is unavailable." });
+    await expect(handler({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "verify_result" } }))
+      .resolves.toEqual({ ok: false, error: "A run the model takes part in needs a signed-in person." });
     expect(runRuntimeSession).not.toHaveBeenCalled();
+  });
+
+  it("runs a plain run, without a model intent, with no llmExecution", async () => {
+    const { runRuntimeSession } = await runWith(async () => null);
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
   });
 });
 

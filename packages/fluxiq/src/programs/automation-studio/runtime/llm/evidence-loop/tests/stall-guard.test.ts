@@ -49,10 +49,20 @@ function asksForever(toolId: string) {
   });
 }
 
-/** The no-progress redirections the model was shown, newest last. */
+/**
+ * The no-progress redirections the model was shown, newest last, across every
+ * decision. A redirection leaves the evidence when a newer one arrives, so no
+ * decision is shown more than one; each is counted once, by its call id.
+ */
 function redirections(decide: { mock: { calls: unknown[][] } }): JsonObject[] {
-  const last = decide.mock.calls.at(-1)?.[0] as { evidence?: ReadonlyArray<{ toolId: string; value: JsonValue }> } | undefined;
-  return (last?.evidence ?? []).filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID).map((entry) => entry.value as JsonObject);
+  const seen = new Map<string, JsonObject>();
+  for (const call of decide.mock.calls) {
+    const evidence = (call[0] as { evidence?: ReadonlyArray<{ callId: string; toolId: string; value: JsonValue }> } | undefined)?.evidence ?? [];
+    const shown = evidence.filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
+    expect(shown.length).toBeLessThanOrEqual(1);
+    for (const entry of shown) seen.set(entry.callId, entry.value as JsonObject);
+  }
+  return [...seen.values()];
 }
 
 describe("a guard that can actually fire", () => {
@@ -63,8 +73,7 @@ describe("a guard that can actually fire", () => {
     // neither could reach it before the budget ended the run.
     for (const maxCallsPerRun of [26, 48, 64]) {
       const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun });
-      // Less the instruction authority's one call (`loop-limits/flow-bootstrap-evidence-loop.ts`).
-      expect(limits.loop.maxIterations).toBe(maxCallsPerRun - 1);
+      expect(limits.loop.maxIterations).toBe(maxCallsPerRun);
       expect(limits.maxConsecutiveUnusableDecisions).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
       expect(limits.maxConsecutiveUnusableDecisions).toBeLessThan(limits.loop.maxIterations / 3);
     }

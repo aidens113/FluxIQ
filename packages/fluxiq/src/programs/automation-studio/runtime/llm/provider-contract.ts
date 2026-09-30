@@ -1,10 +1,4 @@
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
-import {
-  AutomationStudioLlmExecutionGrantRefusal,
-  automationStudioLlmExecutionGrantRefusedAfterResponse,
-  type AutomationStudioLlmExecutionGrantCallRefusalReason,
-  type AutomationStudioLlmExecutionGrantRefusalCode
-} from "./grant-refusal/index.ts";
 import { automationStudioLlmProviderThrowRead, type AutomationStudioLlmProviderThrowRead } from "./throw-account/index.ts";
 
 /**
@@ -162,14 +156,12 @@ export type AutomationStudioLlmOpaqueSecretResolver = (input: {
 }) => Promise<string>;
 
 export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
-  code: AutomationStudioLlmProviderErrorCode | AutomationStudioLlmExecutionGrantRefusalCode | "llm.provider_request_failed";
+  code: AutomationStudioLlmProviderErrorCode | "llm.provider_request_failed";
   message: string;
   retryable: boolean;
   status?: number;
   provenance: AutomationStudioLlmProviderFailureProvenance;
   refusal?: AutomationStudioLlmProviderRefusal;
-  /** Which check refused, where the grant wrapping the provider refused the call. */
-  grantRefusalReason?: AutomationStudioLlmExecutionGrantCallRefusalReason;
   /**
    * What an untyped throw was, as read (`throw-account/`). Only on
    * `llm.provider_request_failed`: a typed failure already names its fault with
@@ -181,20 +173,6 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
    */
   thrown?: AutomationStudioLlmProviderThrowRead;
 } {
-  // The grant wraps the provider, so its refusals are thrown from inside the
-  // call. They are Core's own refusals with Core's own codes, and flattening them
-  // to `llm.provider_request_failed` is how a refused grant was recorded as a
-  // transport failure (`grant-refusal/call-refusal.ts`).
-  if (error instanceof AutomationStudioLlmExecutionGrantRefusal) {
-    const afterResponse = automationStudioLlmExecutionGrantRefusedAfterResponse(error.reason);
-    return {
-      code: error.code,
-      message: error.message,
-      retryable: false,
-      provenance: afterResponse ? { providerInvocation: "attempted", providerResponse: "received" } : { providerInvocation: "not_attempted", providerResponse: "not_received" },
-      ...(error.reason ? { grantRefusalReason: error.reason } : {})
-    };
-  }
   const typed = structurallyTypedProviderError(error);
   if (typed) {
     const refusal = refusalFromProviderError(error);

@@ -111,9 +111,10 @@ describe("what the record says about the draft the model was shown", () => {
     const last = result.trace.at(-1)?.draft;
     expect(last?.steps).toBe(10);
     expect(last?.overBudget).toBeUndefined();
-    // Packed, which is the only shape the refusal could happen in.
-    const shownDrafts = decide.mock.calls.map(([request]) => (request as { evidence: { toolId: string; value: { format?: string } }[] }).evidence.find((entry) => entry.value?.format !== undefined)?.value.format);
-    expect(shownDrafts.at(-1)).toBe("step_rows_v1");
+    // Packed, which is the only shape the refusal could happen in. Read by the
+    // draft's own format, since the decision history beside it packs too.
+    const lastShown = (decide.mock.calls.at(-1)![0] as { evidence: { value: { format?: string } }[] }).evidence;
+    expect(lastShown.some((entry) => entry.value?.format === "step_rows_v1")).toBe(true);
   });
 
   it("carries no draft for a loop that is not drafting at all", async () => {

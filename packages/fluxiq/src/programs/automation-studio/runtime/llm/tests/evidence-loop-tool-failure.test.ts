@@ -33,11 +33,15 @@ describe("a tool call that fails, in a loop that observes failures", () => {
       at: expect.any(Number)
     });
     const shown = decide.mock.calls[1]?.[0].evidence;
-    // The draft sits after the window, so the failed call's own result is the
-    // entry before it. The failure is in the draft too: an action that was
+    // The history and the draft sit after the window, so the failed call's own
+    // result is the entry before them, and the history records the failure as
+    // a row of its own. The failure is in the draft too: an action that was
     // attempted and did not happen is part of the record of what was done.
-    expect(shown.at(-2)).toEqual({ callId: "call.press.1", toolId: "press", value: {
+    expect(shown.at(-3)).toEqual({ callId: "call.press.1", toolId: "press", value: {
       ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
+    } });
+    expect(shown.at(-2)).toMatchObject({ callId: "core.evidence_history", toolId: "core.evidence_history", value: {
+      rows: [[0, "look", "inspect", null, "initial.inspect", "ok"], [1, "call_failed", "press", null, "call.press.1", "llm_evidence_loop.tool_failed"]]
     } });
     expect(shown.at(-1)).toMatchObject({ callId: "core.flow_draft", toolId: "core.flow_draft", value: {
       code: "llm_evidence_loop.draft",

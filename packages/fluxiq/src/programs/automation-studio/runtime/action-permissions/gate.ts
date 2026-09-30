@@ -1,14 +1,14 @@
 // Where Core decides, for one run, whether the action a domain is about to
 // take is one a person allowed.
 //
-// One gate per run. It holds the consequences the run's grant permits, sees
+// One gate per run. It holds the consequences the run is permitted, sees
 // every piece of evidence the domain hands back, and hands the domain a check
 // with every action. The first action whose consequences the run does not hold
 // raises a request, and the gate records it.
 //
 // **What it can refuse is narrow, deliberately.** Only a destructive class --
 // spending money, changing what already exists, deleting -- is ever refused,
-// and only when neither the person's instruction nor a grant asked for it.
+// and only when neither the person's instruction nor their permission asked for it.
 // Making something new and sending what the instruction said to send are not
 // the gate's to refuse at all; see `destructive.ts` for why, and for the days
 // of live builds that ended asking a person for permission to put an item in a
@@ -24,7 +24,7 @@
 // and lets the work go on; a refused one stays recorded, so every later check
 // reports the same refusal rather than asking the same person again.
 //
-// **Fail closed.** No grant, an empty grant and a grant naming something Core
+// **Fail closed.** No permitted set, an empty one and one naming something Core
 // does not recognise all permit nothing. There is no consequence the gate
 // assumes is fine, and no path through it that permits an action whose
 // declaration it could not read -- that throws, and the action fails.
@@ -110,8 +110,8 @@ export class AutomationStudioActionPermissionGate {
   private deriving: Promise<{ derived: true; entries: readonly AutomationStudioInstructedConsequence[] } | { derived: false; reason: unknown }> | undefined;
 
   constructor(private readonly input: AutomationStudioActionPermissionGateInput) {
-    // Only a recognised class is ever a grant. Filtering rather than trusting
-    // the caller's type means a grant that reached here with a word Core does
+    // Only a recognised class is ever permitted. Filtering rather than trusting
+    // the caller's type means a permitted set that reached here with a word Core does
     // not know still permits nothing by it.
     this.permitted = new Set((input.permittedConsequences ?? []).filter(isAutomationStudioActionConsequence));
     this.instructedEntries = input.instructed;
@@ -152,7 +152,7 @@ export class AutomationStudioActionPermissionGate {
    * `granted` adds exactly the classes the request said were missing, and
    * forgets the request, so the same check asked again permits the action and a
    * later action wanting something else can raise a request of its own. Nothing
-   * beyond `missing` is granted: an answer widens the run by what was asked
+   * beyond `missing` is permitted: an answer widens the run by what was asked
    * about and by nothing else.
    *
    * `refused` keeps the request. It is then what every later refusal reports,
@@ -253,7 +253,7 @@ export class AutomationStudioActionPermissionGate {
       const instructed = await this.instructedFor();
       // Only a destructive class can stop anything (`destructive.ts`). Making
       // something new or sending what the instruction said to send takes
-      // nothing away, so nobody is asked about it -- not because a grant or an
+      // nothing away, so nobody is asked about it -- not because a permission or an
       // instruction covered it, but because it was never the gate's to refuse.
       const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) =>
         !this.permitted.has(consequence) && !instructed.some((entry) => entry.consequence === consequence)));
@@ -284,7 +284,7 @@ export class AutomationStudioActionPermissionGate {
   /**
    * The instruction's own authority, derived once when first needed.
    *
-   * Fail closed. A derivation that failed grants nothing, so the run asks; it
+   * Fail closed. A derivation that failed permits nothing, so the run asks; it
    * is remembered as failed rather than as an answer, so it is not retried
    * mid-run and `instructed` stays unknown -- nothing is stored with the Flow
    * as though the instruction had asked for nothing.

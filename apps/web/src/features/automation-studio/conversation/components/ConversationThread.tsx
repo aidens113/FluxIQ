@@ -9,21 +9,31 @@
 // its most recent turns and keeps the rest behind one control, because turns
 // are variable height and the fixed-row virtualiser the run log uses would
 // mis-measure every one of them.
+//
+// Core's live activity rows sit between the turns by time. They are ephemeral
+// -- the thread stays the durable record -- so they are drawn here and never
+// written into it.
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button, EmptyState } from "../../../programs/components";
 import { ArrowDown, MessagesSquare, TriangleAlert } from "lucide-react";
 import type { ConversationCommands } from "../conversation-host";
+import { interleaveConversationActivity, type ConversationActivity } from "../activity";
 import {
   conversationFollowsTail,
   visibleConversationTurns,
   type ConversationAnswer,
   type ConversationTurn as ConversationTurnRecord
 } from "../thread";
+import { ConversationActivityRow } from "./ConversationActivityRow";
 import { ConversationTurn } from "./ConversationTurn";
 
 export function ConversationThread(props: {
   turns: readonly ConversationTurnRecord[];
+  /** Core's live activity for the project; the events with a detail become rows. */
+  activity?: readonly ConversationActivity[];
+  /** The open thread, so an event that names another conversation stays out of this one. */
+  conversationId?: string;
   /** The project the thread belongs to; a turn's attachment read is project-scoped. */
   projectId: string;
   busy: boolean;
@@ -42,12 +52,19 @@ export function ConversationThread(props: {
   const [showAll, setShowAll] = useState(false);
   const [behind, setBehind] = useState(false);
   const { turns: visible, hidden } = visibleConversationTurns(props.turns, showAll);
+  const entries = interleaveConversationActivity({
+    turns: visible,
+    activity: props.activity ?? [],
+    earlierHidden: hidden > 0,
+    ...(props.conversationId ? { conversationId: props.conversationId } : {})
+  });
+  const entryCount = entries.length;
 
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const grew = props.turns.length > lastCountRef.current;
-    lastCountRef.current = props.turns.length;
+    const grew = entryCount > lastCountRef.current;
+    lastCountRef.current = entryCount;
     if (!grew) return;
     if (followRef.current) {
       list.scrollTop = list.scrollHeight;
@@ -55,7 +72,7 @@ export function ConversationThread(props: {
       return;
     }
     setBehind(true);
-  }, [props.turns.length]);
+  }, [entryCount]);
 
   // A collapsed surface has no layout, so the effect above measures a zero-height
   // list and the transcript opens at the top of the oldest turn the person has
@@ -100,7 +117,7 @@ export function ConversationThread(props: {
     setBehind(false);
   }
 
-  if (!props.turns.length) {
+  if (!entries.length) {
     return (
       <EmptyState
         description="FluxIQ writes here when it has something to tell you or something to ask. You can write first."
@@ -131,12 +148,16 @@ export function ConversationThread(props: {
         onScroll={trackScroll}
         ref={listRef}
       >
-        {visible.map((turn) => (
-          <li data-turn-id={turn.turnId} key={turn.turnId}>
+        {entries.map((entry) => entry.kind === "activity" ? (
+          <li data-activity-sequence={entry.activity.sequence} key={entry.key}>
+            <ConversationActivityRow activity={entry.activity} />
+          </li>
+        ) : (
+          <li data-turn-id={entry.turn.turnId} key={entry.key}>
             <ConversationTurn
               busy={props.busy}
               projectId={props.projectId}
-              turn={turn}
+              turn={entry.turn}
               {...(props.error ? { error: props.error } : {})}
               {...(props.loadAttachment ? { loadAttachment: props.loadAttachment } : {})}
               {...(props.onOpenAttachment ? { onOpenAttachment: props.onOpenAttachment } : {})}

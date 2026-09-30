@@ -1,8 +1,7 @@
 import path from "node:path";
 import { expect } from "vitest";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
-import type { AutomationStudioBuildAndAdaptExecutionGrant } from "../../../service.ts";
+import type { AutomationStudioLlmModelCaller, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../flow-bootstrap/index.ts";
@@ -112,16 +111,9 @@ export async function blankFixture(
   return { project, flow };
 }
 
-export async function grant(instance: AutomationStudioService, projectId: string, flowId: string): Promise<AutomationStudioBuildAndAdaptExecutionGrant> {
-  const binding = await instance.getLlmExecutionBinding(projectId, flowId);
-  return {
-    grantId: "llm-grant:test",
-    actorUserId: "user.test",
-    actorSessionId: "session.test",
-    purpose: "build_and_adapt",
-    executionDigest: binding.executionDigest,
-    settingsRevision: binding.settingsRevision
-  };
+/** The person a build is made for. Not an authorization: nothing is issued, held or revoked. */
+export function caller(): AutomationStudioLlmModelCaller {
+  return { actorUserId: "user.test", actorSessionId: "session.test" };
 }
 
 export async function expectNoTopology(instance: AutomationStudioService, projectId: string, flowId: string) {

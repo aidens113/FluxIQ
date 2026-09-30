@@ -21,7 +21,6 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.generation_lock_failed",
     "flow_bootstrap.blank_target_required",
     "flow_bootstrap.canonical_settings_binding_unavailable",
-    "flow_bootstrap.stale_grant_binding",
     "flow_bootstrap.pending_adaptation_exists",
     "flow_bootstrap.pending_adaptation_check_failed",
     "flow_bootstrap.active_instructions_required",
@@ -66,24 +65,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
   provider_resolution: [
     "flow_bootstrap.provider_resolution_failed",
     "flow_bootstrap.provider_resolver_unavailable",
-    "flow_bootstrap.provider_resolution_invalid",
-    // The grant that authorises the call, refused. One code per refusal Core
-    // distinguishes, because the four are different problems with different
-    // answers: gone or spent, asked under the wrong scope, minted against a
-    // world that has since changed, or a purpose that is not one of Core's.
-    //
-    // Without them a refused grant fell out of the catch as whatever stage the
-    // build had reached, which for a build that got as far as its loop is
-    // `flow_bootstrap.provider_request_failed` -- a code saying a request was
-    // attempted and its answer unknown, true of nothing that happened, since
-    // no request was ever made. The first two runs in which the wrong-answer
-    // repair reached a build, `run-muhqop38-997ee8e5` and
-    // `run-muhrf6c4-9714939f`, both recorded exactly that, with no provider
-    // status because there was no response to have one.
-    "flow_bootstrap.execution_grant_unavailable",
-    "flow_bootstrap.execution_grant_scope_mismatch",
-    "flow_bootstrap.execution_grant_no_longer_valid",
-    "flow_bootstrap.execution_grant_purpose_invalid"
+    "flow_bootstrap.provider_resolution_invalid"
+    // A build's model calls run on the caller's own key, so nothing is refused
+    // before a call: a resolver that cannot supply a provider is one of the
+    // three codes above.
   ],
   provider_request: [
     "flow_bootstrap.provider_request_failed",
@@ -95,18 +80,14 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.provider_http_error",
     "flow_bootstrap.provider_network_error",
     "flow_bootstrap.provider_secret_unavailable",
-    // The grant was revoked or replaced while the provider was answering: the
-    // one grant refusal raised after a request went out, so it belongs here and
-    // not with the four resolution refusals above, which all say nothing was sent.
-    "flow_bootstrap.execution_grant_revoked_in_flight",
     // What the catch actually caught, where it recognised nothing else.
     //
     // `flow_bootstrap.provider_request_failed` is this stage's default, and the
     // catch used it for every unrecognised throw -- so it read as "a request was
     // attempted and its answer is unknown" for failures where no request was
     // ever made. Four consecutive runs of the wrong-answer repair recorded it
-    // with no provider status, and it named nothing: the grant refusals were
-    // ruled out by giving them their own codes and the code did not change.
+    // with no provider status, and it named nothing: every refusal with its
+    // own code was ruled out and the code did not change.
     //
     // These three separate the kinds that remain. `aborted_or_timed_out` is a
     // DOMException, which is what an abort and a deadline both arrive as;
@@ -186,8 +167,8 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.evidence_unusable_decision",
     // Building the Flow needed an action with a lasting consequence the build
     // was not permitted. Not a failure of the build: the diagnostic carries
-    // the request a person grants or refuses, and a build whose grant holds
-    // what it asks for can take the action.
+    // the request a person allows or refuses, and a build permitted what it
+    // asks for can take the action.
     "flow_bootstrap.permission_required"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],

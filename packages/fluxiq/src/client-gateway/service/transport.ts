@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "@fluxiq/contracts/client-gateway";
-import type { ClientGatewayServerMessage, ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayServerMessage, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 
 /** Builds server messages and delivers them to a session's socket and queue. */
@@ -32,6 +32,25 @@ export class ClientGatewayTransport {
     const session = this.sessions.require(sessionId);
     session.outbound.push(message);
     await session.socket?.send(JSON.stringify(message));
+  }
+
+  /**
+   * Sends straight to the session's socket without entering `outbound`, which
+   * has no bound, so a stream can go to a session without growing its queue.
+   * Returns false when there was no socket or the send threw; a failure is
+   * dropped, never thrown, because the message is disposable.
+   */
+  sendUnqueued(session: ClientGatewaySession & { socket?: ClientGatewaySocket }, message: ClientGatewayServerMessage): boolean {
+    const socket = session.socket;
+    if (!socket) return false;
+    try {
+      const sent = socket.send(JSON.stringify(message));
+      if (sent instanceof Promise) sent.catch(() => { /* best-effort: an unqueued message to a socket that closed mid-send is disposable */ });
+      return true;
+    } catch {
+      /* best-effort: a closed socket drops an unqueued message; the next one supersedes it */
+      return false;
+    }
   }
 
   outbound(sessionId: string): ClientGatewayServerMessage[] {

@@ -53,7 +53,7 @@ describe("planAutomationStudioRuntimeRecovery", () => {
 
   // The model's way of saying "the page refuses this on purpose": the step's
   // intended result can no longer be had. A patch requested after that answer
-  // can only be a substitute, and under a proposal grant the model must name
+  // can only be a substitute, and on a proposal-only run the model must name
   // one -- which is how a deleted item's click was re-pointed at another button
   // (live repair campaign, 2026-09-17). An omitted `patchNeeded` defaults to
   // the classifier's "yes", so the verdict has to stop the request by itself.

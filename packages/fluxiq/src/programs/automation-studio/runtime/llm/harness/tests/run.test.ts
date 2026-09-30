@@ -175,7 +175,7 @@ describe("what the harness claims about retrying a temporary fault", () => {
     expect(result.providerInvocation).toBe("attempted");
     // One question asked of the model is one call. Counting each attempt would
     // charge the run's token and cost caps twice over for one answer, and would
-    // exhaust a 48-call Lab grant in sixteen questions.
+    // exhaust a 48-call Lab budget in sixteen questions.
     expect(budget.snapshot("run.invocation").calls).toBe(1);
     expect(result.providerRetry).toMatchObject({ retries: 2, stop: "answered", attempts: expect.any(Array) });
     expect(result.providerRetry?.attempts.map((attempt) => [attempt.attempt, attempt.code, attempt.status])).toEqual([

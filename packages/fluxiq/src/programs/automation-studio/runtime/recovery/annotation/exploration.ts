@@ -26,7 +26,7 @@
 // **It hands every action to the recovery's permission gate, and says so.** The
 // registry is told `mutationsGovernedByPermission`, so a mutating option is
 // offered whatever `policy.allowExternalSideEffects` says, and each action it
-// would take with a lasting consequence is permitted by the person's grant or
+// would take with a lasting consequence is permitted by the person's permitted consequences or
 // instruction, or ends the recovery with a request they can answer. That flag
 // used to withhold the option outright, which left a recovery unable to press
 // anything and with nobody to ask. A destructive option is still never offered,
@@ -431,7 +431,7 @@ async function explorationDecision(
  *
  * Closed, and it fails closed. Every error the call ended with must be one of
  * two things: a provider failure whose disposition is a spent call (the same
- * table the execution grant reads, so a failure the grant survives is exactly
+ * table the provider retry reads, so a failure a call survives is exactly
  * a failure worth asking again), or a finding in `llm_output.`, the harness's
  * own namespace for a reply that arrived and did not pass Core's checks. An
  * `ok` result whose response was some other kind is the same thing. Anything

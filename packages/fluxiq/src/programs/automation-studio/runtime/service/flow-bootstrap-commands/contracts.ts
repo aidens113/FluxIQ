@@ -1,6 +1,6 @@
-import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioFlowBootstrapGenerationGrant } from "./generation-request.ts";
+import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 
 // What a caller asks for when it generates a Flow Bootstrap adaptation, and
 // what it gets back.
@@ -8,7 +8,10 @@ import type { AutomationStudioFlowBootstrapGenerationGrant } from "./generation-
 export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   projectId: string;
   flowId: string;
-  executionGrant: AutomationStudioFlowBootstrapGenerationGrant;
+  /** The person the build is made for, whose unlocked key pays for its model calls. Not an authorization. */
+  caller: AutomationStudioLlmModelCaller;
+  /** The lasting consequences the person has already allowed this build's actions to have. Absent, none: each is asked about. */
+  permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
   useReusableContext?: true;
   /**
@@ -68,10 +71,10 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
     estimatedCostUsd?: number;
   };
   /**
-   * Present when the build met an action its grant did not permit and finished
-   * anyway. The proposal is real and is stored, and nothing may be approved or
-   * applied until the person has answered this: issue the next build's grant
-   * with the classes it lists as `missing`.
+   * Present when the build met an action whose consequence the person had not
+   * permitted and finished anyway. The proposal is real and is stored, and
+   * nothing may be approved or applied until the person has answered this: send
+   * the next build with the classes it lists as `missing` permitted.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
 };

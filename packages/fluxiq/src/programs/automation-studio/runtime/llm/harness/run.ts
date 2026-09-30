@@ -201,7 +201,6 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
         metadata: {
           retryable: failure.retryable,
           ...(failure.status !== undefined ? { providerStatus: failure.status } : {}),
-          ...(failure.grantRefusalReason ? { grantRefusalReason: failure.grantRefusalReason } : {}),
           // Metadata, never the diagnostic's message: the message is what an
           // intervention's validation line prints.
           ...(providerThrow ? { providerThrow } : {})

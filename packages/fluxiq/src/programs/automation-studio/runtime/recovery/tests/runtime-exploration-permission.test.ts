@@ -1,5 +1,5 @@
 // A recovery exploration that needs an action the run was not allowed ends
-// there, carrying the request a person grants or refuses from.
+// there, carrying the request a person allows or refuses from.
 //
 // Driven through the real evidence loop and the real harness-option registry,
 // with a stand-in domain that asks before a press that would move money and
@@ -7,8 +7,8 @@
 //
 // The press declares two classes the gate still asks about. It declared
 // `move_money` and `modify_existing` until 2026-09-26, and an edit is no longer
-// gated: on that pair the row below that grants "only part of it" would have
-// granted a class needing no grant, and proved nothing about a partial grant.
+// gated: on that pair the row below that permits "only part of it" would have
+// permitted a class needing no permission, and proved nothing about a partial one.
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -117,7 +117,7 @@ describe("a recovery exploration that needs permission", () => {
     expect(event.detail).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", permissionRequest: run.exploration.permissionRequest });
   });
 
-  it("takes the action when the run's grant holds every consequence it has", async () => {
+  it("takes the action when the run is permitted every consequence it has", async () => {
     const run = await explore({ permittedConsequences: ["move_money", "delete"] satisfies AutomationStudioActionConsequence[] });
 
     expect(run.pressed).toEqual(["c4"]);
@@ -125,14 +125,14 @@ describe("a recovery exploration that needs permission", () => {
     expect(run.exploration.permissionRequest).toBeUndefined();
   });
 
-  it("asks for what is still missing when the grant holds only part of it", async () => {
+  it("asks for what is still missing when the run is permitted only part of it", async () => {
     const run = await explore({ permittedConsequences: ["delete"] });
 
     expect(run.pressed).toEqual([]);
     expect(run.exploration.permissionRequest?.missing).toEqual(["move_money"]);
   });
 
-  it("does not read an unrecognised class as a grant", async () => {
+  it("does not read an unrecognised class as permitted", async () => {
     const run = await explore({ permittedConsequences: ["refund", "purchase"] });
 
     expect(run.pressed).toEqual([]);
@@ -141,7 +141,7 @@ describe("a recovery exploration that needs permission", () => {
 
   // A recovery builds one gate and hands it to the exploration, so the patch
   // stage after it reads the same request. The exploration uses that gate as
-  // it is: its grant, its instructed set and what it has already been shown.
+  // it is: its permitted consequences, its instructed set and what it has already been shown.
   it("checks every action against a gate the caller handed it, and leaves the request on that gate", async () => {
     const refusing = new AutomationStudioActionPermissionGate({ stage: "recovery", instructionIds: ["instruction.dispatch"] });
     refusing.observe({ controls: ["Refund and void line 1"] });

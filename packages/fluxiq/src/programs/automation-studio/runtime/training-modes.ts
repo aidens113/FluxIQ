@@ -393,7 +393,7 @@ function promotionEvidenceRefusal(confidence: AutomationStudioChangeConfidenceDe
 // successfully, and together they sent almost every real web automation to a
 // person merely for acting on a page. Keeping what a run learned is the
 // automation's own work, and the rule is that asking for the automation is the
-// grant for it. What protects the Flow instead is what already did the work: a
+// permission for it. What protects the Flow instead is what already did the work: a
 // change is promoted only on a succeeded trial (`promotionEvidenceRefusal`), and
 // a change the evaluator judges to have made things worse is rolled back to the
 // version that was better.
