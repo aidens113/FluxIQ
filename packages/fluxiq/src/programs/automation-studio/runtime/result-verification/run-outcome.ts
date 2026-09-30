@@ -61,6 +61,7 @@ import {
   type AutomationStudioFlowGraphVersion,
   type AutomationStudioJudgedFlowGraphVersion
 } from "../flow-version/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 
 import {
@@ -79,6 +80,7 @@ import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
+import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
 
 /**
  * A resolver's answer, normalized to the one shape the verification reads.
@@ -177,6 +179,13 @@ export type AutomationStudioResultVerificationPorts = {
    * to; what is missing is only the queryable history across runs.
    */
   recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => Promise<unknown>) | undefined;
+  /**
+   * Judges a finished run that asked no model anything as a replay of each
+   * applied change it executed, and saves what it proved
+   * (`service/runtime-adaptation/adaptation-replays.ts`). Absent, no replay is
+   * ever recorded and no change rises past `provisional`.
+   */
+  recordAdaptationReplays?: ((input: { projectId: string; flowId: string; runId: string; checkedAt: number; trace: AutomationStudioGraphExecutionTrace; subflowId?: string }) => Promise<unknown>) | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -254,7 +263,8 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  const recorded = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions);
+  const record = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions);
+  const recorded = record?.detail;
   // The join this module exists to make: the verdict, against the versions the
   // run executed. It is written after the run's own record, so a reader who
   // finds a judgement row always finds the run behind it, and before the repair
@@ -262,6 +272,9 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // revision it was about -- which is the revision a later rollback would return
   // to, and the one thing the repair is about to change.
   await recordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
+  // A run that asked no model anything is the replay the confidence rule counts
+  // (`./zero-provider-run.ts`), and it is recorded as one.
+  if (record?.askedNoModel) await recordAdaptationReplays(input, next);
   // Only a run that was actually put to the question has anything to say. What
   // to say, and whether to say it at all, belongs to the schedule: this hands
   // over the facts and Core's own words, never the model's prose. It is said
@@ -607,9 +620,11 @@ async function recordOnRunDetail(
   outcome: AutomationStudioResultVerificationOutcome,
   interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"],
   flowVersions: readonly AutomationStudioFlowGraphVersion[]
-): Promise<AutomationStudioFlowRunDetail | undefined> {
+): Promise<{ detail: AutomationStudioFlowRunDetail; askedNoModel: boolean } | undefined> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   if (!detail) return undefined;
+  // In this save and no other, so the verdict and the run's zero cost are one write.
+  const zeroGate = automationStudioZeroProviderGate(detail, interventions);
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
   // Answered as well as saved, because the repair that may follow continues
@@ -639,9 +654,25 @@ async function recordOnRunDetail(
       ...automationStudioMetadataWithFlowVersions(detail.metadata, flowVersions),
       resultVerification: recordedOutcome(outcome),
       ...(scheduled ? { resultCheck: scheduled } : {}),
-      ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {})
+      ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {}),
+      ...(zeroGate ? { llmGate: zeroGate } : {})
     }
   };
   await input.ports.saveFlowRunDetail(recorded);
-  return recorded;
+  return { detail: recorded, askedNoModel: zeroGate !== undefined };
+}
+
+/**
+ * Hands a run that asked no model anything to the replay recorder the service
+ * lends. Evidence about the changes the run executed, never a condition of the
+ * run: the run has finished, and a store that refused the write leaves each
+ * change where it stood.
+ */
+async function recordAdaptationReplays(input: AutomationStudioRuntimeSessionVerificationInput, session: AutomationStudioRuntimeSession): Promise<void> {
+  if (!session.trace || !input.ports.recordAdaptationReplays) return;
+  try {
+    await input.ports.recordAdaptationReplays({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, checkedAt: session.finishedAt ?? Date.now(), trace: session.trace, ...(input.subflowId !== undefined ? { subflowId: input.subflowId } : {}) });
+  } catch {
+    /* best-effort: replay evidence never fails the finished run it describes */
+  }
 }
