@@ -48,12 +48,6 @@ export type AutomationStudioFlowBootstrapIncompleteDraftKeeper = {
   unfinished(stopped: AutomationStudioFlowBootstrapIncompleteDraft["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number): Promise<AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined>;
   /** The loop's stall failure, with the pointer to the draft it is about to keep. */
   stalled(error: AutomationStudioFlowBootstrapGenerationError): AutomationStudioFlowBootstrapGenerationError;
-  /**
-   * A stall that ends the build as it is (`../unfinished-build/`, an
-   * exploration with nothing in its Flow): the failure to throw, pointing at
-   * the draft kept for it once that is written, exactly as `settle` would.
-   */
-  stalledEnding(error: AutomationStudioFlowBootstrapGenerationError): Promise<unknown>;
   /** Awaits the loop, writing a stalled build's draft before its failure travels on. */
   settle<T>(loop: Promise<T>): Promise<T>;
   /** The build proposed a Flow: an incomplete draft of this Flow is no longer anything to continue. */
@@ -92,7 +86,7 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
   const kept = (stopped: AutomationStudioFlowBootstrapIncompleteDraft["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number) => input.enabled
     ? automationStudioFlowBootstrapIncompleteDraftKept({ projectId: input.projectId, flowId: input.flowId, baseDependencyDigest: input.baseDependencyDigest, sourceInstructionIds: input.sourceInstructionIds, stopped, outstandingIssueCodes: outstanding, completionAttempts, steps, ...(previous ? { previous } : {}), now: now() })
     : undefined;
-  const keeper: AutomationStudioFlowBootstrapIncompleteDraftKeeper = {
+  return {
     draft,
     attempted(steps) {
       attempts += 1;
@@ -125,14 +119,6 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
       pending = { record, pointed, unpointed: error };
       return pointed;
     },
-    async stalledEnding(error) {
-      try {
-        await keeper.settle(Promise.reject(keeper.stalled(error)));
-      } catch (thrown) {
-        return thrown;
-      }
-      return error;
-    },
     async settle(loop) {
       try {
         return await loop;
@@ -154,5 +140,4 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
       if (input.enabled && input.stored) await input.discard();
     }
   };
-  return keeper;
 }

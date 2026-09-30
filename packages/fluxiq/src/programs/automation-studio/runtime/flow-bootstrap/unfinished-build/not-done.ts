@@ -47,6 +47,29 @@ export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStud
   return `${said.join("; ")}${more}`;
 }
 
+/** A refusal the model was shown, as the clause that finishes "... because ...". First match wins. */
+const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^bootstrap\.instructed_act_missing$/u, "the Flow did not yet do what you asked"],
+  [/^bootstrap\.cannot_answer_instruction$/u, "the Flow could not give the answer you asked for"],
+  [/dry_run|replay/u, "a step did not work when the Flow was run from its start"],
+  [/permission/u, "a step needed your permission"],
+  [/^llm_output\.|malformed|unreadable|provider_output/u, "the model's replies could not be read"],
+  [/^llm_evidence_loop\.(?:already_answered|already_observed|look_withdrawn|no_progress)/u, "the model kept asking for what it had already been shown"],
+  [/plan|flow_draft|validation|node|subflow/u, "the Flow it wrote was not one that could run"]
+];
+
+/**
+ * What blocked the build, in plain words, from the last refusals the model was
+ * shown: at most two distinct reasons, or nothing when none is known.
+ */
+export function automationStudioFlowBootstrapBlockedSaid(issueCodes: readonly string[]): string {
+  const said = [...new Set(issueCodes.flatMap((code) => {
+    const words = BLOCKED_WORDS.find(([pattern]) => pattern.test(code))?.[1];
+    return words ? [words] : [];
+  }))].slice(0, 2);
+  return said.join(", and ");
+}
+
 /** What the last test found, as a sentence. */
 export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudioFlowBootstrapJudgement | undefined): string {
   if (!judgement || judgement.tested === "not_tested") return judgement && judgement.stepsInFlow === 0 ? "No step I found belonged in the Flow." : "";

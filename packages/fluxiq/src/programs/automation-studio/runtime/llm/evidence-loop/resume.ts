@@ -71,20 +71,31 @@ const REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished w
   + "Correct or drop a step the test found not working. Do not repeat work the draft already holds. "
   + "The whole Flow is tested again from where it starts when you complete: complete only when every act and choice on the checklist is done.";
 
+const EXPLORE_AGAIN_INSTRUCTION = "Nothing is in the Flow yet: the build stopped (stopped says why) before any step you ran was added to it. "
+  + "That does not end the build. The acts checklist beside the draft lists everything the person asked, all still to do, and judgement.lastRefusedFor says what refused your last attempts to finish. "
+  + "Keep exploring live from the page as it stands -- look first -- and do not repeat what was refused or answered already: try another way to what the checklist asks. "
+  + "Add each step the Flow needs as you run it (add true), naming the act or choice it does (act a2, or a2.quantity). "
+  + "Complete only when every act and choice on the checklist is done.";
+
+/** Whether this entry opens a round after one that left nothing in the Flow. */
+function nothingInFlow(resume: AutomationStudioLlmEvidenceLoopResume): boolean {
+  return resume.judgement !== undefined && resume.judgement.stepsInFlow === 0;
+}
+
 /** The entry itself, under a call id of its own. */
 export function automationStudioLlmEvidenceResumeEntry(
   resume: AutomationStudioLlmEvidenceLoopResume,
   steps: readonly AutomationStudioFlowDraftStep[]
 ): { callId: string; toolId: string; value: JsonObject } {
   const value: JsonObject = {
-    code: resume.judgement ? "llm_evidence_loop.repair" : "llm_evidence_loop.resumed",
+    code: nothingInFlow(resume) ? "llm_evidence_loop.explore_again" : resume.judgement ? "llm_evidence_loop.repair" : "llm_evidence_loop.resumed",
     revision: Number.isSafeInteger(resume.revision) && resume.revision > 0 ? resume.revision : 1,
     stopped: resume.stopped,
     draftSteps: steps.length,
     proposableSteps: steps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
     outstanding: resume.outstandingIssueCodes.filter((code) => /^[a-z0-9_.:-]{1,100}$/iu.test(code)).slice(0, MAX_OUTSTANDING),
     ...(resume.judgement ? { judgement: resume.judgement } : {}),
-    instruction: resume.judgement ? REPAIR_INSTRUCTION : INSTRUCTION
+    instruction: nothingInFlow(resume) ? EXPLORE_AGAIN_INSTRUCTION : resume.judgement ? REPAIR_INSTRUCTION : INSTRUCTION
   };
   return { callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID}.0`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID, value };
 }

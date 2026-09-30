@@ -30,7 +30,9 @@ export type AutomationStudioFlowBootstrapBudgetBound =
   /** The call count the Flow's settings or the resolver declared. */
   | "calls"
   /** The repairs a build may make, reached while each was still getting further. */
-  | "repair_rounds";
+  | "repair_rounds"
+  /** The live rounds a build may run in all, the far backstop under the others. */
+  | "rounds";
 
 /** What a build that could not finish says about itself. */
 export type AutomationStudioFlowBootstrapBuildEnding = {
@@ -61,7 +63,7 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE = 1_000;
 const MAX_NOT_DONE = 16;
 const MAX_QUOTE = 200;
 const MAX_COUNT = 10_000;
-const BOUNDS: readonly string[] = ["cost", "tokens", "duration", "calls", "repair_rounds"];
+const BOUNDS: readonly string[] = ["cost", "tokens", "duration", "calls", "repair_rounds", "rounds"];
 const TESTED: readonly string[] = ["replayed_clean", "replay_failed", "not_tested"];
 const ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u;
 const CODE = /^[a-z0-9_.:-]{1,100}$/iu;

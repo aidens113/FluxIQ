@@ -15,9 +15,8 @@
 // calls, $0.06 of $0.25 and 398 s of 540 s still unused.
 //
 // **What happens now.** A round that stops short with steps in its Flow goes
-// to phase 2 with what it has (one that stopped with none keeps its own ending,
-// since there is nothing to test, judge or repair): the Flow so far is tested from its start and judged against the
-// checklist (`./judgement.ts`). Then phase 3: a repair round, live, seeded with
+// to phase 2 with what it has: the Flow so far is tested from its start and
+// judged against the checklist (`./judgement.ts`). Then phase 3: a repair round, live, seeded with
 // that Flow and told the judgement, working on what is missing or failing with
 // the same checklist. When the model says the Flow is ready the loop tests it
 // as it always does; a Flow it accepts is the build's result. A repair that
@@ -25,6 +24,17 @@
 // further than the judgement before it. One that gets no further is the
 // evidence that no route is left: the build ends "not doable", with the acts
 // that cannot be done, why, and what was tried (`./not-doable.ts`).
+//
+// **A round that stops with nothing in its Flow never ends the build while
+// budget remains (supervisor, t208).** It was the main case -- 57 of 117 live
+// builds ended with no Flow (audit A1) -- and it used to end as a bare
+// `evidence_unusable_decision` or `evidence_iteration_limit`. Now the model is
+// told plainly that nothing is in the Flow yet, with the checklist all to do,
+// and keeps exploring live from the page as it stands, round after round,
+// until a Flow is accepted or a budget runs out; the budget ending then says
+// what was tried, how far it got and what blocked it. "Not doable" is never
+// reached from an empty Flow: it needs the evidence of a repair that got no
+// further than a judged Flow.
 //
 // **A budget is never "not doable".** A round stopped by the spend ceiling,
 // the token budget or the deadline -- or a repair that has none of them left to
@@ -61,6 +71,13 @@ import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall
 /** Repairs one build may make after its exploration, while each gets further. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS = 2;
 
+/**
+ * Live rounds one build may run in all, the exploration included: the far
+ * backstop under the budgets, which bind first in any build that pays for its
+ * decisions. Reaching it is reported as the budget it is.
+ */
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS = 6;
+
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS = 30_000;
 
@@ -96,9 +113,18 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
   declaredCalls?: number | undefined;
   /** Keep the Flow so far for a later build (`../incomplete-draft/`), and say where. */
   keep(stopped: AutomationStudioLlmEvidenceLoopResume["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number): Promise<AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined>;
+  /**
+   * An ending of the caller's own that a stopped round raised -- a question put
+   * to the person (a permission ask, a check only they can pass) -- returned as
+   * the error to end the build with. It wins over exploring again or repairing:
+   * the build waits on the person's answer, never spends past it.
+   */
+  callerEnding?(progress: AutomationStudioFlowBootstrapRoundProgress): unknown;
   /** Tell the person the build moved to a phase: the chat's row for it. */
-  announce?(event: { phase: "verifying" | "repairing"; label: string; text: string }): void;
+  announce?(event: { phase: "exploring" | "verifying" | "repairing"; label: string; text: string }): void;
   maxRepairRounds?: number;
+  /** Live rounds in all, the exploration included (`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS`). */
+  maxRounds?: number;
   now?: () => number;
 };
 
@@ -107,12 +133,11 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
   | { kind: "finished"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
   /**
    * An ending this lifecycle does not reach past, as the round's loop reported
-   * it -- and the exploration's own ending when it stopped with nothing in its
-   * Flow, which leaves nothing to test, judge or repair.
+   * it: cancelled, a refused configuration, the evidence backstop. Never a
+   * round that stopped short, which is always explored again, repaired or
+   * ended with a stated reason.
    */
   | { kind: "ended"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
-  /** The same, for an exploration whose decisions kept coming back unusable: the caller's stall ending, as before. */
-  | { kind: "stalled"; progress: AutomationStudioFlowBootstrapUnfinishedStall["progress"]; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
   /** Not doable, or a budget ran out first: the ending the person is told. */
   | {
     kind: "unfinished";
@@ -130,7 +155,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   const clock = input.now ?? Date.now;
   const startedAt = clock();
   const maxRepairRounds = input.maxRepairRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS;
+  const maxRounds = Math.max(1, input.maxRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS);
   const spent = emptyAccounting();
+  let repairs = 0;
   let repair: AutomationStudioFlowBootstrapRoundRequest["repair"];
   let previous: AutomationStudioFlowBootstrapJudgement | undefined;
   for (let round = 0; ; round += 1) {
@@ -148,13 +175,10 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds };
     if (ending.kind === "other") return { kind: "ended", loop: ending.loop, accounting: spent, rounds };
     const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
-    // An exploration that stopped with no step in its Flow covers nothing to test, judge or repair: its own ending stands.
-    if (ending.kind === "unfinished" && round === 0 && !automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
-      return outcome instanceof AutomationStudioFlowBootstrapUnfinishedStall
-        ? { kind: "stalled", progress: outcome.progress, accounting: spent, rounds }
-        : { kind: "ended", loop: outcome as Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, accounting: spent, rounds };
-    }
-    if (ending.kind === "unfinished") {
+    const asked = input.callerEnding?.(ending.progress);
+    if (asked !== undefined) throw asked;
+    // Only a Flow with steps in it is tested: an empty one has nothing to run.
+    if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
       input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
     }
     // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
@@ -175,7 +199,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         kind: "unfinished",
         ending: kind === "not_doable"
           ? automationStudioFlowBootstrapNotDoable(told)
-          : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds } }),
+          : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds } }),
         progress: ending.progress,
         lastIssueCodes: ending.lastIssueCodes,
         kept,
@@ -184,17 +208,30 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       };
     };
     if (ending.kind === "budget") return await end(ending.bound);
-    // Phase 3, or the evidence that no route is left: a repair that got no further than the judgement before it.
+    const todo = judgement.todo.length;
+    const resume = (): AutomationStudioLlmEvidenceLoopResume => ({ revision: round + 1, stopped, outstandingIssueCodes: [...judgement.lastIssueCodes, ...judgement.testIssueCodes], judgement: automationStudioFlowBootstrapJudgementValue(judgement) });
+    // Nothing in the Flow: never an ending while budget remains. The model is told so, with the checklist all to do, and explores on live.
+    if (!judgement.stepsInFlow) {
+      if (rounds >= maxRounds) return await end("rounds");
+      const exhausted = exhaustedBound(input, spent, clock() - startedAt);
+      if (exhausted) return await end(exhausted);
+      input.announce?.({ phase: "exploring", label: "Exploring again", text: `Nothing is in the Flow yet${todo ? `, and all ${todo} of the things you asked are still to do` : ""}. Exploring on from the page as it stands.` });
+      repair = { seed: [], resume: resume() };
+      previous = undefined;
+      continue;
+    }
+    // Phase 3, or the evidence that no route is left: a repair that got no further than the judged Flow before it.
     if (previous && !automationStudioFlowBootstrapJudgementAdvanced(previous, judgement)) return await end("not_doable");
     previous = judgement;
-    if (round >= maxRepairRounds) return await end("repair_rounds");
+    if (repairs >= maxRepairRounds) return await end("repair_rounds");
+    if (rounds >= maxRounds) return await end("rounds");
     const exhausted = exhaustedBound(input, spent, clock() - startedAt);
     if (exhausted) return await end(exhausted);
-    const todo = judgement.todo.length;
+    repairs += 1;
     input.announce?.({ phase: "repairing", label: "Repairing the Flow", text: todo ? `Repairing the Flow live: ${todo} of the things you asked ${todo === 1 ? "is" : "are"} still to do.` : "Repairing the Flow live on what did not work when it was run." });
     repair = {
       seed,
-      resume: { revision: round + 1, stopped: stopped === "budget" ? "budget" : stopped, outstandingIssueCodes: [...judgement.lastIssueCodes, ...judgement.testIssueCodes], judgement: automationStudioFlowBootstrapJudgementValue(judgement) }
+      resume: resume()
     };
   }
 }

@@ -192,6 +192,53 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "repair_rounds" });
   });
 
+  it("keeps an empty draft exploring live while budget remains, told plainly that nothing is in the Flow yet", async () => {
+    const { input, requests, tested, announced } = harness([
+      // Every completion refused and nothing added: the old `evidence_unusable_decision` ending.
+      (request) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(20, 0.04), steps: [step(1, { disposition: "taken", effect: "observe" })] }); },
+      (request) => finished([step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } }), step(3, { acts: ["a2"] })])
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("finished");
+    // Nothing to run, so no test; the second round starts from an empty Flow, from the page as it stands.
+    expect(tested).toHaveLength(0);
+    expect(requests[1]!.repair!.seed).toEqual([]);
+    expect(requests[1]!.repair!.resume).toMatchObject({
+      stopped: "unusable_decisions",
+      judgement: { stepsInFlow: 0, actsDone: 0, actsTodo: ["a1", "a1.quantity", "a2"], lastRefusedFor: ["bootstrap.instructed_act_missing"] }
+    });
+    expect(announced).toEqual(["exploring: Exploring again"]);
+  });
+
+  it("never ends an empty draft not doable: it explores again until a budget ends it, and says so", async () => {
+    const empty = (request: AutomationStudioFlowBootstrapRoundRequest) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(12, 0.01), steps: [] }); };
+    const { input, requests } = harness([empty, empty, empty], { maxRounds: 3 });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(requests).toHaveLength(3);
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { rounds: 3, decisions: 36, stepsInFlow: 0 } });
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("its limit of 3 live rounds");
+  });
+
+  it("ends an empty draft at the budget as a budget hit, with what was tried, how far it got and what blocked it", async () => {
+    const { input, requests, kept } = harness([
+      (request) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(40, 0.25), steps: [] }); }
+    ]);
+    input.keep = async (...args) => { kept.push(args); return undefined; };
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(requests).toHaveLength(1);
+    expect(outcome.kind).toBe("unfinished");
+    if (outcome.kind !== "unfinished") return;
+    expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", notDone: [{ id: "a1" }, { id: "a1.quantity" }, { id: "a2" }], tried: { rounds: 1, decisions: 40, stepsInFlow: 0, tested: "not_tested" } });
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. 0 of the 3 things you asked are done; still to do: /u);
+    expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I explored live once over 40 decisions, and what held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
+  });
+
   it("passes every ending it does not reach past through untouched", async () => {
     const asked = new Error("permission asked");
     const { input } = harness([() => { throw asked; }]);

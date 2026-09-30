@@ -82,6 +82,67 @@ async function build(repairs: "finish" | "refuse") {
   return { requests, generation };
 }
 
+/**
+ * A model that acts but adds nothing to its Flow, then says it is ready with a
+ * result the check refuses, until the round stops. Told to explore again, it
+ * adds the step and finishes when `again` says so, or goes on the same way.
+ */
+async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
+  const requests: AutomationStudioLlmTaskRequest[] = [];
+  let exploringAgain = 0;
+  const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+  const provider = mockProvider(async (request) => {
+    requests.push(request);
+    const entry = request.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined;
+    if (entry?.code === "llm_evidence_loop.explore_again") exploringAgain += 1;
+    const finishing = again === "finish" && exploringAgain > 0;
+    // Every round acts before it may finish: this domain gives no free first look.
+    const acts = request.context.evidenceLoop?.iteration === 1;
+    const decision: JsonObject = acts
+      ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length }, ...(finishing ? { add: true } : {}) }
+      : finishing
+        ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
+        : { kind: "complete", result: { summary: "Done.", plan: { ...plan(), subflows: [] } } };
+    return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+  });
+  const instance = new AutomationStudioService({
+    dataDir: tempRoot,
+    llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, ...(maxCallsPerRun ? { maxCallsPerRun } : {}) })) as never,
+    llmEvidenceRuntime: {
+      domainId: "example",
+      deniedEvidenceKeys: [],
+      tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
+      executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
+    }
+  });
+  services.add(instance);
+  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
+  return { requests, generation };
+}
+
+describe("a Flow build that stops with nothing in its Flow", () => {
+  it("does not end while budget remains: it is told nothing is in the Flow yet, explores on, and its Flow is proposed", async () => {
+    const { requests, generation } = await buildEmpty("finish");
+
+    await expect(generation).resolves.toMatchObject({ status: "proposed" });
+    const entry = requests.map((request) => request.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined).find((value) => value?.code === "llm_evidence_loop.explore_again");
+    expect(entry).toMatchObject({ stopped: "unusable_decisions", draftSteps: 0, judgement: { stepsInFlow: 0 }, instruction: expect.stringContaining("Nothing is in the Flow yet") });
+  });
+
+  it("ends at its budget as a budget hit, with what was tried, how far it got and what blocked it", async () => {
+    const { requests, generation } = await buildEmpty("same", 12);
+
+    const diagnostic = await rejectedGenerationDiagnostic(generation);
+
+    expect(requests).toHaveLength(12);
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", tried: { stepsInFlow: 0, decisions: 12 } });
+    expect(diagnostic.ending?.message).toMatch(/^The build stopped at its limit of 12 model calls before the Flow was finished\./u);
+    expect(diagnostic.ending?.message).toContain("No step I found belonged in the Flow.");
+    expect(diagnostic.ending?.message).toMatch(/I explored live (?:once|\d+ times) over 12 decisions, and what held it up was that /u);
+  });
+});
+
 describe("a Flow build that stops before its Flow is ready", () => {
   it("tests and judges what it has, then repairs it live, and the repaired Flow is proposed", async () => {
     const { requests, generation } = await build("finish");
