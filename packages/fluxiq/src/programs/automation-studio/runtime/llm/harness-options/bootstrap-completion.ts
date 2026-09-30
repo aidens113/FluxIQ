@@ -292,8 +292,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   }
   // Read off the draft rather than the plan, so it is asked even of a draft
   // whose plan did not assemble. Only a Flow built from the draft has steps a
-  // claim can name.
-  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
+  // claim can name. Where the build starts goes with it: a step that only
+  // arrives there does no act but opening (`run-munoeac4-33c17306`).
+  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined, startLocation: input.startLocation });
   if (!acts.ok) {
     // Filed under the cannot-answer code: a Flow that does not do what it was
     // told cannot answer the instruction, and the issue code says which way.
