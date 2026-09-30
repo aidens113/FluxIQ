@@ -183,8 +183,22 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * that throws is taken as the call having failed, and the step is recorded
    * as one, because a step with a digest the caller could not take is a step
    * nothing knows the shape of.
+   *
+   * A caller whose results report `stateDigests` from the call's own captures
+   * (`evidence-loop/tool-execution.ts`) leaves this out: the loop then reads
+   * each call's two states off its result and never asks for one, which is
+   * what keeps a look at one capture instead of three. Given, it is asked as
+   * before and a result's own digests are not read, so no point in a step is
+   * ever digested twice.
    */
   captureStateDigest?(input: { callId: string; toolId: string; signal?: AbortSignal }): Promise<string | undefined> | string | undefined;
+  /**
+   * `false` keeps every look on offer after an ignored redirect
+   * (`decision-handlers/look-withdrawal.ts`). For replaying a build recorded
+   * before looks were withdrawn, whose later decisions were made without it;
+   * a live loop leaves it out.
+   */
+  lookWithdrawal?: false;
   /**
    * The draft the loop accrues and shows the model beside its evidence
    * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.

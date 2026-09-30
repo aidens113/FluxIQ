@@ -630,7 +630,13 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     propagateDecisionErrors: true,
     unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error(`recorded run ${name}: stalled`) },
     checkCompletion,
-    captureStateDigest: () => `world.${world}`,
+    // These builds ran before a look asked again was run once more to check
+    // the page, and before an ignored redirect withdrew looks (t196). Their
+    // later decisions were made under neither, so the replay keeps both out: no
+    // state digests, so every repeat is answered from memory as it was, and
+    // looks stay on offer. `../../decision-handlers/tests/state-digest-cost.test.ts` replays a
+    // recorded build with both.
+    lookWithdrawal: false,
     ...limits.loop,
     budget: { ...limits.loop.budget, now: () => fixedClock },
     decide,

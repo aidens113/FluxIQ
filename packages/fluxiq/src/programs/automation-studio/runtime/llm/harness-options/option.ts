@@ -100,6 +100,8 @@ export type AutomationStudioHarnessOptionBundle = {
 };
 
 const OPTION_ID = /^[a-z0-9_.:-]{1,200}$/i;
+/** The input key naming a call's action (`actionInputKey`): a plain property name. */
+const ACTION_INPUT_KEY = /^[a-z][a-z0-9_]{0,63}$/i;
 const IDENTIFIER = /^[A-Za-z0-9._:-]{1,200}$/;
 const SIDE_EFFECTS = new Set<string>(["none", "observe", "mutate", "destructive"]);
 
@@ -116,6 +118,7 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
   if (option.effect !== undefined && option.effect !== "observe" && option.effect !== "mutate") issues.push("harness_option.effect_invalid");
   if (option.repeatPolicy !== undefined && (option.repeatPolicy !== "after_mutation" || option.effect !== "observe")) issues.push("harness_option.repeat_policy_invalid");
   if (option.perCallEffect !== undefined && typeof option.perCallEffect !== "boolean") issues.push("harness_option.per_call_effect_invalid");
+  if (option.actionInputKey !== undefined && (typeof option.actionInputKey !== "string" || !ACTION_INPUT_KEY.test(option.actionInputKey))) issues.push("harness_option.action_input_key_invalid");
   // A free first look is a look. That is an option that only observes -- or one
   // whose calls declare their own effect, whose initial argument the host
   // writes rather than the model, and which is therefore the host's own
@@ -133,10 +136,11 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
 }
 
 /**
- * The option as the evidence loop and the provider accept it: the six tool
+ * The option as the evidence loop and the provider accept it: the seven tool
  * fields and nothing else. Provider adapters reject an unknown key on a tool,
  * so the gate metadata is dropped here rather than travelling and being
- * ignored. Written field by field, never spread, so a renamed tool field is a
+ * ignored; `actionInputKey` is the loop's own and the loop strips it from
+ * every tool it offers (`../decision-handlers/look-withdrawal.ts`). Written field by field, never spread, so a renamed tool field is a
  * compile error instead of a silently wider payload.
  */
 export function automationStudioHarnessOptionTool(option: AutomationStudioHarnessOption): AutomationStudioLlmEvidenceTool {
@@ -146,6 +150,7 @@ export function automationStudioHarnessOptionTool(option: AutomationStudioHarnes
     inputSchema: option.inputSchema,
     ...(option.effect !== undefined ? { effect: option.effect } : {}),
     ...(option.perCallEffect === true ? { perCallEffect: true } : {}),
+    ...(option.actionInputKey !== undefined ? { actionInputKey: option.actionInputKey } : {}),
     ...(option.repeatPolicy !== undefined ? { repeatPolicy: option.repeatPolicy } : {}),
     ...(option.initialObservation !== undefined ? { initialObservation: option.initialObservation } : {})
   };

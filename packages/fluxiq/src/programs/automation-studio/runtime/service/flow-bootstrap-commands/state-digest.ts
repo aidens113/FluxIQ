@@ -21,11 +21,18 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.
  *
  * A domain that says nothing leaves the step without digests, which the
  * reduction reports rather than treats as a failure.
+ *
+ * Nothing, too, when the binding reports each call's states on its result
+ * (`stateDigestsOnCalls`): the loop then reads them there and the build makes
+ * no digest call at all. Asking the hook as well would put two digests at one
+ * point, and in the web domain each was a whole page capture of its own -- a
+ * look cost three captures and an action four (`run-munneauy-de8663ed`).
  */
 export function automationStudioBootstrapStateDigestHook(
   binding: AutomationStudioLlmEvidenceRuntimeBinding | undefined,
   context: { projectId: string; flowId: string; startLocation?: string }
 ): ((input: { callId: string; toolId: string; signal?: AbortSignal }) => Promise<string | undefined>) | undefined {
+  if (binding?.stateDigestsOnCalls === true) return undefined;
   const capture = binding?.captureStateDigest?.bind(binding);
   if (!capture) return undefined;
   const asked = new Set<string>();

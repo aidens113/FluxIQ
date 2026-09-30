@@ -34,6 +34,18 @@ export type AutomationStudioLlmEvidenceTool = {
    * responsible for it being a look.
    */
   perCallEffect?: boolean;
+  /**
+   * For a tool that runs whichever of many actions a call names: the key of
+   * its input that names the action (`node` for `core.run_node`).
+   *
+   * Loop data, never sent: the loop strips it from every tool it offers,
+   * because provider adapters refuse a tool carrying a key they do not know.
+   * It is what lets the loop withdraw the looks among such a tool's actions
+   * without withdrawing the tool (`../decision-handlers/look-withdrawal.ts`):
+   * the input is offered with that key narrowed to exclude the actions this
+   * build saw report `effect: "observe"` and `proposes: false`.
+   */
+  actionInputKey?: string;
   /** Optional domain-declared observation that is safe to run before the first
    * provider decision. The coordinator executes at most one such declaration. */
   initialObservation?: { input: JsonObject };
