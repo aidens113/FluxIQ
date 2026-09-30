@@ -90,3 +90,6 @@ export * from "./runtime-session-llm.ts";
 // released per call to their unlocked session (`session-key-provider.ts`).
 export * from "./session-key-provider.ts";
 export * from "./resolver-contract.ts";
+// A resolution narrowed by the Flow's own configured call count, token limits,
+// timeout and per-call cost (`flow-execution-limits/`). Numbers only: the run's budget enforces them.
+export * from "./flow-execution-limits/index.ts";
