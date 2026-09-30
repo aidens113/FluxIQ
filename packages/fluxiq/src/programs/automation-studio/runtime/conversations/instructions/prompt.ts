@@ -8,6 +8,7 @@
 // are left out, and the id need not be spelt perfectly.
 
 import { automationStudioPanelCapabilityVocabulary } from "../../panel-capabilities/index.ts";
+import { automationStudioConversationPageShown } from "../commands/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 
 const LISTED_FLOWS = 60;
@@ -49,7 +50,11 @@ function onScreenSection(context: AutomationStudioConversationDecisionContext): 
     open.runId ? `the run ${open.runId}` : "",
     open.recordingId ? `the recording ${open.recordingId}` : ""
   ].filter(Boolean);
-  return parts.length
+  // Origin and path only: a query or fragment is where a page keeps a search,
+  // a session or a token, and none of that says which page this is.
+  const page = automationStudioConversationPageShown(open.pageUrl);
+  const pageLine = page ? `\nIn their browser they are on the page ${page}. Something they ask to be made "here" or "for this page" starts there.` : "";
+  return (parts.length
     ? `The person has ${parts.join(", ")} open, so "it" or "this" most likely means that.`
-    : "The person has nothing in particular open, so if they say \"it\" or \"this\" without naming a Flow, and the conversation has not named one, ask which Flow they mean rather than choosing one.";
+    : "The person has nothing in particular open, so if they say \"it\" or \"this\" without naming a Flow, and the conversation has not named one, ask which Flow they mean rather than choosing one.") + pageLine;
 }

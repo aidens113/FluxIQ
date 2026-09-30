@@ -111,6 +111,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   automationStudio.conversations.bindModel(createAutomationStudioDeepSeekPanelCommandModel({
     resolveKey: automationStudioPanelCommandKeyFromSecretKeys(secretKeys)
   }));
+  // A paired client (the browser extension) acts under a session of its own,
+  // which no key is released to. Its chat, and the builds and runs the chat
+  // starts, use the approving person's live unlocked session instead, when
+  // they have one; the paired client's permissions are unchanged.
+  automationStudio.conversations.bindUnlockedSessionResolver((userId) => secretKeys.unlockedSessionFor(userId));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));

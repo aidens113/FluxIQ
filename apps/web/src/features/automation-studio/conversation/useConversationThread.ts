@@ -295,10 +295,15 @@ export function useConversationThread(input: ConversationThreadInput): Conversat
       // continues an existing thread rather than adding a second.
       const conversationId = selectedRef.current || await openThread();
       if (!conversationId) return false;
-      // Sent as an instruction: Core reads it with the panel's vocabulary,
-      // answers in the thread, and the capability it chose runs here when it
-      // is ordinary work. The result, success or failure, is written into the
-      // thread by the time this returns.
+      // Sent as an instruction: Core reads it with the panel's vocabulary and
+      // answers in the thread. A capability Core knows, Core runs itself
+      // (`result.execution`); one it does not, and that is ordinary work, runs
+      // here. Either way the thread is read again below, whatever the result.
+      // When Core's run is `started`, its result turn arrives after this
+      // returns: `afterWrite` publishes `conversation.changed`, which resets the
+      // backoff poller to its fast beat, and that poller never stops (it decays
+      // to a ten-second ceiling, five while hidden), so the turn is read on a
+      // later beat without anything tracking the background work here.
       const result = await commands.sendInstruction({
         projectId: projectFor(conversationId),
         conversationId,
