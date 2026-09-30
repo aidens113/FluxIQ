@@ -36,7 +36,7 @@
 // changed, so the draft the model is shown still says what it said.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
-import { automationStudioFlowBootstrapValuesCarryLocation } from "./location-agreement.ts";
+import { automationStudioFlowBootstrapDraftStepGoesToLocation as goesThere } from "./step-goes-to-location.ts";
 
 /** A draft as completion should build it, and the step it had to keep, if any. */
 export type AutomationStudioFlowBootstrapDraftWithStartStep = {
@@ -80,13 +80,4 @@ export function automationStudioFlowBootstrapDraftWithStartStep(input: {
     steps: ordered.map((step, index) => step.position === index + 1 && step !== restored ? step : { ...step, position: index + 1 }),
     restored: { position: arrival.position, ...(arrival.id === undefined ? {} : { id: arrival.id }), withdrawnAs: arrival.disposition === "dropped" ? "dropped" : "exploratory" }
   };
-}
-
-/**
- * Whether a step went to where the Flow starts, read off what it ran with --
- * which is what the Flow is written from -- or, where it carried no such
- * record, what it was written with.
- */
-function goesThere(step: AutomationStudioFlowDraftStep, startLocation: string): boolean {
-  return automationStudioFlowBootstrapValuesCarryLocation(step.ranWith ?? step.input, startLocation);
 }

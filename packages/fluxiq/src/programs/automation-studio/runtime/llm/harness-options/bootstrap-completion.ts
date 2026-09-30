@@ -65,6 +65,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
@@ -291,8 +292,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   }
   // Read off the draft rather than the plan, so it is asked even of a draft
   // whose plan did not assemble. Only a Flow built from the draft has steps a
-  // claim can name.
-  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
+  // claim can name. Where the build starts goes with it: a step that only
+  // arrives there does no act but opening (`run-munoeac4-33c17306`).
+  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined, startLocation: input.startLocation });
   if (!acts.ok) {
     // Filed under the cannot-answer code: a Flow that does not do what it was
     // told cannot answer the instruction, and the issue code says which way.
@@ -349,7 +351,12 @@ function fromDraft(
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): AutomationStudioFlowBootstrapAcceptance {
-  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+  // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
+  // summary is one sentence about the Flow, and refusing a whole Flow because the
+  // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
+  // (`bootstrap.completion_profile_limit_exceeded`, `maxSummaryLength`).
+  const written = typeof result.summary === "string" ? result.summary.replace(/\s+/gu, " ").trim() : "";
+  const summary = (written || "Flow built from the steps that ran.").slice(0, AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength);
   const assembled = assembleAutomationStudioFlowDraftPlan({
     steps: steps.filter(automationStudioFlowDraftStepIsProposed),
     write: automationStudioFlowBootstrapDraftNodeStep,

@@ -80,6 +80,43 @@ describe("the lasting acts an instruction asks for", () => {
   });
 });
 
+// Lane D's run 2 (`run-munnop9n-5475d593`): "confirm everyone I have at least
+// five mutual friends with" was answered by one Confirm. An act over every
+// member of a set is marked, so a step that acts once is not taken for it.
+describe("an act asked for every member of a set", () => {
+  const PLURAL: Record<string, string[]> = {
+    "job board save week": ["save"],
+    "auction watch endings": ["add"],
+    "social confirm requests": ["confirm"],
+    "professional withdraw": ["withdraw"]
+  };
+
+  it.each(CONSEQUENTIAL)("marks exactly the acts over a whole set in %s", (label, instruction) => {
+    const acts = automationStudioInstructedActs(instruction);
+    expect(acts.filter((act) => act.plural).map((act) => act.verb)).toEqual(PLURAL[label] ?? []);
+    for (const act of acts) if (!act.plural) expect(act).not.toHaveProperty("plural");
+  });
+
+  it.each([
+    ["each, all, every and everyone", ["Confirm all pending requests.", "Withdraw each request I sent in August.", "Withdraw each of the invitations.", "Save everything in the results to my saved items.", "Clip every coupon for this store.", "Confirm everyone who sent me a request this week."]]
+  ])("reads %s as a whole set", (_label, instructions) => {
+    for (const instruction of instructions) expect(automationStudioInstructedActs(instruction).map((act) => act.plural), instruction).toEqual([true]);
+  });
+
+  it.each([
+    ["a price each", "Buy one at $30 each."],
+    ["all and a count", "Add all three kettles to my cart."],
+    ["a product name", "Add the ValueRidge All-Purpose Cleaner to my cart."],
+    ["a quantifier well after the object", "Save the cheapest table for sale within five miles of every station to my saved items."],
+    ["an act of opening", "Open my saved items and list everything in my saved items."],
+    ["a setting", "Sort all results by price."]
+  ])("does not read %s as a whole set", (_label, instruction) => {
+    const acts = automationStudioInstructedActs(instruction);
+    expect(acts.length).toBeGreaterThan(0);
+    expect(acts.some((act) => act.plural)).toBe(false);
+  });
+});
+
 // A build reads its instruction as title, newline, body, and a title restates
 // the task. Read as a second save, it could never be given a step of its own.
 describe("an instruction's title", () => {
