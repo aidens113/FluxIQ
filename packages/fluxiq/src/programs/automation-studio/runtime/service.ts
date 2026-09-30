@@ -202,6 +202,7 @@ import {
   AutomationStudioRecordingPaths,
   AutomationStudioRunDatasets,
   AutomationStudioServiceIndexes,
+  pipelineIndexWithoutRecording,
   type AutomationStudioProjectIndex,
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
@@ -4391,19 +4392,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await rm(recordingProposalRoot, { recursive: true, force: true });
     if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId));
     else await rm(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
-    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
-      pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
-      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.normalizationReviews.has(item.reviewId)),
-      miningRuns: (index.miningRuns ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.miningRuns.has(item.miningRunId)),
-      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceFacts.has(item.factId)),
-      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceObservations.has(item.observationId)),
-      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.stateActionCorrelations.has(item.correlationId)),
-      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceClaims.has(item.claimId)),
-      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.learnedTaskModels.has(item.learnedTaskModelId)),
-      policyProposals: (index.policyProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.policyProposals.has(item.proposalId)),
-      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.recordingFlowProposals.has(item.proposalId)),
-      replayResults: (index.replayResults ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.replayResults.has(item.replayId))
-    }));
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => pipelineIndexWithoutRecording(index, recordingId, artifactIds));
     await this.recordings.prunePhysicalPipelineIndex(projectId, recordingId, artifactIds);
   }
 
