@@ -1,5 +1,6 @@
 import { validateKeyCompatibility, validateRevealedKey, executionBinding, roundedCost, reportedTotalTokens, required } from "./grant-checks.ts";
-import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES, AutomationStudioLlmExecutionGrantRefusal } from "./grant-refusal.ts";
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES, AutomationStudioLlmExecutionGrantRefusal } from "../grant-refusal/index.ts";
+import { automationStudioLlmExecutionGrantCallRefusal as callRefusal, automationStudioLlmExecutionGrantInvalidity } from "../grant-refusal/index.ts";
 import { randomUUID } from "node:crypto";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { IdentityAccessService } from "../../../../identity-access/index.ts";
@@ -461,7 +462,7 @@ export class AutomationStudioLlmExecutionGrantService {
         };
         if (execution?.signal?.aborted) {
           this.revoke(grant.grantId);
-          throw new Error("LLM execution grant was cancelled.");
+          throw callRefusal("cancelled", "LLM execution grant was cancelled.");
         }
         execution?.signal?.addEventListener("abort", cancellation, { once: true });
         try {
@@ -606,26 +607,26 @@ export class AutomationStudioLlmExecutionGrantService {
 
   private claimCall(grant: StoredGrant, input: GrantScope, request: AutomationStudioLlmTaskRequest, policy: AutomationStudioLlmExecutionGrantResolvePolicy): ClaimedCall {
     if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.remainingUses <= 0) {
-      throw new Error("LLM execution grant is unavailable.");
+      throw callRefusal(grant.remainingUses <= 0 ? "uses_spent" : "grant_gone", "LLM execution grant is unavailable.");
     }
     // Past its lease, the grant is finished whether or not its timer has run.
     if (this.expired(grant)) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw callRefusal("lease_expired", "LLM execution grant is unavailable.");
     }
     // A call whose scope no longer matches the claim is an integrity failure.
     if (!sameScope(grant, input)) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution grant scope mismatch.");
+      throw callRefusal("scope_mismatch", "LLM execution grant scope mismatch.");
     }
-    if (grant.callInFlight) throw new Error("LLM execution grant already has a call in progress.");
+    if (grant.callInFlight) throw callRefusal("call_in_progress", "LLM execution grant already has a call in progress.");
     if (!automationStudioLlmRequestMatchesGrant(request, grant, policy)) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution request mismatch.");
+      throw callRefusal("request_exceeds_grant", "LLM execution request mismatch.");
     }
     if (roundedCost(grant.committedEstimatedCostUsd + request.maxEstimatedCostUsd) > grant.maxTotalEstimatedCostUsd) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution total estimated-cost limit exceeded.");
+      throw callRefusal("cost_exhausted", "LLM execution total estimated-cost limit exceeded.");
     }
     // The most this call can spend: its input and output limits together, and
     // never more than its total limit. Charged against what earlier calls
@@ -636,12 +637,12 @@ export class AutomationStudioLlmExecutionGrantService {
     const worstCaseTokens = Math.min(request.tokenLimits.maxTotalTokens, request.tokenLimits.maxInputTokens + request.tokenLimits.maxOutputTokens);
     if (grant.committedTotalTokens + worstCaseTokens > grant.maxTotalTokensPerRun) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution total token limit exceeded.");
+      throw callRefusal("tokens_exhausted", "LLM execution total token limit exceeded.");
     }
     const authorizationId = grant.revealAuthorizationIds.shift();
     if (!authorizationId) {
       this.revoke(grant.grantId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw callRefusal("uses_spent", "LLM execution grant is unavailable.");
     }
     const controller = new AbortController();
     grant.callInFlight = true;
@@ -671,16 +672,16 @@ export class AutomationStudioLlmExecutionGrantService {
       userId: grant.actorUserId,
       ttlMs: callWindowMs,
       nowMs: this.now()
-    });
+    }).catch((error: unknown) => { throw callRefusal("reveal_unavailable", error instanceof Error ? error.message : "LLM execution grant could not release its credential."); });
     // Revoked, cancelled or superseded while the authorization was minted: the
     // new one must not outlive the call it was minted for.
     if (call.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.inFlightAbortController !== call.controller) {
       this.options.secretKeys.revokeRevealAuthorization(renewed.authorizationId);
-      throw new Error("LLM execution grant is unavailable.");
+      throw callRefusal(call.signal.aborted ? "cancelled" : "grant_gone", "LLM execution grant is unavailable.");
     }
     if (renewed.keyId !== grant.keyId || renewed.keyUpdatedAtMs !== grant.keyUpdatedAtMs) {
       this.options.secretKeys.revokeRevealAuthorization(renewed.authorizationId);
-      throw new Error("LLM key changed during grant authorization.");
+      throw callRefusal("key_changed", "LLM key changed during grant authorization.");
     }
     this.options.secretKeys.revokeRevealAuthorization(call.authorizationId);
     call.authorizationId = renewed.authorizationId;
@@ -689,10 +690,10 @@ export class AutomationStudioLlmExecutionGrantService {
 
   private async commitCall(grant: StoredGrant, input: GrantScope, call: ClaimedCall, result: unknown): Promise<void> {
     const controller = call.controller;
-    if (controller.signal.aborted || grant.inFlightAbortController !== controller) throw new Error("LLM execution grant is unavailable.");
+    if (controller.signal.aborted || grant.inFlightAbortController !== controller) throw callRefusal("revoked_in_flight", "LLM execution grant is unavailable.");
     await this.validateClaimedGrant(grant, input);
     if (controller.signal.aborted || this.grants.get(grant.grantId) !== grant || grant.inFlightAbortController !== controller) {
-      throw new Error("LLM execution grant is unavailable.");
+      throw callRefusal("revoked_in_flight", "LLM execution grant is unavailable.");
     }
     this.finishCall(grant, call, reportedTotalTokens(result, call.worstCaseTokens));
   }
@@ -760,20 +761,17 @@ export class AutomationStudioLlmExecutionGrantService {
   }
 
   private async validateClaimedGrant(grant: StoredGrant, input: GrantScope): Promise<void> {
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
-    if (!sameScope(grant, input)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.scope_mismatch, "LLM execution grant scope mismatch.");
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw callRefusal(this.expired(grant) ? "lease_expired" : "grant_gone", "LLM execution grant is unavailable.");
+    if (!sameScope(grant, input)) throw callRefusal("scope_mismatch", "LLM execution grant scope mismatch.");
     const [session, key, unresolvedBinding] = await Promise.all([
       this.options.identityAccess.validateSession(input.actorSessionId, this.now()),
       this.options.secretKeys.getKeySummary(grant.keyId),
       this.options.resolveExecutionDigest(grant.projectId, grant.flowId)
     ]);
     const binding = executionBinding(unresolvedBinding, grant.purpose);
-    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.unavailable, "LLM execution grant is unavailable.");
-    if (!session || session.user.id !== input.actorUserId
-      || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
-      || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
-      throw new AutomationStudioLlmExecutionGrantRefusal(AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_REFUSAL_CODES.no_longer_valid, "LLM execution grant is no longer valid.");
-    }
+    if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || this.expired(grant)) throw callRefusal(this.expired(grant) ? "lease_expired" : "grant_gone", "LLM execution grant is unavailable.");
+    const invalid = automationStudioLlmExecutionGrantInvalidity({ session, actorUserId: input.actorUserId, key, binding, grant });
+    if (invalid || !key) throw callRefusal(invalid ?? "key_changed", "LLM execution grant is no longer valid.");
     validateKeyCompatibility(key, grant);
   }
 

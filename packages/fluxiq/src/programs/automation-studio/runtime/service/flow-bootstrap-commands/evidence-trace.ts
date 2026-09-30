@@ -6,6 +6,7 @@ import {
   evidenceStepDraft,
   evidenceStepDraftChange,
   evidenceStepProgress,
+  evidenceStepRestoredStep,
   type AutomationStudioFlowBootstrapEvidenceTraceRow
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
@@ -122,6 +123,10 @@ export function sanitizeEvidenceLoopTrace(
     if (draft) clean.draft = draft;
     const answerability = evidenceStepAnswerability(item.answerability);
     if (answerability) clean.answerability = answerability;
+    // Which withdrawn step the completion check put back, left behind rather
+    // than thrown on when malformed, like every reader's detail above.
+    const restoredStep = evidenceStepRestoredStep(item.restoredStep);
+    if (restoredStep) clean.restoredStep = restoredStep;
     if (item.usage) clean.usage = { ...item.usage };
     return clean;
   });

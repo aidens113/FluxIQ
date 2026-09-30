@@ -37,8 +37,27 @@ describe("amending the draft", () => {
   it("refuses an edit that names no step, or that says what is already true", () => {
     const draft = steps();
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 9, change: "drop" }])).toEqual({ applied: 0, refused: [{ step: 9, reason: "no_such_step" }] });
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "keep" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "already_so" }] });
+    // Said as the side of the Flow the step is already on, which is what the
+    // edit was trying to settle: a keep about a step in the Flow is a
+    // confirmation, and the generic "already so" got it sent again.
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "keep" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "already_in_flow" }] });
     applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "drop" }]);
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "drop" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "already_so" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "drop" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "already_out" }] });
+  });
+
+  // A step that did not work is out of the Flow whatever it is called, so the
+  // only edit that can change it is running it again. Every hard live build of
+  // 2026-09-28 spent decisions dropping or keeping refused presses.
+  it("refuses every edit but rerun about a step that did not work, and changes nothing about it", () => {
+    const draft = steps();
+    draft[1] = { ...draft[1]!, effectApplied: false, resultCode: "action.refused" };
+    const changes = ["drop", "exploratory", "keep", "optional"] as const;
+    for (const change of changes) {
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "did_not_work" }] });
+    }
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "reorder", to: 1 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "did_not_work" }] });
+    expect(draft.map((step) => [step.position, step.disposition, step.routing])).toEqual([[1, "kept", undefined], [2, "kept", undefined], [3, "kept", undefined]]);
+    // A rerun is still the loop's to carry out, and the one edit not refused for this.
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "rerun", input: {} }]).refused).toEqual([{ step: 2, reason: "run_by_the_loop" }]);
   });
 });

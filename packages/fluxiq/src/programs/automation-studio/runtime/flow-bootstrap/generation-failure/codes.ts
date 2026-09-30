@@ -95,6 +95,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     "flow_bootstrap.provider_http_error",
     "flow_bootstrap.provider_network_error",
     "flow_bootstrap.provider_secret_unavailable",
+    // The grant was revoked or replaced while the provider was answering: the
+    // one grant refusal raised after a request went out, so it belongs here and
+    // not with the four resolution refusals above, which all say nothing was sent.
+    "flow_bootstrap.execution_grant_revoked_in_flight",
     // What the catch actually caught, where it recognised nothing else.
     //
     // `flow_bootstrap.provider_request_failed` is this stage's default, and the

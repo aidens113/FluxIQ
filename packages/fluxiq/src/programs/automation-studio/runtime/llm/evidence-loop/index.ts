@@ -9,6 +9,7 @@
 // published onwards from the coordinator; the rest is the loop's own and is
 // reachable through this barrel alone.
 export * from "./accounting.ts";
+export * from "./amendment-memory.ts";
 export * from "./answered-request.ts";
 export * from "./answerability.ts";
 export * from "./call-id.ts";
@@ -21,6 +22,7 @@ export * from "./draft-change.ts";
 export * from "./exhaustion.ts";
 export * from "./no-progress.ts";
 export * from "./progress.ts";
+export * from "./progress-trace.ts";
 export * from "./rerun-replacement.ts";
 export * from "./rerun-request.ts";
 export * from "./resume.ts";

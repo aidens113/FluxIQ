@@ -173,7 +173,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "pre_provider_validation",
       retryable: false,
       providerInvocation: "not_attempted",
-      providerResponse: "not_received"
+      providerResponse: "not_received",
+      // What was thrown and where, never what it said (`generation-failure/thrown-issue-codes.ts`).
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
     });
     expect(JSON.stringify(diagnostic)).not.toContain("private setup detail");
     expect(resolver).toHaveBeenCalledTimes(1);

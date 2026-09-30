@@ -323,6 +323,45 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       .toEqual(["web.output.browser-navigate", "web.output.dom-extract_list"]);
     // The loop's own draft still says what the model said about the step.
     expect(draftSteps[0]?.disposition).toBe("exploratory");
+    // And the record says the Flow judged has a step the model had taken out:
+    // which one, and how it had been withdrawn. Content-free, so it can travel.
+    expect(verdict.check.restoredStep).toEqual({ step: 1, withdrawnAs: "exploratory" });
+  });
+
+  it("says a restored step on a refusal too, and says nothing when nothing was restored", async () => {
+    const step = (position: number, node: string, parameters: JsonObject, disposition: AutomationStudioFlowDraftStep["disposition"]): AutomationStudioFlowDraftStep => ({
+      position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
+      input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition
+    });
+    // A navigation the model dropped, restored, and the result then refused for a step the writer cannot write down.
+    const refused = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
+      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "dropped"), step(2, "web.not.a_registered_node", {}, "kept")],
+      startLocation: START_LOCATION
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.check.restoredStep).toEqual({ step: 1, withdrawnAs: "dropped" });
+    const plain = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
+      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "kept")], startLocation: START_LOCATION
+    });
+    expect(plain.check.restoredStep).toBeUndefined();
+  });
+
+  // `run-muncqlr0-3348202b`: a draft built by the steps that ran was refused
+  // outright because the model's one-line summary ran past 240 characters.
+  it("bounds a draft's summary as a written plan's is bounded, rather than refusing the Flow for it", async () => {
+    const draftSteps: AutomationStudioFlowDraftStep[] = [
+      { position: 1, id: "d1", iteration: 1, actionId: "web.browser.navigate", toolId: "core.run_node", input: { node: "web.browser.navigate", parameters: { url: START_LOCATION }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 2, id: "d2", iteration: 2, actionId: "web.dom.extract_list", toolId: "core.run_node", input: { node: "web.dom.extract_list", parameters: { extractList }, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true }
+    ];
+    const long = "Open the store,   pick the Millbrook store for pickup, and read every towel on the page. ".repeat(4);
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result: { summary: long }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, startLocation: START_LOCATION });
+
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.summary.length).toBe(240);
+    expect(verdict.summary).not.toMatch(/\s{2}/u);
   });
 
   it("never reaches the check for a build that was given no start location", async () => {

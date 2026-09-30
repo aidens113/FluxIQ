@@ -40,7 +40,7 @@ import { automationStudioFlowDraftStepById } from "./routing.ts";
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran and that worked, with the argument it ran with. This is the record of what you did, not a tool result, and it is not affected by which results are still shown. Every step whose inResult is true is a step of the finished Flow, whether or not its own result is still in front of you -- so there is nothing to write down at the end. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. A step you want and have not run yet is run, not written. Getting to the page is part of the work, not looking around it: going somewhere, dismissing what covers the page, typing a search and pressing it are steps the Flow cannot start without, and marking them exploratory leaves a Flow that has nowhere to run. Only a step whose effect the Flow does not need -- a page you opened to read and moved on from -- is exploratory.";
+const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with. This is the record of what you did, not a tool result, and it is not affected by which results are still shown. Every step whose inResult is true is a step of the finished Flow, whether or not its own result is still in front of you -- so there is nothing to write down at the end, and nothing to confirm. A did_not_work step is already out: only rerun changes it. Correct the draft with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers the page, typing a search and pressing it are steps the Flow cannot start without, so never exploratory. Only a step whose effect the Flow does not need -- a page you opened to read and moved on from -- is exploratory.";
 
 // The same instruction told shorter, for when telling it in full would cost the
 // entry the steps it exists to list.
@@ -53,7 +53,7 @@ const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it:
 // list of what the build actually ran is carried by nothing else at all. What no
 // telling drops is the two things the model cannot act without: that the list is
 // the Flow in order, and that amend_draft is how it is corrected.
-const DRAFT_INSTRUCTION_BRIEF = "The Flow you are building, in the order you built it: every step here is something you actually ran and that worked. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. Getting to the page is part of the work: a step the Flow cannot start without is not exploratory. A step you want and have not run yet is run, not written.";
+const DRAFT_INSTRUCTION_BRIEF = "The Flow you are building, in the order you built it: every step here is something you actually ran. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down or confirm. A did_not_work step is already out; only rerun changes it. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. Getting to the page is part of the work: a step the Flow cannot start without is not exploratory. A step you want and have not run yet is run, not written.";
 const DRAFT_INSTRUCTION_MINIMAL = "What you have built, in the order you built it. Every step whose inResult is true is a step of the finished Flow. Correct it with an amend_draft decision.";
 
 /** Longest first: the telling only gets shorter once the room has run out. */
@@ -249,7 +249,7 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: 
     ...(withInput && !argument ? { inputTooLarge: true } : {}),
     ...(step.resultCode ? { resultCode: step.resultCode } : {}),
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
-    disposition: step.disposition,
+    disposition: shownDisposition(step),
     inResult: automationStudioFlowDraftStepIsProposed(step),
     // How it answered the last time the draft was run as a Flow. It sits on
     // the step rather than only in the refusal that reported it, because a
@@ -281,7 +281,7 @@ function stepRow(step: AutomationStudioFlowDraftStep, withInput: boolean, all: r
     withInput ? step.input : null,
     step.resultCode ?? null,
     step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
-    step.disposition,
+    shownDisposition(step),
     automationStudioFlowDraftStepIsProposed(step)
   ];
   const optional: JsonValue[] = [
@@ -292,6 +292,21 @@ function stepRow(step: AutomationStudioFlowDraftStep, withInput: boolean, all: r
   let last = optional.length - 1;
   while (last >= 0 && optional[last] === null) last -= 1;
   return [...values, ...optional.slice(0, last + 1)];
+}
+
+/**
+ * What the model is told a step's disposition is.
+ *
+ * A step that did not work is out of the Flow whatever the model calls it, and
+ * listing it as `kept` -- which is what it is, since nobody withdrew it -- read
+ * as a step still to be dealt with. Every hard live build of 2026-09-28 spent
+ * decisions dropping or "keeping" refused presses, and the draft's own
+ * instruction said every listed step had worked. Only what is shown changes:
+ * the step keeps its disposition, and no amendment but `rerun` touches it
+ * (`./amendment.ts`).
+ */
+function shownDisposition(step: AutomationStudioFlowDraftStep): string {
+  return step.effectApplied === false ? "did_not_work" : step.disposition;
 }
 
 /** One routing statement in the words and the numbers an amendment took. */

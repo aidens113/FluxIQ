@@ -63,7 +63,8 @@ describe("a guard that can actually fire", () => {
     // neither could reach it before the budget ended the run.
     for (const maxCallsPerRun of [26, 48, 64]) {
       const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun });
-      expect(limits.loop.maxIterations).toBe(maxCallsPerRun);
+      // Less the instruction authority's one call (`loop-limits/flow-bootstrap-evidence-loop.ts`).
+      expect(limits.loop.maxIterations).toBe(maxCallsPerRun - 1);
       expect(limits.maxConsecutiveUnusableDecisions).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
       expect(limits.maxConsecutiveUnusableDecisions).toBeLessThan(limits.loop.maxIterations / 3);
     }

@@ -7,6 +7,8 @@
 // refuses on both counts -- correctly, because a caller that only needs to read
 // a refusal code should not have to import the whole grant service to do it.
 
+import type { AutomationStudioLlmExecutionGrantCallRefusalReason } from "./call-refusal.ts";
+
 /**
  * Why a grant would not be claimed, as a code rather than a sentence.
  *
@@ -49,10 +51,13 @@ export type AutomationStudioLlmExecutionGrantRefusalCode =
  */
 export class AutomationStudioLlmExecutionGrantRefusal extends Error {
   readonly code: AutomationStudioLlmExecutionGrantRefusalCode;
-  constructor(code: AutomationStudioLlmExecutionGrantRefusalCode, message: string) {
+  /** Which check refused, where a granted call was refused (`call-refusal.ts`). */
+  readonly reason: AutomationStudioLlmExecutionGrantCallRefusalReason | undefined;
+  constructor(code: AutomationStudioLlmExecutionGrantRefusalCode, message: string, reason?: AutomationStudioLlmExecutionGrantCallRefusalReason) {
     super(message);
     this.name = "AutomationStudioLlmExecutionGrantRefusal";
     this.code = code;
+    this.reason = reason;
   }
 }
 

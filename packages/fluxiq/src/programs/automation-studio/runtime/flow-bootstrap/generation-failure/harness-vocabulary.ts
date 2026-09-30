@@ -11,7 +11,7 @@
 // breaks -- and it breaks loudly, in the temporal dead zone of a `const`.
 // `diagnostic-parse.ts` and `harness-failure.ts` do import a value across the
 // same edge, and safely, because both call it from inside a function.
-import type { AutomationStudioLlmProviderPreflightErrorCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../llm/index.ts";
+import type { AutomationStudioLlmExecutionGrantRefusalCode, AutomationStudioLlmProviderPreflightErrorCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../llm/index.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 
@@ -101,3 +101,17 @@ export const FLOW_BOOTSTRAP_RUN_BUDGET_CODES = Object.freeze({
 } as const satisfies Record<AutomationStudioLlmRunBudgetDiagnostic["code"], `flow_bootstrap.run_budget_${string}`>);
 
 export const FLOW_BOOTSTRAP_RUN_BUDGET_CODE_LIST = Object.values(FLOW_BOOTSTRAP_RUN_BUDGET_CODES);
+
+/**
+ * Core's four grant refusals under their Flow Bootstrap names. Read by the
+ * build's own catch, for a grant refused while it was being resolved, and by the
+ * harness projection, for a grant refused on a call -- which used to arrive as
+ * `llm.provider_request_failed` and leave as `provider_transport_unknown`
+ * (`runtime/llm/grant-refusal/call-refusal.ts`).
+ */
+export const FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES = Object.freeze({
+  "llm.execution_grant_unavailable": "flow_bootstrap.execution_grant_unavailable",
+  "llm.execution_grant_scope_mismatch": "flow_bootstrap.execution_grant_scope_mismatch",
+  "llm.execution_grant_no_longer_valid": "flow_bootstrap.execution_grant_no_longer_valid",
+  "llm.execution_grant_purpose_invalid": "flow_bootstrap.execution_grant_purpose_invalid"
+} as const satisfies Record<AutomationStudioLlmExecutionGrantRefusalCode, `flow_bootstrap.execution_grant_${string}`>);

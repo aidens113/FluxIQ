@@ -9,6 +9,7 @@ import type { AutomationStudioLlmRequestRefusalCode } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError, parseAutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
+import { flowBootstrapThrownIssueCodes } from "./thrown-issue-codes.ts";
 
 /**
  * The failure for a phase, under the most specific code the caller can vouch
@@ -24,9 +25,12 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function flowBootstrapPhaseFailure(
   stage: AutomationStudioFlowBootstrapFailureStage,
   accounting?: AutomationStudioFlowBootstrapFailureDiagnostic["accounting"],
-  requestedCode?: AutomationStudioFlowBootstrapPhaseFailureCode
+  requestedCode?: AutomationStudioFlowBootstrapPhaseFailureCode,
+  /** What the catch caught, where it recognised nothing: named by class and Core frame, never by message. */
+  thrown?: unknown
 ): AutomationStudioFlowBootstrapGenerationError {
   const code = phaseFailureCode(stage, accounting, requestedCode);
+  const issueCodes = flowBootstrapThrownIssueCodes(thrown);
   const state = automationStudioFlowBootstrapFailureState(code, stage, automationStudioFlowBootstrapProviderStatus(accounting?.providerStatus));
   // A phase failure names a cost only where the record would be wrong without
   // one. Past the request the accounting is what the build actually spent; at
@@ -40,7 +44,8 @@ export function flowBootstrapPhaseFailure(
     retryable: state.retryable,
     providerInvocation: state.providerInvocation,
     providerResponse: state.providerResponse,
-    ...(keepAccounting ? { accounting } : {})
+    ...(keepAccounting ? { accounting } : {}),
+    ...(issueCodes.length ? { issueCodes } : {})
   });
 }
 

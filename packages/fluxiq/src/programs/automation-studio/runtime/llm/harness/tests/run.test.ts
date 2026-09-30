@@ -254,6 +254,43 @@ describe("what the harness claims about retrying a temporary fault", () => {
  * arithmetic is proved in `provider-retry/tests/`; what these tests are about is
  * what the harness says once it has run.
  */
+describe("what the harness says about a throw no adapter typed", () => {
+  // `run-mun5e1ie-5aeefbbd`: the first call threw, the record said
+  // `provider_transport_unknown` and nothing about the throw. The throw's own
+  // account now rides on the failure's metadata, screened, and never on its
+  // message -- the message is what an intervention's validation line prints.
+  it("carries the class, the cause's code and the screened message on the failure's metadata", async () => {
+    const result = await harness({
+      provider: {
+        metadata: { provider: "deepseek", model: "deepseek-flash" },
+        runTask: async () => { throw new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }); }
+      }
+    });
+    const failure = result.diagnostics.find((diagnostic) => diagnostic.code === "llm.provider_request_failed");
+
+    expect(result.ok).toBe(false);
+    expect(failure?.message).toBe("The LLM provider request failed before a valid response was returned.");
+    expect(failure?.metadata).toEqual({
+      retryable: false,
+      providerThrow: { errorClass: "TypeError", causeCode: "ECONNRESET", message: "fetch failed" }
+    });
+    expect(JSON.stringify(result.intervention)).not.toContain("ECONNRESET");
+  });
+
+  it("drops a message that names a credential and keeps the codes", async () => {
+    const result = await harness({
+      provider: {
+        metadata: { provider: "deepseek", model: "deepseek-flash" },
+        runTask: async () => { throw new TypeError("request failed with Authorization: Bearer x", { cause: { code: "UND_ERR_SOCKET" } }); }
+      }
+    });
+
+    expect(result.diagnostics.find((diagnostic) => diagnostic.code === "llm.provider_request_failed")?.metadata?.providerThrow)
+      .toEqual({ errorClass: "TypeError", causeCode: "UND_ERR_SOCKET", withheld: ["message_credential_shaped"] });
+    expect(JSON.stringify(result)).not.toContain("Bearer");
+  });
+});
+
 function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<AutomationStudioLlmTaskResult> {
   return runAutomationStudioLlmHarness({
     taskKind: "runtime_diagnosis",

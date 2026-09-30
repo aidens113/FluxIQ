@@ -1,5 +1,7 @@
 export * from "./SettingsViews";
 export * from "./FlowSettingsView";
+export * from "./AiProviderSettingsSection";
+export * from "./ai-provider-model";
 export * from "./SubflowSettingsView";
 export * from "./flow-settings-model";
 export * from "./persistence-check";

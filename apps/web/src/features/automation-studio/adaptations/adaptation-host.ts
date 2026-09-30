@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
 import { reviewFlowAdaptation } from "./adaptation-commands";
-import { getFlowAdaptation, listFlowAdaptations } from "./adaptation-queries";
+import { getFlowAdaptation, listFlowAdaptations, loadFlowChangeTopology } from "./adaptation-queries";
 export type AdaptationsViewHostModel = {
   projectId: string | null;
   flow: any;
@@ -16,6 +16,8 @@ export type AdaptationCommands = {
   listAdaptations(payload: Record<string, any>): ReturnType<typeof listFlowAdaptations>;
   loadAdaptation(payload: Record<string, any>): ReturnType<typeof getFlowAdaptation>;
   reviewAdaptation(payload: Record<string, any>): ReturnType<typeof reviewFlowAdaptation>;
+  /** The Flow's current Router and Subflows, for a Flow Bootstrap before/after diff. Optional: without it the diff shows the proposal alone. */
+  loadTopology?(payload: Parameters<typeof loadFlowChangeTopology>[1]): ReturnType<typeof loadFlowChangeTopology>;
 };
 
 export function useAdaptationCommands(): AdaptationCommands {
@@ -23,6 +25,7 @@ export function useAdaptationCommands(): AdaptationCommands {
   return useMemo(() => ({
     listAdaptations: (payload) => listFlowAdaptations(transport, payload),
     loadAdaptation: (payload) => getFlowAdaptation(transport, payload),
-    reviewAdaptation: (payload) => reviewFlowAdaptation(transport, payload)
+    reviewAdaptation: (payload) => reviewFlowAdaptation(transport, payload),
+    loadTopology: (payload) => loadFlowChangeTopology(transport, payload)
   }), [transport]);
 }

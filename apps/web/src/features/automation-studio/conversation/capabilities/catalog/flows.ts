@@ -6,9 +6,17 @@
 // `flow.build` authors from the instruction alone, and `flow.explore` opens the
 // site and builds from what actually worked there. A person who says "build it"
 // gets the first; one who says "try it on the website" gets the second.
+//
+// `flow.improve` is the third door, and the one for a Flow that already has
+// steps: the person says what should be different, that is saved as one more
+// instruction on the Flow, and the Flow's own steps are amended from the live
+// site (Core's `extend`) into a suggested change to review with the
+// `adaptation.*` capabilities.
 
-import { generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, saveFlowGenerationInstruction } from "../../../authoring";
+import { flowModelBinding, flowModelFromDetail, generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, improveFlowFromWebsiteAdaptation, saveFlowGenerationInstruction, saveFlowImprovementInstruction } from "../../../authoring";
 import { saveFlowInstruction } from "../../../instructions";
+import { issueLlmExecutionGrant } from "../../../runtime";
+import { loadFlowSettingsDetail } from "../../../settings";
 import { automationStudioViewId } from "../../../views";
 import { definePanelCapability, panelCapabilityResult, type PanelCapability } from "../contract";
 import { PROJECT, FLOW, PIN } from "./argument";
@@ -80,6 +88,46 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     )
   }),
   definePanelCapability({
+    id: "flow.improve",
+    title: "Improve a Flow that already has steps",
+    summary: "Says what an existing Flow should do differently, then has the model amend its steps on the real website into a suggested change for you to review.",
+    group: "Flows",
+    phrases: ["improve the flow", "change what it does", "make it also handle", "it should also", "fix it so that", "teach it to"],
+    control: { view: automationStudioViewId.flowEditor, label: "Improve automation" },
+    endpoints: ["get-flow-metadata-detail", "save-flow-instruction", "issue-llm-execution-grant", "generate-flow-bootstrap-adaptation"],
+    arguments: [
+      PROJECT,
+      FLOW,
+      { name: "change", kind: "text", describe: "What the Flow should do differently, in plain words.", required: true }
+    ],
+    consequences: ["modify_existing"],
+    // It issues its own grant, and only after saving. The words are saved
+    // first because the build reads the Flow's active instructions and nothing
+    // else; saving changes the Flow's execution digest, so a grant issued
+    // before the save -- by `permission.allowModelRun` -- is stale by the time
+    // the build claims it, and Core refuses it ("LLM execution grant is no
+    // longer valid."). The Flow is read through its metadata detail because the
+    // browser may not read a whole Flow document (`data-request-policy.ts`).
+    invoke: async (context, args) => {
+      const projectId = str(args, "projectId");
+      const flowId = str(args, "flowId");
+      const read = await loadFlowSettingsDetail(context.transport, { projectId, flowId });
+      if (!read.ok) return panelCapabilityResult(read, "", "The Flow could not be read, so nothing was changed.");
+      const binding = flowModelBinding(projectId, flowModelFromDetail(read.payload?.flow));
+      if (!binding.ok) return { status: "failed", summary: "This Flow has no DeepSeek model key chosen. Choose one in the Flow's settings first.", error: "This Flow has no DeepSeek model key chosen." };
+      const saved = await saveFlowImprovementInstruction(context.transport, { projectId, flowId, instruction: str(args, "change") });
+      if (!saved.ok) return panelCapabilityResult(saved, "", "What should change could not be saved, so nothing was built.");
+      const issued = await issueLlmExecutionGrant(context.transport, binding.payload);
+      const grantId = issued.ok ? issued.payload?.grant?.grantId : undefined;
+      if (!issued.ok || typeof grantId !== "string" || !grantId) return panelCapabilityResult(issued.ok ? { ok: false, error: "Core issued no grant." } : issued, "", "The model run could not be allowed, so nothing was built.");
+      return panelCapabilityResult(
+        await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId, llmExecutionGrantId: grantId }),
+        "Worked out the change on the website. It is waiting in Suggested changes for you to accept or reject.",
+        "The improvement could not be worked out."
+      );
+    }
+  }),
+  definePanelCapability({
     id: "flow.instruct",
     title: "Add a standing instruction to a Flow",
     summary: "Records an instruction the Flow follows every time it runs.",
@@ -132,3 +180,4 @@ function instructionTitle(text: string): string {
   const sentence = firstLine.split(/(?<=[.!?])\s/u)[0] ?? firstLine;
   return sentence.length > 80 ? `${sentence.slice(0, 77).trimEnd()}...` : sentence;
 }
+

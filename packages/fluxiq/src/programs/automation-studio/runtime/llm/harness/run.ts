@@ -11,6 +11,7 @@ import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
 import { validRequestIdentity } from "./json-bounds.ts";
+import { automationStudioLlmScreenedProviderThrow } from "./throw-screen.ts";
 import { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 import { expectedOutputForTask } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, AutomationStudioLlmTaskResult } from "./task-request.ts";
@@ -188,6 +189,9 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   const retryStated = retryDiagnostics.length > 0 ? { providerRetry: call.retry } : {};
   if (!call.ok) {
     const failure = call.failure;
+    // An untyped throw's own account, screened here and nowhere earlier
+    // (`./throw-screen.ts`): the normalizer holds its message unscreened.
+    const providerThrow = failure.thrown ? automationStudioLlmScreenedProviderThrow(failure.thrown) : undefined;
     const diagnostics = [
       ...context.instructions.diagnostics,
       {
@@ -196,7 +200,11 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
         message: failure.message,
         metadata: {
           retryable: failure.retryable,
-          ...(failure.status !== undefined ? { providerStatus: failure.status } : {})
+          ...(failure.status !== undefined ? { providerStatus: failure.status } : {}),
+          ...(failure.grantRefusalReason ? { grantRefusalReason: failure.grantRefusalReason } : {}),
+          // Metadata, never the diagnostic's message: the message is what an
+          // intervention's validation line prints.
+          ...(providerThrow ? { providerThrow } : {})
         }
       },
       // After the failure, never before it, and never as an error. The projection

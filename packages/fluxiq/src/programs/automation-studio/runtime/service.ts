@@ -89,11 +89,11 @@ import {
 export type { AutomationStudioBuildAndAdaptExecutionGrant, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioLlmExecutionGrantRefusalCode, type AutomationStudioLlmExecutionGrantRefusalCode, automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForGrant, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
+import { automationStudioLlmExecutionGrantRefusalCode, automationStudioFlowDraftPlanNodeIds, automationStudioRuntimeAdaptationContextForGrant, type AutomationStudioRuntimeSessionGrant } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftKeeper, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftKeeper, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_DRAFT_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import { assertAutomationStudioBootstrapHasNoRecordingProvenance, automationStudioBootstrapTargetRefusal, bootstrapAdaptationAsFlowAdaptation, normalizeAutomationStudioFlowBuildPlan, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioBootstrapAdaptation, type AutomationStudioBootstrapAdaptationMode, type AutomationStudioBootstrapAdaptationOrigin, type AutomationStudioBootstrapExistingTopology } from "./flow-bootstrap/index.ts";
@@ -210,7 +210,7 @@ import {
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -325,18 +325,6 @@ export type UpdateFlowSubflowInput = {
   proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"] | null;
   interventionModeOverride?: AutomationStudioFlowSubflow["interventionModeOverride"] | null;
   graphFlowId?: string;
-};
-
-/**
- * Core's four grant refusals as this entry point's own codes, so a refused
- * grant is named rather than falling into whichever stage default the build had
- * reached (`flow-bootstrap/generation-failure.ts`).
- */
-const FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES: Record<AutomationStudioLlmExecutionGrantRefusalCode, AutomationStudioFlowBootstrapPhaseFailureCode> = {
-  "llm.execution_grant_unavailable": "flow_bootstrap.execution_grant_unavailable",
-  "llm.execution_grant_scope_mismatch": "flow_bootstrap.execution_grant_scope_mismatch",
-  "llm.execution_grant_no_longer_valid": "flow_bootstrap.execution_grant_no_longer_valid",
-  "llm.execution_grant_purpose_invalid": "flow_bootstrap.execution_grant_purpose_invalid"
 };
 
 
@@ -1620,7 +1608,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
                 expectedOutput: "evidence_tool_decision", ...(signal ? { signal } : {})
               });
-              estimatedInputTokens += decision.request.estimatedInputTokens;
+              estimatedInputTokens += decision.request.estimatedInputTokens; if (decision.ok) { failureStage = "provider_output_validation"; failureCode = "flow_bootstrap.provider_output_validation_failed"; } // A decision has come back, so a later throw is not "before the provider" (`run-muncqlr0-3348202b`).
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             }),
@@ -1718,11 +1706,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       // Its own stage as well as its own code: the grant is what authorises the
       // call, so a refused grant belongs to provider resolution however far the
       // build had otherwise got.
-      if (refusal) throw flowBootstrapPhaseFailure("provider_resolution", failureAccounting, FLOW_BOOTSTRAP_GRANT_REFUSAL_CODES[refusal]);
+      if (refusal) throw flowBootstrapPhaseFailure("provider_resolution", failureAccounting, FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES[refusal]);
       // Which kind of throw it was, where nothing above recognised it. This
       // outer fallback covers setup and later named phases; an exception from
       // the harness itself is converted at its scoped request boundary above.
-      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode));
+      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode), error);
     } finally {
       // Public generation owns its grant; only the private reauthor wrapper retains the run-owned grant.
       if (!retainRunOwnedGrant && grantId) this.revokeLlmExecutionGrant?.(grantId);
@@ -2760,8 +2748,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             }
           }] : []
         }, adaptationContext);
-        const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-          detail: routedRunDetail,
+        const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: routedRunDetail, recovering: Boolean(adaptationContext), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+          detail,
           context: adaptationContext,
           runtimeFlow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical),
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}),
@@ -2770,7 +2758,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
           ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
-        });
+        }) });
         // A verified repair resumes a granted run too. Withholding it here is
         // what left an explicit repair applying a patch and then reporting the
         // original failure, with nothing having re-run.
@@ -2819,8 +2807,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {
       const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
-      const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-        detail: runDetail,
+      const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: runDetail, recovering: true, saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+        detail,
         context: adaptationContext,
         runtimeFlow: runtimeCanonical ? canonicalFlowDocument(runtimeCanonical) : runtimeFlow,
         ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
@@ -2828,7 +2816,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
         ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
-      });
+      }) });
       const retry = await this.rerunAfterRepair({
         projectId: input.projectId,
         session: next,

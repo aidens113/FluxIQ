@@ -94,7 +94,7 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
   loop: {
     minToolCalls: number;
-    /** The backstop: the grant's call count, or the loop's ceiling. */
+    /** The backstop: the grant's call count less the calls it spends outside the loop, or the loop's ceiling. */
     maxIterations: number;
     maxToolCalls: number;
     maxEvidenceBytes: number;
@@ -125,9 +125,16 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   maxTotalEstimatedCostUsd?: number | undefined;
   maxTotalTokensPerRun?: number | undefined;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
+  providerRetryCount?: number | undefined;
 }): AutomationStudioFlowBootstrapEvidenceLoopLimits {
   const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
-  const declared = positive(resolution.maxCallsPerRun) ? Math.trunc(resolution.maxCallsPerRun) : undefined;
+  // The grant's calls are not all the loop's. Reading the instruction for what
+  // it asks takes one (`service/instruction-authority.ts`), and each re-sent
+  // attempt after a temporary fault takes another, so a loop allowed every call
+  // asked for a decision the grant then refused as spent -- the build's ending
+  // named the grant, not the exhausted budget (`run-munaiz76-7026748c`).
+  const reserved = 1 + (Number.isInteger(resolution.providerRetryCount) && (resolution.providerRetryCount as number) > 0 ? resolution.providerRetryCount as number : 0);
+  const declared = positive(resolution.maxCallsPerRun) ? Math.max(1, Math.trunc(resolution.maxCallsPerRun) - reserved) : undefined;
   const maxIterations = Math.min(declared ?? ceiling.maxIterations, ceiling.maxIterations);
   // One more tool call than decisions: the loop's first observation is a tool
   // call made before any decision, and the last decision completes. So tool
@@ -135,7 +142,8 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
   const perCall = resolution.maxEstimatedCostUsd;
   const total = resolution.maxTotalEstimatedCostUsd;
-  const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;
+  // Shared across every call the grant makes, the reserved ones included, since each commits its reservation.
+  const share = total === undefined ? undefined : Math.floor((total / (maxIterations + (declared === undefined ? 0 : reserved))) * 1_000_000_000) / 1_000_000_000;
   const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
   // The most one decision may use, which the grant sets aside before each call.
   const tokens = resolveAutomationStudioLlmTokenLimits(resolution.tokenLimits).limits;

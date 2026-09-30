@@ -65,6 +65,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
   type AutomationStudioFlowBootstrapAcceptance,
@@ -82,6 +83,7 @@ import {
   type AutomationStudioFlowBuildPlan
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
@@ -199,8 +201,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // anything else, and the Flow cannot take a step without it. Putting it back
   // here is the Flow the reachability refusal would have asked the model for,
   // without the turn (`flow-bootstrap/reachability/start-step.ts`).
-  const draftSteps = input.draftSteps
-    ? automationStudioFlowBootstrapDraftWithStartStep({ steps: input.draftSteps, startLocation: input.startLocation }).steps
+  const withStart = input.draftSteps
+    ? automationStudioFlowBootstrapDraftWithStartStep({ steps: input.draftSteps, startLocation: input.startLocation })
+    : undefined;
+  const draftSteps = withStart?.steps;
+  // Said on the record whichever way the check goes: the Flow judged here has a
+  // step the model had taken out, and a reader of the run must be able to see it.
+  const restoredStep: AutomationStudioLlmEvidenceRestoredStep | undefined = withStart?.restored
+    ? { step: withStart.restored.position, withdrawnAs: withStart.restored.withdrawnAs }
     : undefined;
   const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
   const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
@@ -288,8 +296,12 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     // told cannot answer the instruction, and the issue code says which way.
     failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: acts.missingActs, instruction: acts.instruction } });
   }
-  if (failures.length || !buildPlan || !accepted.ok) return refused(failures, accepted.script, answerability);
-  return { ok: true, summary: accepted.summary, buildPlan, check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false } } };
+  const restoredField = restoredStep ? { restoredStep } : {};
+  if (failures.length || !buildPlan || !accepted.ok) {
+    const verdict = refused(failures, accepted.script, answerability);
+    return verdict.ok ? verdict : { ...verdict, check: { ...verdict.check, ...restoredField } };
+  }
+  return { ok: true, summary: accepted.summary, buildPlan, check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField } };
 }
 
 /** Registry validation, which may throw. */
@@ -334,7 +346,12 @@ function fromDraft(
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): AutomationStudioFlowBootstrapAcceptance {
-  const summary = typeof result.summary === "string" && result.summary.trim() ? result.summary.trim() : "Flow built from the steps that ran.";
+  // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
+  // summary is one sentence about the Flow, and refusing a whole Flow because the
+  // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
+  // (`bootstrap.completion_profile_limit_exceeded`, `maxSummaryLength`).
+  const written = typeof result.summary === "string" ? result.summary.replace(/\s+/gu, " ").trim() : "";
+  const summary = (written || "Flow built from the steps that ran.").slice(0, AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength);
   const assembled = assembleAutomationStudioFlowDraftPlan({
     steps: steps.filter(automationStudioFlowDraftStepIsProposed),
     write: automationStudioFlowBootstrapDraftNodeStep,

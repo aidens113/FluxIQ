@@ -121,6 +121,7 @@ const FLOW_BOOTSTRAP_PROVIDER_REQUEST_RULES: {
   "flow_bootstrap.provider_http_error": { retryable: "server_error", providerInvocation: "attempted", providerResponse: "by_status" },
   "flow_bootstrap.provider_network_error": { retryable: true, providerInvocation: "attempted", providerResponse: "unknown" },
   "flow_bootstrap.provider_secret_unavailable": { retryable: false, providerInvocation: "not_attempted", acceptedProviderInvocations: PREFLIGHT_WITH_LEGACY_ATTEMPTED, providerResponse: "not_received" },
+  "flow_bootstrap.execution_grant_revoked_in_flight": { retryable: false, providerInvocation: "attempted", providerResponse: "received" },
   // The three kinds of unrecognised throw. Whether the request had gone out
   // when it was thrown is exactly what is not known, so none of them claims an
   // answer, and none is retryable as it stands: an abort and a Core defect are

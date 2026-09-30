@@ -15,8 +15,21 @@ import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerabili
  * content the model has not already seen from its own tools.
  */
 export type AutomationStudioLlmEvidenceCompletionCheck =
-  | { ok: true; answerability?: AutomationStudioLlmEvidenceLoopAnswerability }
-  | { ok: false; issueCodes: readonly string[]; feedback: JsonObject; answerability?: AutomationStudioLlmEvidenceLoopAnswerability };
+  | { ok: true; answerability?: AutomationStudioLlmEvidenceLoopAnswerability; restoredStep?: AutomationStudioLlmEvidenceRestoredStep }
+  | { ok: false; issueCodes: readonly string[]; feedback: JsonObject; answerability?: AutomationStudioLlmEvidenceLoopAnswerability; restoredStep?: AutomationStudioLlmEvidenceRestoredStep };
+
+/**
+ * A withdrawn draft step the check put back before checking: which one, by the
+ * draft position it had, and how the model had withdrawn it. Content-free --
+ * a position and a closed word -- so it may travel on every published record.
+ *
+ * Flow Bootstrap restores the step that reached the start location when the
+ * draft's amendments had withdrawn it (`../../flow-bootstrap/reachability/start-step.ts`),
+ * and that silently changed the Flow a completion was judged on: nothing in a
+ * run's record said the Flow had a step the model had taken out.
+ */
+export type AutomationStudioLlmEvidenceRestoredStep = { step: number; withdrawnAs: "dropped" | "exploratory" };
 
 /** The evidence entry a refused completion's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID = "core.completion_check";
+

@@ -32,7 +32,17 @@ describe("the Flow Bootstrap budget", () => {
     });
 
     expect(limits.loop.budget).toEqual({ maxTotalTokens: 600_000, maxTokensPerDecision: 56_000, maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
-    expect(limits.loop.maxIterations).toBe(64);
+    // One call is the instruction authority's, not the loop's.
+    expect(limits.loop.maxIterations).toBe(63);
+  });
+
+  // `run-munaiz76-7026748c`: 48 calls, and the loop's 48th decision was refused
+  // by the grant as spent -- the authority had taken one. Each re-sent attempt
+  // takes one too, so the loop stops by its own budget, before the grant does.
+  it("leaves the grant the instruction authority's call and every retry it allows", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 48, providerRetryCount: 2 }).loop.maxIterations).toBe(45);
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 48 }).loop.maxIterations).toBe(47);
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 1, providerRetryCount: 2 }).loop.maxIterations).toBe(1);
   });
 
   it("names only the bounds the resolution declared, and keeps a cost ceiling under a dollar", () => {
@@ -55,7 +65,8 @@ describe("the unusable-decision streak", () => {
   });
 
   it("never exceeds what the loop may spend, so the loop accepts it", () => {
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 2 }).maxConsecutiveUnusableDecisions).toBe(2);
+    // Three calls leave the loop two: one is the instruction authority's.
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3 }).maxConsecutiveUnusableDecisions).toBe(2);
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 1 }).maxConsecutiveUnusableDecisions).toBe(1);
   });
 });
@@ -64,10 +75,10 @@ describe("the unusable-decision streak", () => {
 // nothing was declared. It now takes the resolution's call count, or the loop's
 // own ceiling, and splits the grant's purse so every authorised call can pay.
 describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
-  it("lets a default 26-call grant iterate 26 times, past the old cap of eight", () => {
+  it("lets a default 26-call grant iterate 25 times, past the old cap of eight, leaving the authority its call", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes, maxEvidenceContextBytes: 24_000, budget: { maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 25, maxToolCalls: 26, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes, maxEvidenceContextBytes: 24_000, budget: { maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
     // Each decision reserves a twenty-sixth of $2, never the $0.25 per-call
     // cap: at $0.25 the grant would refuse the ninth decision on cost.
     expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(2 / 26, 8);
@@ -106,7 +117,7 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
 
     expect(limits.loop.maxIterations).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
     expect(limits.loop.maxToolCalls).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls);
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3 }).loop).toMatchObject({ maxIterations: 3, maxToolCalls: 4 });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 4 }).loop).toMatchObject({ maxIterations: 3, maxToolCalls: 4 });
   });
 
   it("keeps a per-call cost that is already the smaller of the two, and passes one through when no total is given", () => {

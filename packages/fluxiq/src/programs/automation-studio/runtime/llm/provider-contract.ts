@@ -1,4 +1,11 @@
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
+import {
+  AutomationStudioLlmExecutionGrantRefusal,
+  automationStudioLlmExecutionGrantRefusedAfterResponse,
+  type AutomationStudioLlmExecutionGrantCallRefusalReason,
+  type AutomationStudioLlmExecutionGrantRefusalCode
+} from "./grant-refusal/index.ts";
+import { automationStudioLlmProviderThrowRead, type AutomationStudioLlmProviderThrowRead } from "./throw-account/index.ts";
 
 /**
  * Every way a provider refuses a request before sending it, one code per check.
@@ -110,8 +117,8 @@ export class AutomationStudioLlmProviderError extends Error {
      * What the provider said, for a caller keeping a local diagnostic.
      *
      * **It is whatever the adapter put here, and by itself it is never
-     * published.** It exists because a 400 is a client error — the request was
-     * wrong — and the only thing that says *how* is the body the provider sends
+     * published.** It exists because a 400 is a client error â€” the request was
+     * wrong â€” and the only thing that says *how* is the body the provider sends
      * back with it. Two live runs died on their first call with an unexplained
      * 400 and this was thrown away unread one line after being in hand.
      *
@@ -132,8 +139,8 @@ export class AutomationStudioLlmProviderError extends Error {
      * adapter and bounded by `refusal-record.ts`.
      *
      * This is the field a refusal should arrive on. It is provider-neutral on
-     * purpose — a refusal is a status, what the provider said about it, the
-     * shape of the request it refused, and what was deliberately left out — so
+     * purpose â€” a refusal is a status, what the provider said about it, the
+     * shape of the request it refused, and what was deliberately left out â€” so
      * no reader downstream has to know which adapter produced it, and no reader
      * has to re-parse a string of unknown shape to find out.
      */
@@ -155,13 +162,39 @@ export type AutomationStudioLlmOpaqueSecretResolver = (input: {
 }) => Promise<string>;
 
 export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
-  code: AutomationStudioLlmProviderErrorCode | "llm.provider_request_failed";
+  code: AutomationStudioLlmProviderErrorCode | AutomationStudioLlmExecutionGrantRefusalCode | "llm.provider_request_failed";
   message: string;
   retryable: boolean;
   status?: number;
   provenance: AutomationStudioLlmProviderFailureProvenance;
   refusal?: AutomationStudioLlmProviderRefusal;
+  /** Which check refused, where the grant wrapping the provider refused the call. */
+  grantRefusalReason?: AutomationStudioLlmExecutionGrantCallRefusalReason;
+  /**
+   * What an untyped throw was, as read (`throw-account/`). Only on
+   * `llm.provider_request_failed`: a typed failure already names its fault with
+   * a code Core chose, and its message stays on the throw.
+   *
+   * **Its message is unscreened.** The account beside it is codes only; the
+   * message reaches a record only through the harness's screen
+   * (`harness/throw-screen.ts`), which is the one caller that publishes it.
+   */
+  thrown?: AutomationStudioLlmProviderThrowRead;
 } {
+  // The grant wraps the provider, so its refusals are thrown from inside the
+  // call. They are Core's own refusals with Core's own codes, and flattening them
+  // to `llm.provider_request_failed` is how a refused grant was recorded as a
+  // transport failure (`grant-refusal/call-refusal.ts`).
+  if (error instanceof AutomationStudioLlmExecutionGrantRefusal) {
+    const afterResponse = automationStudioLlmExecutionGrantRefusedAfterResponse(error.reason);
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: false,
+      provenance: afterResponse ? { providerInvocation: "attempted", providerResponse: "received" } : { providerInvocation: "not_attempted", providerResponse: "not_received" },
+      ...(error.reason ? { grantRefusalReason: error.reason } : {})
+    };
+  }
   const typed = structurallyTypedProviderError(error);
   if (typed) {
     const refusal = refusalFromProviderError(error);
@@ -174,11 +207,16 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
       ...(refusal ? { refusal } : {})
     };
   }
+  // The code says only that something threw. What threw is the one thing that
+  // can tell a reset socket from a failed name lookup from a bug in an adapter,
+  // and `run-mun5e1ie-5aeefbbd` was stored without it.
+  const thrown = automationStudioLlmProviderThrowRead(error);
   return {
     code: "llm.provider_request_failed",
     message: "The LLM provider request failed before a valid response was returned.",
     retryable: false,
-    provenance: { providerInvocation: "unknown", providerResponse: "unknown" }
+    provenance: { providerInvocation: "unknown", providerResponse: "unknown" },
+    ...(thrown ? { thrown } : {})
   };
 }
 
@@ -187,8 +225,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
  *
  * Read from a real `AutomationStudioLlmProviderError` and never from a
  * structurally typed clone, for the same reason `provenance` is: a clone comes
- * from outside this module's guarantees — another bundle, a provider's own
- * object, a test double — and its `code`, `retryable` and `status` are read
+ * from outside this module's guarantees â€” another bundle, a provider's own
+ * object, a test double â€” and its `code`, `retryable` and `status` are read
  * because each is checked against Core's own vocabulary and ranges. A refusal
  * record cannot be checked that way. It carries the provider's sentence, and
  * the one thing that makes that sentence publishable is that the adapter which

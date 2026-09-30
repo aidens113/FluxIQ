@@ -1,5 +1,7 @@
 import type { ProgramCommandTransport } from "../data/program-transport";
+import { saveFlowInstruction } from "../instructions";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
+import { improvementInstruction } from "./existing-flow-improvement";
 
 // A website exploration iterates for as long as Core's run lease allows, so the
 // browser waits out the grant's claim window, that whole lease, and the reply.
@@ -19,5 +21,39 @@ export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommand
     evidenceGuided: true
   }, {
     policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
+  });
+}
+
+/**
+ * Improves a Flow that already has steps. It is an exploration -- the model
+ * opens the page and sees what the Flow does not handle -- run as Core's
+ * `extend`, so the Flow's own steps are the draft the model amends and its
+ * Router, Subflow and node ids are kept.
+ */
+export function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; llmExecutionGrantId: string }) {
+  return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", {
+    ...payload,
+    evidenceGuided: true,
+    mode: "extend"
+  }, {
+    policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
+  });
+}
+
+/**
+ * Saves what a person said should change as a standing, required instruction
+ * on the Flow. `save-flow-generation-instruction` is creation's and refuses a
+ * Flow that already has steps; an improvement is one more thing the Flow is
+ * asked to do, beside what it was already asked, so it is an instruction of
+ * its own.
+ */
+export function saveFlowImprovementInstruction(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; instruction: string; instructionId?: string }) {
+  return saveFlowInstruction(api, {
+    projectId: payload.projectId,
+    flowId: payload.flowId,
+    // Given, the person reworded an improvement they already asked for, so the
+    // same instruction is updated rather than a second one left beside it.
+    ...(payload.instructionId ? { instructionId: payload.instructionId } : {}),
+    ...improvementInstruction(payload.instruction)
   });
 }

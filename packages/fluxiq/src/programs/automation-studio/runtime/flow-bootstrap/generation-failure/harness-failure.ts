@@ -8,6 +8,14 @@
 // too, so a projection cannot describe a state the reader will refuse. Three
 // copies of that decision used to exist; this file held one of them.
 import { parseAutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
+// The leaf, not `runtime/llm/`: this directory and that one are a module cycle
+// (`harness-vocabulary.ts`), and a value read through the `llm/` barrel from
+// here left its `export *` half-copied under vite-node.
+import {
+  automationStudioLlmExecutionGrantRefusedAfterResponse,
+  type AutomationStudioLlmExecutionGrantCallRefusalReason,
+  type AutomationStudioLlmExecutionGrantRefusalCode
+} from "../../llm/grant-refusal/index.ts";
 import type {
   AutomationStudioLlmDiagnostic,
   AutomationStudioLlmProviderMetadata,
@@ -20,9 +28,10 @@ import type {
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import type { AutomationStudioFlowBootstrapFailureStage, AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes } from "./diagnostic.ts";
+import { parseAutomationStudioFlowBootstrapProviderThrow } from "./diagnostic-parse.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
-import { FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES, FLOW_BOOTSTRAP_RUN_BUDGET_CODES } from "./harness-vocabulary.ts";
+import { FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES, FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES, FLOW_BOOTSTRAP_RUN_BUDGET_CODES } from "./harness-vocabulary.ts";
 
 export function flowBootstrapHarnessFailure(input: {
   diagnostics: AutomationStudioLlmDiagnostic[];
@@ -43,6 +52,8 @@ export function flowBootstrapHarnessFailure(input: {
   // diagnostics. Select the newest error so an earlier instruction diagnostic
   // cannot mask the actual provider failure at this projection boundary.
   const error = findLastError(input.diagnostics);
+  const refusedGrant = executionGrantHarnessFailure(error, input);
+  if (refusedGrant) return refusedGrant;
   const projected = input.provider
     ? resolvedProviderHarnessFailure(error?.code)
     : { ...preProviderHarnessFailure(error?.code), stage: "pre_provider_validation" as const };
@@ -65,10 +76,20 @@ export function flowBootstrapHarnessFailure(input: {
   // (`error.refusal ?? parse(error.responseBody)`), and a record the reader
   // would refuse does not lose the refusal, it loses the whole diagnostic.
   const providerRefusal = parseAutomationStudioLlmProviderRefusal(input.providerRefusal);
+  // What an untyped throw was, where the failure is the one code that says only
+  // that something threw -- by either path to it, the normalizer's
+  // `llm.provider_request_failed` or an unrecognised code whose diagnostic
+  // happens to carry one. Re-read through the reader's parse for the refusal's
+  // reason: a value it would refuse would take the whole diagnostic with it, so
+  // one that does not parse is left out and the failure keeps its code.
+  const providerThrow = projected.code === "flow_bootstrap.provider_transport_unknown"
+    ? parseAutomationStudioFlowBootstrapProviderThrow(error?.metadata?.providerThrow) ?? undefined
+    : undefined;
   return harnessFailure({
     ...projected,
     providerInvocation: input.providerInvocation,
     providerStatus,
+    ...(providerThrow ? { providerThrow } : {}),
     accounting: {
       ...request,
       ...(input.provider?.provider ? { provider: input.provider.provider } : {}),
@@ -83,6 +104,50 @@ export function flowBootstrapHarnessFailure(input: {
   });
 }
 
+/**
+ * A call the grant refused, under the grant's own code, with the check that
+ * refused it as the one issue code.
+ *
+ * These reached the `llm.provider_request_failed` arm below and were published
+ * as `provider_transport_unknown` -- a request whose answer is unknown -- for a
+ * call no request had been made for. `run-mun5e1ie-5aeefbbd` ended its first
+ * decision that way, and nothing in its record could say which check it was.
+ * All but one were refused before anything was sent, so they belong to provider
+ * resolution and carry no accounting; the one raised after the provider
+ * answered keeps the request stage and the call's accounting.
+ */
+function executionGrantHarnessFailure(
+  error: AutomationStudioLlmDiagnostic | undefined,
+  input: { request: AutomationStudioLlmTaskRequest; provider?: AutomationStudioLlmProviderMetadata }
+): AutomationStudioFlowBootstrapGenerationError | undefined {
+  const grantCode = error?.code;
+  if (typeof grantCode !== "string" || !Object.hasOwn(FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES, grantCode)) return undefined;
+  const reason = error?.metadata?.grantRefusalReason;
+  const afterResponse = typeof reason === "string" && automationStudioLlmExecutionGrantRefusedAfterResponse(reason as AutomationStudioLlmExecutionGrantCallRefusalReason);
+  const code: AutomationStudioFlowBootstrapPhaseFailureCode = afterResponse
+    ? "flow_bootstrap.execution_grant_revoked_in_flight"
+    : FLOW_BOOTSTRAP_EXECUTION_GRANT_CODES[grantCode as AutomationStudioLlmExecutionGrantRefusalCode];
+  const stage: AutomationStudioFlowBootstrapFailureStage = afterResponse ? "provider_request" : "provider_resolution";
+  const state = automationStudioFlowBootstrapFailureState(code, stage, undefined);
+  const issueCodes = typeof reason === "string" ? flowBootstrapDiagnosticIssueCodes([`llm.execution_grant.${reason}`]) : [];
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code,
+    stage,
+    retryable: state.retryable,
+    providerInvocation: state.providerInvocation,
+    providerResponse: state.providerResponse,
+    ...(issueCodes.length ? { issueCodes } : {}),
+    ...(afterResponse ? {
+      accounting: {
+        requestId: input.request.requestId,
+        estimatedInputTokens: input.request.estimatedInputTokens,
+        ...(input.provider?.provider ? { provider: input.provider.provider } : {}),
+        ...(input.provider?.model ? { model: input.provider.model } : {})
+      }
+    } : {})
+  });
+}
+
 function harnessFailure(projected: {
   code: AutomationStudioFlowBootstrapPhaseFailureCode;
   stage: AutomationStudioFlowBootstrapFailureStage;
@@ -90,6 +155,7 @@ function harnessFailure(projected: {
   providerStatus?: number | undefined;
   providerInvocation: AutomationStudioLlmProviderInvocationState;
   accounting: NonNullable<AutomationStudioFlowBootstrapGenerationError["diagnostic"]["accounting"]>;
+  providerThrow?: AutomationStudioFlowBootstrapGenerationError["diagnostic"]["providerThrow"];
 }): AutomationStudioFlowBootstrapGenerationError {
   const state = automationStudioFlowBootstrapFailureState(projected.code, projected.stage, projected.providerStatus);
   return new AutomationStudioFlowBootstrapGenerationError({
@@ -99,7 +165,8 @@ function harnessFailure(projected: {
     providerInvocation: state.acceptedProviderInvocations.includes(projected.providerInvocation) ? projected.providerInvocation : state.providerInvocation,
     providerResponse: state.providerResponse,
     ...(projected.issueCodes?.length ? { issueCodes: projected.issueCodes } : {}),
-    accounting: projected.accounting
+    accounting: projected.accounting,
+    ...(projected.providerThrow ? { providerThrow: projected.providerThrow } : {})
   });
 }
 

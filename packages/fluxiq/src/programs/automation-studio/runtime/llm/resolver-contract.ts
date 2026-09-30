@@ -16,6 +16,12 @@ export type AutomationStudioLlmProviderResolution = {
   maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
   /**
+   * How many times one call may be re-sent after a temporary fault. Each
+   * attempt spends one of the grant's calls, so a loop sized to the call count
+   * alone asks for calls the grant no longer has (`run-munaiz76-7026748c`).
+   */
+  providerRetryCount?: number;
+  /**
    * The lasting consequences the person allowed the run's actions to have, as
    * the grant the resolver was issued for holds them. Absent permits none: a
    * resolver that says nothing about permission has granted nothing, and a
