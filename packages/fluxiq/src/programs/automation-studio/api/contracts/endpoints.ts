@@ -79,6 +79,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   appendRecordingEntry: "append-recording-entry",
   appendRecordingNote: "append-recording-note",
   appendRecordingMarker: "append-recording-marker",
+  removeRecordingEntry: "remove-recording-entry",
   finalizeRecording: "finalize-recording",
   processFinalizedRecording: "process-finalized-recording",
   generateRecordingProposal: "generate-recording-proposal",

@@ -3,7 +3,7 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES, automationStudioRunChangedDurableBehavior } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
@@ -85,10 +85,8 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         const reason = error instanceof Error ? error.message : String(error);
         return { ok: false, error: `Run ${runtimeSession.runId} ended ${runtimeSession.status}, but its run detail could not be read: ${reason}`, payload: { runtimeSession, runDetailLink } };
       }
-      const durableBehaviorChanged = Boolean(runDetail?.adaptationIds?.length && runDetail.adaptationIds.some((adaptationId) => {
-        const attempt = runDetail.metadata?.runtimePatchAttempts;
-        return Array.isArray(attempt) && attempt.some((item) => typeof item === "object" && item && (item as any).adaptationId === adaptationId && (item as any).approvalDecision?.autoApply === true);
-      }));
+      // The same reading every stored run summary carries, so this answer and `list-flow-runs` agree.
+      const durableBehaviorChanged = runDetail ? automationStudioRunChangedDurableBehavior(runDetail) : false;
       return {
         ok: true,
         payload: {

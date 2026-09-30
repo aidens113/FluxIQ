@@ -16,6 +16,7 @@ import type { AutomationStudioRuntimeRunSummary } from "../../../storage/index.t
 import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions } from "../../flow-version/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
+import { automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
@@ -65,6 +66,7 @@ export function flowRunSummaryWithInterventionSummaries(detail: AutomationStudio
     actionAttemptCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount,
     interventionCount: interventionSummaries.length,
     adaptationCount: new Set(detail.adaptationIds ?? []).size,
+    durableBehaviorChanged: automationStudioRunChangedDurableBehavior(detail),
     ...(hasTokenUsage ? { tokenUsage } : {}),
     ...(interventionSummaries.length ? { interventionSummaries } : {})
   };

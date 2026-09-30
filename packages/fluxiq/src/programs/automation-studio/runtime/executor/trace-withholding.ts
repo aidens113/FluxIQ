@@ -1,5 +1,5 @@
 // Withholding, from the trace a run persists, every value the run resolved out
-// of state.
+// of state, and every run input a caller supplied.
 //
 // A parameter state binding -- `{ $state: { path } }`, `nodes/parameter-bindings.ts`
 // -- is a *request* for a value the Flow document deliberately does not carry.
@@ -87,6 +87,16 @@ export type AutomationStudioTraceWithholding = {
    */
   record(authored: Record<string, JsonValue>, resolved: Record<string, JsonValue>): void;
   /**
+   * Records every text and number in values a caller supplied to the run whole
+   * -- its run inputs -- so a copy of one under any data key is withheld, not
+   * only the input at its own position. An input equal to the default the Flow
+   * document itself declares for it (`authored`) is authored, as a binding's
+   * untouched subtree is, and is not recorded: the document already holds it,
+   * and withholding it by value would blank every computed value that equals
+   * a default.
+   */
+  supply(values: Record<string, JsonValue>, authored?: Record<string, JsonValue>): void;
+  /**
    * Records values another run has already withheld from its own trace -- a
    * Call Flow child's -- so this trace withholds them wherever they reach it.
    * The parent executes with its child's real outputs, so they can.
@@ -110,6 +120,12 @@ export function automationStudioTraceWithholding(): AutomationStudioTraceWithhol
   return {
     record(authored, resolved) {
       recordSuppliedValue(authored, resolved, withheld, 0);
+    },
+    supply(values, authored = {}) {
+      for (const [key, value] of Object.entries(values)) {
+        if (Object.hasOwn(authored, key) && sameJson(authored[key], value)) continue;
+        recordWithheldScalars(value, withheld, 1);
+      }
     },
     include(values) {
       for (const text of values.texts) if (text) withheld.texts.add(text);
@@ -199,6 +215,12 @@ function withheldTraceValue(value: unknown, rewrite: TraceRewrite, data: boolean
   // A subtree with nothing withheld is handed back as it arrived, so the rewrite
   // never allocates a copy of a trace it did not change.
   return changed ? record : value;
+}
+
+function sameJson(left: JsonValue | undefined, right: JsonValue): boolean {
+  if (left === right) return true;
+  if (left === undefined || typeof left !== "object" || typeof right !== "object" || left === null || right === null) return false;
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isPlainRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

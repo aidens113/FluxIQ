@@ -206,7 +206,8 @@ import {
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements
+  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements,
+  AutomationStudioRecordingEntryRemoval
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
@@ -738,6 +739,9 @@ export class AutomationStudioService {
       return next;
     });
   }
+
+  // t182: undo one captured step of an open recording (`service/recordings/entry-removal-command.ts`). A collaborator, not a method: the ports run only when called.
+  readonly recordingEntryRemoval = new AutomationStudioRecordingEntryRemoval({ lock: (projectId, recordingId, run) => this.locks.withRecordingMutationLock(projectId, recordingId, run), read: (projectId, recordingId) => this.recordings.getRawRecordingSession(recordingId, projectId), save: async (projectId, recording) => { await this.repositories.recordingSessions.put(recording); await this.writeProjectRecordingSession(projectId, recording); await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline); } });
 
   summarizeRecordingSession(recording: RecordingSession): RecordingSession {
     return summaryRecordingSession(recording);
@@ -4443,6 +4447,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: no storage root, so the in-memory repository is the only copy
     await this.projects.ensureProjectStructure(projectId);
     const sessionDir = this.recordingPaths.recordingSessionDirectory(projectId, recording.recordingId);
     const recordingDocument = { ...recording, timeline: [] };
@@ -4467,6 +4472,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingIndexSummary(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     await this.projects.ensureProjectStructure(projectId);
     await this.recordings.ensureProjectRecordingPipeline(projectId, recording);
     await this.indexes.writeRecordingIndex(projectId, (index) => ({
@@ -4530,6 +4536,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRecordingTimeline(projectId: string, recordingId: string, timeline: RecordingSession["timeline"]): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
     await mkdir(path.dirname(filePath), { recursive: true });
     const text = timeline.map((entry) => JSON.stringify(entry)).join("\n");
