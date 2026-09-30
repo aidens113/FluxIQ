@@ -291,6 +291,28 @@ describe("what the harness says about a throw no adapter typed", () => {
   });
 });
 
+// `run-munw7ffn-fe1cecd2`: 14 decisions refused as a malformed reply, with the
+// code and nothing else on the record. The adapter's account of the reply
+// rides on the failure's metadata, and the reply itself on nothing.
+describe("what the harness says about a reply it could not read", () => {
+  it("carries the malformed case, the finish reason, the length and the paid usage, and none of the content", async () => {
+    const content = '{"kind":"diagnosis","summary":"PRIVATE_PAGE_TEXT';
+    const result = await harness({
+      provider: deepSeek(() => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content } }],
+        usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 }
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.find((diagnostic) => diagnostic.code === "llm.provider_malformed_response")?.metadata).toEqual({
+      retryable: false,
+      providerReply: { case: "content_unclosed", finishReason: "stop", contentChars: content.length, usage: { inputTokens: 900, outputTokens: 40, totalTokens: 940, estimatedCostUsd: expect.any(Number) } }
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PAGE_TEXT");
+  });
+});
+
 function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<AutomationStudioLlmTaskResult> {
   return runAutomationStudioLlmHarness({
     taskKind: "runtime_diagnosis",

@@ -7,6 +7,21 @@ import { automationStudioResultReadAccounts } from "../accounts.ts";
 import { automationStudioResultReadSentence } from "../sentence.ts";
 import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "./earbuds-read.ts";
 
+/** The earbuds attempt with the read's own `conditions.seen`. */
+function withSeen(seen: Array<string | number | null>) {
+  const attempt = earbudsAttempt();
+  const extraction = attempt.metadata!.extraction as Record<string, unknown>;
+  return earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), seen } } } as never });
+}
+
+/** The earbuds step with its first condition on the Brightaisle Plus icon's accessible name, as `run-munw7ffn-fe1cecd2` authored it. */
+function plusNode() {
+  const node = earbudsNode();
+  const read = node.parameterValues!.extractList as { where: Array<Record<string, unknown>> };
+  read.where[0] = { read: { kind: "attribute", selector: ".result-card .plus-badge i", attribute: "aria-label", required: false }, is: "present" };
+  return node;
+}
+
 describe("a read's account", () => {
   it("says the pages, the stop, the items, and each condition as written with the rows it rejected", () => {
     const { reads, withheld } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
@@ -45,6 +60,36 @@ describe("a read's account", () => {
     read.where[3] = { field: "name", contains: [".sponsored-badge", "ear tips"] };
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
     expect(reads[0]?.conditions?.[3]).toEqual({ condition: "name contains [(withheld), \"ear tips\"]", rejected: 16 });
+  });
+
+  // `run-munw7ffn-fe1cecd2`: a condition on the Brightaisle Plus icon's accessible
+  // name reached the judge as `attribute aria-label is present`, and it advised
+  // adding the Plus condition the Flow already had.
+  it("says what a condition's own read found beside it, and nothing beside a condition over a column", () => {
+    const seen = ["Brightaisle Plus", "4.5 out of 5 stars", null, "Pro Earbuds"];
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [withSeen(seen)], flowNodes: [plusNode()], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions).toEqual([
+      { condition: "attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present", rejected: 13 },
+      // These three are their columns' own reads, named by the column, whose values are the rows: none is said.
+      { condition: "rating atLeast 4", rejected: 20 },
+      { condition: "price lessThan 50", rejected: 27 },
+      { condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16 }
+    ]);
+    const full = automationStudioResultReadSentence(reads[0]!, "full");
+    expect(full).toContain("attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present rejected 13 rows");
+    for (const locator of [...EARBUDS_LOCATORS, ".plus-badge"]) expect(JSON.stringify(reads) + full).not.toContain(locator);
+  });
+
+  it("withholds a found value shaped like a locator or a secret, or naming a denied key, and keeps the condition and its count", () => {
+    const said = (value: string | number) =>
+      automationStudioResultReadAccounts({ actionAttempts: [withSeen([value, null, null, null])], flowNodes: [plusNode()], deniedEvidenceKeys: ["inner_html"] }).reads;
+    // The contrast: a plain value is said.
+    expect(said("Brightaisle Plus")[0]?.conditions?.[0]?.condition).toBe("attribute aria-label (read \"Brightaisle Plus\" on a row it kept) is present");
+    for (const value of [".plus-badge > i", "aria-label=Plus", "sk-abcdefghij0123456789abcdef", "innerHTML", 7]) {
+      const reads = said(value);
+      expect(reads[0]?.conditions?.[0], String(value)).toEqual({ condition: "attribute aria-label is present", rejected: 13 });
+      if (typeof value === "string") expect(JSON.stringify(reads)).not.toContain(value);
+    }
   });
 
   it("carries counts alone where the domain declared no keys, since absent means nobody said", () => {

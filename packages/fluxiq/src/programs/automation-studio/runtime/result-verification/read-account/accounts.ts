@@ -109,12 +109,14 @@ function conditionAccounts(
   deniedKeys: readonly string[] | undefined
 ): NonNullable<AutomationStudioResultReadAccount["conditions"]> {
   const rejected = Array.isArray(filter?.rejected) ? filter.rejected : [];
+  // What each condition's own read found, positionally like the counts; `condition.ts` decides whether it may be said.
+  const seen = Array.isArray(filter?.seen) ? filter.seen : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
   const total = Math.min(MAX_CONDITIONS, Math.max(rejected.length, written.length));
   const accounts: NonNullable<AutomationStudioResultReadAccount["conditions"]> = [];
   for (let index = 0; index < total; index += 1) {
-    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys) : undefined;
+    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
     const rows = count(rejected[index]);
     accounts.push({ ...(condition ? { condition } : {}), ...(rows !== undefined ? { rejected: rows } : {}) });
   }

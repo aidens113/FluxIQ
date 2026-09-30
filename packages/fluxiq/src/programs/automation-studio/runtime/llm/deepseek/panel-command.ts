@@ -27,6 +27,7 @@ import type {
   AutomationStudioConversationModelTurn
 } from "../../conversations/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
+import { automationStudioLlmProviderReplyAccount } from "../reply-account.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, readAutomationStudioDeepSeekBoundedResponse } from "./bounded-read.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, type AutomationStudioDeepSeekModel } from "./models.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
@@ -123,9 +124,14 @@ function panelCommandContent(text: string): string {
   try {
     envelope = JSON.parse(text);
   } catch {
-    throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply was not JSON.", true);
+    throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply was not JSON.", true, undefined, undefined, undefined, undefined, { case: "envelope_not_json" });
   }
-  const content = (envelope as { choices?: Array<{ message?: { content?: unknown } }> } | null)?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply carried no answer.", true);
+  const choice = (envelope as { choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }> } | null)?.choices?.[0];
+  const content = choice?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    // Which of the two it was, and why the provider stopped: never the reply (`../reply-account.ts`).
+    const reply = automationStudioLlmProviderReplyAccount({ case: typeof content === "string" ? "content_empty" : "content_missing", finishReason: choice?.finish_reason, ...(typeof content === "string" ? { contentChars: content.length } : {}) });
+    throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply carried no answer.", true, undefined, undefined, undefined, undefined, reply);
+  }
   return content;
 }

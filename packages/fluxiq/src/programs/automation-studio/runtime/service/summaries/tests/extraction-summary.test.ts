@@ -184,6 +184,18 @@ describe("what the projection admits", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, fieldNames: ["__proto__"] } } })).toBeUndefined();
   });
 
+  it("copies what each condition's own read found, cut to sixty characters, and refuses a malformed list", () => {
+    const counts = { applied: 30, kept: 4, rejected: [26, 2], unfiltered: false };
+    const admitted = (seen: unknown) => extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { ...counts, seen } } } });
+    expect(admitted(["Brightaisle Plus", null])?.conditions).toEqual({ ...counts, seen: ["Brightaisle Plus", null] });
+    expect(admitted(["x".repeat(500), null])?.conditions).toEqual({ ...counts, seen: ["x".repeat(60), null] });
+    // Absent is a producer that predates it, and the report still arrives.
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: counts } } })?.conditions).toEqual(counts);
+    for (const malformed of [["Brightaisle Plus"], ["Brightaisle Plus", 3], [{ label: "Plus" }, null], "Brightaisle Plus", null]) {
+      expect(admitted(malformed), JSON.stringify(malformed)).toBeUndefined();
+    }
+  });
+
   it("refuses a condition report that kept more than it looked at, or whose rejections are unbounded", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 3, rejected: [], unfiltered: false } } } })).toBeUndefined();
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 1, rejected: Array.from({ length: 65 }, () => 0), unfiltered: false } } } })).toBeUndefined();

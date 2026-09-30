@@ -2,6 +2,7 @@
 // time went and nothing a run was shown or sent.
 import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopProgressTrace } from "../index.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "../../unusable-decision.ts";
 
 const SECRET_PAGE_TEXT = "Kettle 1.7L stainless, basket total 42.99";
 
@@ -52,6 +53,17 @@ describe("the evidence loop's progress trace", () => {
     await expect(traced.checkCompletion({ summary: SECRET_PAGE_TEXT }, { steps: [] })).resolves.toMatchObject({ ok: false });
     expect(lines.at(-1)).toMatch(/completion check ok=false issues=bootstrap\.instruction_actions_missing$/u);
     expect(lines.join("\n")).not.toContain("Kettle");
+  });
+
+  // `run-munw7ffn-fe1cecd2` printed `code=- issues=-` for all 14 of its
+  // unusable decisions: the issue codes sit on the error itself, and the
+  // reply's account was nowhere.
+  it("names an unusable decision by its issue codes and the unreadable reply's account", async () => {
+    const lines: string[] = [];
+    const unusable = new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "content_unclosed", finishReason: "stop", contentChars: 2140, usage: { outputTokens: 571 } });
+    const traced = automationStudioLlmEvidenceLoopProgressTrace({ ...loopInput(), decide: async (_input: { iteration: number; evidence: string[] }) => { throw unusable; } }, { FLUXIQ_BUILD_PROGRESS_TRACE: "1" }, (line) => lines.push(line));
+    await expect(traced.decide({ iteration: 7, evidence: [] })).rejects.toBe(unusable);
+    expect(lines.at(-1)).toMatch(/decide throw iteration=7 ms=\d+ name=AutomationStudioLlmUnusableDecisionError code=- issues=llm\.provider_malformed_response reply=content_unclosed finish=stop chars=2140 out=571$/u);
   });
 
   it("names a failed decision by its codes and rethrows it", async () => {

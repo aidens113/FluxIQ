@@ -20,8 +20,9 @@
 // the one part of them that is not page data travels: every member admitted
 // here is a count, a boolean, a word from a closed set, or a record field key,
 // which the same limits that govern a stored dataset's schema hold to letters,
-// digits, `_` and `-`. No selector, no page text, no URL and no prose can be
-// spelled in any of them.
+// digits, `_` and `-`. No selector, no URL and no prose can be spelled in any
+// of them, and no page text but the one bounded exception the last paragraph
+// names.
 //
 // **A summary is admitted whole or not at all.** The producer's own copy
 // (`domain/src/actions/extraction/summary.ts`) drops the whole summary rather
@@ -56,6 +57,15 @@
 // `listPresence` stays strict for a different reason: its two words answer a
 // yes/no question about whether the selector ever named an element, so that set
 // is closed by what it means and has nowhere to grow.
+//
+// **One member carries page text, bounded: `conditions.seen`.** A condition that
+// names its value by a read of its own is described without the part that
+// addresses the page, so `attribute aria-label is present` is all the judge of
+// `run-munw7ffn-fe1cecd2` knew of a Brightaisle Plus badge, and it advised adding
+// the condition the Flow already had. So the read reports, per condition, the
+// first value that condition's read found on an item it held of, or `null`, and
+// this projection copies it cut to `MAXIMUM_SEEN_CHARACTERS`. It is screened
+// where it is said, not here (`result-verification/read-account/condition.ts`).
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
@@ -110,6 +120,9 @@ const PAGINATION_STOP_UNKNOWN = "unknown";
  * is refused rather than republished at whatever length it came in.
  */
 const MAXIMUM_CONDITIONS = 64;
+
+/** The longest `conditions.seen` value carried: the producer's own bound (`domain/src/actions/extraction/seen-values.ts`), restated. */
+const MAXIMUM_SEEN_CHARACTERS = 60;
 
 /**
  * The read's summary, rebuilt member by member, or `undefined` when the attempt
@@ -200,10 +213,11 @@ function waitReport(value: unknown): JsonObject | undefined {
 }
 
 /**
- * What the read's `where` did, in counts alone: the items it was asked about,
- * the items every condition held of, one rejection count per condition
- * positionally, and whether the read answered with the rows its conditions
- * rejected because keeping only the survivors would have answered with none.
+ * What the read's `where` did: the items it was asked about, the items every
+ * condition held of, one rejection count per condition positionally, whether
+ * the read answered with the rows its conditions rejected because keeping only
+ * the survivors would have answered with none, and, from a producer that sends
+ * it, one value per condition its own read found (`seen`, see the header).
  */
 function conditionReport(value: unknown): JsonObject | undefined {
   if (!isJsonRecord(value)) return undefined;
@@ -215,7 +229,16 @@ function conditionReport(value: unknown): JsonObject | undefined {
   if (applied === undefined || kept === undefined || rejected === undefined || typeof value.unfiltered !== "boolean") return undefined;
   // A read cannot have kept more items than it looked at.
   if (kept > applied) return undefined;
-  return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered };
+  const seen = value.seen === undefined ? undefined : seenValues(value.seen, rejected.length);
+  if (value.seen !== undefined && seen === undefined) return undefined;
+  return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered, ...(seen ? { seen } : {}) };
+}
+
+/** One string or `null` per condition, each string cut to its bound, or `undefined` for anything else. */
+function seenValues(value: unknown, conditions: number): Array<string | null> | undefined {
+  if (!Array.isArray(value) || value.length !== conditions) return undefined;
+  if (!value.every((entry) => entry === null || typeof entry === "string")) return undefined;
+  return (value as Array<string | null>).map((entry) => (entry === null ? null : entry.slice(0, MAXIMUM_SEEN_CHARACTERS)));
 }
 
 function count(value: unknown): number | undefined {

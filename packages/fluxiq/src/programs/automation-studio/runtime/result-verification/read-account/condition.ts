@@ -19,6 +19,17 @@
 // a plain name -- `attribute data-sponsored is absent` is how an exclusion of
 // sponsored items reads.
 //
+// **What the read found, when the condition reads for itself.** A kind and an
+// attribute name do not say what a condition is about: `run-munw7ffn-fe1cecd2`
+// filtered on the aria-label of the store's Brightaisle Plus icon, its judge was
+// told `attribute aria-label is present`, and it advised adding a Plus condition
+// the Flow already had. So the one value the read reports that condition's read
+// found on an item it held of (the summary's `conditions.seen`) is said beside
+// the subject -- `attribute aria-label (read "Brightaisle Plus" on a row it kept)
+// is present` -- bounded, and withheld entirely when it would trip either screen
+// or is a key the domain denies. A condition over a column says no value: the
+// column's own values are the rows.
+//
 // **What is said about it.** Every other key of the condition is a relation the
 // model wrote, spelled as it wrote it (the domain's reader accepts several
 // spellings, and translating them here would be Core learning a grammar it does
@@ -37,7 +48,7 @@ import { automationStudioEvidenceKey, automationStudioLocatorShapedText, screenA
 const NAMING_KEYS = new Set(["field", "read"]);
 /** The longest condition wording carried. */
 const MAX_CONDITION_LENGTH = 200;
-/** The longest single compared string carried. */
+/** The longest single compared string carried, and the longest value a condition's read found. */
 const MAX_OPERAND_LENGTH = 60;
 /** The most compared values of one relation carried. */
 const MAX_OPERANDS = 6;
@@ -56,11 +67,14 @@ const NAME = /^[A-Za-z_][\w-]{0,63}$/u;
 export function automationStudioResultReadConditionText(
   condition: JsonValue | undefined,
   columns: JsonObject | undefined,
-  deniedKeys: readonly string[]
+  deniedKeys: readonly string[],
+  seen?: JsonValue | undefined
 ): string | undefined {
   if (!isRecord(condition)) return undefined;
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  const subject = subjectOf(condition, columns, denied);
+  const named = subjectOf(condition, columns, denied);
+  const found = named.ownRead ? foundText(seen, denied) : undefined;
+  const subject = found ? `${named.text} (read ${found} on a row it kept)` : named.text;
   const relations = Object.entries(condition)
     .filter(([key, value]) => !NAMING_KEYS.has(key) && key !== "not" && value !== null && value !== undefined && WORD.test(key))
     .map(([key, value]) => `${key} ${operandText(key, value)}`);
@@ -71,17 +85,31 @@ export function automationStudioResultReadConditionText(
   return sayable(bounded) ? bounded : undefined;
 }
 
-/** What the condition tests: a column key, or its own read described without the part that addresses the page. */
-function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): string {
+/**
+ * What the condition tests: a column key, or its own read described without the
+ * part that addresses the page -- and whether it is the latter, which is the
+ * only subject a value the read found is said beside.
+ */
+function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): { text: string; ownRead: boolean } {
   const named = condition.field;
-  if (typeof named === "string" && plainName(named, denied)) return named;
+  if (typeof named === "string" && plainName(named, denied)) return { text: named, ownRead: false };
   const read = condition.read;
-  if (!isRecord(read)) return "a value";
+  if (!isRecord(read)) return { text: "a value", ownRead: false };
   const column = columns ? Object.entries(columns).find(([key, declared]) => plainName(key, denied) && sameRead(declared, read))?.[0] : undefined;
-  if (column) return column;
+  if (column) return { text: column, ownRead: false };
   const kind = typeof read.kind === "string" && WORD.test(read.kind) ? read.kind : "value";
   const attribute = read.attribute;
-  return kind === "attribute" && typeof attribute === "string" && plainName(attribute, denied) ? `attribute ${attribute}` : `the item's ${kind}`;
+  const text = kind === "attribute" && typeof attribute === "string" && plainName(attribute, denied) ? `attribute ${attribute}` : `the item's ${kind}`;
+  return { text, ownRead: true };
+}
+
+/** A value the condition's read found, quoted and bounded, or `undefined` when there is none or it may not be said. */
+function foundText(seen: JsonValue | undefined, denied: ReadonlySet<string>): string | undefined {
+  if (typeof seen !== "string") return undefined;
+  const trimmed = seen.trim();
+  if (!trimmed || denied.has(automationStudioEvidenceKey(trimmed))) return undefined;
+  const bounded = trimmed.length <= MAX_OPERAND_LENGTH ? trimmed : `${trimmed.slice(0, MAX_OPERAND_LENGTH - 1)}…`;
+  return sayable(bounded) ? JSON.stringify(bounded) : undefined;
 }
 
 /** Whether a column's declaration and a condition's read address the same thing the same way. Whether either is required does not change what it reads. */

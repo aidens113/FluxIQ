@@ -73,9 +73,15 @@ async function refutedSession(): Promise<AutomationStudioRuntimeSession> {
   };
 }
 
-async function rerun() {
+/** The read itself fails on the re-run, so the repaired Flow ends failed. */
+const readFails: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => JSON.stringify(effect.payload ?? null).includes("results")
+  ? { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } }
+  : checkPassed(effect);
+
+async function rerun(options: { dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>; detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]> } = {}) {
   const context = await adaptationContext();
   const session = await refutedSession();
+  const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
   const result = await rerunAutomationStudioSessionAfterRepair({
@@ -90,8 +96,8 @@ async function rerun() {
     },
     projectId: PROJECT_ID,
     session,
-    detail: runtimeSessionToFlowRunDetail(session, PROJECT_ID),
-    graphOptions: { effectDispatcher: checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
+    detail: options.detailMetadata ? { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...options.detailMetadata } } : firstDetail,
+    graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
     adaptationContext: context,
     from: "start"
   });
@@ -128,5 +134,40 @@ describe("a repaired re-run of an optional press whose target is gone", () => {
     const detailIds = saved.at(-1)?.actionAttempts?.map((attempt) => attempt.attemptId) ?? [];
     expect(detailIds).toEqual(keptIds);
     expect(saved.at(-1)?.actionAttempts?.find((attempt) => attempt.attemptId === "check.attempt.6")?.status).toBe("failed");
+  });
+});
+
+// Live run `run-munw7ffn-fe1cecd2`: the re-run of a re-authored Flow failed,
+// and its detail carried no recovery marker, because the first pass had
+// succeeded and no recovery ever ran. The Lab read the failure as a recovery
+// still to come and waited 306 s for a record Core never writes.
+describe("the recovery marker on a finished repair re-run", () => {
+  it("says a failed re-run of a re-authored Flow has ended its recovery", async () => {
+    const { result, saved } = await rerun({ dispatcher: readFails });
+    const metadata = saved.at(-1)?.metadata as Record<string, any> | undefined;
+
+    expect(result?.session?.status).toBe("failed");
+    expect(metadata?.repairedRerun).toMatchObject({ attempted: true, status: "failed" });
+    expect(metadata?.recoveryState).toMatchObject({ state: "ended" });
+    expect(metadata?.recoveryState.endedAt).toBeGreaterThanOrEqual(metadata?.recoveryState.startedAt);
+  });
+
+  it("says a succeeded re-run has ended too, so no reader waits on it", async () => {
+    const { saved } = await rerun();
+
+    expect((saved.at(-1)?.metadata as Record<string, any> | undefined)?.recoveryState).toMatchObject({ state: "ended" });
+  });
+
+  it("keeps the marker of the recovery that ran before the re-run", async () => {
+    const ladder = { state: "ended", startedAt: 5, endedAt: 9 };
+    const { saved } = await rerun({ dispatcher: readFails, detailMetadata: { recoveryState: ladder } });
+
+    expect((saved.at(-1)?.metadata as Record<string, any> | undefined)?.recoveryState).toEqual(ladder);
+  });
+
+  it("replaces a first pass's running marker, since the re-run has finished", async () => {
+    const { saved } = await rerun({ dispatcher: readFails, detailMetadata: { recoveryState: { state: "running", startedAt: 5 } } });
+
+    expect((saved.at(-1)?.metadata as Record<string, any> | undefined)?.recoveryState).toMatchObject({ state: "ended" });
   });
 });

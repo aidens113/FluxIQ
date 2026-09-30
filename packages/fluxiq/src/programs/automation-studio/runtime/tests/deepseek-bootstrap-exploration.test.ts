@@ -516,8 +516,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // Every malformed reply was paid for nothing, so the record says so.
-      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 0, totalTokens: 0 }),
+      // Every malformed reply was paid for, and the record says what it cost.
+      // It used to say nothing -- zero tokens after eight paid calls -- and
+      // `run-munw7ffn-fe1cecd2`'s re-author left 14 such calls out of its
+      // accounting that way (`runtime/llm/reply-account.ts`).
+      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 9_600, outputTokens: 1_200, totalTokens: 10_800 }),
       // One step per decision, each naming the iteration that paid for it --
       // which is the whole point: eight refusals reading the same code are
       // told apart by nothing else.
@@ -526,7 +529,9 @@ describe("creating a Flow through an exploration, with no grant", () => {
       // as being present at all.
       evidenceLoop: {
         iterationCount: 8, decisionCount: 8, toolCallCount: 0, evidenceBytes: expect.any(Number),
-        steps: Array.from({ length: 8 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", at: expect.any(Number) }))
+        // Each says which malformed case it was: this script's reply stops
+        // inside its object.
+        steps: Array.from({ length: 8 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage: expect.objectContaining({ outputTokens: 150 }), at: expect.any(Number) }))
       },
       issueCodes: ["llm.provider_malformed_response"]
     });

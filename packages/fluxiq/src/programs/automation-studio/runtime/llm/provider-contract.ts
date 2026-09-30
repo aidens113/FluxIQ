@@ -1,5 +1,6 @@
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
 import { automationStudioLlmProviderThrowRead, type AutomationStudioLlmProviderThrowRead } from "./throw-account/index.ts";
+import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
 
 /**
  * Every way a provider refuses a request before sending it, one code per check.
@@ -138,7 +139,13 @@ export class AutomationStudioLlmProviderError extends Error {
      * no reader downstream has to know which adapter produced it, and no reader
      * has to re-parse a string of unknown shape to find out.
      */
-    readonly refusal?: AutomationStudioLlmProviderRefusal
+    readonly refusal?: AutomationStudioLlmProviderRefusal,
+    /**
+     * What a reply Core could not read looked like -- which case, the finish
+     * reason, the content's length, what it cost -- and never what it said
+     * (`./reply-account.ts`). Only on a reply that arrived.
+     */
+    readonly reply?: AutomationStudioLlmProviderReplyAccount
   ) {
     super(message);
   }
@@ -162,6 +169,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   status?: number;
   provenance: AutomationStudioLlmProviderFailureProvenance;
   refusal?: AutomationStudioLlmProviderRefusal;
+  /** A reply that arrived and could not be read, described without its content. Bounded again here. */
+  reply?: AutomationStudioLlmProviderReplyAccount;
   /**
    * What an untyped throw was, as read (`throw-account/`). Only on
    * `llm.provider_request_failed`: a typed failure already names its fault with
@@ -176,13 +185,16 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   const typed = structurallyTypedProviderError(error);
   if (typed) {
     const refusal = refusalFromProviderError(error);
+    // From a real instance only, like the refusal: a clone's claim is not read.
+    const reply = error instanceof AutomationStudioLlmProviderError ? automationStudioLlmProviderReplyAccount(error.reply) : undefined;
     return {
       code: typed.code,
       message: safeProviderFailureMessage(typed.code),
       retryable: typed.retryable,
       ...(typed.status !== undefined ? { status: typed.status } : {}),
       provenance: error instanceof AutomationStudioLlmProviderError ? error.provenance : defaultProviderFailureProvenance(typed.code),
-      ...(refusal ? { refusal } : {})
+      ...(refusal ? { refusal } : {}),
+      ...(reply ? { reply } : {})
     };
   }
   // The code says only that something threw. What threw is the one thing that
