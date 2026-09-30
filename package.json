@@ -8,8 +8,8 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm --filter @fluxiq/web dev",
-    "build": "pnpm --filter @fluxiq/contracts build && pnpm --filter fluxiq build && pnpm --filter @fluxiq/client-gateway-websocket build && pnpm --filter @fluxiq/web build",
-    "check": "pnpm structure:test && pnpm task:test && node scripts/structure-audit.mjs && pnpm -r check",
+    "build": "node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build web:build",
+    "check": "node --test \"scripts/structure-audit/rules/tests/*.test.mjs\" \"scripts/structure-audit/tests/*.test.mjs\" \"scripts/task/tests/*.test.mjs\" \"scripts/build-cache/tests/*.test.mjs\" && node scripts/build-cache/cli.mjs structure-audit:check && node scripts/build-cache/cli.mjs --parallel contracts:check fluxiq:check client-gateway-websocket:check web:check",
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/structure-audit.mjs --rule docs-links && node scripts/docs-reference.mjs --check",
@@ -25,6 +25,8 @@
     "structure:test": "node --test \"scripts/structure-audit/rules/tests/*.test.mjs\" \"scripts/structure-audit/tests/*.test.mjs\"",
     "task": "node scripts/task/run-task.mjs",
     "task:test": "node --test \"scripts/task/tests/*.test.mjs\"",
+    "build-cache:test": "node --test \"scripts/build-cache/tests/*.test.mjs\"",
+    "build-cache:prove": "node scripts/build-cache/prove-inputs.mjs",
     "package:lint": "publint packages/contracts --strict && publint packages/fluxiq --strict && publint packages/client-gateway-websocket --strict && attw --pack --profile esm-only packages/contracts && attw --pack --profile esm-only packages/fluxiq && attw --pack --profile esm-only packages/client-gateway-websocket",
     "package:smoke": "node scripts/validate-packages.mjs",
     "package:validate": "pnpm build && pnpm package:lint && pnpm package:smoke"

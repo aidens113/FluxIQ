@@ -466,3 +466,30 @@ describe("a recovery the Flow's settings refuse", () => {
     ]);
   });
 });
+
+// A recovery that is one part of a refuted result's repair spends from that
+// repair's one purse (`../../refuted-result/purse.ts`). Handed nothing, it used
+// to take the whole $0.25 ceiling, because a total of zero is ignored as no
+// limit at all.
+describe("a recovery that is part of a repair whose purse is spent", () => {
+  it("asks no model, and names the cost bound as why", async () => {
+    const taskKinds: string[] = [];
+    const detail = await annotate({ executed: [], taskKinds, costLeftUsd: 0 });
+    const stages = (detail.metadata?.recoveryTrace as { stages?: JsonObject[] } | undefined)?.stages ?? [];
+
+    expect(taskKinds).toEqual([]);
+    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm_budget.run_cost_limit", bound: "cost" });
+    expect(stages.map((stage) => [stage.stage, stage.status, stage.providerCalled])).toEqual([
+      ["diagnosis", "refused", false],
+      ["recovery_plan", "refused", false],
+      ["exploration", "refused", false],
+      ["resolution", "refused", false]
+    ]);
+  });
+
+  it("still asks the model when some of the purse is left", async () => {
+    const taskKinds: string[] = [];
+    await annotate({ executed: [], taskKinds, costLeftUsd: 0.05 });
+    expect(taskKinds.at(0)).toBe("runtime_diagnosis");
+  });
+});

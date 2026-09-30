@@ -42,6 +42,15 @@ export class HeldKeys {
     return this.sessions.get(sessionId);
   }
 
+  /** The sessions held for one user, as ids, expiries and how many keys each opens; no key material. */
+  sessionsFor(userId: string): Array<{ sessionId: string; expiresAtMs: number; keyCount: number }> {
+    const held: Array<{ sessionId: string; expiresAtMs: number; keyCount: number }> = [];
+    for (const unlock of this.sessions.values()) {
+      if (unlock.userId === userId) held.push({ sessionId: unlock.sessionId, expiresAtMs: unlock.expiresAtMs, keyCount: unlock.decryptionKeys.size });
+    }
+    return held;
+  }
+
   holdAuthorization(authorization: HeldRevealAuthorization): void {
     this.authorizations.set(authorization.authorizationId, authorization);
   }

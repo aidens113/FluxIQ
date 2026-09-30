@@ -55,3 +55,4 @@ export {
   type AutomationStudioFlowBootstrapCompletionFailureCode,
   type AutomationStudioFlowBootstrapCompletionVerdict
 } from "./bootstrap-completion.ts";
+export { automationStudioRepeatSuggestion, type AutomationStudioRepeatSuggestion } from "./repeat-suggestion.ts";

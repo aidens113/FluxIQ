@@ -273,6 +273,9 @@ function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | 
     ...(entry.written.node ? { node: entry.written.node } : {}),
     entries: entry.written.entries ?? [],
     branches: [],
+    // Which draft step this is, so the node it becomes can be traced back to
+    // it. The joins and loops this module adds carry none.
+    draftStepId: automationStudioFlowDraftStepId(entry.step),
     line: 0
   };
 }

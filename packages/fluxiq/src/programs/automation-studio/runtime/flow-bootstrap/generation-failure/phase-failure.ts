@@ -30,7 +30,13 @@ export function flowBootstrapPhaseFailure(
   thrown?: unknown
 ): AutomationStudioFlowBootstrapGenerationError {
   const code = phaseFailureCode(stage, accounting, requestedCode);
-  const issueCodes = flowBootstrapThrownIssueCodes(thrown);
+  // Only a throw the catch recognised nothing about is named by its class and
+  // frame: the stage's own default, or a code read from the throw's class. A
+  // guard that refused with a closed code (`invalid_input`,
+  // `blank_target_required`, `generation_lock_failed`) is already named, and
+  // stays exactly as it was.
+  const unrecognised = code === FLOW_BOOTSTRAP_DEFAULT_PHASE_FAILURE_CODE[stage] || code === "flow_bootstrap.unexpected_error" || code === "flow_bootstrap.internal_error";
+  const issueCodes = unrecognised ? flowBootstrapThrownIssueCodes(thrown) : [];
   const state = automationStudioFlowBootstrapFailureState(code, stage, automationStudioFlowBootstrapProviderStatus(accounting?.providerStatus));
   // A phase failure names a cost only where the record would be wrong without
   // one. Past the request the accounting is what the build actually spent; at

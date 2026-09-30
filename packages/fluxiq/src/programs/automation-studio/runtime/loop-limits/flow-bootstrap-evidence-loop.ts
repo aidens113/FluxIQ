@@ -7,16 +7,25 @@
 // (`run-mubs2sme-75efe4a4`, `run-mubri4yg-10d01258`). The standing decision is
 // that a build iterates while it makes progress and stops on a bound that
 // means something. So the loop is handed the run's own bounds as its `budget`
-// -- the resolver's token budget, the run's cost ceiling (the Flow's configured
-// `maxEstimatedCostUsdPerRun` when set, else the resolver's default total), and
-// a deadline -- and works out from what it has actually spent how many
+// -- the resolver's token budget, the run's cost ceiling (the $0.25 run cost
+// ceiling, lowered by the resolver's total or the Flow's configured
+// `maxEstimatedCostUsdPerRun` and never raised by either), and a deadline --
+// and works out from what it has actually spent how many
 // decisions it has left, tells the model so on every decision, and offers its
 // last one only completion (`runtime/llm/loop-budget.ts`). Under those sit the
 // loop's no-progress checks. The call count is only the backstop: the
 // resolver's declared count, or the loop's ceiling when none is declared.
 //
+// The cost ceiling is enforced there, from each decision's reported cost: no
+// decision is asked for once what was spent leaves no room for another at the
+// running average (the first is always asked for, having nothing to average),
+// and the loop ends `llm_evidence_loop.iteration_limit` with `bound: "budget"`
+// and `budgetBound: "cost"`. A build has no ledger, so a per-call cost on its
+// requests was never checked against anything; the even share of the total it
+// used to carry only restated the total, and is gone.
+//
 // This module does arithmetic only. From `runtime/llm/` it reads the harness's
-// token constants.
+// token constants and the run cost ceiling.
 //
 // `maxEvidenceContextBytes` was 8,000, and the loop sizes each observation at
 // that figure less 512, so one observation could fill the window and leave 512
@@ -43,7 +52,7 @@
 // calls, cost or tokens do.
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
-import type { AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
+import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
 
 /**
@@ -87,12 +96,6 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
     budget: AutomationStudioLlmEvidenceLoopBudget;
   };
   /**
-   * What one decision may reserve against the run's cost total: the total
-   * divided by the calls, so the last calls are never refused on cost while
-   * the run still had money. Absent when the resolution named no cost at all.
-   */
-  maxEstimatedCostUsdPerCall?: number;
-  /**
    * Unusable decisions in a row after which the exploration stops. Each one
    * still spends one of the loop's iterations, so the budget keeps binding
    * underneath; this is the guard that stops a loop whose replies stay bad.
@@ -101,15 +104,15 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
 };
 
 /**
- * The loop limits, budget and per-decision cost for one evidence-guided bootstrap.
+ * The loop limits and budget for one evidence-guided bootstrap.
  *
  * `flowMaxEstimatedCostUsdPerRun` is the Flow's configured spend limit
- * (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`). Set, it is the
- * build's total cost ceiling; unset, the resolver's default total is.
+ * (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`). The build's total is
+ * the run cost ceiling, $0.25, lowered by that limit and by the resolver's own
+ * total where either is a positive number, and never raised by them.
  */
 export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   maxCallsPerRun?: number | undefined;
-  maxEstimatedCostUsd?: number | undefined;
   maxTotalEstimatedCostUsd?: number | undefined;
   maxTotalTokensPerRun?: number | undefined;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
@@ -121,21 +124,16 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   // call made before any decision, and the last decision completes. So tool
   // calls never bind before the call count does.
   const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
-  const perCall = resolution.maxEstimatedCostUsd;
-  const configured = typeof flowMaxEstimatedCostUsdPerRun === "number" && Number.isFinite(flowMaxEstimatedCostUsdPerRun) && flowMaxEstimatedCostUsdPerRun > 0 ? flowMaxEstimatedCostUsdPerRun : undefined;
-  const total = configured ?? resolution.maxTotalEstimatedCostUsd;
-  const share = total === undefined ? undefined : Math.floor((total / maxIterations) * 1_000_000_000) / 1_000_000_000;
-  const maxEstimatedCostUsdPerCall = share === undefined ? perCall : Math.min(perCall ?? share, share);
+  const maxCostUsd = automationStudioLlmRunCostCeilingUsd(resolution.maxTotalEstimatedCostUsd, flowMaxEstimatedCostUsdPerRun);
   // The most one decision may use, set aside before each call.
   const tokens = resolveAutomationStudioLlmTokenLimits(resolution.tokenLimits).limits;
   const budget: AutomationStudioLlmEvidenceLoopBudget = {
     ...(positive(resolution.maxTotalTokensPerRun) ? { maxTotalTokens: resolution.maxTotalTokensPerRun, maxTokensPerDecision: Math.min(tokens.maxTotalTokens, tokens.maxInputTokens + tokens.maxOutputTokens) } : {}),
-    ...(typeof total === "number" && Number.isFinite(total) && total > 0 ? { maxCostUsd: total } : {}),
+    maxCostUsd,
     maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS
   };
   return {
     loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: ceiling.maxEvidenceBytes, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES, budget },
-    ...(maxEstimatedCostUsdPerCall !== undefined ? { maxEstimatedCostUsdPerCall } : {}),
     // Three was this number until 2026-09-22, and three ended builds that were
     // working: it is the loop's no-progress guard as well as its unusable-reply
     // guard, and a build that meets a setback, looks again and tries another way

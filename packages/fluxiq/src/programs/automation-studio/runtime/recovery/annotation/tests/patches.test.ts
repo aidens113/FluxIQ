@@ -215,8 +215,8 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with explored packets", ()
 // which every granted run does, and nobody was asked. It now says what pressing
 // its new target would lastingly do, and the recovery's one gate is asked: a
 // high-risk class nobody allowed becomes the request the recovery ends on.
-// Ordinary creation and editing run without a second permission; sending or
-// publishing still needs the person's instruction or permitted consequences. The
+// Ordinary creation and editing run without a second permission; moving money,
+// deleting, and sending or publishing need a person's permission every time. The
 // policy's broad side-effect flags do not replace that class-specific gate.
 describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permission gate", () => {
   const RESOLVED: AutomationStudioRuntimeTargetOverrideEvidenceValidation = { status: "resolved", target: { handles: { control: "candidate.2" }, resolvedBy: "domain" }, control: { name: "Add to queue", kind: "button" } };
@@ -243,20 +243,25 @@ describe("applyAutomationStudioRuntimeRecoveryPatches with the recovery's permis
     expect(request.action).toEqual({ kind: "flow_step", id: "builtin.policy.action", ref: "recorded.press", verb: "press" });
     expect(request.control).toEqual({ name: "Add to queue", kind: "button" });
     expect(request.reason.stage).toBe("recovery");
-    expect(request.sentence).toBe("To repair the step that failed, the Flow would press \"Add to queue\" (button) each time it runs, which would spend, refund or move money and delete or remove something. Neither its instruction nor a grant allows that, so the repair stopped to ask.");
+    expect(request.sentence).toBe("To repair the step that failed, the Flow would press \"Add to queue\" (button) each time it runs, which would spend, refund or move money and delete or remove something. A person has to allow that each time, even when the instruction asks for it, so the repair stopped to ask.");
     expect(outcome.attempts[0]?.issues).toEqual([`Permission required: ${request.sentence}`]);
     // What a person reads is exactly what Core built.
     expect(parseAutomationStudioActionPermissionRequest(JSON.parse(JSON.stringify(request)))).toEqual(request);
   });
 
-  // `send_or_publish` came off the gated list on 2026-09-28: a run that sends is
-  // a run whose instruction asked for the sending, so a standing gate on it
-  // asked permission for the request itself. A repair that would send therefore
-  // runs, with nothing permitted and nothing derived from the instruction -- and what it
-  // declared is still recorded, so the cross-check against the instruction still
-  // sees it.
-  it("runs a send repair with nothing permitted, and still records what it declared", async () => {
+  // `send_or_publish` is gated again since 2026-09-30 (the user's rule): a
+  // repair that would send with nothing permitted becomes the recovery's request
+  // and runs nothing, like a refund or a deletion.
+  it("turns a send repair with nothing permitted into the recovery's request, and runs nothing", async () => {
     const gate = recoveryGate([]);
+    const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
+
+    expect(gate.request?.missing).toEqual(["send_or_publish"]);
+    expect(outcome.attempts[0]).toMatchObject({ executed: false, permissionOutcome: "required", missing: ["send_or_publish"], traceStatus: "not-run" });
+  });
+
+  it("runs a send repair once sending is permitted, and still records what it declared", async () => {
+    const gate = recoveryGate(["send_or_publish"]);
     const outcome = await apply({ asked: [], answer: RESOLVED, explicitProposalRun: false, gate, consequences: ["create_new", "send_or_publish"], sideEffectsWithheld: true });
 
     expect(gate.request).toBeUndefined();

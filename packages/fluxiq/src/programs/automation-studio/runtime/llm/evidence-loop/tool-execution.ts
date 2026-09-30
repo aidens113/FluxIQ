@@ -92,6 +92,21 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    */
   stateDigests?: { before?: string; after?: string };
   /**
+   * The route state of the page the call left -- what a Router's `state.*`
+   * conditions would read there -- projected by the caller from the capture
+   * the call itself took, exactly as its host runtime's `observeRouteState`
+   * projects a fresh one.
+   *
+   * **Why the call says it.** A Flow build shows the model every route state
+   * its exploration reached, and it used to learn each one by asking the host
+   * for a whole page capture before the next decision (`../../route-state/build-routing.ts`):
+   * after t196 removed the digest captures, that was the largest browser cost
+   * left per decision. The call already holds that page. The loop itself never
+   * reads this; the build's routing does, from the results it is handed, and
+   * captures only when no call has left a current one.
+   */
+  routeState?: JsonObject;
+  /**
    * What this one call did, for the draft the loop is accruing.
    *
    * A tool that runs whichever of a library's things the call named answers

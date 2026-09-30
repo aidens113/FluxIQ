@@ -229,6 +229,9 @@ pnpm build
 ```
 
 Use `pnpm structure:check` to run the audit alone.
+Builds, type checks and the audit are cached by content fingerprint; see
+[Build And Check Cache](docs/operations/quality-and-security.md#build-and-check-cache)
+for how to force a rebuild (`FLUXIQ_BUILD_FORCE=1`) or switch the store off.
 
 Do not start the web panel unless the user has explicitly authorized panel
 management for the session. When authorized, manage it and keep any server

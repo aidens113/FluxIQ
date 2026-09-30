@@ -15,11 +15,14 @@ import type { JsonValue } from "../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  automationStudioFlowDraftConditionalStepIds,
   automationStudioFlowDraftDryRunFeedback,
   automationStudioFlowDraftDryRunIssueCodes,
+  automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayable,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftReplaySignature,
+  type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
@@ -54,6 +57,9 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   signal?: AbortSignal;
 };
 
+/** How many times one unchanged draft is replayed before its refusal is judged from what those replays found. */
+const MAX_REPLAYS_OF_ONE_DRAFT = 2;
+
 /** The gate, as the loop's own `dryRun()`. */
 export function automationStudioFlowDraftDryRunGate(
   input: AutomationStudioFlowDraftDryRunGateInput
@@ -66,10 +72,38 @@ export function automationStudioFlowDraftDryRunGate(
   // that putting the target back could not undo a step's own effect, and that
   // finishes again with the step kept, has answered.
   const asked = new Set<string>();
+  // What the last refused replay found, the draft it was a replay of, and how
+  // many times that draft has been replayed. An unchanged draft is replayed
+  // twice -- a step can fail once on a page still settling and replay the next
+  // time -- and after that its outcomes are judged again rather than replayed
+  // again: lane t195's run `run-muntu7in-e3dd1972` completed one unchanged draft
+  // fourteen times and spent 401 of its 537 seconds replaying it, then ran out
+  // of time. Judged, not repeated, because what may block can change between
+  // two completions of the same steps: a step put to the model as
+  // unreproducible once no longer blocks, and a span stated as repeating no
+  // longer does.
+  let refused: { signature: string; verdict: AutomationStudioFlowDraftDryRun; replays: number } | undefined;
   return async () => {
     if (!input.enabled || !automationStudioFlowDraftReplayable(input.steps)) return undefined;
     const signature = automationStudioFlowDraftReplaySignature(input.steps);
     if (signature === cleanSignature) return undefined;
+    if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
+      const again = automationStudioFlowDraftDryRunVerdict({
+        attempt: refused.verdict.attempt,
+        reset: refused.verdict.reset,
+        outcomes: refused.verdict.outcomes,
+        asked,
+        conditional: automationStudioFlowDraftConditionalStepIds(input.steps)
+      });
+      if (again.ok) {
+        cleanSignature = signature;
+        return undefined;
+      }
+      const feedback = automationStudioFlowDraftDryRunFeedback(again);
+      if (input.reserveEvidence(feedback) === undefined) return "evidence_limit";
+      input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
+      return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(again) };
+    }
     attempts += 1;
     let replay: Awaited<ReturnType<typeof replayAutomationStudioFlowDraft>>;
     try {
@@ -99,6 +133,7 @@ export function automationStudioFlowDraftDryRunGate(
       cleanSignature = signature;
       return undefined;
     }
+    refused = { signature, verdict: replay.verdict, replays: refused?.signature === signature ? refused.replays + 1 : 1 };
     // The target as it was when the replay broke, which is what a correction
     // has to be made from, and then the verdict that says what to do about it.
     if (replay.evidence) {

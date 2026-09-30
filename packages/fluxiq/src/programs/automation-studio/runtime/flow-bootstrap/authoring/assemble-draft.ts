@@ -66,7 +66,17 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   summary: string;
-}): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
+}): {
+  plan?: AutomationStudioFlowBootstrapPlan;
+  refusedPlan?: AutomationStudioFlowBootstrapPlan;
+  issues: AutomationStudioFlowBootstrapIssue[];
+  /**
+   * Which draft step each node of `plan` was written from, by node key and
+   * step id. Only nodes a step became are here: a join or a loop this draft's
+   * routing added was written from no step (`./draft-routing.ts`).
+   */
+  draftStepIdByNodeKey?: Record<string, string>;
+} {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const routable: AutomationStudioFlowDraftRoutedStep[] = [];
   for (const step of input.steps) {
@@ -109,5 +119,30 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   // performed and would be absent from the result, which is the one outcome
   // the draft exists to make impossible.
   if (issues.length) return { issues: all, ...(assembled.plan ?? assembled.refusedPlan ? { refusedPlan: (assembled.plan ?? assembled.refusedPlan)! } : {}) };
-  return { ...(assembled.plan ? { plan: assembled.plan } : {}), ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), issues: all };
+  return {
+    ...(assembled.plan ? { plan: assembled.plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, assembled.plan) } : {}),
+    ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}),
+    issues: all
+  };
+}
+
+/**
+ * The draft step each node was written from.
+ *
+ * The one Subflow names its nodes `s1`, `s2`, ... in the order of the steps it
+ * was given (`./assemble.ts`), and a node is counted only when it is the node
+ * its step named, so a key that ever landed on another step's node would be
+ * left out rather than claimed.
+ */
+function draftStepIdByNodeKey(
+  steps: readonly { node?: string; draftStepId?: string }[],
+  plan: AutomationStudioFlowBootstrapPlan
+): Record<string, string> {
+  const nodes = new Map((plan.subflows[0]?.nodes ?? []).map((node) => [node.key, node] as const));
+  const found: Record<string, string> = {};
+  for (const [index, step] of steps.entries()) {
+    const key = `s${index + 1}`;
+    if (step.draftStepId !== undefined && step.node !== undefined && nodes.get(key)?.definitionId === step.node) found[key] = step.draftStepId;
+  }
+  return found;
 }

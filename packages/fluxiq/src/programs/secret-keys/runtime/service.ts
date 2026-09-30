@@ -367,6 +367,24 @@ export class SecretKeysService {
     return this.heldKeys.sessionCount();
   }
 
+  /**
+   * The session id of `userId`'s own unlock that opens at least one key and has the latest expiry still live
+   * at `nowMs`, or null when that person is locked or every unlock has expired.
+   * This is how a paired client acting for this person (whose own session never
+   * holds an unlock) reaches their key. Returns an id only, never key material,
+   * never another user's session, and creates, extends or revokes nothing.
+   */
+  unlockedSessionFor(userId: string, nowMs: number = this.now()): string | null {
+    if (!userId) return null;
+    let best: { sessionId: string; expiresAtMs: number } | null = null;
+    // An unlock that opens no key (a wrong password still holds a session) cannot pay for anything.
+    for (const held of this.heldKeys.sessionsFor(userId)) {
+      if (held.expiresAtMs <= nowMs || held.keyCount === 0) continue;
+      if (!best || held.expiresAtMs > best.expiresAtMs) best = held;
+    }
+    return best?.sessionId ?? null;
+  }
+
   revokeSessionUnlock(sessionId: string): void {
     this.heldKeys.revokeSession(sessionId);
   }

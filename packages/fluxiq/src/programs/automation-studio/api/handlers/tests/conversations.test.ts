@@ -9,12 +9,21 @@
 // does, `register.ts` registers them with the rest and `domain-scope.test.ts`
 // gains all of them in its `DOMAIN_SCOPED` list.
 
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
-import type { AutomationStudioConversations } from "../../../runtime/index.ts";
+import {
+  automationStudioConversationCommandWork,
+  automationStudioConversationEffectiveCaller,
+  AutomationStudioConversations,
+  AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT,
+  AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT
+} from "../../../runtime/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 import { cacheActor } from "./test-actor.ts";
 import { registerAutomationStudioConversationEndpoints } from "../conversations.ts";
 
@@ -31,6 +40,11 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
     answerAsk: vi.fn().mockResolvedValue({ askId: "ask.1", status: "answered" }),
     getAttachment: vi.fn().mockResolvedValue({ attachment: { kind: "run", ref: "run.17" }, payload: null }),
     respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: { runNow: true }, problem: null }),
+    callerFor: vi.fn((actor: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(actor, () => "session.unlocked")),
+    getAsk: vi.fn().mockResolvedValue(null),
+    getTurn: vi.fn().mockResolvedValue(null),
+    pendingAsks: vi.fn().mockResolvedValue([]),
+    appendAutomationTurn: vi.fn().mockResolvedValue({ turnId: "turn.result" }),
     ...overrides
   };
   const assertProjectDomainAccess = vi.fn().mockResolvedValue(undefined);
@@ -219,7 +233,8 @@ describe("Automation Studio conversation API", () => {
         onScreen: { flowId: "flow.kettle", runId: 7 }
       }
     });
-    expect(response).toEqual({ ok: true, payload: { turn: { turnId: "turn.1" }, response: { runNow: true }, problem: null } });
+    // Nothing Core runs was chosen, so `execution` is null and the client runs what it chose.
+    expect(response).toEqual({ ok: true, payload: { turn: { turnId: "turn.1" }, response: { runNow: true, execution: null }, problem: null } });
     expect(conversations.appendTurn).not.toHaveBeenCalled();
     expect(listFlows).toHaveBeenCalledWith("project.one");
     const request = conversations.respondToPersonTurn.mock.calls[0]?.[0];
@@ -240,5 +255,126 @@ describe("Automation Studio conversation API", () => {
     });
     expect(response.ok).toBe(true);
     expect(conversations.respondToPersonTurn.mock.calls[0]?.[0]).toMatchObject({ flows: null, capabilities: [], onScreen: {} });
+  });
+
+  // Core runs the capabilities it owns itself, for whichever client asked. A
+  // paired client acts as its person, whose unlocked session pays for the
+  // model and is the session every call runs under; permissions stay its own.
+  it("runs a capability Core owns for a paired client, under its person's unlocked session, and answers what came of it", async () => {
+    const describeDecision = {
+      decision: { kind: "invoke", say: null, invocation: { capabilityId: "flow.describe", title: "Say what a Flow should do", arguments: { flowId: "flow.kettle", instruction: "Check prices" }, confidence: 1, requestedId: null, renamedArguments: {}, droppedArguments: [], asksFirst: false, consequences: [] } },
+      source: "model", modelProblem: null, attempts: 1, turnId: "turn.2", askId: null, runNow: true
+    };
+    const { registry, conversations } = conversationApi({ respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: describeDecision, problem: null }) });
+    const saved: Array<{ actor: unknown; payload: unknown }> = [];
+    registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction, permission: "flows.write", classification: "authoring", handler: (request) => { saved.push({ actor: request.actor, payload: request.payload }); return { ok: true, payload: {} }; } });
+    const paired = { sessionId: "client-gateway:gateway.7", userId: "user.writer", roleId: "admin", permissions: ["programs.read" as const, "programs.write" as const, "flows.write" as const] };
+
+    const response = await registry.call<unknown, { response: { execution: unknown } }>({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+      scope: { domainId: null },
+      actor: paired,
+      payload: { projectId: "project.one", conversationId: "conversation.one", text: "it should check prices", capabilities: [{ id: "flow.describe" }], onScreen: { pageUrl: "https://shop.example/kettles?q=blue" } }
+    });
+
+    const request = conversations.respondToPersonTurn.mock.calls[0]?.[0];
+    expect(request.caller).toEqual({ userId: "user.writer", sessionId: "session.unlocked" });
+    // The client sent the id alone; the model is shown Core's own descriptor.
+    expect(request.capabilities[0].arguments.map((argument: { name: string }) => argument.name)).toEqual(["flowId", "instruction"]);
+    expect(request.onScreen).toEqual({ pageUrl: "https://shop.example/kettles?q=blue" });
+    expect(saved).toEqual([{ actor: { ...paired, sessionId: "session.unlocked" }, payload: { projectId: "project.one", flowId: "flow.kettle", authSessionId: "session.unlocked", instruction: "Check prices" } }]);
+    expect(response.payload?.response.execution).toEqual({ capabilityId: "flow.describe", status: "done", summary: "Saved what this Flow should do.", flowId: "flow.kettle" });
+    expect(conversations.appendAutomationTurn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation.one", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.describe" } }));
+  });
+
+  it("keeps an address that is not a web page, or is too long, out of what is on screen", async () => {
+    for (const pageUrl of ["javascript:alert(1)", "ftp://files.example/a", `https://shop.example/${"a".repeat(2_100)}`, "https://shop.example/a b", 42]) {
+      const { registry, conversations } = conversationApi();
+      await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+        scope: { domainId: null },
+        actor: writeActor,
+        payload: { projectId: "project.one", conversationId: "conversation.one", text: "make one here", capabilities: [], onScreen: { pageUrl } }
+      });
+      expect(conversations.respondToPersonTurn.mock.calls[0]?.[0].onScreen, String(pageUrl).slice(0, 40)).toEqual({});
+    }
+  });
+
+  it("applies the change a granted conversation-command question carries, and only the first time", async () => {
+    const ref = Buffer.from(JSON.stringify({ capabilityId: "adaptation.apply", arguments: { flowId: "flow.kettle", adaptationId: "adaptation.9" } })).toString("base64url");
+    const pending = { askId: "conversation-command.1", conversationId: "conversation.one", turnId: "turn.q", kind: "confirm", status: "pending", answer: null };
+    const answered = { ...pending, status: "answered", answer: { kind: "grant" } };
+    const { registry, conversations } = conversationApi({
+      getAsk: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(answered),
+      answerAsk: vi.fn().mockResolvedValue(answered),
+      getTurn: vi.fn().mockResolvedValue({ turnId: "turn.q", attachment: { kind: AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT, ref } })
+    });
+    const reviews: unknown[] = [];
+    registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation, permission: "programs.write", classification: "authoring", handler: (request) => { reviews.push(request.payload); return { ok: true, payload: {} }; } });
+    const grant = () => registry.call<unknown, { ask: unknown; execution?: unknown }>({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk,
+      scope: { domainId: null },
+      actor: writeActor,
+      payload: { projectId: "project.one", askId: "conversation-command.1", kind: "grant" }
+    });
+
+    const first = await grant();
+    expect(first.payload?.execution).toMatchObject({ capabilityId: "adaptation.apply", status: "done", flowId: "flow.kettle", adaptationId: "adaptation.9" });
+    expect(conversations.getTurn).toHaveBeenCalledWith({ projectId: "project.one", conversationId: "conversation.one", turnId: "turn.q" });
+    expect(reviews).toEqual([
+      { projectId: "project.one", flowId: "flow.kettle", adaptationId: "adaptation.9", action: "approve" },
+      { projectId: "project.one", flowId: "flow.kettle", adaptationId: "adaptation.9", action: "apply" }
+    ]);
+
+    // A resend of the same answer replays it; nothing is applied twice.
+    const second = await grant();
+    expect(second.payload).toEqual({ ask: answered });
+    expect(reviews).toHaveLength(2);
+  });
+
+  it("reads a thread about a Flow as that Flow, and runs it in the background for the client", async () => {
+    const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversation-endpoints-test");
+    await rm(rootDir, { recursive: true, force: true });
+    await mkdir(rootDir, { recursive: true });
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    try {
+      const conversations = new AutomationStudioConversations(pool);
+      const thread = await conversations.openConversation({ projectId: "project.one", subject: { kind: "flow", id: "flow.kettle" }, title: null });
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioConversationEndpoints({
+        registry,
+        service: {
+          assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined),
+          listProjects: vi.fn().mockResolvedValue({ projects: [] }),
+          listFlows: vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }, { flow: { flowId: "flow.toaster", name: "Toaster stock watch" } }]),
+          conversations
+        }
+      });
+      const runs: unknown[] = [];
+      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push(request.payload); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "completed" }, terminalReason: "completed" } }; } });
+      const runner = { ...writeActor, permissions: ["programs.write" as const, "runtime.control" as const] };
+
+      const response = await registry.call<unknown, { response: { decision: { kind: string }; execution: { status: string } } }>({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+        scope: { domainId: null },
+        actor: runner,
+        payload: { projectId: "project.one", conversationId: thread.conversationId, text: "run it", capabilities: [{ id: "run.execute" }] }
+      });
+      expect(response.payload?.response.decision.kind).toBe("invoke");
+      expect(response.payload?.response.execution.status).toBe("started");
+      await automationStudioConversationCommandWork.idle();
+
+      expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle" }]);
+      const turns = (await conversations.getConversation({ projectId: "project.one", conversationId: thread.conversationId }))?.turns ?? [];
+      expect(turns.map((turn) => turn.author)).toEqual(["person", "automation", "automation"]);
+      expect(turns[2]).toMatchObject({ text: "The run run.1 ended completed.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
+    } finally {
+      await pool.closeAll();
+      await rm(rootDir, { recursive: true, force: true });
+    }
   });
 });

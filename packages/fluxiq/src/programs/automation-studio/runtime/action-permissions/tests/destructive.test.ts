@@ -1,11 +1,12 @@
-// Which acts still need a person, and which the instruction alone settles.
+// Which acts need a person, and which the instruction alone settles.
 //
-// The property these rows protect is the one the product was losing for days:
-// a run told to add something to a basket, save a listing for later or send a
-// message must do it without a second permission. The counter-property is in the
-// same file so neither can be relaxed without the other being read: a high-risk
-// act nobody asked for still stops the run, and the question that reaches the
-// person still carries everything they need to answer it.
+// Two properties, kept in one file so neither can be relaxed without the other
+// being read. A run told to add something to a basket, save a listing for later
+// or edit a record does it without asking (the product lost days to asking about
+// ordinary work). And moving money, deleting, and sending or publishing are asked
+// about every time, even when the instruction asked for them -- the user's rule,
+// `docs/working/mvp-today-plan.md:150`, restored on 2026-09-30 -- with a question
+// that carries everything the person needs to answer it.
 
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -72,19 +73,15 @@ describe("which classes a person is still asked about", () => {
   // These rows name the list in full rather than probing one class, so a change
   // to `DESTROYS` is a failing test and never a surprise on a live run.
   //
-  // The list has shrunk twice on the same rule -- the person's instruction is
-  // itself the permission, so only a genuinely high-risk real-world consequence
-  // reaches them. `modify_existing` left on 2026-09-26 because it is the
-  // broadest of the five, so gating it asked about ordinary editing.
-  // `send_or_publish` left on 2026-09-28 because a run that sends is a run whose
-  // instruction asked for the sending, so gating it asked permission for the
-  // request itself. Both are still declared, still recorded, and still compared
-  // against the instruction by the cross-check.
-  it("is exactly delete and money movement, and no others", () => {
-    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete"]);
+  // `modify_existing` left on 2026-09-26 because gating it asked about ordinary
+  // editing. `send_or_publish` left on 2026-09-28 and came back on 2026-09-30:
+  // the user's rule names it beside money and deletion, and a message nobody
+  // asked for was otherwise sent without asking (lane t195).
+  it("is exactly money movement, deletion, and sending or publishing", () => {
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual(["move_money", "delete", "send_or_publish"]);
     expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => !isAutomationStudioDestructiveActionConsequence(consequence)))
-      .toEqual(["send_or_publish", "modify_existing", "create_new"]);
-    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(false);
+      .toEqual(["modify_existing", "create_new"]);
+    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(true);
     expect(isAutomationStudioDestructiveActionConsequence("modify_existing")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence("create_new")).toBe(false);
     expect(isAutomationStudioDestructiveActionConsequence("purchase")).toBe(false);
@@ -93,31 +90,39 @@ describe("which classes a person is still asked about", () => {
 
   // The counted form of the same rule, so re-gating a class fails here too
   // however it is reintroduced.
-  it("gates two of the five classes and leaves three ungated", () => {
+  it("gates three of the five classes and leaves two ungated", () => {
     expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES).toHaveLength(5);
-    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toHaveLength(2);
-    expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter(isAutomationStudioDestructiveActionConsequence)).toHaveLength(2);
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toHaveLength(3);
+    expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter(isAutomationStudioDestructiveActionConsequence)).toHaveLength(3);
   });
 
-  it("keeps Core's order, drops repeats, and drops ordinary creating, editing and sending", () => {
+  it("keeps Core's order, drops repeats, and drops ordinary creating and editing", () => {
     expect(automationStudioDestructiveConsequences(["create_new", "delete", "move_money", "delete", "send_or_publish"]))
-      .toEqual(["move_money", "delete"]);
-    expect(automationStudioDestructiveConsequences(["create_new", "send_or_publish", "modify_existing"])).toEqual([]);
+      .toEqual(["move_money", "delete", "send_or_publish"]);
+    expect(automationStudioDestructiveConsequences(["create_new", "modify_existing"])).toEqual([]);
   });
 });
 
 describe("an act the person's instruction plainly asks for", () => {
-  it("adds to the basket and sends the message with nothing permitted, and asks nobody", async () => {
+  it("adds to the basket with nothing permitted and asks nobody, but asks before sending the message it asked for", async () => {
     const run = gate({ derive: async () => readWell() });
 
     expect(await run.checkFor(PRESS)(ADD_TO_BASKET)).toEqual({ permitted: true });
-    expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
     expect(run.request).toBeUndefined();
-    expect(run.signal.aborted).toBe(false);
+    expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: "permission-request:one" });
+    expect(run.request?.authority.instructed.map((entry) => entry.consequence)).toContain("send_or_publish");
+    expect(run.signal.aborted).toBe(true);
   });
 
-  it("is still recorded in full, so narrowing what stops a run narrows nothing about what is known", async () => {
-    const run = gate({ derive: async () => readWell() });
+  it("sends the message once a person has permitted sending", async () => {
+    const run = gate({ permitted: ["send_or_publish"], derive: async () => readWell() });
+
+    expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
+    expect(run.request).toBeUndefined();
+  });
+
+  it("is still recorded in full", async () => {
+    const run = gate({ permitted: ["send_or_publish"], derive: async () => readWell() });
     await run.checkFor(STEP)(SEND_MESSAGE);
 
     expect(run.declarations[0]).toEqual({
@@ -128,28 +133,25 @@ describe("an act the person's instruction plainly asks for", () => {
     });
   });
 
-  // The regression this row exists for. A send used to need the derivation that
-  // reads the instruction to succeed, and that derivation misses whenever the
-  // provider call fails, the model does not name the class, or the quote is not
-  // the person's own words -- so an instruction that says "send the seller a
-  // message" in so many words still stopped the run. Sending is ungated now, so
-  // none of those three misses can stop it.
-  it("still sends when the instruction's authority cannot be derived at all", async () => {
+  // The same answer however the instruction was read: whether the derivation
+  // named the class, found nothing, or failed, only a person's permission lets a
+  // send through. Until 2026-09-30 an instructed class went ahead unasked, so
+  // the answer depended on how the model happened to read the instruction.
+  it("asks before sending however the instruction's authority was derived, and never before adding", async () => {
+    const readIt = gate({ derive: async () => readWell() });
     const claimedNothing = gate({ derive: async () => readAutomationStudioInstructedConsequences({ instructions: [BASKET], result: { instructed: [] } }) });
     const providerDown = gate({ derive: async () => { throw new Error("provider down"); } });
     const noDerivation = gate();
 
-    for (const run of [claimedNothing, providerDown, noDerivation]) {
+    for (const run of [readIt, claimedNothing, providerDown, noDerivation]) {
       expect(await run.checkFor(PRESS)(ADD_TO_BASKET)).toEqual({ permitted: true });
-      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: true });
-      expect(run.request).toBeUndefined();
-      expect(run.signal.aborted).toBe(false);
+      expect(await run.checkFor(STEP)(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: "permission-request:one" });
     }
   });
 
-  it("creates and sends with no run behind it either, since neither is anybody's to refuse", async () => {
+  it("creates with no run behind it, and refuses to send, since no person could have permitted it", async () => {
     expect(await automationStudioActionPermissionDenied(ADD_TO_BASKET)).toEqual({ permitted: true });
-    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: true });
+    expect(await automationStudioActionPermissionDenied(SEND_MESSAGE)).toEqual({ permitted: false, missing: ["send_or_publish"], requestId: null });
   });
 });
 
@@ -178,7 +180,7 @@ describe("a destructive act the instruction did not ask for", () => {
           { consequence: "create_new", instructionId: "instruction.basket", quote: "add both to the basket" }
         ]
       },
-      sentence: "The Flow its instruction describes would press \"Place order\" (button) each time it runs, which would spend, refund or move money. Neither its instruction nor a grant allows that, so the build stopped to ask."
+      sentence: "The Flow its instruction describes would press \"Place order\" (button) each time it runs, which would spend, refund or move money. A person has to allow that each time, even when the instruction asks for it, so the build stopped to ask."
     });
   });
 
@@ -199,7 +201,7 @@ describe("a destructive act the instruction did not ask for", () => {
     expect(run.declarations[0]?.missing).toEqual(["delete"]);
   });
 
-  it("goes ahead once a person's permission, or the instruction itself, covers it", async () => {
+  it("goes ahead once a person has permitted it, and not because the instruction asked for it", async () => {
     const granted = gate({ permitted: ["move_money"], derive: async () => readWell() });
     expect(await granted.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: true });
     expect(granted.request).toBeUndefined();
@@ -210,8 +212,10 @@ describe("a destructive act the instruction did not ask for", () => {
         result: { instructed: [{ consequence: "move_money", quote: "Buy the cheapest brass desk lamp and check out." }] }
       })
     });
-    expect(await asked.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: true });
-    expect(asked.request).toBeUndefined();
+    // Lane t195's bigbox runs: an instruction read as asking for `move_money`
+    // let Place order through unasked in one run and not in the next.
+    expect(await asked.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:one" });
+    expect(asked.request?.authority.instructed.map((entry) => entry.consequence)).toEqual(["move_money"]);
 
   });
 
