@@ -35,13 +35,12 @@ import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 import { automationStudioFlowDraftStepById } from "./routing.ts";
-import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with, whether or not its result is still shown. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To do one act to every item of a list, run the step listing the items (keeping only those to act on), do the act to one item, then repeat it over the listing step: the Flow does the rest, so never do them yourself. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
+const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with, whether or not its result is still shown. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept, then repeat it over the listing step: the Flow does the rest, so never act on the others yourself. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
 
 // The same instruction told shorter, for when telling it in full would cost the
 // entry the steps it exists to list.
@@ -57,7 +56,7 @@ const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it:
 // 2026-09-30, that amend_draft repeat is how one act is done to every listed
 // item: in live run `run-munnop9n-5475d593` the telling shrank to a size that
 // named no amendment word, and the model confirmed one friend request of four.
-const DRAFT_INSTRUCTION_BRIEF = "The Flow you are building, in the order you built it: every step here is something you actually ran. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down or confirm. A did_not_work step is already out; only rerun changes it. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To act on every item of a list, run the step that lists them, act on one item, then amend_draft repeat over the listing step through the act's last step. Getting to the page is part of the work: a step the Flow cannot start without is not exploratory. A step you want and have not run yet is run, not written.";
+const DRAFT_INSTRUCTION_BRIEF = "The Flow you are building, in the order you built it: every step here is something you actually ran. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down or confirm. A did_not_work step is already out; only rerun changes it. Correct it with an amend_draft decision: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To act on every item of a list, list them with a where keeping only those to act on, act on one item it kept, then amend_draft repeat over the listing step through the act's last step. Getting to the page is part of the work: a step the Flow cannot start without is not exploratory. A step you want and have not run yet is run, not written.";
 const DRAFT_INSTRUCTION_MINIMAL = "What you have built, in the order you built it. Every step whose inResult is true is a step of the finished Flow. Correct it, or repeat an act per listed item, with amend_draft.";
 
 /** Longest first: the telling only gets shorter once the room has run out. */
@@ -263,9 +262,7 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: 
     // has happened, and the refusal that put it there explains itself in full.
     // Spending two hundred bytes of every draft entry on a sentence about a
     // check that usually passes would cost the entry steps it has to list.
-    // A step that was only checked reads `verified`, not `replayed`
-    // (`./verify-only.ts`): the model must not believe it was done again.
-    ...(step.replayed ? { replayed: automationStudioFlowDraftReplayOutcomeWord(step.replayed) } : {}),
+    ...(step.replayed ? { replayed: step.replayed.status } : {}),
     // What the step says about when it runs, in the step numbers the model
     // reads rather than the ids the draft keeps (`./routing.ts`). It is shown
     // back for the same reason the disposition is: an edit the model made and
@@ -291,7 +288,7 @@ function stepRow(step: AutomationStudioFlowDraftStep, withInput: boolean, all: r
     automationStudioFlowDraftStepIsProposed(step)
   ];
   const optional: JsonValue[] = [
-    step.replayed ? automationStudioFlowDraftReplayOutcomeWord(step.replayed) : null,
+    step.replayed?.status ?? null,
     step.routing ? routingLine(step.routing, all) : null,
     step.settings ?? null
   ];

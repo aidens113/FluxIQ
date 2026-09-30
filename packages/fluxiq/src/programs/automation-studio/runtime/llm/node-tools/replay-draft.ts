@@ -2,9 +2,7 @@
 //
 // The reset, then every step the draft proposes, in order, each through the
 // same executor an ordinary tool call goes through -- so each one passes the
-// same permission gate, and none of them reaches a provider. A step whose
-// effect lasts is verified rather than run again, and the steps after it are
-// still run (`../../flow-draft/verify-only.ts`). The loop keeps its
+// same permission gate, and none of them reaches a provider. The loop keeps its
 // own bookkeeping out of here: this makes the calls and reports what came back,
 // and `evidence-loop.ts` decides what the verdict does to the build.
 //
@@ -23,11 +21,8 @@ import {
   automationStudioFlowDraftConditionalStepIds,
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayFrom,
-  automationStudioFlowDraftReplayOutcomeVerified,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
-  automationStudioFlowDraftStepReplayMode,
-  automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep
@@ -40,8 +35,7 @@ import {
   automationStudioNodeReplayResetCall,
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayStepCall,
-  automationStudioNodeReplayToolId,
-  automationStudioNodeReplayVerifyCall
+  automationStudioNodeReplayToolId
 } from "./replay.ts";
 
 /** What the caller has to lend a replay: the executor, and how to bound it. */
@@ -81,12 +75,9 @@ export type AutomationStudioFlowDraftReplayResult = {
  * and the model would be asked to amend a Flow with nothing wrong in it. So a
  * step answers `replayed`; a reset answers nothing, because the replay reads a
  * reset from `effectApplied`, which the domain's own statement already carries.
- * A verify a person cleared answers `verified`: it was still not run.
  */
 export function automationStudioFlowDraftReplayClearedCode(value: JsonObject): string | undefined {
-  const kind = value[AUTOMATION_STUDIO_NODE_REPLAY_KEY];
-  if (kind === "step") return AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed;
-  return kind === "verify" ? AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.verified : undefined;
+  return value[AUTOMATION_STUDIO_NODE_REPLAY_KEY] === "step" ? AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed : undefined;
 }
 
 /** Run the draft again, from the state its first step found. */
@@ -105,28 +96,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     };
   }
   let evidence: AutomationStudioFlowDraftReplayResult["evidence"];
-  // The first verified step whose effect was withheld. Steps after it that do
-  // not replay may have needed that effect (`../../flow-draft/verify-only.ts`).
-  let withheldBy: number | undefined;
   for (const step of proposed) {
-    const mode = automationStudioFlowDraftStepReplayMode(step);
-    const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
+    const value = automationStudioNodeReplayStepCall(step);
     const callId = `dryrun.${input.attempt}.${step.position}`;
     const toolId = automationStudioNodeReplayToolId(step);
     // A step with nothing to run it with is a failed step, not a skipped one.
     const ran: ReplayAnswer = value ? await call(input, callId, toolId, value) : { readable: false };
     const status = ran.readable ? automationStudioNodeReplayStatus(ran.result.resultCode) : "failed";
-    const outcome: AutomationStudioFlowDraftReplayOutcome = {
-      step: step.position,
-      stepId: automationStudioFlowDraftStepId(step),
-      actionId: step.actionId,
-      status,
-      ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
-      ...(mode === "verify" ? { mode } : {}),
-      ...(status !== "replayed" && withheldBy !== undefined ? { withheldBy } : {})
-    };
-    outcomes.push(outcome);
-    if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome)) withheldBy = step.position;
+    outcomes.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), actionId: step.actionId, status, ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}) });
     if (status === "replayed") continue;
     // The first thing that did not replay is the one worth showing, and the
     // rest of the steps are still run: a verdict that stops at the first
@@ -144,15 +121,13 @@ function verdictOf(
 ): AutomationStudioFlowDraftDryRun {
   // A step the Flow would not always run answers for itself: the replay is one
   // situation, and a step that exists for another one is not a broken step
-  // (`../../flow-draft/routing.ts`). Nor is a step that ran without an effect
-  // the dry run withheld (`../../flow-draft/verify-only.ts`).
-  const withheld = automationStudioFlowDraftWithheldStepIds(outcomes);
+  // (`../../flow-draft/routing.ts`).
   return automationStudioFlowDraftDryRunVerdict({
     attempt: input.attempt,
     reset,
     outcomes,
     asked: input.asked,
-    conditional: new Set([...automationStudioFlowDraftConditionalStepIds(input.steps), ...withheld])
+    conditional: automationStudioFlowDraftConditionalStepIds(input.steps)
   });
 }
 

@@ -202,7 +202,7 @@ describe("the feedback an amendment refusal is shown as", () => {
   // compile here until this test names it, and in the module until it is
   // explained there.
   const everyReason: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], true> = {
-    no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, not_a_kept_step: true,
+    no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true
   };
 

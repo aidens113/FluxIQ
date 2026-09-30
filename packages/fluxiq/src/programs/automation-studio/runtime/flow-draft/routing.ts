@@ -101,10 +101,16 @@ export function automationStudioFlowDraftRoutingReferences(routing: AutomationSt
  * never blocks -- and a step *not* named here still does, because an
  * unconditional step that does not replay is a Flow that does not run.
  *
- * Four kinds of step are in it: one the model marked `optional`, one it made
+ * Five kinds of step are in it: one the model marked `optional`, one it made
  * conditional with `only_if`, the check that guards such a step (the check
- * failing is how the skip happens), and a step some other step falls back to,
- * which by construction runs only when that step failed.
+ * failing is how the skip happens), a step some other step falls back to,
+ * which by construction runs only when that step failed, and every step of a
+ * span that repeats. A repeated step runs once per row, or while a check
+ * holds -- zero times or many, never "once, on a fresh start" -- and the row the
+ * build acted on is already done on a site that remembers it: the Confirm it
+ * pressed is gone. Replayed as an unconditional step it fails or is
+ * unreproducible every time, and in live run `run-munq51ik-a7ebd077` that
+ * refused nine of ten completions of a correct loop (lane t195).
  */
 export function automationStudioFlowDraftConditionalStepIds(
   steps: readonly AutomationStudioFlowDraftStep[]
@@ -119,8 +125,17 @@ export function automationStudioFlowDraftConditionalStepIds(
       conditional.add(routing.check);
     }
     if (routing.kind === "on_failed") conditional.add(routing.to);
+    if (routing.kind === "repeat") for (const member of repeatedSpan(steps, step, routing.through)) conditional.add(member);
   }
   return conditional;
+}
+
+/** The ids of a repeating span: this step through `through`, in draft order; just this step when `through` is not after it. */
+function repeatedSpan(steps: readonly AutomationStudioFlowDraftStep[], first: AutomationStudioFlowDraftStep, through: string): string[] {
+  const start = steps.indexOf(first);
+  const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
+  if (start < 0 || end < start) return [automationStudioFlowDraftStepId(first)];
+  return steps.slice(start, end + 1).filter(automationStudioFlowDraftStepIsProposed).map(automationStudioFlowDraftStepId);
 }
 
 /**

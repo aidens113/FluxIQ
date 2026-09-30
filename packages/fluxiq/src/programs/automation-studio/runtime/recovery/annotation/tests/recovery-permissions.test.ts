@@ -95,12 +95,15 @@ describe("a recovery under its permission gate", () => {
     expect(run.diagnosisGates).not.toHaveProperty("allowExternalSideEffects");
   });
 
-  it("presses on the authority of the person's instruction, as the Flow's build stored it", async () => {
+  // Until 2026-09-30 the stored instruction pressed on its own authority. A
+  // deletion now needs a person's permission every time; the instruction's
+  // words travel with the question instead.
+  it("asks rather than pressing on the authority of the person's instruction, and says what it asked for", async () => {
     const current = instruction();
     const run = await recover({ instructions: [current], storedInstructed: [stored(current)] });
 
-    expect(run.pressed).toEqual(["Cancel unfilled lines"]);
-    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
+    expect(run.pressed).toEqual([]);
+    expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["delete"], authority: { granted: [], instructed: [expect.objectContaining({ consequence: "delete" })] } });
     expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: ["delete"], lapsed: [] });
   });
 
