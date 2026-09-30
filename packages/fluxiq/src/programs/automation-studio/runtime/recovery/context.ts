@@ -101,6 +101,7 @@ import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
+import { fitAutomationStudioRecoveryContextToBudget } from "./context-budget/index.ts";
 
 /**
  * Every section, most important first. The order is the contract: it is the
@@ -179,8 +180,13 @@ export type AutomationStudioRuntimeRecoveryContext = {
   schemaVersion: "automation-studio.recovery-context.v1";
   /** Only the sections that made it. Keyed by section name so a reader never positionally indexes them. */
   sections: Partial<Record<AutomationStudioRecoveryContextSection, JsonObject>>;
-  /** The included sections in priority order, with what each one costs. */
-  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number }>;
+  /**
+   * The included sections in priority order, with what each one costs.
+   * `trimmedFromByteCount` is present only on a section the byte budget made
+   * smaller rather than dropped (`context-budget/fit.ts`), and says what it cost
+   * as built.
+   */
+  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number; trimmedFromByteCount?: number }>;
   /** Every other section, with the reason. `included` and `omitted` together name every section, always. */
   omitted: AutomationStudioRecoveryContextOmission[];
   byteCount: number;
@@ -239,6 +245,18 @@ export type AutomationStudioRuntimeRecoveryContextInput = {
  * exists. On the patch, which is the tight one, the explored packets yield by
  * exactly this much, and that is the trade: the model is shown one fewer
  * explored page and is shown the graph it is being asked to rewire.
+ *
+ * **The estimate above was low, and the budget did not move; the trim did.**
+ * Live run `run-munnhi5q-4867dabe` (2026-09-29) measured an eleven-node
+ * bootstrap Flow's graph at about 5,000 bytes and its step chain at about 5,000
+ * more -- real ids are long, and every action has a `failed` edge beside its
+ * `success` one -- beside a 3,300-byte refuted-result failure record. Dropped
+ * whole, lowest first, that left the failure record alone. Raising the budget
+ * would have moved the cliff, not removed it, and the patch request is the tight
+ * one. So the essential sections are now trimmed, largest first, before any of
+ * them is dropped (`context-budget/fit.ts`): the graph keeps the failing node and
+ * the edges either side of it, and the step chain keeps the failing step's
+ * parameters, at every rung.
  */
 export const AUTOMATION_STUDIO_RECOVERY_CONTEXT_MAX_BYTES = 8_000;
 
@@ -304,32 +322,8 @@ export function buildAutomationStudioRuntimeRecoveryContext(input: AutomationStu
     context.sections[section] = screened;
     context.included.push({ section, byteCount: serializedByteCount(screened) });
   }
-  trimRecoveryContextToBudget(context);
+  fitAutomationStudioRecoveryContextToBudget(context, AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS, record?.nodeId);
   return context;
-}
-
-/**
- * Drops included sections lowest priority first until the whole object fits,
- * recording each drop as `byte_budget` with what it cost.
- *
- * The size is re-measured on the whole context every time, because each
- * omission entry it writes costs bytes too. When nothing is left to drop the
- * loop stops and `byteCount` reports the truth rather than a fiction: the
- * bookkeeping is not droppable, so a context can legitimately end up over its
- * own budget with every section already gone, and saying so is better than
- * throwing away the record of what was withheld.
- */
-function trimRecoveryContextToBudget(context: AutomationStudioRuntimeRecoveryContext): void {
-  context.byteCount = serializedByteCount(context);
-  while (context.byteCount > context.byteBudget && context.included.length) {
-    const dropped = context.included.pop()!;
-    delete context.sections[dropped.section];
-    context.omitted.push({ section: dropped.section, reason: "byte_budget", byteCount: dropped.byteCount });
-    context.byteCount = serializedByteCount(context);
-  }
-  context.omitted.sort((left, right) =>
-    AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(left.section) - AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(right.section));
-  context.byteCount = serializedByteCount(context);
 }
 
 export function serializedByteCount(value: unknown): number {

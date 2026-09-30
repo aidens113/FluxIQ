@@ -33,7 +33,8 @@ export type AutomationStudioRecoveryContextSummary = {
   byteBudget: number;
   /** How many of the contract's sections the context carries. */
   includedCount: number;
-  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number }>;
+  /** Each included section and its cost; `trimmedFromByteCount` where the budget made it smaller rather than dropping it. */
+  included: Array<{ section: AutomationStudioRecoveryContextSection; byteCount: number; trimmedFromByteCount?: number }>;
   /** Every section that is not in `included`, each with why. Never empty unless every section was included. */
   omitted: AutomationStudioRecoveryContextOmission[];
   /** True when at least one section existed and the byte budget forced it out. Distinct from a section that was absent or withheld. */
@@ -47,7 +48,11 @@ export function summarizeAutomationStudioRuntimeRecoveryContext(context: Automat
     byteCount: context.byteCount,
     byteBudget: context.byteBudget,
     includedCount: context.included.length,
-    included: context.included.map((entry) => ({ section: entry.section, byteCount: entry.byteCount })),
+    included: context.included.map((entry) => ({
+      section: entry.section,
+      byteCount: entry.byteCount,
+      ...(entry.trimmedFromByteCount !== undefined ? { trimmedFromByteCount: entry.trimmedFromByteCount } : {})
+    })),
     omitted: context.omitted.map((entry) => ({ section: entry.section, reason: entry.reason, byteCount: entry.byteCount })),
     budgetTruncated: context.omitted.some((entry) => entry.reason === "byte_budget")
   };

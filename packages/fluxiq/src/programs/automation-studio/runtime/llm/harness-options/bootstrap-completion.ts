@@ -87,6 +87,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
+import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
 
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
@@ -255,7 +256,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         flowId: input.flowId,
         binding: input.binding,
         handlesIssued: true,
-        permissionFor: input.permissionFor
+        permissionFor: input.permissionFor,
+        inheritedNodeRefs: drafted?.inheritedNodeRefs
       });
       if (!resolved.ok) {
         failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
@@ -350,7 +352,7 @@ function fromDraft(
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
-): AutomationStudioFlowBootstrapAcceptance {
+): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
   // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
@@ -367,7 +369,10 @@ function fromDraft(
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };
   }
-  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE };
+  // The steps the Flow being extended already runs, untouched, which the gate
+  // has nothing new to ask about (`./inherited-plan-nodes.ts`).
+  const inheritedNodeRefs = automationStudioInheritedPlanNodeRefs({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs };
 }
 
 /**
