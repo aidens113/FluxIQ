@@ -161,6 +161,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   getConversationAttachment: "get-conversation-attachment",
   appendConversationTurn: "append-turn",
   answerConversationAsk: "answer-ask",
+  getActivity: "get-activity",
   inspectStateDiff: "inspect-state-diff",
   listSignalRegistries: "list-signal-registries",
   listRecordingDomains: "list-recording-domains",

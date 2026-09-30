@@ -33,6 +33,7 @@ import {
 } from "./turn-commands";
 import { describePanelCapabilities, panelCapabilityVocabulary, type PanelCapabilityDescription } from "./capabilities";
 import { sendConversationInstruction, type ConversationInstructionPayload, type ConversationOnScreen } from "./instruction-commands";
+import { getConversationActivity, type ConversationActivityQuery } from "./activity";
 
 export type ConversationViewHostModel = {
   /** The project whose threads are listed, or null to list across every project the person can see. */
@@ -79,6 +80,8 @@ export type ConversationCommands = {
   describeCapabilities(): { prose: string; vocabulary: PanelCapabilityDescription[] };
   /** Optional: absent means an attachment renders as a reference rather than in place. */
   loadAttachment?(payload: ConversationAttachmentQuery, signal?: AbortSignal): ReturnType<typeof getConversationAttachment>;
+  /** Optional: absent means the chat shows the thread without Core's live status header and rows. */
+  loadActivity?(payload: ConversationActivityQuery, signal?: AbortSignal): ReturnType<typeof getConversationActivity>;
 };
 
 export function useConversationCommands(): ConversationCommands {
@@ -92,6 +95,7 @@ export function useConversationCommands(): ConversationCommands {
     answerAsk: (payload) => answerConversationAsk(transport, payload),
     runCapability: (payload) => runConversationCapability(transport, payload),
     describeCapabilities: () => ({ prose: describePanelCapabilities(), vocabulary: panelCapabilityVocabulary() }),
-    loadAttachment: (payload, signal) => getConversationAttachment(transport, payload, signal)
+    loadAttachment: (payload, signal) => getConversationAttachment(transport, payload, signal),
+    loadActivity: (payload, signal) => getConversationActivity(transport, payload, signal)
   }), [transport]);
 }
