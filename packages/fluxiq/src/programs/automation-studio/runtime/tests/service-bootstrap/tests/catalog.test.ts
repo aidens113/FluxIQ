@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { plan, mockProvider, permissionScopedNativeRuntime, blankFixture, grant, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { plan, mockProvider, permissionScopedNativeRuntime, blankFixture, caller, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
 let tempRoot: string;
 
@@ -14,7 +14,6 @@ const services = new Set<AutomationStudioService>();
 function createService(input: {
   provider?: AutomationStudioLlmProvider;
   resolver?: (input: AutomationStudioLlmProviderResolverInput) => unknown | Promise<unknown>;
-  revoke?: (grantId: string) => void;
   evidenceRuntime?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>;
   reusableLlmContext?: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>;
 } = {}) {
@@ -30,8 +29,7 @@ function createService(input: {
     dataDir: tempRoot,
     llmProviderResolver: resolver as any,
     ...(input.evidenceRuntime ? { llmEvidenceRuntime: input.evidenceRuntime } : {}),
-    ...(input.reusableLlmContext ? { reusableLlmContext: input.reusableLlmContext } : {}),
-    ...(input.revoke ? { revokeLlmExecutionGrant: input.revoke } : {})
+    ...(input.reusableLlmContext ? { reusableLlmContext: input.reusableLlmContext } : {})
   });
   services.add(instance);
   return instance;
@@ -50,16 +48,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
   it("reports unavailable canonical settings binding before provider resolution", async () => {
     const resolver = vi.fn();
-    const revoke = vi.fn();
-    const instance = createService({ resolver, revoke });
+    const instance = createService({ resolver });
     const { project, flow } = await blankFixture(instance);
-    const executionGrant = await grant(instance, project.id, flow.flowId);
     vi.spyOn(instance, "getLlmExecutionBinding").mockRejectedValue(new Error("raw binding failure"));
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
-      executionGrant
+      caller: caller()
     }));
 
     expect(diagnostic).toEqual({
@@ -70,7 +66,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       providerResponse: "not_received"
     });
     expect(resolver).not.toHaveBeenCalled();
-    expect(revoke).toHaveBeenCalledTimes(1);
   });
 
   it("projects the bound native runtime grants into bootstrap catalog selection without weakening permission filtering", async () => {
@@ -95,7 +90,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     await expect(granted.generateFlowBootstrapAdaptation({
       projectId: grantedFixture.project.id,
       flowId: grantedFixture.flow.flowId,
-      executionGrant: await grant(granted, grantedFixture.project.id, grantedFixture.flow.flowId)
+      caller: caller()
     })).resolves.toMatchObject({ status: "proposed" });
 
     expect(providerRun).toHaveBeenCalledTimes(1);
@@ -121,7 +116,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const diagnostic = await rejectedGenerationDiagnostic(denied.generateFlowBootstrapAdaptation({
       projectId: deniedFixture.project.id,
       flowId: deniedFixture.flow.flowId,
-      executionGrant: await grant(denied, deniedFixture.project.id, deniedFixture.flow.flowId)
+      caller: caller()
     }));
     expect(diagnostic).toEqual({
       code: "flow_bootstrap.required_capabilities_unavailable",
@@ -136,8 +131,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
   it("reports required instruction capabilities that the bounded catalog cannot supply", async () => {
     const resolver = vi.fn();
-    const revoke = vi.fn();
-    const instance = createService({ resolver, revoke });
+    const instance = createService({ resolver });
     const { project, flow } = await blankFixture(instance);
     const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
     await instance.saveFlowInstruction(project.id, {
@@ -145,12 +139,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       body: "Click the required browser button using a web interaction node.",
       updatedAt: Date.now()
     });
-    const executionGrant = await grant(instance, project.id, flow.flowId);
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
-      executionGrant
+      caller: caller()
     }));
 
     expect(diagnostic).toEqual({
@@ -161,6 +154,5 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       providerResponse: "not_received"
     });
     expect(resolver).not.toHaveBeenCalled();
-    expect(revoke).toHaveBeenCalledTimes(1);
   });
 });

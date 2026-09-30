@@ -3,7 +3,7 @@
 //
 // A step that presses something has to be able to say what pressing it would
 // cause, because that is the only fact in the permission seam nobody but the
-// model holds. Core holds the person's grant and has never seen the page; the
+// model holds. Core holds the person's permission and has never seen the page; the
 // domain knows which control the step acts on and not what pressing it means on
 // this site. Without somewhere to write it, the refusal that asks for it cannot
 // be answered, and a build that met one died on `bootstrap.unknown_parameter`

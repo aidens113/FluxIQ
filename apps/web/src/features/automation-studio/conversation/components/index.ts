@@ -1,3 +1,5 @@
+export { ConversationActivityHeader } from "./ConversationActivityHeader";
+export { ConversationActivityRow } from "./ConversationActivityRow";
 export { ConversationAskForm } from "./ConversationAskForm";
 export { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
 export { ConversationComposer } from "./ConversationComposer";

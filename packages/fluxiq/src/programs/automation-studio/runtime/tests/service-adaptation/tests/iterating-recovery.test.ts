@@ -1,15 +1,16 @@
 // A runtime recovery that asks to look before it answers.
 //
-// Twice against the real provider, a run under an explicit grant got as far as
-// a staged diagnosis and no further: the model's first move was to ask for more
+// Twice against the real provider, a run a person asked for got as far as a
+// staged diagnosis and no further: the model's first move was to ask for more
 // evidence, the one call that could serve that request was forbidden to the
-// grant a runtime session could carry, and the recovery ended with
+// grant a runtime session then had to carry, and the recovery ended with
 // `validationOk: false` while its scenario still passed.
 //
-// These tests drive that exact sequence end to end: a failed run, the real
-// grant service, the real DeepSeek provider contract behind a scripted
-// endpoint, and the task-kind policy the host binds for a recovery. The script
-// asks to gather before it answers, and the recovery has to complete.
+// These tests drive that exact sequence end to end: a failed run, the host's
+// own session-key resolver (no grant: the caller's key, released per call), the
+// real DeepSeek provider contract behind a scripted endpoint, and the
+// task-kind policy the host binds for a recovery. The script asks to gather
+// before it answers, and the recovery has to complete.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -17,9 +18,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import {
-  AutomationStudioLlmExecutionGrantService,
+  createAutomationStudioSessionKeyProviderResolver,
   type AutomationStudioLlmRunCallRecord,
-  type AutomationStudioRuntimeSessionGrantPurpose
+  type AutomationStudioRuntimeSessionLlmIntent
 } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../service-fixtures.ts";
@@ -54,8 +55,8 @@ describe("AutomationStudioService iterating recovery", () => {
 
   // A whole failed run and four scripted calls: on a loaded machine this runs
   // well past the suite's 15-second default, hence its own timeout.
-  it.each(["diagnose_and_adapt", "explore_and_adapt"] as const)("completes a %s recovery that stages a diagnosis, gathers evidence and then answers", async (purpose) => {
-    const fixture = await recoveryFixture(purpose);
+  it.each(["diagnose_and_adapt", "explore_and_adapt"] as const)("completes a %s recovery that stages a diagnosis, gathers evidence and then answers, with no grant", async (intent) => {
+    const fixture = await recoveryFixture(intent);
 
     const { run, detail } = await fixture.run();
 
@@ -97,44 +98,37 @@ describe("AutomationStudioService iterating recovery", () => {
     // And it answered, under manual review: nothing was applied on its own.
     expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ kind: "temporary_target_override" })]);
     expect(JSON.stringify(detail?.metadata?.runtimePatchAttempts)).not.toContain("\"autoApply\":true");
-    // Four calls on one grant, past the two it used to be pinned at, and the
-    // grant released when the run ended.
-    expect(fixture.reveals()).toBe(4);
-    expect(fixture.grants.activeGrantCount()).toBe(0);
+    // Four calls, past the two a grant used to pin a recovery at, each on the
+    // caller's own key released for that call alone: nothing issued or held.
+    expect(fixture.reveals()).toEqual(Array.from({ length: 4 }, () => ({ userId: "user.one", sessionId: "session.one" })));
     expect(run.status).toBe("failed");
   }, 60_000);
 
-  it("runs a granted session whatever its purpose, its dry-run flag or its side-effect authorization", async () => {
-    // **All three of these were refusals, and all three were the t166 bug.** A
-    // grant's purpose is not a statement about how a run may execute: what a
-    // grant exists to gate is a lasting real-world consequence, and those are
-    // gated one action at a time by `permittedConsequences` and the action
-    // permission gate, neither of which this ever touched. What it did instead
-    // was throw the grant away -- every refusal revoked it -- so the caller could
-    // not retry without asking a person for a new one. A build's purpose was
-    // refused outright, which is the entry point a Flow built from an
-    // instruction actually runs under; and a purpose that "changes nothing" was
-    // refused for carrying side-effect authorization, so having a run's answer
-    // judged cost the run its ability to act on a page.
+  it("runs a model run whatever its intent, its dry-run flag or its side-effect authorization", async () => {
+    // A run's intent is not a statement about how it may execute: what stays
+    // gated is a lasting real-world consequence, one action at a time, by
+    // `permittedConsequences` and the action permission gate. A build's intent
+    // is the entry point a Flow built from an instruction runs under, and a
+    // verification that "changes nothing" may still act on a page.
     const service = track(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
-    const project = await service.createProject({ name: "Unsupported purpose" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.unsupported-purpose", metadata: adaptiveTrainingMetadata() });
+    const project = await service.createProject({ name: "Any intent" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.any-intent", metadata: adaptiveTrainingMetadata() });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
-      llmExecution: { grantId: "grant.build", actorUserId: "user.one", actorSessionId: "session.one", purpose: "build_and_adapt" as never }
+      llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "build_and_adapt" }
     })).resolves.toMatchObject({ flowId: flow.flowId });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
       dryRunLlm: true,
-      llmExecution: { grantId: "grant.explore", actorUserId: "user.one", actorSessionId: "session.one", purpose: "explore_and_adapt" }
+      llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" }
     })).resolves.toMatchObject({ flowId: flow.flowId });
     await expect(service.runRuntimeSession({
       projectId: project.id,
       flowId: flow.flowId,
       authorizedExternalSideEffects: true,
-      llmExecution: { grantId: "grant.diagnose", actorUserId: "user.one", actorSessionId: "session.one", purpose: "diagnosis_only" }
+      llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "diagnosis_only" }
     })).resolves.toMatchObject({ flowId: flow.flowId });
   });
 });
@@ -145,8 +139,8 @@ function track(service: AutomationStudioService): AutomationStudioService {
 }
 
 /**
- * One project, one failing Flow, one real grant service and one service wired
- * to it the way the host wires them, with the provider's replies scripted.
+ * One project, one failing Flow, and one service wired to the session-key
+ * resolver the way the host wires it, with the provider's replies scripted.
  *
  * The domain here captures no failure evidence. The recovery exploration
  * currently forwards captured failure evidence into its `evidence_tool_decision`
@@ -155,53 +149,39 @@ function track(service: AutomationStudioService): AutomationStudioService {
  * before a provider is called. That is a separate defect in
  * `recovery/annotation/exploration.ts`, reported rather than papered over here.
  */
-async function recoveryFixture(purpose: AutomationStudioRuntimeSessionGrantPurpose) {
+async function recoveryFixture(intent: AutomationStudioRuntimeSessionLlmIntent) {
   const replies = Object.fromEntries(Object.entries(GATHER_THEN_ANSWER).map(([taskKind, list]) => [taskKind, [...list]]));
   const taskKinds: string[] = [];
   const toolCalls: Array<{ toolId: string; callId: string }> = [];
-  let revealCount = 0;
-  let authorizationCount = 0;
-  let service: AutomationStudioService | undefined;
-  const key = { id: "secret:key", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
-  const grants = new AutomationStudioLlmExecutionGrantService({
-    resolveExecutionDigest: async (projectId, flowId) => service!.getLlmExecutionBinding(projectId, flowId),
-    identityAccess: {
-      validateSession: async () => ({ user: { id: "user.one", passwordConfigured: true, pinConfigured: true }, session: {}, role: {} })
-    } as any,
-    secretKeys: {
-      getKeySummary: async () => ({ ...key }),
-      createSessionRevealAuthorization: async (input: { ttlMs?: number; nowMs: number }) => {
-        authorizationCount += 1;
-        return { authorizationId: `secret-reveal:${authorizationCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: input.nowMs + (input.ttlMs ?? 60_000), remainingUses: 1 };
-      },
-      revealKeyWithAuthorization: async () => {
-        revealCount += 1;
-        return { key: { ...key }, value: "test-provider-secret" };
-      },
-      revokeRevealAuthorization: () => undefined
-    } as any,
-    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
-      const task = JSON.parse(body.messages?.find((message) => message.role === "user")?.content ?? "{}") as { taskKind?: string };
-      const taskKind = String(task.taskKind);
-      taskKinds.push(taskKind);
-      const content = replies[taskKind]?.shift() ?? { kind: "unscripted" };
-      return new Response(JSON.stringify({
-        choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    }) as typeof fetch
-  });
-  service = track(new AutomationStudioService({
+  const reveals: Array<{ userId: string; sessionId: string }> = [];
+  const service = track(new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    // The host's own composition: one grant resolves the provider for the whole
-    // diagnosis, evidence, repair and verification loop, whatever its purpose.
-    llmProviderResolver: (input) => input.executionGrant
-      ? grants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId })
-      : undefined,
-    revokeLlmExecutionGrant: (grantId) => grants.revoke(grantId),
-    closeLlmExecutionGrants: () => grants.close(),
+    // The host's own composition: the caller's key resolves the provider for
+    // the whole diagnosis, evidence, repair and verification loop, whatever its
+    // intent. Nothing is issued before the run or revoked after it.
+    llmProviderResolver: createAutomationStudioSessionKeyProviderResolver({
+      ports: {
+        snapshot: async () => ({ keys: [{ id: "secret:key", kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
+        createSessionRevealAuthorization: async (input) => {
+          reveals.push({ userId: input.userId, sessionId: input.sessionId });
+          return { authorizationId: `secret-reveal:${reveals.length}`, keyId: input.id, keyUpdatedAtMs: 1 };
+        },
+        revealKeyWithAuthorization: async () => ({ value: "test-provider-secret" }),
+        revokeRevealAuthorization: () => undefined
+      },
+      fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
+        const task = JSON.parse(body.messages?.find((message) => message.role === "user")?.content ?? "{}") as { taskKind?: string };
+        const taskKind = String(task.taskKind);
+        taskKinds.push(taskKind);
+        const content = replies[taskKind]?.shift() ?? { kind: "unscripted" };
+        return new Response(JSON.stringify({
+          choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch
+    }),
     llmEvidenceRuntime: {
       domainId: "test.domain",
       deniedEvidenceKeys: ["html", "cookies", "headers"],
@@ -212,30 +192,19 @@ async function recoveryFixture(purpose: AutomationStudioRuntimeSessionGrantPurpo
       }
     }
   }));
-  const project = await service.createProject({ name: `Iterating recovery ${purpose}` });
-  const flow = await createFailingCanonicalFlow(service, project.id, { flowId: `flow.iterating-${purpose.replaceAll("_", "-")}`, metadata: adaptiveTrainingMetadata() });
-  const grant = await grants.issue({
-    actorUserId: "user.one",
-    actorSessionId: "session.one",
-    keyId: key.id,
-    projectId: project.id,
-    flowId: flow.flowId,
-    provider: "deepseek",
-    model: "deepseek-flash",
-    purpose
-  });
+  const project = await service.createProject({ name: `Iterating recovery ${intent}` });
+  const flow = await createFailingCanonicalFlow(service, project.id, { flowId: `flow.iterating-${intent.replaceAll("_", "-")}`, metadata: adaptiveTrainingMetadata() });
   return {
-    grants,
     taskKinds,
     toolCalls,
-    reveals: () => revealCount,
+    reveals: () => reveals,
     unusedReplies: () => Object.values(replies).flat(),
     run: async () => {
       const run = await service!.runRuntimeSession({
         projectId: project.id,
         flowId: flow.flowId,
         inputs: { numerator: 1, denominator: 0 },
-        llmExecution: { grantId: grant.grantId, actorUserId: "user.one", actorSessionId: "session.one", purpose }
+        llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent }
       });
       const detail = await service!.getFlowRunDetail(project.id, run.runId);
       return { run, detail };

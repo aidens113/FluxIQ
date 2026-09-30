@@ -19,7 +19,7 @@
 //
 // **What a disagreement does, and why it does no more.**
 //
-// 1. **It never refuses the build and never grants anything.** The instruction
+// 1. **It never refuses the build and never permits anything.** The instruction
 //    is the authority for *permitting*, so a class the instruction asks for was
 //    already allowed: an under-declaration bypasses no permission, and refusing
 //    the build would be Core overruling the person's own instruction on Core's
@@ -36,7 +36,7 @@
 // a class declared where the instruction did not ask for it was already handled,
 // because the gate refused it and raised a person's question. That is now true of
 // `delete` and `move_money` only: the rule is that the person's instruction is
-// itself the grant, and a question reaches them for a genuinely risky real-world
+// itself the permission, and a question reaches them for a genuinely risky real-world
 // consequence rather than for the automation doing its job, so `modify_existing`
 // came off the gated list (`./destructive.ts`). **For an unasked-for edit this
 // check is now the only thing that catches it**, which raises rather than lowers

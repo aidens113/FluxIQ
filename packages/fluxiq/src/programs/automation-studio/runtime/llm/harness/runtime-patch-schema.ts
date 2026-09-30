@@ -13,7 +13,7 @@
 // is what the recovery's permission gate is asked about before the patch runs:
 // a class nobody allowed becomes a request the person answers, never a refusal
 // the run swallows. It is required only where the patch may execute. Under a
-// `diagnose_and_adapt` grant a target override is a proposal a person reviews
+// `diagnose_and_adapt` run a target override is a proposal a person reviews
 // and nothing runs, so the model is not asked for a field nothing reads.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
@@ -143,11 +143,11 @@ const NO_REPAIR_OUTPUT_SCHEMA = {
 /**
  * The output schema for a `runtime_patch` request: two shapes, always -- a
  * patch, or the answer that there is no repair. With one shape the model had
- * to name a control whatever the evidence showed, and under a proposal grant
+ * to name a control whatever the evidence showed, and on a proposal-only run
  * that control had to be a target override with at least one handle -- which
  * is how every refusal task of the 2026-09-17 live campaign came back with one.
  *
- * `proposalOnly` is a `diagnose_and_adapt` grant: exactly one target override,
+ * `proposalOnly` is a `diagnose_and_adapt` run: exactly one target override,
  * proposed and never run, so it carries no `consequences`.
  */
 export function automationStudioRuntimePatchOutputSchema(input: { proposalOnly: boolean }): JsonSchema {

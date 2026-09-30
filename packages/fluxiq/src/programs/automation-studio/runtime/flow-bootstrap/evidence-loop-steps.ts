@@ -35,7 +35,7 @@ import type {
 } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./plan/index.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "./plan/index.ts";
 
 /**
  * A trace row as a reader of the loop's record sees one.
@@ -378,7 +378,13 @@ const MAX_DRAFT_REVISIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterat
 // in every loop iteration, and also carry the deterministic iteration-zero
 // observation. This bounds represented draft positions, not revisions or the
 // amendments allowed in one decision.
-const MAX_REPRESENTED_DRAFT_STEPS = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes
+//
+// **At the Flow size setting's largest value, not a Flow's own.** These readers
+// read a trace row or a published step back, and no caller has the Flow in
+// hand (the loop's own rows, the service's evidence trace, a stored failure
+// diagnostic). A record written while a Flow's setting was higher must still
+// read after it is lowered, so the bound is whatever any Flow could have held.
+const MAX_REPRESENTED_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
   + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
   + 1;
 

@@ -2,7 +2,7 @@
 //
 // The property these rows protect is the one the product was losing for days:
 // a run told to add something to a basket, save a listing for later or send a
-// message must do it without a second grant. The counter-property is in the
+// message must do it without a second permission. The counter-property is in the
 // same file so neither can be relaxed without the other being read: a high-risk
 // act nobody asked for still stops the run, and the question that reaches the
 // person still carries everything they need to answer it.
@@ -73,7 +73,7 @@ describe("which classes a person is still asked about", () => {
   // to `DESTROYS` is a failing test and never a surprise on a live run.
   //
   // The list has shrunk twice on the same rule -- the person's instruction is
-  // itself the grant, so only a genuinely high-risk real-world consequence
+  // itself the permission, so only a genuinely high-risk real-world consequence
   // reaches them. `modify_existing` left on 2026-09-26 because it is the
   // broadest of the five, so gating it asked about ordinary editing.
   // `send_or_publish` left on 2026-09-28 because a run that sends is a run whose
@@ -107,7 +107,7 @@ describe("which classes a person is still asked about", () => {
 });
 
 describe("an act the person's instruction plainly asks for", () => {
-  it("adds to the basket and sends the message with no grant, and asks nobody", async () => {
+  it("adds to the basket and sends the message with nothing permitted, and asks nobody", async () => {
     const run = gate({ derive: async () => readWell() });
 
     expect(await run.checkFor(PRESS)(ADD_TO_BASKET)).toEqual({ permitted: true });
@@ -199,7 +199,7 @@ describe("a destructive act the instruction did not ask for", () => {
     expect(run.declarations[0]?.missing).toEqual(["delete"]);
   });
 
-  it("goes ahead once a grant, or the instruction itself, covers it", async () => {
+  it("goes ahead once a person's permission, or the instruction itself, covers it", async () => {
     const granted = gate({ permitted: ["move_money"], derive: async () => readWell() });
     expect(await granted.checkFor(STEP)(CHECK_OUT)).toEqual({ permitted: true });
     expect(granted.request).toBeUndefined();

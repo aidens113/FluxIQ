@@ -1,31 +1,30 @@
-// What a failed provider call means for the authorization it was made under.
+// What a failed provider call means for the run it was made in.
 //
-// An execution grant used to treat every failure the same way: any exception
-// inside a granted call revoked the whole grant. That is right for a failure
-// that says something about the authorization -- the person's session ended,
-// the key changed, the request is one Core will never send -- and wrong for a
-// failure that only says something about one reply. A model that answers once
-// with a malformed object, or a provider that is slow once, then ended the
-// whole recovery: every later call, the patch included, was refused because the
-// grant was gone. An adaptation that is meant to iterate cannot survive one bad
-// reply that way.
+// A provider failure says one of two things. Some failures say something no
+// retry can fix: the caller's key was rejected or is gone, the request is one
+// Core will never send, the call was cancelled, the provider billed past the
+// call's ceiling. Asking again would fail the same way, so the model's part in
+// the run or loop ends there. Other failures only say something about one
+// reply: a model that answers once with a malformed object, or a provider that
+// is slow once. The next call may well succeed, so the failure only spends the
+// call, and a loop that is meant to iterate asks again.
 //
 // So each provider failure code is given one of two meanings here, and the
-// meaning is decided by the code, never by a message. **`end_grant`** is an
-// authorization or integrity failure: nothing that happens next can make the
-// grant valid again, so it is revoked on the spot. **`spend_call`** is the model
-// or the network: the call was authorized, the credential went to the fixed
-// endpoint, and the call is counted and charged exactly as a successful one
-// would be -- the grant itself is untouched. **`spend_call_on_server_error`** is
-// an HTTP failure, which is the network only when the status is a 5xx; any other
-// status is the provider refusing this request, and that ends the grant.
+// meaning is decided by the code, never by a message. **`end_model_calls`** is
+// a credential or integrity failure: nothing that happens next can make the
+// call succeed, so the model is asked nothing more. **`spend_call`** is the
+// model or the network: the credential went to the fixed endpoint, and the call
+// is counted and charged against the run's budget exactly as a successful one
+// would be. **`spend_call_on_server_error`** is an HTTP failure, which is the
+// network only when the status is a 5xx; any other status is the provider
+// refusing this request, and that ends the model's calls.
 //
 // **The table is closed.** It is a `Record` over every provider code, checked
 // with `satisfies`, so a code added to the provider contract and not given a
 // meaning here is a compile error rather than a silent default. And anything
-// that is not a typed provider failure at all -- the grant's own refusals, a
-// Secret Keys error, an exception nobody named -- has no code, is not in the
-// table, and ends the grant. Nothing falls into "keep" by omission.
+// that is not a typed provider failure at all -- a Secret Keys error, an
+// exception nobody named -- has no code, is not in the table, and ends the
+// model's calls. Nothing falls into "ask again" by omission.
 
 import {
   AutomationStudioLlmProviderError,
@@ -33,51 +32,51 @@ import {
   type AutomationStudioLlmProviderErrorCode
 } from "./provider-contract.ts";
 
-/** What a failed call does to the grant it was made under. */
-export type AutomationStudioLlmProviderFailureDisposition = "end_grant" | "spend_call" | "spend_call_on_server_error";
+/** What a failed call does to the rest of the model's calls in the run. */
+export type AutomationStudioLlmProviderFailureDisposition = "end_model_calls" | "spend_call" | "spend_call_on_server_error";
 
-const END_GRANT = "end_grant" as const;
+const END_MODEL_CALLS = "end_model_calls" as const;
 
 /**
- * Every provider failure code, and what it means for the grant.
+ * Every provider failure code, and what it means for the model's next call.
  *
- * The eighteen pre-flight refusals all end it: a request Core refused to build
+ * The pre-flight refusals all end the model's calls: a request Core refused to build
  * or send will be refused identically next time, so retrying it only spends
  * reveals, and one of them -- a credential found in the outbound body -- is an
  * exfiltration signal in its own right.
  */
 export const AUTOMATION_STUDIO_LLM_PROVIDER_FAILURE_DISPOSITIONS = Object.freeze({
   // Pre-flight: the provider as configured, and the request as built.
-  "llm.provider_secret_reference_invalid": END_GRANT,
-  "llm.provider_model_unsupported": END_GRANT,
-  "llm.provider_response_limit_invalid": END_GRANT,
-  "llm.provider_request_identity_invalid": END_GRANT,
-  "llm.provider_request_scope_invalid": END_GRANT,
-  "llm.provider_request_context_unbounded": END_GRANT,
-  "llm.provider_request_task_mismatch": END_GRANT,
-  "llm.provider_recent_actions_invalid": END_GRANT,
-  "llm.provider_failure_evidence_invalid": END_GRANT,
-  "llm.provider_exploration_evidence_invalid": END_GRANT,
-  "llm.provider_result_summary_invalid": END_GRANT,
-  "llm.provider_recovery_context_invalid": END_GRANT,
-  "llm.provider_flow_bootstrap_context_invalid": END_GRANT,
-  "llm.provider_evidence_loop_context_invalid": END_GRANT,
-  "llm.provider_request_limits_invalid": END_GRANT,
-  "llm.provider_request_timeout_invalid": END_GRANT,
-  "llm.provider_input_budget_exceeded": END_GRANT,
-  "llm.provider_credential_in_request": END_GRANT,
-  "llm.provider_request_construction_failed": END_GRANT,
-  "llm.provider_request_setup_failed": END_GRANT,
-  // The credential gate refused, the provider rejected the credential, or the
-  // endpoint tried to send the call somewhere else: all about the authorization.
-  "llm.provider_secret_unavailable": END_GRANT,
-  "llm.provider_auth_failed": END_GRANT,
-  "llm.provider_redirect_rejected": END_GRANT,
+  "llm.provider_secret_reference_invalid": END_MODEL_CALLS,
+  "llm.provider_model_unsupported": END_MODEL_CALLS,
+  "llm.provider_response_limit_invalid": END_MODEL_CALLS,
+  "llm.provider_request_identity_invalid": END_MODEL_CALLS,
+  "llm.provider_request_scope_invalid": END_MODEL_CALLS,
+  "llm.provider_request_context_unbounded": END_MODEL_CALLS,
+  "llm.provider_request_task_mismatch": END_MODEL_CALLS,
+  "llm.provider_recent_actions_invalid": END_MODEL_CALLS,
+  "llm.provider_failure_evidence_invalid": END_MODEL_CALLS,
+  "llm.provider_exploration_evidence_invalid": END_MODEL_CALLS,
+  "llm.provider_result_summary_invalid": END_MODEL_CALLS,
+  "llm.provider_recovery_context_invalid": END_MODEL_CALLS,
+  "llm.provider_flow_bootstrap_context_invalid": END_MODEL_CALLS,
+  "llm.provider_evidence_loop_context_invalid": END_MODEL_CALLS,
+  "llm.provider_request_limits_invalid": END_MODEL_CALLS,
+  "llm.provider_request_timeout_invalid": END_MODEL_CALLS,
+  "llm.provider_input_budget_exceeded": END_MODEL_CALLS,
+  "llm.provider_credential_in_request": END_MODEL_CALLS,
+  "llm.provider_request_construction_failed": END_MODEL_CALLS,
+  "llm.provider_request_setup_failed": END_MODEL_CALLS,
+  // The caller's key was unavailable, the provider rejected it, or the endpoint
+  // tried to send the call somewhere else: none of it changes on a retry.
+  "llm.provider_secret_unavailable": END_MODEL_CALLS,
+  "llm.provider_auth_failed": END_MODEL_CALLS,
+  "llm.provider_redirect_rejected": END_MODEL_CALLS,
   // Cancelled from outside. A cancellation is final.
-  "llm.provider_aborted": END_GRANT,
-  // The provider billed past the call's ceiling, so every reservation the grant
-  // makes from here is an underestimate and its total can no longer be promised.
-  "llm.provider_usage_limit_exceeded": END_GRANT,
+  "llm.provider_aborted": END_MODEL_CALLS,
+  // The provider billed past the call's ceiling, so every estimate made from
+  // here is an underestimate and the run's budget can no longer be promised.
+  "llm.provider_usage_limit_exceeded": END_MODEL_CALLS,
   // The network, or the provider being unavailable for a moment.
   "llm.provider_timeout": "spend_call",
   "llm.provider_network_error": "spend_call",
@@ -98,7 +97,8 @@ const DISPOSITIONS: Readonly<Record<string, AutomationStudioLlmProviderFailureDi
 
 /**
  * Whether a provider failure, named by its code and HTTP status, was only a
- * spent call: the model's reply or the network, never the authorization.
+ * spent call: the model's reply or the network, never the credential or the
+ * request itself.
  *
  * Anything that is not a provider code -- including the harness's own
  * `llm.provider_request_failed`, which is what an untyped exception becomes --

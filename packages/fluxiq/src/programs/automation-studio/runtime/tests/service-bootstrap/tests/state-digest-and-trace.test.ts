@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, grant, mockProvider, plan } from "./fixtures.ts";
+import { blankFixture, caller, mockProvider, plan } from "./fixtures.ts";
 
 type DigestAsk = { projectId: string; flowId: string; callId: string; toolId: string; phase: string };
 
@@ -89,8 +89,7 @@ async function build(options: { digests?: boolean } = {}) {
   });
   services.add(instance);
   const { project, flow } = await blankFixture(instance, "active", "example");
-  const executionGrant = await grant(instance, project.id, flow.flowId);
-  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, executionGrant });
+  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
   return { instance, project, flow, asked, generation };
 }
 

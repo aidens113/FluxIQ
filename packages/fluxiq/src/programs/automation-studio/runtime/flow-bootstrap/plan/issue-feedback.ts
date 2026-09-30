@@ -67,6 +67,15 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // beside the issues in the feedback the completion check builds.
   "bootstrap.instructed_act_missing",
   "bootstrap.completion_profile_limit_exceeded",
+  // A plan over the Flow's size (`./size-limits.ts`): each sentence is Core's
+  // own, carrying only counts and the setting's name and value, so the model
+  // knows the bound it must write within.
+  "bootstrap.invalid_nodes",
+  "bootstrap.invalid_edges",
+  "bootstrap.too_many_nodes",
+  "bootstrap.too_many_edges",
+  "bootstrap.plan_too_large",
+  "bootstrap.graph_too_deep",
   "bootstrap.invalid_subflows",
   "bootstrap.subflow_has_no_nodes",
   "bootstrap.invalid_node",

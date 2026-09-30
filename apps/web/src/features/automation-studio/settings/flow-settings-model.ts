@@ -5,6 +5,7 @@ import {
   isAutomationStudioDeepSeekModel
 } from "fluxiq/automation-studio/llm-models";
 import { FLOW_RESULT_CHECK_DEFAULT_VALUES, flowResultCheckDraftFromSettings, flowResultCheckSchedule, type FlowResultCheckDraft } from "./flow-result-check-model";
+import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 
 export const FLOW_LLM_HARD_MAX_TOKENS = 64_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
@@ -63,6 +64,8 @@ export type FlowSettingsDraft = {
   maxRetriesPerAction: string;
   maxRecoveryAttemptsPerSubflow: string;
   maxReroutesPerRun: string;
+  /** The most nodes one Subflow may hold (`max-nodes-setting.ts`). */
+  maxNodesPerSubflow: string;
   interfaceInputs: FlowPortSettingsDraft[];
   interfaceOutputs: FlowPortSettingsDraft[];
   dependencyPins: string[];
@@ -88,13 +91,14 @@ export type FlowSettingsDraft = {
   // this file is already the widest in the directory.
 } & FlowResultCheckDraft;
 
-export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInterventionsPerRun" | "maxTokensPerRun" | "maxCostUsdPerTrainingWindow" | "maxAdaptationInterventionsPerRun" | "maxAdaptationCostUsdPerRun" | "maxRetriesPerAction" | "maxRecoveryAttemptsPerSubflow" | "maxReroutesPerRun" | "interfaceInputs" | "interfaceOutputs">): string[] {
+export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInterventionsPerRun" | "maxTokensPerRun" | "maxCostUsdPerTrainingWindow" | "maxAdaptationInterventionsPerRun" | "maxAdaptationCostUsdPerRun" | "maxRetriesPerAction" | "maxRecoveryAttemptsPerSubflow" | "maxReroutesPerRun" | "maxNodesPerSubflow" | "interfaceInputs" | "interfaceOutputs">): string[] {
   const errors: string[] = [];
   const wholeNumberFields: Array<[string, string, number]> = [["LLM interventions per run", draft.maxInterventionsPerRun, 100], ["Adaptation interventions per run", draft.maxAdaptationInterventionsPerRun, 100], ["Retries per action", draft.maxRetriesPerAction, 20], ["Recovery attempts per subflow", draft.maxRecoveryAttemptsPerSubflow, 20], ["Reroutes per run", draft.maxReroutesPerRun, 20]];
   // A blank box is refused rather than read as zero. `Number("")` is 0, which
   // passes every range below, so an empty limit used to save silently as "no
   // interventions at all" -- a Flow turned off by a field nobody typed in.
   for (const [label, value, maximum] of wholeNumberFields) if (!value.trim() || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > maximum) errors.push(`${label} must be a whole number from 0 to ${maximum}.`);
+  if (!flowSizeSettingValid(Number(draft.maxNodesPerSubflow)) || !draft.maxNodesPerSubflow.trim()) errors.push(`${FLOW_SIZE_SETTING.label} must be a whole number from ${FLOW_SIZE_SETTING.minimum} to ${FLOW_SIZE_SETTING.maximum.toLocaleString("en-US")}.`);
   if (!draft.maxTokensPerRun.trim() || !Number.isInteger(Number(draft.maxTokensPerRun)) || Number(draft.maxTokensPerRun) < 128 || Number(draft.maxTokensPerRun) > 1_000_000) errors.push("LLM tokens per run must be a whole number from 128 to 1,000,000.");
   for (const [label, value] of [["Training-window cost", draft.maxCostUsdPerTrainingWindow], ["Adaptation cost per run", draft.maxAdaptationCostUsdPerRun]] as const) if (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100_000) errors.push(`${label} must be from 0 to 100,000 USD.`);
   for (const [kind, ports] of [["Input", draft.interfaceInputs], ["Output", draft.interfaceOutputs]] as const) {
@@ -116,6 +120,7 @@ export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
   llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2",
+  maxNodesPerSubflow: String(FLOW_SIZE_SETTING.defaultValue),
   ...FLOW_RESULT_CHECK_DEFAULT_VALUES
 };
 
@@ -139,7 +144,8 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     { key: "maxTokensPerRun", group: "Limits", label: "LLM tokens per run", value: draft.maxTokensPerRun, overridden: Number(draft.maxTokensPerRun) !== 12000 },
     { key: "maxRetriesPerAction", group: "Limits", label: "Retries per action", value: draft.maxRetriesPerAction, overridden: Number(draft.maxRetriesPerAction) !== 1 },
     { key: "maxRecoveryAttemptsPerSubflow", group: "Limits", label: "Recovery attempts per subflow", value: draft.maxRecoveryAttemptsPerSubflow, overridden: Number(draft.maxRecoveryAttemptsPerSubflow) !== 2 },
-    { key: "maxReroutesPerRun", group: "Limits", label: "Reroutes per run", value: draft.maxReroutesPerRun, overridden: Number(draft.maxReroutesPerRun) !== 2 }
+    { key: "maxReroutesPerRun", group: "Limits", label: "Reroutes per run", value: draft.maxReroutesPerRun, overridden: Number(draft.maxReroutesPerRun) !== 2 },
+    { key: "maxNodesPerSubflow", group: "Limits", label: FLOW_SIZE_SETTING.label, value: draft.maxNodesPerSubflow, overridden: Number(draft.maxNodesPerSubflow) !== FLOW_SIZE_SETTING.defaultValue }
   ];
   return definitions.map((item) => ({ ...item, source: item.overridden ? "Flow override" : "Framework default", resettable: item.overridden && Object.prototype.hasOwnProperty.call(FLOW_SETTINGS_DEFAULT_VALUES, item.key) }));
 }
@@ -237,6 +243,9 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
   const llmModel = typeof llm.model === "string" ? llm.model : metadata.llmModel;
   const llmSecretKeyId = typeof llm.secretKeyId === "string" ? llm.secretKeyId : metadata.llmSecretKeyId;
   const adaptationPolicyId = typeof adaptation.policyId === "string" ? adaptation.policyId : metadata.adaptationPolicyId;
+  // Not a column of the SQL settings row: Core's settings endpoints set it on
+  // the detail beside the row, so a saved size comes back with the save.
+  const flowSizeSettings = detail[FLOW_SIZE_SETTING.metadataKey] && typeof detail[FLOW_SIZE_SETTING.metadataKey] === "object" ? detail[FLOW_SIZE_SETTING.metadataKey] : undefined;
 
   return {
     ...(baseFlow ?? {}),
@@ -269,7 +278,8 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
       ...(llmModel ? { llmModel } : {}),
       ...(llmSecretKeyId ? { llmSecretKeyId } : {}),
       ...(Object.keys(llmExecution).length ? { llmExecutionSettings: llmExecution } : {}),
-      ...(adaptationPolicyId ? { adaptationPolicyId } : {})
+      ...(adaptationPolicyId ? { adaptationPolicyId } : {}),
+      ...(flowSizeSettings ? { [FLOW_SIZE_SETTING.metadataKey]: flowSizeSettings } : {})
     }
   };
 }
@@ -324,6 +334,7 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     maxRetriesPerAction: numberInputValue(trainingSettings.recoveryBudget?.maxRetriesPerAction ?? 1),
     maxRecoveryAttemptsPerSubflow: numberInputValue(trainingSettings.recoveryBudget?.maxRecoveryAttemptsPerSubflow ?? 2),
     maxReroutesPerRun: numberInputValue(trainingSettings.recoveryBudget?.maxReroutesPerRun ?? 2),
+    maxNodesPerSubflow: numberInputValue(storedMaxNodesPerSubflow(metadata)),
     interfaceInputs: (flow?.interface?.inputs ?? []).map(flowPortSettingsDraft),
     interfaceOutputs: (flow?.interface?.outputs ?? []).map(flowPortSettingsDraft),
     dependencyPins: flow?.source?.mode === "code" ? [...(flow.source.declaredDependencies ?? [])] : [],
@@ -467,7 +478,13 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
       ...(llmModel && llmModel !== "host-default" ? { llmModel } : {}),
       llmSecretKeyId,
       llmExecutionSettings,
-      adaptationPolicyId: adaptationPolicyId || "policy.default"
+      adaptationPolicyId: adaptationPolicyId || "policy.default",
+      // Stated on every save, default included, for the same reason as the
+      // settings above: an omitted key keeps whatever is stored.
+      [FLOW_SIZE_SETTING.metadataKey]: {
+        ...(rawMetadata[FLOW_SIZE_SETTING.metadataKey] && typeof rawMetadata[FLOW_SIZE_SETTING.metadataKey] === "object" ? rawMetadata[FLOW_SIZE_SETTING.metadataKey] : {}),
+        [FLOW_SIZE_SETTING.field]: Number(draft.maxNodesPerSubflow)
+      }
     }
   };
 }
@@ -587,6 +604,16 @@ function storedLlmCallCount(execution: unknown): number {
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function flowSizeSettingValid(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= FLOW_SIZE_SETTING.minimum && value <= FLOW_SIZE_SETTING.maximum;
+}
+
+/** The stored size, or the default when none is stored or the stored one is unusable -- how Core reads it. */
+function storedMaxNodesPerSubflow(metadata: any): number {
+  const value = metadata?.[FLOW_SIZE_SETTING.metadataKey]?.[FLOW_SIZE_SETTING.field];
+  return flowSizeSettingValid(value) ? value : FLOW_SIZE_SETTING.defaultValue;
 }
 
 function numberInputValue(value: unknown): string {

@@ -46,8 +46,6 @@ function fakeCore() {
     start: vi.fn(async () => ({ ok: true, payload: { runtimeSession: { runId: "run.live" } } })),
     execute: vi.fn(() => new Promise((resolve) => { finish = resolve; })),
     cancel: vi.fn(async () => ({ ok: true })),
-    preflightLlm: vi.fn(),
-    issueLlmGrant: vi.fn(),
     readControl: vi.fn(async () => answer()),
     // The fake holds at once: the step in flight is Core's concern, not the panel's.
     pause: vi.fn(async (payload: { takeControl?: boolean }) => {

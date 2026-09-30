@@ -8,6 +8,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
   AutomationStudioFlowBootstrapGenerationError,
   flowBootstrapEvidenceLoopFailure,
@@ -138,6 +140,22 @@ describe("a stored record read back", () => {
     const moved = JSON.parse(JSON.stringify(kept()));
     moved.steps[2].position = 7;
     expect(parseAutomationStudioFlowBootstrapIncompleteDraft(moved, OWNER)).toBeNull();
+  });
+
+  // A Flow is no longer capped at sixty-four nodes, so a draft kept from a
+  // build of a larger Flow must seed the next build. The reader has only the
+  // owner's ids and bounds by the largest Flow the setting allows.
+  it.each([100, 150])("reads back a kept draft of %i steps", (count) => {
+    const record = JSON.parse(JSON.stringify(kept())) as { steps: Array<Record<string, unknown>> };
+    record.steps = Array.from({ length: count }, (_, index) => ({ ...record.steps[0], position: index + 1 }));
+    expect(parseAutomationStudioFlowBootstrapIncompleteDraft(record, OWNER)?.steps).toHaveLength(count);
+  });
+
+  it("refuses a kept draft longer than any Flow could hold", () => {
+    const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 2;
+    const record = JSON.parse(JSON.stringify(kept())) as { steps: Array<Record<string, unknown>> };
+    record.steps = Array.from({ length: beyond }, (_, index) => ({ ...record.steps[0], position: index + 1 }));
+    expect(parseAutomationStudioFlowBootstrapIncompleteDraft(record, OWNER)).toBeNull();
   });
 });
 

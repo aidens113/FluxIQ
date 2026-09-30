@@ -1,7 +1,7 @@
 // What a step says its own action would lastingly do, and what Core does with it.
 //
 // The declaration is the only part of the permission seam neither Core nor the
-// domain can supply: Core holds the grant but not the page, the domain holds
+// domain can supply: Core holds the permission but not the page, the domain holds
 // the control but not what pressing it means on this site. So the model says
 // it, on the step, and these rows pin how Core reads it -- the shapes a Flow
 // script can produce, the fail-closed reading of anything else, and the promise

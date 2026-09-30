@@ -15,7 +15,7 @@
 // the starting draft (`flow-bootstrap/extend.ts`), and the patch ladder is left
 // to the failures it is actually for. This module is the decision and the
 // record of it; the call itself belongs to the service, which is the only thing
-// holding a provider resolver, a grant and a node registry.
+// holding a provider resolver and a node registry.
 //
 // **What it will not do, which is now only one thing: route a failure that is
 // not a wrong answer, or one whose Flow it has not got.** Both are statements
@@ -23,17 +23,17 @@
 // re-author, so there is nothing to allow.
 //
 // **It used to ask two permission questions here, and both were the t166 bug.**
-// The route was closed unless the run's grant purpose was one that "buys
+// The route was closed unless the run's purpose was one that "bought
 // exploring", and closed again unless the run's training context permitted
 // creating adaptations. Repairing a Flow that gave the wrong answer is not a
-// risky act: it edits a Flow, and a Flow is versioned and rolls back. A grant
-// exists to gate a lasting real-world consequence -- money, a deletion, a
-// publication -- and every one of those is still gated, action by action, by
-// the permission gate this route runs under, which holds no permitted
-// consequence at all. Gating the *repair* on the grant's name protected nobody
-// and disabled the feature outright: five live runs reached
-// `grant_does_not_buy_exploration` and stopped, and the wrong-answer repair had
-// never once executed.
+// risky act: it edits a Flow, and a Flow is versioned and rolls back.
+// Permission exists to gate a lasting real-world consequence -- money, a
+// deletion, a publication -- and every one of those is still gated, action by
+// action, by the permission gate this route runs under, which holds no
+// permitted consequence at all. Gating the *repair* on the run's purpose
+// protected nobody and disabled the feature outright: five live runs were
+// refused for it and stopped, and the wrong-answer repair had never once
+// executed.
 //
 // Every refusal is recorded on the run under one key with one code, so "this
 // was not re-authored" is always a stated reason rather than a silence.
@@ -73,7 +73,7 @@ export type AutomationStudioRefutedResultReauthorDecision =
  *
  * Every condition is read off the run rather than asked of a model, and there
  * are only two: which verdict refuted it, and whether the Flow it would extend
- * is in hand. Nothing about the grant is consulted, because nothing about
+ * is in hand. No permission is consulted, because nothing about
  * repairing a Flow needs permission.
  */
 export function automationStudioRefutedResultReauthorDecision(input: {
@@ -108,7 +108,7 @@ function automationStudioRefutedResultCode(detail: AutomationStudioFlowRunDetail
  * by that ask rather than by a second, per-occurrence press.
  *
  * **Nothing is widened to make that true, and the gates that matter still
- * stand.** The grant the route runs under carries no permitted consequence, so
+ * stand.** The route runs with no permitted consequence, so
  * an action with a lasting effect is refused and put to the person exactly as
  * before. The cost, token and deadline ledger bounds the build. And `approve`
  * itself refuses a record whose
@@ -138,7 +138,7 @@ export async function automationStudioReauthorRefutedResult(input: {
    * it recorded `flow_bootstrap.provider_request_failed` — which is the default
    * code for the whole `provider_request` stage, so it says only that a request
    * was attempted and its answer is unknown. Whether that was a per-request
-   * timeout, a transport error, a refused grant or a provider status was
+   * timeout, a transport error, a refused credential or a provider status was
    * computed in the diagnostic the caller already parses, and thrown away here.
    */
   failureCode(error: unknown): AutomationStudioRefutedResultFailure;
@@ -297,14 +297,6 @@ export type AutomationStudioRefutedResultFailure = {
  */
 export function automationStudioRefutedResultFlowWasReauthored(detail: AutomationStudioFlowRunDetail): boolean {
   return reauthorMarker(detail)?.applied === true;
-}
-
-/**
- * Whether an applied re-author may be replayed: false only where the grant
- * continuation said it may not (`service/runtime-adaptation/reauthor-continuation.ts`).
- */
-export function automationStudioRefutedResultReplayReady(detail: AutomationStudioFlowRunDetail): boolean {
-  return reauthorMarker(detail)?.replayReady !== false;
 }
 
 function reauthorMarker(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {

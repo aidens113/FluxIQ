@@ -1,3 +1,4 @@
+export * from "./activity/index.ts";
 export * from "./adaptation-confidence/index.ts";
 export * from "./action-permissions/index.ts";
 export * from "./adapters.ts";

@@ -4,9 +4,12 @@ export * from "./transport.ts";
 export * from "./types.ts";
 
 export {
+  CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID,
   CLIENT_GATEWAY_PROTOCOL_VERSION,
   type ClientGatewayActionCommand,
   type ClientGatewayActionResult,
+  type ClientGatewayActivity,
+  type ClientGatewayActivityPhase,
   type ClientGatewayAppendRecordingEntryRequest,
   type ClientGatewayCapability,
   type ClientGatewayClientHello,

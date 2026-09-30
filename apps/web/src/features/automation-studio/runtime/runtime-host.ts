@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
-import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunControl, issueLlmExecutionGrant, pauseRuntimeSession, preflightLlmExecution, resumeRuntimeSession, startRuntimeSession } from "./run-commands";
+import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunControl, pauseRuntimeSession, resumeRuntimeSession, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 import { generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, saveFlowGenerationInstruction } from "../authoring/authoring-commands";
 import { currentProgramDomainId, deleteRunDatasets, exportRunDataset, getRunDatasetPage, listRunDatasets, runDatasetDownloadHref, type RunDatasetCommands } from "../datasets";
@@ -51,11 +51,9 @@ export type RuntimeExecutionCommands = {
   loadReadiness(payload: { projectId: string; flowId: string }): ReturnType<typeof getRuntimeFlowReadiness>;
   start(payload: Record<string, any>): ReturnType<typeof startRuntimeSession>;
   execute(payload: Record<string, any>): ReturnType<typeof executeRuntimeSession>;
-  preflightLlm(payload: Record<string, any>): ReturnType<typeof preflightLlmExecution>;
-  issueLlmGrant(payload: Record<string, any>): ReturnType<typeof issueLlmExecutionGrant>;
-  generateBootstrap(payload: { projectId: string; flowId: string; llmExecutionGrantId: string }): ReturnType<typeof generateFlowBootstrapAdaptation>;
+  generateBootstrap(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): ReturnType<typeof generateFlowBootstrapAdaptation>;
   saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string }): ReturnType<typeof saveFlowGenerationInstruction>;
-  generateFromWebsite(payload: { projectId: string; flowId: string; llmExecutionGrantId: string }): ReturnType<typeof generateFlowFromWebsiteExplorationAdaptation>;
+  generateFromWebsite(payload: { projectId: string; flowId: string; permittedConsequences?: string[] }): ReturnType<typeof generateFlowFromWebsiteExplorationAdaptation>;
   cancel(payload: { projectId: string; runId: string }): ReturnType<typeof cancelRuntimeSession>;
   /**
    * Pause, take control, resume, and the live read behind them. Optional for
@@ -103,8 +101,6 @@ export function useRuntimeExecutionCommands(): RuntimeExecutionCommands {
     loadReadiness: (payload) => getRuntimeFlowReadiness(transport, payload),
     start: (payload) => startRuntimeSession(transport, payload),
     execute: (payload) => executeRuntimeSession(transport, payload),
-    preflightLlm: (payload) => preflightLlmExecution(transport, payload),
-    issueLlmGrant: (payload) => issueLlmExecutionGrant(transport, payload),
     generateBootstrap: (payload) => generateFlowBootstrapAdaptation(transport, payload),
     saveGenerationInstruction: (payload) => saveFlowGenerationInstruction(transport, payload),
     generateFromWebsite: (payload) => generateFlowFromWebsiteExplorationAdaptation(transport, payload),

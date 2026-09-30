@@ -10,7 +10,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
-import { plan, mockProvider, blankFixture, grant, expectNoTopology, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
 let tempRoot: string;
 
@@ -19,7 +19,6 @@ const services = new Set<AutomationStudioService>();
 function createService(input: {
   provider?: AutomationStudioLlmProvider;
   resolver?: (input: AutomationStudioLlmProviderResolverInput) => unknown | Promise<unknown>;
-  revoke?: (grantId: string) => void;
   evidenceRuntime?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>;
   reusableLlmContext?: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>;
 } = {}) {
@@ -35,8 +34,7 @@ function createService(input: {
     dataDir: tempRoot,
     llmProviderResolver: resolver as any,
     ...(input.evidenceRuntime ? { llmEvidenceRuntime: input.evidenceRuntime } : {}),
-    ...(input.reusableLlmContext ? { reusableLlmContext: input.reusableLlmContext } : {}),
-    ...(input.revoke ? { revokeLlmExecutionGrant: input.revoke } : {})
+    ...(input.reusableLlmContext ? { reusableLlmContext: input.reusableLlmContext } : {})
   });
   services.add(instance);
   return instance;
@@ -68,7 +66,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
   });
 
-  it("saves and updates one bounded evidence-guided instruction before grant binding", async () => {
+  it("saves and updates one bounded evidence-guided instruction before binding", async () => {
     const instance = createService();
     const project = await instance.createProject({ name: "Evidence instruction" });
     const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.evidence-instruction", name: "Blank" });
@@ -83,7 +81,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     await expect(instance.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: " ".repeat(4_001) })).rejects.toThrow("1 to 4,000");
   });
 
-  it("uses the grant-resolved bounded provider and persists one sanitized pending proposal without topology mutation", async () => {
+  // A build's model call needs no grant: the caller names whose key pays, and
+  // nothing is issued, checked or revoked around the call.
+  it("builds with no grant: resolves the bounded provider for the caller and persists one sanitized pending proposal without topology mutation", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {
       requests.push(request);
@@ -99,19 +99,19 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 20_000
     });
-    const revoke = vi.fn();
-    const instance = createService({ provider, resolver, revoke });
+    const instance = createService({ provider, resolver });
     const { project, flow } = await blankFixture(instance);
-    const executionGrant = await grant(instance, project.id, flow.flowId);
+    const binding = await instance.getLlmExecutionBinding(project.id, flow.flowId);
 
     const result = await instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
-      executionGrant
+      caller: caller()
     });
 
-    // The grant as the service read it: a grant that named no consequences permits none.
-    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, executionGrant: { ...executionGrant, permittedConsequences: [] } });
+    // The resolver is told only who the call is for.
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, caller: caller() });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       taskKind: "flow_bootstrap",
@@ -127,8 +127,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       flowId: flow.flowId,
       status: "proposed",
       sourceInstructionIds: ["instruction.build"],
-      baseDependencyDigest: executionGrant.executionDigest,
-      baseSettingsRevision: executionGrant.settingsRevision,
+      baseDependencyDigest: binding.executionDigest,
+      baseSettingsRevision: binding.settingsRevision,
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
@@ -151,9 +151,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     ]);
     expect(JSON.stringify(result)).not.toMatch(/plan|instruction body|grantId|secret|keyId/i);
     await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId))
-      .resolves.toMatchObject({ status: "proposed", baseSettingsRevision: executionGrant.settingsRevision });
+      .resolves.toMatchObject({ status: "proposed", baseSettingsRevision: binding.settingsRevision });
     await expectNoTopology(instance, project.id, flow.flowId);
-    expect(revoke).toHaveBeenCalledWith(executionGrant.grantId);
   });
 
   it("runs a bounded evidence loop and persists only content-free trace with the bootstrap adaptation", async () => {
@@ -172,7 +171,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
     });
     const { project, flow } = await blankFixture(instance);
-    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
+    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
     expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision"]);
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 8_000)).toBe(true);
@@ -199,15 +198,15 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
   });
 
-  // The loop used to stop at `min(calls, 8)` decisions. A grant's call count is
-  // now what bounds it, each decision reserves an even share of the grant's
-  // purse so every authorised call can be paid for, and a model that never
+  // The loop used to stop at `min(calls, 8)` decisions. The resolution's call
+  // count is now what bounds it, each decision reserves an even share of the
+  // run's purse so every call it allows can be paid for, and a model that never
   // finishes is still stopped at that count.
   it.each([
     { looks: 10, calls: 11, finishes: true },
-    // Never finishing: stopped at the grant's twelve, not at eight and not later.
+    // Never finishing: stopped at the resolution's twelve, not at eight and not later.
     { looks: 100, calls: 12, finishes: false }
-  ])("lets an evidence-guided bootstrap keep gathering past eight decisions, up to its grant's call count (%o)", async ({ looks, calls, finishes }) => {
+  ])("lets an evidence-guided bootstrap keep gathering past eight decisions, up to its call count (%o)", async ({ looks, calls, finishes }) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {
       requests.push(request);
@@ -228,7 +227,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       }
     });
     const { project, flow } = await blankFixture(instance);
-    const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
+    const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
     if (finishes) {
       const result = await generation;
@@ -237,9 +236,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       await expect(generation).rejects.toThrow();
     }
     expect(requests).toHaveLength(calls);
-    // Each decision reserved an even share of the grant's purse, not its $0.25
-    // per-call cap, at which the grant would refuse the ninth on cost.
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(2 / 12, 8);
+    // Each decision reserved an even share of the run's purse, not the $0.25
+    // per-call cap, at which the purse would refuse a late decision on cost.
+    // The purse is the Flow's own configured ceiling -- a new Flow's settings
+    // carry `adaptationPolicySettings.maxEstimatedCostUsdPerRun: 1` -- which
+    // wins over the resolution's $2 default total.
+    const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
+    expect(configured?.maxEstimatedCostUsdPerRun).toBe(1);
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(1 / 12, 8);
   });
 
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {
@@ -269,9 +273,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       compatibilityTags: [{ name: "surface", value: "same" }], promptProjection: { facts: [{ kind: "element", role: "button" }] }, outcome: "succeeded", reviewerState: "approved",
       sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"]
     } });
-    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true, useReusableContext: true });
+    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, useReusableContext: true });
     expect(selectedEvidence).toHaveLength(1);
-    // The fresh inspection is the only evidence observed. A three-call grant
+    // The fresh inspection is the only evidence observed. A three-call build
     // is inside the wrap-up from its first decision (`llm/loop-budget.ts`), so
     // that decision also carries the loop's own `core.budget` entry.
     const observed = (requests[0]?.context.evidenceLoop?.evidence ?? []).filter((entry) => entry.toolId !== "core.budget");
@@ -296,7 +300,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
-      executionGrant: await grant(instance, project.id, flow.flowId),
+      caller: caller(),
       evidenceGuided: true
     }));
     expect(diagnostic).toEqual({

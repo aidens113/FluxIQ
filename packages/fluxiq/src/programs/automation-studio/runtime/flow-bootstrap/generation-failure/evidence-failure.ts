@@ -121,12 +121,13 @@ export function flowBootstrapEvidenceCompletionFailure(
 
 /**
  * The build stopped to ask a person: an action it needed would have had a
- * lasting consequence its grant did not permit.
+ * lasting consequence it was not permitted.
  *
  * Built from the loop's progress at the moment the request was raised, which
  * ended it; the request is Core's own, already bounded by the gate that raised
- * it. Not retryable as it stands -- the same grant would ask the same question
- * -- but a build whose grant adds `permissionRequest.missing` can go on.
+ * it. Not retryable as it stands -- the same permitted consequences would ask
+ * the same question -- but a build that is also permitted
+ * `permissionRequest.missing` can go on.
  */
 export function flowBootstrapPermissionRequiredFailure(
   request: AutomationStudioActionPermissionRequest,

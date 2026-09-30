@@ -3,7 +3,7 @@
 //
 // It was a closure inside `runRuntimeSession` (`runtime/service.ts`), which is
 // at its line ratchet, and the closure dropped the one thing the repair most
-// needed: it called the build with a Flow id, a mode and a grant, and the
+// needed: it called the build with a Flow id, a mode and its caller, and the
 // check's findings and advice -- present in the port's own input -- went no
 // further (`run-mulwm2dc-0bd95f22`). Moved here so that what the build is
 // handed is one readable function rather than one line of a six-thousand-line
@@ -19,7 +19,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioLlmExecutionGrantRefusalCode, AutomationStudioRuntimeSessionGrant } from "../../llm/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import {
   automationStudioReauthorBrief,
   automationStudioReauthorRefutedResult,
@@ -30,26 +31,25 @@ import {
   type AutomationStudioRefutedResultRepairPort
 } from "../../recovery/refuted-result/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
-import { automationStudioRuntimeReauthorContinuationDetail } from "./reauthor-continuation.ts";
 
-type Binding = { executionDigest: string; settingsRevision: number };
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
 
-/** What the service lends the port: its reads, its build, its review, and its apply-and-continue. */
+/** What the service lends the port: its reads, its build, and its review. */
 export type AutomationStudioRefutedResultRepairPortDependencies = {
   projectId?: string | null | undefined;
   /** The Flow the run executed, when the adaptation context named it. Read when the port is called, because the context is resolved after the port is built. */
   flowId(): string | null | undefined;
-  /** The grant the run executes under, which the build runs under too. */
-  executionGrant?: AutomationStudioRuntimeSessionGrant | undefined;
+  /** The person the run was made for, whose key the build pays with too. Absent for a run nobody asked the model into. */
+  caller?: AutomationStudioLlmModelCaller | undefined;
+  /** The lasting consequences the run's caller already allowed, carried into the build. */
+  permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   /** The ladder's annotation, for a refutation the route does not take. */
   annotate(request: RepairRequest): Promise<AutomationStudioFlowRunDetail>;
-  binding(projectId: string, flowId: string): Promise<Binding>;
   /** The build, run-owned, with the brief beside the Flow's own instructions. */
   generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
-  /** Applies the adaptation and continues the run's grant onto the Flow it produced. */
-  applyAndContinue(input: { projectId: string; flowId: string; adaptationId: string; actorId: string; expectedPreviousBinding: Binding; executionGrant: AutomationStudioRuntimeSessionGrant }): Promise<{ replayReady: true } | { replayReady: false; code: AutomationStudioLlmExecutionGrantRefusalCode }>;
+  /** Applies the approved adaptation; the run then replays the Flow it produced. */
+  apply(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   now?: () => number;
 };
 
@@ -64,34 +64,24 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     const decision = automationStudioRefutedResultReauthorDecision({ detail: refuted.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
     if (!decision.route) return automationStudioRefutedResultReauthored({ detail: await deps.annotate(refuted), decision, attempt: refuted.current.attempt });
     const brief = automationStudioReauthorBrief({ projectId: decision.projectId, flowId: decision.flowId, current: refuted.current, history: refuted.history, maxAttempts: refuted.maxAttempts, now: now() });
-    let previousBinding: Binding | undefined;
-    let continuationFailure: AutomationStudioLlmExecutionGrantRefusalCode | undefined;
     const build = () => automationStudioReauthorRefutedResult({
       now,
       generate: async () => {
-        const executionGrant = deps.executionGrant;
-        // No gate on the grant's purpose, by design and with a test
-        // (`tests/refuted-result/tests/reauthor-service.test.ts`): repairing is
-        // the automation's own work, which the person's instruction already
-        // granted. The build runs under the run's grant as it is, purpose and
-        // all, because that is the grant the registry holds for this run; every
-        // purpose pays for a build (`service/flow-bootstrap-commands/generation-request.ts`).
-        // What the build needs that the run does not name -- the Flow's current
-        // digest and settings revision -- is read here, never demanded. Only a
-        // run holding no grant at all has nothing to pay with, and that is named
-        // rather than thrown plainly.
-        if (!executionGrant) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.execution_grant_unavailable");
-        const binding = await deps.binding(decision.projectId, decision.flowId);
-        previousBinding = binding;
-        const generated = await deps.generate({ projectId: decision.projectId, flowId: decision.flowId, mode: "extend", evidenceGuided: true, executionGrant: { ...executionGrant, executionDigest: binding.executionDigest, settingsRevision: binding.settingsRevision } }, brief);
+        // Repairing is the automation's own work, so the build needs nothing
+        // but somebody's key to pay with: the run's own caller's. A run nobody
+        // asked the model into has none, and that is named rather than thrown
+        // plainly.
+        const caller = deps.caller;
+        if (!caller) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_failed");
+        const generated = await deps.generate({
+          projectId: decision.projectId, flowId: decision.flowId, mode: "extend", evidenceGuided: true,
+          caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
+          ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
+        }, brief);
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR }),
-      apply: async (adaptationId) => {
-        if (!deps.executionGrant || !previousBinding) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.execution_grant_unavailable");
-        const continued = await deps.applyAndContinue({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR, expectedPreviousBinding: previousBinding, executionGrant: deps.executionGrant });
-        if (!continued.replayReady) continuationFailure = continued.code;
-      },
+      apply: (adaptationId) => deps.apply({ projectId: decision.projectId, flowId: decision.flowId, adaptationId, actorId: REPAIR_ACTOR }),
       failureCode: (error) => automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "pre_provider_validation"))
     });
     const record = (detail: AutomationStudioFlowRunDetail, built: Awaited<ReturnType<typeof build>>) => automationStudioRefutedResultReauthored({
@@ -113,7 +103,7 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     // the patch ladder a refutation the route does not take is given -- rather
     // than ending the repair with nothing tried (`run-mulxk0ro-36bf090d`).
     if (!built.adaptationId && built.failure) return await degradeToPatchLadder(deps, refuted, repaired, built.failure.code);
-    return automationStudioRuntimeReauthorContinuationDetail({ detail: repaired, applied: built.applied === true, failure: continuationFailure });
+    return repaired;
   };
 }
 

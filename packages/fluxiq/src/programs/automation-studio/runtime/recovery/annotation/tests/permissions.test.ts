@@ -1,4 +1,4 @@
-// The recovery's one permission gate: its authority is the grant plus the
+// The recovery's one permission gate: its authority is the run's permitted consequences plus the
 // instruction's stored, still-current set, and nothing else -- not a policy
 // flag, and not a model reading the instruction again mid-recovery.
 
@@ -9,12 +9,12 @@ import { automationStudioRecoveryPermissionGate } from "../permissions.ts";
 
 // A class the gate still asks about, so what each row proves is the authority
 // and not the narrowing of 2026-09-26: a press declaring `modify_existing` is
-// now permitted whatever the grant or the instruction said, which would leave
+// now permitted whatever the permitted consequences or the instruction said, which would leave
 // every "permits it" row below passing without testing anything.
 const PRESS = { consequences: ["delete"] as const, control: { name: "Remove unfillable line", kind: "button" }, verb: "press" };
 
 describe("automationStudioRecoveryPermissionGate", () => {
-  it("permits nothing with no grant and no stored set, and asks for exactly what was missing", async () => {
+  it("permits nothing with nothing permitted and no stored set, and asks for exactly what was missing", async () => {
     const built = automationStudioRecoveryPermissionGate({ granted: undefined, storedInstructed: undefined, instructions: [instruction()], newRequestId: () => "permission-request:one" });
 
     expect(built.summary()).toEqual({ granted: [], instructed: [], lapsed: [] });
@@ -27,7 +27,7 @@ describe("automationStudioRecoveryPermissionGate", () => {
     });
   });
 
-  it("holds the grant's recognised classes in Core's order, and drops a word Core does not know", async () => {
+  it("holds the permitted recognised classes in Core's order, and drops a word Core does not know", async () => {
     const built = automationStudioRecoveryPermissionGate({ granted: ["delete", "purchase", "send_or_publish"], storedInstructed: undefined, instructions: [] });
 
     expect(built.summary().granted).toEqual(["delete", "send_or_publish"]);

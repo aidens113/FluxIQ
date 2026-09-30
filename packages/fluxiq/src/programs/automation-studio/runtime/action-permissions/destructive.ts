@@ -20,7 +20,7 @@
 // a basket is `create_new` and is not.
 //
 // **`send_or_publish` came off this list on 2026-09-28**, on the product owner's
-// rule that the person's instruction is itself the grant. A run that sends is a
+// rule that the person's instruction is itself the permission. A run that sends is a
 // run whose instruction asked for the sending, so a standing gate on every send
 // asks permission for the request itself -- the exact shape the rule forbids.
 // The case it was there for, a send *nobody asked for*, is not a permission
@@ -62,7 +62,7 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, automationStudioConsequencesInOr
  * class either way silently would be the mistake this shape exists to prevent.
  *
  * **Only a very high risk is asked about, as of 2026-09-28.** The user's rule is
- * that their instruction is itself the grant, and that a question reaches them
+ * that their instruction is itself the permission, and that a question reaches them
  * for genuinely risky real-world consequences and nothing else -- deleting
  * something, and completing a purchase, payment or transfer. Those two, and
  * nothing else. `modify_existing` came off this list on 2026-09-26 and
@@ -87,7 +87,7 @@ const DESTROYS: Readonly<Record<AutomationStudioActionConsequence, boolean>> = O
 export const AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES: readonly AutomationStudioActionConsequence[] =
   Object.freeze(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => DESTROYS[consequence]));
 
-/** Whether this class is one an instruction or a grant has to authorise. */
+/** Whether this class is one an instruction or a person's permission has to authorise. */
 export function isAutomationStudioDestructiveActionConsequence(value: unknown): value is AutomationStudioActionConsequence {
   return typeof value === "string" && value in DESTROYS && DESTROYS[value as AutomationStudioActionConsequence];
 }

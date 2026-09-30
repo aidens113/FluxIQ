@@ -45,23 +45,24 @@ export const AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE = 6_000;
 export const AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES = 24;
 
 /**
- * The most one recovery may be estimated to cost, whoever authorised it.
+ * The most one recovery may be estimated to cost, whoever asked for it.
  *
- * Without a grant the purse is the policy's and at most $0.25, which this does
- * not touch. With a grant it is the grant's own total, and this is the ceiling
- * over a resolver that gives a per-call cost and no total -- which would
- * otherwise be multiplied by the shares into a purse nobody chose.
+ * In a run nobody asked the model into, the purse is the policy's and at most
+ * $0.25, which this does not touch. In a run a person asked for, it is the
+ * Flow's configured ceiling, else the resolver's default total, and this is the
+ * ceiling over a resolver that gives a per-call cost and no total -- which
+ * would otherwise be multiplied by the shares into a purse nobody chose.
  */
 export const AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN = 2;
 
 export type AutomationStudioRecoveryRunBudgetInput = {
-  /** A grant that carries its own budget, rather than the training settings'. */
-  explicitGrantBudget: boolean;
+  /** A run a person asked the model into, held to the run's own budget rather than the training settings'. */
+  explicitRunBudget: boolean;
   /** What the provider resolver said, when it said anything beyond a provider. */
   resolution?: {
     maxCallsPerRun?: number | undefined;
-    /** The whole run's token exposure, when the resolver was issued for one.
-     * It caps the pot however many calls are authorised. */
+    /** The whole run's token exposure, when the resolver states one. It caps
+     * the pot however many calls the run makes. */
     maxTotalTokensPerRun?: number | undefined;
     tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
     maxEstimatedCostUsd?: number | undefined;
@@ -69,7 +70,7 @@ export type AutomationStudioRecoveryRunBudgetInput = {
   } | undefined;
   /** The training settings' token budget, when a person set one. */
   maxTokensPerRun?: number | undefined;
-  /** The adaptation policy's cost ceiling, when it has one. */
+  /** The Flow's configured cost ceiling (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`), when it has one. */
   policyMaxEstimatedCostUsdPerRun?: number | undefined;
 };
 
@@ -86,45 +87,50 @@ export type AutomationStudioRecoveryRunBudget = {
 /** The limits one recovery runs under. */
 export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudioRecoveryRunBudgetInput): AutomationStudioRecoveryRunBudget {
   const resolution = input.resolution;
-  // A resolver that says how many calls it will authorise is taken at its word
-  // -- a grant mints exactly that many, so a call past it would fail anyway,
-  // and failing at the budget names the reason. An intervention limit counts
+  // A resolver that says how many calls a run makes is taken at its word, and
+  // failing at the budget names the reason. An intervention limit counts
   // interventions, not provider calls, and no longer stands in for one.
   const declaredCalls = positiveInteger(resolution?.maxCallsPerRun);
   const maxCallsPerRun = declaredCalls ?? AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
-  // The purse is divided among exactly the calls that will be paid for. A
-  // grant commits each call's *reservation* against its own total, not what the
-  // call went on to spend, so if an authorised call's share were larger than
-  // purse / authorised calls, the grant would refuse the last few calls on
-  // cost -- unnamed, and revoking itself -- while the run still had money.
+  // The purse is divided among exactly the calls the resolver declared. The
+  // ledger reserves each call's share before it knows what it will spend, so a
+  // share larger than purse / declared calls would refuse the last few calls on
+  // cost while the run still had money.
   const costShares = declaredCalls ?? AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
-  // A grant's token pot is what the person confirmed when it was issued: the
-  // per-call limit times the calls. Without one, the default shares size it.
-  const tokenShares = input.explicitGrantBudget ? costShares : Math.min(costShares, AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
+  // A run a person asked for sizes its token pot at the per-call limit times
+  // the calls. Otherwise the default shares size it.
+  const tokenShares = input.explicitRunBudget ? costShares : Math.min(costShares, AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
   const tokenLimits = resolution?.tokenLimits;
   const requestedTotalTokens = (tokenLimits?.maxTotalTokens ?? 10_000) * tokenShares;
   const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(
     AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST * tokenShares,
     positiveInteger(resolution?.maxTotalTokensPerRun) ?? Number.POSITIVE_INFINITY,
-    input.explicitGrantBudget
+    input.explicitRunBudget
       ? requestedTotalTokens
       : Math.min(input.maxTokensPerRun ?? AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE * tokenShares, requestedTotalTokens)
   )));
   const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (tokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * tokenShares)));
   const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (resolution?.maxEstimatedCostUsd ?? 0.25) * costShares;
+  // A run a person asked for spends up to the Flow's configured ceiling when
+  // one is set, and the resolver's default total when none is.
+  const policyCeiling = positiveCost(input.policyMaxEstimatedCostUsdPerRun);
   const maxEstimatedCostUsdPerRun = Math.min(
     AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN,
-    input.explicitGrantBudget
-      ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, requestedCost)
+    input.explicitRunBudget
+      ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, policyCeiling ?? requestedCost)
       : Math.min(0.25, input.policyMaxEstimatedCostUsdPerRun ?? 0.25, requestedCost)
   );
   return {
     ledger: { maxCallsPerRun, maxTotalTokensPerRun, maxOutputTokensPerRun, maxEstimatedCostUsdPerRun },
-    // Rounded down to the billionth the grant rounds its running total to, so
-    // every authorised call's reservation still fits on the last call.
+    // Rounded down to the billionth the ledger rounds its running total to, so
+    // every declared call's reservation still fits on the last call.
     maxEstimatedCostUsdPerCall: Math.floor((maxEstimatedCostUsdPerRun / costShares) * 1_000_000_000) / 1_000_000_000,
     ...(declaredCalls !== undefined ? { declaredCallsPerRun: declaredCalls } : {})
   };
+}
+
+function positiveCost(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function positiveInteger(value: unknown): number | undefined {

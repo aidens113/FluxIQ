@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioInterventionMode, defaultAutomationStudioFlowSettingsMetadata, withAutomationStudioInterventionMode } from "../../../model/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, automationStudioFlowMaxNodesPerSubflow, automationStudioInterventionMode, defaultAutomationStudioFlowSettingsMetadata, withAutomationStudioInterventionMode } from "../../../model/index.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { withoutAutomationStudioLockedDefaultSettings } from "./locked-default-migration.ts";
 
@@ -46,6 +46,13 @@ export function mergedFlowSettingsMetadata(stored: JsonObject | undefined): Json
     adaptationPolicySettings: {
       ...(jsonObjectFromUnknown(defaults.adaptationPolicySettings) ?? {}),
       ...(jsonObjectFromUnknown(source.adaptationPolicySettings) ?? {})
+    },
+    // The Flow size setting, read the way every size bound reads it: a Flow
+    // saved before it existed, or holding a value no save would have taken,
+    // reads the default rather than an absent or unusable number.
+    [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.metadataKey]: {
+      ...(jsonObjectFromUnknown(source[AUTOMATION_STUDIO_FLOW_SIZE_SETTING.metadataKey]) ?? {}),
+      [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.field]: automationStudioFlowMaxNodesPerSubflow(source)
     }
   };
 }

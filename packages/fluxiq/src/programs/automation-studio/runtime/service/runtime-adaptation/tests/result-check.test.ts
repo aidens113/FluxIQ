@@ -64,7 +64,7 @@ function context(options: {
   };
 }
 
-/** What `resultPorts.resolveProvider` answers for this run, with no grant anywhere. */
+/** What `resultPorts.resolveProvider` answers for this run, with no caller anywhere. */
 async function unattendedProvider(instance: AutomationStudioRuntimeAdaptationContext, asked: Array<{ keyId: string; maxEstimatedCostUsd: number }>) {
   const check = automationStudioRunResultCheck({ context: instance, nowMs: NOW });
   const resolution = await resolveAutomationStudioResultCheckProvider({
@@ -137,16 +137,16 @@ describe("an unattended run obtaining a model", () => {
     expect(resolution?.maxEstimatedCostUsd).toBe(0.05);
   });
 
-  it("prefers a person's grant, which behaves exactly as it did before any of this existed", async () => {
-    const granted = { provider: model, maxEstimatedCostUsd: 0.25 };
+  it("prefers the provider of a person who asked the model into the run, which behaves exactly as it did before any of this existed", async () => {
+    const callers = { provider: model, maxEstimatedCostUsd: 0.25 };
     const resolution = await resolveAutomationStudioResultCheckProvider({
       scope: { projectId: "project.checks", flowId: "flow.catalogue" },
-      // The schedule says no and there is no authorization, and the grant still wins.
+      // The schedule says no and there is no authorization, and the caller's provider still wins.
       check: automationStudioRunResultCheck({ context: context({ ordinal: 5, lastCheckedOrdinal: 3, lastStatus: "confirmed" }), nowMs: NOW }),
-      resolveGrantedProvider: async () => granted,
-      resolveStandingProvider: async () => { throw new Error("the standing path must not be reached when a grant resolved"); }
+      resolveCallerProvider: async () => callers,
+      resolveStandingProvider: async () => { throw new Error("the standing path must not be reached when the caller's provider resolved"); }
     });
-    expect(resolution).toBe(granted);
+    expect(resolution).toBe(callers);
   });
 });
 

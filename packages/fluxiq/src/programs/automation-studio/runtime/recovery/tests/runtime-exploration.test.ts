@@ -100,7 +100,7 @@ describe("runAutomationStudioRuntimeExploration", () => {
 
   // The decision this guard exists for: an adaptation iterates for as many
   // provider calls as it needs. The old limits were two calls for a run and six
-  // for an exploring grant, with sixteen underneath as the loop's own ceiling;
+  // for an exploring run, with sixteen underneath as the loop's own ceiling;
   // a loop that keeps finding something new runs past all three and ends
   // because it finished, not because it was counted.
   it("lets a loop that keeps learning run well past the old two-, six- and sixteen-call limits", async () => {
@@ -236,9 +236,10 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(decisions).toBe(1);
   });
 
-  // The exploration's clock cuts off a call in flight as a timeout, which a
-  // grant reads as a spent call; a cancellation from outside stays a
-  // cancellation, which a grant reads as the end of its authorization.
+  // The exploration's clock cuts off a call in flight as a timeout, which the
+  // failure-disposition table reads as a spent call; a cancellation from
+  // outside stays a cancellation, which it reads as the end of the model's
+  // calls.
   it("aborts a call in flight as a timeout when its clock runs out, and as a cancellation when stopped from outside", async () => {
     vi.useFakeTimers();
     try {
@@ -430,7 +431,7 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
     }],
     // Only the permission gate raises `operator_approval_required`, with a
     // request in hand: here the domain asks before a consequential step and
-    // the run holds no grant. A domain code read as that reason is reported
+    // the run is permitted nothing. A domain code read as that reason is reported
     // as the refusal it is (`runtime-exploration-permission.test.ts`).
     ["step a person has not allowed", "user_intervention_required", "operator_approval_required", {
       decisions: [call("test.reveal", { control: "Refund" }), complete({ finding: "unreached" })],

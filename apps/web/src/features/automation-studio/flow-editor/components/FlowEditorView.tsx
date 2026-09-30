@@ -65,7 +65,7 @@ export const FlowEditorView = memo(function FlowEditorView(props: FlowEditorView
  */
 function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCreateFlow: (() => void) | undefined }) {
   const commands = useRuntimeExecutionCommands();
-  const improvementCommands = useFlowImprovementCommands(commands);
+  const improvementCommands = useFlowImprovementCommands();
   const [readiness, setReadiness] = useState<StartPaneReadiness>(idleReadiness);
   const [revision, setRevision] = useState(0);
   const generationRef = useRef(0);

@@ -20,7 +20,7 @@
 //
 // **Why a deadline rather than a fix for the hang.** The hang has no named
 // cause to fix. Every promise on that path is somebody else's -- the host's
-// provider resolver, the grant service's session and key validation, the
+// provider resolver, the session-key release and its validation, the
 // project database's serialized operation queue -- and a bound is the only
 // guard that holds whichever of them stops settling. If the cause is ever
 // named, this stays: a verification that cannot end is worse than one that

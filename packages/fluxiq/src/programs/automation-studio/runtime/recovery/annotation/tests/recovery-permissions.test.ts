@@ -5,8 +5,8 @@
 //
 // The press declares `delete`, which the gate still asks about. It declared
 // `modify_existing` until 2026-09-26, and that class is no longer gated: on it,
-// every row here that presses "when the grant holds the consequence" would have
-// pressed with no grant at all and proved nothing.
+// every row here that presses "when the run permits the consequence" would have
+// pressed with nothing permitted at all and proved nothing.
 //
 // Driven through `annotateAutomationStudioRunDetailWithRuntimeLlm` with a
 // stand-in domain whose press asks Core first, as a domain is meant to, and a
@@ -82,7 +82,7 @@ describe("a recovery under its permission gate", () => {
     expect(stage(run.detail, "resolution")).toMatchObject({ status: "skipped", providerCalled: false, detail: { skipCode: "llm.runtime_patch_permission_required" } });
   });
 
-  it("presses when the grant holds the consequence, raises nothing, and goes on to the patch", async () => {
+  it("presses when the run permits the consequence, raises nothing, and goes on to the patch", async () => {
     const run = await recover({ permittedConsequences: ["delete"] });
 
     expect(run.pressed).toEqual(["Cancel unfilled lines"]);
@@ -150,7 +150,7 @@ describe("a recovery under its permission gate", () => {
     expect(run.detail.metadata?.llmGate).not.toHaveProperty("patchHeldCode");
   });
 
-  it("runs the repair as authorized when the grant holds its destructive classes, and raises nothing", async () => {
+  it("runs the repair as authorized when the run permits its destructive classes, and raises nothing", async () => {
     const run = await recover({ explore: false, repair: { consequences: ["delete"] }, permittedConsequences: ["delete"] });
 
     expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
@@ -185,7 +185,7 @@ async function recover(setup: Setup): Promise<Recovery> {
   };
   run.detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: {
-      resolveLlmProvider: () => ({ provider, maxCallsPerRun: 6, ...(setup.permittedConsequences ? { permittedConsequences: setup.permittedConsequences as never } : {}) }),
+      resolveLlmProvider: () => ({ provider, maxCallsPerRun: 6 }),
       llmEvidenceRuntime: {
         domainId: "test.domain",
         deniedEvidenceKeys: [],
@@ -207,7 +207,8 @@ async function recover(setup: Setup): Promise<Recovery> {
     context: context(),
     runtimeFlow: { schemaVersion: "0.1", flowId: "flow.recovery", ownerKind: "policy", ownerId: "project.recovery", name: "Recovery flow", nodes: [{ id: "node.action", definitionId: "builtin.policy.action" }], edges: [], createdAt: 1, updatedAt: 1 },
     failedTraceAttempt: { attemptId: "node.action.attempt.1", nodeId: "node.action", definitionId: "builtin.policy.action", startedAt: 1, finishedAt: 2, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: "The action failed.", failure: { category: "target_not_found", code: "test.target_not_found", retryable: false } },
-    executionGrant: { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.test", purpose: "explore_and_adapt" }
+    llmExecution: { actorUserId: "user.test", actorSessionId: "session.test", intent: "explore_and_adapt" },
+    ...(setup.permittedConsequences ? { permittedConsequences: setup.permittedConsequences as never } : {})
   });
   return run;
 }

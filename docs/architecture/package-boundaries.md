@@ -108,6 +108,59 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): model calls need no execution grant (`fluxiq`)
+
+LLM execution grants are removed. A model call made while building, exploring,
+repairing, verifying or judging, diagnosing or adapting a Flow runs on the
+caller's own unlocked Secret Keys key: nothing is issued, leased, preflighted,
+digest-checked, confirmed for size, or revoked before or during a provider
+call. The grant, purpose, lifetime, high-token and failure-for-the-grant
+passages of the 0.6.0 and 0.7.0 entries below describe what was removed. Read
+this entry if a host binds a provider resolver, calls the build or runtime
+session endpoints, or reads LLM readiness.
+
+**Removed.**
+- The endpoints `preflight-llm-execution` and `issue-llm-execution-grant`, and
+  their request, response, preflight and grant contracts.
+- `AutomationStudioLlmExecutionGrantService`, the `runtime/llm/execution/`
+  module, `runtime/llm/grant-capabilities.ts`,
+  `runtime/llm/runtime-session-grant.ts`, the grant constants and refusal codes,
+  `AutomationStudioBuildAndAdaptExecutionGrant`, and
+  `GlobalProgramRuntime.llmExecutionGrants`.
+- Readiness `runtime.llmExecutionGrantsConfigured`.
+- `llmExecutionGrantId` on `generate-flow-bootstrap-adaptation`,
+  `run-runtime-session`, and every other build endpoint.
+- The service options `revokeLlmExecutionGrant`,
+  `continueLlmExecutionGrantAfterAppliedFlowAdaptation` and
+  `closeLlmExecutionGrants`.
+
+**Changed.**
+- `automationStudio.bindLlmExecutionProvider(resolver)` takes the resolver
+  only. `AutomationStudioLlmProviderResolverInput.executionGrant` is replaced
+  by `caller?: AutomationStudioLlmModelCaller` (`{ actorUserId,
+  actorSessionId }`, the person whose key pays; not an authorization).
+  `createAutomationStudioSessionKeyProviderResolver({ ports })` is the shipped
+  resolver: no caller resolves no provider.
+- `AutomationStudioLlmProviderResolution` no longer carries
+  `permittedConsequences`. Builds and runs carry optional
+  `permittedConsequences` on their own input; the recovery's consequence gate
+  reads it from there. The gate still asks before a consequential act
+  (`permission_required`).
+- `generateFlowBootstrapAdaptation` takes `caller` and optional
+  `permittedConsequences`; the API endpoint's caller is the request's actor.
+- `runRuntimeSession` takes `llmExecution?: AutomationStudioRuntimeSessionLlm`
+  (the caller plus an intent from
+  `AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS`) and optional
+  `permittedConsequences`. `run-runtime-session` makes `llmExecution` from a
+  `runIntent` sent by a signed-in actor.
+- Spend is bounded by the loop budget. The Flow setting
+  `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, when set, is the run's
+  total estimated-cost ceiling for builds and recoveries; otherwise the
+  resolution's default applies.
+
+The Flow-scoped standing result-check authorization for unattended runs is
+unchanged.
+
 ### 0.7.0: node execution is defensive, provider retry is grant-accounted, and result repair is structured (`fluxiq`)
 
 No export was removed. Public Automation Studio contracts gain optional fields
