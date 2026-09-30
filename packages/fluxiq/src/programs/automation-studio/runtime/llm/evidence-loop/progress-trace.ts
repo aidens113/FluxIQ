@@ -68,11 +68,14 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
 
 /**
  * A call id only when it is a numbered id (`c18`, `call.1`) or Core's own
- * (`initial.<tool>`). The model writes call ids, and one that spells out what it
- * is doing carries the instruction's words into the log (`run-muntmwvx-0d53884a`).
+ * (`initial.<tool>`, and a dry run's `dryrun.<attempt>.<step|reset>`). The model
+ * writes call ids, and one that spells out what it is doing carries the
+ * instruction's words into the log (`run-muntmwvx-0d53884a`). A dry run's own
+ * ids are printed so a completion that replayed can be told from one that
+ * reused an earlier verdict and made no call (t174-w16, run 18's completion 48).
  */
 function callIdOf(value: unknown): string {
-  return typeof value === "string" && /^(?:[A-Za-z]{1,6}[._-]?\d{1,4}|initial\.[A-Za-z0-9_.:-]{1,80})$/u.test(value) ? value : "-";
+  return typeof value === "string" && /^(?:[A-Za-z]{1,6}[._-]?\d{1,4}|initial\.[A-Za-z0-9_.:-]{1,80}|dryrun\.\d{1,4}\.(?:\d{1,4}|reset))$/u.test(value) ? value : "-";
 }
 
 /** At most this many amendments, claims or missing acts are named on one line. */

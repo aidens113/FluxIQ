@@ -86,6 +86,12 @@ function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: num
 }
 
 /**
+ * The words a shown step passed the dry run under: run again, or checked and
+ * not run because its effect lasts (`../../flow-draft/verify-only.ts`).
+ */
+const PASSED: ReadonlySet<string> = new Set(["replayed", "verified", "present"]);
+
+/**
  * What the dry run said during the attempt: the steps its verdict refused, as
  * the `core.dry_run` entry the gate showed lists them; `clean` when it
  * replayed and showed nothing; `reused_clean` when the gate answered from an
@@ -96,7 +102,7 @@ function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: num
 function dryRunSaid(seen: { ran: boolean; reused?: boolean; verdict?: JsonValue }): AutomationStudioLlmDecisionContextDryRun {
   if (seen.verdict !== undefined) {
     const steps = isObject(seen.verdict) && Array.isArray(seen.verdict.steps) ? seen.verdict.steps : [];
-    return steps.flatMap((step) => isObject(step) && typeof step.step === "number" && typeof step.replayed === "string" && step.replayed !== "replayed"
+    return steps.flatMap((step) => isObject(step) && typeof step.step === "number" && typeof step.replayed === "string" && !PASSED.has(step.replayed)
       ? [{ step: step.step, status: step.replayed }]
       : []);
   }

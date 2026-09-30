@@ -487,14 +487,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
       recordRow({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...callDiagnostic(execution) }, { draftChanged, pageState });
     }
   }
-  // A continuation: told what it owes, its draft replayed (`./evidence-loop/resume.ts`).
+  // A continuation: told what it owes, and carried on live from where the page
+  // stands. Its draft is not replayed from the first step: nothing in a build's
+  // live phase is, and the Flow is tested once, when the model says it is ready
+  // (`./evidence-loop/resume.ts`, `./evidence-loop/completion-attempt.ts`).
   const resume = input.draft === false ? undefined : input.draft?.resume;
   if (resume) {
     const resumed = automationStudioLlmEvidenceResumeEntry(resume, draftSteps);
     if (reserveEvidence(resumed.value) !== undefined) evidence.push(resumed);
-    const replayed = await dryRun();
-    if (replayed === "cancelled") return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    if (replayed === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
   }
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);

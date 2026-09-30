@@ -738,7 +738,16 @@ split into malformed partial JSON to fit the window. The window carries whole
 entries only and no longer lists the calls it leaves out: the decision history
 beside it records every decision.
 
-Before a completed result is accepted, the draft is dry-run
+A build has a live phase and a judgement phase (user, 2026-09-30). In the live
+phase the model explores and writes its draft, and nothing replays the draft
+from its first step: not a completion the check refuses, and not a continued
+build, which carries on from wherever the page stands
+(`runtime/llm/evidence-loop/completion-attempt.ts`,
+`runtime/llm/evidence-loop/resume.ts`). The judgement phase starts when the
+model says the Flow is ready and the completion check accepts it: the draft is
+then dry-run, which is the one full run from where the Flow starts, and a
+refused test sends the model back to live repair from where the test stopped,
+to be tested again the next time it says the Flow is ready
 (`runtime/flow-draft/dry-run.ts`, `runtime/llm/node-tools/dry-run-gate.ts`):
 the target is reset to where the first proposed step started and every
 proposed step is run again in order with the argument the Flow will use, with
@@ -756,7 +765,35 @@ been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
 that way with a step that did not replay. A clean verdict is remembered by the
 draft's replay signature (the proposed steps, in order, with what each runs
 with), so a completion over the same unchanged draft is not replayed again; its
-history row says `reused_clean`.
+history row says `reused_clean`. A refused draft completed again unchanged is
+replayed at most twice; after that it is judged again from those replays'
+outcomes, which refuses it again unless its failing steps have since been
+marked as not always run (routing is not part of the signature), and a pass
+that way also records `reused_clean`.
+
+A dry run never clears site data or logs the person out, never repeats a
+lasting effect, and checks a changing step rather than running it again
+(decision D1, `runtime/flow-draft/verify-only.ts`). The reset is a navigation
+and nothing more. A proposed step that changes something and declares any
+consequence but none is sent `replay: "verify"` with where it found the target
+(`replay.from`) instead of `replay: "step"`, and the host acts on nothing. It
+answers `core.replay.verified` (the target is there and would take the action),
+`core.replay.present` (the target is gone from the very page the step acted on:
+its effect is already in place, as when a store already chosen shows "Your
+store" instead of its button), or `unreproducible` (gone, and the page is not
+the one the step acted on: the steps before it no longer reach it), `failed`
+otherwise. `verified` and `present` pass, and only for a check; a step asked to
+run that answers either has failed. The model sees the words `verified` and
+`present`, never `replayed`, for a checked step. A step after a verified step
+that does not replay is excused (`afterWithheld`) only when the verified step's
+own run moved the target, which Core reads by comparing the two steps'
+`replay.from` values whole: the withheld effect then left the steps after it on
+the page before the move. A verified step that did not move the target excuses
+nothing, because the site still holds the effect from exploring. Steps that
+declare none (an open, a filter, a navigation) are run again as before, since
+the steps after them stand on them. The build trace prints a dry run's own call
+ids (`dryrun.<attempt>.<step|reset>`), so a completion that replayed can be told
+from one that reused a verdict.
 
 Core's own notes are superseded rather than accumulated. Before a
 `core.request_check`, `core.no_progress`, `core.decision_check`,

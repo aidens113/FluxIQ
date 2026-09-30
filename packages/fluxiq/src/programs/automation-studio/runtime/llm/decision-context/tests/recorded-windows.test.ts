@@ -33,15 +33,16 @@ const WINDOW_BYTES = 24_000;
 const HISTORY_CAP = 4_000;
 
 /**
- * The decisions each replay is expected to trace differently from its log.
- * Run 4's completion 47 ran no dry run live, because the gate of the time had
- * waved steps 3 and 6 through as asked-once unreproducible steps; it now
- * replays them and is refused for them, as dry runs 2-4 are.
+ * The decisions each replay is expected to trace differently from its log:
+ * every completion the check refused that the live build dry-ran anyway. Since
+ * 2026-09-30 such a completion is still the build's live phase and is not
+ * tested; the draft is replayed from its first step only once the check
+ * accepts it (`../../evidence-loop/completion-attempt.ts`).
  */
 const DIVERGES: Readonly<Record<RecordedRunName, readonly number[]>> = {
-  "bigbox-run6": [],
-  crossborder: [],
-  "everything-store-run4": [47]
+  "bigbox-run6": [22, 26],
+  crossborder: [19],
+  "everything-store-run4": [40, 44, 46]
 };
 
 /** How each replay ends: after its last logged call, or on the decision after its last logged one. */
@@ -196,7 +197,7 @@ describe("the replay is the recorded run", () => {
     // `did_not_work`, which `../../evidence-loop/draft-shown.ts` did not accept.
     // With that fixed the loop asks decision 38 and ends on its unreadable answer.
     const run = await replayRecordedRun("bigbox-run6", { pastLog: true });
-    expect(run.expected).toEqual(run.logged);
+    expect(Object.keys(run.diverges).map(Number)).toEqual(DIVERGES["bigbox-run6"]);
     expect(run.rebuilt).toEqual(run.expected);
     expect(run.result.ok ? undefined : run.result.code).toBe("llm_evidence_loop.invalid_decision");
     expect(run.shown.at(-1)?.iteration).toBe(38);
@@ -320,13 +321,15 @@ describe("bigbox-run6 decision 22: the superseded notes leave, and pages take th
 });
 
 describe("bigbox-run6 decision 37: every completion is on the record, and the stale dry run is gone", () => {
-  it("completions 22 and 26 are distinct rows with their codes and dry-run refusals; amendment 21 withdrew step 12", async () => {
+  it("completions 22 and 26 are distinct rows with their codes, untested because the check refused them; amendment 21 withdrew step 12", async () => {
     const run = await replay("bigbox-run6");
     const rows = rowsOf(historyAt(run, 37));
     const completions = rows.filter((row) => row.kind === "completion");
     expect(completions.map((row) => row.at)).toEqual([[22], [26]]);
     expect(completions[0]!.code).toEqual(expect.arrayContaining(["bootstrap.cannot_reach_start_location", "bootstrap.completion_profile_limit_exceeded"]));
-    expect(completions[0]!.detail?.dryRun).toEqual([[4, "unreproducible"], [11, "unreproducible"]]);
+    // The check refused both, so neither was tested: no dry run, and nothing
+    // replayed from the first step in the middle of the build's live work.
+    expect(completions.map((row) => row.detail?.dryRun)).toEqual([undefined, undefined]);
     expect(completions[1]!.code).toBe("bootstrap.instructed_act_missing");
     expect(rows.find((row) => row.kind === "amendment" && row.at[0] === 21)?.detail?.withdrewChanged).toEqual([12]);
     const ids = shownAt(run, 37).map((entry) => entry.callId);
@@ -357,20 +360,18 @@ describe("everything-store-run4 decision 47: no refusal is lost, and the stale d
     const run = await replay("everything-store-run4");
     const completions = rowsOf(historyAt(run, 47)).filter((row) => row.kind === "completion");
     expect(completions.flatMap((row) => row.at)).toEqual(expect.arrayContaining([40, 44, 46]));
-    // Steps 3 and 6 refuse every dry run now, not only the first: on the old
-    // gate dry runs 2-4 read "clean" because both had been reported once.
-    for (const at of [29, 40, 44, 46]) {
-      expect(completions.find((row) => row.at.includes(at))?.detail?.dryRun, `completion ${at}`).toEqual([[3, "unreproducible"], [6, "unreproducible"]]);
+    // Only 29's check passed, so only 29 was tested; 40, 44 and 46 were refused
+    // by the check and, being live work still, not replayed from the first step.
+    expect(completions.find((row) => row.at.includes(29))?.detail?.dryRun).toEqual([[3, "unreproducible"], [6, "unreproducible"]]);
+    for (const at of [40, 44, 46]) {
+      expect(completions.find((row) => row.at.includes(at))?.detail?.dryRun, `completion ${at}`).toBeUndefined();
     }
     const ids = shownAt(run, 47).map((entry) => entry.callId);
     expect(ids).not.toContain("core.dry_run.1");
     expect(ids).not.toContain("dryrun.1.3");
-    // The newest page is dry run 4's, where step 3 did not replay: it ran after
-    // `cartextract5`, which the old code showed here and which no longer fits
-    // beside it. Its verdict marks both steps as reported before.
-    expect(ids).toEqual(expect.arrayContaining(["dryrun.4.3", "core.dry_run.4"]));
-    expect(ids).not.toContain("cartextract5");
-    const verdict = note(run, "core.dry_run.4", 47) as { steps: { step: number; again?: boolean }[] };
-    expect(verdict.steps.filter((line) => line.again).map((line) => line.step)).toEqual([3, 6]);
+    // The newest page is the live one the model's own work left, `cartextract5`,
+    // which dry runs 2-4 used to push out of the window.
+    expect(ids).toContain("cartextract5");
+    expect(ids.filter((id) => id.startsWith("dryrun.") || id.startsWith("core.dry_run."))).toEqual([]);
   });
 });

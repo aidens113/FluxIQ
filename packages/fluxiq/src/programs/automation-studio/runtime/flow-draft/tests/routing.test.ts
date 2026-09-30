@@ -138,7 +138,6 @@ describe("a replay of a draft that branches", () => {
         { step: 3, stepId: "d3", actionId: "press", status: "failed" },
         { step: 4, stepId: "d4", actionId: "press", status: "replayed" }
       ],
-      asked: new Set(),
       conditional: automationStudioFlowDraftConditionalStepIds(draft)
     });
     expect(verdict.ok).toBe(true);

@@ -119,6 +119,8 @@ const DETECT_TOOL_ID = "web.detect_repeating_structure";
 const RUN_NODE_TOOL_ID = "core.run_node";
 /** Run 4 logged no completion check, so what its checks refused is not known. */
 const UNLOGGED_CHECK_CODE = "recorded.unlogged_completion_refusal";
+/** Why a logged completion that the check refused no longer runs its dry run. */
+const NOT_TESTED_WHILE_THE_CHECK_REFUSES = "a completion the check refuses is still live work and is not tested; the draft is replayed only once the check accepts it";
 
 /** A settings-only edit of one kept step: the stand-in for an amendment whose content was not logged. */
 const unlogged = (step: number, iteration: number, as: "keep" | "exploratory" = "keep"): AutomationStudioFlowDraftAmendment[] =>
@@ -288,7 +290,21 @@ D37 tool_call | pick-millbrook-3 web.action.succeeded
     // have done, and the kept mutating steps are 21 and 22.
     26: refusal([actsMissing([{ id: "a2", kind: "add_to", verb: "add" }], ["d21", "d22"])])
   },
-  logsChecks: true
+  logsChecks: true,
+  now: {
+    // Both completions were refused by the check, and since 2026-09-30 a
+    // completion the check refuses is not tested: it is still the live phase,
+    // and the draft is replayed from its first step only once the check accepts
+    // it (`../../evidence-loop/completion-attempt.ts`). So neither dry run runs.
+    22: {
+      line: "D22 complete | check ok=false issues=bootstrap.completion_profile_limit_exceeded,bootstrap.cannot_reach_start_location",
+      why: NOT_TESTED_WHILE_THE_CHECK_REFUSES
+    },
+    26: {
+      line: "D26 complete | check ok=false issues=bootstrap.instructed_act_missing",
+      why: NOT_TESTED_WHILE_THE_CHECK_REFUSES
+    }
+  }
 };
 
 /** Crossborder marketplace: `t174-slot-1/run-munda7ub-d9214e3b`. */
@@ -339,7 +355,11 @@ D22 tool_call | act1 web.action.rejected.target_not_found
     // Which act is not traced; the kept mutating step at 19 is 10 (`nav6`).
     19: refusal([actsMissing([{ id: "a1", kind: "submit", verb: "buy" }], ["d10"])])
   },
-  logsChecks: true
+  logsChecks: true,
+  now: {
+    // Refused by the check, so not tested (see bigbox-run6's 22 and 26).
+    19: { line: "D19 complete | check ok=false issues=bootstrap.instructed_act_missing", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }
+  }
 };
 
 /** Run 4, everything-store: `t174-slot-2/run-munaiz76-7026748c`. */
@@ -427,17 +447,17 @@ D47 complete
   },
   logsChecks: false,
   now: {
-    // The live build accepted nothing here, but its gate had waved steps 3 and
-    // 6 through from dry run 2 on (an unreproducible step was asked about once),
-    // so dry runs 2-4 were "clean" and 47, over dry run 4's draft, was not
-    // replayed at all. An unreproducible step now refuses every completion
-    // (`../../../flow-draft/dry-run.ts`), dry runs 2-4 refuse as dry run 1 did,
-    // nothing clean is cached, and 47 replays the same draft: dry run 5, the
-    // same positions and answers as dry run 4.
-    47: {
-      line: "D47 complete | dryrun.5.reset core.replay.replayed | dryrun.5.2 core.replay.replayed | dryrun.5.3 core.replay.unreproducible | dryrun.5.4 core.replay.replayed | dryrun.5.5 core.replay.replayed | dryrun.5.6 core.replay.unreproducible | dryrun.5.14 core.replay.replayed | dryrun.5.18 core.replay.replayed | dryrun.5.20 core.replay.replayed | dryrun.5.25 core.replay.replayed | dryrun.5.27 core.replay.replayed | dryrun.5.28 core.replay.replayed | dryrun.5.29 core.replay.replayed | dryrun.5.30 core.replay.replayed",
-      why: "an unreproducible step blocks every completion, so the gate cached no clean verdict to skip 47's replay on"
-    }
+    // The live build's checks refused 40, 44, 46 and 47 (it accepted nothing
+    // here), and each of the first three ran a dry run; 47 reused dry run 4's
+    // "clean" verdict, because the gate had waved steps 3 and 6 through from dry
+    // run 2 on. Two changes since: an unreproducible step refuses every
+    // completion (`../../../flow-draft/dry-run.ts`), and a completion the check
+    // refuses is not tested at all (`../../evidence-loop/completion-attempt.ts`).
+    // The second decides it: none of the four runs a dry run, and dry run 1 at
+    // 29, whose check passed, is the only one. 47 traces as logged again.
+    40: { line: "D40 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    44: { line: "D44 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    46: { line: "D46 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }
   }
 };
 

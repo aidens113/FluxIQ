@@ -35,6 +35,7 @@ import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 import { automationStudioFlowDraftStepById } from "./routing.ts";
+import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
@@ -262,7 +263,9 @@ function stepLine(step: AutomationStudioFlowDraftStep, withInput: boolean, all: 
     // has happened, and the refusal that put it there explains itself in full.
     // Spending two hundred bytes of every draft entry on a sentence about a
     // check that usually passes would cost the entry steps it has to list.
-    ...(step.replayed ? { replayed: step.replayed.status } : {}),
+    // A step that was only checked reads `verified` or `present`, never
+    // `replayed` (`./verify-only.ts`): the model must not believe it was done again.
+    ...(step.replayed ? { replayed: automationStudioFlowDraftReplayOutcomeWord(step.replayed) } : {}),
     // What the step says about when it runs, in the step numbers the model
     // reads rather than the ids the draft keeps (`./routing.ts`). It is shown
     // back for the same reason the disposition is: an edit the model made and
@@ -288,7 +291,7 @@ function stepRow(step: AutomationStudioFlowDraftStep, withInput: boolean, all: r
     automationStudioFlowDraftStepIsProposed(step)
   ];
   const optional: JsonValue[] = [
-    step.replayed?.status ?? null,
+    step.replayed ? automationStudioFlowDraftReplayOutcomeWord(step.replayed) : null,
     step.routing ? routingLine(step.routing, all) : null,
     step.settings ?? null
   ];

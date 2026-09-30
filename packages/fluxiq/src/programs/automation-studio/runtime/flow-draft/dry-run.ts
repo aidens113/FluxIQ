@@ -21,6 +21,15 @@
 // refusal is an ordinary issue the loop already knows how to feed back, so the
 // model amends the draft and finishes again rather than the build dying.
 //
+// **When, in the build's lifecycle (user, 2026-09-30).** This replay is the
+// judgement phase: the test run once the model says the Flow is ready and the
+// completion check has accepted it, and again after each repair. It is never
+// part of the live phase -- exploring and writing the draft -- so a completion
+// the check refuses, and a continued build, replay nothing
+// (`../llm/evidence-loop/completion-attempt.ts`, `../llm/evidence-loop/resume.ts`).
+// A refused test leaves the page where it broke, which is where live repair
+// starts.
+//
 // **What Core knows and what it does not.** Core knows which steps the draft
 // proposes, in which order, and what each ran with; it knows nothing about
 // targets, pages or state. So the two things a replay needs from the world --
@@ -56,10 +65,18 @@
 // the draft saying so: `optional`, or `only_if` on a check (`./routing.ts`),
 // which exempts it through the verdict's `conditional` set. A step dropped,
 // exploratory or that did not work is not proposed, so it is not replayed.
+//
+// **A step whose effect lasts is checked, not run (decision D1).** The reset
+// is a navigation: it never clears site data or logs the person out, so what
+// the site remembers stays remembered, and replaying a save or an add would do
+// it to the person's real account again. Such a step is verified instead --
+// its target could take the action now, or its effect is already in place --
+// and the steps after it are still run (`./verify-only.ts`).
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 /** The entry a dry run's verdict is shown to the model under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID = "core.dry_run";
@@ -99,8 +116,23 @@ export type AutomationStudioFlowDraftReplayOutcome = {
   /** What was run, under the caller's own name for it. */
   actionId: string;
   status: AutomationStudioFlowDraftReplayStatus;
-  /** The caller's code for the answer, carried and never read. */
+  /**
+   * The caller's code for the answer. Read only to tell the two answers to a
+   * check apart (`./verify-only.ts`); every other code is carried unread.
+   */
   resultCode?: string;
+  /**
+   * `verify` when the step was checked rather than run again, because running
+   * it would have repeated a lasting effect (`./verify-only.ts`). Absent, it
+   * was run again.
+   */
+  mode?: "verify";
+  /**
+   * The position of the verified step before this one that moved the target
+   * and whose effect the dry run withheld, set only on a step that then did
+   * not replay (`./verify-only.ts`). Such a step does not refuse the proposal.
+   */
+  withheldBy?: number;
 };
 
 /** One whole replay of the draft. */
@@ -212,8 +244,8 @@ export function automationStudioFlowDraftDryRunIssueCodes(verdict: AutomationStu
   ])];
 }
 
-const DRY_RUN_INSTRUCTION = "Your draft was run again from the beginning with no model attached, the way the finished Flow will run: the target was put back the way your first step found it, and every step you kept was run in order with the argument the Flow will use. "
-  + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. "
+const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run once from the beginning with no model attached, the way the finished Flow will run. The target was put back the way your first step found it, and every step you kept was run in order with the argument the Flow will use. "
+  + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. Repair it live from where the test stopped -- the draft is not run from the beginning again until you say it is ready again. "
   + "failed: the step did not run this time. Rerun it with a corrected argument (amend_draft rerun), or run the step it needed first and keep that one too. "
   + "changed: it ran, and produced nothing where it produced something before -- almost always the step before it left the target somewhere else, so correct the order or the earlier step rather than this one. "
   + "unreproducible: the step's target was not there when it was run again. Either the site remembers its effect -- a consent banner answered once stays answered -- or the steps before it no longer reach the page it acts on, and the replay cannot tell which: check that the steps before it still get there. "
@@ -227,6 +259,10 @@ const DRY_RUN_INSTRUCTION = "Your draft was run again from the beginning with no
   // or nearly shipped a step that did not replay that way (see the header).
   + "So a step that does not replay keeps the Flow from being proposed until it replays, is marked optional (or only_if on a check), or is dropped; finishing again with it unchanged is refused again. Drop it only if the Flow does not need it at all. "
   + "again: true marks a step an earlier dry run already reported as not replaying. "
+  // Decision D1: a lasting effect is never repeated (`./verify-only.ts`). The
+  // model must not read a checked step as one that was done again.
+  + "verified: the step changes something that lasts, so it was not run again, only checked that it could run now. present: the same kind of step, whose effect is already in place on the page it acted on, so it was not run either. Both pass. "
+  + "afterWithheld names the verified step before this one that moved the page and whose effect was withheld; a step marked with it does not stand in the way of the proposal on its own. "
   + "The target now stands where the replay ended.";
 
 /**
@@ -246,8 +282,11 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
     steps: verdict.outcomes.map((outcome) => ({
       step: outcome.step,
       actionId: outcome.actionId,
-      replayed: outcome.status,
+      // `verified` or `present` for a step that was checked and not run
+      // (`./verify-only.ts`), so the model never believes it was done again.
+      replayed: automationStudioFlowDraftReplayOutcomeWord(outcome),
       ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
+      ...(outcome.withheldBy !== undefined ? { afterWithheld: outcome.withheldBy } : {}),
       ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
     })),
     instruction: DRY_RUN_INSTRUCTION

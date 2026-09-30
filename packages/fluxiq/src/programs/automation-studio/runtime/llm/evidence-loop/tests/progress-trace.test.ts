@@ -42,8 +42,10 @@ describe("the evidence loop's progress trace", () => {
   it("prints a call id only when it is numbered or Core's own", async () => {
     const lines: string[] = [];
     const traced = automationStudioLlmEvidenceLoopProgressTrace(loopInput(), { FLUXIQ_BUILD_PROGRESS_TRACE: "1" }, (line) => lines.push(line));
-    for (const callId of ["c18", "initial.core.run_node", "add_kettle_to_cart", "pick_Millbrook_store"]) await traced.executeTool({ callId, toolId: "web.look", value: { text: "" } });
-    expect(lines.filter((line) => line.includes("tool start")).map((line) => /callId=(\S+)/u.exec(line)?.[1])).toEqual(["c18", "initial.core.run_node", "-", "-"]);
+    for (const callId of ["c18", "initial.core.run_node", "add_kettle_to_cart", "pick_Millbrook_store", "dryrun.3.reset", "dryrun.3.26", "dryrun.3.kettle"]) await traced.executeTool({ callId, toolId: "web.look", value: { text: "" } });
+    // A dry run's own calls are Core's too, so a completion that replayed can
+    // be told in the log from one that reused an earlier verdict and made none.
+    expect(lines.filter((line) => line.includes("tool start")).map((line) => /callId=(\S+)/u.exec(line)?.[1])).toEqual(["c18", "initial.core.run_node", "-", "-", "dryrun.3.reset", "dryrun.3.26", "-"]);
   });
 
   it("names a refused completion by its issue codes", async () => {
