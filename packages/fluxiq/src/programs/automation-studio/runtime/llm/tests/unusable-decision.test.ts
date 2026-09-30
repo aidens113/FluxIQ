@@ -240,10 +240,14 @@ describe("the evidence loop after a completed result its caller refuses", () => 
         at: expect.any(Number)
       }
     ]);
-    // The second decision was asked with the refusal in its evidence.
+    // The second decision was asked with the refusal in its evidence, and the
+    // refused completion as a row of the decision history beside it.
     expect(decide.mock.calls[1]![0].evidence).toEqual([
       { callId: "initial.inspect", toolId: "inspect", value: { seen: true } },
-      { callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.1`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: refusal("bootstrap.invalid_parameter_value").feedback }
+      { callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID}.1`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, value: refusal("bootstrap.invalid_parameter_value").feedback },
+      { callId: "core.evidence_history", toolId: "core.evidence_history", value: expect.objectContaining({
+        rows: [[0, "look", "inspect", null, "initial.inspect", "ok"], expect.arrayContaining([1, "completion", "bootstrap.invalid_parameter_value"])]
+      }) }
     ]);
     expect(checkCompletion).toHaveBeenCalledTimes(2);
   });

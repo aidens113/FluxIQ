@@ -108,7 +108,9 @@ describe("Automation Studio harness option registry", () => {
     expect(result).toMatchObject({ ok: true, result: { summary: "ready" } });
     expect(decide.mock.calls[2]?.[0].evidence).toEqual([
       { callId: "call.1", toolId: AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS.flowGraph, value: { nodes: [{ nodeId: "node.one", definitionId: "definition.one" }], edges: [] } },
-      { callId: "call.2", toolId: "erp.ledger_balances", value: { period: "2026-09", accounts: [{ code: "1000", balance: 42 }] } }
+      { callId: "call.2", toolId: "erp.ledger_balances", value: { period: "2026-09", accounts: [{ code: "1000", balance: 42 }] } },
+      // The decision history beside the window: both calls, as rows.
+      { callId: "core.evidence_history", toolId: "core.evidence_history", value: expect.objectContaining({ rows: [expect.arrayContaining([1, "call", "call.1"]), expect.arrayContaining([2, "call", "call.2"])] }) }
     ]);
     // The tool list the loop saw is what the provider would be handed, so the
     // gate metadata must not have travelled with it.
