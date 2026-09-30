@@ -6,7 +6,8 @@
 // activity land in the chat thread; an improvement asks before it applies, and
 // a yes applies exactly the change it asked about.
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,7 +22,10 @@ import { runConfirmedAutomationStudioConversationCommand } from "../confirmed.ts
 import { executeAutomationStudioConversationCommand } from "../execute.ts";
 import { automationStudioConversationCommandWork } from "../work.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversation-commands-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.commands";
 const PAGE = "https://shop.example/kettles?q=blue&token=secret#top";
 
@@ -72,8 +76,7 @@ const REVIEW_OK: Handler = (payload) => ({ ok: true, payload: { adaptation: { ad
 
 describe("conversation commands", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversation-commands-test-"));
   });
 
   afterEach(async () => {

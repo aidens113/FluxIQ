@@ -83,14 +83,16 @@ export class AutomationStudioRunDetailWriter {
       return null;
     }
     try {
-      const held = await store.getRunDetail(runId);
+      // The stream read here is handed to the write below, so a save reads the
+      // run's events once rather than twice.
+      const { detail: held, events } = await store.readRunForUpdate(runId);
       // A run first saved to the legacy detail is merged from there when the
       // typed store takes it over, so the move cannot drop what it recorded.
       const stored = held ?? await this.readLegacy(projectId, runId);
       const normalizedDetail = normalizedFlowRunDetail(runDetailPreservingStored(stored, detail));
       try {
         await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: normalizedDetail.summary.startedAt ?? normalizedDetail.summary.updatedAt });
-        await store.putRunDetail(normalizedDetail);
+        await store.putRunDetail(normalizedDetail, events ? { existingEvents: events } : {});
       } catch (error) {
         if (held) throw error;
         await store.upsertRunSummary(normalizedDetail.summary).catch(() => undefined);

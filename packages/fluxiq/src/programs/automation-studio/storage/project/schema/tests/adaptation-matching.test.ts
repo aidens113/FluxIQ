@@ -1,4 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
@@ -6,7 +7,10 @@ import { AutomationStudioProjectDatabasePool, type AutomationStudioSqlExecutor }
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUN_DATASET_MIGRATION } from "../index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-adaptation-matching-migration-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const MIGRATION = AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION;
 const PREVIOUS = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id < MIGRATION.id);
 
@@ -15,7 +19,7 @@ type ColumnInfo = { name: string; type: string; notnull: number; dflt_value: unk
 describe("migration 0020: adaptation matching columns", () => {
   let pool: AutomationStudioProjectDatabasePool;
 
-  beforeEach(async () => { await rm(rootDir, { recursive: true, force: true }); await mkdir(rootDir, { recursive: true }); pool = new AutomationStudioProjectDatabasePool({ rootDir }); });
+  beforeEach(async () => { rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-adaptation-matching-migration-test-")); pool = new AutomationStudioProjectDatabasePool({ rootDir }); });
   afterEach(async () => { await pool.closeAll(); await rm(rootDir, { recursive: true, force: true }); });
 
   it("is the next migration after 0019", () => {

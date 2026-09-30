@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_LIMITS,
@@ -22,7 +23,10 @@ import { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { AutomationStudioRunDatasets } from "../run-datasets.ts";
 import type { AutomationStudioRunDatasetExportLimits, AutomationStudioRunDatasetStream } from "../types.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-run-datasets-collaborator-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.datasets";
 const RUN = "run.a";
 const UNAVAILABLE = "Run datasets require project storage.";
@@ -46,8 +50,7 @@ const pools: AutomationStudioProjectDatabasePool[] = [];
 
 describe("AutomationStudioRunDatasets", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-run-datasets-collaborator-test-"));
   });
 
   afterEach(async () => {

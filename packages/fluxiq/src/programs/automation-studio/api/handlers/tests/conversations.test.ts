@@ -9,7 +9,8 @@
 // does, `register.ts` registers them with the rest and `domain-scope.test.ts`
 // gains all of them in its `DOMAIN_SCOPED` list.
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -336,9 +337,7 @@ describe("Automation Studio conversation API", () => {
   });
 
   it("reads a thread about a Flow as that Flow, and runs it in the background for the client", async () => {
-    const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversation-endpoints-test");
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversation-endpoints-test-"));
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     try {
       const conversations = new AutomationStudioConversations(pool);

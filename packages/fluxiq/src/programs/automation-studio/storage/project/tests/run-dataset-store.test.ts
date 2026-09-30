@@ -1,4 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +9,10 @@ import { AutomationStudioProjectRunDatasetStore, runDatasetSummariesForRun, type
 import { AutomationStudioProjectRuntimeStreamStore } from "../runtime-stream-store.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-run-dataset-store-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.datasets";
 const MAX_ROWS = AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRowsPerDatasetPerRun;
 const CURSOR_MISMATCH = "Paging cursor does not match this query.";
@@ -30,8 +34,7 @@ let fixture: Fixture | undefined;
 
 describe("AutomationStudioProjectRunDatasetStore", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-run-dataset-store-test-"));
   });
 
   afterEach(async () => {

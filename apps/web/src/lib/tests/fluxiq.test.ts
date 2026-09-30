@@ -43,7 +43,8 @@ describe("FluxIQ web host module loading", () => {
   });
 
   it("fails loudly when the configured host module is missing", () => {
-    process.env.FLUXIQ_HOST_MODULE = path.join(os.tmpdir(), "missing-fluxiq-host-module.cjs");
+    // Inside a directory of its own, so no other run can have created it.
+    process.env.FLUXIQ_HOST_MODULE = path.join(mkdtempSync(path.join(os.tmpdir(), "fluxiq-missing-host-module-")), "missing-fluxiq-host-module.cjs");
 
     expect(() => resolveFluxIQHostModulePath()).toThrow("FLUXIQ_HOST_MODULE points to a missing file");
   });

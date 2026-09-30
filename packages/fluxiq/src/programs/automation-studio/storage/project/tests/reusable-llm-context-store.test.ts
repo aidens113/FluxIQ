@@ -1,4 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
@@ -11,11 +12,14 @@ import {
   type AutomationStudioReusableLlmContextWrite
 } from "../reusable-llm-context-store.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-reusable-llm-context-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const contentProtection = new AutomationStudioAesGcmProjectContentProtection(({ projectId }) => ({ keyId: "test.key", key: Buffer.from(projectId.padEnd(32, ".").slice(0, 32)) }));
 
 describe("AutomationStudioProjectReusableLlmContextStore", () => {
-  beforeEach(async () => { await rm(rootDir, { recursive: true, force: true }); await mkdir(rootDir, { recursive: true }); });
+  beforeEach(async () => { rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-reusable-llm-context-test-")); });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
 
   it("is feature-off by default without changing existing-project behavior", async () => {
