@@ -1,5 +1,6 @@
 export * from "./automation-studio.ts";
 export * from "./messages.ts";
+export * from "./open-error.ts";
 export * from "./transport.ts";
 export * from "./types.ts";
 

@@ -8,6 +8,7 @@ import {
 } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "@fluxiq/contracts/core";
 import { parseServerMessage } from "./messages.ts";
+import { FluxIQClientGatewayOpenError } from "./open-error.ts";
 import type {
   FluxIQClientGatewayWebSocketEvent,
   FluxIQClientGatewayWebSocketEventType,
@@ -17,6 +18,15 @@ import type {
   FluxIQWebSocketLike
 } from "./types.ts";
 
+/**
+ * How long `connect()` waits for its socket to open, unless
+ * `openTimeoutMs` says otherwise. The gateway is local or near: a socket that
+ * has not opened in this time is not going to, and the caller -- a person's
+ * Connect, a reconnect, a test harness -- is owed a named failure instead of a
+ * promise that never settles.
+ */
+export const CLIENT_GATEWAY_OPEN_TIMEOUT_MS = 10_000;
+
 export class FluxIQClientGatewayWebSocketClient {
   private readonly options: FluxIQClientGatewayWebSocketOptions;
   private readonly handlers = new Map<FluxIQClientGatewayWebSocketEventType, Set<FluxIQClientGatewayWebSocketHandler>>();
@@ -25,6 +35,10 @@ export class FluxIQClientGatewayWebSocketClient {
   private token: string | undefined;
 
   constructor(options: FluxIQClientGatewayWebSocketOptions) {
+    const openTimeoutMs = options.openTimeoutMs;
+    if (openTimeoutMs !== undefined && !(Number.isFinite(openTimeoutMs) && openTimeoutMs > 0)) {
+      throw new Error("openTimeoutMs must be a positive finite number of milliseconds.");
+    }
     this.options = options;
   }
 
@@ -42,7 +56,14 @@ export class FluxIQClientGatewayWebSocketClient {
     if (!WebSocketImpl) throw new Error("A WebSocket implementation is required.");
     const socket = new WebSocketImpl(this.options.url ?? "ws://127.0.0.1:4777/client");
     this.socket = socket;
-    await waitForOpen(socket);
+    try {
+      await waitForOpen(socket, this.options.openTimeoutMs ?? CLIENT_GATEWAY_OPEN_TIMEOUT_MS);
+    } catch (error) {
+      // A socket that never opened is not this client's socket any more: a
+      // later connect() must open a new one rather than return early on it.
+      if (this.socket === socket) this.socket = null;
+      throw error;
+    }
     this.attachSocketHandlers(socket);
     this.emit({ type: "open" });
     const storedToken = await this.options.tokenStorage?.read();
@@ -148,7 +169,10 @@ export class FluxIQClientGatewayWebSocketClient {
   }
 }
 
-function waitForOpen(socket: FluxIQWebSocketLike): Promise<void> {
+// Settles on the first of: open, an error, a close, or the deadline. Every
+// outcome but open is a named `FluxIQClientGatewayOpenError`, and the deadline
+// also closes the socket so it cannot open later behind the caller's back.
+function waitForOpen(socket: FluxIQWebSocketLike, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const onOpen = () => {
       cleanup();
@@ -156,14 +180,27 @@ function waitForOpen(socket: FluxIQWebSocketLike): Promise<void> {
     };
     const onError = (event: unknown) => {
       cleanup();
-      reject(event instanceof Error ? event : new Error("FluxIQ client gateway WebSocket failed to open."));
+      reject(new FluxIQClientGatewayOpenError("open_failed", { cause: event }));
     };
+    const onClose = (event: unknown) => {
+      cleanup();
+      reject(new FluxIQClientGatewayOpenError("closed_before_open", { cause: event }));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      // Rejected before the close, so a socket whose close throws still leaves the caller a named failure.
+      reject(new FluxIQClientGatewayOpenError("open_timeout", { timeoutMs }));
+      socket.close();
+    }, timeoutMs);
     const cleanup = () => {
+      clearTimeout(timer);
       removeListener(socket, "open", onOpen);
       removeListener(socket, "error", onError);
+      removeListener(socket, "close", onClose);
     };
     addListener(socket, "open", onOpen);
     addListener(socket, "error", onError);
+    addListener(socket, "close", onClose);
   });
 }
 
