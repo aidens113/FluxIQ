@@ -251,12 +251,15 @@ export class AutomationStudioActionPermissionGate {
       // Flow, and a run that only ever made things would otherwise never derive
       // it at all.
       const instructed = await this.instructedFor();
-      // Only a destructive class can stop anything (`destructive.ts`). Making
-      // something new or sending what the instruction said to send takes
-      // nothing away, so nobody is asked about it -- not because a permission or an
-      // instruction covered it, but because it was never the gate's to refuse.
-      const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) =>
-        !this.permitted.has(consequence) && !instructed.some((entry) => entry.consequence === consequence)));
+      // Only a gated class can stop anything (`destructive.ts`): moving money,
+      // deleting, sending or publishing. Making or editing something is never
+      // the gate's to refuse. A gated class is asked about unless a person
+      // permitted it -- the instruction asking for it is recorded, and is not a
+      // permission (the user's rule, `docs/working/mvp-today-plan.md:150`:
+      // these acts independently require a person's authority; until
+      // 2026-09-30 an instructed class went ahead unasked, so whether Place
+      // order asked depended on how the model happened to read the instruction).
+      const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence)));
       if (!missing.length) return record({ permitted: true });
       if (this.raised) return record({ permitted: false, missing, requestId: this.raised.requestId });
       const stage = this.input.stage;
@@ -325,10 +328,10 @@ export const automationStudioActionPermissionDenied: AutomationStudioActionPermi
   // that only reads is the same case: there is nothing it could have done that
   // outlasts it, so there is nobody who would need to be asked.
   if (read.effect === "observe") return { permitted: true };
-  // Nor is there anybody to ask about making or sending something: those are
+  // Nor is there anybody to ask about making or editing something: those are
   // not gated anywhere (`destructive.ts`), so having no run behind the action
-  // changes nothing about them. What it changes is that a destructive class has
-  // no instruction that could have authorised it, and no request to raise.
+  // changes nothing about them. What it changes is that a gated class has no
+  // person who could have permitted it, and no request to raise.
   const missing = automationStudioDestructiveConsequences(read.consequences);
   if (!missing.length) return { permitted: true };
   return { permitted: false, missing, requestId: null };

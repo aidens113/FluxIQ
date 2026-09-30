@@ -4,5 +4,6 @@ export * from "./attempt.ts";
 export * from "./brief.ts";
 export * from "./conversation.ts";
 export * from "./history.ts";
+export * from "./purse.ts";
 export * from "./reauthor.ts";
 export * from "./repair.ts";

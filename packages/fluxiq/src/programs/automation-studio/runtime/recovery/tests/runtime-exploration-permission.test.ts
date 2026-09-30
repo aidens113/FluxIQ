@@ -151,10 +151,8 @@ describe("a recovery exploration that needs permission", () => {
     expect(refused.exploration.permissionRequest).toBe(refusing.request);
     expect(refusing.request).toMatchObject({ reason: { stage: "recovery", instructionIds: ["instruction.dispatch"] }, control: { name: "Refund and void line 1" } });
 
-    const permitting = new AutomationStudioActionPermissionGate({ stage: "recovery", instructed: [
-      { consequence: "move_money", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" },
-      { consequence: "delete", instructionId: "instruction.refund", instructionDigest: `sha256:${"0".repeat(64)}`, quote: "refund the damaged line" }
-    ] });
+    // A person's permission, not the instruction, lets it press (the user's rule, 2026-09-30).
+    const permitting = new AutomationStudioActionPermissionGate({ stage: "recovery", permittedConsequences: ["move_money", "delete"] });
     const permitted = await explore({ gate: permitting });
 
     expect(permitted.pressed).toEqual(["c4"]);

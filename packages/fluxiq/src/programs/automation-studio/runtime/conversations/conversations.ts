@@ -16,6 +16,12 @@ import type { AutomationStudioProjectDatabasePool } from "../../storage/index.ts
 import { automationStudioConversationParkingPort, type AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAsk } from "./ask.ts";
 import { AutomationStudioProjectConversationStore } from "./store.ts";
+import { currentAutomationStudioConversation } from "./context/index.ts";
+import {
+  automationStudioConversationEffectiveCaller,
+  type AutomationStudioConversationEffectiveCaller,
+  type AutomationStudioConversationUnlockedSessionResolver
+} from "./commands/index.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubject, AutomationStudioConversationThread } from "./thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn } from "./turn.ts";
 import {
@@ -26,7 +32,8 @@ import {
   type AutomationStudioConversationInstructionAnswer,
   type AutomationStudioConversationInstructionRequest,
   type AutomationStudioConversationModel,
-  type AutomationStudioConversationModelTurn
+  type AutomationStudioConversationModelTurn,
+  type AutomationStudioConversationOnScreen
 } from "./instructions/index.ts";
 import {
   automationStudioConversationWriter,
@@ -36,6 +43,8 @@ import {
 } from "./writer.ts";
 
 const STORAGE_UNAVAILABLE = "Conversations require project storage.";
+/** How far back a thread is searched for asks still waiting. */
+const PENDING_ASK_WINDOW = 50;
 
 export type AutomationStudioConversationListRequest = {
   projectId: string;
@@ -132,6 +141,13 @@ export class AutomationStudioConversations {
    */
   private model: AutomationStudioConversationModel | null = null;
 
+  /**
+   * Finds a person's live unlocked session, so a paired client's chat can use
+   * their key (`commands/caller.ts`). Null leaves a paired caller on its own
+   * session, where the key is locked.
+   */
+  private unlockedSession: AutomationStudioConversationUnlockedSessionResolver | null = null;
+
   constructor(
     private readonly pool: AutomationStudioProjectDatabasePool | undefined,
     private readonly resolveAttachment?: AutomationStudioConversationAttachmentResolver
@@ -196,6 +212,13 @@ export class AutomationStudioConversations {
   openConversation(input: AutomationStudioConversationOpenRequest): Promise<AutomationStudioConversation> {
     return this.withStore(input.projectId, async (store) => {
       if (input.conversationId === undefined) {
+        // Work the chat started speaks in the chat. A build's question is
+        // raised on the Flow's subject by code that knows nothing of the chat;
+        // inside the thread's ambient context (`context/`) it is the thread the
+        // person is typing in that is continued, not a second one about the Flow.
+        const ambient = currentAutomationStudioConversation(input.projectId);
+        const thread = ambient ? await store.getConversation({ conversationId: ambient.conversationId, limit: 1 }) : null;
+        if (thread && thread.conversation.status === "open") return thread.conversation;
         const [open] = await store.listConversations({ subjectKind: input.subject.kind, subjectId: input.subject.id, status: "open", limit: 1 });
         if (open) return open;
       }
@@ -242,6 +265,30 @@ export class AutomationStudioConversations {
     );
   }
 
+  /** Connects the lookup of a person's unlocked session, for paired callers. Null disconnects it. */
+  bindUnlockedSessionResolver(resolver: AutomationStudioConversationUnlockedSessionResolver | null): this {
+    this.unlockedSession = resolver;
+    return this;
+  }
+
+  /** The session a request's model calls and commands run under: the actor's own, or a paired client's person's unlocked one. */
+  callerFor(actor: { userId: string; sessionId: string }): AutomationStudioConversationEffectiveCaller {
+    return automationStudioConversationEffectiveCaller(actor, this.unlockedSession);
+  }
+
+  /** The thread's asks still waiting for an answer, oldest first, from its most recent turns. */
+  pendingAsks(input: { projectId: string; conversationId: string }): Promise<AutomationStudioConversationAsk[]> {
+    return this.withStore(input.projectId, async (store) => {
+      const turns = await store.recentTurns(input.conversationId, PENDING_ASK_WINDOW);
+      return turns.flatMap((turn) => (turn.ask && turn.ask.status === "pending" ? [turn.ask] : []));
+    });
+  }
+
+  /** One turn by id, or null when the thread does not hold it. */
+  getTurn(input: { projectId: string; conversationId: string; turnId: string }): Promise<AutomationStudioConversationTurn | null> {
+    return this.withStore(input.projectId, (store) => store.getTurn(input.conversationId, input.turnId));
+  }
+
   /** Connects the model a person's message is read with. Null disconnects it. */
   bindModel(model: AutomationStudioConversationModel | null): this {
     this.model = model;
@@ -263,12 +310,13 @@ export class AutomationStudioConversations {
   async respondToPersonTurn(input: AutomationStudioConversationInstructionRequest): Promise<AutomationStudioConversationInstructionAnswer> {
     const turn = await this.appendTurn(input);
     const earlier = await this.earlierTurns(input, turn.turnId);
+    const onScreen = await this.onScreenWithSubject(input);
     const interpretation = await interpretAutomationStudioConversationTurn({
       model: this.model,
       message: input.text,
       transcript: earlier.transcript,
       transcriptWithheld: earlier.withheld,
-      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen: input.onScreen },
+      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen },
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})
     });
@@ -281,6 +329,26 @@ export class AutomationStudioConversations {
       // would read as the message itself being lost and invite a duplicate.
       return { turn, response: null, problem: `Your message was saved, but my answer could not be written into the thread: ${error instanceof Error ? error.message : String(error)}` };
     }
+  }
+
+  /**
+   * What is on screen, with the thread's own Flow standing in when none is
+   * open. A chat about one automation -- opened from its row in the extension's
+   * list -- is about that Flow, so "run it" there means it, not a question
+   * back. A subject that cannot be read leaves what was sent as it was.
+   */
+  private async onScreenWithSubject(input: AutomationStudioConversationInstructionRequest): Promise<AutomationStudioConversationOnScreen> {
+    if (input.onScreen.flowId) return input.onScreen;
+    let thread: AutomationStudioConversationThread | null;
+    try {
+      thread = await this.withStore(input.projectId, (store) => store.getConversation({ conversationId: input.conversationId, limit: 1 }));
+    } catch (error) {
+      // Context, not the message: the turn is still read, without the subject.
+      if (error instanceof Error) return input.onScreen;
+      throw error;
+    }
+    const subject = thread?.conversation.subject;
+    return subject?.kind === "flow" ? { ...input.onScreen, flowId: subject.id } : input.onScreen;
   }
 
   /** The end of the thread before `turnId`, as the model reads it, or a note that it could not be read. */

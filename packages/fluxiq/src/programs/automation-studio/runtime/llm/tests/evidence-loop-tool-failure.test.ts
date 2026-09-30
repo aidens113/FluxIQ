@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 
 // A tool call that fails is an observation, not the end: Flow creation on the
 // realistic professional-network site died on the first press a promotion covered, because
@@ -175,5 +176,29 @@ describe("a tool call that fails, in a loop that ends on failures", () => {
       .resolves.toMatchObject({ ok: true });
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, toolFailures: "end", unusableDecisions: { stalled }, decide: pressThenComplete(), executeTool: throwing }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.tool_failed" });
+  });
+});
+
+// Reading a caller's execution result that says only a person can get past
+// what it met. The key list is exact, so a flag the parser has not learned is
+// not a result with one field too many -- it is the whole result refused as
+// `llm_evidence_loop.tool_result_invalid`, and the build's hand-off to the
+// person never sees it. The flag is read only as the literal `true`.
+const base = { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "USER_INTERVENTION_REQUIRED" }, effectApplied: true } as const;
+
+describe("an execution result that says only a person can get past what it met", () => {
+  it("is read, with the flag kept", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...base, personNeeded: true }, "mutate")).toEqual({ evidence: base.evidence, effectApplied: true, personNeeded: true });
+  });
+
+  it("keeps the flag only as the literal true, and still reads the result", () => {
+    for (const personNeeded of [false, "true", 1, null]) {
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult({ ...base, personNeeded } as never, "mutate");
+      expect(parsed).toEqual({ evidence: base.evidence, effectApplied: true });
+    }
+  });
+
+  it("carries nothing when the caller did not say it", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...base }, "mutate")).not.toHaveProperty("personNeeded");
   });
 });

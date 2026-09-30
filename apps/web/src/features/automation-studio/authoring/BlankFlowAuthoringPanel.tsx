@@ -52,6 +52,7 @@ function generationFailureReason(result: any, mode: "build" | "explore"): string
   if (code === "flow_bootstrap.evidence_iteration_limit" || code === "flow_bootstrap.evidence_limit") return "Exploration reached its evidence limit before it could create a proposal. Start closer to the target page or make the website task more specific, then try again.";
   if (code === "flow_bootstrap.evidence_tool_failed") return "The connected browser could not complete an exploration action. Check that the target tab is still available, then try again.";
   if (code === "flow_bootstrap.evidence_cancelled") return "Exploration was interrupted. Keep the browser connected and try again.";
+  if (code === "flow_bootstrap.user_intervention_required") return "The website showed a check only you can complete, and it was not completed. Complete it in the browser, then try again.";
   return mode === "explore"
     ? "Website exploration did not create a Flow proposal. Check the connected browser and task, then try again."
     : "Flow authoring did not create a reviewable proposal. Check the active instructions and try again.";

@@ -146,6 +146,34 @@ export function flowBootstrapPermissionRequiredFailure(
   });
 }
 
+/**
+ * The build stopped because only a person could get past what it met, and the
+ * person did not.
+ *
+ * Built like the permission ending, from the loop's progress when the build
+ * was stopped. Not retryable as it stands: the same site would put the same
+ * check in front of the next build, and FluxIQ never answers one itself. The
+ * one issue code says why the person did not get it past, from the closed list
+ * `../person-needed.ts` writes.
+ */
+export function flowBootstrapUserInterventionRequiredFailure(
+  reason: string,
+  progress: EvidenceLoopProgress,
+  accounting?: EvidenceAccounting
+): AutomationStudioFlowBootstrapGenerationError {
+  const issueCodes = flowBootstrapDiagnosticIssueCodes([reason]);
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.user_intervention_required",
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    ...(accounting ? { accounting } : {}),
+    evidenceLoop: evidenceLoopDiagnostic(progress),
+    ...(issueCodes.length ? { issueCodes } : {})
+  });
+}
+
 /** What a loop has recorded so far: a finished result's, or a stopped loop's. */
 type EvidenceLoopProgress = {
   /** The loop's rows, each carrying the moment it was recorded where the loop stamped one. */

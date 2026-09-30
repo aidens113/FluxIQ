@@ -19,6 +19,7 @@ function improvementFailureMessage(result: any): string {
   if (code === "flow_bootstrap.provider_timeout") return "The model request timed out. Keep the browser connected and try again.";
   if (code === "flow_bootstrap.evidence_iteration_limit" || code === "flow_bootstrap.evidence_limit") return "FluxIQ reached its limit before it found the change. Say more precisely what should be different, then try again.";
   if (code === "flow_bootstrap.evidence_tool_failed" || code === "flow_bootstrap.evidence_runtime_unavailable") return "The connected browser could not try this out. Check that the website's tab is still open, then try again.";
+  if (code === "flow_bootstrap.user_intervention_required") return "The website showed a check only you can complete, and it was not completed. Complete it in the browser, then try again.";
   return "FluxIQ did not come back with a change to review. Check the connected browser and what you asked for, then try again.";
 }
 

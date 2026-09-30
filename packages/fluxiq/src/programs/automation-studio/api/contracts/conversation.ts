@@ -17,6 +17,7 @@
 // project-scoped, so `answer-ask` carries the project too: it is which
 // database to open, not a second key.
 
+import type { AutomationStudioConversationCommandExecution } from "../../runtime/index.ts";
 import type { FlowProjectRequest } from "./flow.ts";
 
 /**
@@ -74,6 +75,13 @@ export type ConversationReadRequest = FlowProjectRequest & {
  * question or reply, writes that into the thread, and answers with the
  * decision so the panel can run what was chosen. Without it the turn is only
  * stored, exactly as before -- which is how the panel records what it did.
+ *
+ * For the capabilities Core runs itself (`runtime/conversations/commands/`:
+ * `flow.createHere`, `flow.describe`, `flow.explore`, `flow.improve`,
+ * `run.execute`, `ask.answer`) a client need send only the id: Core's own
+ * descriptor replaces whatever was sent, Core runs the capability, and the
+ * answer's `response.execution` says what came of it
+ * (`ConversationCommandExecution`). The client then runs nothing itself.
  */
 export type ConversationTurnAppendRequest = FlowProjectRequest & {
   conversationId: string;
@@ -81,14 +89,31 @@ export type ConversationTurnAppendRequest = FlowProjectRequest & {
   attachmentKind?: string;
   attachmentRef?: string;
   capabilities?: unknown[];
-  /** What the panel has open, so "run it" means the Flow on screen. Every field optional. */
+  /**
+   * What the panel has open, so "run it" means the Flow on screen. Every field
+   * optional. Without `flowId`, a thread whose subject is a Flow means that
+   * Flow. `pageUrl` is the browser page the person is on (http or https, at
+   * most 2,048 characters; anything else is left out): a build Core runs from
+   * the chat starts there, and the model is shown only its origin and path.
+   */
   onScreen?: {
     flowId?: string;
     subflowId?: string;
     runId?: string;
     recordingId?: string;
+    pageUrl?: string;
   };
 };
+
+/**
+ * `append-turn`'s `payload.response.execution`, and `answer-ask`'s
+ * `payload.execution` when a granted question runs something: null when Core
+ * does not run the chosen capability or nothing is run now; otherwise `done`
+ * or `failed` for work that finished in the request, and `started` for a
+ * build or run whose result arrives later as an automation turn with a
+ * `panel-capability-result` attachment naming the capability.
+ */
+export type ConversationCommandExecution = AutomationStudioConversationCommandExecution;
 
 /**
  * The answer to one ask. `kind` must settle the ask's kind -- grant or deny a

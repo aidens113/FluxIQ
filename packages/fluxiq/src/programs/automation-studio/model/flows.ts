@@ -286,7 +286,12 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     requireApprovalForDestructiveChanges: false,
     requireApprovalForExternalSideEffects: false,
     maxInterventionsPerRun: 3,
-    maxEstimatedCostUsdPerRun: 1
+    // The run cost ceiling (`runtime/llm/flow-execution-limits/
+    // run-cost-ceiling.ts`), which this setting may lower and never raise.
+    // Written as a literal because the model does not import the runtime;
+    // `runtime/llm/flow-execution-limits/tests/run-cost-ceiling.test.ts` holds
+    // the two equal.
+    maxEstimatedCostUsdPerRun: 0.25
   };
   return {
     adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
