@@ -1,7 +1,7 @@
 // The recording pipeline end to end: capture and entry append, finalization,
 // proposals, normalization, and the evidence and policy work mined from it.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type AppendRecordingMarkerRequest, type AppendRecordingNoteRequest, type ApprovePolicyProposalRequest, type CreateRecordingRequest, type DeleteRecordingRequest, type DeleteRecordingsRequest, type FinalizeRecordingRequest, type GetProposalRequest, type GetRecordingEntryStateRequest, type GetStateSnapshotRequest, type LearnTaskModelRequest, type MineRecordingEvidenceRequest, type NormalizeRecordingRequest, type NormalizedTimelineProjectRequest, type ProcessFinalizedRecordingRequest, type ProposePolicyFromModelRequest, type RecordingIdProjectRequest, type RecordingProjectRequest, type RepairRecordingStateIndexRequest, type ReplayPolicyAgainstRecordingRequest, type UpdateRecordingRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type AppendRecordingMarkerRequest, type AppendRecordingNoteRequest, type ApprovePolicyProposalRequest, type CreateRecordingRequest, type DeleteRecordingRequest, type DeleteRecordingsRequest, type FinalizeRecordingRequest, type GetProposalRequest, type GetRecordingEntryStateRequest, type GetStateSnapshotRequest, type LearnTaskModelRequest, type MineRecordingEvidenceRequest, type NormalizeRecordingRequest, type NormalizedTimelineProjectRequest, type ProcessFinalizedRecordingRequest, type ProposePolicyFromModelRequest, type RecordingIdProjectRequest, type RecordingProjectRequest, type RemoveRecordingEntryRequest, type RemoveRecordingEntryResponse, type RepairRecordingStateIndexRequest, type ReplayPolicyAgainstRecordingRequest, type UpdateRecordingRequest } from "../contracts.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -174,6 +174,27 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingMarkerRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.appendRecordingMarkerEntry(payload) } };
+    }
+  });
+  // Undoing one captured step while the recording is still open: every entry
+  // recorded from the gateway event `eventId` goes. `authoring` under
+  // `runtime.control`, like appending: it edits a recording nobody has
+  // finalized, and a finalized one refuses it. The answer is the recording as a
+  // summary, never its entries.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.removeRecordingEntry,
+    permission: "runtime.control",
+    classification: "authoring",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<Record<keyof RemoveRecordingEntryRequest, unknown>>;
+      const projectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";
+      const recordingId = typeof payload.recordingId === "string" ? payload.recordingId.trim() : "";
+      const eventId = typeof payload.eventId === "string" ? payload.eventId.trim() : "";
+      if (!projectId || !recordingId || !eventId) return { ok: false, error: "Removing a recording entry needs its project, recording and event IDs." };
+      const removed = await service.recordingEntryRemoval.remove({ projectId, recordingId, eventId });
+      const answer: RemoveRecordingEntryResponse = { removedCount: removed.removedCount, recording: service.summarizeRecordingSession(removed.recording) };
+      return { ok: true, payload: answer };
     }
   });
   registry.register({
