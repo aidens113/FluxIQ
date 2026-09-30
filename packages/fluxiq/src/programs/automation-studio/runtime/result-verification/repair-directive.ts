@@ -283,9 +283,18 @@ function fixLine(finding: AutomationStudioResultRepairFinding, summary: Automati
   return undefined;
 }
 
+/**
+ * The Flow's entry and exit, which the assembler derives from the order of the
+ * steps and no build authors or edits (`llm/node-tools/draft-from-flow.ts`
+ * keeps the same set out of a seeded draft). A saved Flow ends in its end node,
+ * so naming the last node outright pointed a repair at the one step it cannot
+ * change (t176).
+ */
+const DERIVED_CONTROL_NODES: ReadonlySet<string> = new Set(["builtin.control.start", "builtin.control.end"]);
+
 /** The Flow's last authored step, named as that and not as the step that stored the rows. */
 function lastStep(summary: AutomationStudioRunResultSummary): string {
-  const step = summary.flowShape.at(-1);
+  const step = summary.flowShape.filter((candidate) => !DERIVED_CONTROL_NODES.has(candidate.definitionId)).at(-1);
   return step ? ` -- the Flow's last step is ${step.nodeId} (${step.definitionId})` : "";
 }
 

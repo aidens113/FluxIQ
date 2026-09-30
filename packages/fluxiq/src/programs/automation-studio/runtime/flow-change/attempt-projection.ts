@@ -20,7 +20,20 @@ export function automationStudioAttemptCapturedRecords(attempt: Pick<AutomationS
   const saves = attempt.effects.some((effect) => effect.type === "records.write" || (effect.type === "policy.output.dispatch" && declaresRecordOutput(effect.payload)));
   if (!saves) return undefined;
   const rows = attempt.outputs.records;
-  return { captured: Array.isArray(rows) ? rows.length : 0 };
+  return { captured: Array.isArray(rows) ? rows.length : savedRecordCount(rows) };
+}
+
+/**
+ * The count a saved trace keeps where the rows were: `{ $dataset: { recordCount } }`
+ * (`executor/record-summary.ts`). A replay is judged from a run's saved trace,
+ * so reading only a live array counted every saved extraction as nothing and
+ * no extraction Flow's replay could prove its change (t176). Anything else is
+ * nothing captured.
+ */
+function savedRecordCount(rows: unknown): number {
+  const marker = isJsonObject(rows) ? rows.$dataset : undefined;
+  const count = isJsonObject(marker) ? marker.recordCount : undefined;
+  return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : 0;
 }
 
 /**
