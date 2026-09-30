@@ -47,7 +47,7 @@ import {
 } from "../runtime/index.ts";
 
 /** The exhaustive answer. Anything else in this list asks a person about ordinary work. */
-const ASKS_A_PERSON = ["move_money", "delete"] as const;
+const ASKS_A_PERSON = ["move_money", "delete", "send_or_publish"] as const;
 
 /** A Flow with no metadata at all: the reader's own fallbacks, with nothing to read. */
 const NOTHING_CONFIGURED = {} as const;
@@ -62,15 +62,20 @@ function policyWith(overrides: Partial<AutomationStudioAdaptationPolicy>): Autom
 }
 
 describe("the classes that reach a person", () => {
-  it("are delete and money movement, and nothing else", () => {
+  it("are money movement, deletion, and sending or publishing, and nothing else", () => {
     expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toEqual([...ASKS_A_PERSON]);
   });
 
   // Named one by one, so re-gating any single class fails on its own row and the
   // failure says which class came back.
-  it.each(["send_or_publish", "modify_existing", "create_new"] as const)("never asks about %s", (consequence) => {
+  it.each(["modify_existing", "create_new"] as const)("never asks about %s", (consequence) => {
     expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCES).toContain(consequence);
     expect(isAutomationStudioDestructiveActionConsequence(consequence)).toBe(false);
+  });
+
+  // Back on the list on 2026-09-30, by the user's rule (`docs/working/mvp-today-plan.md:150`).
+  it("asks about send_or_publish", () => {
+    expect(isAutomationStudioDestructiveActionConsequence("send_or_publish")).toBe(true);
   });
 });
 

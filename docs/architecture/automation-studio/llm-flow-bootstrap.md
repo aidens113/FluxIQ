@@ -67,8 +67,8 @@ their own: they run on the caller's own unlocked Secret Keys key. The domain
 declares, action by action, what one would do --
 for a step the build takes now while exploring, and for a step the finished Flow
 would take each time it runs -- and
-`AutomationStudioActionPermissionGate` answers from `permittedConsequences` and
-from what the person's own instruction already asks for. An action whose consequences the
+`AutomationStudioActionPermissionGate` answers from `permittedConsequences`, which a
+person's answer to the gate's question extends. An action whose gated consequences the
 build does not hold raises an
 `automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
 
@@ -77,13 +77,17 @@ build does not hold raises an
 `delete`, and `send_or_publish` (`action-permissions/destructive.ts`): completing
 a purchase or checkout, moving money, deleting, and sending or publishing on the
 person's behalf. `modify_existing` and `create_new` do not cause an authoring
-permission question solely from their class. The derivation in
-`instructed.ts` authorises a high-risk act the person's instruction did ask for;
-it needs a provider call, the model has to name the class, and a claim survives
-only where its quote is the person's own words. Every class is still declared,
-kept in the declaration record, and compared with the instruction below. Only an
-uncovered high-risk subset produces an
-`automation-studio.action-permission-request.v1`.
+permission question solely from their class. **The instruction authorises none of
+the three** (the user's rule, `docs/working/mvp-today-plan.md:150` in the web
+extension repository: these acts independently require a person's authority, so
+each is asked about even when the instruction asked for it; restored 2026-09-30
+after the gate had let an instructed class through unasked and never gated
+sends). The derivation in `instructed.ts` still reads which of them the
+instruction asks for: the answer travels in the request's
+`authority.instructed`, is stored with the Flow, and feeds the cross-check
+below. Every class is still declared, kept in the declaration record, and
+compared with the instruction. Only a gated subset no person has permitted
+produces an `automation-studio.action-permission-request.v1`.
 
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask

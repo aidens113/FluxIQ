@@ -1089,17 +1089,18 @@ read the instruction again.
 **Only a high-risk real-world consequence reaches that gate as something
 refusable.** The gate is defined in `action-permissions/destructive.ts`:
 `move_money`, `delete`, and `send_or_publish` are the classes the run's
-`permittedConsequences` or the instruction has to authorise. `modify_existing`
+`permittedConsequences` or a person's answer has to authorise; the instruction
+asking for one does not (restored 2026-09-30). `modify_existing`
 and `create_new` do not prompt merely because of their class. All five classes
 remain on declarations and in the instruction/consequence cross-check, so the
 narrow prompt gate does not erase an under- or over-declaration. On the repair
 path the narrow gate is what makes a live repair possible at all: a target
 override the gate permits carries `sideEffectPermission: "permitted"`, which is
 the authorization both of the policy's side-effect lines ask for, so a repair
-under `explore_and_adapt` may press a control that makes or sends something even
+under `explore_and_adapt` may press a control that makes or edits something even
 though `policy.allowExternalSideEffects` is `false` on every default policy. A
-destructive repair the person neither permitted nor instructed stops and asks
-(`permission_required`).
+repair that would move money, delete, or send or publish, with no person's
+permission for it, stops and asks (`permission_required`).
 
 **`policy.allowExternalSideEffects` is no longer read on the recovery
 exploration path.** The exploration is offered the domain's `mutate` options

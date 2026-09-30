@@ -50,28 +50,32 @@ describe("reading what an instruction asks for", () => {
 });
 
 describe("a gate that reads the instruction", () => {
-  it("lets an instructed refund go ahead with nothing permitted, and reads the instruction once", async () => {
+  // Until 2026-09-30 an instructed refund went ahead unasked. The user's rule
+  // (`docs/working/mvp-today-plan.md:150`) makes moving money need a person's
+  // authority independently of the instruction, so it asks, and says what the
+  // instruction asked for.
+  it("asks before an instructed refund with nothing permitted, reads the instruction once, and records it", async () => {
     const derive = vi.fn(async () => readAutomationStudioInstructedConsequences({
       instructions: [REFUND_INSTRUCTION],
       result: { instructed: [{ consequence: "move_money", quote: "refund the value of the first line" }, { consequence: "modify_existing", quote: "refund the value of the first line" }] }
     }));
     const gate = new AutomationStudioActionPermissionGate({ stage: "authoring", deriveInstructed: derive });
 
-    expect(await gate.checkFor(STEP)(REFUND)).toEqual({ permitted: true });
-    expect(await gate.checkFor({ ...STEP, ref: "main.s4" })({ ...REFUND, control: { name: "Confirm refund" } })).toEqual({ permitted: true });
+    expect(await gate.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["move_money"] });
+    expect(await gate.checkFor({ ...STEP, ref: "main.s4" })({ ...REFUND, control: { name: "Confirm refund" } })).toMatchObject({ permitted: false, missing: ["move_money"] });
     expect(derive).toHaveBeenCalledTimes(1);
-    expect(gate.request).toBeUndefined();
+    expect(gate.request?.authority.instructed.map((entry) => entry.consequence)).toEqual(["move_money", "modify_existing"]);
     expect(gate.instructed?.map((entry) => entry.consequence)).toEqual(["move_money", "modify_existing"]);
   });
 
-  it("asks for what the instruction did not ask for, saying what it did", async () => {
+  it("asks for every gated class the action declares, whether or not the instruction asked for it, saying what it did", async () => {
     const gate = new AutomationStudioActionPermissionGate({
       stage: "authoring",
       permittedConsequences: ["create_new"],
       deriveInstructed: async () => readAutomationStudioInstructedConsequences({ instructions: [REFUND_INSTRUCTION], result: { instructed: [{ consequence: "move_money", quote: "refund the value of the first line" }] } })
     });
 
-    expect(await gate.checkFor(STEP)(REFUND_AND_REMOVE)).toMatchObject({ permitted: false, missing: ["delete"] });
+    expect(await gate.checkFor(STEP)(REFUND_AND_REMOVE)).toMatchObject({ permitted: false, missing: ["move_money", "delete"] });
     expect(gate.request?.consequences).toEqual(["move_money", "delete"]);
     expect(gate.request?.authority).toEqual({
       granted: ["create_new"],
@@ -102,8 +106,11 @@ describe("the instructed set kept with a Flow", () => {
 
     expect(current).toEqual(stored);
     expect(lapsed).toEqual([]);
+    // Kept and read back, not a permission: a stored instruction still asks
+    // before moving money, and the question carries it.
     const gate = new AutomationStudioActionPermissionGate({ stage: "recovery", instructed: current });
-    expect(await gate.checkFor(STEP)({ ...REFUND, consequences: ["move_money"] })).toEqual({ permitted: true });
+    expect(await gate.checkFor(STEP)({ ...REFUND, consequences: ["move_money"] })).toMatchObject({ permitted: false, missing: ["move_money"] });
+    expect(gate.request?.authority.instructed.map((entry) => entry.consequence)).toEqual(["move_money"]);
   });
 
   it("lapses when the instruction's words change or it is no longer active", () => {
