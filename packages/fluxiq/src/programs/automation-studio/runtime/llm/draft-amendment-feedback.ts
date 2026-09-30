@@ -52,7 +52,10 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   no_such_position: "There is no position to move a step to at that number.",
   run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs the whole argument to run with, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",
   no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
-  not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs."
+  not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs.",
+  did_not_work: "That step did not work, so it is already out of the Flow and nothing needs dropping or keeping about it. The only amendment that changes it is rerun with a corrected argument; or run the action again as a new call. If the Flow does not need it, leave it alone.",
+  already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
+  already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back."
 };
 
 /**
@@ -72,6 +75,17 @@ const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, f
   + "The step numbers an amendment takes are the ones the draft entry shows, and they are renumbered whenever a step moves or is withdrawn. "
   + "Amend a step that exists, do something else, or complete. A decision whose amendments all change nothing counts toward stopping this exploration.";
 
+/** What an amendment that put the draft back exactly as it stood is recorded and shown under. */
+const AMENDMENT_UNDONE_CODE = "llm_evidence_loop.draft_amendment_undone";
+
+// Said once a refusal repeats, because the model had already been told the
+// reason and sent the same edit anyway: everything-store round 2 sent one set
+// of five refused amendments four decisions running.
+const REPEATED_INSTRUCTION = " Every refusal marked repeated was refused for the same reason before, and it will be refused again however often it is sent: stop sending it.";
+
+const UNDONE_INSTRUCTION = " These amendments put the draft back exactly as it stood at iteration sameDraftAsIteration, so the Flow is no different from then."
+  + " Decide once whether the step belongs in the Flow and leave it: toggling a step counts toward stopping this exploration.";
+
 /**
  * What the model reads after an amendment decision the draft refused, before it
  * is asked again: which amendments changed nothing and why, how far the draft
@@ -83,20 +97,24 @@ const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, f
  * actually be looked up against rather than a range assumed from a count.
  */
 export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
-  refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[];
+  /** `repeated` on a refusal this build already gave for the same step and reason (`./evidence-loop/amendment-memory.ts`). */
+  refusals: readonly (AutomationStudioFlowDraftAmendmentRefusal & { repeated?: boolean })[];
   /** How many of the same decision's amendments did land. */
   applied: number;
   steps: readonly { position: number }[];
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
+  /** The iteration whose draft the applied amendments put back exactly, when they did. */
+  sameDraftAsIteration?: number;
 }): JsonObject {
-  const refused = input.refusals.slice(0, MAX_REFUSALS_LISTED).map((refusal) => ({ step: refusal.step, reason: refusal.reason }));
+  const refused = input.refusals.slice(0, MAX_REFUSALS_LISTED).map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}) }));
+  const undone = input.sameDraftAsIteration !== undefined;
   const met = [...new Set(refused.map((refusal) => refusal.reason))];
   const reasons: JsonObject = {};
   for (const reason of met) reasons[reason] = REFUSAL_REASONS[reason];
   return {
     ok: false,
-    code: AMENDMENTS_REFUSED_CODE,
+    code: refused.length || !undone ? AMENDMENTS_REFUSED_CODE : AMENDMENT_UNDONE_CODE,
     refused,
     applied: input.applied,
     steps: input.steps.length,
@@ -105,7 +123,10 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
     reasons,
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
-    instruction: AMENDMENT_FEEDBACK_INSTRUCTION
+    ...(undone ? { sameDraftAsIteration: input.sameDraftAsIteration! } : {}),
+    instruction: ((refused.length || !undone ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
+      + (refused.some((refusal) => refusal.repeated) ? REPEATED_INSTRUCTION : "")
+      + (undone ? UNDONE_INSTRUCTION : "")).trim()
   };
 }
 

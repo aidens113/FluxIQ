@@ -11,7 +11,7 @@
 // one that can say which field it objected to.
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
-import type { AutomationStudioLlmEvidenceLoopExhaustion } from "../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
 
@@ -131,6 +131,22 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * would recognise it, and why. What FluxIQ asks the person with.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
+  /**
+   * Present only beside `flow_bootstrap.provider_transport_unknown`: what the
+   * provider call threw when the throw was not one of Core's own -- its class
+   * and code, its cause's class and code, and its message once screened.
+   *
+   * That code says only that a request failed in a way nothing named, and
+   * `run-mun5e1ie-5aeefbbd` was stored with it and nothing else, so a reset
+   * socket, a connect timeout and a bug in the adapter all read the same. The
+   * throw was read by `runtime/llm/throw-account/` and screened by
+   * `runtime/llm/harness/throw-screen.ts` before the harness put it on its
+   * failure diagnostic, and
+   * the harness projection stores only what
+   * `parseAutomationStudioFlowBootstrapProviderThrow` returns -- the reader's
+   * own parse -- so a stored throw always reads back.
+   */
+  providerThrow?: AutomationStudioLlmProviderThrow;
 };
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;

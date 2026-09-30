@@ -15,13 +15,14 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDI
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
+import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
 
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow"])) return null;
   if (typeof value.code !== "string") return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
   // code the taxonomy does not have belongs to none, and is not Core's.
@@ -48,6 +49,10 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     || !value.issueCodes.every((code) => typeof code === "string" && DIAGNOSTIC_ISSUE_CODE.test(code)))) return null;
   const permissionRequest = value.permissionRequest === undefined ? undefined : parseAutomationStudioActionPermissionRequest(value.permissionRequest);
   if (permissionRequest === null || (state.permissionRequest === "required") !== (permissionRequest !== undefined)) return null;
+  // Only the one code that means "something threw and nothing named it" may
+  // say what threw: every other code already names its fault.
+  const providerThrow = parseAutomationStudioFlowBootstrapProviderThrow(value.providerThrow);
+  if (providerThrow === null || (providerThrow !== undefined && value.code !== PROVIDER_THROW_CODE)) return null;
   return {
     code: value.code,
     stage,
@@ -57,7 +62,61 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(accounting ? { accounting } : {}),
     ...(evidenceLoop ? { evidenceLoop } : {}),
     ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {}),
-    ...(permissionRequest ? { permissionRequest } : {})
+    ...(permissionRequest ? { permissionRequest } : {}),
+    ...(providerThrow ? { providerThrow } : {})
+  };
+}
+
+/** The code a stored provider throw may stand beside. */
+const PROVIDER_THROW_CODE = "flow_bootstrap.provider_transport_unknown";
+/**
+ * The bounds a stored throw is held to, written out here like every other bound
+ * in this file (`runtime/llm/throw-account/` reads the throw and `runtime/llm/harness/throw-screen.ts` screens it). The `satisfies`
+ * keeps the vocabulary a subset of the producer's type; a test holds the two
+ * lists equal.
+ */
+const PROVIDER_THROW_WITHHELD = [
+  "message_credential_shaped",
+  "message_url_query_shaped",
+  "message_payload_shaped",
+  "message_locator_shaped",
+  "message_truncated",
+  "throw_unreadable"
+] as const satisfies readonly AutomationStudioLlmProviderThrowWithheld[];
+const PROVIDER_THROW_MESSAGE_LENGTH = 240;
+const PROVIDER_THROW_CODE_FIELDS = ["errorClass", "errorCode", "causeClass", "causeCode"] as const;
+
+/**
+ * A stored account of an untyped provider throw, read back: `undefined` when
+ * there is none, `null` when what is there is not one Core wrote.
+ *
+ * Bounds only, like the refusal record's parse. The credential, header, query
+ * and locator screens ran in the harness, against the whole text as thrown;
+ * this cannot repeat them and does not pretend to. What it holds is the shape:
+ * code-shaped classes and codes, a message within its bound on one line, and a
+ * `withheld` list drawn from the producer's vocabulary without repeats. The
+ * harness projection stores only what this returns, so a throw Core stores is a
+ * throw Core reads back.
+ */
+export function parseAutomationStudioFlowBootstrapProviderThrow(value: unknown): AutomationStudioLlmProviderThrow | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !hasExactFields(value, [...PROVIDER_THROW_CODE_FIELDS, "message", "withheld"]) || !Object.keys(value).length) return null;
+  for (const field of PROVIDER_THROW_CODE_FIELDS) {
+    if (value[field] !== undefined && (typeof value[field] !== "string" || !DIAGNOSTIC_ISSUE_CODE.test(value[field]))) return null;
+  }
+  if (value.message !== undefined && (typeof value.message !== "string" || value.message.length === 0
+    || value.message.length > PROVIDER_THROW_MESSAGE_LENGTH || /[\u0000-\u001f\u007f]/u.test(value.message))) return null;
+  const withheldVocabulary: readonly string[] = PROVIDER_THROW_WITHHELD;
+  if (value.withheld !== undefined && (!Array.isArray(value.withheld) || !value.withheld.length
+    || value.withheld.length > PROVIDER_THROW_WITHHELD.length || new Set(value.withheld).size !== value.withheld.length
+    || !value.withheld.every((reason) => typeof reason === "string" && withheldVocabulary.includes(reason)))) return null;
+  return {
+    ...(value.errorClass !== undefined ? { errorClass: value.errorClass as string } : {}),
+    ...(value.errorCode !== undefined ? { errorCode: value.errorCode as string } : {}),
+    ...(value.causeClass !== undefined ? { causeClass: value.causeClass as string } : {}),
+    ...(value.causeCode !== undefined ? { causeCode: value.causeCode as string } : {}),
+    ...(value.message !== undefined ? { message: value.message } : {}),
+    ...(value.withheld !== undefined ? { withheld: [...value.withheld as AutomationStudioLlmProviderThrowWithheld[]] } : {})
   };
 }
 

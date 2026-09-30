@@ -415,6 +415,15 @@ async function executeAutomationStudioGraph(
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
     }
+    // A pause holds here, before the node executes, and never inside it. The
+    // run resumes at this same node with everything it had computed.
+    const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
+    if (held) {
+      const released = await held;
+      if (released.outcome === "stop" || options.signal?.aborted) {
+        return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: released.outcome === "stop" ? released.message : "Run cancelled." };
+      }
+    }
     const regionId = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
     const region = options.regionRuntime?.regions.find((candidate) => candidate.id === regionId);
     let route = resumedRoute;
