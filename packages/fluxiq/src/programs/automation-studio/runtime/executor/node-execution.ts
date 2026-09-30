@@ -13,6 +13,7 @@ import { collectNodeInputs } from "./node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
 import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
 /**
@@ -325,6 +326,7 @@ async function withStoredBatch(
     return { ...result, status: "failed", route: "failed", message: persistFailedMessage, failure: { category: "action_failed", code: "record_output.persist_failed", retryable: false } };
   }
   target.runState.records.record(batch, stored);
+  if (stored) emitAutomationStudioActivity({ phase: "extracting", label: `Saved ${batch.rows.length} ${batch.rows.length === 1 ? "record" : "records"}`, detail: { kind: "step", title: "Records saved", status: "succeeded", ref: batch.nodeId } });
   return result;
 }
 

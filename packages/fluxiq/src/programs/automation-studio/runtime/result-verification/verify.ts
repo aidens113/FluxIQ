@@ -56,6 +56,7 @@ import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResu
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 
 /**
  * Core's codes for a run that was not verified, and why. Never a verdict.
@@ -131,6 +132,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
       }
     };
   }
+  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
   const first = await askOnce(request, provider, 1);
   if (!automationStudioResultVerificationAskAgain(first.verification)) {
     return { outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] };

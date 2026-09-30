@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioLlmExecutionGrantService, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -80,6 +80,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
   });
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
+  // What a build or run is doing reaches the paired clients of its project that asked for it (`server.activity`), never queued.
+  automationStudioActivityHub.subscribe((activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
