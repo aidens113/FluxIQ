@@ -69,6 +69,7 @@ import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from
 import {
   automationStudioRefutedResultFlowWasReauthored,
   automationStudioResultRepairSettled,
+  automationStudioStepFailureTarget,
   repairAutomationStudioRefutedRunResult,
   type AutomationStudioFailedStepRepairPort,
   type AutomationStudioRefutedResultRepairPort,
@@ -382,6 +383,15 @@ export async function verifyAutomationStudioRuntimeSessionResult(
 async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSession> {
   const port = input.ports.repairFailedStep;
   if (input.session.status !== "failed" || !port) return input.session;
+  // The route re-authors only a step whose target was not found or not told
+  // apart, and the run's own trace says whether that is how it failed: the
+  // record's attempts are the trace's. Any other failed run is handed back
+  // before its record is read from the project's store, as every failed run
+  // was before t193. A store that is closing or cannot be opened -- which may
+  // be what the run failed at -- must not turn a failed run into a thrown one
+  // (t207, `recovery/refuted-result/step-failure-target.ts`). A session that
+  // carries no trace says nothing either way, so its record decides.
+  if (input.session.trace && !automationStudioStepFailureTarget(input.session.trace.attempts)?.targetLevel) return input.session;
   const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
   if (!detail) return input.session;
   const failedTraceAttempt = [...(input.session.trace?.attempts ?? [])].reverse().find((attempt) => attempt.status === "failed");

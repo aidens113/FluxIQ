@@ -11,3 +11,4 @@ export * from "./reauthor.ts";
 export * from "./repair.ts";
 export * from "./step-failure-brief.ts";
 export * from "./step-failure-decision.ts";
+export * from "./step-failure-target.ts";
