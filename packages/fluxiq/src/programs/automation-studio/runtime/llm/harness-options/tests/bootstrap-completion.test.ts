@@ -509,3 +509,39 @@ describe("a completed draft that does not do what the instruction asks", () => {
     expect(verdict.ok).toBe(true);
   });
 });
+
+// `run-munoeac4-33c17306` (run 15): the Flow accepted on the build's second
+// completion was two navigations to its start location, named for the add to
+// cart and the coupon. Completion hands the check where the build starts, so a
+// step that only arrives there is not taken for either.
+describe("a completed draft whose acts are named for arriving where it starts", () => {
+  const START = "http://127.0.0.1:59512";
+  const HUBS = "Put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart, and collect that store's coupon.";
+  const ran = (position: number, node: string, parameters: JsonObject): AutomationStudioFlowDraftStep => ({
+    position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
+    input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept"
+  });
+  const arrivals = [ran(1, "web.browser.navigate", { url: START }), ran(2, "web.browser.navigate", { url: START })];
+  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
+    result: { summary: "Puts the hubs in the cart.", acts },
+    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: HUBS, startLocation: START
+  });
+
+  it("is refused, naming each act as only arrived at", async () => {
+    const verdict = await complete(arrivals, [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }]);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[] } };
+    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_only_arrives"], ["a2", "step_only_arrives"]]);
+    expect(feedback.instruction).toContain("does not do the act");
+  });
+
+  it("is accepted once each act is named for a press after the arrival", async () => {
+    const pressed = [...arrivals, ran(3, "web.dom.click", { selector: "#add-to-cart" }), ran(4, "web.dom.click", { selector: "#collect-coupon" })];
+    const verdict = await complete(pressed, [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }]);
+
+    expect(verdict.ok).toBe(true);
+  });
+});

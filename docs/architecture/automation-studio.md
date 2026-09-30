@@ -506,6 +506,18 @@ test with its description, and the distinct states the host observed -- where
 a run starts, then after each exploration step -- screened with the domain's
 denied evidence keys, with credential-shaped values left out.
 
+A draft step that repeats a span over a list
+(`runtime/flow-bootstrap/authoring/draft-routing.ts`) is wired through
+`builtin.control.for-each`: the list step's array output goes to For Each's
+`items`, and For Each's `item` output (which declares `multiple`) goes to every
+step of the span whose node declares an input `item`. A node that can act on
+"the current row of an enclosing loop" declares that input as
+`{ id: "item", valueType: "any", role: "data", required: false }` after its
+control input `in`, and receives each pass's row as `inputs.item`. A span that
+repeats while a check holds has no rows and gets no `item` edges. The assembler
+reaches a `role: "data"` input only through a branch that names it; an edge
+that names no port never falls into one.
+
 When a canonical Flow has a saved router, `runRuntimeSession` evaluates the
 router before graph execution. A matching route executes the selected subflow's
 `graphFlowId` through the existing canonical Flow executor. The selected graph

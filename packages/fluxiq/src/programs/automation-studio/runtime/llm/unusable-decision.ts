@@ -76,6 +76,17 @@ const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used,
   + "Answer again with exactly one decision of the accepted shape. The same issues again count toward stopping this exploration.";
 
 /**
+ * What an issue the loop itself refuses a decision for means, where the code
+ * alone does not say what to do instead. Added only when that code is listed,
+ * so every other feedback is exactly what it was.
+ */
+const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
+  // `./decision-handlers/look-withdrawal.ts`: a look asked for after an ignored redirect.
+  "llm_evidence_loop.look_withdrawn": "Looking is withdrawn: you asked again for what you already hold right after being told you hold it, so no look runs and none is answered from memory. "
+    + "Looks return once an action runs: run an action the instruction needs, amend the draft, or complete."
+};
+
+/**
  * Thrown by a decision callback to say "the provider was asked and its answer
  * cannot be acted on, for a reason another attempt could fix". It carries
  * issue codes only, never a model's words.
@@ -136,7 +147,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
     accepted: acceptedDecision(input.offers),
-    instruction: DECISION_FEEDBACK_INSTRUCTION
+    instruction: [DECISION_FEEDBACK_INSTRUCTION, ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
   };
 }
 

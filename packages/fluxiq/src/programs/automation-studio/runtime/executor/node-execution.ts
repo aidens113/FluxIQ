@@ -9,7 +9,7 @@ import { nodeAttemptFromResult, nodeAttemptWithAdaptationIds } from "./attempt-t
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
 import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "./defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
-import { collectNodeInputs } from "./node-inputs.ts";
+import { collectNodeInputs, collectWiredNodeInputs } from "./node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
 import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
@@ -148,7 +148,9 @@ async function executeNodeAttempt(
   if (!definition?.execute) {
     const native = await options.nativeNodeExecutor?.({
       node: executionNode,
-      inputs,
+      // Only what an edge brings: a declared port is never filled from a bare
+      // key another node left behind (`node-inputs.ts`).
+      inputs: collectWiredNodeInputs(flow, node, values),
       ...(options.signal ? { signal: options.signal } : {}),
       hostContext: {
         capabilityIds: hostCapabilities,

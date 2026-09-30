@@ -55,6 +55,13 @@ export type AutomationStudioInstructedAct = {
    * verb, that object and where it goes (`./instruction-acts.ts`).
    */
   quote: string;
+  /**
+   * Present, and true, when the act is asked for every member of a set:
+   * "confirm everyone ...", "withdraw every request ...", "save all ...". One
+   * step that acts once does not do it; a step the Flow repeats over a list
+   * does (`./check.ts`). Absent on every other act.
+   */
+  plural?: true;
 };
 
 /** A model's claim that a draft step does an act. Both strings are the model's, bounded before use. */
@@ -71,7 +78,24 @@ export type AutomationStudioInstructedActMissingReason =
   /** The step named changed nothing, or failed. */
   | "step_changed_nothing"
   /** The step named is already claimed for another act. */
-  | "step_claimed_twice";
+  | "step_claimed_twice"
+  /**
+   * The step named only went to where the Flow starts, and the act is not one
+   * of opening. Arriving at the start page adds, collects, sets or sends
+   * nothing (`run-munoeac4-33c17306`, `./check.ts`).
+   */
+  | "step_only_arrives"
+  /**
+   * The step named is marked optional, so the Flow carries on when it fails
+   * and the act may never be done (`run-munnop9n-5475d593`, `./check.ts`).
+   */
+  | "step_is_optional"
+  /**
+   * The act is asked for every member of a set, and the step named acts once:
+   * it neither repeats over a list nor lies inside a span that does
+   * (`run-munnop9n-5475d593`, `./check.ts`).
+   */
+  | "act_needs_repeat";
 
 /** An act with no step that does it, as the model is shown it. */
 export type AutomationStudioInstructedActMissing = AutomationStudioInstructedAct & {

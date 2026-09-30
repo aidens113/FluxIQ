@@ -57,6 +57,26 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    */
   nodeId?: string;
   /**
+   * The state the call found and the state it left, digested from the captures
+   * the call itself took -- a look's one capture is both, an action's read
+   * before acting is `before` and its read after is `after`.
+   *
+   * **Why the call says it rather than the loop asking.** The loop used to ask
+   * the caller's `captureStateDigest` before and after every call, and the web
+   * domain answered each with a whole page capture of its own: a look cost
+   * three captures and an action four, each one a "Looking at the page" the
+   * person watching the side panel saw (`run-munneauy-de8663ed`, about 39
+   * captures for 3 looks and 3 actions). The call already holds those states.
+   * A caller that reports them here, and says so on its binding
+   * (`stateDigestsOnCalls`), is never asked for one around a call.
+   *
+   * Opaque, compared only for equality, and held to the same contract as
+   * `captureStateDigest`: a digest of the world the call saw, never of the
+   * evidence it returned. A value that is not code-shaped is dropped, and the
+   * step is then simply unobserved on that side.
+   */
+  stateDigests?: { before?: string; after?: string };
+  /**
    * What this one call did, for the draft the loop is accruing.
    *
    * A tool that runs whichever of a library's things the call named answers

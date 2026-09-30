@@ -18,11 +18,34 @@
 // this check with a consent-dialog click and a store-chip click given as a
 // store switch and an add to cart, because nothing held a claim to its act.
 //
+// **Arriving is not doing.** A step that only went to where the Flow starts
+// changed something -- the page -- so it passed as doing any act. Run 15
+// (`run-munoeac4-33c17306`) was accepted with two navigations to its start
+// location named for putting hubs in the cart and collecting a coupon; the Flow
+// ran, did neither, and Core's own verification refuted it. Run 13
+// (`run-munmmj5n-52d8a67d`) passed with seven navigations. Such a step now
+// answers an act of opening and no other. Core reads it off the step's values
+// against the start location the build was given (`../reachability/`), never
+// off a node id, so no domain's navigation is named here; a build given no
+// start location is held to nothing new.
+//
+// **Doing it once, or maybe, is not doing it.** Lane D's run 2
+// (`run-munnop9n-5475d593`) was told to confirm everyone with five or more
+// mutual friends, pressed one Confirm on the first card, marked it optional and
+// named it for the act; it passed, and the Flow confirmed one request of four.
+// Two things were wrong, and each is now refused on what the draft itself says,
+// with no page read: a step marked `optional` answers no act, because the Flow
+// carries on without it when it fails (`step_is_optional`); and an act asked
+// for every member of a set (`plural`, `./instruction-acts.ts`) is answered only
+// by a step the Flow repeats -- one carrying `repeat`, or one inside the span a
+// kept step repeats (`act_needs_repeat`).
+//
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
 import type {
   AutomationStudioInstructedAct,
   AutomationStudioInstructedActClaim,
@@ -58,15 +81,35 @@ const INSTRUCTION = "Nothing was created and this build is still open. "
   + "Then complete again with acts listing every act by its id (a1, a2 ...) and its step, e.g. [{\"action\": \"a1\", \"step\": \"d7\"}]. A claim that names no act answers none. "
   + "Each act needs a step of its own, and it must be one that changed something.";
 
+/** Said only when a claim named a step that only arrived, so the plain refusal stays as it was. */
+const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to the page this Flow starts on: "
+  + "arriving at the start page does not do the act. After arriving, press or set the control that does it (the add, collect, save or set control), keep that step, and name it for the act instead.";
+
+/** Said only when a claim named an optional step. */
+const OPTIONAL_INSTRUCTION = " A reason of step_is_optional means the step named is marked optional, so the Flow carries on without it when it fails and the act may never be done: "
+  + "make it always run with amend_draft keep on that step, or name a step that always runs.";
+
+/** Said only when an act over a whole set was claimed by a step that acts once; the way to repeat is the draft's own telling of it. */
+const REPEAT_INSTRUCTION = " A reason of act_needs_repeat means the act is asked for every item of a list (plural) and the step named does it once: "
+  + "run the step that lists the items (keeping only those to act on), act on one item, then amend_draft repeat over the listing step through the act's last step, and name the repeated step for the act.";
+
 /** Every act, and whether the draft has a step for each. Nothing here calls a provider. */
 export function checkAutomationStudioInstructedActs(input: {
   instructionText?: string | undefined;
   result: JsonObject;
   draftSteps?: readonly AutomationStudioFlowDraftStep[] | undefined;
+  /**
+   * Where the Flow starts, as the build was told it. A step that only went
+   * there answers no act but one of opening. Absent, nothing is held to it.
+   */
+  startLocation?: string | undefined;
 }): AutomationStudioInstructedActsVerdict {
   const acts = automationStudioInstructedActs(input.instructionText ?? "");
   if (!acts.length || !input.draftSteps) return { ok: true, acts };
   const steps = input.draftSteps;
+  const startLocation = input.startLocation?.trim();
+  const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
+    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
   const claims = readClaims(input.result.acts);
   const assigned = assign(acts, claims);
   const used = new Set<AutomationStudioFlowDraftStep>();
@@ -82,6 +125,9 @@ export function checkAutomationStudioInstructedActs(input: {
     if (!step) missing.push({ ...act, reason: "no_such_step", ...named });
     else if (step.disposition !== "kept") missing.push({ ...act, reason: "step_not_kept", ...named });
     else if (step.effect !== "mutate" || !automationStudioFlowDraftStepIsProposable(step)) missing.push({ ...act, reason: "step_changed_nothing", ...named });
+    else if (act.kind !== "open" && onlyArrives(step)) missing.push({ ...act, reason: "step_only_arrives", ...named });
+    else if (step.routing?.kind === "optional") missing.push({ ...act, reason: "step_is_optional", ...named });
+    else if (act.plural && !repeated(step, steps)) missing.push({ ...act, reason: "act_needs_repeat", ...named });
     else if (used.has(step)) missing.push({ ...act, reason: "step_claimed_twice", ...named });
     else used.add(step);
   }
@@ -100,14 +146,39 @@ export function checkAutomationStudioInstructedActs(input: {
       path: "acts"
     },
     missingActs: {
-      acts: missing.map((act) => ({ id: act.id, kind: act.kind, verb: act.verb, quote: act.quote, reason: act.reason, ...(act.step ? { step: act.step } : {}) })),
+      acts: missing.map((act) => ({ id: act.id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true } : {}), reason: act.reason, ...(act.step ? { step: act.step } : {}) })),
       // The steps that could be named: kept, and changed something.
       stepsThatChangedSomething: kept.slice(0, MAX_LISTED_STEPS).map((step) => step.id ?? `${step.position}`),
       // Said rather than hidden, so a model does not take a cut list for all of them.
       ...(kept.length > MAX_LISTED_STEPS ? { stepsWithheld: kept.length - MAX_LISTED_STEPS } : {})
     },
-    instruction: INSTRUCTION
+    instruction: INSTRUCTION + REASON_INSTRUCTIONS
+      .filter(([reason]) => missing.some((act) => act.reason === reason))
+      .map(([, said]) => said)
+      .join("")
   };
+}
+
+/** What a refusal adds for each reason that needs more than the plain instruction, in this order. */
+const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedActMissing["reason"], string]> = [
+  ["step_only_arrives", ARRIVAL_INSTRUCTION],
+  ["step_is_optional", OPTIONAL_INSTRUCTION],
+  ["act_needs_repeat", REPEAT_INSTRUCTION]
+];
+
+/**
+ * Whether the Flow runs this step once per item: it carries `repeat`, or it
+ * lies between a kept step carrying `repeat` and the step that repeat runs
+ * through. A repeat on a step the model withdrew is in no Flow, so it counts
+ * for nothing.
+ */
+function repeated(step: AutomationStudioFlowDraftStep, steps: readonly AutomationStudioFlowDraftStep[]): boolean {
+  if (step.routing?.kind === "repeat") return true;
+  return steps.some((carrier) => {
+    if (carrier.routing?.kind !== "repeat" || !automationStudioFlowDraftStepIsProposed(carrier)) return false;
+    const through = automationStudioFlowDraftStepById(steps, carrier.routing.through)?.position ?? carrier.position;
+    return step.position >= Math.min(carrier.position, through) && step.position <= Math.max(carrier.position, through);
+  });
 }
 
 /** The model's claims, in any of the shapes it may reasonably write them. */

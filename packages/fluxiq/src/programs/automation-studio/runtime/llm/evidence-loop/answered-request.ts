@@ -23,7 +23,11 @@ const ANSWERED_REQUEST = {
   // offered used to run anyway: the check was against the tools the loop could
   // run, not the ones it had offered. answeredByCallId is the tool's latest
   // call where there is one, and empty where there is none.
-  "llm_evidence_loop.not_offered": "The build is in its last decisions, which offer no tools, so this call was not run. Complete from your draft, or amend it and complete."
+  "llm_evidence_loop.not_offered": "The build is in its last decisions, which offer no tools, so this call was not run. Complete from your draft, or amend it and complete.",
+  // The first time one look is asked again, Core runs it once more rather than
+  // taking a digest of its own to check it (`../decision-handlers/answer-check.ts`);
+  // when the page is exactly as before, this is what the model is told.
+  "llm_evidence_loop.looked_again_unchanged": "Core looked again just now and the page is exactly as before. The entry named by answeredByCallId, just before this one, is that fresh look, and it replaces the earlier one. Asking for it again is answered from memory until an action runs: use it, run an action, or complete."
 } as const;
 
 export type AutomationStudioLlmEvidenceAnsweredRequestCode = keyof typeof ANSWERED_REQUEST;
@@ -38,9 +42,10 @@ export type AutomationStudioLlmEvidenceAnsweredRequestCode = keyof typeof ANSWER
  * a `core.run_node` request had been answered. So the note says how often this
  * request has been asked and when (`timesAsked`, `askedAt`, from the decision
  * history), when it was answered (`answeredAt`), the newest action that ran
- * before this ask (`lastActionBefore`), and -- when Core took a fresh digest of
- * the page and it matched the one taken after the answering call --
- * `pageUnchanged`.
+ * before this ask (`lastActionBefore`), and -- when Core ran the look again and
+ * it left the page exactly as the answering call did -- `pageUnchanged`. Core
+ * never takes a digest of its own to say so: an answer from memory costs no
+ * capture (`../decision-handlers/answer-check.ts`).
  */
 export type AutomationStudioLlmEvidenceAnsweredRequestRepeat = {
   timesAsked?: number;
@@ -87,15 +92,20 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
  */
 function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCode; answeredAt?: number; lastActionBefore?: { iteration: number }; timesAsked?: number; pageUnchanged?: true }): string {
   if (input.code === "llm_evidence_loop.not_offered") return ANSWERED_REQUEST[input.code];
+  if (input.code === "llm_evidence_loop.looked_again_unchanged") return `${ANSWERED_REQUEST[input.code]}${askedAgain(input.timesAsked, "it will be answered from memory")}`;
   const noActionSince = input.answeredAt !== undefined && (!input.lastActionBefore || input.lastActionBefore.iteration <= input.answeredAt);
   const since = noActionSince
     ? `It was answered at iteration ${input.answeredAt} and no action has run since.`
     : "No action has changed anything since it was answered.";
   const checked = input.pageUnchanged ? " Core checked the page just now: it is unchanged." : "";
-  const again = input.timesAsked !== undefined && input.timesAsked >= 2
-    ? ` This is the ${ordinal(input.timesAsked)} time you have asked it (askedAt); it will get this same answer until an action runs.`
+  return `${since}${checked} ${ANSWERED_REQUEST[input.code]}${askedAgain(input.timesAsked, "it will get this same answer")}`;
+}
+
+/** From the second ask on: which ask this is, and what asking again gets. */
+function askedAgain(timesAsked: number | undefined, outcome: string): string {
+  return timesAsked !== undefined && timesAsked >= 2
+    ? ` This is the ${ordinal(timesAsked)} time you have asked it (askedAt); ${outcome} until an action runs.`
     : "";
-  return `${since}${checked} ${ANSWERED_REQUEST[input.code]}${again}`;
 }
 
 function ordinal(count: number): string {

@@ -19,7 +19,8 @@
 // nothing else:
 //
 //   1. nothing new has entered the evidence for N steps, and which tools keep
-//      answering the same thing;
+//      answering the same thing -- and that asking again for what it holds
+//      withdraws looking until it acts, or that it now has;
 //   2. what the draft already holds -- the steps that would be proposed if the
 //      build finished now;
 //   3. what happened the last time it tried to finish, by issue code, which is
@@ -79,6 +80,8 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
   canComplete: boolean;
   /** What the latest completion check found the plan could and could not answer, when one ran. */
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  /** Whether looking is withdrawn now, until an action runs (`../decision-handlers/look-withdrawal.ts`). */
+  looksWithdrawn?: boolean | undefined;
 };
 
 /**
@@ -117,6 +120,7 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     completionAttempts: input.completionAttempts,
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
     ...(stillMissing ? { stillMissing } : {}),
+    ...(input.looksWithdrawn ? { looksWithdrawn: true } : {}),
     instruction: instruction(input, stepsLeft, issueCodes.length > 0, stillMissing)
   };
 }
@@ -130,6 +134,11 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     input.repeatingToolIds.length
       ? `The tools named in repeatingToolIds are answering with what they already answered; asking them again will return the same thing again.`
       : `Repeating a request returns the result you already hold.`,
+    // What ignoring this costs (`../decision-handlers/look-withdrawal.ts`): said
+    // before it happens, and said again once it has.
+    input.looksWithdrawn
+      ? `You asked again for what you already hold right after being told so, so looking is withdrawn until you run an action: no look is offered, and one asked for is refused.`
+      : `Asking again for what you already hold withdraws looking until you run an action.`,
     input.proposableSteps > 0
       ? `Your draft already holds ${input.proposableSteps} step(s) that would be proposed if you finished now. Read the draft entry and build on it.`
       : `Your draft holds no step that could be proposed yet, so finishing now would produce nothing. The next thing to do is run a step that produces what the instruction asks for.`

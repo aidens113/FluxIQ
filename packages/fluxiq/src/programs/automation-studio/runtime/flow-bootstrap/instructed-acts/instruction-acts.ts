@@ -35,6 +35,14 @@
 //     kettle and the toaster" stays one act, and coordinated verbs over one
 //     object ("Collect and use that store's coupon") stay one act as before.
 //
+// **An act over a whole set is marked.** "Confirm everyone I have at least
+// five mutual friends with" asks for one act per qualifying request, and Lane
+// D's run 2 (`run-munnop9n-5475d593`) answered it with one Confirm. Where a
+// closed quantifier -- every, everyone, everybody, everything, all, each --
+// stands among the first words of a saving, adding, claiming, moving or
+// submitting act, the act is `plural` (`EVERY` says what it must not follow or
+// precede), and `./check.ts` wants a step the Flow repeats for it.
+//
 // Every pattern was checked against the forty-odd instructions of the ten
 // realistic sites (`apps/scenario-lab/src/scenarios/*/live-tasks.ts` in the web
 // repository): each consequential task yields its acts, and no extraction task
@@ -57,6 +65,23 @@ const DESTINATION = new RegExp(`(?<![A-Za-z])(?:to|in|into|onto|on)\\s+(?:my|the
 const COUNT = "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\\d+)\\s+(?!(?:half|quarter|few|bit|lot|little|while|moment)(?![A-Za-z]))[A-Za-z0-9]";
 const COUNTED_OBJECT = new RegExp(`^\\s+${COUNT}`, "iu");
 const OBJECT_JOIN = new RegExp(`(?:,\\s*|\\s+)and\\s+(?=${COUNT})`, "giu");
+
+/**
+ * An act asked for every member of a set: "confirm everyone ...", "withdraw
+ * every connection request ...", "add to my watchlist every auction ...". The
+ * quantifier must stand within the first four words after the verb, where it
+ * governs the act's own object; later it qualifies something else ("within
+ * five miles of every station"). Not after a price ("at $30 each"), not before
+ * a count ("all three kettles", which separate steps may do), and not inside a
+ * name ("All-Purpose").
+ */
+const EVERY = /^(?:\s+\S+){0,3}?\s+(?<![0-9£$€¥¢]\S*\s+)(?:every(?:one|body|thing)?|all|each)(?![A-Za-z0-9'-])(?!\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|\d+)(?![A-Za-z0-9]))/iu;
+
+/**
+ * The kinds an act over a whole set can be. Opening a place shows all of it
+ * at once, and a setting ("sort all results") is made once, so neither is.
+ */
+const PLURAL_KINDS: ReadonlySet<AutomationStudioInstructedActKind> = new Set(["save", "add_to", "claim", "move", "submit"]);
 
 /** What only joins a quote to the next act, trimmed from its end. */
 const TRAILING = /(?:[\s,;:(&"“—-]+|\s+(?:then|and|also|please|first|next|finally|now|just))+$/iu;
@@ -110,12 +135,13 @@ export function automationStudioInstructedActs(instructionText: string): Automat
       // The act's own clause: its verb up to the next act's verb, or the sentence's end.
       const rest = sentence.slice(act.index + act.written.length, matched[order + 1]?.index ?? sentence.length);
       const verb = act.written.replace(/\s+/gu, " ").toLowerCase();
+      const plural = PLURAL_KINDS.has(act.kind) && EVERY.test(rest) ? { plural: true as const } : {};
       const objects = act.kind === "add_to" || act.kind === "save" ? coordinatedObjects(rest) : undefined;
       if (!objects) {
-        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index });
+        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index, ...plural });
         return;
       }
-      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset });
+      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset, ...plural });
     });
   }
   // A build reads its instruction as its title, a newline, then its body
@@ -130,7 +156,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
     .filter((act) => !(titleEnd >= 0 && act.at < titleEnd && body.some((other) => other.kind === act.kind)))
     .sort((left, right) => left.at - right.at)
     .slice(0, MAX_ACTS)
-    .map((act, index) => ({ id: `a${index + 1}`, kind: act.kind, verb: act.verb, quote: act.quote }));
+    .map((act, index) => ({ id: `a${index + 1}`, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}) }));
 }
 
 /**

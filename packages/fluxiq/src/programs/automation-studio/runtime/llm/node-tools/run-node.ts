@@ -103,6 +103,9 @@ export function automationStudioLlmRunNodeTool(input: {
     // says for itself what it actually did.
     effect: "mutate",
     perCallEffect: true,
+    // Which node a call runs, so the loop can withdraw the looks among them
+    // without withdrawing the library (`../decision-handlers/look-withdrawal.ts`).
+    actionInputKey: "node",
     inputSchema: {
       type: "object",
       additionalProperties: false,

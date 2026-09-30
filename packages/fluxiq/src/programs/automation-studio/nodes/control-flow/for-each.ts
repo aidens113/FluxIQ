@@ -18,7 +18,9 @@ export const forEachNode = defineBuiltinNode({
   outputs: [
     { id: "body", label: "Each item", valueType: "any" },
     { id: "done", label: "Done", valueType: "any" },
-    { id: "item", label: "Item", valueType: "any" },
+    // Several steps of one body may each act on the row a pass is on, so the
+    // row may leave on more than one edge.
+    { id: "item", label: "Item", valueType: "any", multiple: true },
     { id: "index", label: "Index", valueType: "number" },
     { id: "count", label: "Count", valueType: "number" }
   ],
