@@ -240,6 +240,17 @@ The detailed procedure for each, with the current offenders, is in the
   more, and the same comment anywhere else does not count. The `swallowed-failure`
   rule enforces this in all non-test source, with existing instances
   baselined per file.
+- **Reaching Node from a module a browser loads.** A `node:crypto` import
+  type-checks; what fails is loading it in the browser, so no type check
+  sees it. On 2026-09-30 a `runtime/parking/` module imported `node:crypto`,
+  the web extension's bundle reached it through `automation-studio/nodes`,
+  and only a live Lab run noticed. The `browser-imports` rule walks the
+  value-import graph from `browserBundles.entries` (where downstream browser
+  bundles enter this repository) and fails on any Node built-in, any
+  third-party package not declared in `browserBundles.browserPackages`, and
+  any import it cannot follow. It is never baselined. The web extension's
+  `pnpm check` fails when its bundle enters Core through a module missing
+  from those entries, so the list follows the real bundle.
 
 ## Worked Example — `automation-studio/storage/`
 
