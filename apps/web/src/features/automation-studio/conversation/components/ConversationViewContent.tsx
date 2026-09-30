@@ -21,8 +21,7 @@ import { RefreshCw } from "lucide-react";
 import type { ConversationCommands, ConversationViewHostCommands, ConversationViewHostModel } from "../conversation-host";
 import { conversationSubjectDetail, conversationSubjectLabel } from "../thread";
 import { useConversationThread } from "../useConversationThread";
-import { useConversationActivity } from "../activity";
-import { ConversationActivityHeader } from "./ConversationActivityHeader";
+import { useConversationActivity, usePacedConversationActivity } from "../activity";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationOpeningMessage } from "./ConversationOpeningMessage";
 import { ConversationThread } from "./ConversationThread";
@@ -54,12 +53,20 @@ export function ConversationViewContent(props: ConversationViewProps & { command
   // Live activity is per project, so it follows the open thread's project, or
   // the surface's when nothing is open. Without a project there is none to read.
   const activity = useConversationActivity({
-    projectId: selected?.projectId ?? props.projectId,
+    projectId: selected?.projectId ?? props.projectId ?? null,
     commands: props.commands,
     ...(props.active === undefined ? {} : { active: props.active })
   });
-  const hasActivityRows = activity.events.some((event) => event.detail);
-  const nothingYet = thread.loaded && !thread.conversations.length && !hasActivityRows;
+  const activityProject = selected?.projectId ?? props.projectId;
+  const paced = usePacedConversationActivity(activity.current, activityProject);
+  // The status is drawn in the stream only while the work is going or waits
+  // on the person, and only in the thread it belongs to; once it settles, the
+  // group's summary says how it went.
+  const current = activity.current;
+  const ownThread = !current?.conversationId || !thread.selectedConversationId || current.conversationId === thread.selectedConversationId;
+  const live = paced && ownThread && (paced.outcome === null || paced.outcome === "waiting") ? paced : null;
+  const hasActivityRows = activity.events.some((event) => event.detail && event.detail.kind !== "note");
+  const nothingYet = thread.loaded && !thread.conversations.length && !hasActivityRows && !live;
   // Writing with nothing selected opens a thread first, so the only state that
   // genuinely has nowhere to send is one with no project to open a thread on -
   // which is the dock mounted on the landing screen, before a project is picked.
@@ -92,12 +99,10 @@ export function ConversationViewContent(props: ConversationViewProps & { command
             {selected ? <span>{conversationSubjectDetail(selected)}</span> : null}
           </div>
         )}
-        <Button onClick={thread.refresh} size="compact" title="Read this thread again now">
+        <Button aria-label="Refresh" className="automation-conversation-refresh" onClick={thread.refresh} size="compact" title="Read this thread again now" variant="ghost">
           <RefreshCw aria-hidden size={13} />
-          Refresh
         </Button>
       </header>
-      {activity.current ? <ConversationActivityHeader activity={activity.current} /> : null}
       {thread.error ? <InlineNotice message={thread.error} title="This thread could not be read" tone="error" /> : null}
       {nothingYet
         ? <ConversationOpeningMessage />
@@ -108,6 +113,7 @@ export function ConversationViewContent(props: ConversationViewProps & { command
             projectId={selected?.projectId ?? props.projectId ?? ""}
             turns={thread.turns}
             activity={activity.events}
+            live={live}
             {...(thread.selectedConversationId ? { conversationId: thread.selectedConversationId } : {})}
             {...(props.active === undefined ? {} : { visible: props.active })}
             {...(thread.pendingTurn ? { pendingTurnId: thread.pendingTurn.turnId } : {})}
