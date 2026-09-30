@@ -66,7 +66,8 @@ export const CONFIG = {
       "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
-      "packages/client-gateway-websocket/src/index.ts"
+      "packages/client-gateway-websocket/src/index.ts",
+      "packages/fluxiq/src/ui/index.ts"
     ],
     ownedElsewhere: [],
     browserPackages: []

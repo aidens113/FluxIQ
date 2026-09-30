@@ -138,7 +138,10 @@ describe("the chat's live activity", () => {
     });
     const renderer = await mount(commands([raw]));
     const text = textOf(renderer.toJSON());
-    expect(text).toContain("Working on the page");
+    // A standalone action is its card: Core's name for the kind, what it acted on, how it went.
+    expect(text).toContain("Open page");
+    expect(text).toContain("Open the listing");
+    expect(text).toContain("Done");
     for (const leak of ["core.run_node", "web.action", "Result:", "n3", "Status:"]) expect(text).not.toContain(leak);
   });
 
@@ -167,7 +170,7 @@ describe("the chat's live activity", () => {
   it("says how failed work ended as its own message", async () => {
     const renderer = await mount(commands([event(1), event(2, { phase: "failed", label: "The run stopped", final: true, detail: undefined })]));
     const steps = renderer.root.findAllByType("li").filter((item) => item.props["data-step-key"]);
-    expect(steps.map((item) => textOf(item.children))).toEqual([expect.stringContaining("Opened the listing page"), expect.stringContaining("Run failed")]);
+    expect(steps.map((item) => textOf(item.children))).toEqual([expect.stringContaining("Open the listing"), expect.stringContaining("Run failed")]);
   });
 
   it("keeps every step of a long build after Core's snapshot has moved past them, each message in place", async () => {

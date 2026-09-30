@@ -26,9 +26,9 @@ export {
   conversationActivityIsInternal,
   conversationStepMessages,
   conversationStepOutcomeWords,
+  type ConversationStepAction,
   type ConversationStepMessage,
   type ConversationStepMessageKind,
-  type ConversationStepOutcome,
   type ConversationStepOutcomeWords
 } from "./steps";
 export { conversationStream, type ConversationStreamEntry } from "./stream";

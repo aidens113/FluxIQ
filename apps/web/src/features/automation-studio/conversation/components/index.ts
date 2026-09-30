@@ -1,3 +1,4 @@
+export { CONVERSATION_ACTION_ICONS, ConversationActionCard } from "./action-card";
 export { ConversationAskForm } from "./ConversationAskForm";
 export { ConversationAttachmentPanel } from "./ConversationAttachmentPanel";
 export { ConversationComposer } from "./ConversationComposer";

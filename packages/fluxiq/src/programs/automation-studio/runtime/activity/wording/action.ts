@@ -1,34 +1,39 @@
+import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
 
-type Verb = { word: RegExp; plain: string; named?: (name: string) => string; also?: { word: RegExp; plain: string } };
+type Phrase = { verb: ActivityActionVerb; plain: string; named?: (name: string) => string; also?: { word: RegExp; plain: string } };
 
 const quoted = (name: string): string => `“${name}”`;
 
 /**
  * What a node or tool does, told by the verbs in its id. The first word of the
- * id's last segment that is one of these decides ("web.output.dom-click" is
- * `dom`, `click`: a click). Generic verbs only -- no domain's id is written
- * here -- so a node registered later is named by the same words.
+ * id's last segment that names a verb decides ("web.output.dom-click" is
+ * `dom`, `click`: a click). Which words name which verb is written once, in
+ * the chat's action kinds (`ui/activity-action/verb.ts`), so the card's icon
+ * and this sentence always agree; this table says each verb in a person's
+ * words. A verb with no sentence here (`search`, `list`) is passed over, as an
+ * unknown word is. Each sentence opens with the verb's "-ing" word in that
+ * table, which is how a card reads the verb back from a title.
  */
-const VERBS: readonly Verb[] = [
-  { word: /^(navigate|goto|visit|open|load)$/u, plain: "Opening a page" },
-  { word: /^back$/u, plain: "Going back a page" },
-  { word: /^(click|press|tap)$/u, plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
-  { word: /^(type|fill|enter)$/u, plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}` },
-  { word: /^clear$/u, plain: "Clearing a field", named: (name) => `Clearing ${quoted(name)}` },
-  { word: /^(select|choose)$/u, plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}` },
-  { word: /^check$/u, plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
-  { word: /^upload$/u, plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
-  { word: /^(extract|read|collect|scrape)$/u, plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list" } },
-  { word: /^detect$/u, plain: "Looking for something on the page", also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the list of items" } },
-  { word: /^(capture|snapshot|inspect|look|observe)$/u, plain: "Looking at the page" },
-  { word: /^scroll$/u, plain: "Scrolling the page" },
-  { word: /^wait$/u, plain: "Waiting for the page" },
-  { word: /^assert$/u, plain: "Checking the page" },
-  { word: /^download$/u, plain: "Downloading a file" },
-  { word: /^(keypress|key)$/u, plain: "Pressing a key" },
-  { word: /^dialog$/u, plain: "Answering a dialog" },
-  { word: /^tab$/u, plain: "Switching tabs" }
+const PHRASES: readonly Phrase[] = [
+  { verb: "navigate", plain: "Opening a page" },
+  { verb: "back", plain: "Going back a page" },
+  { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
+  { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}` },
+  { verb: "clear", plain: "Clearing a field", named: (name) => `Clearing ${quoted(name)}` },
+  { verb: "select", plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}` },
+  { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
+  { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
+  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list" } },
+  { verb: "detect", plain: "Looking for something on the page", also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the list of items" } },
+  { verb: "look", plain: "Looking at the page" },
+  { verb: "scroll", plain: "Scrolling the page" },
+  { verb: "wait", plain: "Waiting for the page" },
+  { verb: "assert", plain: "Checking the page" },
+  { verb: "download", plain: "Downloading a file" },
+  { verb: "key", plain: "Pressing a key" },
+  { verb: "dialog", plain: "Answering a dialog" },
+  { verb: "tab", plain: "Switching tabs" }
 ];
 
 /**
@@ -56,7 +61,8 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
   if (typeof input.id !== "string") return undefined;
   const words = (input.id.split(".").at(-1) ?? "").toLowerCase().split(/[-_\s]+/u).filter(Boolean);
   for (const [index, word] of words.entries()) {
-    const verb = VERBS.find((candidate) => candidate.word.test(word));
+    const named = activityActionVerb(word)?.verb;
+    const verb = named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return verb.also.plain;
     const name = verb.named ? elementName(input.parameters) : undefined;

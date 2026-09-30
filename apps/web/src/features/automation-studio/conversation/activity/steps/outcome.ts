@@ -1,28 +1,41 @@
-// The quiet line under a step message that says how its action went, in a
-// person's words:
+// The outcome line of an action card, in a person's words:
 //
-//   under way   "Working on it", only on the newest message of work that is
-//               still running; an action that never said it ended says
-//               nothing once the work moved on or settled
-//   done        "Done", or "Passed" for a check
-//   failed      "Didn't work", or "Didn't pass" for a check
+//   working   "Working on it", only on the newest card of work that is still
+//             running; a card that never said it ended says nothing once the
+//             work moved on or settled
+//   done      "Done", or "Passed" for a test run
+//   failed    "Didn't work", or "Didn't pass" for a test run, then why:
+//             "Didn't work: it wasn't on the page"
+//   waiting   "Waiting for you": a permission ask or a robot check
 //
-// Core's sentence about the action follows when it has one in words ("Didn't
-// work. The field was covered by a banner."). The words match the extension's
-// (`apps/extension/src/panel/chat/stream/step/outcome.ts`). Pure.
+// `status` is the status word Core's `fluxiqStatusTone` reads, so a card takes
+// its tone from the same table as every status badge in the panel. Pure.
 
-import type { ConversationStepMessage } from "./messages";
+import type { ConversationStepAction } from "./messages";
 
-/** The outcome line; `state` drives its mark. */
-export type ConversationStepOutcomeWords = { state: "working" | "succeeded" | "failed"; label: string };
+/** The outcome line; `state` drives the card's mark, `status` its tone. */
+export type ConversationStepOutcomeWords = {
+  state: ConversationStepAction["outcome"];
+  status: "running" | "succeeded" | "failed" | "waiting";
+  label: string;
+};
 
-/** The outcome line for `message`; `working` is true while its unit of work runs. Null for none. */
-export function conversationStepOutcomeWords(message: ConversationStepMessage, working: boolean): ConversationStepOutcomeWords | null {
-  const outcome = message.outcome;
-  if (outcome === null) return null;
-  if (outcome.status === "started") return working && message.latest ? { state: "working", label: "Working on it" } : null;
-  const check = message.kind === "check";
-  const head = outcome.status === "failed" ? (check ? "Didn't pass" : "Didn't work") : check ? "Passed" : "Done";
-  const said = outcome.text?.trim();
-  return { state: outcome.status, label: said ? `${head}. ${said}` : head };
+/** The outcome line for `action`; `live` is true for the newest card of work still running. Null for none. */
+export function conversationStepOutcomeWords(action: ConversationStepAction, live: boolean): ConversationStepOutcomeWords | null {
+  const test = action.kind === "test";
+  switch (action.outcome) {
+    case "working":
+      return live ? { state: "working", status: "running", label: "Working on it" } : null;
+    case "waiting":
+      return { state: "waiting", status: "waiting", label: "Waiting for you" };
+    case "done": {
+      const head = test ? "Passed" : "Done";
+      return { state: "done", status: "succeeded", label: action.said ? `${head}. ${action.said}` : head };
+    }
+    case "failed": {
+      const head = test ? "Didn't pass" : "Didn't work";
+      const label = action.why ? `${head}: ${action.why}` : action.said ? `${head}. ${action.said}` : head;
+      return { state: "failed", status: "failed", label };
+    }
+  }
 }
