@@ -693,6 +693,8 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     // looks stay on offer. `../../decision-handlers/tests/state-digest-cost.test.ts` replays a
     // recorded build with both.
     lookWithdrawal: false,
+    // And every step that ran was kept unless withdrawn: the model did not author these drafts (`../../loop-configuration.ts`, `draftAuthoring`).
+    draftAuthoring: "transcript",
     ...limits.loop,
     budget: { ...limits.loop.budget, now: () => fixedClock },
     decide,

@@ -144,8 +144,10 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
   // still refuses is the thing it was written to refuse: a schema that is not
   // Core's, over tools that were not offered.
   const written = JSON.stringify(loop.decisionSchema);
-  return [false, true].some((allowAmend) =>
-    written === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, allowAmend)));
+  // And, since 2026-09-30, with and without the fields a call authors the draft
+  // with (`add`, `act`), which a loop offers only where the model authors it.
+  return [false, true].some((allowAmend) => [false, true].some((authoring) =>
+    written === JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(loop.tools, loop.completionSchema, loop.canComplete, allowAmend, authoring))));
 }
 
 function containsForbiddenBootstrapKey(root: unknown): boolean {

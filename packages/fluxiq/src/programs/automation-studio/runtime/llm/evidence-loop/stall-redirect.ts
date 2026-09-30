@@ -82,6 +82,12 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
   /** Whether looking is withdrawn now, until an action runs (`../decision-handlers/look-withdrawal.ts`). */
   looksWithdrawn?: boolean | undefined;
+  /**
+   * The acts on the acts checklist that no step in the Flow does yet, by id
+   * (`../loop-configuration.ts`, `draft.actsMissing`). What the build still owes,
+   * which is what a redirect has to name rather than only what not to repeat.
+   */
+  actsMissing?: readonly string[] | undefined;
 };
 
 /**
@@ -121,14 +127,25 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
     ...(stillMissing ? { stillMissing } : {}),
     ...(input.looksWithdrawn ? { looksWithdrawn: true } : {}),
+    ...(actsMissing(input).length ? { actsMissing: actsMissing(input) } : {}),
     instruction: instruction(input, stepsLeft, issueCodes.length > 0, stillMissing)
   };
+}
+
+/** The missing act ids that are ids, at most eight. */
+function actsMissing(input: AutomationStudioLlmEvidenceStallRedirectInput): string[] {
+  return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}$/u.test(id)))].slice(0, MAX_NAMED);
 }
 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];
+  const owed = actsMissing(input);
+  if (owed.length) {
+    said.push(`The acts checklist still has ${owed.join(", ")} not done by any step in your Flow (actsMissing). Going back to a page you have already been on, or pressing what you already pressed, does not do them.`
+      + ` Your next step is the one that does ${owed[0]}: run it and add it with act ${owed[0]}. Complete only once no act is missing.`);
+  }
   said.push(
     `The last ${input.stepsWithoutProgress} steps told you nothing you did not already have.`,
     input.repeatingToolIds.length
@@ -148,10 +165,10 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
   if (!stillMissing && refused) {
     said.push(`You have tried to finish ${input.completionAttempts} time(s) and lastCompletionIssueCodes says what refused the last one.`
       + ` That refusal is the only thing between your draft and a finished Flow: correct exactly it.`);
-  } else if (!stillMissing && input.completionAttempts === 0 && input.proposableSteps > 0 && input.canComplete) {
+  } else if (!stillMissing && !owed.length && input.completionAttempts === 0 && input.proposableSteps > 0 && input.canComplete) {
     said.push(`You have not tried to finish yet. If the draft answers the instruction, complete now.`);
   }
-  const way = stillMissing ? "Do the missing step." : "Do something you have not done, or complete.";
+  const way = stillMissing || owed.length ? "Do the missing step." : "Do something you have not done, or complete.";
   said.push(stepsLeft > 0
     ? `${way} ${stepsLeft} more step(s) without progress and this exploration stops with no Flow.`
     : `${way} This exploration stops on the next step without progress.`);

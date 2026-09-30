@@ -28,7 +28,7 @@ export type AutomationStudioLlmEvidenceCompletionCheck =
  * and that silently changed the Flow a completion was judged on: nothing in a
  * run's record said the Flow had a step the model had taken out.
  */
-export type AutomationStudioLlmEvidenceRestoredStep = { step: number; withdrawnAs: "dropped" | "exploratory" };
+export type AutomationStudioLlmEvidenceRestoredStep = { step: number; withdrawnAs: "dropped" | "exploratory" | "taken" };
 
 /** The evidence entry a refused completion's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID = "core.completion_check";

@@ -5,9 +5,16 @@
 // that replaced it had not happened. Where that step was the navigation to the
 // start location, the Flow could no longer reach its first page, and the build
 // was refused `bootstrap.cannot_reach_start_location` for it.
+//
+// Where the model authors its draft (the default since 2026-09-30), a rerun
+// that worked takes the replaced step's place: its position, its being in the
+// Flow, its acts and its routing, and every statement naming the old step names
+// it (audit A1, cause 5a; `run-muog33va-96469cb2` orphaned a repeat nine times).
 
 import { describe, expect, it, vi } from "vitest";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import { automationStudioLlmEvidenceRerunReplaced } from "../rerun-replacement.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 
 const go = { toolId: "go", description: "Go somewhere.", inputSchema: { type: "object" }, effect: "mutate" as const };
 const completed = { kind: "complete", result: { flow: "ready" } };
@@ -16,8 +23,9 @@ const ran = (effectApplied: boolean) => ({
   kind: "llm_evidence_tool_execution", evidence: { ok: effectApplied }, effectApplied,
   draft: { actionId: "web.browser.navigate", proposes: effectApplied }
 });
+// The first call is added to the Flow as it runs; the rerun corrects it.
 const decisions = () => vi.fn()
-  .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "go", input: { url: "https://shop.test/" } })
+  .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "go", input: { url: "https://shop.test/" }, add: true })
   .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { url: "https://shop.test/audio" } }] })
   .mockResolvedValueOnce(completed);
 
@@ -28,7 +36,7 @@ describe("a rerun and the step it replaces", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
 
     expect(executeTool).toHaveBeenCalledTimes(2);
-    expect(result.steps.map((step) => [step.id, step.disposition, step.effectApplied])).toEqual([["d1", "kept", true], ["d2", "kept", false]]);
+    expect(result.steps.map((step) => [step.id, step.disposition, step.effectApplied])).toEqual([["d1", "kept", true], ["d2", "taken", false]]);
   });
 
   it("keeps the original when the rerun threw", async () => {
@@ -36,7 +44,7 @@ describe("a rerun and the step it replaces", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
 
-    expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "kept"], ["d2", "kept"]]);
+    expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "kept"], ["d2", "taken"]]);
     expect(result.steps[1]).toMatchObject({ effectApplied: false });
   });
 
@@ -45,7 +53,41 @@ describe("a rerun and the step it replaces", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
 
+    // In the Flow as the original was, and at its position; the original stays listed behind it, withdrawn.
+    expect(result.steps.map((step) => [step.id, step.disposition, step.position])).toEqual([["d2", "kept", 1], ["d1", "dropped", 2]]);
+    expect(result.steps[0]?.input).toMatchObject({ url: "https://shop.test/audio" });
+  });
+
+  it("under the transcript rule, appends the rerun kept and drops the original, as recorded builds did", async () => {
+    const executeTool = vi.fn().mockResolvedValueOnce(ran(true)).mockResolvedValueOnce(ran(true));
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, draftAuthoring: "transcript", unusableDecisions: { stalled } });
+
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "dropped"], ["d2", "kept"]]);
-    expect(result.steps[1]?.input).toMatchObject({ url: "https://shop.test/audio" });
+  });
+});
+
+describe("a rerun taking the replaced step's place", () => {
+  const step = (id: string, position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep =>
+    ({ id, position, iteration: position, actionId: "node", input: {}, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", ...over });
+
+  it("carries the acts and routing, and every statement naming the old step names the rerun", () => {
+    // d15 lists the rows, d16 acts on each (repeat over d15), and d15 is rerun as d17.
+    const steps = [
+      step("d15", 1, { effect: "observe", acts: ["a1"] }),
+      step("d16", 2, { routing: { kind: "repeat", through: "d16", over: "d15" } }),
+      step("d17", 3, { effect: "observe", disposition: "taken" })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.position, entry.disposition])).toEqual([["d17", 1, "kept"], ["d15", 2, "dropped"], ["d16", 3, "kept"]]);
+    expect(steps[0]!.acts).toEqual(["a1"]);
+    expect(steps[1]!.acts).toBeUndefined();
+    expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
+  });
+
+  it("leaves a rerun of a step that was not in the Flow out of it too", () => {
+    const steps = [step("d1", 1, { disposition: "taken" }), step("d2", 2, { disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([["d2", "taken"], ["d1", "dropped"]]);
   });
 });

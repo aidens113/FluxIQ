@@ -12,7 +12,9 @@
 // So a step is appended the moment it happens, and the loop carries the list to
 // the end. What is appended is what the loop observed -- which action, the
 // argument it was given, whether it changed anything -- rather than what the
-// model later says it did.
+// model later says it did. Appended is not added: a step the model runs is
+// evidence of what works, and it is the model that decides which of them make
+// the Flow (`taken`, below).
 //
 // **A step is opaque.** `actionId` is a name Core does not interpret and
 // `input` is the argument it was given, carried so a kept step can be written
@@ -41,15 +43,21 @@ export type AutomationStudioFlowDraftStepEffect = "observe" | "mutate";
 /**
  * What the model has since said about a step it took.
  *
- * `kept` is where every step starts. The other two are the model's own
- * amendments: `dropped` is "this should not be in the result at all", and
- * `exploratory` is "I did this to look around" -- the deliberate escape hatch
- * from the rule that a changing action always becomes part of the result. They
- * are held apart because they are two different statements about one step, and
- * a reader of the draft can tell a step that was a mistake from one that was a
- * detour.
+ * `taken` is where every step the model runs starts when the model authors the
+ * draft (user, 2026-09-30: "IT SHOULD NOT JUST BLINDLY ADD EACH STEP THAT IT
+ * TOOK ONE BY ONE IN ORDER"): the step ran and is evidence, and it is not in
+ * the Flow until the model adds it -- `add` on the call itself, or an `add`
+ * amendment naming it (`./amendment.ts`). `kept` is a step the model put in the
+ * Flow; it is also where every step started under the older transcript rule,
+ * which a loop can still be run under to replay a build recorded before
+ * (`../llm/loop-configuration.ts`, `draftAuthoring`). The other two are the
+ * model's own withdrawals: `dropped` is "this should not be in the result at
+ * all", and `exploratory` is "I did this to look around". They are held apart
+ * because they are different statements about one step, and a reader of the
+ * draft can tell a step that was a mistake from one that was a detour, and
+ * both from one the model has simply not added.
  */
-export type AutomationStudioFlowDraftStepDisposition = "kept" | "dropped" | "exploratory";
+export type AutomationStudioFlowDraftStepDisposition = "kept" | "taken" | "dropped" | "exploratory";
 
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
@@ -158,6 +166,14 @@ export type AutomationStudioFlowDraftStep = {
    * states the relation and never the graph.
    */
   routing?: AutomationStudioFlowDraftStepRouting;
+  /**
+   * The instructed acts (`a1`, `a2` ...) the model says this step does, written
+   * when it added the step or later. Core's ids for acts it showed the model
+   * beside the draft (`../flow-bootstrap/instructed-acts/checklist.ts`); the
+   * completion check reads them as the model's claims, so an authored step that
+   * says which act it does needs no claim written again at the end.
+   */
+  acts?: string[];
 };
 
 /**

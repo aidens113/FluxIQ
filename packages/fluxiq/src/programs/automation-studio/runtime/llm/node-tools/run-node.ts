@@ -79,7 +79,7 @@ const DESCRIPTION = [
   // request is refused runs nothing at all (`tests/run-node.test.ts`).
   `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] when it only reads or leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
   `Judge this node, not the Flow: in one Flow the press that applies a filter is [] and the press that submits the post is ${PUBLISHING}.`,
-  "Correct a step you have already run with an amend_draft decision rather than by running it again: rerun replaces it, drop removes it, reorder moves it."
+  "A step joins the Flow only when added (add on the call or amend_draft add); correct one with amend_draft: rerun, drop, reorder."
 ].join(" ");
 
 /**

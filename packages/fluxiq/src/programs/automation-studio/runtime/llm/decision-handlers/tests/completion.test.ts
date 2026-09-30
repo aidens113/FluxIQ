@@ -46,7 +46,7 @@ const executeTool = vi.fn(async ({ callId, value }: { callId: string; value: Jso
 describe("a completion's test in the decision history", () => {
   it("tests nothing while the check refuses, then shows the refused steps of a failed test", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] }, add: true })
       .mockResolvedValueOnce({ kind: "complete", result: { attempt: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { attempt: 3 } })
       .mockResolvedValueOnce({ kind: "complete", result: { attempt: 4 } });

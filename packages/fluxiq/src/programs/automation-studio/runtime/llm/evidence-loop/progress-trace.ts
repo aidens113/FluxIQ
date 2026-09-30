@@ -84,6 +84,8 @@ const MAX_LISTED = 16;
 /** What an amendment or a completion carried, in step numbers and closed words; empty for any other decision. */
 function decisionDetail(decision: unknown): string {
   const record = asRecord(decision);
+  // A call that authors the draft as it runs (`../evidence-loop-decision.ts`): whether it adds, and the act id.
+  if (record?.kind === "tool_call") return record.add === true || record.act !== undefined ? ` add=1${record.act === undefined ? "" : ` act=${codeOf(record.act)}`}` : "";
   if (record?.kind === "amend_draft" && Array.isArray(record.amendments)) {
     const listed = record.amendments.slice(0, MAX_LISTED).map((item) => {
       const amendment = asRecord(item) ?? {};

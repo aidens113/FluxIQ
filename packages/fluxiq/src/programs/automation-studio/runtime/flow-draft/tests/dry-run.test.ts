@@ -158,7 +158,7 @@ describe("the loop's gate on proposing", () => {
   /** One build: press once, finish, and finish again if the first is refused. */
   const build = async (replies: string[]) => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
       if (value.replay === "reset") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
@@ -211,7 +211,7 @@ describe("the loop's gate on proposing", () => {
 
   it("does not replay a caller that says nothing about replaying", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: "after" }, effectApplied: true }));
     const result = await runAutomationStudioLlmEvidenceLoop({

@@ -183,7 +183,7 @@ async function createWorld(options: { unlocked: string | null }) {
 }
 
 const SEARCH_THEN_COMPLETE = [
-  { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "kettles" }, consequences: [] } },
+  { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "kettles" }, consequences: [] }, add: true },
   { kind: "complete", result: { summary: "Search the catalog for kettles." } }
 ];
 

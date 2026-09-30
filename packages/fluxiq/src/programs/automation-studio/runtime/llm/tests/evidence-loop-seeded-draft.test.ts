@@ -59,7 +59,7 @@ describe("a loop that starts from a draft", () => {
   it("lets an amendment edit a step the loop never took", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "drop" }] })
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "act", input: { node: "web.dom.extract_list" } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "act", input: { node: "web.dom.extract_list" }, add: true })
       .mockResolvedValueOnce({ kind: "complete", result: { summary: "Replaced the extraction." } });
     const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, draft: { actionId: "web.dom.extract_list", proposes: true } });
 

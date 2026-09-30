@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable,
   type AutomationStudioFlowDraftStep
@@ -61,6 +62,7 @@ import {
   type AutomationStudioLlmEvidenceLoopDraftShown,
   type AutomationStudioLlmEvidenceLoopResult,
   automationStudioLlmEvidenceRerunReplaced,
+  automationStudioLlmEvidenceAuthoredProgress,
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
@@ -243,6 +245,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // in front of the model. Kept whether or not it is shown.
   const draftSteps: AutomationStudioFlowDraftStep[] = automationStudioLlmEvidenceLoopSeedSteps(input.draft);
   const drafting = input.draft !== false;
+  // Who decides which steps are in the Flow: the model, unless a recorded build is replayed under the old rule (`./loop-configuration.ts`).
+  const authoring = input.draftAuthoring !== "transcript";
+  // Whether the authored draft has advanced toward the acts: progress, where the model authors it (`./evidence-loop/authored-progress.ts`).
+  const authored = authoring && drafting ? automationStudioLlmEvidenceAuthoredProgress({ steps: draftSteps, actsMissing: input.draft ? input.draft.actsMissing : undefined }) : undefined;
   // The numbers the loop and its handlers both move (`decision-handlers/types.ts` says what each counts).
   const counters: AutomationStudioLlmEvidenceLoopCounters = { draftAmendments: 0, unusableInARow: 0, completionAttempts: 0, failedToolCalls: 0, mutationEpoch: 0, attemptEpoch: 0 };
   // Refusals already given, and drafts already stood at (`./evidence-loop/amendment-memory.ts`).
@@ -253,11 +259,17 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const match = /^d([0-9]+)$/.exec(step.id ?? "");
     return match ? Math.max(largest, Number(match[1])) : largest;
   }, 0);
-  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">): boolean => {
+  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">, authored?: { add?: true | undefined; act?: string | undefined }): boolean => {
     draftAppended += 1;
     // The step's own name, which a position stops being the moment the draft is
     // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
-    const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: "kept" };
+    // A step that ran is `taken` -- evidence, not a step of the Flow -- unless
+    // the model added it as it ran it and it worked (`../flow-draft/step.ts`).
+    const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
+    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) {
+      appended.disposition = "kept";
+      if (authored.act !== undefined) appended.acts = [authored.act];
+    }
     draftSteps.push(appended);
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
@@ -329,7 +341,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       completionAttempts: counters.completionAttempts,
       canComplete: offeredCompletion,
       answerability: previousAnswerability,
-      looksWithdrawn: looks.active(counters.attemptEpoch)
+      looksWithdrawn: looks.active(counters.attemptEpoch),
+      actsMissing: input.draft ? input.draft.actsMissing?.(draftSteps) : undefined
     }),
     // Dropped rather than ending anything when it will not fit.
     show: (iteration: number, note: JsonObject) => {
@@ -354,7 +367,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     counters.unusableInARow += 1;
     lastIssueCodes = issueCodes;
     if (transition) noProgress.completionRefused(issueCodes);
-    if (noProgress.sameIssuesAgain(automationStudioLlmUnusableDecisionIssueSet(issueCodes))) noProgress.stepped();
+    const issueSet = automationStudioLlmUnusableDecisionIssueSet(issueCodes);
+    // A refused completion also counts when the same draft was refused the same way before, whatever ran between (`./evidence-loop/no-progress.ts`).
+    const sameDraftRefusedAgain = transition !== undefined && noProgress.refusedAgain(automationStudioFlowDraftReplaySignature(draftSteps), issueSet);
+    if (noProgress.sameIssuesAgain(issueSet) || sameDraftRefusedAgain) noProgress.stepped();
     else noProgress.restarted();
     recordRow(step, transition);
     if (!noProgress.reached() && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
@@ -431,7 +447,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
     history, draftRevision: () => draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), looks,
-    recordRow, draftRecord, reserveEvidence, unusable, dryRun
+    recordRow, draftRecord, reserveEvidence, unusable, dryRun, authored
   };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
   if (initialTool) {
@@ -533,7 +549,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const offered = wrappingUp ? [] : eligibleTools;
     try {
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend);
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend, drafting && authoring);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp) : undefined;
       // The window, and beside it the history, the draft and the budget, which
@@ -541,7 +557,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
         evidence, records: history.records(), budgetEntry, maxEvidenceContextBytes: limits.maxEvidenceContextBytes,
-        draft: drafting ? { steps: draftSteps, maxBytes: limits.draftBytes, minBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES } : undefined
+        draft: drafting ? { steps: draftSteps, maxBytes: limits.draftBytes, minBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined } : undefined
       });
       draftShown = decisionContext.draftShown;
       const shown = decisionContext.shown;
@@ -697,8 +713,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) });
-    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces);
+    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
+    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
+    // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
+    const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
       ? "unobserved"
       : stateBefore === stateAfter ? "unchanged" : "changed";
@@ -718,12 +736,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // The caller's statement about *this* call, not its tool's standing
       // declaration, which is what lets one tool run a whole library.
       mutated: record.effect === "mutate" && effectApplied,
+      stateAfter,
       ...(execution.repeatedAnswer === undefined ? {} : { repeatedAnswer: execution.repeatedAnswer })
     });
     // A look asked again and run once more: the same page is a step without
     // progress whatever its bytes, and a page that moved by itself is progress.
     const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
-    if (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated))) {
+    // A step the model added to its Flow is the draft advancing, wherever the page went.
+    if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
       // Progress: a redirect about steps without it no longer holds.
       noProgress.cleared();
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);

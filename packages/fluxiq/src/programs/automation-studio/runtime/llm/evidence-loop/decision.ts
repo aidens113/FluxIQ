@@ -8,7 +8,12 @@ import type { AutomationStudioFlowDraftAmendment } from "../../flow-draft/index.
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 
 export type AutomationStudioLlmEvidenceLoopDecision =
-  | { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; usage?: AutomationStudioLlmUsageSummary }
+  /**
+   * Run one tool. `add` puts the step it takes into the Flow if it works, and
+   * `act` names the instructed act that step does; both only where the model
+   * authors its draft (`../../flow-draft/step.ts`, `taken`).
+   */
+  | { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: true; act?: string; usage?: AutomationStudioLlmUsageSummary }
   /** An edit to the draft the loop is accruing. Offered only once there is a step to edit. */
   | { kind: "amend_draft"; amendments: readonly AutomationStudioFlowDraftAmendment[]; usage?: AutomationStudioLlmUsageSummary }
   | { kind: "complete"; result: JsonObject; usage?: AutomationStudioLlmUsageSummary };

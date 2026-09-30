@@ -129,8 +129,8 @@ describe("a dry run over a draft with a lasting step", () => {
 describe("the loop's gate over a lasting step", () => {
   it("never replays the lasting press, and shows the verdict as verified", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.broken", parameters: {}, consequences: [] } })
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c2", toolId: "core.run_node", input: { node: "node.save_for_later", parameters: {}, consequences: ["modify_existing"] } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.broken", parameters: {}, consequences: [] }, add: true })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c2", toolId: "core.run_node", input: { node: "node.save_for_later", parameters: {}, consequences: ["modify_existing"] }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
     const dispatched: string[] = [];
     const shown = new Map<string, JsonObject>();

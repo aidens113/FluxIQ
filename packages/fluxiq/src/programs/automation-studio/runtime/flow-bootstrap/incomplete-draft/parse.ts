@@ -73,6 +73,8 @@ function keptStep(value: unknown, position: number): value is AutomationStudioFl
   if (value.callId !== undefined || value.replayed !== undefined) return false;
   if (value.effectApplied !== undefined && typeof value.effectApplied !== "boolean") return false;
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return false;
+  // The acts the model said the step does (`../../flow-draft/step.ts`): Core's own ids, nothing else.
+  if (value.acts !== undefined && (!Array.isArray(value.acts) || !value.acts.every((act) => typeof act === "string" && /^a[1-9][0-9]{0,2}$/u.test(act)))) return false;
   return OPTIONAL_OBJECTS.every((key) => value[key] === undefined || isRecord(value[key]))
     && OPTIONAL_STRINGS.every((key) => value[key] === undefined || typeof value[key] === "string");
 }

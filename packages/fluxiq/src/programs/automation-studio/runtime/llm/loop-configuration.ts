@@ -238,7 +238,18 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * tested like any draft once the model says the Flow is ready.
      */
     resume?: AutomationStudioLlmEvidenceLoopResume;
+    /** The instructed acts as the model's checklist beside the draft, from the first decision (`../flow-bootstrap/instructed-acts/checklist.ts`). */
+    acts?: (steps: readonly AutomationStudioFlowDraftStep[]) => JsonValue | undefined;
+    /** The acts not done yet, by id: what a redirect names and what authored progress counts down. */
+    actsMissing?: (steps: readonly AutomationStudioFlowDraftStep[]) => readonly string[];
   };
+  /**
+   * Who decides which steps are in the Flow. Absent, the model: a step that
+   * runs is `taken` until the model adds it (`../flow-draft/step.ts`; user,
+   * 2026-09-30). `"transcript"` keeps every step that ran unless withdrawn, and
+   * is only for replaying a build recorded under that rule.
+   */
+  draftAuthoring?: "transcript";
   /**
    * Whether a completed result must first have its draft replayed clean
    * (`runtime/flow-draft/dry-run.ts`) -- the test of the Flow, asked only once

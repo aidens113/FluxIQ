@@ -535,6 +535,48 @@ creation fails as `flow_bootstrap.evidence_unusable_decision`. A usable
 decision resets the count. A completion the check accepts is persisted as it
 was checked.
 
+**The model authors the draft (user, 2026-09-30).** A step the loop runs is
+appended as `taken`: evidence, not a step of the Flow. It enters the Flow only
+when the model adds it, either with `add: true` on the tool call that runs it
+(no extra decision) or with an `add` amendment naming its step (`to` places it,
+`act` names the act it does). Drop, exploratory, reorder, rerun, repeat,
+only_if, on_failed and optional edit the authored Flow as before. A rerun that
+worked takes the replaced step's place: its position, its membership, its acts
+and its routing, and every routing statement naming the old step is rewritten
+to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). The draft entry's
+guidance says so, and the Flow is assembled only from added steps. The loop
+option `draftAuthoring: "transcript"` keeps the old rule, under which every step
+that ran was `kept` unless withdrawn; it exists only to replay builds recorded
+under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
+
+**The instructed acts are the model's checklist from the first decision**
+(audit A1, cause 1). The draft entry carries `acts`: each lasting act the
+instruction asks for, in the person's words, with `done` naming the step of the
+Flow that does it or `todo` saying why none does yet. It is computed each
+decision by the same rule the completion check applies
+(`runtime/flow-bootstrap/instructed-acts/checklist.ts`, `check.ts`
+`automationStudioInstructedActStepFault`), is carried whole and never trimmed,
+and is shown even before any step has run. A step added with `act` is the
+model's claim for that act, so a completion need not name it again; a claim in
+the result names a step by the number the draft shows. The standing decision
+instruction says a Flow is ready only when every act on the checklist is done.
+
+**Progress means the Flow advanced** (audit A1, cause 2). A call that applied
+an effect is no longer progress by itself: one that leaves a state the build
+has already been in (its post-call digest, for the life of the loop, across
+tools) is a step without progress, and so is a completion refused for the same
+issues over the same proposed steps, even after calls between. What clears the
+guard, besides new evidence, is the authored draft advancing: a step entering
+the Flow for the first time, or fewer acts undone than ever before
+(`runtime/llm/evidence-loop/authored-progress.ts`); a step toggled out and back
+in is not new. A redirect names the acts still undone (`actsMissing`) and the
+step to take next.
+
+**A continued build carries no start location on its calls.** Its draft
+already reached the start in the build it continues, so Core does not tell the
+domain to hold it there: exploration carries on from the page as it stands
+(`runtime/service.ts`, the harness registry built for a continuation).
+
 Once drafting has begun and at least one actionable step exists, a provider
 decision also receives a bounded Flow-draft beside entry. Its
 live reservation remains 4,000 UTF-8 bytes: one quarter of the configured

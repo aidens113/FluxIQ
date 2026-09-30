@@ -56,3 +56,5 @@ export {
   type AutomationStudioFlowBootstrapCompletionVerdict
 } from "./bootstrap-completion.ts";
 export { automationStudioRepeatSuggestion, type AutomationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
+// The instruction's acts as the checklist a Flow Bootstrap's loop shows beside its draft.
+export { automationStudioFlowBootstrapDraftActs } from "./draft-acts.ts";

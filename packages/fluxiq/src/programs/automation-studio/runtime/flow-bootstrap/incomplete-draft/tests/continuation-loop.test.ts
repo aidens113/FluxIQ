@@ -14,7 +14,7 @@ function pressesOnward(prefix: string) {
   let call = 0;
   return vi.fn(async (_input: { evidence: ReadonlyArray<{ toolId: string; value: JsonValue }> }) => {
     call += 1;
-    return { kind: "tool_call", callId: `${prefix}.${call}`, toolId: "run_node", input: { press: `${prefix}${call}` } };
+    return { kind: "tool_call", callId: `${prefix}.${call}`, toolId: "run_node", input: { press: `${prefix}${call}` }, add: true };
   });
 }
 

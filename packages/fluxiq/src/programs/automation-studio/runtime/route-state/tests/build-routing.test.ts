@@ -171,6 +171,8 @@ async function build(script: Script, routing: Routing, options: {
       checkCompletion,
       propagateDecisionErrors: true,
       unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error("stalled") },
+      // Recorded builds, whose drafts were transcripts: every step that ran was kept unless withdrawn.
+      draftAuthoring: "transcript",
       ...limits.loop,
       budget: { ...limits.loop.budget, now: () => 1_790_000_000_000 }
     });

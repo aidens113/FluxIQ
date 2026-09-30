@@ -63,6 +63,16 @@ const DRAFT_INSTRUCTION_MINIMAL = "What you have built, in the order you built i
 /** Longest first: the telling only gets shorter once the room has run out. */
 const DRAFT_INSTRUCTIONS = [DRAFT_INSTRUCTION, DRAFT_INSTRUCTION_BRIEF, DRAFT_INSTRUCTION_MINIMAL];
 
+// The same three tellings where the model authors its draft (user, 2026-09-30:
+// "IT SHOULD ONLY ADD STEPS IN A WAY THAT MAKE AN INTELLIGENT FLOW!"): a step
+// that ran is evidence, marked `taken`, and is in the Flow only once the model
+// adds it (`./step.ts`). The acts checklist beside it (`acts`) is what "ready"
+// means (audit A1, cause 1), so every telling names it.
+const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. To do one act to every item of a list, add the step listing them with a where keeping only those to act on, add the act done to one item, then amend_draft repeat over the listing step. For something only sometimes there, add it and mark it optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. The Flow is ready only when every act shows done: complete then, not before. A did_not_work step can only be rerun.";
+const AUTHORED_INSTRUCTION_BRIEF = "The Flow you are authoring. Steps you run are evidence (taken) until you add them: add true on the call, or amend_draft add. inResult true is a step of the Flow. Add only what the Flow needs, in order: never a look, a failed try, a detour or a duplicate. Say which act a step does with act; acts shows each act done or todo. Repeat one act over a list with amend_draft repeat over the listing step. Complete only when every act is done.";
+const AUTHORED_INSTRUCTION_MINIMAL = "Your Flow: only steps you added (inResult true). Add with add on a call or amend_draft add, naming the act. Complete when every act in acts is done.";
+const AUTHORED_INSTRUCTIONS = [AUTHORED_INSTRUCTION, AUTHORED_INSTRUCTION_BRIEF, AUTHORED_INSTRUCTION_MINIMAL];
+
 const DRAFT_STEP_ROW_FORMAT = "step_rows_v1";
 const DRAFT_STEP_ROW_FIELDS = [
   "step",
@@ -100,7 +110,25 @@ type DraftEntryShape = {
 export function automationStudioFlowDraftEntry(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   maxBytes: number;
+  /** Whether the model authors the draft; absent, the transcript tellings (`./step.ts`, `taken`). */
+  authored?: boolean | undefined;
+  /** The acts checklist, carried whole on every entry and never trimmed. */
+  acts?: JsonValue | undefined;
 }): { callId: string; toolId: string; value: JsonValue } | undefined {
+  const tellings = input.authored ? AUTHORED_INSTRUCTIONS : DRAFT_INSTRUCTIONS;
+  const acts = input.acts;
+  // The checklist's own room is taken first: the steps and the guidance share what is left.
+  const room = acts === undefined ? input.maxBytes : input.maxBytes - serializedBytes({ acts });
+  const withActs = (value: JsonObject): { callId: string; toolId: string; value: JsonValue } => entry(acts === undefined ? value : { code: value.code!, acts, ...value });
+  const shaped = draftShape({ steps: input.steps, maxBytes: room, tellings });
+  if (shaped) return withActs(shaped);
+  // No step yet, and still a checklist: the model is shown what it is to do from the first decision.
+  return acts === undefined ? undefined : withActs({ code: DRAFT_CODE, steps: [], instruction: tellings[0]! });
+}
+
+/** The draft's own value within `maxBytes`, or nothing when it holds no step a result could be made of. */
+function draftShape(input: { steps: readonly AutomationStudioFlowDraftStep[]; maxBytes: number; tellings: readonly string[] }): JsonObject | undefined {
+  const [full, brief, minimal] = input.tellings as [string, string, string];
   // Every step that could be in the result, whether or not it is: an
   // extraction changes nothing on the page and is the whole point of a
   // scraping Flow, so "did it mutate" is not the question. A step the model
@@ -112,8 +140,8 @@ export function automationStudioFlowDraftEntry(input: {
   // Keep the established representation byte-for-byte when it can carry the
   // complete draft. Packing is only a recovery from the information loss the
   // old ladder would otherwise introduce.
-  const complete = entryValue({ steps: listed, withInput: listed.length, instruction: DRAFT_INSTRUCTION }, 0);
-  if (serializedBytes(complete) <= input.maxBytes) return entry(complete);
+  const complete = entryValue({ steps: listed, withInput: listed.length, instruction: full }, 0, full);
+  if (serializedBytes(complete) <= input.maxBytes) return complete;
 
   // A packed row removes repeated field names, not values. Only use it when
   // every argument can be carried: an argument rejected by the per-step bound
@@ -121,14 +149,14 @@ export function automationStudioFlowDraftEntry(input: {
   // mistaken for budget trimming.
   const allInputsBounded = listed.every((step) => boundedInput(step.input) !== undefined);
   if (allInputsBounded) {
-    for (const attempt of packedTrimmings(listed)) {
-      const value = packedEntryValue(attempt, listed.length - attempt.steps.length);
-      if (serializedBytes(value) <= input.maxBytes) return entry(value);
+    for (const attempt of packedTrimmings(listed, input.tellings)) {
+      const value = packedEntryValue(attempt, listed.length - attempt.steps.length, full);
+      if (serializedBytes(value) <= input.maxBytes) return value;
     }
   } else {
-    for (const attempt of objectTrimmings(listed)) {
-      const value = entryValue(attempt, listed.length - attempt.steps.length);
-      if (serializedBytes(value) <= input.maxBytes) return entry(value);
+    for (const attempt of objectTrimmings(listed, brief, minimal)) {
+      const value = entryValue(attempt, listed.length - attempt.steps.length, full);
+      if (serializedBytes(value) <= input.maxBytes) return value;
     }
   }
   // Not one rung fitted, so `maxBytes` cannot hold a single step and the
@@ -143,7 +171,7 @@ export function automationStudioFlowDraftEntry(input: {
   // the model nothing and the model would amend a Flow it could not read.
   const newest = listed.slice(-1);
   const newestInputRejected = boundedInput(newest[0]!.input) === undefined;
-  return entry(entryValue({ steps: newest, withInput: newestInputRejected ? 1 : 0, instruction: DRAFT_INSTRUCTION_MINIMAL }, listed.length - 1));
+  return entryValue({ steps: newest, withInput: newestInputRejected ? 1 : 0, instruction: minimal }, listed.length - 1, full);
 }
 
 function entry(value: JsonObject): { callId: string; toolId: string; value: JsonValue } {
@@ -156,14 +184,14 @@ function entry(value: JsonObject): { callId: string; toolId: string; value: Json
  * withhold arguments oldest first under the minimal telling. Only after no
  * all-step candidate fits are the oldest steps removed.
  */
-function* objectTrimmings(steps: readonly AutomationStudioFlowDraftStep[]): Generator<DraftEntryShape> {
-  yield { steps, withInput: steps.length, instruction: DRAFT_INSTRUCTION_BRIEF };
-  yield { steps, withInput: steps.length, instruction: DRAFT_INSTRUCTION_MINIMAL };
+function* objectTrimmings(steps: readonly AutomationStudioFlowDraftStep[], brief: string, minimal: string): Generator<DraftEntryShape> {
+  yield { steps, withInput: steps.length, instruction: brief };
+  yield { steps, withInput: steps.length, instruction: minimal };
   for (let withInput = steps.length - 1; withInput >= 0; withInput -= 1) {
-    yield { steps, withInput, instruction: DRAFT_INSTRUCTION_MINIMAL };
+    yield { steps, withInput, instruction: minimal };
   }
   for (let dropped = 1; dropped < steps.length; dropped += 1) {
-    yield { steps: steps.slice(dropped), withInput: 0, instruction: DRAFT_INSTRUCTION_MINIMAL };
+    yield { steps: steps.slice(dropped), withInput: 0, instruction: minimal };
   }
 }
 
@@ -172,15 +200,16 @@ function* objectTrimmings(steps: readonly AutomationStudioFlowDraftStep[]): Gene
  * the minimal telling while giving up oldest arguments. Step removal remains
  * the final trade and keeps the newest contiguous suffix.
  */
-function* packedTrimmings(steps: readonly AutomationStudioFlowDraftStep[]): Generator<DraftEntryShape> {
-  for (const instruction of DRAFT_INSTRUCTIONS) {
+function* packedTrimmings(steps: readonly AutomationStudioFlowDraftStep[], tellings: readonly string[]): Generator<DraftEntryShape> {
+  const minimal = tellings[tellings.length - 1]!;
+  for (const instruction of tellings) {
     yield { steps, withInput: steps.length, instruction };
   }
   for (let withInput = steps.length - 1; withInput >= 0; withInput -= 1) {
-    yield { steps, withInput, instruction: DRAFT_INSTRUCTION_MINIMAL };
+    yield { steps, withInput, instruction: minimal };
   }
   for (let dropped = 1; dropped < steps.length; dropped += 1) {
-    yield { steps: steps.slice(dropped), withInput: 0, instruction: DRAFT_INSTRUCTION_MINIMAL };
+    yield { steps: steps.slice(dropped), withInput: 0, instruction: minimal };
   }
 }
 
@@ -189,9 +218,9 @@ function* packedTrimmings(steps: readonly AutomationStudioFlowDraftStep[]): Gene
  * shown, and `omitted` names what shrinking cost, so nothing is missing without
  * the entry saying that it is.
  */
-function entryValue(shape: DraftEntryShape, unlisted: number): JsonObject {
+function entryValue(shape: DraftEntryShape, unlisted: number, full: string): JsonObject {
   const from = shape.steps.length - shape.withInput;
-  const left = omitted(shape);
+  const left = omitted(shape, full);
   return {
     code: DRAFT_CODE,
     ...(unlisted > 0 ? { unlisted } : {}),
@@ -202,9 +231,9 @@ function entryValue(shape: DraftEntryShape, unlisted: number): JsonObject {
 }
 
 /** The same draft values with repeated step-field names paid once. */
-function packedEntryValue(shape: DraftEntryShape, unlisted: number): JsonObject {
+function packedEntryValue(shape: DraftEntryShape, unlisted: number, full: string): JsonObject {
   const from = shape.steps.length - shape.withInput;
-  const left = omitted(shape);
+  const left = omitted(shape, full);
   return {
     code: DRAFT_CODE,
     format: DRAFT_STEP_ROW_FORMAT,
@@ -229,7 +258,7 @@ function packedEntryValue(shape: DraftEntryShape, unlisted: number): JsonObject 
  * the entries that had to shrink that can least afford a sentence. A hundred
  * bytes of explanation here costs the draft a step it would otherwise list.
  */
-function omitted(shape: DraftEntryShape): string[] {
+function omitted(shape: DraftEntryShape, full: string): string[] {
   const without = shape.steps.length - shape.withInput;
   const notes: string[] = [];
   if (without > 0) {
@@ -237,7 +266,7 @@ function omitted(shape: DraftEntryShape): string[] {
       ? "the argument each step ran with"
       : `the argument of the ${without} oldest steps`);
   }
-  if (shape.instruction !== DRAFT_INSTRUCTION) notes.push("most of the guidance on amending a draft");
+  if (shape.instruction !== full) notes.push("most of the guidance on amending a draft");
   return notes;
 }
 
