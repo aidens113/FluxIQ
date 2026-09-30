@@ -125,7 +125,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "provider_resolution",
       retryable: false,
       providerInvocation: "not_attempted",
-      providerResponse: "not_received"
+      providerResponse: "not_received",
+      // The resolver's own throw, named by class and line and never by its message.
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
     });
     expect(JSON.stringify(resolutionDiagnostic)).not.toContain("raw resolver");
     expect(resolutionRevoke).toHaveBeenCalledTimes(1);
@@ -292,7 +294,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         outputTokens: 80,
         totalTokens: 200,
         estimatedCostUsd: 0.002
-      }
+      },
+      // Core's own refusal of the plan, thrown in the service and named by its line there.
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.service\.ts:\d+$/u)]
     });
     expect(revoke).toHaveBeenCalledTimes(1);
     await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
@@ -359,11 +363,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
   it("distinguishes unavailable, failed, and malformed provider resolution", async () => {
     const cases = [
-      ["flow_bootstrap.provider_resolver_unavailable", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = undefined; }],
-      ["flow_bootstrap.provider_resolution_failed", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = vi.fn().mockRejectedValue(new Error("raw resolver failure")); }],
-      ["flow_bootstrap.provider_resolution_invalid", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = vi.fn().mockResolvedValue({}); }]
+      ["flow_bootstrap.provider_resolver_unavailable", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = undefined; }, false],
+      ["flow_bootstrap.provider_resolution_failed", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = vi.fn().mockRejectedValue(new Error("raw resolver failure")); }, true],
+      ["flow_bootstrap.provider_resolution_invalid", (instance: AutomationStudioService) => { (instance as any).llmProviderResolver = vi.fn().mockResolvedValue({}); }, false]
     ] as const;
-    for (const [code, configure] of cases) {
+    for (const [code, configure, threwHere] of cases) {
       const revoke = vi.fn();
       const instance = createService({ revoke });
       const { project, flow } = await blankFixture(instance);
@@ -379,7 +383,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         stage: "provider_resolution",
         retryable: false,
         providerInvocation: "not_attempted",
-        providerResponse: "not_received"
+        providerResponse: "not_received",
+        // Only the resolver that threw is named, by its throw's class and line.
+        ...(threwHere ? { issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)] } : {})
       });
       expect(revoke).toHaveBeenCalledTimes(1);
     }
@@ -404,7 +410,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "pre_provider_validation",
       retryable: false,
       providerInvocation: "not_attempted",
-      providerResponse: "not_received"
+      providerResponse: "not_received",
+      // Codes only: the lock's own throw by class and line, and its message nowhere.
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
     });
     expect(JSON.stringify(diagnostic)).not.toContain("raw lock");
     expect(resolver).not.toHaveBeenCalled();

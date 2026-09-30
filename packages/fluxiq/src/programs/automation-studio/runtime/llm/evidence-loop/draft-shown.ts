@@ -41,6 +41,14 @@ const DRAFT_STEP_ROW_FIELDS = [
   "runs",
   "settings"
 ] as const;
+/**
+ * Every disposition the draft *shows*, which is not the set a step keeps: a step
+ * whose effect did not apply is shown as `did_not_work` whatever it keeps
+ * (`../../flow-draft/entry.ts`, `shownDisposition`). Knowing only the kept three,
+ * this reader refused the producer's first packed entry holding a refused press,
+ * and three live builds ended on that refusal (`./tests/draft-shown.test.ts`).
+ */
+const SHOWN_DISPOSITIONS: ReadonlySet<unknown> = new Set(["kept", "dropped", "exploratory", "did_not_work"]);
 
 /** What one decision was shown of the draft, and what showing it cost. */
 export type AutomationStudioLlmEvidenceLoopDraftShown = {
@@ -160,7 +168,7 @@ function isDraftStepRow(value: unknown): value is JsonValue[] {
     && (value[2] === null || isRecord(value[2]))
     && (value[3] === null || typeof value[3] === "string")
     && (value[4] === "yes" || value[4] === "no" || value[4] === "unknown")
-    && (value[5] === "kept" || value[5] === "dropped" || value[5] === "exploratory")
+    && SHOWN_DISPOSITIONS.has(value[5])
     && typeof value[6] === "boolean"
     && (value.length < 8 || value[7] === null || typeof value[7] === "string")
     && (value.length < 9 || value[8] === null || typeof value[8] === "string")
