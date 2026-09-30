@@ -203,6 +203,11 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         // ran. `message` is the host's sentence and stays behind.
         ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
         ...(adaptiveFailure ? { adaptiveFailure } : {}),
+        // The question this attempt put to a person, and how it came out: closed
+        // words only, never the question or the answer. It is the only record
+        // that a failed attempt did not end its node -- a person cleared what the
+        // step met and the run went on down `route` (`executor/person-needed.ts`).
+        ...(attempt.ask ? { ask: { kind: attempt.ask.kind, status: attempt.ask.status, ...(attempt.ask.route ? { route: attempt.ask.route } : {}), ...(attempt.ask.personNeeded ? { personNeeded: true } : {}) } } : {}),
         ...(recordCount !== undefined ? { recordCount } : {}),
         // What a list read said about its own read: counts, flags, the field
         // keys it declared, and whether the list it waited for was ever there.

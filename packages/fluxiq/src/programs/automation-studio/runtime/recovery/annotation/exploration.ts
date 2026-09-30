@@ -21,7 +21,10 @@
 // which is the same mechanism the authoring path uses and the same one the
 // standing "one loop, three entry points" rule asks for. Without a thread bound
 // to the run there is nowhere to ask and the request ends the exploration, as
-// it did for every recovery before 2026-09-22.
+// it did for every recovery before 2026-09-22. The same thread is where a
+// check only a person can complete goes (`../runtime-exploration.ts`); the
+// check's own packet is never kept for the patch, and the look taken after
+// the person cleared it is kept in its place.
 //
 // **It hands every action to the recovery's permission gate, and says so.** The
 // registry is told `mutationsGovernedByPermission`, so a mutating option is
@@ -72,7 +75,7 @@ import {
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
 import type { AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
-import type { AutomationStudioPermissionAsk } from "../../parking/index.ts";
+import { automationStudioPersonNeededLookCallId, automationStudioToolResultNeedsPerson, type AutomationStudioPermissionAsk } from "../../parking/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
@@ -201,12 +204,22 @@ export async function runAutomationStudioRecoveryExploration(
   const domainToolIds = new Set(binding.tools.map((tool) => tool.toolId));
   if (binding.harnessOptions) for (const option of binding.harnessOptions.options) domainToolIds.add(option.toolId);
   const returned: Array<{ callId: string; toolId: string; packet: JsonObject }> = [];
+  // Calls that met a check only a person can complete, by the id their fresh
+  // look runs under once the person pressed Continue. The check's own packet
+  // is never kept -- no model is shown it, so no repair may name a handle from
+  // it -- and the look's packet is kept under the call it stands in for,
+  // because that is the id the loop records and the model was shown it under.
+  const clearedLooks = new Map<string, string>();
   const loop: AutomationStudioHarnessOptionLoopBinding = {
     tools: registryLoop.tools,
     executeTool: async (call) => {
       const execution = await registryLoop.executeTool(call);
+      if (automationStudioToolResultNeedsPerson(execution)) {
+        clearedLooks.set(automationStudioPersonNeededLookCallId(call.callId), clearedLooks.get(call.callId) ?? call.callId);
+        return execution;
+      }
       const packet = domainToolIds.has(call.toolId) ? returnedPacket(execution) : undefined;
-      if (packet) returned.push({ callId: call.callId, toolId: call.toolId, packet });
+      if (packet) returned.push({ callId: clearedLooks.get(call.callId) ?? call.callId, toolId: call.toolId, packet });
       return execution;
     }
   };

@@ -36,6 +36,25 @@ describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
   });
 });
 
+// A failed attempt a person cleared is the only failed attempt that does not end
+// its node, and this record is the only place a reader of the run can see it.
+describe("runtimeSessionToFlowRunDetail attempt ask", () => {
+  it("carries the person-needed ask as closed words: kind, status, route and the mark, never the question or answer", () => {
+    const cleared = { ...failedAttempt(), route: "success", ask: { askId: "node.action.attempt.1", kind: "choice", parks: true, status: "answered", route: "success", settledAtMs: 14, personNeeded: true } } as AutomationStudioNodeAttemptTrace;
+    const detail = runtimeSessionToFlowRunDetail(session([cleared]), "project.conversions");
+
+    expect(detail.actionAttempts?.[0]?.metadata?.ask).toEqual({ kind: "choice", status: "answered", route: "success", personNeeded: true });
+  });
+
+  it("writes no ask for an attempt that asked nothing, and no mark for an ask that was not the person-needed one", () => {
+    const plain = runtimeSessionToFlowRunDetail(session([failedAttempt()]), "project.conversions");
+    expect(plain.actionAttempts?.[0]?.metadata).not.toHaveProperty("ask");
+
+    const permission = { ...failedAttempt(), ask: { askId: "a", kind: "permission", parks: true, status: "pending" } } as AutomationStudioNodeAttemptTrace;
+    expect(runtimeSessionToFlowRunDetail(session([permission]), "project.conversions").actionAttempts?.[0]?.metadata?.ask).toEqual({ kind: "permission", status: "pending" });
+  });
+});
+
 // Fix 5: the only production call site passed no adaptations at all, so
 // `knownAdaptationMatches` was always empty no matter what any adaptation
 // recorded. The list has to reach the classifier for matching to exist.
