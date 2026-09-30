@@ -32,7 +32,7 @@ export class AutomationStudioLegacyRetirementStore {
   }
 
   async readLegacyRetirementState(projectId: string): Promise<AutomationStudioLegacyRetirementState> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const fallback = (): AutomationStudioLegacyRetirementState => ({ schemaVersion: "0.1", projectId, projectSchemaVersion: "0.1", phase: "compatibility", importerEvidence: [], intentionallyDeferred: [], importerCoverageAcknowledged: false, updatedAt: Date.now() });
     if (!this.paths.root) return structuredClone(this.memoryLegacyRetirementStates.get(projectId) ?? fallback());
     return await new ProgramJsonStore<AutomationStudioLegacyRetirementState>(this.paths.projectFile(projectId, "migration", "retirement-state.json"), fallback).read();
@@ -89,7 +89,7 @@ export class AutomationStudioLegacyRetirementStore {
   }
 
   private async readLegacyProjectArtifactsUncached(projectId: string): Promise<AutomationStudioProjectArtifacts> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const [tasks, routines, allConfigs, allFlows] = await Promise.all([
       this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
       this.readProjectArtifactList<AutomationStudioRoutineArtifact>(projectId, "routines"),

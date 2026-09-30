@@ -45,7 +45,7 @@ afterEach(async () => {
 /** What the service's own store holds for the Flow, read as a fresh service would. */
 async function storedDraft(projectId: string, flowId: string) {
   const projectPaths = new AutomationStudioProjectPaths(path.join(tempRoot, "programs", "automation-studio", "projects"));
-  const projects = { findProject: async () => ({ id: projectId }), ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore;
+  const projects = { findProject: async () => ({ id: projectId }), requireProject: async () => undefined, ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore;
   return await new AutomationStudioFlowBootstrapIncompleteDraftStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), projects).get(projectId, flowId);
 }
 

@@ -1823,7 +1823,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     limit?: number;
     pinnedNodeIds?: string[];
   }): Promise<{ flow: AutomationStudioFlowArtifact; page: AutomationStudioGraphViewportPage }> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
     const canonical = await this.getFlow(input.projectId, input.flowId);
     const graph = await AutomationStudioProjectGraphRepository.open({
@@ -1971,7 +1971,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowPublications(projectId: string, flowId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return (await this.catalogue.listFlowPublicationRecords(projectId)).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
   }
 
@@ -2165,7 +2165,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async inspectLegacyRetirement(projectId: string): Promise<AutomationStudioLegacyRetirementReport> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const [state, artifacts, canonicalFlows, migration] = await Promise.all([
       this.legacy.readLegacyRetirementState(projectId),
       this.legacy.readLegacyProjectArtifacts(projectId),
@@ -2238,7 +2238,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listLegacyRetirementAudit(projectId: string): Promise<AutomationStudioLegacyRetirementAuditEvent[]> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     return await this.legacy.readLegacyRetirementAudit(projectId);
   }
 
@@ -2874,7 +2874,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowRouterSummary(projectId: string, flowId: string): Promise<Omit<AutomationStudioFlowRouter, "rules"> & { rules?: never; ruleCount: number } | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     await this.flows.ensureSqlFlowRouterProjection(projectId, flowId);
     const projected = await this.flows.tryWithFlowResourceRepository(projectId, async (item) => {
       const summary = await item.getRouterSummaryForFlow(flowId);
@@ -2905,7 +2905,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRouterRoutes(input: { projectId: string; flowId: string; groupId?: string | null; status?: "active" | "disabled"; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioRouterRoutePage> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     await this.flows.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
     const typed = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => {
       const [page, summary] = await Promise.all([repository.listRouterRoutesPage(input), repository.getRouterSummaryForFlow(input.flowId)]);
@@ -2923,7 +2923,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRouterTargetReferences(input: { projectId: string; flowId: string; subflowIds: string[]; perTargetLimit?: unknown }): Promise<AutomationStudioRouterTargetReferenceBatch> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     await this.flows.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
     const projected = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listRouterTargetReferences(input));
     if (!projected) return { targets: input.subflowIds.map((subflowId) => ({ subflowId, total: 0, hasMore: false, references: [] })), perTargetLimit: automationStudioPageLimit(input.perTargetLimit, 20) };
@@ -2984,14 +2984,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowChangeProposal(projectId: string, flowId: string, proposalId: string): Promise<AutomationStudioFlowChangeProposal | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowChangeProposalFile(projectId, flowId, proposalId), () => ({})).read();
     return typeof stored.proposalId === "string" ? stored as unknown as AutomationStudioFlowChangeProposal : null;
   }
 
   // Strict at every step: a store that fails is an error, never "not held" (see service/run-detail-read).
   async getFlowRunDetail(projectId: string, runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const access = { pool: this.runtimeProjectDatabasePool, root: this.projectPaths.root, flowPaths: this.flowPaths };
     return await readAutomationStudioFlowRunDetail({ ...access, getRuntimeSession: (sessionProjectId, sessionRunId) => this.getRuntimeSession(sessionProjectId, sessionRunId), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail) }, projectId, runId, options);
   }
@@ -2999,7 +2999,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown; cursor?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
     const limit = clampInteger(input.limit, 1, 100, 50);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset, cursor: input.cursor }));
     if (typed && (typed.total > 0 || offset === 0)) return typed;
     if (!this.projectPaths.root) {
@@ -3025,7 +3025,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowRunActionDetail(input: { projectId: string; runId: string; attemptId: string }): Promise<AutomationStudioFlowRunActionAttemptRecord | null> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRunActionDetail({ runId: input.runId, attemptId: input.attemptId }));
     if (typed) return typed;
     const detail = await this.getFlowRunDetail(input.projectId, input.runId);
@@ -3036,7 +3036,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (this.runtimeProjectDatabasePool && this.projectPaths.root) {
       const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
@@ -3945,7 +3945,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
     }
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     await this.projects.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.filter((project) => project.id !== projectId)
@@ -4089,7 +4089,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowSubflowTargets(input: { projectId: string; flowId: string; status?: string; role?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioSubflowTargetPage> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const typed = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listSubflowTargetsPage(input));
     if (typed) return { subflows: typed.items.map((item) => subflowSummaryFromSql(item, input.projectId)), total: typed.total, limit: typed.limit, nextCursor: typed.nextCursor, hasMore: typed.hasMore };
     const status = input.status?.trim() || "active";
@@ -4148,7 +4148,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private async reviewTypedFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation | null> {
     if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
     try {
       const detail = await store.getAdaptation(input.adaptationId);
@@ -4214,7 +4214,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRunEvents(input: { projectId: string; runId: string; afterSequence?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioRuntimeEventPage> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const owner = `run-events:${input.runId}`;
     const filterHash = automationStudioFilterHash({});
     const cursor = decodeAutomationStudioPageCursor<{ sequence: number }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.sequence) && Number(values.sequence) >= 0 });
@@ -4234,7 +4234,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowRunEventDetail(input: { projectId: string; runId: string; sequence: unknown }): Promise<import("../storage/index.ts").AutomationStudioRuntimeStreamEvent | null> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRuntimeEventDetail({ runId: input.runId, sequence: input.sequence }));
     if (typed) return typed;
     const page = await this.listFlowRunEvents({ projectId: input.projectId, runId: input.runId, afterSequence: Math.max(0, Number(input.sequence) - 1), limit: 1 });
@@ -4260,7 +4260,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   private async withReusableLlmContextStore<T>(projectId: string, operation: (store: AutomationStudioProjectReusableLlmContextStore) => Promise<T>): Promise<T> {
     if (!this.reusableLlmContextEnabled) throw new Error("Reusable LLM context is disabled.");
     if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) throw new Error("Reusable LLM context requires project storage.");
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool: this.runtimeProjectDatabasePool, projectId, enabled: true, ...(this.reusableLlmContextContentProtection ? { contentProtection: this.reusableLlmContextContentProtection } : {}) });
     try { return await operation(store); }
     finally { await store.close(); }

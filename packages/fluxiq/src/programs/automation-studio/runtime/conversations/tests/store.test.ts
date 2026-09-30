@@ -4,15 +4,24 @@
 // ask is answered once, and every write reaches the project change feed --
 // which is the only way a turn ever reaches a reader who is not asking.
 
-import { mkdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import { AutomationStudioProjectAdministration, AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 import { automationStudioConversationAskIsConsequential, automationStudioConversationAskRoute } from "../ask.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ASK_ANSWERED, AutomationStudioProjectConversationStore } from "../store.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversation-store-test");
+// Each case gets a directory of its own. A fixed directory under the working
+// directory was shared by every run of this file in the same checkout, so two
+// runs at once (two lanes validating one Core) deleted each other's databases
+// and wrote onto each other's change feed.
+let rootDir = "";
+// The project, migrated once for the file and copied into each case's own
+// directory. Migrating a new project is most of a case's cost (0.6-0.9 s of
+// about 1 s, measured), and repeating it fifteen times proved nothing more.
+let seedDir = "";
 const PROJECT = "project.conversations";
 const CONVERSATION = "conversation.first";
 
@@ -34,9 +43,21 @@ type Fixture = { pool: AutomationStudioProjectDatabasePool; store: AutomationStu
 let fixture: Fixture | undefined;
 
 describe("AutomationStudioProjectConversationStore", () => {
+  beforeAll(async () => {
+    seedDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-conversation-store-seed-"));
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: seedDir });
+    const store = await AutomationStudioProjectConversationStore.open({ pool, projectId: PROJECT });
+    await store.close();
+    await pool.closeAll();
+  });
+
+  afterAll(async () => {
+    await rm(seedDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-conversation-store-"));
+    await cp(seedDir, rootDir, { recursive: true });
   });
 
   afterEach(async () => {
@@ -45,7 +66,7 @@ describe("AutomationStudioProjectConversationStore", () => {
       await fixture.pool.closeAll();
       fixture = undefined;
     }
-    await rm(rootDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   it("installs migration 0021's tables, its ordinal index, and the answered-once check", async () => {

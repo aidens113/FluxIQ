@@ -21,7 +21,7 @@ export class AutomationStudioBootstrapAdaptationStore {
   ) {}
 
   async getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const key = bootstrapAdaptationMemoryKey(projectId, flowId, adaptationId);
     const memory = this.memoryBootstrapAdaptations.get(key);
     if (memory) return structuredClone(memory);
@@ -35,7 +35,7 @@ export class AutomationStudioBootstrapAdaptationStore {
 
   async listProjectFlowBootstrapAdaptations(projectId: string, flowId?: string): Promise<AutomationStudioBootstrapAdaptation[]> {
     if (flowId) return await this.listFlowBootstrapAdaptations(projectId, flowId);
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
     for (const adaptation of this.memoryBootstrapAdaptations.values()) {
       if (adaptation.projectId === projectId) byId.set(adaptation.adaptationId, structuredClone(adaptation));

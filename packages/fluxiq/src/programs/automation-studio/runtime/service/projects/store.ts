@@ -42,6 +42,16 @@ export class AutomationStudioProjectStore {
     return [...normalizeProjectCategories(categories)].sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
   }
 
+  // Throws exactly as `findProject` does for a project the catalogue does not
+  // list, and reads nothing else. Nearly every service operation checks its
+  // project first; `findProject` also reads the project's four hierarchy and
+  // workspace documents, so each of those checks cost five file reads for a
+  // value it discarded -- about 1,700 of the 2,800 file reads a repaired run
+  // made in a unit test, measured.
+  async requireProject(projectId: string): Promise<void> {
+    await this.findProjectSummary(projectId);
+  }
+
   async findProject(projectId: string): Promise<AutomationStudioProjectRecord> {
     return await this.readProjectRecord(await this.findProjectSummary(projectId));
   }

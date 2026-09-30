@@ -77,7 +77,7 @@ export class AutomationStudioRunDetailWriter {
     const { projectId, flowId, runId } = detail.summary;
     let store: AutomationStudioProjectRuntimeStreamStore;
     try {
-      await this.projects.findProject(projectId);
+      await this.projects.requireProject(projectId);
       store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
     } catch {
       return null;

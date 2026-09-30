@@ -13,7 +13,7 @@ export type AutomationStudioProjectProblemListingPorts = {
  * answering with the framework baseline.
  */
 export async function listAutomationStudioProjectProblems(ports: AutomationStudioProjectProblemListingPorts, input: { projectId: string; domainId?: string | null; severity?: string; source?: string; status?: string; scopeId?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioProblemPage> {
-  await ports.projects.findProject(input.projectId);
+  await ports.projects.requireProject(input.projectId);
   const severity = input.severity?.trim().toLowerCase() || "";
   const source = input.source?.trim().toLowerCase() || "";
   const requestedStatus = input.status?.trim().toLowerCase() || "open";
