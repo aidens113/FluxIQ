@@ -37,7 +37,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
   };
   const executeTool = async (request: Parameters<T["executeTool"]>[0]) => {
     const started = Date.now();
-    log(`tool start callId=${codeOf(request.callId)} toolId=${codeOf(request.toolId)}`);
+    log(`tool start callId=${callIdOf(request.callId)} toolId=${codeOf(request.toolId)}`);
     try {
       const result = await input.executeTool(request);
       log(`tool end toolId=${codeOf(request.toolId)} ms=${Date.now() - started} resultCode=${codeOf((result as { resultCode?: unknown } | undefined)?.resultCode)}`);
@@ -55,6 +55,15 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     return verdict;
   };
   return { ...input, decide, executeTool, ...(checkCompletion ? { checkCompletion } : {}) } as T;
+}
+
+/**
+ * A call id only when it is a numbered id (`c18`, `call.1`) or Core's own
+ * (`initial.<tool>`). The model writes call ids, and one that spells out what it
+ * is doing carries the instruction's words into the log (`run-muntmwvx-0d53884a`).
+ */
+function callIdOf(value: unknown): string {
+  return typeof value === "string" && /^(?:[A-Za-z]{1,6}[._-]?\d{1,4}|initial\.[A-Za-z0-9_.:-]{1,80})$/u.test(value) ? value : "-";
 }
 
 /** A code-shaped value, or `-`: never a sentence, so nothing but an identifier reaches the log. */
