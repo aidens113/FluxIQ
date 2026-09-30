@@ -6,6 +6,8 @@ import { AlertTriangle, CircleCheck } from "lucide-react";
 import type { AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
 import { RunHistory } from "./RunHistory";
 import { RunPermissionRequest } from "./RunPermissionRequest";
+import { RunControlBar } from "./RunControlBar";
+import { useRunControl } from "./useRunControl";
 import { commitRuntimeRunChanged } from "./run-commands";
 import { sortRuntimeRunsForDebugView } from "./run-detail-model";
 import {
@@ -339,6 +341,10 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     if (!result.ok) setRunError(result.error ?? "Run could not be stopped.");
     else commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId: activeRunId });
   };
+  // The run a person can pause: the one this panel started, or an authorized
+  // run whose id is known while its request is still open.
+  const controlledRunId = activeRunId ?? (runningMode ? liveRunId : null);
+  const runControl = useRunControl({ projectId: props.projectId, runId: controlledRunId, commands: props.commands });
   const studioRuntimeActions = {
     // The header's Play and Stop drive the run panel a person is looking at, not
     // whichever one mounted last. The object-scoped view ids make a Run and test
@@ -346,10 +352,10 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     // panel. `FlowGraphCanvas` resolves graph actions the same way.
     active: () => props.activeRef?.current ?? true,
     canPlay: Boolean(props.projectId && props.flow?.flowId && !runningMode && !activeRunId),
-    canPause: false,
+    canPause: runControl.canPause,
     canStop: Boolean(props.projectId && activeRunId),
     play: () => { requestRun(lastMode); },
-    pause: () => undefined,
+    pause: () => { void runControl.pause(false); },
     stop: () => { void stopRun(); }
   };
   useEffect(() => registerAutomationStudioRuntimeActions(studioRuntimeActionId, studioRuntimeActions), [studioRuntimeActionId]);
@@ -383,6 +389,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         onOpenLiveLog={() => activeRunId && setLiveRunId(activeRunId)}
         {...(props.onOpenReadinessTarget ? { onOpenTarget: props.onOpenReadinessTarget } : {})}
       />
+      {controlledRunId ? <RunControlBar control={runControl} /> : null}
       {runError ? <p className="automation-runtime-message" role="alert">{runError}</p> : null}
       {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} {...(runPermission && runPermission.runId === lastRun.runtimeSession?.runId ? { permission: {
         runDetail: runPermission.runDetail,

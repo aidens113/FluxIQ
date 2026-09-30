@@ -71,7 +71,8 @@ describe("the draft entry a decision is shown", () => {
       { target: "target.1" },
       "action.refused",
       "no",
-      "exploratory",
+      // A step that did not work is shown as that, whatever it was called.
+      "did_not_work",
       false,
       "changed",
       "optional: the Flow carries on when this fails",
@@ -100,7 +101,9 @@ describe("the draft entry a decision is shown", () => {
     expect(value.steps.map((listed) => [listed.disposition, listed.inResult, listed.changed])).toEqual([
       ["exploratory", false, "yes"],
       ["dropped", false, "yes"],
-      ["kept", false, "no"]
+      // Not `kept`: listed so under an instruction that said every step had
+      // worked, a refused press read as one still to drop or confirm.
+      ["did_not_work", false, "no"]
     ]);
   });
 

@@ -209,8 +209,9 @@ import {
   type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
+import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -394,6 +395,8 @@ export class AutomationStudioService {
   private continueLlmExecutionGrantAfterAppliedFlowAdaptation?: AutomationStudioServiceOptions["continueLlmExecutionGrantAfterAppliedFlowAdaptation"];
   private closeLlmExecutionGrants?: AutomationStudioServiceOptions["closeLlmExecutionGrants"];
   private readonly runtimeAbortControllers = new Map<string, AbortController>();
+  /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
+  readonly runControl = new AutomationStudioRunControlRegistry();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
   private reusableLlmContextEnabled: boolean;
   private reusableLlmContextContentProtection: AutomationStudioProjectContentProtection | undefined;
@@ -2463,6 +2466,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   // field the loop learned to read -- the result summary a refuted run is
   // repaired from -- reached the recovery only once this stopped listing them.
   private async maybeAnnotateRunDetailWithRuntimeLlm(input: Omit<AutomationStudioRuntimeRecoveryAnnotationInput, "ports">): Promise<AutomationStudioFlowRunDetail> {
+    automationStudioMarkRunAdapting(input.graphOptions?.runControl);
     return await annotateAutomationStudioRunDetailWithRuntimeLlm({
       ...input,
       ports: {
@@ -2682,6 +2686,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (adaptationContext) runResultCheck = automationStudioRunResultCheck({ context: adaptationContext, nowMs: Date.now() });
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
+      graphOptions.runControl = this.runControl.open(input.projectId, session.runId, abortController.signal);
       await this.writeRuntimeSession(input.projectId, {
         ...session,
         status: "running", startedAt: session.startedAt ?? startedAt,
@@ -2760,8 +2765,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             }
           }] : []
         }, adaptationContext);
-        const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-          detail: routedRunDetail,
+        const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: routedRunDetail, recovering: Boolean(adaptationContext), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+          detail,
           context: adaptationContext,
           runtimeFlow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical),
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}),
@@ -2770,7 +2775,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
           ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
-        });
+        }) });
         // A verified repair resumes a granted run too. Withholding it here is
         // what left an explicit repair applying a patch and then reporting the
         // original failure, with nothing having re-run.
@@ -2819,8 +2824,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {
       const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
-      const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
-        detail: runDetail,
+      const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: runDetail, recovering: true, saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
+        detail,
         context: adaptationContext,
         runtimeFlow: runtimeCanonical ? canonicalFlowDocument(runtimeCanonical) : runtimeFlow,
         ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
@@ -2828,7 +2833,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
         ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
-      });
+      }) });
       const retry = await this.rerunAfterRepair({
         projectId: input.projectId,
         session: next,
@@ -2847,7 +2852,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     } finally {
       // Whatever happened, a grant this run was handed ends with it.
       if (input.llmExecution) this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
-      if (input.projectId && session) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
+      if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }
   }
 

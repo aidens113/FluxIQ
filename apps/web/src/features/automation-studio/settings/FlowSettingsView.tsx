@@ -2,7 +2,7 @@
 
 import { Combobox, StatusBadge } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, ArrowLeftRight, Bot, Boxes, CircleCheck, CircleDollarSign, Gauge, Info, ListChecks, Plus, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeftRight, Bot, Boxes, CircleCheck, CircleDollarSign, Gauge, Info, KeyRound, ListChecks, Plus, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 import { JsonToggle } from "../runtime";
 import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
@@ -11,6 +11,8 @@ import { SettingsSectionLayout, type SettingsSectionDefinition } from "./Setting
 import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
 import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-check-model";
 import { flowSettingsNotPersisted } from "./persistence-check";
+import { AiProviderSettingsSection } from "./AiProviderSettingsSection";
+import { deepSeekKeyAvailability } from "./ai-provider-model";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 
@@ -18,6 +20,7 @@ export type FlowSettingsViewProps = { projectId: string | null; flow: any };
 
 const FLOW_SETTINGS_SECTIONS = [
   { id: "flow-settings-general", label: "General", description: "Identity and visibility", icon: Settings2 },
+  { id: "flow-settings-ai-provider", label: "AI Provider", description: "DeepSeek key and adaptation", icon: KeyRound },
   { id: "flow-settings-runtime", label: "Runtime", description: "Execution behavior", icon: Gauge },
   { id: "flow-settings-safety", label: "Safety", description: "Approval gates", icon: ShieldCheck },
   { id: "flow-settings-adaptation", label: "Adaptation", description: "Learning policy", icon: Sparkles },
@@ -159,6 +162,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const selectedProvider = flowLlmProvider(draft.llmProvider);
   const compatibleLlmSecrets = llmSecrets.filter((key) => key.enabled === true && normalizedProviderLabel(key.provider) === normalizedProviderLabel(selectedProvider.label) && (key.scope === "global" || (key.scope === "flow" && key.scopeRef === flow?.flowId)));
   const llmSettingsErrors = flowLlmSettingsErrors(draft, compatibleLlmSecrets, !llmSecretsLoading && !llmSecretsError);
+  const aiKeyAvailability = deepSeekKeyAvailability({ keys: props.projectId && flow?.flowId ? llmSecrets : null, loading: llmSecretsLoading, error: llmSecretsError, flowId: flow?.flowId ?? null });
   const llmSecretError = llmSettingsErrors.find((item) => item.toLowerCase().includes("key")) ?? "";
   const adaptationErrors = flowAdaptationErrors(draft);
   const limitsInterfaceErrors = flowLimitsInterfaceErrors(draft);
@@ -238,6 +242,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
           <label><span>Description</span><textarea maxLength={1000} rows={4} value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="What this Flow is responsible for." /><small>{draft.description.length}/1000 characters</small></label>
           <fieldset className="automation-settings-choice"><legend>Visibility</legend><div className="automation-instruction-segments"><button aria-pressed={draft.visibility === "private"} className={draft.visibility === "private" ? "selected" : ""} onClick={() => updateDraft("visibility", "private")} type="button">Private</button><button aria-pressed={draft.visibility === "public"} className={draft.visibility === "public" ? "selected" : ""} onClick={() => updateDraft("visibility", "public")} type="button">Public composite</button></div><small>Public Flows can be published for reuse when their interface is valid.</small></fieldset>
         </section>
+        <AiProviderSettingsSection draft={draft} keyAvailability={aiKeyAvailability} onDraftChange={setDraft} />
         <section className="automation-settings-panel" id="flow-settings-runtime">
           <header><strong>Runtime Mode</strong><span>Choose how this Flow may use LLM assistance and adaptations</span></header>
           <fieldset className="automation-settings-choice automation-settings-mode-choice"><legend>LLM intervention mode</legend><div className="automation-settings-mode-grid">{([ ["fully_adaptive", "Fully adaptive", "Use LLM recovery and auto-apply safe validated adaptations."], ["manual_approval", "Manual approval", "Use LLM recovery but hold every adaptation for review."], ["no_llm_intervention", "No LLM intervention", "Run only saved deterministic behavior."] ] as const).map(([value, label, detail]) => <button aria-pressed={draft.adaptationMode === value} className={draft.adaptationMode === value ? "selected" : ""} key={value} onClick={() => setDraft((current) => applyFlowAdaptationMode(current, value))} type="button"><strong>{label}</strong><span>{detail}</span></button>)}</div></fieldset>

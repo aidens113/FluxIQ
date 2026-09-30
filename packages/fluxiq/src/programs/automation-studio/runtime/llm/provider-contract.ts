@@ -1,4 +1,5 @@
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
+import { automationStudioLlmProviderThrowRead, type AutomationStudioLlmProviderThrowRead } from "./throw-account/index.ts";
 
 /**
  * Every way a provider refuses a request before sending it, one code per check.
@@ -161,6 +162,16 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   status?: number;
   provenance: AutomationStudioLlmProviderFailureProvenance;
   refusal?: AutomationStudioLlmProviderRefusal;
+  /**
+   * What an untyped throw was, as read (`throw-account/`). Only on
+   * `llm.provider_request_failed`: a typed failure already names its fault with
+   * a code Core chose, and its message stays on the throw.
+   *
+   * **Its message is unscreened.** The account beside it is codes only; the
+   * message reaches a record only through the harness's screen
+   * (`harness/throw-screen.ts`), which is the one caller that publishes it.
+   */
+  thrown?: AutomationStudioLlmProviderThrowRead;
 } {
   const typed = structurallyTypedProviderError(error);
   if (typed) {
@@ -174,11 +185,16 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
       ...(refusal ? { refusal } : {})
     };
   }
+  // The code says only that something threw. What threw is the one thing that
+  // can tell a reset socket from a failed name lookup from a bug in an adapter,
+  // and `run-mun5e1ie-5aeefbbd` was stored without it.
+  const thrown = automationStudioLlmProviderThrowRead(error);
   return {
     code: "llm.provider_request_failed",
     message: "The LLM provider request failed before a valid response was returned.",
     retryable: false,
-    provenance: { providerInvocation: "unknown", providerResponse: "unknown" }
+    provenance: { providerInvocation: "unknown", providerResponse: "unknown" },
+    ...(thrown ? { thrown } : {})
   };
 }
 

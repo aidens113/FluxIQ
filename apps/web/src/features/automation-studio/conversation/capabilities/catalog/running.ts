@@ -4,14 +4,19 @@
 // "why did it fail" is asked in the same breath as "run it", and a person
 // switching between the two should not be switching vocabularies.
 
-import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunDetail, issueLlmExecutionGrant, listRuntimeRunActions, listRuntimeRuns, preflightLlmExecution, startRuntimeSession } from "../../../runtime";
+import { flowModelFromDetail } from "../../../authoring";
+import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE, cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, getRuntimeRunControl, getRuntimeRunDetail, issueLlmExecutionGrant, listRuntimeRunActions, listRuntimeRuns, pauseRuntimeSession, preflightLlmExecution, resumeRuntimeSession, startRuntimeSession, type RuntimeRunControlAnswer } from "../../../runtime";
+import { loadFlowSettingsDetail } from "../../../settings";
 import { automationStudioViewId } from "../../../views";
-import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityArgument, type PanelCapabilityContext } from "../contract";
+import { definePanelCapability, panelCapabilityResult, type PanelCapability, type PanelCapabilityArgument, type PanelCapabilityContext, type PanelCapabilityOutcome } from "../contract";
 import { PROJECT, FLOW, RUN } from "./argument";
 import { str } from "./value";
 
 /** What a model run is for. Left out, Core applies its own default. */
 const PURPOSE: PanelCapabilityArgument = { name: "purpose", kind: "text", describe: "What the model run is for, such as `build_and_adapt`.", required: false };
+
+/** Why a person is holding the run, kept on the run's record. */
+const REASON: PanelCapabilityArgument = { name: "reason", kind: "text", describe: "Why the run is being held, in a few words.", required: false };
 
 export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
@@ -64,6 +69,71 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
       await cancelRuntimeSession(context.transport, { projectId: str(args, "projectId"), runId: str(args, "runId") }),
       "Stopped the run.",
       "The run could not be stopped."
+    )
+  }),
+  definePanelCapability({
+    id: "run.pause",
+    title: "Pause a run",
+    summary: "Holds a run that is going between two steps, never in the middle of one. It keeps everything it has done and goes on from the same step when resumed.",
+    group: "Running",
+    phrases: ["pause it", "pause the run", "hold on", "wait a moment", "hang on"],
+    control: { view: automationStudioViewId.runtime, label: "Pause" },
+    endpoints: ["pause-runtime-session"],
+    arguments: [PROJECT, RUN, REASON],
+    consequences: ["modify_existing"],
+    invoke: async (context, args) => runControlOutcome(
+      await pauseRuntimeSession(context.transport, { projectId: str(args, "projectId"), runId: str(args, "runId"), ...(args.reason ? { reason: str(args, "reason") } : {}) }),
+      "The run will pause before its next step.",
+      "The run could not be paused."
+    )
+  }),
+  definePanelCapability({
+    id: "run.takeControl",
+    title: "Take control of the page",
+    summary: "Pauses the run between steps and hands the page to you, so you can sign in, solve a check or fix something by hand. FluxIQ touches nothing until you continue.",
+    group: "Running",
+    phrases: ["take control", "let me do it", "i will do this part", "hand it to me", "let me take over"],
+    control: { view: automationStudioViewId.runtime, label: "Take control" },
+    endpoints: ["pause-runtime-session"],
+    arguments: [PROJECT, RUN, REASON],
+    consequences: ["modify_existing"],
+    invoke: async (context, args) => runControlOutcome(
+      await pauseRuntimeSession(context.transport, { projectId: str(args, "projectId"), runId: str(args, "runId"), takeControl: true, ...(args.reason ? { reason: str(args, "reason") } : {}) }),
+      "You have the page. The run is held before its next step until you continue.",
+      "Control could not be handed over."
+    )
+  }),
+  definePanelCapability({
+    id: "run.resume",
+    title: "Resume a run",
+    summary: "Lets a paused run go on from the step it held before, or hands the page back to FluxIQ after you acted on it.",
+    group: "Running",
+    phrases: ["resume", "continue", "carry on", "keep going", "i am done", "give it back", "return control"],
+    control: { view: automationStudioViewId.runtime, label: "Resume" },
+    endpoints: ["resume-runtime-session"],
+    arguments: [PROJECT, RUN, { name: "afterManualAction", kind: "boolean", describe: "True when you did something on the page while the run was held.", required: false }],
+    consequences: ["modify_existing"],
+    invoke: async (context, args) => runControlOutcome(
+      await resumeRuntimeSession(context.transport, { projectId: str(args, "projectId"), runId: str(args, "runId"), afterManualAction: args.afterManualAction === true }),
+      "The run is going on from where it paused.",
+      "The run could not be resumed."
+    )
+  }),
+  definePanelCapability({
+    id: "run.progress",
+    title: "Check on a run",
+    summary: "Says what a run is doing right now: running, paused, adapting, waiting for you, or how it ended.",
+    group: "Running",
+    phrases: ["is it still running", "how is it going", "what is it doing", "is it paused", "run status"],
+    control: { view: automationStudioViewId.runtime, label: "Run controls" },
+    endpoints: ["get-runtime-run-control"],
+    arguments: [PROJECT, RUN],
+    consequences: [],
+    invoke: async (context, args) => runControlOutcome(
+      await getRuntimeRunControl(context.transport, { projectId: str(args, "projectId"), runId: str(args, "runId") }),
+      "Here is where the run stands.",
+      "The run could not be read.",
+      true
     )
   }),
   definePanelCapability({
@@ -141,7 +211,7 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     group: "Permissions",
     phrases: ["allow the model", "grant it", "give it permission", "let it use the model", "authorise the model"],
     control: { view: automationStudioViewId.flowEditor, label: "Allow model run" },
-    endpoints: ["get-flow", "issue-llm-execution-grant"],
+    endpoints: ["get-flow-metadata-detail", "issue-llm-execution-grant"],
     arguments: [PROJECT, FLOW, PURPOSE],
     consequences: ["create_new"],
     invoke: async (context, args) => {
@@ -166,7 +236,7 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
     group: "Permissions",
     phrases: ["what does it need", "check permissions", "preflight", "is it ready to build"],
     control: { view: automationStudioViewId.flowEditor, label: "Check readiness" },
-    endpoints: ["get-flow", "preflight-llm-execution"],
+    endpoints: ["get-flow-metadata-detail", "preflight-llm-execution"],
     arguments: [PROJECT, FLOW, PURPOSE],
     consequences: [],
     invoke: async (context, args) => {
@@ -205,6 +275,25 @@ export const RUNNING_CAPABILITIES: readonly PanelCapability[] = [
   })
 ];
 
+/**
+ * A run-control answer in words that match what happened. Pausing or resuming
+ * a run that is not executing is not a failure -- Core answers it with the run
+ * as it stands -- but saying "paused" about it would be untrue.
+ */
+function runControlOutcome(
+  response: { ok: boolean; payload?: RuntimeRunControlAnswer; error?: string; retryable?: boolean },
+  done: string,
+  failed: string,
+  reading = false
+): PanelCapabilityOutcome {
+  if (!response.ok || !response.payload) return panelCapabilityResult(response, done, failed);
+  const answer = response.payload;
+  const progress = answer.progress ? `${answer.progress.label}${answer.progress.detail ? `: ${answer.progress.detail}` : "."}` : "No such run.";
+  if (reading) return { status: "done", summary: `${done} ${progress}`, payload: answer };
+  if (!answer.live) return { status: "done", summary: `That run is not executing right now, so nothing changed. ${progress}`, payload: answer };
+  return { status: "done", summary: done, payload: answer };
+}
+
 type FlowModelKey =
   | { ok: true; request: { keyId: string; provider?: string; model?: string } }
   | { ok: false; error: string; retryable?: boolean };
@@ -215,12 +304,19 @@ type FlowModelKey =
  * Core's grant service refuses a request with no `keyId` ("An enabled LLM key
  * is required."), and a person asking the chat to "allow the model" never names
  * a key. The panel's own build button takes it from the Flow's
- * `metadata.llmSecretKeyId`, so this reads the same place rather than asking.
+ * `metadata.llmSecretKeyId`, so this reads the same choice rather than asking.
+ *
+ * It reads the Flow's metadata detail, never `get-flow`: the browser refuses
+ * whole-document reads (`data-request-policy.ts`,
+ * `AUTOMATION_STUDIO_BROWSER_BLOCKED_LEGACY_ENDPOINTS`), so a `get-flow` here
+ * threw in the real chat window before any grant could be issued, and chat
+ * build and explore had no way to get one. The detail keeps the choice in
+ * `settings.llm` (`flowModelFromDetail`).
  */
 async function flowModelKey(transport: PanelCapabilityContext["transport"], projectId: string, flowId: string): Promise<FlowModelKey> {
-  const read = await transport.post<{ flow?: { metadata?: Record<string, unknown> } }>("get-flow", { projectId, flowId });
+  const read = await loadFlowSettingsDetail(transport, { projectId, flowId });
   if (!read.ok) return { ok: false, error: read.error ?? "The Flow could not be read.", ...((read as { retryable?: boolean }).retryable ? { retryable: true } : {}) };
-  const metadata = read.payload?.flow?.metadata ?? {};
+  const metadata = flowModelFromDetail(read.payload?.flow).metadata;
   const keyId = typeof metadata.llmSecretKeyId === "string" ? metadata.llmSecretKeyId : "";
   if (!keyId) return { ok: false, error: "This Flow has no model key chosen. Choose one in the Flow's settings first." };
   return {

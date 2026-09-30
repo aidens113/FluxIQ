@@ -44,7 +44,7 @@ describe("completion keeps the step that arrived where the Flow starts", () => {
 
     const result = restore(steps);
 
-    expect(result.restored).toEqual({ position: 1, id: steps[0]!.id });
+    expect(result.restored).toEqual({ position: 1, id: steps[0]!.id, withdrawnAs: "dropped" });
     expect(result.steps.map((entry) => [entry.position, entry.actionId, entry.disposition])).toEqual([
       [1, "web.output.browser-navigate", "kept"],
       [2, "web.output.dom-click", "kept"],
@@ -59,6 +59,7 @@ describe("completion keeps the step that arrived where the Flow starts", () => {
 
     expect(result.steps[0]).toMatchObject({ disposition: "kept" });
     expect(result.steps[0]!.routing).toBeUndefined();
+    expect(result.restored?.withdrawnAs).toBe("exploratory");
   });
 
   it("moves an arrival that was reordered behind the steps that act, ahead of them", () => {
@@ -78,7 +79,7 @@ describe("completion keeps the step that arrived where the Flow starts", () => {
   it("reads what the step ran with before what it was written with", () => {
     const steps = [step(1, { url: "handle-7" }, { disposition: "dropped", ranWith: { parameters: { url: `${START}?ref=home` } } }), press(2)];
 
-    expect(restore(steps).restored).toEqual({ position: 1, id: steps[0]!.id });
+    expect(restore(steps).restored).toEqual({ position: 1, id: steps[0]!.id, withdrawnAs: "dropped" });
   });
 
   it("restores the earliest of several withdrawn arrivals, and only that one", () => {

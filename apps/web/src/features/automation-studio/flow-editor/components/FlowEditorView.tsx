@@ -4,7 +4,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { Plus, Sparkles } from "lucide-react";
 import type { FlowEditorProps, AutomationGraphSaveResult } from "../flow-editor-types";
 import { useFlowEditorController } from "../hooks";
-import { BlankFlowAuthoringPanel, blankFlowAuthoringRequest, blankFlowExplorationRequest } from "../../authoring";
+import { BlankFlowAuthoringPanel, blankFlowAuthoringRequest, blankFlowExplorationRequest, existingFlowImprovementRequest, ImproveFlowPanel, useFlowImprovementCommands } from "../../authoring";
 import { useRuntimeExecutionCommands } from "../../runtime";
 
 const FlowGraphCanvas = lazy(() => import("./FlowGraphCanvas").then((module) => ({
@@ -65,6 +65,7 @@ export const FlowEditorView = memo(function FlowEditorView(props: FlowEditorView
  */
 function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCreateFlow: (() => void) | undefined }) {
   const commands = useRuntimeExecutionCommands();
+  const improvementCommands = useFlowImprovementCommands(commands);
   const [readiness, setReadiness] = useState<StartPaneReadiness>(idleReadiness);
   const [revision, setRevision] = useState(0);
   const generationRef = useRef(0);
@@ -91,6 +92,9 @@ function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCre
 
   const canDescribeTheJob = blankFlowExplorationRequest(props.projectId, props.flow, readiness).ok
     || blankFlowAuthoringRequest(props.projectId, props.flow, readiness).ok;
+  // A Flow that already has steps is improved rather than described afresh:
+  // the person says what should change, and the result is a suggested change.
+  const canImprove = !canDescribeTheJob && existingFlowImprovementRequest(props.projectId, props.flow, readiness).ok;
 
   return (
     <section aria-label="Start here" className="automation-flow-start-pane">
@@ -118,6 +122,9 @@ function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCre
         : null}
       {canDescribeTheJob
         ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} projectId={props.projectId} readiness={readiness} />
+        : null}
+      {canImprove
+        ? <ImproveFlowPanel commands={improvementCommands} flow={props.flow} projectId={props.projectId} readiness={readiness} />
         : null}
     </section>
   );
