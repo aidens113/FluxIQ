@@ -46,6 +46,32 @@ export const CONFIG = {
     }
   ],
 
+  // Where browser bundles enter this repository, for the browser-imports rule:
+  // nothing reachable from these by a value import may import a Node built-in
+  // or an undeclared package. Each entry is the SOURCE of a module a downstream
+  // browser bundle loads.
+  //
+  // These are the modules the web extension's bundles (background, content,
+  // page-world, popup, sidepanel) enter Core through, read from the bundle's
+  // own metafile on 2026-09-30, not chosen by hand. The extension's `pnpm check`
+  // bundles every entry and fails when the bundle enters Core through a module
+  // missing here (apps/extension/scripts/check-extension.mjs), so this list
+  // cannot fall behind the bundle. The two `client` subpaths are published for
+  // browsers and held to it too.
+  browserBundles: {
+    consumer: "the web extension's browser bundles",
+    entries: [
+      "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/fingerprinting/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/client/index.ts",
+      "packages/fluxiq/src/client-gateway/contracts.ts",
+      "packages/client-gateway-websocket/src/index.ts"
+    ],
+    ownedElsewhere: [],
+    browserPackages: []
+  },
+
   // Paths whose files build values that must satisfy an external wire
   // contract, where no property may arrive through a spread. TypeScript runs
   // no excess-property check on a property a spread brings in, so a renamed or
