@@ -28,6 +28,7 @@ let tempRoot: string;
 // Nothing in the store reads the project record; it only has to exist.
 const projects = {
   findProject: async () => ({ id: PROJECT_ID }),
+  requireProject: async () => undefined,
   ensureProjectStructure: async () => undefined
 } as unknown as AutomationStudioProjectStore;
 

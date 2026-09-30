@@ -1,24 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { conversationStepOutcomeWords, type ConversationStepMessage } from "..";
+import { conversationStepOutcomeWords, type ConversationStepAction } from "..";
 
-function message(overrides: Partial<ConversationStepMessage>): ConversationStepMessage {
-  return { key: "step:b#1", activityId: "b", kind: "decision", title: "Clicking “Next”", outcome: null, atMs: 0, sequence: 1, latest: true, ...overrides };
+function action(overrides: Partial<ConversationStepAction>): ConversationStepAction {
+  return { key: "action:b#1", kind: "click", target: "Next", outcome: "done", why: null, ...overrides };
 }
 
-describe("the outcome line", () => {
-  it("says done or didn't work, with Core's sentence when it has one, and passed or didn't pass for a check", () => {
-    expect(conversationStepOutcomeWords(message({ outcome: { status: "succeeded" } }), false)).toEqual({ state: "succeeded", label: "Done" });
-    expect(conversationStepOutcomeWords(message({ outcome: { status: "failed", text: "The field was covered." } }), false))
-      .toEqual({ state: "failed", label: "Didn't work. The field was covered." });
-    expect(conversationStepOutcomeWords(message({ kind: "check", outcome: { status: "succeeded" } }), false)?.label).toBe("Passed");
-    expect(conversationStepOutcomeWords(message({ kind: "check", outcome: { status: "failed" } }), false)?.label).toBe("Didn't pass");
-    expect(conversationStepOutcomeWords(message({ outcome: null }), true)).toBeNull();
+describe("an action card's outcome line", () => {
+  it("says done or didn't work with why, and passed or didn't pass for a test run", () => {
+    expect(conversationStepOutcomeWords(action({}), false)).toEqual({ state: "done", status: "succeeded", label: "Done" });
+    expect(conversationStepOutcomeWords(action({ outcome: "failed", why: "it wasn't on the page" }), false))
+      .toEqual({ state: "failed", status: "failed", label: "Didn't work: it wasn't on the page" });
+    expect(conversationStepOutcomeWords(action({ outcome: "failed", said: "The field was covered." }), false)?.label).toBe("Didn't work. The field was covered.");
+    expect(conversationStepOutcomeWords(action({ kind: "test" }), false)?.label).toBe("Passed");
+    expect(conversationStepOutcomeWords(action({ kind: "test", outcome: "failed" }), false)?.label).toBe("Didn't pass");
   });
 
-  it("says working on it only on the newest message of work still running", () => {
-    const started = message({ outcome: { status: "started" } });
-    expect(conversationStepOutcomeWords(started, true)).toEqual({ state: "working", label: "Working on it" });
+  it("says waiting for you whenever the work waits on the person", () => {
+    expect(conversationStepOutcomeWords(action({ kind: "permission", outcome: "waiting" }), false)).toEqual({ state: "waiting", status: "waiting", label: "Waiting for you" });
+  });
+
+  it("says working on it only on the newest card of work still running", () => {
+    const started = action({ outcome: "working" });
+    expect(conversationStepOutcomeWords(started, true)).toEqual({ state: "working", status: "running", label: "Working on it" });
     expect(conversationStepOutcomeWords(started, false)).toBeNull();
-    expect(conversationStepOutcomeWords({ ...started, latest: false }, true)).toBeNull();
   });
 });

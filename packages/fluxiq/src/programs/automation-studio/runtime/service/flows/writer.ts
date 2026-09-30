@@ -55,14 +55,14 @@ export class AutomationStudioFlowWriter {
   ) {}
 
   async getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const artifact = await new ProgramJsonStore<JsonObject>(this.paths.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
     if (!Object.keys(artifact).length) throw new Error(`Unknown Automation Studio ${kind}: ${artifactId}`);
     return artifact;
   }
 
   async saveProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifact: unknown }): Promise<unknown> {
-    await this.projects.findProject(input.projectId);
+    await this.projects.requireProject(input.projectId);
     if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
     if (!input.artifact || typeof input.artifact !== "object" || Array.isArray(input.artifact)) throw new Error("Artifact object is required.");
     const artifact = input.artifact as Record<string, unknown>;

@@ -148,9 +148,12 @@ async function executeNodeAttempt(
   if (!definition?.execute) {
     const native = await options.nativeNodeExecutor?.({
       node: executionNode,
-      // Only what an edge brings: a declared port is never filled from a bare
-      // key another node left behind (`node-inputs.ts`).
-      inputs: collectWiredNodeInputs(flow, node, values),
+      // The run's own Flow inputs, then what an edge brings: a declared port is
+      // never filled from a bare key another node left behind (`node-inputs.ts`).
+      // Flow inputs come from `options.inputs`, not `values`, where a node's
+      // bare output key could have overwritten them. The native runtime still
+      // hands the implementation only its declared ports.
+      inputs: { ...(options.inputs ?? {}), ...collectWiredNodeInputs(flow, node, values) },
       ...(options.signal ? { signal: options.signal } : {}),
       hostContext: {
         capabilityIds: hostCapabilities,

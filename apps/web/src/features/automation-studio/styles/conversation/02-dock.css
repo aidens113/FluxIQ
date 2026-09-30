@@ -1,6 +1,6 @@
 /* The conversation overlay: the launcher that is always on screen, the panel
-   it opens, the opening message an empty thread shows, and Core's work
-   folded under the turn.
+   it opens, the opening message an empty thread shows, and FluxIQ's steps
+   with their action cards.
    Role tokens only -- no literal surface colours -- and no letter-spacing. */
 
 .automation-conversation-dock {
@@ -266,57 +266,73 @@
 }
 
 /* FluxIQ's steps: each one its own message on FluxIQ's side, what it did in
-   bold and why after a dash, and a quiet line saying how the action went. */
+   bold and why after a dash, and the action it led to as a card beneath. */
 .automation-conversation-step {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xxs);
+  gap: var(--space-xs);
   min-width: 0;
   font-size: var(--font-size-body);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
-.automation-conversation-thread > li[data-step-key] + li[data-step-key] {
-  margin-top: calc(var(--space-sm) - var(--space-lg));
-}
+.automation-conversation-thread > li[data-step-key] + li[data-step-key] { margin-top: calc(var(--space-sm) - var(--space-lg)); }
 
 .automation-conversation-step-line {
   margin: 0;
   color: var(--color-text);
 }
 
-.automation-conversation-step-line > strong {
-  font-weight: 650;
-}
+.automation-conversation-step-line > strong { font-weight: 650; }
 
-.automation-conversation-step[data-kind="check"] .automation-conversation-step-line > strong,
-.automation-conversation-step[data-kind="step"] .automation-conversation-step-line > strong {
-  font-weight: 600;
-}
+.automation-conversation-step[data-kind="check"] .automation-conversation-step-line > strong { font-weight: 600; }
 
-.automation-conversation-step-outcome {
+/* An action card: the panel's card surface, its icon in a mark tinted with
+   the status-badge tones, the kind and what it acted on, then the outcome. */
+.automation-conversation-action {
   display: flex;
-  align-items: center;
-  gap: var(--space-compact);
-  margin: 0;
-  color: var(--color-text-muted);
+  align-items: flex-start;
+  gap: var(--space-sm);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-compact) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
   font-size: var(--font-size-body-small);
   line-height: 1.45;
 }
 
-.automation-conversation-step-mark {
+.automation-conversation-action-mark {
+  display: grid;
   flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
 }
 
-.automation-conversation-step-outcome[data-state="succeeded"] .automation-conversation-step-mark {
-  color: var(--color-success);
+.automation-conversation-action.tone-info .automation-conversation-action-mark { border-color: var(--color-info-border); background: var(--color-info-surface); color: var(--color-info); }
+.automation-conversation-action.tone-success .automation-conversation-action-mark { border-color: var(--color-success-border); background: var(--color-success-surface); color: var(--color-success); }
+.automation-conversation-action.tone-warning .automation-conversation-action-mark { border-color: var(--color-warning-border); background: var(--color-warning-surface); color: var(--color-warning); }
+.automation-conversation-action.tone-danger .automation-conversation-action-mark { border-color: var(--color-danger-border); background: var(--color-danger-surface); color: var(--color-danger); }
+
+.automation-conversation-action p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-compact);
+  margin: 0;
 }
 
-.automation-conversation-step-outcome[data-state="failed"],
-.automation-conversation-step-outcome[data-state="failed"] .automation-conversation-step-mark {
-  color: var(--color-danger);
-}
+.automation-conversation-action p > span,
+.automation-conversation-action-outcome { color: var(--color-text-muted); }
+.automation-conversation-action.tone-warning .automation-conversation-action-outcome { color: var(--color-warning); }
+.automation-conversation-action.tone-danger .automation-conversation-action-outcome { color: var(--color-danger); }
 
 .automation-conversation-step-spinner {
   width: 9px;
@@ -342,6 +358,7 @@
 }
 
 .automation-conversation-live > div,
+.automation-conversation-action > div,
 .automation-conversation-opening li > div {
   display: flex;
   flex-direction: column;

@@ -88,7 +88,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.paths.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
     return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
   }
@@ -107,7 +107,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.paths.root) return;
     // A missing index reads as empty. One that is present but unreadable throws
     // here, in every ensure method below: it is an error for an operator to see,
@@ -124,7 +124,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.paths.root) return;
     let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId);
     if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
@@ -142,7 +142,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.paths.root) return;
     const index = await this.indexes.readFlowRunIndex(projectId);
     if (!(index.runs ?? []).length) {
@@ -164,7 +164,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.paths.root) return;
     let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId);
     const repository = this.flowMutations.flowSubflowSummaryRepository(projectId);
@@ -189,7 +189,7 @@ export class AutomationStudioSummaryStore {
   }
 
   async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
+    await this.projects.requireProject(projectId);
     if (!this.paths.root) return;
     const index = await this.indexes.readRuntimeIndex(projectId);
     if (!(index.sessions ?? []).length) {
@@ -306,7 +306,7 @@ export class AutomationStudioSummaryStore {
   async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
     if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
     try {
-      await this.projects.findProject(projectId);
+      await this.projects.requireProject(projectId);
       const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
         return await operation(store);
@@ -321,7 +321,7 @@ export class AutomationStudioSummaryStore {
   async tryWithRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
     if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
     try {
-      await this.projects.findProject(projectId);
+      await this.projects.requireProject(projectId);
       const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
         return await operation(store);
