@@ -398,7 +398,7 @@ const MAX_REPRESENTED_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimi
  */
 export function evidenceStepRestoredStep(value: unknown): AutomationStudioLlmEvidenceRestoredStep | undefined {
   if (!isStepRecord(value) || !hasExactFields(value, ["step", "withdrawnAs"]) || !Number.isSafeInteger(value.step) || (value.step as number) < 1) return undefined;
-  if (value.withdrawnAs !== "dropped" && value.withdrawnAs !== "exploratory") return undefined;
+  if (value.withdrawnAs !== "dropped" && value.withdrawnAs !== "exploratory" && value.withdrawnAs !== "taken") return undefined;
   return { step: value.step as number, withdrawnAs: value.withdrawnAs };
 }
 

@@ -332,7 +332,7 @@ function isHandle(value: JsonValue | undefined): value is { handle: string } {
 }
 
 function pressDecision(handle: string): JsonObject {
-  return { kind: "tool_call", callId: `call.${handle}`, toolId: "example.press", input: { handle } };
+  return { kind: "tool_call", callId: `call.${handle}`, toolId: "example.press", input: { handle }, add: true };
 }
 
 function complete(plan: JsonObject): JsonObject {

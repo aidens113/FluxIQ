@@ -382,7 +382,7 @@ function fromDraft(
  * What a refusal hands back in place of the script the model wrote, since it
  * wrote none: the Flow is the draft, and the draft is already in front of it.
  */
-const DRAFT_SCRIPT_NOTE = "The Flow is the list of steps in your draft. Correct it with amend_draft decisions -- drop, exploratory, reorder, rerun -- or run the step it is missing, then finish again.";
+const DRAFT_SCRIPT_NOTE = "The Flow is the steps in your draft that are in the Flow. Correct it with amend_draft decisions -- add, drop, reorder, rerun, repeat -- or run the step it is missing and add it, then finish again.";
 
 /** The plan a refusal is about, and where its nodes are defined. */
 type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };

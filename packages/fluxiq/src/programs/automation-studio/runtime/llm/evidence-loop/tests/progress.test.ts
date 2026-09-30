@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 
 const press = { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const };
-const pressed = (index: number) => ({ kind: "tool_call", callId: `call.${index}`, toolId: "press", input: { target: `target.${index}` } });
+// Presses the Flow needs, added to it as they run (`../../../flow-draft/step.ts`, `taken`).
+const pressed = (index: number) => ({ kind: "tool_call", callId: `call.${index}`, toolId: "press", input: { target: `target.${index}` }, add: true });
 const completed = { kind: "complete", result: { flow: "ready" } };
 const stalled = () => new Error("stalled");
 
@@ -57,7 +58,8 @@ describe("evidence-loop draft progress", () => {
     });
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([
       // Reordering changes position, never identity.
-      ["d2", "dropped"], ["d1", "dropped"], ["d3", "kept"]
+      // A rerun that worked takes the replaced step's place, which stays listed behind it, withdrawn.
+      ["d2", "dropped"], ["d3", "kept"], ["d1", "dropped"]
     ]);
     // A row says what its decision was shown before that row changed the
     // draft. The count includes withdrawn steps, whose dispositions and ids

@@ -302,7 +302,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     // The fresh inspection is the only evidence observed. A three-call build
     // is inside the wrap-up from its first decision (`llm/loop-budget.ts`), so
     // that decision also carries the loop's own `core.budget` entry.
-    const observed = (requests[0]?.context.evidenceLoop?.evidence ?? []).filter((entry) => entry.toolId !== "core.budget");
+    // The draft entry is Core's too: it carries the acts checklist from the first decision.
+    const observed = (requests[0]?.context.evidenceLoop?.evidence ?? []).filter((entry) => entry.toolId !== "core.budget" && entry.toolId !== "core.flow_draft");
     expect(observed).toEqual([expect.objectContaining({ callId: "initial.inspect", toolId: "inspect" })]);
     expect(requests[0]?.context.reusableContext).toMatchObject({ items: [{ advisory: true, recordId: "context.creation", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] }] });
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);

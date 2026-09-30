@@ -1,7 +1,7 @@
 // Asking the caller to run a step again, and reading what it answers.
 //
 // The dry run (`../../flow-draft/dry-run.ts`) decides *that* a draft must be
-// replayed; this is *how* one step of it is asked for. Two calls, both sent
+// replayed; this is *how* one step of it is asked for. Three calls, all sent
 // through the same executor an ordinary tool call goes through:
 //
 //   { replay: "reset", from }        put the target back the way the draft's
@@ -10,6 +10,13 @@
 //   { replay: "step", ...ranWith }   run this step again with exactly what the
 //                                    Flow will run it with, and say whether it
 //                                    reproduced `produced`.
+//   { replay: "verify", ...ranWith,  check this step could run now, or that
+//     from? }                        its effect is already in place, and run
+//                                    nothing: its effect lasts, and a dry run
+//                                    never repeats a lasting effect. `from`
+//                                    is where the step found the target, the
+//                                    caller's own token, carried unread
+//                                    (`../../flow-draft/verify-only.ts`).
 //
 // **Why the executor rather than a seam of its own.** Everything a replay needs
 // is already on that path and already right there: the permission gate wraps
@@ -32,13 +39,19 @@
 // happened, in the caller's own words, belongs in the evidence beside it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftReplayStatus, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
+  type AutomationStudioFlowDraftReplayMode,
+  type AutomationStudioFlowDraftReplayStatus,
+  type AutomationStudioFlowDraftStep
+} from "../../flow-draft/index.ts";
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KEY = "replay";
 
 /** What one replay call asks for. */
-export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step"] as const;
+export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step", "verify"] as const;
 
 export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPLAY_KINDS)[number];
 
@@ -46,6 +59,10 @@ export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPL
 export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   /** It ran, and produced what it produced before. */
   replayed: "core.replay.replayed",
+  /** Asked to check, it could run now and was not run: its target is there and would take the action. */
+  verified: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
+  /** Asked to check, its effect is already in place on the page it acted on, and nothing was run. */
+  present: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
   /** It did not run. */
   failed: "core.replay.failed",
   /** It ran and produced nothing where it had produced something. */
@@ -87,6 +104,25 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
   };
 }
 
+/**
+ * The call that checks one step without running it.
+ *
+ * The same argument the step would run with, so the host resolves the same
+ * target the Flow would act on; where the step found the target, so the host
+ * can tell an effect already in place from a page the steps before it no
+ * longer reach; and no `produced`: nothing is run, so there is nothing to
+ * compare.
+ */
+export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep): JsonObject | undefined {
+  const ranWith = step.ranWith;
+  if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
+  return {
+    ...ranWith,
+    [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
+    ...(step.replay?.from === undefined ? {} : { from: step.replay.from })
+  };
+}
+
 /** Which tool a step's replay is sent to: the one that ran it. */
 export function automationStudioNodeReplayToolId(step: AutomationStudioFlowDraftStep): string {
   return step.toolId ?? step.actionId;
@@ -96,11 +132,19 @@ export function automationStudioNodeReplayToolId(step: AutomationStudioFlowDraft
  * The status a replay's result code names, or `failed` for a code Core does not
  * know.
  *
+ * A check (`mode` `verify`) also passes on `verified` and `present`; the
+ * outcome's own `mode` and code are what tell a reader it was only checked.
+ *
  * Unknown means failed, deliberately. A caller that answered something else
  * either does not implement the replay or answered an error of its own, and
  * both are "this step did not demonstrably run again" -- which is the reading
  * that refuses the proposal rather than the one that waves it through.
  */
-export function automationStudioNodeReplayStatus(resultCode: string | undefined): AutomationStudioFlowDraftReplayStatus {
+export function automationStudioNodeReplayStatus(resultCode: string | undefined, mode: AutomationStudioFlowDraftReplayMode = "replay"): AutomationStudioFlowDraftReplayStatus {
+  // A check's two passing answers pass only a check. A step that was asked to
+  // run and answered that it was not run did not demonstrably run again.
+  if (resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.verified || resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.present) {
+    return mode === "verify" ? "replayed" : "failed";
+  }
   return (resultCode !== undefined && STATUS_BY_CODE[resultCode]) || "failed";
 }

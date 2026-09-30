@@ -62,7 +62,7 @@ describe("a Flow build that runs out, and the build after it", () => {
       // The continuation takes one step of its own -- a build must gather before it may finish -- and then finishes.
       const decision: JsonObject = continuedAt !== undefined && call > continuedAt + 1
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
-        : { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call } };
+        : { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, add: true };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
     });
     const instance = new AutomationStudioService({
@@ -100,5 +100,47 @@ describe("a Flow build that runs out, and the build after it", () => {
     expect(firstLook.find((entry) => entry.toolId === "core.resumed")?.value).toMatchObject({ code: "llm_evidence_loop.resumed", revision: 1, draftSteps: kept!.steps, proposableSteps: kept!.steps });
     // A Flow was proposed, so there is nothing left to continue.
     await expect(storedDraft(project.id, flow.flowId)).resolves.toBeUndefined();
+  });
+
+  // A continued build carries on live from the page as it stands (user,
+  // 2026-09-30). Its calls used to carry the start location like a fresh
+  // build's, and a new process knows no arrival, so the domain refused every
+  // call until the build went back to the start.
+  it("sends the start location on a fresh build's calls and none on the calls of the build that continues it", async () => {
+    const seen: { build: number; startLocation: string | undefined }[] = [];
+    let build = 1;
+    let call = 0;
+    const provider = mockProvider(async () => {
+      call += 1;
+      const decision: JsonObject = { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, add: true };
+      return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+    });
+    const instance = new AutomationStudioService({
+      dataDir: tempRoot,
+      llmProviderResolver: (() => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmEvidenceRuntime: {
+        domainId: "example",
+        deniedEvidenceKeys: [],
+        tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
+        executeTool: async (input) => {
+          seen.push({ build, startLocation: input.startLocation });
+          return { kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" };
+        }
+      }
+    });
+    services.add(instance);
+    const { project, flow } = await blankFixture(instance, "active", "example");
+    const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller(), startLocation: "https://store.test/" };
+
+    await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+    expect((await storedDraft(project.id, flow.flowId))?.steps.length).toBeGreaterThan(0);
+    build = 2;
+    await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+
+    expect(seen.filter((entry) => entry.build === 1).map((entry) => entry.startLocation)).toEqual(expect.arrayContaining(["https://store.test/"]));
+    expect(seen.filter((entry) => entry.build === 1).every((entry) => entry.startLocation === "https://store.test/")).toBe(true);
+    const continued = seen.filter((entry) => entry.build === 2);
+    expect(continued.length).toBeGreaterThan(0);
+    expect(continued.every((entry) => entry.startLocation === undefined)).toBe(true);
   });
 });

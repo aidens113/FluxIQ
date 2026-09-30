@@ -48,7 +48,7 @@ const DRAFT_STEP_ROW_FIELDS = [
  * this reader refused the producer's first packed entry holding a refused press,
  * and three live builds ended on that refusal (`./tests/draft-shown.test.ts`).
  */
-const SHOWN_DISPOSITIONS: ReadonlySet<unknown> = new Set(["kept", "dropped", "exploratory", "did_not_work"]);
+const SHOWN_DISPOSITIONS: ReadonlySet<unknown> = new Set(["kept", "taken", "dropped", "exploratory", "did_not_work"]);
 
 /** What one decision was shown of the draft, and what showing it cost. */
 export type AutomationStudioLlmEvidenceLoopDraftShown = {

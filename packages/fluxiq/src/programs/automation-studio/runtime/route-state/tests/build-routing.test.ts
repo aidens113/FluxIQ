@@ -171,6 +171,8 @@ async function build(script: Script, routing: Routing, options: {
       checkCompletion,
       propagateDecisionErrors: true,
       unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error("stalled") },
+      // Recorded builds, whose drafts were transcripts: every step that ran was kept unless withdrawn.
+      draftAuthoring: "transcript",
       ...limits.loop,
       budget: { ...limits.loop.budget, now: () => 1_790_000_000_000 }
     });
@@ -349,9 +351,12 @@ describe("route-state captures per recorded build", () => {
     // The old trigger is a high-water mark on the shown count, which stops growing once the window is full:
     // it fired rarely, and missed most of the states these builds reached.
     expect(rows).toEqual({
-      "bigbox-run6": { decisions: 37, before: 7, afterReported: 0, afterUnreported: 17, callsBeforeUnseen: 13 },
-      crossborder: { decisions: 22, before: 5, afterReported: 0, afterUnreported: 11, callsBeforeUnseen: 8 },
-      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 32, callsBeforeUnseen: 28 }
+      // A completion the check refuses is no longer tested (2026-09-30; `recorded-runs.ts` says why), so
+      // the decisions after bigbox's 22 and 26, crossborder's 19 and run 4's 40, 44 and 46 have no dry-run
+      // calls before them: 15/12, 10/7 and 29/25 where the logged runs gave 17/13, 11/8 and 32/28.
+      "bigbox-run6": { decisions: 37, before: 6, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 12 },
+      crossborder: { decisions: 22, before: 5, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 7 },
+      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 29, callsBeforeUnseen: 25 }
     });
   });
 

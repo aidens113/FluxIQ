@@ -20,6 +20,7 @@
 // guidance, then the oldest steps -- and a run could not answer "was the model
 // shown its whole draft?" without rebuilding the steps by hand.
 
+import type { JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
@@ -37,12 +38,12 @@ import { automationStudioLlmDecisionContextEntry } from "./entry.ts";
 export function automationStudioLlmDecisionContextShown(input: {
   evidence: readonly AutomationStudioLlmEvidenceEntry[];
   records: readonly AutomationStudioLlmDecisionContextRecord[];
-  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; maxBytes: number; minBytes: number } | undefined;
+  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; maxBytes: number; minBytes: number; authored?: boolean | undefined; acts?: JsonValue | undefined } | undefined;
   budgetEntry?: AutomationStudioLlmEvidenceEntry | undefined;
   maxEvidenceContextBytes: number;
 }): { shown: AutomationStudioLlmEvidenceEntry[]; draftShown?: AutomationStudioLlmEvidenceLoopDraftShown } {
   const historyEntry = automationStudioLlmDecisionContextEntry({ records: input.records, maxBytes: Math.min(4_000, Math.floor(input.maxEvidenceContextBytes / 6)) });
-  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, maxBytes: input.draft.maxBytes }) : undefined;
+  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, maxBytes: input.draft.maxBytes, authored: input.draft.authored, acts: input.draft.acts }) : undefined;
   const draftShown = draftEntry && input.draft
     ? automationStudioLlmEvidenceLoopDraftShown({ value: draftEntry.value, budget: input.draft.maxBytes, minBytes: input.draft.minBytes })
     : undefined;

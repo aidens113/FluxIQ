@@ -38,9 +38,19 @@
 //      already brought back, an amendment that applied nothing, an unusable
 //      decision refused for issues already seen since the last tool result.
 //
-// A call that **applied** an effect is always progress, whatever it answered:
-// two presses of the same control answer `{ok:true}` twice and did two
-// different things.
+// A call that **applied** an effect was always progress, whatever it answered,
+// because two presses of the same control answer `{ok:true}` twice and did two
+// different things. That let a circling build run to the backstop: 24 of 57
+// failed builds of 2026-09-29/30 ended at 64 decisions, `run-munwmfrs-b81bbc65`
+// with 47 applied actions going open, add, open cart ten times over (audit A1,
+// cause 2). So an applied call is progress only when it reaches a state the
+// build has not been in (`stateAfter`, the digest of the page it left); a call
+// that lands on a page already seen, by any tool, is a step without progress.
+// A call with no digest is judged as before. What the model authors is
+// progress too -- a step added to the Flow is the draft advancing -- and the
+// loop clears the count for it wherever it happens. And a refused completion
+// over the same proposed steps for the same issues is a step even after calls
+// between, because refuse, act, refuse the same way again is the same place.
 //
 // **What the loop does about it, in order.** It redirects first and stops last.
 // From `redirectAt` steps it tells the model plainly that it already holds this
@@ -68,8 +78,18 @@ export type AutomationStudioLlmEvidenceNoProgress = {
   answeredFromEvidence(answeredByCallId: string, toolId: string): void;
   /** What the last decision was shown, so a result brought back into view is told from one that never left. */
   shown(callIds: readonly string[]): void;
-  /** Whether this answer is one its own tool already gave. Records it either way. */
-  answerRepeats(input: { toolId: string; answer: string; repeatedAnswer?: number | undefined; mutated: boolean }): boolean;
+  /**
+   * Whether this answer is one its own tool already gave, or, for a call that
+   * applied an effect, whether the state it left is one the build was already
+   * in. Records both either way.
+   */
+  answerRepeats(input: { toolId: string; answer: string; repeatedAnswer?: number | undefined; mutated: boolean; stateAfter?: string | undefined }): boolean;
+  /**
+   * Whether a completion refused for `issueSet` over the draft `signature` was
+   * refused the same way before, since the draft last changed. Records it.
+   * Not reset by a tool call, only by the draft changing.
+   */
+  refusedAgain(signature: string, issueSet: string): boolean;
   /** Record an answer nothing asked for, such as the loop's free first look. */
   answered(toolId: string, answer: string): void;
   /**
@@ -111,6 +131,10 @@ export function automationStudioLlmEvidenceNoProgress(input: {
   let lastShown = new Set<string>();
   const broughtBack = new Set<string>();
   let lastRefusal: readonly string[] = [];
+  // Every state a call left, for the life of the loop: a page seen once is
+  // never new again. And the refusals seen per draft signature.
+  const visited = new Set<string>();
+  const refusals = new Map<string, Set<string>>();
   return {
     get steps() { return steps; },
     reached: () => steps >= input.max,
@@ -142,10 +166,19 @@ export function automationStudioLlmEvidenceNoProgress(input: {
     shown(callIds) {
       lastShown = new Set(callIds);
     },
-    answerRepeats({ toolId, answer, repeatedAnswer, mutated }) {
-      const repeats = !mutated && (repeatedAnswer !== undefined || lastAnswer.get(toolId) === answer);
+    answerRepeats({ toolId, answer, repeatedAnswer, mutated, stateAfter }) {
+      const revisits = mutated && stateAfter !== undefined && visited.has(stateAfter);
+      const repeats = revisits || (!mutated && (repeatedAnswer !== undefined || lastAnswer.get(toolId) === answer));
       lastAnswer.set(toolId, answer);
+      if (stateAfter !== undefined) visited.add(stateAfter);
       return repeats;
+    },
+    refusedAgain(signature, issueSet) {
+      const seen = refusals.get(signature);
+      if (seen?.has(issueSet)) return true;
+      refusals.clear();
+      refusals.set(signature, new Set([...(seen ?? []), issueSet]));
+      return false;
     },
     answered(toolId, answer) {
       lastAnswer.set(toolId, answer);

@@ -25,6 +25,7 @@ export * from "./progress.ts";
 export * from "./decision-dump.ts";
 export * from "./progress-trace.ts";
 export * from "./rerun-replacement.ts";
+export * from "./authored-progress.ts";
 export * from "./rerun-request.ts";
 export * from "./resume.ts";
 export * from "./result.ts";

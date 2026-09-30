@@ -41,7 +41,8 @@ describe("Automation Studio LLM evidence loop", () => {
     // evicted. No mutating tool is offered here, so nothing is shown a draft.
     // `id` is the step's own name, which a position stops being the moment the
     // draft is reordered; what a step says about when it runs is kept under it.
-    expect(result.ok && result.steps).toEqual([{ position: 1, id: "d1", iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "kept" }]);
+    expect(result.ok && result.steps).toEqual([{ position: 1, id: "d1", iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "taken" }]);
+    // Taken, not kept: a step that ran is evidence until the model adds it to the Flow (`../../flow-draft/step.ts`).
     expect(JSON.stringify({ ...result, steps: undefined })).not.toContain("scope");
   });
 

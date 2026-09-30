@@ -16,7 +16,7 @@ const tool = { toolId: "core.run_node", description: "Run a node.", inputSchema:
 
 async function build(answer: "person_done" | "person_stop") {
   const decide = vi.fn()
-    .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.open", parameters: {}, consequences: [] } })
+    .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.open", parameters: {}, consequences: [] }, add: true })
     .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
   const executeTool = vi.fn(async ({ value }: { value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
     if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };

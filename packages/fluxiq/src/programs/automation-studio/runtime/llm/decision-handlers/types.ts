@@ -11,6 +11,7 @@ import type { AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type {
   AutomationStudioLlmEvidenceAmendmentMemory,
+  AutomationStudioLlmEvidenceAuthoredProgress,
   AutomationStudioLlmEvidenceLoopAccounting,
   AutomationStudioLlmEvidenceLoopAnswerability,
   AutomationStudioLlmEvidenceLoopDecision,
@@ -79,10 +80,11 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   lastAction: { callId: string; iteration: number } | undefined;
   /**
    * What the dry run did during the current completion attempt: whether it
-   * replayed at all, and the verdict it showed when it refused. The handler
+   * replayed at all, whether it reused an earlier clean replay instead, and the
+   * verdict it showed when it refused. The handler
    * clears it before the attempt; the loop's gate callbacks fill it.
    */
-  dryRunSeen: { ran: boolean; verdict?: JsonValue };
+  dryRunSeen: { ran: boolean; reused?: boolean; verdict?: JsonValue };
   /**
    * Requests already asked again once, and run then to see whether the page
    * was as the answering call left it (`./answer-check.ts`). Keyed on the
@@ -112,6 +114,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   unusable(step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: AutomationStudioLlmEvidenceRowTransition): { error: unknown } | undefined;
   /** The draft's dry-run gate (`../node-tools/dry-run-gate.ts`). */
   dryRun(): Promise<AutomationStudioFlowDraftDryRunRefusal | undefined>;
+  /** Whether the draft the model authors has advanced; absent under the transcript rule (`../evidence-loop/authored-progress.ts`). */
+  authored: AutomationStudioLlmEvidenceAuthoredProgress | undefined;
 };
 
 /** What the loop does once a handler has answered: ask again, end, or run a rerun as this iteration's call. */

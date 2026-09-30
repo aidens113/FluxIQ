@@ -109,7 +109,7 @@ function shapeOf(record: AutomationStudioLlmDecisionContextRecord): Shape | unde
       const dryRunRefused = Array.isArray(decision.dryRun) && decision.dryRun.length > 0;
       const dryRun: JsonValue | undefined = Array.isArray(decision.dryRun)
         ? decision.dryRun.map((item) => [item.step, closed(item.status)])
-        : decision.dryRun === "clean" ? "clean" : undefined;
+        : decision.dryRun === "clean" || decision.dryRun === "reused_clean" ? decision.dryRun : undefined;
       const shown = dryRun === undefined ? {} : { dryRun };
       const refusalCodes = record.detail ? [record.detail.code, record.detail.refusal, ...(Array.isArray(record.detail.refusals) ? record.detail.refusals : [])] : [];
       const refusal = [...new Set(refusalCodes.flatMap((value) => closed(value) ?? []))];

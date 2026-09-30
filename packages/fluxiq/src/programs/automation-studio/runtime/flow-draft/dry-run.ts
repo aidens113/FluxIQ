@@ -21,6 +21,15 @@
 // refusal is an ordinary issue the loop already knows how to feed back, so the
 // model amends the draft and finishes again rather than the build dying.
 //
+// **When, in the build's lifecycle (user, 2026-09-30).** This replay is the
+// judgement phase: the test run once the model says the Flow is ready and the
+// completion check has accepted it, and again after each repair. It is never
+// part of the live phase -- exploring and writing the draft -- so a completion
+// the check refuses, and a continued build, replay nothing
+// (`../llm/evidence-loop/completion-attempt.ts`, `../llm/evidence-loop/resume.ts`).
+// A refused test leaves the page where it broke, which is where live repair
+// starts.
+//
 // **What Core knows and what it does not.** Core knows which steps the draft
 // proposes, in which order, and what each ran with; it knows nothing about
 // targets, pages or state. So the two things a replay needs from the world --
@@ -33,18 +42,41 @@
 //   failed          -- it did not run. The Flow would not run it either.
 //   changed         -- it ran and produced nothing where it produced something.
 //                      The step before it left the target somewhere else.
-//   unreproducible  -- the reset could not put back what it needed, because the
-//                      step's own effect is remembered beyond the page: a
-//                      consent banner answered once stays answered. That is not
-//                      a fault in the step, and refusing it outright would push
-//                      the model to delete exactly the dismissals round 1 lost.
-//                      So it is a question, asked once: told about it, a model
-//                      that finishes again with the step kept has answered it,
-//                      and the step no longer blocks.
+//   unreproducible  -- the step's target was not there when it was run again.
+//                      The domain answers this for any missing target, so it
+//                      covers two different things it cannot tell apart: a
+//                      site that remembers the step's effect beyond the page (a
+//                      consent banner answered once stays answered), and a
+//                      draft whose earlier steps no longer reach the page this
+//                      step acts on.
+//
+// **All three block, every time.** An unreproducible step used to be a question
+// asked once: a model told about it that finished again with the step kept had
+// "answered", and the step stopped blocking. Live builds showed what that
+// answer was worth. Run 18 (`run-munpwa5r-e7aefe04`) was refused at completion
+// 46 for step 26, finished again unchanged at 47, had its dry run pass on the
+// waved step, and completion 48 was accepted on that cached verdict without
+// replaying -- with the add-to-cart step replaying on the search results page,
+// because an amendment had withdrawn the steps that reach the product page.
+// Run 21 (`run-muntufao-7b7bc04a`) "passed" dry run 5 at decision 64 with step
+// 38 unreproducible; run 33 (`run-munwwkwq-064c4203`) waved two such steps
+// through at decisions 61-64. Insisting is not evidence either way, so it is no
+// longer an answer. What a step that is not always there *is* answered by is
+// the draft saying so: `optional`, or `only_if` on a check (`./routing.ts`),
+// which exempts it through the verdict's `conditional` set. A step dropped,
+// exploratory or that did not work is not proposed, so it is not replayed.
+//
+// **A step whose effect lasts is checked, not run (decision D1).** The reset
+// is a navigation: it never clears site data or logs the person out, so what
+// the site remembers stays remembered, and replaying a save or an add would do
+// it to the person's real account again. Such a step is verified instead --
+// its target could take the action now, or its effect is already in place --
+// and the steps after it are still run (`./verify-only.ts`).
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 /** The entry a dry run's verdict is shown to the model under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID = "core.dry_run";
@@ -84,8 +116,23 @@ export type AutomationStudioFlowDraftReplayOutcome = {
   /** What was run, under the caller's own name for it. */
   actionId: string;
   status: AutomationStudioFlowDraftReplayStatus;
-  /** The caller's code for the answer, carried and never read. */
+  /**
+   * The caller's code for the answer. Read only to tell the two answers to a
+   * check apart (`./verify-only.ts`); every other code is carried unread.
+   */
   resultCode?: string;
+  /**
+   * `verify` when the step was checked rather than run again, because running
+   * it would have repeated a lasting effect (`./verify-only.ts`). Absent, it
+   * was run again.
+   */
+  mode?: "verify";
+  /**
+   * The position of the verified step before this one that moved the target
+   * and whose effect the dry run withheld, set only on a step that then did
+   * not replay (`./verify-only.ts`). Such a step does not refuse the proposal.
+   */
+  withheldBy?: number;
 };
 
 /** One whole replay of the draft. */
@@ -139,30 +186,26 @@ export function automationStudioFlowDraftReplaySignature(steps: readonly Automat
 /**
  * The verdict one replay makes.
  *
- * `asked` is the steps the model has already been told were unreproducible, by
- * `<position>:<actionId>`. A step in it no longer blocks: it was put to the
- * model, and finishing again with it kept is the answer.
- *
  * `conditional` is the ids of the steps a Flow built from this draft would not
  * always run (`./routing.ts`). A replay runs every proposed step once, in
  * order, so a step the Flow takes only in some situations may legitimately not
  * run in the situation the replay is in -- and refusing the proposal for that
  * would refuse exactly the Flow the model was asked to write. This is the
- * honest closure of the question `unreproducible` could only ask: a dismissal
- * the site remembers stops being a question the model answers by insisting, and
- * becomes a step the Flow itself handles.
+ * honest closure of the question `unreproducible` used to ask: a dismissal the
+ * site remembers is not a step the model gets through by insisting, but one the
+ * Flow itself handles. Every other step that did not replay refuses the
+ * proposal, whatever the model was told about it before.
  */
 export function automationStudioFlowDraftDryRunVerdict(input: {
   attempt: number;
   reset: "ok" | "failed";
   outcomes: readonly AutomationStudioFlowDraftReplayOutcome[];
-  asked: ReadonlySet<string>;
   conditional?: ReadonlySet<string>;
 }): AutomationStudioFlowDraftDryRun {
   const outcomes = input.outcomes.map((outcome) => ({ ...outcome }));
   const conditional = input.conditional ?? new Set<string>();
   const blocking = outcomes.filter((outcome) => !(outcome.stepId !== undefined && conditional.has(outcome.stepId))
-    && automationStudioFlowDraftReplayOutcomeBlocks(outcome, input.asked));
+    && automationStudioFlowDraftReplayOutcomeBlocks(outcome));
   return {
     attempt: input.attempt,
     reset: input.reset,
@@ -172,17 +215,19 @@ export function automationStudioFlowDraftDryRunVerdict(input: {
   };
 }
 
-/** Whether one outcome stands in the way of a proposal. */
-export function automationStudioFlowDraftReplayOutcomeBlocks(
-  outcome: AutomationStudioFlowDraftReplayOutcome,
-  asked: ReadonlySet<string>
-): boolean {
-  if (outcome.status === "replayed") return false;
-  if (outcome.status !== "unreproducible") return true;
-  return !asked.has(automationStudioFlowDraftReplayOutcomeKey(outcome));
+/**
+ * Whether one outcome stands in the way of a proposal: any answer but
+ * `replayed`. An `unreproducible` step is not let through for having been
+ * reported before (see the header).
+ */
+export function automationStudioFlowDraftReplayOutcomeBlocks(outcome: AutomationStudioFlowDraftReplayOutcome): boolean {
+  return outcome.status !== "replayed";
 }
 
-/** How one step is named in the set of questions already put to the model. */
+/**
+ * How one step is named among those an earlier dry run already told the model
+ * did not replay. It marks a feedback line `again` and never changes a verdict.
+ */
 export function automationStudioFlowDraftReplayOutcomeKey(outcome: AutomationStudioFlowDraftReplayOutcome): string {
   return `${outcome.step}:${outcome.actionId}`;
 }
@@ -199,22 +244,36 @@ export function automationStudioFlowDraftDryRunIssueCodes(verdict: AutomationStu
   ])];
 }
 
-const DRY_RUN_INSTRUCTION = "Your draft was run again from the beginning with no model attached, the way the finished Flow will run: the target was put back the way your first step found it, and every step you kept was run in order with the argument the Flow will use. "
-  + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. "
+const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run once from the beginning with no model attached, the way the finished Flow will run. The target was put back the way your first step found it, and every step you kept was run in order with the argument the Flow will use. "
+  + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. Repair it live from where the test stopped -- the draft is not run from the beginning again until you say it is ready again. "
   + "failed: the step did not run this time. Rerun it with a corrected argument (amend_draft rerun), or run the step it needed first and keep that one too. "
   + "changed: it ran, and produced nothing where it produced something before -- almost always the step before it left the target somewhere else, so correct the order or the earlier step rather than this one. "
-  + "unreproducible: putting the target back could not undo this step's own effect, which is what happens when a site remembers it -- a consent banner answered once stays answered. "
+  + "unreproducible: the step's target was not there when it was run again. Either the site remembers its effect -- a consent banner answered once stays answered -- or the steps before it no longer reach the page it acts on, and the replay cannot tell which: check that the steps before it still get there. "
   // The honest answer to a step that is not always there. Before routing
   // existed the only answers were "insist" or "delete", and a live build's
   // dismissals were waved through unchecked under the first. Named here rather
   // than only in the draft entry because this refusal is where the model is
   // actually looking at the step that needs it.
   + "A step that is not always needed is not a step to insist on: say so instead, with amend_draft optional, and the Flow carries on when it is not there. Where you ran a check first, amend_draft only_if on this step runs it only when that check succeeded. "
-  + "If the Flow truly does need it on every fresh start, finish again with it kept and it will be accepted; drop it only if the Flow does not need it at all. "
+  // Insisting used to be accepted the second time; runs 18, 21 and 33 shipped
+  // or nearly shipped a step that did not replay that way (see the header).
+  + "So a step that does not replay keeps the Flow from being proposed until it replays, is marked optional (or only_if on a check), or is dropped; finishing again with it unchanged is refused again. Drop it only if the Flow does not need it at all. "
+  + "again: true marks a step an earlier dry run already reported as not replaying. "
+  // Decision D1: a lasting effect is never repeated (`./verify-only.ts`). The
+  // model must not read a checked step as one that was done again.
+  + "verified: the step changes something that lasts, so it was not run again, only checked that it could run now. present: the same kind of step, whose effect is already in place on the page it acted on, so it was not run either. Both pass. "
+  + "afterWithheld names the verified step before this one that moved the page and whose effect was withheld; a step marked with it does not stand in the way of the proposal on its own. "
   + "The target now stands where the replay ended.";
 
-/** What the model is shown of a refused dry run: the verdict, and what to do. */
-export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudioFlowDraftDryRun): JsonObject {
+/**
+ * What the model is shown of a refused dry run: the verdict, and what to do.
+ *
+ * `told` is the steps an earlier dry run of this build already reported as not
+ * replaying, by `automationStudioFlowDraftReplayOutcomeKey`; such a step's line
+ * says `again: true`, so the model can see it is being refused for the same
+ * step a second time rather than a new one.
+ */
+export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudioFlowDraftDryRun, told: ReadonlySet<string> = new Set()): JsonObject {
   return {
     ok: false,
     code: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
@@ -223,8 +282,12 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
     steps: verdict.outcomes.map((outcome) => ({
       step: outcome.step,
       actionId: outcome.actionId,
-      replayed: outcome.status,
-      ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {})
+      // `verified` or `present` for a step that was checked and not run
+      // (`./verify-only.ts`), so the model never believes it was done again.
+      replayed: automationStudioFlowDraftReplayOutcomeWord(outcome),
+      ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
+      ...(outcome.withheldBy !== undefined ? { afterWithheld: outcome.withheldBy } : {}),
+      ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
     })),
     instruction: DRY_RUN_INSTRUCTION
   };

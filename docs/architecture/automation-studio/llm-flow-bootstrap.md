@@ -535,6 +535,48 @@ creation fails as `flow_bootstrap.evidence_unusable_decision`. A usable
 decision resets the count. A completion the check accepts is persisted as it
 was checked.
 
+**The model authors the draft (user, 2026-09-30).** A step the loop runs is
+appended as `taken`: evidence, not a step of the Flow. It enters the Flow only
+when the model adds it, either with `add: true` on the tool call that runs it
+(no extra decision) or with an `add` amendment naming its step (`to` places it,
+`act` names the act it does). Drop, exploratory, reorder, rerun, repeat,
+only_if, on_failed and optional edit the authored Flow as before. A rerun that
+worked takes the replaced step's place: its position, its membership, its acts
+and its routing, and every routing statement naming the old step is rewritten
+to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). The draft entry's
+guidance says so, and the Flow is assembled only from added steps. The loop
+option `draftAuthoring: "transcript"` keeps the old rule, under which every step
+that ran was `kept` unless withdrawn; it exists only to replay builds recorded
+under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
+
+**The instructed acts are the model's checklist from the first decision**
+(audit A1, cause 1). The draft entry carries `acts`: each lasting act the
+instruction asks for, in the person's words, with `done` naming the step of the
+Flow that does it or `todo` saying why none does yet. It is computed each
+decision by the same rule the completion check applies
+(`runtime/flow-bootstrap/instructed-acts/checklist.ts`, `check.ts`
+`automationStudioInstructedActStepFault`), is carried whole and never trimmed,
+and is shown even before any step has run. A step added with `act` is the
+model's claim for that act, so a completion need not name it again; a claim in
+the result names a step by the number the draft shows. The standing decision
+instruction says a Flow is ready only when every act on the checklist is done.
+
+**Progress means the Flow advanced** (audit A1, cause 2). A call that applied
+an effect is no longer progress by itself: one that leaves a state the build
+has already been in (its post-call digest, for the life of the loop, across
+tools) is a step without progress, and so is a completion refused for the same
+issues over the same proposed steps, even after calls between. What clears the
+guard, besides new evidence, is the authored draft advancing: a step entering
+the Flow for the first time, or fewer acts undone than ever before
+(`runtime/llm/evidence-loop/authored-progress.ts`); a step toggled out and back
+in is not new. A redirect names the acts still undone (`actsMissing`) and the
+step to take next.
+
+**A continued build carries no start location on its calls.** Its draft
+already reached the start in the build it continues, so Core does not tell the
+domain to hold it there: exploration carries on from the page as it stands
+(`runtime/service.ts`, the harness registry built for a continuation).
+
 Once drafting has begun and at least one actionable step exists, a provider
 decision also receives a bounded Flow-draft beside entry. Its
 live reservation remains 4,000 UTF-8 bytes: one quarter of the configured
@@ -561,7 +603,9 @@ amendment with its refusals (marked when repeated), the positions of withdrawn
 steps that had applied an effect, the iteration an undo returned the draft to
 and the step it reran; each completion with the draft revision it was checked
 against, its issue codes, the closed codes of the check's feedback and the
-steps the dry run refused (or `clean`, or `not_run`); each unusable reply; and,
+steps the dry run refused (or `clean`, `reused_clean` when the gate answered
+from an earlier clean replay of the same draft, or `not_run`); each unusable
+reply; and,
 beside the rows, each no-progress redirect. Rows hold only closed codes, ids
 and integers, never page content or model prose. Identical decisions are
 grouped with their iterations and carry `sameAs`, the first iteration the same
@@ -735,6 +779,63 @@ establish provider convergence or a live product outcome. Evidence is never
 split into malformed partial JSON to fit the window. The window carries whole
 entries only and no longer lists the calls it leaves out: the decision history
 beside it records every decision.
+
+A build has a live phase and a judgement phase (user, 2026-09-30). In the live
+phase the model explores and writes its draft, and nothing replays the draft
+from its first step: not a completion the check refuses, and not a continued
+build, which carries on from wherever the page stands
+(`runtime/llm/evidence-loop/completion-attempt.ts`,
+`runtime/llm/evidence-loop/resume.ts`). The judgement phase starts when the
+model says the Flow is ready and the completion check accepts it: the draft is
+then dry-run, which is the one full run from where the Flow starts, and a
+refused test sends the model back to live repair from where the test stopped,
+to be tested again the next time it says the Flow is ready
+(`runtime/flow-draft/dry-run.ts`, `runtime/llm/node-tools/dry-run-gate.ts`):
+the target is reset to where the first proposed step started and every
+proposed step is run again in order with the argument the Flow will use, with
+no model attached. Each step answers `replayed`, `failed`, `changed` or
+`unreproducible` (its target was not there on the replay, which the domain
+cannot tell apart from a site that remembers an earlier answer). Every answer
+but `replayed` refuses the completion, on every attempt: finishing again with
+the step unchanged is refused again. The only exemptions are a step the Flow
+would not always run (marked `optional`, made `only_if` on a check, the check
+guarding such a step, or a step another falls back to) and a step no longer
+proposed (dropped, exploratory or failed), which is not replayed. A step
+reported before is marked `again: true` on the next refusal, which changes no
+verdict. Until 2026-09-30 an `unreproducible` step stopped blocking once it had
+been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
+that way with a step that did not replay. A clean verdict is remembered by the
+draft's replay signature (the proposed steps, in order, with what each runs
+with), so a completion over the same unchanged draft is not replayed again; its
+history row says `reused_clean`. A refused draft completed again unchanged is
+replayed at most twice; after that it is judged again from those replays'
+outcomes, which refuses it again unless its failing steps have since been
+marked as not always run (routing is not part of the signature), and a pass
+that way also records `reused_clean`.
+
+A dry run never clears site data or logs the person out, never repeats a
+lasting effect, and checks a changing step rather than running it again
+(decision D1, `runtime/flow-draft/verify-only.ts`). The reset is a navigation
+and nothing more. A proposed step that changes something and declares any
+consequence but none is sent `replay: "verify"` with where it found the target
+(`replay.from`) instead of `replay: "step"`, and the host acts on nothing. It
+answers `core.replay.verified` (the target is there and would take the action),
+`core.replay.present` (the target is gone from the very page the step acted on:
+its effect is already in place, as when a store already chosen shows "Your
+store" instead of its button), or `unreproducible` (gone, and the page is not
+the one the step acted on: the steps before it no longer reach it), `failed`
+otherwise. `verified` and `present` pass, and only for a check; a step asked to
+run that answers either has failed. The model sees the words `verified` and
+`present`, never `replayed`, for a checked step. A step after a verified step
+that does not replay is excused (`afterWithheld`) only when the verified step's
+own run moved the target, which Core reads by comparing the two steps'
+`replay.from` values whole: the withheld effect then left the steps after it on
+the page before the move. A verified step that did not move the target excuses
+nothing, because the site still holds the effect from exploring. Steps that
+declare none (an open, a filter, a navigation) are run again as before, since
+the steps after them stand on them. The build trace prints a dry run's own call
+ids (`dryrun.<attempt>.<step|reset>`), so a completion that replayed can be told
+from one that reused a verdict.
 
 Core's own notes are superseded rather than accumulated. Before a
 `core.request_check`, `core.no_progress`, `core.decision_check`,

@@ -231,16 +231,29 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * this build continues it (`../flow-bootstrap/incomplete-draft/`).
      *
      * Before the first decision the model is told what the last build still
-     * owed (`./evidence-loop/resume.ts`), and the draft is replayed through the
-     * dry run so the target is where the draft leaves it rather than where the
-     * Flow starts. A seed carried from the loop's own steps keeps their replay,
-     * so unlike an extend's seed it is dry-run gated like any draft.
+     * owed (`./evidence-loop/resume.ts`). The draft is not replayed: a
+     * continuation is still the build's live phase, and the model carries on
+     * from wherever the page stands (user, 2026-09-30). A seed carried from the
+     * loop's own steps keeps their replay, so unlike an extend's seed it is
+     * tested like any draft once the model says the Flow is ready.
      */
     resume?: AutomationStudioLlmEvidenceLoopResume;
+    /** The instructed acts as the model's checklist beside the draft, from the first decision (`../flow-bootstrap/instructed-acts/checklist.ts`). */
+    acts?: (steps: readonly AutomationStudioFlowDraftStep[]) => JsonValue | undefined;
+    /** The acts not done yet, by id: what a redirect names and what authored progress counts down. */
+    actsMissing?: (steps: readonly AutomationStudioFlowDraftStep[]) => readonly string[];
   };
   /**
+   * Who decides which steps are in the Flow. Absent, the model: a step that
+   * runs is `taken` until the model adds it (`../flow-draft/step.ts`; user,
+   * 2026-09-30). `"transcript"` keeps every step that ran unless withdrawn, and
+   * is only for replaying a build recorded under that rule.
+   */
+  draftAuthoring?: "transcript";
+  /**
    * Whether a completed result must first have its draft replayed clean
-   * (`runtime/flow-draft/dry-run.ts`).
+   * (`runtime/flow-draft/dry-run.ts`) -- the test of the Flow, asked only once
+   * the completion check has accepted it (`./evidence-loop/completion-attempt.ts`).
    *
    * On by default, and it costs a caller that cannot replay nothing: the gate
    * applies only to a draft whose proposed steps carry what a replay needs, so

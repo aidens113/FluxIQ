@@ -15,6 +15,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
   type AutomationStudioFlowDraftAmendment,
@@ -48,7 +49,7 @@ import type {
  * Flow, and "never repeat a successful mutation" read as "act on one row
  * only": live run `run-munnop9n-5475d593` pressed one Confirm of four and
  * never said repeat. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run: then run each step it needs once, and to do one act to every item of a list do it to one item and state repeat, rather than doing it to each; never repeat a successful mutation merely to try another eventual-workflow value. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result -- except where a core.flow_draft entry is shown: then the result is a Flow you author, and it is ready only when every act on that entry's acts checklist is done by a step you added to the Flow. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run and add to it: then run each step it needs once and add it (a look, a failed try or a detour is never added), and to do one act to every item of a list do it to one item and state repeat, rather than doing it to each; never repeat a successful mutation merely to try another eventual-workflow value. Getting back to a state you were already in is not progress: only a step added to the Flow, or a state you had not reached, is. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
 
 /** How many steps one amendment decision may edit at once. */
 const MAX_AMENDMENTS_PER_DECISION = 16;
@@ -189,7 +190,7 @@ function readReplayRecord(value: unknown): AutomationStudioFlowDraftStepReplay |
  * something to amend, and the loop withdraws it once a run has spent its
  * allowance of them, which no tool does.
  */
-export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true, allowAmend = false): JsonObject {
+export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true, allowAmend = false, authoring = false): JsonObject {
   return {
     oneOf: [
       ...(allowComplete ? [{
@@ -207,12 +208,21 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
         type: "object", additionalProperties: false, required: ["kind", "callId", "toolId", "input"],
         properties: {
           kind: { const: "tool_call" }, callId: { type: "string", pattern: "^[a-zA-Z0-9_.:-]{1,200}$" },
-          toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema)
+          toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema),
+          // Offered where the model authors its draft: promoting the step it is
+          // taking costs no decision of its own (`../flow-draft/step.ts`, `taken`).
+          ...(authoring ? AUTHORING_CALL_PROPERTIES : {})
         }
       }))
     ]
   };
 }
+
+/** What a call may say about the draft, where the model authors it. */
+const AUTHORING_CALL_PROPERTIES: JsonObject = {
+  add: { type: "boolean", description: "true: if this call works, put its step into the Flow now. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}$", description: "The act from the acts checklist this step does, such as a2. Implies add." }
+};
 
 /** The three shapes a decision may take, which is also what a reply may arrive as instead of the wrapper. */
 const DECISION_KINDS = new Set(["tool_call", "complete", "amend_draft"]);
@@ -273,9 +283,17 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown): Automa
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
     return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
-  if (value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage"])
-    && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)) {
-    return { kind: "tool_call", callId: value.callId, toolId: value.toolId, input: value.input, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
+  if (value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage", "add", "act"])
+    && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)
+    && (value.add === undefined || typeof value.add === "boolean")
+    && (value.act === undefined || (typeof value.act === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(value.act)))) {
+    // `act` says the step does an act, which only a step in the Flow can: it adds.
+    const add = value.add === true || value.act !== undefined;
+    return {
+      kind: "tool_call", callId: value.callId, toolId: value.toolId, input: value.input,
+      ...(add ? { add: true as const } : {}), ...(typeof value.act === "string" ? { act: value.act } : {}),
+      ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {})
+    };
   }
   if (value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
     const amendments = readAmendments(value.amendments);
@@ -297,7 +315,8 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
   if (!Array.isArray(value) || !value.length || value.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
   const read: AutomationStudioFlowDraftAmendment[] = [];
   for (const item of value) {
-    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over"])) continue;
+    if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "act"])) continue;
+    if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) continue;
     if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) continue;
     if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) continue;
     if (item.settings !== undefined && !isJsonObject(item.settings)) continue;
@@ -320,7 +339,8 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
       ...(item.input ? { input: item.input } : {}),
       ...(item.check === undefined ? {} : { check: item.check as number }),
       ...(item.through === undefined ? {} : { through: item.through as number }),
-      ...(item.over === undefined ? {} : { over: item.over as number })
+      ...(item.over === undefined ? {} : { over: item.over as number }),
+      ...(item.act === undefined ? {} : { act: item.act as string })
     });
   }
   return read.length ? read : undefined;
@@ -348,7 +368,7 @@ export function automationStudioLlmEvidenceParseRestoredStep(value: unknown): Au
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const { step, withdrawnAs, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length || !Number.isSafeInteger(step) || (step as number) < 1) return undefined;
-  if (withdrawnAs !== "dropped" && withdrawnAs !== "exploratory") return undefined;
+  if (withdrawnAs !== "dropped" && withdrawnAs !== "exploratory" && withdrawnAs !== "taken") return undefined;
   return { step: step as number, withdrawnAs };
 }
 

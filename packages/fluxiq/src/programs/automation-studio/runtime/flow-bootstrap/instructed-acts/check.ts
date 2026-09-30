@@ -89,9 +89,9 @@ const KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonl
 });
 
 const INSTRUCTION = "Nothing was created and this build is still open. "
-  + "missingActs.acts are things the person's instruction asks to be done -- each quote is their own words -- that no kept step of your draft is named as doing, and reason says why. "
-  + "For each one: if a kept step already does it, name that step's id in acts; if none does, run the node that does it (press the control, set the option, open the page), keep it, and name it. "
-  + "Then complete again with acts listing every act by its id (a1, a2 ...) and its step, e.g. [{\"action\": \"a1\", \"step\": \"d7\"}]. A claim that names no act answers none. "
+  + "missingActs.acts are things the person's instruction asks to be done -- each quote is their own words -- that no step in your Flow is named as doing, and reason says why. "
+  + "For each one: if a step in your Flow already does it, say so with amend_draft add on that step and act set to the act's id; if none does, run the node that does it (press the control, set the option, open the page) with add and act on the call. "
+  + "Then complete again. A step you added with act already counts for that act; acts in the result, e.g. [{\"action\": \"a1\", \"step\": \"7\"}], names a step by its number and an act by its id, and a claim that names no act answers none. "
   + "Each act needs a step of its own, and it must be one that changed something.";
 
 /** Said only when a claim named a step that only arrived, so the plain refusal stays as it was. */
@@ -129,7 +129,12 @@ export function checkAutomationStudioInstructedActs(input: {
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
     startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
-  const claims = readClaims(input.result.acts);
+  // An authored step that says which act it does is the model's claim already
+  // (`../../flow-draft/step.ts`, `acts`); a claim written in the result for the
+  // same act id is not read twice.
+  const fromDraft = automationStudioInstructedActDraftClaims(steps);
+  const annotated = new Set(fromDraft.map((claim) => claim.action.toLowerCase()));
+  const claims = [...fromDraft, ...readClaims(input.result.acts).filter((claim) => !annotated.has(claim.action.toLowerCase()))];
   const assigned = assign(acts, choices, claims);
   const used = new Set<AutomationStudioFlowDraftStep>();
   // The step each act was accepted for, so a choice given the same one is told it is its act's press.
@@ -143,9 +148,8 @@ export function checkAutomationStudioInstructedActs(input: {
     }
     const step = findStep(steps, claim.step);
     const named = { step: claim.step.slice(0, 16) };
-    const refused = step ? whyNot(step, act.kind !== "open" && onlyArrives(step)) : "no_such_step";
-    if (refused || !step) missing.push({ ...act, reason: refused ?? "no_such_step", ...named });
-    else if (act.plural && !repeated(step, steps)) missing.push({ ...act, reason: "act_needs_repeat", ...named });
+    const fault = step ? automationStudioInstructedActStepFault(act, step, steps, onlyArrives) : "no_such_step";
+    if (fault || !step) missing.push({ ...act, reason: fault ?? "no_such_step", ...named });
     else if (used.has(step)) missing.push({ ...act, reason: "step_claimed_twice", ...named });
     else {
       used.add(step);
@@ -205,6 +209,34 @@ export function checkAutomationStudioInstructedActs(input: {
   };
 }
 
+/**
+ * Why this step does not do this act, or nothing when it does as far as the
+ * draft can say: in the Flow, an action that changed something, not only the
+ * arrival at the start (unless the act is one of opening), not optional, and
+ * repeated when the act is over a whole set. The one rule the check and the
+ * checklist shown beside the draft both apply (`./checklist.ts`).
+ */
+export function automationStudioInstructedActStepFault(
+  act: AutomationStudioInstructedAct,
+  step: AutomationStudioFlowDraftStep,
+  steps: readonly AutomationStudioFlowDraftStep[],
+  onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean
+): Exclude<AutomationStudioInstructedActMissing["reason"], "no_step_named" | "no_such_step" | "step_claimed_twice" | "choice_is_the_act_step"> | undefined {
+  const refused = whyNot(step, act.kind !== "open" && onlyArrives(step));
+  if (refused) return refused;
+  if (act.plural && !repeated(step, steps)) return "act_needs_repeat";
+  return undefined;
+}
+
+/**
+ * The claims an authored draft already makes: each kept step that says which
+ * acts it does, one claim per act, the step named by its position -- the name
+ * the model reads in the draft.
+ */
+export function automationStudioInstructedActDraftClaims(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioInstructedActClaim[] {
+  return steps.flatMap((step) => step.disposition === "kept" ? (step.acts ?? []).map((act) => ({ action: act, step: `${step.position}` })) : []);
+}
+
 /** What a refusal adds for each reason that needs more than the plain instruction, in this order. */
 const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedActMissing["reason"], string]> = [
   ["step_only_arrives", ARRIVAL_INSTRUCTION],
@@ -217,7 +249,7 @@ const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedAct
  * dropped, changed nothing, only arrived (`arrives`, which the caller decides,
  * since arriving is an act of opening), or may be skipped. Undefined when it can.
  */
-function whyNot(step: AutomationStudioFlowDraftStep, arrives: boolean): AutomationStudioInstructedActMissing["reason"] | undefined {
+function whyNot(step: AutomationStudioFlowDraftStep, arrives: boolean): "step_not_kept" | "step_changed_nothing" | "step_only_arrives" | "step_is_optional" | undefined {
   if (step.disposition !== "kept") return "step_not_kept";
   if (step.effect !== "mutate" || !automationStudioFlowDraftStepIsProposable(step)) return "step_changed_nothing";
   if (arrives) return "step_only_arrives";

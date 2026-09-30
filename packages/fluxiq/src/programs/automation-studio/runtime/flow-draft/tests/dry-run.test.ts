@@ -4,7 +4,8 @@
 // -- which drafts can be replayed at all, what a replay's answers make of them,
 // and what the model is told -- and the loop's is the behaviour: that a refusal
 // asks the model again, that the replay costs no provider call, and that a
-// question about a step the reset could not undo is asked once.
+// step which does not replay keeps refusing however often the model insists.
+// The gate's own bookkeeping across attempts is `../../llm/node-tools/tests/dry-run-gate.test.ts`.
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
@@ -13,6 +14,7 @@ import {
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayable,
   automationStudioFlowDraftReplayFrom,
+  automationStudioFlowDraftReplayOutcomeBlocks,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftReplaySignature,
   type AutomationStudioFlowDraftStep
@@ -78,34 +80,66 @@ describe("what a replay's answers make of a draft", () => {
     ({ step: 1, actionId: "node.click", status: "replayed" as const, ...over });
 
   it("lets a draft whose every step replayed be proposed", () => {
-    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [outcome(), outcome({ step: 2 })], asked: new Set() });
+    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [outcome(), outcome({ step: 2 })] });
     expect(verdict.ok).toBe(true);
     expect(verdict.providerCalls).toBe(0);
   });
 
   it("refuses a draft with a step that did not run, or that stopped producing", () => {
     for (const status of ["failed", "changed"] as const) {
-      expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [outcome({ status })], asked: new Set() }).ok).toBe(false);
+      expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [outcome({ status })] }).ok).toBe(false);
     }
   });
 
   it("replays nothing and refuses when the target could not be put back", () => {
-    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "failed", outcomes: [], asked: new Set() });
+    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "failed", outcomes: [] });
     expect(verdict.ok).toBe(false);
     expect(automationStudioFlowDraftDryRunIssueCodes(verdict)).toContain("core.replay.reset_failed");
   });
 
-  it("asks about a step the reset could not undo once, and takes the answer", () => {
+  it("keeps blocking an unreproducible step on every attempt", () => {
+    // Runs 18, 21 and 33: the second report of the same step used to wave it
+    // through. Nothing the model was told before changes a verdict now.
     const unreproducible = outcome({ status: "unreproducible", resultCode: "core.replay.unreproducible" });
-    const first = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [unreproducible], asked: new Set() });
-    expect(first.ok).toBe(false);
-    const asked = new Set([automationStudioFlowDraftReplayOutcomeKey(unreproducible)]);
-    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 2, reset: "ok", outcomes: [unreproducible], asked }).ok).toBe(true);
+    for (const attempt of [1, 2, 3]) {
+      const verdict = automationStudioFlowDraftDryRunVerdict({ attempt, reset: "ok", outcomes: [outcome({ step: 2 }), unreproducible] });
+      expect(verdict.ok, `attempt ${attempt}`).toBe(false);
+      expect(automationStudioFlowDraftDryRunIssueCodes(verdict)).toEqual([AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, "core.replay.unreproducible"]);
+    }
+    expect(automationStudioFlowDraftReplayOutcomeBlocks(unreproducible)).toBe(true);
+    expect(automationStudioFlowDraftReplayOutcomeBlocks(outcome())).toBe(false);
+  });
+
+  it("lets an unreproducible step the Flow would not always run through, and only that one", () => {
+    const outcomes = [
+      { ...outcome({ status: "unreproducible" }), stepId: "d1" },
+      { ...outcome({ step: 2 }), stepId: "d2" }
+    ];
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes, conditional: new Set(["d1"]) }).ok).toBe(true);
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes, conditional: new Set(["d2"]) }).ok).toBe(false);
+  });
+
+  it("marks a step an earlier dry run already reported, and says finishing unchanged is refused again", () => {
+    const unreproducible = outcome({ step: 26, status: "unreproducible", resultCode: "core.replay.unreproducible" });
+    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 2, reset: "ok", outcomes: [outcome({ step: 2 }), unreproducible] });
+    const told = new Set([automationStudioFlowDraftReplayOutcomeKey(unreproducible), automationStudioFlowDraftReplayOutcomeKey(outcome({ step: 2 }))]);
+    // Only a line that did not replay is marked: step 2 replayed this time.
+    expect(automationStudioFlowDraftDryRunFeedback(verdict, told).steps).toEqual([
+      { step: 2, actionId: "node.click", replayed: "replayed" },
+      { step: 26, actionId: "node.click", replayed: "unreproducible", resultCode: "core.replay.unreproducible", again: true }
+    ]);
+    expect(automationStudioFlowDraftDryRunFeedback(verdict).steps).toEqual([
+      { step: 2, actionId: "node.click", replayed: "replayed" },
+      { step: 26, actionId: "node.click", replayed: "unreproducible", resultCode: "core.replay.unreproducible" }
+    ]);
+    const instruction = String(automationStudioFlowDraftDryRunFeedback(verdict).instruction);
+    expect(instruction).toContain("finishing again with it unchanged is refused again");
+    expect(instruction).not.toContain("it will be accepted");
   });
 
   it("tells the model the issue codes it was refused for, and what each step did", () => {
     const verdict = automationStudioFlowDraftDryRunVerdict({
-      attempt: 2, reset: "ok", asked: new Set(),
+      attempt: 2, reset: "ok",
       outcomes: [outcome(), outcome({ step: 2, status: "changed", resultCode: "core.replay.changed" })]
     });
     expect(automationStudioFlowDraftDryRunIssueCodes(verdict)).toEqual([AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, "core.replay.changed"]);
@@ -124,7 +158,7 @@ describe("the loop's gate on proposing", () => {
   /** One build: press once, finish, and finish again if the first is refused. */
   const build = async (replies: string[]) => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
       if (value.replay === "reset") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
@@ -177,7 +211,7 @@ describe("the loop's gate on proposing", () => {
 
   it("does not replay a caller that says nothing about replaying", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: "after" }, effectApplied: true }));
     const result = await runAutomationStudioLlmEvidenceLoop({

@@ -218,7 +218,7 @@ describe("extending a Flow that already exists", () => {
       decide: async () => {
         decisions += 1;
         const decision = decisions === 1
-          ? { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "widgets" }, consequences: [] } }
+          ? { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "widgets" }, consequences: [] }, add: true }
           : { kind: "complete", result: { summary: "Search the catalog, then read the rows." } };
         return { response: { kind: "evidence_tool_decision", summary: "Search first.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
       }

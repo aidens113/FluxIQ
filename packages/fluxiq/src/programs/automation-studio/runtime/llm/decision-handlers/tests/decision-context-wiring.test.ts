@@ -68,7 +68,7 @@ describe("a completion refused twice over the same draft", () => {
 describe("a request answered from memory", () => {
   it("says what it repeats, how often, and the newest action before it", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.act", toolId: "act", input: {} })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.act", toolId: "act", input: {}, add: true })
       .mockResolvedValueOnce(look("call.2"))
       .mockResolvedValueOnce(look("call.3"))
       .mockResolvedValueOnce({ kind: "complete", result: {} });
@@ -173,7 +173,7 @@ describe("a look asked again, when the caller digests its state", () => {
 describe("an amendment that withdraws a step that worked", () => {
   it("is recorded with the position it withdrew", async () => {
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.act", toolId: "act", input: { choose: "store" } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.act", toolId: "act", input: { choose: "store" }, add: true })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce({ kind: "complete", result: {} });
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true }));

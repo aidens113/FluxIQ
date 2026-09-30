@@ -9,5 +9,6 @@
 // an act's choices travel on the act (`requires`), and whether a step's input
 // makes one is how the check reaches its verdict, not what it offers.
 export * from "./check.ts";
+export * from "./checklist.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";

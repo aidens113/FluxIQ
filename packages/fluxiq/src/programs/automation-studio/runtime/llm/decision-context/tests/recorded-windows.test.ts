@@ -6,7 +6,10 @@
 // replay to the record first -- the same decisions, the same calls in the same
 // order under the same ids, the same result codes and the same dry-run
 // positions -- because a window read off a replay that drifted from the run
-// would describe some other build.
+// would describe some other build. Where Core has since changed deliberately
+// how it answers one of those decisions, the run names that decision and the
+// line it now traces (`now` in `./recorded-runs.ts`), and the replay is held to
+// that line instead; `DIVERGES` pins which decisions those are.
 //
 // Then, for the decisions the debugs of these runs could not see into, it sets
 // what the model was shown on the old code beside what it is shown now:
@@ -28,6 +31,19 @@ import { replayRecordedRun, type RecordedEvidenceEntry, type RecordedRunName, ty
 const HISTORY = "core.evidence_history";
 const WINDOW_BYTES = 24_000;
 const HISTORY_CAP = 4_000;
+
+/**
+ * The decisions each replay is expected to trace differently from its log:
+ * every completion the check refused that the live build dry-ran anyway. Since
+ * 2026-09-30 such a completion is still the build's live phase and is not
+ * tested; the draft is replayed from its first step only once the check
+ * accepts it (`../../evidence-loop/completion-attempt.ts`).
+ */
+const DIVERGES: Readonly<Record<RecordedRunName, readonly number[]>> = {
+  "bigbox-run6": [22, 26],
+  crossborder: [19],
+  "everything-store-run4": [40, 44, 46]
+};
 
 /** How each replay ends: after its last logged call, or on the decision after its last logged one. */
 const ENDING: Readonly<Record<RecordedRunName, string>> = {
@@ -57,7 +73,8 @@ type Old = { entries: number; bytes: number; pages: number; notes: number; noteB
  *     by side, and nothing marking the second as a repeat.
  *   - Run 4 decision 47: the refusals from 40 and 44 and the request check
  *     from 8 dropped with no trace; dry run 1's stale refusal and page shown
- *     although dry runs 2-4 replayed clean.
+ *     although dry runs 2-4 replayed clean. (They were clean only because the
+ *     old gate waved steps 3 and 6 through; they refuse now.)
  */
 const OLD: Readonly<Record<RecordedRunName, Readonly<Record<number, Old>>>> = {
   "bigbox-run6": {
@@ -180,7 +197,8 @@ describe("the replay is the recorded run", () => {
     // `did_not_work`, which `../../evidence-loop/draft-shown.ts` did not accept.
     // With that fixed the loop asks decision 38 and ends on its unreadable answer.
     const run = await replayRecordedRun("bigbox-run6", { pastLog: true });
-    expect(run.rebuilt).toEqual(run.logged);
+    expect(Object.keys(run.diverges).map(Number)).toEqual(DIVERGES["bigbox-run6"]);
+    expect(run.rebuilt).toEqual(run.expected);
     expect(run.result.ok ? undefined : run.result.code).toBe("llm_evidence_loop.invalid_decision");
     expect(run.shown.at(-1)?.iteration).toBe(38);
   });
@@ -188,7 +206,11 @@ describe("the replay is the recorded run", () => {
   for (const name of Object.keys(OLD) as RecordedRunName[]) {
     it(`${name}: every decision, call, result code and dry-run call id as logged`, async () => {
       const run = await replay(name);
-      expect(run.rebuilt).toEqual(run.logged);
+      expect(run.rebuilt).toEqual(run.expected);
+      // The expected run is the log except where the run names a deliberate change.
+      const changed = run.logged.flatMap((line, index) => line === run.expected[index] ? [] : [Number(/^D(\d+)/.exec(line)![1])]);
+      expect(changed).toEqual(DIVERGES[name]);
+      expect(Object.keys(run.diverges).map(Number)).toEqual(DIVERGES[name]);
       // The run ends where the log ends, on the scripted end and not on a guard.
       expect(run.result.ok).toBe(false);
       expect(run.result.ok ? undefined : run.result.code).toBe(ENDING[name]);
@@ -299,13 +321,15 @@ describe("bigbox-run6 decision 22: the superseded notes leave, and pages take th
 });
 
 describe("bigbox-run6 decision 37: every completion is on the record, and the stale dry run is gone", () => {
-  it("completions 22 and 26 are distinct rows with their codes and dry-run refusals; amendment 21 withdrew step 12", async () => {
+  it("completions 22 and 26 are distinct rows with their codes, untested because the check refused them; amendment 21 withdrew step 12", async () => {
     const run = await replay("bigbox-run6");
     const rows = rowsOf(historyAt(run, 37));
     const completions = rows.filter((row) => row.kind === "completion");
     expect(completions.map((row) => row.at)).toEqual([[22], [26]]);
     expect(completions[0]!.code).toEqual(expect.arrayContaining(["bootstrap.cannot_reach_start_location", "bootstrap.completion_profile_limit_exceeded"]));
-    expect(completions[0]!.detail?.dryRun).toEqual([[4, "unreproducible"], [11, "unreproducible"]]);
+    // The check refused both, so neither was tested: no dry run, and nothing
+    // replayed from the first step in the middle of the build's live work.
+    expect(completions.map((row) => row.detail?.dryRun)).toEqual([undefined, undefined]);
     expect(completions[1]!.code).toBe("bootstrap.instructed_act_missing");
     expect(rows.find((row) => row.kind === "amendment" && row.at[0] === 21)?.detail?.withdrewChanged).toEqual([12]);
     const ids = shownAt(run, 37).map((entry) => entry.callId);
@@ -334,11 +358,20 @@ describe("crossborder decisions 13-14: the identical refusal is caught", () => {
 describe("everything-store-run4 decision 47: no refusal is lost, and the stale dry run is gone", () => {
   it("refusals 40, 44 and 46 are all on the record; dry run 1's refusal and page have left; the newest page is shown", async () => {
     const run = await replay("everything-store-run4");
-    const refused = rowsOf(historyAt(run, 47)).filter((row) => row.kind === "completion").flatMap((row) => row.at);
-    expect(refused).toEqual(expect.arrayContaining([40, 44, 46]));
+    const completions = rowsOf(historyAt(run, 47)).filter((row) => row.kind === "completion");
+    expect(completions.flatMap((row) => row.at)).toEqual(expect.arrayContaining([40, 44, 46]));
+    // Only 29's check passed, so only 29 was tested; 40, 44 and 46 were refused
+    // by the check and, being live work still, not replayed from the first step.
+    expect(completions.find((row) => row.at.includes(29))?.detail?.dryRun).toEqual([[3, "unreproducible"], [6, "unreproducible"]]);
+    for (const at of [40, 44, 46]) {
+      expect(completions.find((row) => row.at.includes(at))?.detail?.dryRun, `completion ${at}`).toBeUndefined();
+    }
     const ids = shownAt(run, 47).map((entry) => entry.callId);
     expect(ids).not.toContain("core.dry_run.1");
     expect(ids).not.toContain("dryrun.1.3");
+    // The newest page is the live one the model's own work left, `cartextract5`,
+    // which dry runs 2-4 used to push out of the window.
     expect(ids).toContain("cartextract5");
+    expect(ids.filter((id) => id.startsWith("dryrun.") || id.startsWith("core.dry_run."))).toEqual([]);
   });
 });

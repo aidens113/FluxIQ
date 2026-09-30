@@ -96,6 +96,12 @@ export function automationStudioLlmEvidenceHandleAmendment(
     noProgress.stepped();
     if (noProgress.reached()) return end("llm_evidence_loop.repeat_without_progress");
     noProgress.redirect(iteration);
+  } else if (!rerun.request && context.authored?.advanced()) {
+    // Where the model authors its draft, an edit that put a step in the Flow
+    // for the first time, or left fewer acts undone than ever, is the draft
+    // advancing, which is what progress means there
+    // (`../evidence-loop/authored-progress.ts`). A toggle is not.
+    noProgress.cleared();
   }
   // The model is told which of its amendments changed nothing and why, as
   // evidence, before it is asked again -- the same way a refused completion

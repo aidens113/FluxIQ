@@ -9,7 +9,7 @@ const press = { toolId: "press", description: "Press a control.", inputSchema: {
 const tools = [inspect, press];
 const stalled = () => new Error("stalled");
 
-const pressed = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` } });
+const pressed = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` }, add: true });
 
 describe("the draft a build accrues", () => {
   it("keeps every action it took, with the argument it was given, in order", async () => {

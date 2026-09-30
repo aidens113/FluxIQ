@@ -1,8 +1,9 @@
 // What a continued build's first decision is told about the build it
 // continues: codes, counts and Core's own words, never page content.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID, automationStudioLlmEvidenceResumeEntry } from "../resume.ts";
 
 function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
@@ -52,5 +53,26 @@ describe("the entry a continued build starts from", () => {
     expect(outstanding).not.toContain("has spaces");
     expect(outstanding).not.toContain("<script>");
     expect(outstanding.every((code) => code.length <= 100)).toBe(true);
+  });
+});
+
+// A continuation is still the build's live phase (user, 2026-09-30): its
+// draft is not replayed from the first step before the model decides. It used
+// to be, to put the page where the draft left it.
+describe("a continued build", () => {
+  it("replays nothing before its first decision, and is told the page is where it stands", async () => {
+    const replayable = (position: number): AutomationStudioFlowDraftStep => step(position, { id: `s${position}`, toolId: "press", ranWith: { target: `t.${position}` }, proposes: true, replay: { from: { location: "https://store.test/start" } } });
+    const executeTool = vi.fn(async (): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" }));
+    const decide = vi.fn().mockResolvedValue({ kind: "recorded_run_ended" });
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" }],
+      decide, executeTool, maxIterations: 1, maxToolCalls: 1,
+      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") },
+      draft: { seed: [replayable(1), replayable(2)], resume: { revision: 1, stopped: "iterations", outstandingIssueCodes: [] } }
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    const shown = (decide.mock.calls[0]![0] as { evidence: { toolId: string; value: { instruction?: string } }[] }).evidence;
+    const resumed = shown.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID)!;
+    expect(resumed.value.instruction).toContain("They were not run again");
   });
 });

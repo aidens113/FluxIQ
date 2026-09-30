@@ -1,6 +1,8 @@
-// One attempt to finish, asked of the caller's check and the draft's dry run
-// together. The dry run used to wait for the check to pass, which is how a
-// build learned at decision 27 what was already true at 24.
+// One attempt to finish: the caller's check, then the test of the Flow only
+// once the check accepted it. A completion the check refuses is still live
+// work, and replaying the draft from its first step then is the defect the user
+// saw in live builds (2026-09-30): explore a step, finish too early, and the
+// whole draft ran again, every time.
 
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
@@ -25,15 +27,14 @@ describe("one attempt to finish", () => {
     await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, dryRun: async () => undefined })).resolves.toEqual({ kind: "accepted" });
   });
 
-  it("replays the draft even when the check refused, and reports both refusals at once, the check's first", async () => {
-    const dryRun = vi.fn(async () => ({ issueCodes: ["dry_run.step_failed", "check.one"] }));
+  it("does not replay the draft when the check refused, and answers from the check alone", async () => {
+    const dryRun = vi.fn(async () => ({ issueCodes: ["dry_run.step_failed"] }));
     const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: () => ({ ...refusal("check.one", "check.two"), answerability }), dryRun });
 
-    expect(dryRun).toHaveBeenCalledTimes(1);
-    // One code once, whichever of the two raised it.
+    expect(dryRun).not.toHaveBeenCalled();
     expect(attempt).toEqual({
       kind: "refused",
-      issueCodes: ["check.one", "check.two", "dry_run.step_failed"],
+      issueCodes: ["check.one", "check.two"],
       feedback: { code: "completion_refused", issues: ["check.one", "check.two"] },
       answerability
     });
@@ -92,7 +93,7 @@ describe("one attempt to finish", () => {
   });
 
   it("ends as the dry run ends, when it was cancelled or ran out of evidence room", async () => {
-    await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: () => refusal("a.issue"), dryRun: async () => "cancelled" }))
+    await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: () => ({ ok: true }), dryRun: async () => "cancelled" }))
       .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.cancelled" });
     await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, dryRun: async () => "evidence_limit" }))
       .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.evidence_limit" });

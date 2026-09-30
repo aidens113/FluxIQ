@@ -19,7 +19,8 @@ import {
 const press = { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const };
 const tools = [press];
 const stalled = () => new Error("stalled");
-const pressed = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` } });
+// Each press is one the Flow needs, so it is added to the Flow as it runs.
+const pressed = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` }, add: true });
 const complete = { kind: "complete", result: { flow: "..." } };
 
 /** A tool that always works, with an evidence value of the size asked for. */
@@ -87,7 +88,7 @@ describe("an amendment the draft refused", () => {
   it("names the reason the draft computed, not a guess at the step meant", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
-      // The step is already kept, which is what it starts as.
+      // The step is already in the Flow: it was added as it ran.
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "keep" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({

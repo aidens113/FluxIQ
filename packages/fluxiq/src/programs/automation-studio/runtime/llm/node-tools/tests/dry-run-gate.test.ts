@@ -1,13 +1,179 @@
-// The dry-run gate replays a draft once per version of it (lane t195, run
+// The gate the loop asks before it accepts a result, across attempts.
+//
+// The verdict of one replay is `../../../flow-draft/tests/dry-run.test.ts`.
+// This is what the gate carries from one completion to the next: the clean
+// verdict it may reuse, and the steps it has already reported. The shapes are
+// the live builds that showed the old rule unsound -- an unreproducible step
+// reported once was waved through the next time:
+//
+//   - run 18 (`run-munpwa5r-e7aefe04`): refused at 46 for step 26, waved at 47,
+//     and completion 48 accepted on 47's cached "clean" verdict without
+//     replaying;
+//   - run 21 (`run-muntufao-7b7bc04a`): dry run 5 at decision 64 "passed" with
+//     step 38 unreproducible;
+//   - run 33 (`run-munwwkwq-064c4203`): two unreproducible steps waved through
+//     at decisions 61-64.
+//
+// And the cap on replaying one unchanged draft (lane t195, run
 // `run-muntu7in-e3dd1972`: one unchanged draft completed fourteen times, 401 of
-// the build's 537 seconds spent replaying it, and the build ran out of time).
+// the build's 537 seconds spent replaying it, and the build ran out of time):
+// an unchanged draft is replayed twice, then judged from what those replays
+// found -- still refused, never waved.
+//
+// Each step here is a kept press that says how to run it again; the executor
+// answers each replayed step from a table by position.
+// The llm barrel first, as `../../decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it, vi } from "vitest";
+import {
+  automationStudioFlowDraftDryRunGate,
+  type AutomationStudioFlowDraftDryRunRefusal,
+  type AutomationStudioLlmEvidenceToolExecutionResult
+} from "../../index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES } from "../replay.ts";
-import { automationStudioFlowDraftDryRunGate } from "../dry-run-gate.ts";
 
-function step(position: number, target: string): AutomationStudioFlowDraftStep {
+const UNREPRODUCIBLE = "core.replay.unreproducible";
+const REPLAYED = "core.replay.replayed";
+
+const step = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+  position,
+  id: `d${position}`,
+  iteration: position,
+  actionId: "web.click",
+  input: { node: "web.click", parameters: {} },
+  ranWith: { node: "web.click", parameters: { target: `#s${position}` }, consequences: [] },
+  effect: "mutate",
+  effectApplied: true,
+  disposition: "kept",
+  proposes: true,
+  replay: { from: { location: "https://store.test/start" } },
+  ...over
+});
+
+/** A gate over `steps`, whose replayed steps answer `answers[position]` (replayed when absent). */
+function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number, string>) {
+  const calls: string[] = [];
+  const shown: { callId: string; toolId: string; value: JsonValue }[] = [];
+  let reused = 0;
+  const executeTool = async ({ callId, value }: { callId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+    calls.push(callId);
+    if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: REPLAYED };
+    const code = answers[Number(callId.split(".").pop())] ?? REPLAYED;
+    return { kind: "llm_evidence_tool_execution", evidence: { page: callId }, effectApplied: code === REPLAYED, resultCode: code };
+  };
+  const gate = automationStudioFlowDraftDryRunGate({
+    enabled: true,
+    steps,
+    maxEvidenceBytes: 10_000,
+    executeTool,
+    reserveEvidence: (value) => JSON.stringify(value).length,
+    showEvidence: (entry) => { shown.push(entry); },
+    targetMoved: () => {},
+    reusedClean: () => { reused += 1; }
+  });
+  /** One completion: what the gate answered, and the replay calls it made. */
+  const complete = async (): Promise<{ answer: AutomationStudioFlowDraftDryRunRefusal | undefined; ran: string[] }> => {
+    const from = calls.length;
+    const answer = await gate();
+    return { answer, ran: calls.slice(from) };
+  };
+  const lastVerdict = (): JsonObject => shown.filter((entry) => entry.toolId === "core.dry_run").at(-1)!.value as JsonObject;
+  return { complete, lastVerdict, reused: () => reused };
+}
+
+const refusedFor = (...codes: string[]) => ({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, ...codes] });
+const verdictStep = (verdict: JsonObject, position: number) => (verdict.steps as JsonObject[]).find((line) => line.step === position);
+
+describe("an unreproducible step keeps blocking completion until it replays or leaves the Flow", () => {
+  it("run 18: refused at 46, refused again at 47 rather than waved, and 48 judged from those replays and refused", async () => {
+    const run = harness([step(2), step(26)], { 26: UNREPRODUCIBLE });
+
+    const at46 = await run.complete();
+    expect(at46.answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(at46.ran).toEqual(["dryrun.1.reset", "dryrun.1.2", "dryrun.1.26"]);
+    expect(verdictStep(run.lastVerdict(), 26)).not.toHaveProperty("again");
+
+    // The same draft, finished again unchanged: the old rule's "answer".
+    const at47 = await run.complete();
+    expect(at47.answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(verdictStep(run.lastVerdict(), 26)).toMatchObject({ replayed: "unreproducible", again: true });
+
+    // Nothing clean was cached, so 48 is not accepted. The draft has now been
+    // replayed twice unchanged, so it is judged from those replays rather than
+    // replayed a third time -- and judged the same way.
+    const at48 = await run.complete();
+    expect(at48.ran).toEqual([]);
+    expect(at48.answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(verdictStep(run.lastVerdict(), 26)).toMatchObject({ replayed: "unreproducible", again: true });
+    expect(run.reused()).toBe(0);
+  });
+
+  it("run 21: step 38 refuses the completion at 62 and again at 64, with the draft amended between", async () => {
+    const steps = [step(2), step(38)];
+    const run = harness(steps, { 38: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    // An amendment that leaves step 38 as it was: a new step after it.
+    steps.push(step(40));
+    const at64 = await run.complete();
+    expect(at64.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.38", "dryrun.2.40"]);
+    expect(at64.answer).toEqual(refusedFor(UNREPRODUCIBLE));
+  });
+
+  it("run 33: two unreproducible steps refuse every one of four completions", async () => {
+    const run = harness([step(2), step(12), step(20)], { 12: UNREPRODUCIBLE, 20: UNREPRODUCIBLE });
+    const ran: number[] = [];
+    for (const decision of [61, 62, 63, 64]) {
+      const completed = await run.complete();
+      expect(completed.answer, `decision ${decision}`).toEqual(refusedFor(UNREPRODUCIBLE));
+      ran.push(completed.ran.length);
+    }
+    // Replayed at 61 and 62, judged from those at 63 and 64.
+    expect(ran).toEqual([4, 4, 0, 0]);
+    expect((run.lastVerdict().steps as JsonObject[]).filter((line) => line.again === true).map((line) => line.step)).toEqual([12, 20]);
+  });
+
+  it("passes the same step once it replays, and then reuses that clean verdict without replaying", async () => {
+    const answers: Record<number, string> = { 26: UNREPRODUCIBLE };
+    const run = harness([step(2), step(26)], answers);
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    delete answers[26];
+    const clean = await run.complete();
+    expect(clean.answer).toBeUndefined();
+    expect(clean.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.26"]);
+    expect(run.reused()).toBe(0);
+    // A truly clean draft completed again unchanged is not replayed again.
+    const again = await run.complete();
+    expect(again).toEqual({ answer: undefined, ran: [] });
+    expect(run.reused()).toBe(1);
+  });
+
+  it("passes the same step once it is marked optional, or only_if on a check", async () => {
+    for (const routing of [{ kind: "optional" as const }, { kind: "only_if" as const, check: "d2" }]) {
+      const steps = [step(2), step(26)];
+      const run = harness(steps, { 26: UNREPRODUCIBLE });
+      expect((await run.complete()).answer, routing.kind).toEqual(refusedFor(UNREPRODUCIBLE));
+      steps[1]!.routing = routing;
+      // Still replayed, and still unreproducible: the Flow says it is not always there.
+      const marked = await run.complete();
+      expect(marked.ran, routing.kind).toContain("dryrun.2.26");
+      expect(marked.answer, routing.kind).toBeUndefined();
+    }
+  });
+
+  it("passes once the step is dropped, because a step not proposed is not replayed", async () => {
+    const steps = [step(2), step(26)];
+    const run = harness(steps, { 26: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    steps[1]!.disposition = "dropped";
+    const dropped = await run.complete();
+    expect(dropped.ran).toEqual(["dryrun.2.reset", "dryrun.2.2"]);
+    expect(dropped.answer).toBeUndefined();
+  });
+});
+
+// The cap on replaying one unchanged draft, over presses that name only a target.
+function pressOn(position: number, target: string): AutomationStudioFlowDraftStep {
   return {
     position,
     id: `d${position}`,
@@ -25,7 +191,7 @@ function step(position: number, target: string): AutomationStudioFlowDraftStep {
 }
 
 /** A page on which the step pressing `#gone` no longer replays, as a Confirm already pressed does not. */
-function gate(steps: AutomationStudioFlowDraftStep[]) {
+function gate(steps: AutomationStudioFlowDraftStep[], reusedClean?: () => void) {
   const executeTool = vi.fn(async ({ value }: { value: JsonObject }): Promise<JsonValue> => {
     const resultCode = value.replay === "reset"
       ? AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed
@@ -41,14 +207,15 @@ function gate(steps: AutomationStudioFlowDraftStep[]) {
     executeTool,
     reserveEvidence: () => 1,
     showEvidence: (entry) => shown.push(entry.callId),
-    targetMoved
+    targetMoved,
+    ...(reusedClean ? { reusedClean } : {})
   });
   return { dryRun, executeTool, shown, targetMoved };
 }
 
 describe("the dry run of a draft completed again unchanged", () => {
   it("is replayed twice, then refused from what those replays found without a third", async () => {
-    const steps = [step(1, "#open"), step(2, "#gone")];
+    const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
     const run = gate(steps);
 
     const first = await run.dryRun();
@@ -65,22 +232,25 @@ describe("the dry run of a draft completed again unchanged", () => {
   });
 
   it("is judged again, not replayed, when a routing word makes the failing step one the Flow does not always run", async () => {
-    const steps = [step(1, "#open"), step(2, "#gone")];
-    const run = gate(steps);
+    const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
+    const reused = vi.fn();
+    const run = gate(steps, reused);
     await run.dryRun();
     await run.dryRun();
 
     steps[1]!.routing = { kind: "optional" };
     expect(await run.dryRun()).toBeUndefined();
     expect(run.executeTool).toHaveBeenCalledTimes(6);
+    // Passed on an earlier replay, so the attempt records it as reused.
+    expect(reused).toHaveBeenCalledTimes(1);
   });
 
   it("is replayed again once the steps themselves change", async () => {
-    const steps = [step(1, "#open"), step(2, "#gone")];
+    const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
     const run = gate(steps);
     await run.dryRun();
 
-    steps[1] = step(2, "#there");
+    steps[1] = pressOn(2, "#there");
     expect(await run.dryRun()).toBeUndefined();
     expect(run.executeTool).toHaveBeenCalledTimes(6);
   });

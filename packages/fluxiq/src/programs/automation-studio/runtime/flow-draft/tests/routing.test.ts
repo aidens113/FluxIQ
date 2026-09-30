@@ -101,8 +101,8 @@ describe("a replay of a draft that branches", () => {
       { step: 1, stepId: "d1", actionId: "press", status: "failed" as const },
       { step: 2, stepId: "d2", actionId: "press", status: "replayed" as const }
     ];
-    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes, asked: new Set() }).ok).toBe(false);
-    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes, asked: new Set(), conditional }).ok).toBe(true);
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes }).ok).toBe(false);
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes, conditional }).ok).toBe(true);
   });
 
   it("still refuses an unconditional step that did not replay", () => {
@@ -115,7 +115,6 @@ describe("a replay of a draft that branches", () => {
         { step: 1, stepId: "d1", actionId: "press", status: "failed" },
         { step: 2, stepId: "d2", actionId: "press", status: "changed" }
       ],
-      asked: new Set(),
       conditional: automationStudioFlowDraftConditionalStepIds(draft)
     });
 
@@ -139,7 +138,6 @@ describe("a replay of a draft that branches", () => {
         { step: 3, stepId: "d3", actionId: "press", status: "failed" },
         { step: 4, stepId: "d4", actionId: "press", status: "replayed" }
       ],
-      asked: new Set(),
       conditional: automationStudioFlowDraftConditionalStepIds(draft)
     });
     expect(verdict.ok).toBe(true);

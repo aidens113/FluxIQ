@@ -94,6 +94,13 @@ export type RecordedRunReplay = {
   rebuilt: string[];
   /** The log's transcription, in the same format. */
   logged: string[];
+  /**
+   * What the current code is expected to rebuild: `logged`, with each line the
+   * run's `now` names replaced. The replay is held to this, line for line.
+   */
+  expected: string[];
+  /** The iterations whose expected line is not the logged one, and why. */
+  diverges: Readonly<Record<number, string>>;
   /** Iterations scripted as a request answered from memory. */
   answered: number[];
   /**
@@ -112,6 +119,8 @@ const DETECT_TOOL_ID = "web.detect_repeating_structure";
 const RUN_NODE_TOOL_ID = "core.run_node";
 /** Run 4 logged no completion check, so what its checks refused is not known. */
 const UNLOGGED_CHECK_CODE = "recorded.unlogged_completion_refusal";
+/** Why a logged completion that the check refused no longer runs its dry run. */
+const NOT_TESTED_WHILE_THE_CHECK_REFUSES = "a completion the check refuses is still live work and is not tested; the draft is replayed only once the check accepts it";
 
 /** A settings-only edit of one kept step: the stand-in for an amendment whose content was not logged. */
 const unlogged = (step: number, iteration: number, as: "keep" | "exploratory" = "keep"): AutomationStudioFlowDraftAmendment[] =>
@@ -129,6 +138,13 @@ type RecordedRun = {
   checks: Readonly<Record<number, CheckScript>>;
   /** Whether this run's build logged its completion checks. */
   logsChecks: boolean;
+  /**
+   * Decisions the current code answers differently from the build that was
+   * logged, each as the line it now traces and why. The rest of the log is
+   * still what the replay must rebuild exactly; a line here is a known,
+   * deliberate change of Core's, never a gap in the replay.
+   */
+  now?: Readonly<Record<number, { line: string; why: string }>>;
 };
 
 // ---------------------------------------------------------------------------
@@ -274,7 +290,21 @@ D37 tool_call | pick-millbrook-3 web.action.succeeded
     // have done, and the kept mutating steps are 21 and 22.
     26: refusal([actsMissing([{ id: "a2", kind: "add_to", verb: "add" }], ["d21", "d22"])])
   },
-  logsChecks: true
+  logsChecks: true,
+  now: {
+    // Both completions were refused by the check, and since 2026-09-30 a
+    // completion the check refuses is not tested: it is still the live phase,
+    // and the draft is replayed from its first step only once the check accepts
+    // it (`../../evidence-loop/completion-attempt.ts`). So neither dry run runs.
+    22: {
+      line: "D22 complete | check ok=false issues=bootstrap.completion_profile_limit_exceeded,bootstrap.cannot_reach_start_location",
+      why: NOT_TESTED_WHILE_THE_CHECK_REFUSES
+    },
+    26: {
+      line: "D26 complete | check ok=false issues=bootstrap.instructed_act_missing",
+      why: NOT_TESTED_WHILE_THE_CHECK_REFUSES
+    }
+  }
 };
 
 /** Crossborder marketplace: `t174-slot-1/run-munda7ub-d9214e3b`. */
@@ -325,7 +355,11 @@ D22 tool_call | act1 web.action.rejected.target_not_found
     // Which act is not traced; the kept mutating step at 19 is 10 (`nav6`).
     19: refusal([actsMissing([{ id: "a1", kind: "submit", verb: "buy" }], ["d10"])])
   },
-  logsChecks: true
+  logsChecks: true,
+  now: {
+    // Refused by the check, so not tested (see bigbox-run6's 22 and 26).
+    19: { line: "D19 complete | check ok=false issues=bootstrap.instructed_act_missing", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }
+  }
 };
 
 /** Run 4, everything-store: `t174-slot-2/run-munaiz76-7026748c`. */
@@ -411,7 +445,20 @@ D47 complete
     46: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
     47: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")])
   },
-  logsChecks: false
+  logsChecks: false,
+  now: {
+    // The live build's checks refused 40, 44, 46 and 47 (it accepted nothing
+    // here), and each of the first three ran a dry run; 47 reused dry run 4's
+    // "clean" verdict, because the gate had waved steps 3 and 6 through from dry
+    // run 2 on. Two changes since: an unreproducible step refuses every
+    // completion (`../../../flow-draft/dry-run.ts`), and a completion the check
+    // refuses is not tested at all (`../../evidence-loop/completion-attempt.ts`).
+    // The second decides it: none of the four runs a dry run, and dry run 1 at
+    // 29, whose check passed, is the only one. 47 traces as logged again.
+    40: { line: "D40 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    44: { line: "D44 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    46: { line: "D46 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }
+  }
 };
 
 const RUNS: Readonly<Record<RecordedRunName, RecordedRun>> = {
@@ -493,9 +540,18 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
   const pageBytes = options.pageBytes ?? 5_800;
   const detectBytes = options.detectBytes ?? 2_000;
   const logged = readLog(run.log);
-  const byIteration = new Map(logged.map((decision) => [decision.iteration, decision] as const));
-  // Every logged call's result code, by call id: the model's calls, the reruns, and each dry-run call.
-  const codes = new Map(logged.flatMap((decision) => decision.events.flatMap((event) => event.kind === "call" ? [[event.callId, event.code] as const] : [])));
+  // The log, with each decision the current code is known to answer differently
+  // replaced by what it now traces. The model's decisions are the log's either way.
+  const now = new Map(Object.entries(run.now ?? {}).map(([iteration, change]) => {
+    const [line] = readLog(change.line);
+    if (!line || line.iteration !== Number(iteration)) throw new Error(`recorded run ${name}: the line expected at ${iteration} is for another decision`);
+    if (!logged.some((decision) => decision.iteration === line.iteration && decision.kind === line.kind)) throw new Error(`recorded run ${name}: the log has no ${line.kind} at ${iteration} to replace`);
+    return [line.iteration, line] as const;
+  }));
+  const expected = logged.map((decision) => now.get(decision.iteration) ?? decision);
+  const byIteration = new Map(expected.map((decision) => [decision.iteration, decision] as const));
+  // Every expected call's result code, by call id: the model's calls, the reruns, and each dry-run call.
+  const codes = new Map(expected.flatMap((decision) => decision.events.flatMap((event) => event.kind === "call" ? [[event.callId, event.code] as const] : [])));
   const kindOf = (callId: string, toolId: string, code: string): CallKind =>
     toolId === DETECT_TOOL_ID ? "detect" : run.reads.has(callId) ? "read" : code.startsWith("web.inspect.") || callId === `initial.${RUN_NODE_TOOL_ID}` ? "snapshot" : "action";
 
@@ -637,6 +693,8 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     // looks stay on offer. `../../decision-handlers/tests/state-digest-cost.test.ts` replays a
     // recorded build with both.
     lookWithdrawal: false,
+    // And every step that ran was kept unless withdrawn: the model did not author these drafts (`../../loop-configuration.ts`, `draftAuthoring`).
+    draftAuthoring: "transcript",
     ...limits.loop,
     budget: { ...limits.loop.budget, now: () => fixedClock },
     decide,
@@ -651,6 +709,8 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     result,
     rebuilt: rebuilt.map(logLine),
     logged: logged.map(logLine),
+    expected: expected.map(logLine),
+    diverges: Object.fromEntries(Object.entries(run.now ?? {}).map(([iteration, change]) => [iteration, change.why])),
     answered,
     coreEntries: coreEntries(shown, result.trace)
   };
