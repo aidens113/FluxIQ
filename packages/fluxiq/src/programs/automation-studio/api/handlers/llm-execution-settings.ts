@@ -1,8 +1,13 @@
 // Flow metadata may pin live LLM execution. Reject anything but the supported
 // provider and model, and hold every limit inside its bound.
 
-import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
+import { automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
+
+// The most provider calls a Flow may pin. The run's own budget, and the Flow's
+// `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what actually bound
+// spend.
+const FLOW_LLM_EXECUTION_MAX_CALLS = 64;
 
 export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {
   if (metadata.llmProvider !== undefined && metadata.llmProvider !== "deepseek") throw new Error("Only DeepSeek is supported for live LLM execution.");
@@ -25,7 +30,7 @@ export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>
   const maxOutputTokens = boundedWholeNumber(tokenLimits.maxOutputTokens, 1, 64_000);
   const maxTotalTokens = boundedWholeNumber(tokenLimits.maxTotalTokens, 1, 64_000);
   if (maxInputTokens + maxOutputTokens > maxTotalTokens) throw new Error("LLM input and output limits exceed the total-token limit.");
-  boundedWholeNumber(value.maxCalls, 1, AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS);
+  boundedWholeNumber(value.maxCalls, 1, FLOW_LLM_EXECUTION_MAX_CALLS);
   boundedWholeNumber(value.timeoutMs, 1, 25_000);
   if (typeof value.maxEstimatedCostUsd !== "number" || !Number.isFinite(value.maxEstimatedCostUsd) || value.maxEstimatedCostUsd <= 0 || value.maxEstimatedCostUsd > 0.25) throw new Error("LLM estimated-cost limit is invalid.");
   if (value.retryCount !== 0) throw new Error("Flow LLM execution does not permit provider retries.");

@@ -1,14 +1,23 @@
 // An incomplete draft read back from storage.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 
 /**
  * The most steps a stored record may hold. A kept draft is one build's
- * proposable steps plus any it continued, and a Flow is at most 64 nodes; this
- * is well past either, and only there so a damaged file cannot seed a build
- * with an unbounded list.
+ * proposable steps plus any it continued: at most a whole Flow, one step in
+ * every loop iteration, and the iteration-zero observation. It is there only
+ * so a damaged file cannot seed a build with an unbounded list.
+ *
+ * Bounded by the Flow size setting's largest value, not the Flow's own: the
+ * reader is handed only the owner's ids, and a draft kept while the Flow's
+ * setting was higher must still seed a build after it is lowered -- the
+ * build's own validation refuses what the current setting does not allow.
  */
-const MAX_STEPS = 256;
+const MAX_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
+  + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
+  + 1;
 const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions"];
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const OPTIONAL_OBJECTS = ["ranWith", "settings", "replay", "routing"] as const;

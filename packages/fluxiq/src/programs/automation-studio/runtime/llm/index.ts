@@ -53,14 +53,7 @@ export {
   type AutomationStudioDeepSeekPanelCommandOptions,
   type AutomationStudioPanelCommandKeyPorts
 } from "./deepseek/index.ts";
-export * from "./execution/index.ts";
-// The grant's authorization table. Only the names `execution/grants.ts` used to
-// publish itself are exported; the checks the grant runs stay internal.
-export {
-  automationStudioLlmExecutionGrantTaskKinds,
-  type AutomationStudioLlmExecutionGrantPurpose,
-  type AutomationStudioLlmExecutionGrantResolvePolicy
-} from "./grant-capabilities.ts";
+export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
 // The decision history: every decision a loop made and what it answered, the
@@ -91,5 +84,9 @@ export type {
   AutomationStudioLlmRunCallOutcome,
   AutomationStudioLlmRunCallRecord
 } from "./run-call-record.ts";
-export * from "./runtime-session-grant.ts";
+export * from "./model-caller.ts";
+export * from "./runtime-session-llm.ts";
+// The host's provider for calls made on a person's behalf: their own key,
+// released per call to their unlocked session (`session-key-provider.ts`).
+export * from "./session-key-provider.ts";
 export * from "./resolver-contract.ts";

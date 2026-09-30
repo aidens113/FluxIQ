@@ -74,10 +74,10 @@ describe("resolving an unattended repair's model", () => {
       resolveStandingProvider: () => ({ provider: provider([]), maxEstimatedCostUsd: 0.25 })
     });
 
-    // Absent permits nothing (`resolver-contract.ts`), which is what makes the
-    // recovery gate raise a request for a lasting consequence instead of acting.
+    // A resolution carries no consequence permission at all: the recovery gate
+    // reads the run's own permitted set, which an unattended run does not have,
+    // so a lasting consequence raises a request instead of acting.
     expect(authority.resolution && "permittedConsequences" in authority.resolution).toBe(false);
-    expect(authority.resolution?.permittedConsequences).toBeUndefined();
   });
 
   it("refuses the model any task kind the redemption did not cover", async () => {

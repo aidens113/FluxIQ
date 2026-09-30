@@ -21,7 +21,7 @@
 // would run says what pressing its new target would lastingly do
 // (`consequences`), and the recovery's one permission gate is asked before it
 // runs -- the same gate the exploration answered to. Allowed, by the person's
-// grant or their instruction, it runs as explicitly authorized. Not allowed, it
+// permitted consequences or their instruction, it runs as explicitly authorized. Not allowed, it
 // becomes the request the recovery ends on, which is what the person answers;
 // it is never a preflight refusal nobody is shown. A patch that could not run
 // whatever the person said is not asked about, so nobody is asked a question
@@ -66,18 +66,18 @@ export type AutomationStudioRuntimeRecoveryPatchInput = {
   failedAttempt: NonNullable<Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"]>;
   patches: readonly AutomationStudioRuntimePatch[];
   /**
-   * Whether this came from a `diagnose_and_adapt` grant, which buys exactly one
-   * target override as a proposal and nothing else. A grant is a person saying
-   * yes to one specific thing, so anything else the model returned under it is
+   * Whether this came from a `diagnose_and_adapt` run, which asks for exactly
+   * one target override as a proposal and nothing else. That run is a person
+   * asking for one specific thing, so anything else the model returned in it is
    * refused with its own recorded reason rather than quietly executed.
    */
-  explicitProposalGrant: boolean;
+  explicitProposalRun: boolean;
   /**
    * The patch kinds the recovery plan allowed for this failure
    * (`AutomationStudioRuntimeRecoveryPlan.allowedPatchKinds`). Required, and
    * never defaulted: a patch of any other kind is refused before it runs or is
-   * proposed. The model is not bound by the plan it was not shown, and under a
-   * `diagnose_and_adapt` grant it can only answer with a target override, so a
+   * proposed. The model is not bound by the plan it was not shown, and in a
+   * `diagnose_and_adapt` run it can only answer with a target override, so a
    * navigation failure's plan -- a reroute or a recovery path -- was answered
    * with one and it was proposed (live repair campaign, 2026-09-17).
    */
@@ -115,8 +115,8 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
   const attempts: JsonObject[] = [];
   const adaptationIds: string[] = [];
   const changeProposalIds: string[] = [];
-  const grantIssue = explicitProposalIssue(input);
-  if (grantIssue) {
+  const intentIssue = explicitProposalIssue(input);
+  if (intentIssue) {
     attempts.push(compactJsonObject({
       kind: input.patches.length === 1 ? input.patches[0]?.kind : "runtime_patch_response",
       proposalOnly: true,
@@ -124,7 +124,7 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       preflightOk: false,
       restoredExpectedState: false,
       retryOriginalAction: false,
-      issues: [grantIssue],
+      issues: [intentIssue],
       traceStatus: "not-run"
     }));
     return { attempts, adaptationIds, changeProposalIds };
@@ -164,7 +164,7 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
       ...(input.graphOptions ? { options: input.graphOptions } : {})
     };
-    const proposalOnlyTargetOverride = input.explicitProposalGrant && patch.kind === "temporary_target_override";
+    const proposalOnlyTargetOverride = input.explicitProposalRun && patch.kind === "temporary_target_override";
     // Both kinds that act answer to the gate. An inserted step runs a control
     // the Flow never had, which is at least as consequential as re-pointing one
     // it already had, so a step that would lastingly act is the person's
@@ -241,9 +241,9 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
  *   domain refused its target, or a policy or host check would refuse it -- so
  *   it runs into that refusal as before and nobody is asked.
  * - `undeclared`: it did not say what it would lastingly do. Nothing can be
- *   asked for, or granted, on a claim nobody made, so it does not run.
- * - `permitted`: it declared nothing lasting, or the person's grant or
- *   instruction allows every class it declared. It runs as authorized.
+ *   asked for, or permitted, on a claim nobody made, so it does not run.
+ * - `permitted`: it declared nothing lasting, or the person's permitted
+ *   consequences or instruction allow every class it declared. It runs as authorized.
  * - `required`: it declared a class nobody allowed. The gate raised the
  *   request the recovery ends on.
  */
@@ -423,7 +423,7 @@ function unplannedPatchAttempt(input: AutomationStudioRuntimeRecoveryPatchInput,
   const targetOverride = patch.kind === "temporary_target_override";
   return compactJsonObject({
     kind: patch.kind,
-    proposalOnly: input.explicitProposalGrant && targetOverride ? true : undefined,
+    proposalOnly: input.explicitProposalRun && targetOverride ? true : undefined,
     executed: false,
     preflightOk: false,
     targetOverrideRefusal: targetOverride && !policyRefusal ? { status: "absent", reason: "failure_not_target_repairable" } : undefined,
@@ -435,9 +435,9 @@ function unplannedPatchAttempt(input: AutomationStudioRuntimeRecoveryPatchInput,
   });
 }
 
-/** What, if anything, makes this response wider than the grant that paid for it. */
+/** What, if anything, makes this response wider than the `diagnose_and_adapt` run asked for. */
 function explicitProposalIssue(input: AutomationStudioRuntimeRecoveryPatchInput): string | undefined {
-  if (!input.explicitProposalGrant) return undefined;
+  if (!input.explicitProposalRun) return undefined;
   if (input.patches.length !== 1) return "diagnose_and_adapt requires exactly one runtime patch.";
   if (input.patches[0]?.kind !== "temporary_target_override") return "diagnose_and_adapt supports temporary_target_override proposals only.";
   return undefined;

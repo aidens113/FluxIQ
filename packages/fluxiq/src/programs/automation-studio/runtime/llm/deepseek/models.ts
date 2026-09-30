@@ -2,7 +2,7 @@
 // the one a caller who names none gets.
 //
 // This used to be a single exported string and four `!==` checks against it:
-// one in the provider, one in the grant's key-compatibility check, one in the
+// one in the provider, one in a key-compatibility check, one in the
 // API's Flow-settings validator and one in the panel's own form. DeepSeek
 // retired the `deepseek-chat` and `deepseek-reasoner` compatibility aliases on
 // 2026-07-24, and because every layer permitted exactly one string, moving off

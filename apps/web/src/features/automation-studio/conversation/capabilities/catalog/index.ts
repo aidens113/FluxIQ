@@ -17,10 +17,10 @@
 // **Nothing here asks a person for permission to do ordinary work.** The only
 // capabilities that stop are the ones whose `consequences` name `delete` or
 // `move_money`, and they stop to re-authorize rather than to ask whether they
-// may. Running a Flow, editing it, changing a setting, granting a model run,
+// may. Running a Flow, editing it, changing a setting,
 // rolling a version back and inspecting a run all simply happen: the person
 // asked for the panel to be operable from the chat window, and that ask is the
-// grant.
+// permission.
 //
 // The order is the order a tie breaks in, so the plainer request comes first.
 

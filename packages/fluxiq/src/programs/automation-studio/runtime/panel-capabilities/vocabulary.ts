@@ -12,7 +12,7 @@
 // capability is meant to run on the fewest parameters that can work and the
 // panel fills the rest from what is on screen. The re-authorizing two are called
 // out as re-authorizing rather than as "needs permission": the person asking for
-// the automation is the grant, and a model told it must ask before editing a
+// the automation is the permission, and a model told it must ask before editing a
 // setting will ask, which is the failure this whole default was corrected to
 // prevent.
 

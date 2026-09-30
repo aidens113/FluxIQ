@@ -27,7 +27,7 @@
  *
  * It was two, when a recovery was a diagnosis, a short look and a patch. A
  * recovery now iterates for as long as it is learning something -- a default
- * grant allows twenty-six provider calls -- and at a realistic few seconds a
+ * recovery allows twenty-six provider calls -- and at a realistic few seconds a
  * call, two minutes would quietly have become the new call cap, ending
  * explorations that were still making progress. The per-call timeout is
  * unchanged, so a hung call is still caught at its own limit; this bounds only

@@ -220,7 +220,7 @@ function deterministicPatchNeeded(diagnosis: AutomationStudioRuntimeDeterministi
  * Measured 2026-09-17, thirteen live repair-lane runs against DeepSeek: every
  * one made a single diagnosis call, every one reported
  * `exploration.requested: false`, and not one attempted a repair -- one call
- * spent of the twenty-six granted. The lane's only genuine repair task failed;
+ * spent of the twenty-six allowed. The lane's only genuine repair task failed;
  * the rest were refusals, which pass precisely because stopping after diagnosis
  * is the right answer for them, so the number looked healthy while the repair
  * capability was zero.

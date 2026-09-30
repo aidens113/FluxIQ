@@ -1,6 +1,7 @@
-// The permission request over the wire: a grant request carries what a person
-// allowed, the build receives it from the grant, and a build that stopped to
-// ask returns the request to the caller intact.
+// The permission request over the wire: a build or run request carries what a
+// person allowed as `permittedConsequences`, the service receives it with the
+// signed-in caller -- no grant is issued or consulted -- and a build that
+// stopped to ask returns the request to the caller intact.
 
 import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
@@ -23,55 +24,82 @@ async function refundRequest() {
   return gate.request!;
 }
 
-describe("action permissions through the LLM execution API", () => {
-  it("forwards the classes a person allowed to preflight and to the grant", async () => {
-    const grants = {
-      preflight: vi.fn().mockResolvedValue({ provider: "deepseek", permittedConsequences: ["move_money"] }),
-      issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:one", permittedConsequences: ["move_money"] })
-    };
+function permissionRequiredBuild(request: Awaited<ReturnType<typeof refundRequest>>) {
+  return vi.fn().mockRejectedValue(new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.permission_required",
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    permissionRequest: request
+  }));
+}
+
+describe("action permissions through the LLM build and run API", () => {
+  it("builds with no grant, for the signed-in caller, under the consequences the request allowed", async () => {
+    const request = await refundRequest();
+    const generateFlowBootstrapAdaptation = permissionRequiredBuild(request);
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, readyLlmApiService({}) as any, undefined, undefined, undefined, grants as any);
-    const request = { keyId: "secret:key", projectId: "project.one", flowId: "flow.one", purpose: "build_and_adapt", permittedConsequences: ["move_money"] };
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
 
-    await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor: ACTOR, payload: request });
-    const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor: ACTOR, payload: { ...request, authSessionId: "session.one" } });
+    await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+      scope: {},
+      actor: ACTOR,
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", evidenceGuided: true, permittedConsequences: ["modify_existing", "move_money"] }
+    });
 
-    expect(grants.preflight).toHaveBeenCalledWith(expect.objectContaining({ permittedConsequences: ["move_money"] }));
-    expect(grants.issue).toHaveBeenCalledWith(expect.objectContaining({ permittedConsequences: ["move_money"] }));
-    expect(issued).toMatchObject({ ok: true, payload: { grant: { permittedConsequences: ["move_money"] } } });
+    expect(generateFlowBootstrapAdaptation).toHaveBeenCalledWith(expect.objectContaining({
+      caller: { actorUserId: "user.one", actorSessionId: "session.one" },
+      permittedConsequences: ["move_money", "modify_existing"]
+    }));
+    expect(generateFlowBootstrapAdaptation.mock.calls[0]?.[0]).not.toHaveProperty("executionGrant");
   });
 
-  it("builds under the permission set the grant carries, and returns a build's request intact", async () => {
+  // A consequential act with no permission still ends `permission_required`:
+  // removing grants removed nothing from the one gate that stays.
+  it("returns a build's permission request intact when the act was not permitted", async () => {
     const request = await refundRequest();
-    const generateFlowBootstrapAdaptation = vi.fn().mockRejectedValue(new AutomationStudioFlowBootstrapGenerationError({
-      code: "flow_bootstrap.permission_required",
-      stage: "provider_output_validation",
-      retryable: false,
-      providerInvocation: "attempted",
-      providerResponse: "received",
-      permissionRequest: request
-    }));
-    const grants = {
-      inspectAvailable: vi.fn().mockResolvedValue({ grantId: "llm-grant:build", purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 7, permittedConsequences: ["modify_existing"] })
-    };
+    const generateFlowBootstrapAdaptation = permissionRequiredBuild(request);
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, grants as any);
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
 
     const response = await registry.call({
       programId: "automation-studio",
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
       scope: {},
       actor: ACTOR,
-      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true }
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", evidenceGuided: true }
     });
 
-    expect(generateFlowBootstrapAdaptation).toHaveBeenCalledWith(expect.objectContaining({
-      executionGrant: expect.objectContaining({ permittedConsequences: ["modify_existing"] })
-    }));
+    expect(generateFlowBootstrapAdaptation).toHaveBeenCalledWith(expect.objectContaining({ permittedConsequences: [] }));
     expect(response).toEqual({
       ok: false,
       error: "Flow Bootstrap generation failed (flow_bootstrap.permission_required).",
       payload: { diagnostic: { code: "flow_bootstrap.permission_required", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received", permissionRequest: request } }
+    });
+  });
+
+  it("carries a run's permitted consequences to the service beside its model intent", async () => {
+    const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "succeeded" });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn().mockResolvedValue(null) } as any);
+
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
+      scope: {},
+      actor: ACTOR,
+      payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt", permittedConsequences: ["send_or_publish"] }
+    });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(runRuntimeSession).toHaveBeenCalledWith({
+      projectId: "project.one",
+      flowId: "flow.one",
+      llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" },
+      permittedConsequences: ["send_or_publish"]
     });
   });
 
@@ -86,15 +114,14 @@ describe("action permissions through the LLM execution API", () => {
       const generateFlowBootstrapAdaptation = vi.fn().mockRejectedValue(new AutomationStudioFlowBootstrapGenerationError({
         stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received", ...diagnostic
       } as never));
-      const grants = { inspectAvailable: vi.fn().mockResolvedValue({ grantId: "llm-grant:build", purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 7, permittedConsequences: [] }) };
       const registry = new GlobalProgramApiRegistry();
-      registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any, undefined, undefined, undefined, grants as any);
+      registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
       const response = await registry.call({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
         scope: {},
         actor: ACTOR,
-        payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true }
+        payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", evidenceGuided: true }
       });
 
       expect(response).toEqual({ ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." });

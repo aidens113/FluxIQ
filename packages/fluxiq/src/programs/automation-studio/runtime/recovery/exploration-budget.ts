@@ -364,8 +364,8 @@ export class AutomationStudioExplorationBudgetLedger {
       return;
     }
     // A clock that runs out mid-call aborts it as a timeout. The provider call
-    // it cuts off was spent, not cancelled, and a grant held for the patch that
-    // follows must not read it as a cancellation and end with it.
+    // it cuts off was spent, not cancelled, and the patch call that follows
+    // must not read it as a cancellation and end with it.
     this.timer = setTimeout(() => this.stop(this.expiryReason, new DOMException("The exploration ran out of time.", "TimeoutError")), remaining);
     // A recovery must never hold the process open past its own work.
     this.timer.unref?.();

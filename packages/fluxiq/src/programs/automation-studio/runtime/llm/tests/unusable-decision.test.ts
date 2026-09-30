@@ -4,7 +4,8 @@
 // Flow Bootstrap used to stop at the first bad reply: its loop propagated every
 // decision error, so one malformed object from the model ended the whole
 // creation. These pin the two halves of the fix -- which failed calls count as
-// "unusable" (the same line the execution grant draws), and what the loop does
+// "unusable" (the same line the failure-disposition table draws), and what the
+// loop does
 // with one.
 
 import { describe, expect, it, vi } from "vitest";
@@ -54,7 +55,7 @@ describe("which failed decision calls are unusable rather than final", () => {
     ["a cancellation", [{ code: "llm.provider_aborted" }]],
     ["a refused credential check", [{ code: "llm.provider_secret_unavailable" }]],
     ["a pre-flight refusal", [{ code: "llm.provider_input_budget_exceeded" }]],
-    ["an untyped failure, such as a grant that is gone", [{ code: "llm.provider_request_failed" }]],
+    ["an untyped failure, such as a key that is gone", [{ code: "llm.provider_request_failed" }]],
     ["a usage breach", [{ code: "llm_usage.total_limit_exceeded" }]],
     ["a client error", [{ code: "llm.provider_http_error", status: 400 }]],
     ["an unusable reply beside an authorization failure", [{ code: "llm.provider_malformed_response" }, { code: "llm.provider_auth_failed", status: 401 }]]
@@ -175,7 +176,7 @@ describe("the evidence loop after an unusable decision", () => {
   });
 
   it("treats every other decision error as before, and the unusable error too when not configured", async () => {
-    const final = new Error("grant gone");
+    const final = new Error("key gone");
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide: async () => { throw final; }, executeTool: async () => ({}), propagateDecisionErrors: true,
       unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }

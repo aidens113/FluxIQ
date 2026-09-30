@@ -18,7 +18,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProjectPaths, AutomationStudioRecordingPaths } from "../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";
-import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
+import { pipelineIndexWithoutRecording, type AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioObjectDocuments } from "../object-documents.ts";
 import { mapWithConcurrency } from "../collections.ts";
 import { upsertBy } from "../collections.ts";
@@ -212,19 +212,7 @@ export class AutomationStudioRecordingStore {
     const document = unwrapProgramJsonDocument(parsed);
     if (!document || typeof document !== "object" || Array.isArray(document)) return;
     const index = { ...emptyPipelineIndex(), ...document as Partial<PipelineIndex> };
-    const next: PipelineIndex = {
-      pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
-      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.normalizationReviews.has(item.reviewId)),
-      miningRuns: (index.miningRuns ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.miningRuns.has(item.miningRunId)),
-      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceFacts.has(item.factId)),
-      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceObservations.has(item.observationId)),
-      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.stateActionCorrelations.has(item.correlationId)),
-      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceClaims.has(item.claimId)),
-      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.learnedTaskModels.has(item.learnedTaskModelId)),
-      policyProposals: (index.policyProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.policyProposals.has(item.proposalId)),
-      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.recordingFlowProposals.has(item.proposalId)),
-      replayResults: (index.replayResults ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.replayResults.has(item.replayId))
-    };
+    const next = pipelineIndexWithoutRecording(index, recordingId, artifactIds);
     await mkdir(path.dirname(filePath), { recursive: true });
     const output = isProgramJsonEnvelope(parsed) ? { version: 1, data: next } : next;
     await writeFile(filePath, JSON.stringify(output, null, 2), "utf8");

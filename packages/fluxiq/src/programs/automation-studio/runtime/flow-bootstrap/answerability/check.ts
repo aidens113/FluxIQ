@@ -36,7 +36,7 @@ import { automationStudioFlowBootstrapInstructionAsk } from "./instruction-ask.t
 import { automationStudioFlowBootstrapLibraryReturnsRecords } from "./library-record-sets.ts";
 import { automationStudioFlowBootstrapPlanRecordSets } from "./plan-record-sets.ts";
 
-/** Steps named in the feedback. A plan holds at most sixteen per subflow. */
+/** Steps named in the feedback; a longer plan says `stepsWithheld`. It bounds a prompt listing, not a Flow's size. */
 const MAX_FEEDBACK_STEPS = 24;
 
 /**

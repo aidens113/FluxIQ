@@ -37,7 +37,6 @@ const WORDS: Readonly<Record<string, string>> = {
   changelog: "Tightened the price check.",
   reason: "It made the Flow worse.",
   title: "About the kettle Flow",
-  purpose: "build_and_adapt",
   subjectKind: "flow"
 };
 
@@ -52,7 +51,6 @@ function idFor(ids: Ids, name: string): string | undefined {
     adaptationId: ids.adaptationId,
     routeId: ids.routeId,
     trustedClientId: ids.trustedClientId,
-    llmExecutionGrantId: ids.llmExecutionGrantId,
     subjectId: ids.flowId
   };
   return table[name];
@@ -64,8 +62,7 @@ function idFor(ids: Ids, name: string): string | undefined {
  */
 const OVERRIDES: Readonly<Record<string, Readonly<Record<string, Override>>>> = {
   // Saying what a Flow should do, and building it from that, is done to a blank
-  // Flow: Core refuses both on a Flow that already has a Router. The build grant
-  // the world issues is bound to that Flow.
+  // Flow: Core refuses both on a Flow that already has a Router.
   "flow.describe": {
     "on a blank Flow": (ids) => ({ flowId: ids.blankFlowId })
   },

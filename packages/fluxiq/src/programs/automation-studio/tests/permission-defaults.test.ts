@@ -79,7 +79,7 @@ describe("the classes that reach a person", () => {
 // itself, re-author a subflow, reroute, retarget an action, create a recovery
 // path or keep what it learned -- and every proposal it did manage waited on a
 // person. That is the automation's own work, and asking for the automation is
-// the grant for it.
+// the permission for it.
 describe("what a Flow nobody has configured may do about itself", () => {
   it("is fully adaptive, not locked", () => {
     const metadata = defaultAutomationStudioFlowSettingsMetadata();

@@ -26,6 +26,7 @@ import { automationStudioRunState, type AutomationStudioRunState } from "./run-s
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityStep } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -150,6 +151,10 @@ async function runGraphToTrace(
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
   if (seed) seedRunState(runState, seed);
+  // Every run input is run-time data of unknown sensitivity whether or not a
+  // binding reads it, and a node may copy one into an output under another key.
+  // Recorded before the first node, so every dispatch is told to withhold it too.
+  withholding.supply(options.inputs ?? {}, options.declaredInputDefaults);
   recordDeclaredStateBindings(flow, options, withholding);
   const executed = await executeAutomationStudioGraph(flow, options, withholding, runState, seed);
   for (const attempt of executed.attempts) {
@@ -317,19 +322,19 @@ const MAXIMUM_INPUT_DEPTH = 64;
  * The trace with every run input withheld where this module saved it: in
  * `values`, and in each attempt's `inputs`, both seeded from `options.inputs`.
  *
- * A run input is run-time data of unknown sensitivity whether or not a node reads
- * it, but only an input a binding resolved is recorded for the value-based
- * rewrite, so one no binding reads was saved here in clear. It is found by
- * position and proved by identity: the entry still holds the value the caller
- * supplied, not a node output written over the same key.
+ * Every run input's texts and numbers are also recorded for the value-based
+ * rewrite (`runGraphToTrace`), which withholds a copy of one under any data key.
+ * This pass is kept because it is positional: an input is found at its own key
+ * and proved by identity -- the entry still holds the value the caller supplied,
+ * not a node output written over the same key -- and withheld whole, including
+ * a subtree deeper than the value walk collects.
  *
- * Not by value. A value the run computed can equal an input (5 + 0), and
- * withholding every equal value would make the saved trace misreport what the
- * run computed. The cost is a known gap: an input no binding reads, copied by a
- * node into an output under another key, stays in clear at that copy. Nothing
- * executes from this copy -- a Call Flow parent and a live-patch rerun are handed
- * the executed trace -- so the choice shapes only what is kept. A withheld input
- * keeps its shape, as everything else the trace withholds does.
+ * The value-based rewrite has a cost this pass does not: a value the run
+ * computed that equals an input (5 + 0) reads as withheld too, because a copy
+ * cannot be told from a computation by value. Nothing executes from the saved
+ * trace -- a Call Flow parent and a live-patch rerun are handed the executed
+ * trace -- so the choice shapes only what is kept. A withheld input keeps its
+ * shape, as everything else the trace withholds does.
  */
 function withholdRunInputs(trace: AutomationStudioGraphExecutionTrace, inputs: Record<string, JsonValue>): AutomationStudioGraphExecutionTrace {
   if (!Object.keys(inputs).length) return trace;
@@ -447,6 +452,7 @@ async function executeAutomationStudioGraph(
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
+      emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label });
       const executed = remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
         : await executeWithRegionTimeout(
@@ -508,6 +514,7 @@ async function executeAutomationStudioGraph(
           return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
         }
         if (ask.parks) {
+          emitAutomationStudioActivity({ phase: "waiting_permission", label: "Waiting for an answer before going on", detail: { kind: "ask", title: `Asked a question (${ask.kind})`, status: "started", ref: currentNode.id } });
           const settlement = await settleAskInPlace(options, parked);
           if (!settlement) {
             return { status: "waiting", startedAt, currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, parked, ...(attempt.message ? { message: attempt.message } : {}) };
@@ -546,6 +553,7 @@ async function executeAutomationStudioGraph(
         // whichever way the ladder goes.
         const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
         const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
+        emitAutomationStudioActivity({ phase: "repairing", label: `Recovering from a failed step${failedNode.label?.trim() ? `: ${failedNode.label.trim()}` : ""}`, detail: { kind: "step", title: "Recovery started", status: "started", ref: failedNode.id } });
         const ladder = await runAutomationStudioRecoveryLadder({
           flow,
           node: failedNode,

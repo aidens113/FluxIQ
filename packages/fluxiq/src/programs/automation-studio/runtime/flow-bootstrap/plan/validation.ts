@@ -4,6 +4,10 @@
 // is one connected acyclic graph within the depth limit. The accepted plan is
 // returned laid out and risk-banded.
 //
+// The count, depth and byte bounds are the Flow's own (`./size-limits.ts`):
+// a caller with the Flow in hand passes them, and every other caller is held
+// to the setting's default.
+//
 // A parameter value the runtime would refuse is refused here, so a malformed
 // structured value never reaches dispatch: record outputs, the output a policy
 // action runs, and a domain's bound parameter contract are all checked.
@@ -34,18 +38,24 @@ import type {
 } from "./contracts.ts";
 import { error } from "./issues.ts";
 import { layoutNodes } from "./layout.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { correctAutomationStudioFlowBootstrapPlanNames } from "./name-correction.ts";
 import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
 import { automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
 import { automationStudioFlowBootstrapRouteIssues } from "./route-validation.ts";
+import {
+  automationStudioFlowBootstrapSizeLimits,
+  automationStudioFlowBootstrapSizeRefusal,
+  type AutomationStudioFlowBootstrapSizeLimits
+} from "./size-limits.ts";
 
 export function validateAutomationStudioFlowBootstrapPlan(input: {
   plan: AutomationStudioFlowBootstrapPlan;
   registry?: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
+  /** The Flow's size bounds (`automationStudioFlowBootstrapSizeLimitsOf`); the setting's default when omitted. */
+  size?: AutomationStudioFlowBootstrapSizeLimits;
 }): {
   ok: boolean;
   issues: AutomationStudioFlowBootstrapIssue[];
@@ -56,7 +66,8 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
    */
   validated?: AutomationStudioValidatedFlowBootstrapPlan & { assumptions?: readonly AutomationStudioFlowBootstrapNameAssumption[] };
 } {
-  const structural = parseAutomationStudioFlowBootstrapPlan(input.plan);
+  const size = input.size ?? automationStudioFlowBootstrapSizeLimits();
+  const structural = parseAutomationStudioFlowBootstrapPlan(input.plan, size);
   if (!structural.plan) return { ok: false, issues: structural.issues };
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
   // Names are resolved before anything is checked, so every check below reads
@@ -74,6 +85,7 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
   const scope: ValidationScope = {
     registry,
     resolution: input.resolution,
+    size,
     outputIds: () => outputIds ??= declaredOutputIds(registry, input.resolution)
   };
   const subflowKeys = new Set<string>();
@@ -115,6 +127,8 @@ export function validateAutomationStudioFlowBootstrapPlan(input: {
 type ValidationScope = {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
+  /** The Flow's size bounds; the graph-depth check reads them. */
+  size: AutomationStudioFlowBootstrapSizeLimits;
   /** The output ids the available definitions declare, read once per plan. */
   outputIds(): ReadonlySet<string>;
 };
@@ -190,7 +204,7 @@ function validateSubflow(
     }
   }
   validateRequiredInputConnections(subflow, nodes, issues, path);
-  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, issues, path);
+  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, scope.size, issues, path);
 }
 
 function validateParameters(values: JsonObject, definition: AutomationStudioNodeDefinition, path: string, scope: ValidationScope, issues: AutomationStudioFlowBootstrapIssue[]): void {
@@ -351,6 +365,7 @@ function validateConnectivityAndDepth(
   indegree: Map<string, number>,
   undirected: Map<string, string[]>,
   joined: ReadonlyArray<readonly [string, string]>,
+  size: AutomationStudioFlowBootstrapSizeLimits,
   issues: AutomationStudioFlowBootstrapIssue[],
   path: string
 ): void {
@@ -369,7 +384,8 @@ function validateConnectivityAndDepth(
   let ordered = topologicalOrder(nodes, adjacency, indegree);
   if (ordered.visited !== nodes.size && joined.length) ordered = topologicalOrder(nodes, withoutJoins(adjacency, joined), withoutJoinDegrees(indegree, joined));
   if (ordered.visited !== nodes.size) issues.push(error("bootstrap.cyclic_graph", "Bootstrap Subflow graphs must be acyclic except where a loop closes through a join.", `${path}.edges`));
-  if (Math.max(0, ...ordered.depths.values()) + 1 > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxGraphDepth) issues.push(error("bootstrap.graph_too_deep", "Bootstrap Subflow exceeds the graph-depth limit.", `${path}.edges`));
+  const depth = Math.max(0, ...ordered.depths.values()) + 1;
+  if (depth > size.maxGraphDepth) issues.push(error("bootstrap.graph_too_deep", automationStudioFlowBootstrapSizeRefusal(`Subflow is ${depth} nodes deep`, "maxGraphDepth", size), `${path}.edges`));
 }
 
 /** How many nodes a topological walk reaches, and how deep each one sits. */

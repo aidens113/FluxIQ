@@ -123,3 +123,26 @@ describe("Automation Studio run audit export API", () => {
     }
   });
 });
+
+describe("list-flow-runs durableBehaviorChanged", () => {
+  it("answers a boolean on every run, false for a summary saved before the field existed", async () => {
+    const summaries = [
+      { runId: "run.changed", flowId: "flow.one", durableBehaviorChanged: true },
+      { runId: "run.unchanged", flowId: "flow.one", durableBehaviorChanged: false },
+      { runId: "run.older", flowId: "flow.one" }
+    ];
+    const listFlowRunSummaries = vi.fn(async () => ({ runs: summaries, total: 3, limit: 25, offset: 0 }));
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { listFlowRunSummaries } as unknown as AutomationStudioService);
+
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRuns, scope: {}, actor: cacheActor("user.runs"), payload: { projectId: "project.one", flowId: "flow.one" } });
+
+    const expected = [
+      { runId: "run.changed", flowId: "flow.one", durableBehaviorChanged: true },
+      { runId: "run.unchanged", flowId: "flow.one", durableBehaviorChanged: false },
+      { runId: "run.older", flowId: "flow.one", durableBehaviorChanged: false }
+    ];
+    expect(response).toEqual({ ok: true, payload: { runs: expected, page: { runs: expected, total: 3, limit: 25, offset: 0 } } });
+    expect(listFlowRunSummaries).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", limit: undefined, offset: undefined });
+  });
+});

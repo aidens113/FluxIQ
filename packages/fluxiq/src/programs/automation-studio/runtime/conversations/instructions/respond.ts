@@ -17,7 +17,7 @@
 //   contract parser, and a turn whose reference is not is dropped whole, which
 //   would take the confirmation with it.
 //
-// Everything else runs straight away: the person asking is the grant.
+// Everything else runs straight away: the person asking is the permission.
 
 import { randomUUID } from "node:crypto";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";

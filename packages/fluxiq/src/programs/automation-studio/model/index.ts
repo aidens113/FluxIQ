@@ -10,6 +10,7 @@ export * from "./fixtures.ts";
 export * from "./flow-adaptation.ts";
 export * from "./flow-compatibility.ts";
 export * from "./flows.ts";
+export * from "./flow-size/index.ts";
 export * from "./legacy-retirement.ts";
 export * from "./node-state.ts";
 export * from "./policies.ts";

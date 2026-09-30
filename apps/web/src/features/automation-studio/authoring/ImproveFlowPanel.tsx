@@ -3,21 +3,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
 import { Modal } from "../../programs/shared-ui";
-import { AUTOMATION_LLM_PROGRESS_LABELS, llmRequestRequiresHighTokenWarning, WEBSITE_EXPLORATION_LIMITS, type BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
+import { AUTOMATION_LLM_PROGRESS_LABELS, type BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
 import { existingFlowImprovementRequest, IMPROVEMENT_INSTRUCTION_MAX_LENGTH } from "./existing-flow-improvement";
 import type { FlowImprovementCommands } from "./improvement-host";
-import { llmPreflightRunLimits } from "./llm-preflight-run-limits";
 
 type Phase = "idle" | "preparing" | "improving" | "review";
 
 /** What the person has already been asked and has answered for this wording. */
-type Continuation = { text: string; highTokenConfirmed: boolean; permission?: AutomationStudioActionPermissionRequest };
+type Continuation = { text: string; permission: AutomationStudioActionPermissionRequest };
 
 function improvementFailureMessage(result: any): string {
   const code = typeof result?.payload?.diagnostic?.code === "string" ? result.payload.diagnostic.code : "";
   if (code === "flow_bootstrap.pending_adaptation_exists") return "A suggested change is already waiting for review. Accept or reject it in Suggested changes first, then ask again.";
   if (code === "flow_bootstrap.blank_target_required") return "FluxIQ could not tell which part of this automation to improve. It improves an automation with one main part; open Subflows and mark the one to improve as primary.";
-  if (code === "flow_bootstrap.stale_grant_binding") return "This automation changed while FluxIQ was getting ready. Try again.";
   if (code === "flow_bootstrap.provider_timeout") return "The model request timed out. Keep the browser connected and try again.";
   if (code === "flow_bootstrap.evidence_iteration_limit" || code === "flow_bootstrap.evidence_limit") return "FluxIQ reached its limit before it found the change. Say more precisely what should be different, then try again.";
   if (code === "flow_bootstrap.evidence_tool_failed" || code === "flow_bootstrap.evidence_runtime_unavailable") return "The connected browser could not try this out. Check that the website's tab is still open, then try again.";
@@ -44,7 +42,6 @@ export function ImproveFlowPanel(props: {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Continuation | null>(null);
-  const [runTokenBudget, setRunTokenBudget] = useState<number | undefined>(undefined);
   const saved = useRef<{ instructionId: string; text: string } | null>(null);
   const flowKey = `${props.projectId ?? ""}/${props.flow?.flowId ?? ""}`;
 
@@ -83,34 +80,9 @@ export function ImproveFlowPanel(props: {
         }
         saved.current = { instructionId, text: wording };
       }
-      const preflight = await props.commands.preflightLlm(request.payload);
-      if (!preflight?.ok || !preflight.payload?.preflight) {
-        setPhase("idle");
-        setError("FluxIQ cannot run the model for this automation yet. Check in Settings that a model key is turned on for it.");
-        return;
-      }
-      const limits = llmPreflightRunLimits(preflight.payload);
-      setRunTokenBudget(typeof limits?.runTokenBudget === "number" ? limits.runTokenBudget : undefined);
-      const highTokenConfirmed = continuation?.highTokenConfirmed === true;
-      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmed) {
-        setPhase("idle");
-        setPending({ text: wording, highTokenConfirmed: false });
-        return;
-      }
-      const issued = await props.commands.issueLlmGrant({
-        ...request.payload,
-        ...(highTokenConfirmed ? { highTokenConfirmation: true } : {}),
-        ...(continuation?.permission ? { permittedConsequences: [...continuation.permission.missing] } : {}),
-        ttlMs: WEBSITE_EXPLORATION_LIMITS.grantClaimWindowMs
-      });
-      const grantId = issued?.payload?.grant?.grantId;
-      if (!issued?.ok || typeof grantId !== "string" || !grantId) {
-        setPhase("idle");
-        setError("FluxIQ could not get permission to start. Check that you are still signed in and that the model key is turned on.");
-        return;
-      }
       setPhase("improving");
-      const generated = await props.commands.improveFromWebsite({ projectId, flowId, llmExecutionGrantId: grantId });
+      // Only what the person allowed in answer to this improvement's own request.
+      const generated = await props.commands.improveFromWebsite({ projectId, flowId, ...(continuation ? { permittedConsequences: [...continuation.permission.missing] } : {}) });
       const adaptation = generated?.payload?.adaptation;
       if (generated?.ok && adaptation?.status === "proposed" && typeof adaptation.adaptationId === "string") {
         setPhase("review");
@@ -122,7 +94,7 @@ export function ImproveFlowPanel(props: {
         ? parseAutomationStudioActionPermissionRequest(generated.payload.diagnostic.permissionRequest)
         : null;
       if (asked?.reason.stage === "authoring") {
-        setPending({ text: wording, highTokenConfirmed, permission: asked });
+        setPending({ text: wording, permission: asked });
         return;
       }
       setError(improvementFailureMessage(generated));
@@ -133,7 +105,6 @@ export function ImproveFlowPanel(props: {
     }
   };
 
-  const confirmingTokens = pending !== null && !pending.highTokenConfirmed && !pending.permission;
   const confirmingPermission = pending?.permission ?? null;
 
   return <section aria-label="Improve this automation" className="automation-runtime-run-panel automation-flow-authoring-panel">
@@ -143,15 +114,6 @@ export function ImproveFlowPanel(props: {
     {phase === "improving" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Keep the browser and the website's tab connected.</span></div> : null}
     {phase === "review" ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> Nothing has changed yet. Check the suggested change and accept it to keep it.</p> : null}
     {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
-    {confirmingTokens ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm a large model run" onClose={() => setPending(null)}><div className="automation-modal-form">
-      <p className="automation-router-modal-intro">This could be expensive: the request can use more than 100,000 tokens.</p>
-      <dl aria-label="Improvement request limits">
-        <div><dt>Total tokens for the run</dt><dd>{runTokenBudget === undefined ? "Not reported" : runTokenBudget.toLocaleString("en-US")}</dd></div>
-        <div><dt>Maximum total cost</dt><dd>${WEBSITE_EXPLORATION_LIMITS.maxTotalEstimatedCostUsd.toFixed(2)}</dd></div>
-        <div><dt>Time limit for the run</dt><dd>{WEBSITE_EXPLORATION_LIMITS.runLeaseMs / 60_000} minutes</dd></div>
-      </dl>
-      <div className="modal-actions"><button className="button" onClick={() => setPending(null)} type="button">Cancel</button><button className="button button-primary" data-modal-submit onClick={() => { const next = pending; if (next) void improve({ ...next, highTokenConfirmed: true }); }} type="button">Continue</button></div>
-    </div></Modal> : null}
     {confirmingPermission ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm what the change may do" onClose={() => setPending(null)}><div className="automation-modal-form">
       <p className="automation-router-modal-intro">{confirmingPermission.sentence}</p>
       <ul aria-label="Consequences requiring approval">{confirmingPermission.missing.map((consequence) => <li key={consequence}>{AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]}</li>)}</ul>

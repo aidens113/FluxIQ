@@ -3,11 +3,11 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
-  const { registry, service, llmExecutionGrants } = dependencies;
+  const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
@@ -46,34 +46,31 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     permission: "runtime.control",
     classification: "authoring",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
-      if ((payload as Record<string, unknown>).useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      // Every purpose a runtime session runs under, named in one place, so
+      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true } : {};
+      if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
+      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, ...payload } = raw;
+      // Every intent a runtime session runs under, named in one place, so
       // `explore_and_adapt` is reachable from a failed run rather than being a
-      // capability nothing could ask for.
-      const runIntent = AUTOMATION_STUDIO_RUNTIME_SESSION_GRANT_PURPOSES.find((purpose) => purpose === payload.runIntent);
-      const llmExecution = runIntent && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: runIntent } : undefined;
-      if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A supported explicit LLM intent and grant are required together." };
-      // A granted run may name the run it is continuing (t166). It used to be
-      // refused, with the grant revoked, so the caller could not even retry: a
-      // repair that must resume the run that failed had no way to say which run
-      // that was, and re-running is not an act anybody needs permission for.
+      // capability nothing could ask for. The intent says what the run is for;
+      // the signed-in actor is whose unlocked key pays for its model calls.
+      let llmExecution: AutomationStudioRuntimeSessionLlm | undefined;
+      if (requestedIntent !== undefined) {
+        const intent = AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS.find((candidate) => candidate === requestedIntent);
+        if (!intent) return { ok: false, error: "The run intent is not one Core supports." };
+        if (!request.actor) return { ok: false, error: "A run the model takes part in needs a signed-in person." };
+        llmExecution = { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, intent };
+      }
+      // What the person allowed the run's actions to do. Absent is nothing; a
+      // class Core does not know refuses the run rather than being dropped.
+      let permittedConsequences: AutomationStudioActionConsequence[] | undefined;
+      try { permittedConsequences = requestedConsequences === undefined ? undefined : parseAutomationStudioPermittedConsequences(requestedConsequences); }
+      catch { return { ok: false, error: "The run's permitted consequences name a class Core does not recognise." }; }
+      // A run may name the run it is continuing (t166): a repair that must
+      // resume the run that failed has to be able to say which run that was.
       // `newRunId` is a different field: it names the session the run is about
       // to create, so the caller can read the run back if its own request is cut
       // short (`runtime/service/runtime-session/requested-run-id.ts`).
-      // The run starts now, so the grant is held for it: its claim window runs
-      // to the run's own lease rather than the issue TTL, because its recovery
-      // claims the grant only once a step fails, which may be minutes from now.
-      // A grant that cannot be held -- lapsed, spent, another run's, or out of
-      // scope -- refuses the run here rather than letting it fail without one.
-      if (llmExecution && llmExecutionGrants && typeof payload.projectId === "string" && typeof payload.flowId === "string") {
-        try {
-          await llmExecutionGrants.holdForRun({ ...llmExecution, projectId: payload.projectId, flowId: payload.flowId });
-        } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : "LLM execution grant is unavailable." };
-        }
-      }
-      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}) });
+      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}) });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
       let runDetail: AutomationStudioFlowRunDetail | null = null;
@@ -85,10 +82,8 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         const reason = error instanceof Error ? error.message : String(error);
         return { ok: false, error: `Run ${runtimeSession.runId} ended ${runtimeSession.status}, but its run detail could not be read: ${reason}`, payload: { runtimeSession, runDetailLink } };
       }
-      const durableBehaviorChanged = Boolean(runDetail?.adaptationIds?.length && runDetail.adaptationIds.some((adaptationId) => {
-        const attempt = runDetail.metadata?.runtimePatchAttempts;
-        return Array.isArray(attempt) && attempt.some((item) => typeof item === "object" && item && (item as any).adaptationId === adaptationId && (item as any).approvalDecision?.autoApply === true);
-      }));
+      // The same reading every stored run summary carries, so this answer and `list-flow-runs` agree.
+      const durableBehaviorChanged = runDetail ? automationStudioRunChangedDurableBehavior(runDetail) : false;
       return {
         ok: true,
         payload: {

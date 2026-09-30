@@ -92,6 +92,12 @@ export type AutomationStudioFlowBootstrapCatalogEntry = {
 
 export type AutomationStudioFlowBootstrapContext = {
   outputSchema: JsonObject;
+  /**
+   * The Flow's size setting, present only when it is not the default, so a
+   * provider adapter holding only the request can size the schema it checks and
+   * the plan it parses (`./size-limits.ts`). A default Flow's context is unchanged.
+   */
+  maxNodesPerSubflow?: number;
   nodeCatalog: AutomationStudioFlowBootstrapCatalogEntry[];
   catalogTruncated: boolean;
   catalogSelection: {

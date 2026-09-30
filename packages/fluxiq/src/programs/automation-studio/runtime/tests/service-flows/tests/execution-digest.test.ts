@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createCallFlowNode } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../llm/index.ts";
 import { AutomationStudioProjectDatabasePool, AutomationStudioProjectGraphRepository } from "../../../../storage/index.ts";
 import { installPrimaryRouter } from "../../service-fixtures.ts";
 
@@ -183,7 +182,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     }
   });
 
-  it("binds domain grants to external global publications and invalidates JIT use", async () => {
+  it("binds a domain Flow's dependency digest to the external global publications it calls", async () => {
     const originalNow = Date.now;
     Date.now = () => 30_000;
     try {
@@ -212,26 +211,6 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       });
       await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
 
-      const key = { id: "secret:external", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: caller.flowId, enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
-      let revealCount = 0;
-      let fetchCount = 0;
-      const grants = new AutomationStudioLlmExecutionGrantService({
-        now: () => 30_000,
-        resolveExecutionDigest: (projectId, flowId) => service.getLlmExecutionDependencyDigest(projectId, flowId),
-        identityAccess: {
-          validateSession: async () => ({ user: { id: "user.one", passwordConfigured: true, pinConfigured: true }, session: {}, role: {} })
-        } as any,
-        secretKeys: {
-          getKeySummary: async () => ({ ...key }),
-          createSessionRevealAuthorization: async () => ({ authorizationId: "secret-reveal:external", keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: 90_000, remainingUses: 1 }),
-          revealKeyWithAuthorization: async () => { revealCount += 1; return { key: { ...key }, value: "test-provider-secret" }; },
-          revokeRevealAuthorization: () => {}
-        } as any,
-        fetchImpl: (async () => { fetchCount += 1; throw new Error("transport must not run"); }) as typeof fetch
-      });
-      const grant = await grants.issue({ actorUserId: "user.one", actorSessionId: "session.one", keyId: key.id, projectId: domainProject.id, flowId: caller.flowId });
-      const resolved = await grants.resolve({ grantId: grant.grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: domainProject.id, flowId: caller.flowId, purpose: "diagnosis_only" });
-
       const externalRecord = (await service.listFlowPublications(globalProject.id, external.flowId))[0];
       if (!externalRecord) throw new Error("Expected external global publication");
       const publicationRepository = (service as any).repositories.flowPublications;
@@ -245,26 +224,10 @@ describe("AutomationStudioService canonical Flow persistence", () => {
         }
       });
       expect(await service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).not.toBe(authorizedDigest);
-      await expect(resolved.provider.runTask({
-        requestId: "request.external",
-        idempotencyKey: "request.external",
-        timeoutMs: 20_000,
-        estimatedInputTokens: 100,
-        maxEstimatedCostUsd: 0.25,
-        taskKind: "runtime_diagnosis",
-        promptVersion: "v1",
-        expectedOutput: "diagnosis",
-        tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 },
-        context: { schemaVersion: "0.1", taskKind: "runtime_diagnosis", promptVersion: "v1", projectId: domainProject.id, flowId: caller.flowId, instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8000, estimatedTokens: 0 } }
-      })).rejects.toThrow("LLM execution grant is no longer valid.");
-      expect(revealCount).toBe(0);
-      expect(fetchCount).toBe(0);
-
       await publicationRepository.put(externalRecord);
       await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
       await service.deprecateFlowPublication({ projectId: globalProject.id, flowId: external.flowId, version: "1.0.0" });
       expect(await service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).not.toBe(authorizedDigest);
-      grants.close();
     } finally {
       Date.now = originalNow;
     }

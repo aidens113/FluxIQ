@@ -1,4 +1,4 @@
-// The person's instruction as a grant: what it asks for, grounded in its own
+// The person's instruction as a permission: what it asks for, grounded in its own
 // words, kept with the Flow, and lapsing when the words change.
 
 import { describe, expect, it, vi } from "vitest";
@@ -50,7 +50,7 @@ describe("reading what an instruction asks for", () => {
 });
 
 describe("a gate that reads the instruction", () => {
-  it("lets an instructed refund go ahead with no grant, and reads the instruction once", async () => {
+  it("lets an instructed refund go ahead with nothing permitted, and reads the instruction once", async () => {
     const derive = vi.fn(async () => readAutomationStudioInstructedConsequences({
       instructions: [REFUND_INSTRUCTION],
       result: { instructed: [{ consequence: "move_money", quote: "refund the value of the first line" }, { consequence: "modify_existing", quote: "refund the value of the first line" }] }
@@ -85,7 +85,7 @@ describe("a gate that reads the instruction", () => {
     expect(await gate.checkFor(STEP)(REFUND)).toMatchObject({ permitted: false, missing: ["move_money"] });
   });
 
-  it("still reads the instruction once when a grant covers the action, so what it asks for is kept with the Flow", async () => {
+  it("still reads the instruction once when a person's permission covers the action, so what it asks for is kept with the Flow", async () => {
     const derive = vi.fn(async () => []);
     const gate = new AutomationStudioActionPermissionGate({ stage: "authoring", permittedConsequences: ["move_money", "modify_existing"], deriveInstructed: derive });
 

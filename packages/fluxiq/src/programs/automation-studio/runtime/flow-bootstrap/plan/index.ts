@@ -33,4 +33,5 @@ export * from "./record-output-contract.ts";
 export * from "./route-condition.ts";
 export * from "./route-validation.ts";
 export * from "./routing-context.ts";
+export * from "./size-limits.ts";
 export * from "./validation.ts";

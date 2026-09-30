@@ -98,10 +98,10 @@ export type AutomationStudioLlmContextPacket = {
  * to a call whose actions the gate governs, it takes the place of the policy's
  * side-effect flags in `policyGates`: the gate, not those flags, is what
  * decides such an action, and a model told "no external side effects" would
- * avoid the press a person's grant or instruction allowed.
+ * avoid the press a person's permission or instruction allowed.
  */
 export type AutomationStudioLlmActionPermissions = {
-  /** The classes the person's grant allowed this run. */
+  /** The classes the person permitted this run. */
   granted: readonly AutomationStudioActionConsequence[];
   /** The classes the person's own instruction asks for, as the Flow's build stored them and they still stand. */
   instructed: readonly AutomationStudioActionConsequence[];
@@ -111,7 +111,7 @@ export type AutomationStudioLlmActionPermissions = {
  * Core's sentence for what happens to any other lasting consequence. Never a
  * model's. The last clause is load-bearing: a diagnosis is told to answer
  * "not achievable" where only a person can settle a step, and told only that a
- * person is asked, it read a press it had not been granted as exactly that --
+ * person is asked, it read a press it had not been permitted as exactly that --
  * and ended the recovery with no request, the silent refusal this replaces.
  */
 const ACTION_PERMISSIONS_OTHERWISE = "An action with any other lasting consequence is still within reach: when the recovery needs one, the run asks the person for permission at that step instead of taking it. Needing permission never makes a step's result unachievable.";
@@ -240,6 +240,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
       resolution: input.flowBootstrap.resolution,
+      ...(input.flowBootstrap.size ? { size: input.flowBootstrap.size } : {}),
       // Where the Flow starts, when the build was told. It reaches the model
       // through the context and not through the instruction, because no
       // instruction a person writes names it: they say what they want done, and
@@ -248,7 +249,8 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
       instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
       maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
         maxInputTokens: input.flowBootstrap.maxInputTokens ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
-        instructionBytes: Buffer.byteLength(JSON.stringify(instructions), "utf8")
+        instructionBytes: Buffer.byteLength(JSON.stringify(instructions), "utf8"),
+        ...(input.flowBootstrap.size ? { size: input.flowBootstrap.size } : {})
       })
     })
     : undefined;

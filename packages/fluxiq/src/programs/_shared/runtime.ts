@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -31,7 +31,6 @@ export type GlobalProgramRuntime = {
   productionRunner: ProductionRunnerService;
   runtime: RuntimeService;
   secretKeys: SecretKeysService;
-  llmExecutionGrants: AutomationStudioLlmExecutionGrantService;
 };
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
@@ -39,8 +38,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
   // Built before Automation Studio, which takes the standing result-check
-  // provider at construction: an unattended check is not a grant, so there is
-  // nothing to bind afterwards the way an execution grant is.
+  // provider at construction.
   const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
   // What a Flow's standing authorization buys, for a run nobody is watching:
   // the model that judges its result, and -- since the repair clause -- the
@@ -50,12 +48,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   // expiry all bind in Core before this is reached, and the model Core hands a
   // recovery refuses any task kind the redemption did not cover.
   //
-  // Deliberately not routed through the execution grant service: that refuses
-  // without a live actor session, and widening it would let unattended work
-  // reach `explore_and_adapt` and the Flow-building kinds too. Core has already
-  // decided that this run is checked or repaired and that the authorization
-  // covers it; what reaches here is the key, the person's own key unlock, and
-  // the ceiling for this one redemption.
+  // A run nobody is watching has no live session to release a key to, so it
+  // draws the key from the unlock the person left for it; what reaches here is
+  // the key, that unlock, and the ceiling for this one redemption.
   const resultCheckProviderResolver = (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => createAutomationStudioResultCheckProvider({
     ports: {
       getKeySummary: (id) => secretKeys.getKeySummary(id),
@@ -80,6 +75,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
   });
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
+  // What a build or run is doing reaches the paired clients of its project that asked for it (`server.activity`), never queued.
+  automationStudioActivityHub.subscribe((activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
@@ -102,25 +99,12 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   // The registry, not each handler, asks for the operator's PIN before a
   // `destructive` endpoint runs, so it is built once Identity Access exists.
   const api = new GlobalProgramApiRegistry({ identityAccess });
-  const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({ identityAccess, secretKeys, resolveExecutionDigest: async (projectId, flowId) => automationStudio.getLlmExecutionBinding(projectId, flowId) });
-  automationStudio.bindLlmExecutionProvider(
-    (input) => input.executionGrant
-      // No per-entry-point narrowing (t166). This used to say what each entry
-      // point may spend its grant on -- a build only bootstraps and gathers, a
-      // runtime recovery only diagnoses, gathers and repairs -- and the effect
-      // was that arriving through one door made a capability unreachable
-      // however the work went: a build could not judge its own answer, and a
-      // failed run could not re-author. Flow creation, runtime failure and an
-      // edge case in an existing Flow are three entry points into one loop, not
-      // three systems, and none of the kinds involved is a risky act. What the
-      // grant itself authorizes still applies, and a lasting consequence is
-      // still gated action by action.
-      ? llmExecutionGrants.resolve({ ...input.executionGrant, projectId: input.projectId, flowId: input.flowId })
-      : undefined,
-    (grantId) => llmExecutionGrants.revoke(grantId),
-    () => llmExecutionGrants.close(),
-    (input) => llmExecutionGrants.continueAfterAppliedFlowAdaptation(input)
-  );
+  // Every model call made for a person -- a build, an exploration, a run's
+  // diagnosis and repair, the check of its result -- runs on that person's own
+  // key, released per call to their unlocked session. No grant is issued,
+  // held, digest-checked or revoked around it; the run's budget bounds it, and
+  // a lasting consequence of an action is still asked about act by act.
+  automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys }));
   // The chat window reads plain requests with DeepSeek, on the key of whoever
   // sent the message, released to their own unlocked session. With no key, or
   // a locked session, the conversation still answers from its offline reading.
@@ -170,7 +154,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   }
 
-  registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway, llmExecutionGrants);
+  registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway);
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
   registerDatabaseManagerApi(api, databaseManager, identityAccess);
@@ -206,7 +190,6 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     productionRunner,
     runtime,
     secretKeys
-    , llmExecutionGrants
   };
 }
 

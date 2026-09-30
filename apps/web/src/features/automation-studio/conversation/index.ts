@@ -15,6 +15,7 @@ export {
   type ConversationViewHostCommands,
   type ConversationViewHostModel
 } from "./conversation-host";
+export * from "./activity";
 export * from "./capabilities";
 export * from "./thread";
 export {

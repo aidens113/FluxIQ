@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
-import { AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE, runtimeSessionToFlowRunDetail } from "../index.ts";
+import { AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE, flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../index.ts";
 
 describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
   it("reads recordCount from the $dataset marker a saved trace holds in place of the captured rows", () => {
@@ -159,3 +159,16 @@ function session(attempts: AutomationStudioNodeAttemptTrace[]): AutomationStudio
     trace: { status: "succeeded", startedAt: 5, finishedAt: 20, attempts, values: {}, effects: [] }
   };
 }
+
+// The run summary list-flow-runs answers from carries the same durable-change
+// reading the run endpoint answers with, computed when the summary is saved.
+describe("flowRunSummaryWithInterventionSummaries durableBehaviorChanged", () => {
+  it("is true only when one of the run's adaptations was applied automatically", () => {
+    const detail = runtimeSessionToFlowRunDetail(session([]), "project.conversions");
+    expect(flowRunSummaryWithInterventionSummaries(detail).durableBehaviorChanged).toBe(false);
+    const applied = { ...detail, adaptationIds: ["adaptation.one"], metadata: { ...(detail.metadata ?? {}), runtimePatchAttempts: [{ adaptationId: "adaptation.one", approvalDecision: { autoApply: true } }] } };
+    expect(flowRunSummaryWithInterventionSummaries(applied).durableBehaviorChanged).toBe(true);
+    const pending = { ...applied, metadata: { ...(detail.metadata ?? {}), runtimePatchAttempts: [{ adaptationId: "adaptation.one", approvalDecision: { autoApply: false } }] } };
+    expect(flowRunSummaryWithInterventionSummaries(pending).durableBehaviorChanged).toBe(false);
+  });
+});

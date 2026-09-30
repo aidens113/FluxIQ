@@ -79,6 +79,7 @@ import {
   type AutomationStudioFlowBootstrapIssue,
   type AutomationStudioFlowBootstrapPhaseFailureCode,
   type AutomationStudioFlowBootstrapPlan,
+  type AutomationStudioFlowBootstrapSizeLimits,
   type AutomationStudioFlowBuildPlan
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
@@ -184,6 +185,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
    * and it passes: a Flow is never refused for an arrival nobody asked for.
    */
   startLocation?: string | undefined;
+  /** The Flow's size bounds, from its setting (`flow-bootstrap/plan/size-limits.ts`); the default when absent. */
+  size?: AutomationStudioFlowBootstrapSizeLimits | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -230,14 +233,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   if (!accepted.ok) {
     failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(accepted.issues), about: about(accepted.refusedPlan ?? written) });
   } else {
-    const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan);
+    const parsed = parseAutomationStudioFlowBootstrapPlan(accepted.plan, input.size);
     if (!parsed.plan || parsed.issues.some((item) => item.severity === "error")) {
       failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: errors(parsed.issues), about: about(accepted.plan) });
     } else {
       capabilityPlan = parsed.plan;
       // A plan Core assembled from the draft is held to the Flow's own limits;
       // one the model wrote, to what one reply may carry (`profile-limits.ts`).
-      const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: accepted.summary, plan: parsed.plan }, drafted ? "draft" : "reply");
+      const exceeded = automationStudioEvidenceFlowBootstrapLimitsExceeded({ summary: accepted.summary, plan: parsed.plan }, drafted ? "draft" : "reply", input.size);
       if (exceeded.length) {
         failures.push({
           code: "flow_bootstrap.evidence_completion_profile_limit_exceeded",
@@ -257,7 +260,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
       } else {
         capabilityPlan = resolved.plan;
-        const validated = validatePlan(resolved.plan, input.registry, input.resolution);
+        const validated = validatePlan(resolved.plan, input.registry, input.resolution, input.size);
         if (validated.threw) {
           // A check that throws refuses the plan under a code of its own, rather
           // than ending creation with a record that cannot say what happened.
@@ -307,10 +310,11 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
 function validatePlan(
   plan: AutomationStudioFlowBootstrapPlan,
   registry: AutomationStudioNodeRegistry,
-  resolution: AutomationStudioNodeRegistryResolution
+  resolution: AutomationStudioNodeRegistryResolution,
+  size?: AutomationStudioFlowBootstrapSizeLimits
 ): { threw: true } | { threw: false; outcome: ReturnType<typeof validateAutomationStudioFlowBootstrapPlan> } {
   try {
-    return { threw: false, outcome: validateAutomationStudioFlowBootstrapPlan({ plan, registry, resolution }) };
+    return { threw: false, outcome: validateAutomationStudioFlowBootstrapPlan({ plan, registry, resolution, ...(size ? { size } : {}) }) };
   } catch {
     return { threw: true };
   }

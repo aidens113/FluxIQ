@@ -1,9 +1,9 @@
 // One provider call, retried while the fault is temporary and the bounds allow.
 //
 // **This is the seam every provider call already passes through.** Core sends a
-// request to a model in exactly one place -- the harness -- and the two other
-// `runTask` callers in the repository are decorators the harness wraps
-// (`execution/grants.ts`, `service/runtime-adaptation/repair-authority.ts`), so a
+// request to a model in exactly one place -- the harness -- and the other
+// `runTask` caller in the repository is a decorator the harness wraps
+// (`service/runtime-adaptation/repair-authority.ts`), so a
 // retry here is inherited by the diagnosis, the patch, the Flow build, every
 // exploration decision and every result verification, including ones written
 // later. Nothing opts in and nothing can decline it.
@@ -32,8 +32,6 @@ import { automationStudioLlmProviderRetryDecision } from "./decision.ts";
 import { automationStudioLlmProviderRetryHintMs } from "./hint.ts";
 import { AutomationStudioLlmProviderRetryLedger, automationStudioLlmProviderRetryRunLedger } from "./ledger.ts";
 
-const PROVIDER_ATTEMPT_LIMIT = Symbol.for("fluxiq.automation-studio.llm.provider-attempt-limit");
-
 export type AutomationStudioLlmProviderCallOutcome = {
   /** Every attempt this call made, and why it stopped. Always present, answered or not. */
   retry: AutomationStudioLlmProviderRetryAccount;
@@ -60,8 +58,7 @@ export async function automationStudioLlmProviderCall(input: {
   const ledger = input.ledger ?? automationStudioLlmProviderRetryRunLedger;
   const wait = input.wait ?? waitForMilliseconds;
   const startedAt = input.now();
-  const providerMaxAttempts = Reflect.get(input.provider, PROVIDER_ATTEMPT_LIMIT) as number | undefined;
-  const maxAttempts = Math.min(input.maxAttempts ?? Number.POSITIVE_INFINITY, providerMaxAttempts ?? Number.POSITIVE_INFINITY);
+  const maxAttempts = input.maxAttempts ?? Number.POSITIVE_INFINITY;
   const attempts: AutomationStudioLlmProviderRetryAttempt[] = [];
   let waitedMs = 0;
   let addedMs = 0;

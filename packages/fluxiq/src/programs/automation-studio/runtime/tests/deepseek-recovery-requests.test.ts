@@ -7,16 +7,17 @@
 // accepts whatever it is handed, and every adapter test built its request by
 // hand, which never carried what a real failed run carries.
 //
-// These drive the whole recovery path -- the grant a person issues, the
-// provider it resolves, the packet the harness builds from a failed run -- into
-// the real `createAutomationStudioDeepSeekProvider`. Only the network and the
+// These drive the whole recovery path -- the host's session-key resolver (no
+// grant: the caller's own key, released per call), the provider it resolves,
+// the packet the harness builds from a failed run -- into the real
+// `createAutomationStudioDeepSeekProvider`. Only the network and the
 // credential store are stand-ins. A request the adapter would refuse therefore
 // fails here, in CI, instead of in a live run.
 //
 // The failed run is shaped the way the web domain's are: the attempt carries a
 // structured `target_not_found` failure record, and the domain captures a
-// sanitized page packet and offers an observing tool. The grant carries the
-// limits the live run used.
+// sanitized page packet and offers an observing tool. The resolution carries
+// the limits the live run used.
 
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -28,12 +29,13 @@ import type {
 } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import {
-  AutomationStudioLlmExecutionGrantService,
-  automationStudioRuntimeAdaptationContextForGrant,
+  automationStudioRuntimeAdaptationContextForLlmRun,
   createAutomationStudioDeepSeekProvider,
+  createAutomationStudioSessionKeyProviderResolver,
   type AutomationStudioHarnessOptionBundle,
   type AutomationStudioLlmEvidenceRuntimeBinding,
-  type AutomationStudioLlmTokenLimits
+  type AutomationStudioLlmTokenLimits,
+  type AutomationStudioSessionKeyPorts
 } from "../llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm, type AutomationStudioRuntimeRecoveryPorts } from "../recovery/index.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../result-check-schedule/index.ts";
@@ -56,7 +58,7 @@ const LIVE_TOKEN_LIMITS: Record<string, AutomationStudioLlmTokenLimits> = {
 };
 
 describe("the real DeepSeek adapter on a real runtime recovery", () => {
-  it("accepts the secret reference the grant path hands it", () => {
+  it("accepts a secret reference in the shape Secret Keys mints", () => {
     expect(() => createAutomationStudioDeepSeekProvider({
       secretReference: { kind: "secret_reference", id: KEY_ID },
       resolveSecret: async () => "unused"
@@ -68,7 +70,7 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
   // action may carry had never heard of it, so it refused the whole request
   // as an invalid contract before resolving the credential.
   for (const [name, tokenLimits] of Object.entries(LIVE_TOKEN_LIMITS)) {
-    it(`sends the diagnosis of a target-not-found web failure under the ${name} grant limits`, async () => {
+    it(`sends the diagnosis of a target-not-found web failure under the ${name} per-call limits`, async () => {
       const run = await recover({ tokenLimits, explore: false, patch: false });
 
       expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis"]);
@@ -113,15 +115,15 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
     }
   });
 
-  // One bad answer used to end the whole recovery: the grant was revoked on
-  // the first failed call, so every later call -- the patch included -- was
-  // refused as "grant unavailable". A bad answer is now a spent call. The grant
-  // carries on, the exploration asks again, the progress guard stops a loop
-  // whose answers stay bad, and the patch is still sent under the same grant.
+  // One bad answer used to end the whole recovery: the grant it ran under was
+  // revoked on the first failed call, so every later call -- the patch
+  // included -- was refused. A bad answer is a spent call. The run carries on,
+  // the exploration asks again, the progress guard stops a loop whose answers
+  // stay bad, and the patch is still sent.
   it.each([
     ["come back malformed", "malformed", "llm.provider_malformed_response", undefined],
     ["run past the call's deadline", "hang", "llm.provider_timeout", 1_000]
-  ] as const)("keeps the grant through exploration decisions that %s, stops them on the progress guard, and still sends the patch", async (_label, decisionReply, code, timeoutMs) => {
+  ] as const)("carries on through exploration decisions that %s, stops them on the progress guard, and still sends the patch", async (_label, decisionReply, code, timeoutMs) => {
     const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply, ...(timeoutMs ? { timeoutMs } : {}) });
 
     expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
@@ -153,7 +155,7 @@ type RecoveryOptions = {
   looks?: number;
   /** How every exploration decision is answered instead: a malformed body, or never. */
   decisionReply?: "malformed" | "hang";
-  /** The grant's per-call timeout. */
+  /** The resolution's per-call timeout. */
   timeoutMs?: number;
 };
 
@@ -161,35 +163,30 @@ type SentCall = { url: string; taskKind: string; iteration?: number; recentActio
 
 type Recovery = { detail: AutomationStudioFlowRunDetail; sent: SentCall[]; revealed: string[] };
 
-/** One failed web run, recovered under a real grant through the real adapter. */
+/** One failed web run, recovered for a caller through the real adapter. */
 async function recover(options: RecoveryOptions): Promise<Recovery> {
   const sent: SentCall[] = [];
   const revealed: string[] = [];
-  const grants = grantService(deepSeekEndpoint(options, sent), revealed);
-  const grant = await grants.issue({
-    ...ACTOR,
-    keyId: KEY_ID,
-    projectId: PROJECT_ID,
-    flowId: FLOW_ID,
-    provider: "deepseek",
-    model: "deepseek-flash",
-    purpose: "diagnose_and_adapt",
-    maxCalls: 26,
-    // The live run's 600,000, or every call's worst case when that is less.
-    maxTotalTokensPerRun: Math.min(600_000, options.tokenLimits.maxTotalTokens * 26),
-    highTokenConfirmation: true,
-    tokenLimits: options.tokenLimits,
-    timeoutMs: options.timeoutMs ?? 25_000,
-    maxEstimatedCostUsd: 0.25,
-    maxTotalEstimatedCostUsd: 2
-  });
-  const executionGrant = { grantId: grant.grantId, ...ACTOR, purpose: "diagnose_and_adapt" as const };
-  // As `programs/_shared/runtime.ts` binds it: the grant is not narrowed by
-  // entry point, because diagnosis, evidence, repair and verification are one loop.
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ ports: sessionKeyPorts(revealed), fetchImpl: deepSeekEndpoint(options, sent) });
+  const llmExecution = { ...ACTOR, intent: "diagnose_and_adapt" as const };
+  // As `programs/_shared/runtime.ts` binds it: one resolver for the whole
+  // diagnosis, evidence, repair and verification loop. The limits are the
+  // live run's, set on the resolution as budget defaults, not checked as a grant.
   const ports: AutomationStudioRuntimeRecoveryPorts = {
-    resolveLlmProvider: (input) => grants.resolve(
-      { ...executionGrant, projectId: input.projectId, flowId: input.flowId }
-    ),
+    resolveLlmProvider: (input) => {
+      const resolution = resolveForCaller(input);
+      if (!resolution) return undefined;
+      return {
+        ...resolution,
+        tokenLimits: options.tokenLimits,
+        maxCallsPerRun: 26,
+        // The live run's 600,000, or every call's worst case when that is less.
+        maxTotalTokensPerRun: Math.min(600_000, options.tokenLimits.maxTotalTokens * 26),
+        timeoutMs: options.timeoutMs ?? 25_000,
+        maxEstimatedCostUsd: 0.25,
+        maxTotalEstimatedCostUsd: 2
+      };
+    },
     llmEvidenceRuntime: webBinding(),
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],
@@ -199,19 +196,15 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
     saveFlowAdaptation: async (adaptation) => adaptation,
     promoteRuntimeAdaptation: async (input) => input.adaptation
   };
-  try {
-    const detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
-      ports,
-      detail: failedRun(),
-      context: automationStudioRuntimeAdaptationContextForGrant(adaptationContext(), "diagnose_and_adapt"),
-      runtimeFlow: runtimeFlow(),
-      failedTraceAttempt: failedTraceAttempt(),
-      executionGrant
-    });
-    return { detail, sent, revealed };
-  } finally {
-    grants.close();
-  }
+  const detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
+    ports,
+    detail: failedRun(),
+    context: automationStudioRuntimeAdaptationContextForLlmRun(adaptationContext(), "diagnose_and_adapt"),
+    runtimeFlow: runtimeFlow(),
+    failedTraceAttempt: failedTraceAttempt(),
+    llmExecution
+  });
+  return { detail, sent, revealed };
 }
 
 function providerCalls(detail: AutomationStudioFlowRunDetail): JsonObject[] {
@@ -223,29 +216,21 @@ function explorationStage(detail: AutomationStudioFlowRunDetail): JsonObject | u
   return trace?.stages?.find((stage) => stage.stage === "exploration");
 }
 
-/** The grant service with Identity Access and Secret Keys stood in. */
-function grantService(fetchImpl: typeof fetch, revealed: string[]): AutomationStudioLlmExecutionGrantService {
-  const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
+/** Secret Keys stood in: one enabled DeepSeek key, released per call to the caller's session. */
+function sessionKeyPorts(revealed: string[]): AutomationStudioSessionKeyPorts {
   let minted = 0;
-  const secretKeys = {
-    getKeySummary: async () => ({ ...key }),
-    createSessionRevealAuthorization: async (input: { ttlMs?: number; nowMs?: number }) => {
+  return {
+    snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
+    createSessionRevealAuthorization: async (input) => {
       minted += 1;
-      return { authorizationId: `secret-reveal:${minted}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: (input.nowMs ?? Date.now()) + (input.ttlMs ?? 60_000), remainingUses: 1 };
+      return { authorizationId: `secret-reveal:${minted}`, keyId: input.id, keyUpdatedAtMs: 1 };
     },
-    revealKeyWithAuthorization: async (input: { id: string }) => {
+    revealKeyWithAuthorization: async (input) => {
       revealed.push(input.id);
-      return { key: { ...key }, value: "test-deepseek-credential" };
+      return { value: "test-deepseek-credential" };
     },
     revokeRevealAuthorization: () => {}
   };
-  const identityAccess = { validateSession: async () => ({ user: { id: ACTOR.actorUserId }, session: {}, role: {} }) };
-  return new AutomationStudioLlmExecutionGrantService({
-    identityAccess: identityAccess as unknown as ConstructorParameters<typeof AutomationStudioLlmExecutionGrantService>[0]["identityAccess"],
-    secretKeys: secretKeys as unknown as ConstructorParameters<typeof AutomationStudioLlmExecutionGrantService>[0]["secretKeys"],
-    resolveExecutionDigest: async () => ({ executionDigest: "digest.checkout", settingsRevision: 3 }),
-    fetchImpl
-  });
 }
 
 /** DeepSeek's endpoint, answering each task the way a cooperative model would. */
@@ -478,7 +463,7 @@ function adaptationPolicy(): AutomationStudioAdaptationPolicy {
     allowModifyRouter: false,
     allowModifyExpectations: false,
     // The person's own policy permits the target repair this fixture expects.
-    // A grant no longer widens this flag on the person's behalf.
+    // Asking for the run does not widen this flag on the person's behalf.
     allowModifyActionTargets: true,
     allowDeleteOrDisableBehavior: false,
     allowExternalSideEffects: false,

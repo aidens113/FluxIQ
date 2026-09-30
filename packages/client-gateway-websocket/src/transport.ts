@@ -141,6 +141,7 @@ export class FluxIQClientGatewayWebSocketClient {
     else if (message.type === "server.stop_recording") this.emit({ type: "stop_recording", message });
     else if (message.type === "server.capture_snapshot") this.emit({ type: "capture_snapshot", message });
     else if (message.type === "server.execute_action") this.emit({ type: "execute_action", message });
+    else if (message.type === "server.activity") this.emit({ type: "activity", message });
   }
 
   private emit(event: FluxIQClientGatewayWebSocketEvent): void {

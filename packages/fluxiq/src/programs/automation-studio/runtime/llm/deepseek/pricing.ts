@@ -23,9 +23,10 @@ import {
  * **Peak, deliberately.** DeepSeek charges half of every figure below outside
  * 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday, excluding Chinese public
  * holidays -- so roughly four fifths of the week, both weekend days included,
- * bills at half price. Core prices at the peak rate anyway, because a grant
- * reserves before a call is made and a reservation that assumed the discount
- * would let a run overspend the moment it started inside peak hours. An
+ * bills at half price. Core prices at the peak rate anyway, because a call is
+ * estimated against the run's budget before it is made, and an estimate that
+ * assumed the discount would let a run overspend the moment it started inside
+ * peak hours. An
  * off-peak run is therefore billed less than Core estimated, never more.
  *
  * **A cache hit is a fiftieth of a miss, not a tenth.** The rates that stood
@@ -55,13 +56,13 @@ export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TO
  * cache, as against {@link AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS}
  * for one it had to read.
  *
- * **It never makes a reservation cheaper.** Core reserves against
+ * **It never makes an estimate cheaper.** Core estimates a call against
  * `estimateAutomationStudioDeepSeekInputTokens`, which measures the bytes it is
- * about to send and knows nothing about caching, so a grant still holds back
- * the cache-miss price for every call it authorizes. This rate is applied only
+ * about to send and knows nothing about caching, so the run's budget is still
+ * charged the cache-miss price before every call. This rate is applied only
  * to hits the provider has already reported on a call that has already been
  * made, which is a measurement rather than a promise -- so a hit rate that
- * turns out to be wrong cannot let a grant overspend.
+ * turns out to be wrong cannot let a run overspend its budget.
  */
 export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS =
   PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL].cacheHitInput;

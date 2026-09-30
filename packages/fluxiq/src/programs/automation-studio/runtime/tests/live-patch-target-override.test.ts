@@ -197,7 +197,7 @@ describe("Automation Studio runtime target overrides", () => {
     expect(result.metadata).toEqual({ proposalOnly: true, executed: false, targetOverrideRefusal: { status: "ambiguous" } });
   });
 
-  // Without a proposal grant Core executes an override rather than proposing
+  // Outside a proposal-only run Core executes an override rather than proposing
   // it, and that path never asked the domain: a target the domain refuses --
   // an action it cannot repair, a handle it never issued -- was run anyway.
   // Both paths now go through the same check, and no check means no override.

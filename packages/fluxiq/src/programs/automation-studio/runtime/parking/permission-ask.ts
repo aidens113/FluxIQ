@@ -11,7 +11,7 @@
 // The whole mechanism is the gate's, and nothing here decides anything. The
 // gate raises the request; this opens it as the ask the conversation already
 // has, keyed by the request's own `requestId`, and answers whether it came back
-// granted. What the caller does with a grant is the caller's: it settles its
+// granted. What the caller does with a permission is the caller's: it settles its
 // own gate and asks the same check again, so nothing decides permission twice.
 //
 // **A thread that cannot be written to is not a run that dies.** An unreachable
@@ -29,7 +29,7 @@ import type { AutomationStudioParkingPort } from "./port.ts";
 /**
  * How long any caller waits for an answer, at most.
  *
- * Short on purpose. A waiting caller holds a provider grant and its own
+ * Short on purpose. A waiting caller holds its run, its budget and its own
  * request open, so this is the cost of nobody being there, paid once. A person
  * watching the thread answers in seconds; one who is not never had a build or a
  * repair to rescue. A caller with nobody in front of it passes no timeout and
@@ -54,7 +54,7 @@ export type AutomationStudioPermissionAsk = {
  *
  * Capped rather than taken as given. The caller decides *whether* to wait; how
  * long work may be held open is Core's, because a caller asking for a week
- * would hold a provider grant and its own request for a week.
+ * would hold its run and its own request open for a week.
  */
 export function automationStudioPermissionAskWaitMs(timeoutMs: number | undefined): number | undefined {
   if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) return undefined;

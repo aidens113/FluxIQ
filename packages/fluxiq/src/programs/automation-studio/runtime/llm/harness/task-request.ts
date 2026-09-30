@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowBootstrapRoutingContext } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowBootstrapRoutingContext, AutomationStudioFlowBootstrapSizeLimits } from "../../flow-bootstrap/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
   AutomationStudioFlowIntervention,
@@ -201,6 +201,8 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
     routing?: AutomationStudioFlowBootstrapRoutingContext;
     /** Where the Flow this build writes starts, when the build was told (`../../flow-bootstrap/start-location.ts`). */
     startLocation?: string;
+    /** The Flow's size bounds, from its setting (`../../flow-bootstrap/plan/size-limits.ts`); the default when absent. */
+    size?: AutomationStudioFlowBootstrapSizeLimits;
   };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;

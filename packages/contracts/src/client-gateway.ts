@@ -110,6 +110,60 @@ export type ClientGatewayActionResult = {
   metadata?: JsonObject;
 };
 
+/**
+ * The capability a client advertises to receive `server.activity`. Core sends
+ * the activity stream only to ready sessions that declared it.
+ */
+export const CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID = "fluxiq.activity";
+
+/** What FluxIQ is doing now. Each value is set only by a real Core event. */
+export type ClientGatewayActivityPhase =
+  | "thinking"
+  | "exploring"
+  | "building"
+  | "running"
+  | "extracting"
+  | "verifying"
+  | "repairing"
+  | "waiting_permission"
+  | "done"
+  | "failed";
+
+/**
+ * One activity event: the current status of one unit of work (a build or a
+ * run) plus an optional detail row for the chat stream. Bounded and
+ * content-free beyond what the person's own panel already shows: labels are
+ * Core's own sentences, tool and node ids, and authored step labels; never
+ * observed target content, tokens or secrets. Core truncates `label` to 160
+ * characters, `detail.title` to 160 and `detail.text` to 1,000.
+ */
+export type ClientGatewayActivity = {
+  /** Stable id of the unit of work this event belongs to. */
+  activityId: string;
+  /** Strictly increasing per Core process, so a client can drop stale events. */
+  sequence: number;
+  subject: { kind: "build" | "run"; id: string; projectId: string; flowId?: string };
+  phase: ClientGatewayActivityPhase;
+  /** Core's one-line status sentence, e.g. "Running step 2 of 5". */
+  label: string;
+  step?: { index: number; count: number; nodeId?: string; label?: string };
+  /** A row for the chat stream; absent for a pure status change. */
+  detail?: {
+    kind: "thought" | "tool" | "step" | "check" | "ask" | "note";
+    title: string;
+    text?: string;
+    status?: "started" | "succeeded" | "failed";
+    /** Tool or node id the row describes, when there is one. */
+    ref?: string;
+  };
+  /** The conversation this work speaks through, when it has one. */
+  conversationId?: string;
+  /** True on the last event of the unit of work (`done` or `failed`). */
+  final?: boolean;
+  /** ISO timestamp. */
+  at: string;
+};
+
 export type ClientGatewayPairingChallenge = {
   pairingCode: string;
   referenceCode?: string;
@@ -206,6 +260,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.capture_snapshot", { kind?: string; metadata?: JsonObject }>
   | ClientGatewayEnvelope<"server.execute_action", ClientGatewayActionCommand & { commandId: string }>
   | ClientGatewayEnvelope<"server.set_active_tab", { tabId: string }>
+  | ClientGatewayEnvelope<"server.activity", ClientGatewayActivity>
   | ClientGatewayEnvelope<"server.ping", { nonce: string }>
   | ClientGatewayEnvelope<"server.disconnect", { reason: string }>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;

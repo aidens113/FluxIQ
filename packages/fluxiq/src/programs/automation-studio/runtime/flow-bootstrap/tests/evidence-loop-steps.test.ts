@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceTraceRow } from "../evidence-loop-steps.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import {
   automationStudioFlowBootstrapEvidenceSteps,
   parseAutomationStudioFlowBootstrapEvidenceSteps
 } from "../evidence-loop-steps.ts";
+
+/**
+ * The most draft positions a published step may represent: the largest Flow
+ * the Flow size setting allows, one appended step per iteration, and the
+ * iteration-zero observation. A published step is read with no Flow in hand.
+ */
+const MAX_REPRESENTED = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
 
 function amendRow(row: Partial<AutomationStudioFlowBootstrapEvidenceTraceRow> = {}): AutomationStudioFlowBootstrapEvidenceTraceRow {
   return { iteration: 3, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, ...row };
@@ -115,8 +124,8 @@ describe("Flow Bootstrap evidence steps: content-free progress", () => {
   it("keeps the largest supported seeded-and-appended draft in sanitized and stored evidence", () => {
     const boundary = {
       ...instrumentation,
-      draftChange: { ...instrumentation.draftChange, keptStepCount: 129 },
-      draft: { ...instrumentation.draft, steps: 129, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
+      draftChange: { ...instrumentation.draftChange, keptStepCount: MAX_REPRESENTED },
+      draft: { ...instrumentation.draft, steps: MAX_REPRESENTED, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
     };
     const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow(boundary)]);
 
@@ -124,11 +133,26 @@ describe("Flow Bootstrap evidence steps: content-free progress", () => {
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
   });
 
+  // A Flow is no longer capped at sixty-four nodes (`model/flow-size/`): a
+  // draft of a hundred or a hundred and fifty steps is an ordinary build of a
+  // Flow whose setting allows it, and its published steps must read back.
+  it.each([100, 150])("keeps a %i-step draft in sanitized and stored evidence", (steps) => {
+    const large = {
+      ...instrumentation,
+      draftChange: { ...instrumentation.draftChange, keptStepCount: steps },
+      draft: { ...instrumentation.draft, steps, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
+    };
+    const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow(large)]);
+
+    expect(step).toMatchObject(large);
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
+  });
+
   it("drops and refuses represented draft counts above the supported seed-plus-append maximum", () => {
     const aboveBoundary = {
       ...instrumentation,
-      draftChange: { ...instrumentation.draftChange, keptStepCount: 130 },
-      draft: { ...instrumentation.draft, steps: 130, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
+      draftChange: { ...instrumentation.draftChange, keptStepCount: MAX_REPRESENTED + 1 },
+      draft: { ...instrumentation.draft, steps: MAX_REPRESENTED + 1, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
     };
     const [sanitized] = automationStudioFlowBootstrapEvidenceSteps([amendRow(aboveBoundary)]);
 
@@ -144,15 +168,15 @@ describe("Flow Bootstrap evidence steps: content-free progress", () => {
     }])).toBeNull();
   });
 
-  it("bounds the combined listed and unlisted draft count at 129", () => {
+  it("bounds the combined listed and unlisted draft count at the represented maximum", () => {
     const [boundary] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
-      draft: { ...instrumentation.draft, steps: 64, unlisted: 65, withoutInput: 0, inputTooLarge: 0 }
+      draft: { ...instrumentation.draft, steps: 64, unlisted: MAX_REPRESENTED - 64, withoutInput: 0, inputTooLarge: 0 }
     })]);
     const [aboveBoundary] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
-      draft: { ...instrumentation.draft, steps: 64, unlisted: 66, withoutInput: 0, inputTooLarge: 0 }
+      draft: { ...instrumentation.draft, steps: 64, unlisted: MAX_REPRESENTED - 63, withoutInput: 0, inputTooLarge: 0 }
     })]);
 
-    expect(boundary?.draft).toMatchObject({ steps: 64, unlisted: 65 });
+    expect(boundary?.draft).toMatchObject({ steps: 64, unlisted: MAX_REPRESENTED - 64 });
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([boundary])).toEqual([boundary]);
     expect(aboveBoundary).not.toHaveProperty("draft");
   });

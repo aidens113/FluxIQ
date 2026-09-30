@@ -19,7 +19,7 @@ export type AutomationStudioLlmStructuredResponse =
  * Why there is nothing to repair, in the five ways a page says no.
  *
  * A model asked for a runtime patch had no way to answer "there is no repair":
- * under a `diagnose_and_adapt` grant the schema was one target override with at
+ * on a `diagnose_and_adapt` run the schema was one target override with at
  * least one handle and no other shape, so the only schema-valid answer was a
  * control -- and in the live repair campaign of 2026-09-17 every refusal task
  * came back with one that was merely pressable. This is the answer that was

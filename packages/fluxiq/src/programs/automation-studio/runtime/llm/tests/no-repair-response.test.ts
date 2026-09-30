@@ -4,14 +4,14 @@ import { AUTOMATION_STUDIO_NO_REPAIR_REASONS, parseAutomationStudioLlmProviderRe
 
 // What a model may answer when there is nothing to repair.
 //
-// Under a `diagnose_and_adapt` grant the patch schema was one target override
+// On a `diagnose_and_adapt` run the patch schema was one target override
 // with at least one handle and no other shape, so a model asked to repair a
 // deleted item, a locked record or a retired page had no schema-valid way to
 // say so: every refusal task in the 2026-09-17 live campaign came back with a
 // control that was merely pressable. Declining is now an answer, with a reason
 // from a closed list, and Core records it as a refusal that proposes nothing.
 describe("a runtime patch the model declines", () => {
-  it("offers a no_repair answer beside the one target override a proposal grant buys", async () => {
+  it("offers a no_repair answer beside the one target override a proposal-only run allows", async () => {
     const outbound = await outboundRequest();
 
     const schema = outbound.userPayload.outputSchema as { oneOf?: Array<Record<string, JsonLike>> };
@@ -83,7 +83,7 @@ describe("a runtime patch the model declines", () => {
 
 type JsonLike = unknown;
 
-/** The request a proposal-grant patch call sends, read off the stubbed transport. */
+/** The request a proposal-only patch call sends, read off the stubbed transport. */
 async function outboundRequest(overrides: Partial<AutomationStudioLlmTaskRequest> = {}): Promise<{ systemPrompt: string; userPayload: Record<string, unknown> }> {
   let captured: RequestInit | undefined;
   const answer = overrides.expectedOutput === "diagnosis"

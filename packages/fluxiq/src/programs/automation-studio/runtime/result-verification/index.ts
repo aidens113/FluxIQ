@@ -37,3 +37,4 @@ export * from "./run-outcome.ts";
 export * from "./verdict.ts";
 export * from "./verification-status.ts";
 export * from "./verify.ts";
+export * from "./zero-provider-run.ts";

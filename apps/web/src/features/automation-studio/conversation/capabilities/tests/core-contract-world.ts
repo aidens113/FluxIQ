@@ -21,7 +21,7 @@ import type { ApiResponse, JsonObject } from "../../../../programs/program-api";
 import type { ProgramCommandTransport } from "../../../data/program-transport";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramEndpointClassification } from "../../../../../../../../packages/fluxiq/src/programs/_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/api/handlers/index.ts";
-import { AutomationStudioLlmExecutionGrantService, AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
+import { AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/nodes/index.ts";
 
 export const CONTRACT_PIN = "482915";
@@ -50,7 +50,7 @@ export type ContractWorld = {
     /**
      * A blank Flow with an instruction and a model key, which is the only kind
      * Core builds from an instruction ("Flow Bootstrap requires a Flow without
-     * a Router."). The build grant is bound to it.
+     * a Router.").
      */
     blankFlowId: string;
     /** A part of `flowId` that nothing routes to, so it can be deleted. */
@@ -61,7 +61,6 @@ export type ContractWorld = {
     routeId: string;
     trustedClientId: string;
     version: string;
-    llmExecutionGrantId: string;
   };
   close(): Promise<void>;
 };
@@ -174,21 +173,8 @@ export async function openContractWorld(): Promise<ContractWorld> {
       return true;
     }
   };
-  // Core's real grant service. Only its Secret Keys port is faked, holding one
-  // enabled DeepSeek key, which is what a person who can build a Flow has.
-  const key = { id: LLM_KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", scopeRef: null, enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
-  let reveals = 0;
-  const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({
-    identityAccess: { validateSession: async () => ({ user: { id: "user.contract" }, session: {}, role: {} }) } as never,
-    secretKeys: {
-      getKeySummary: async (keyId: string) => (keyId === LLM_KEY_ID ? { ...key } : null),
-      createSessionRevealAuthorization: async () => ({ authorizationId: `secret-reveal:${++reveals}`, keyId: LLM_KEY_ID, keyUpdatedAtMs: 1, expiresAtMs: Date.now() + 60_000, remainingUses: 1 }),
-      revokeRevealAuthorization: () => undefined
-    } as never,
-    resolveExecutionDigest: async (projectId, flowId) => service.getLlmExecutionBinding(projectId, flowId)
-  });
   const registry = new GlobalProgramApiRegistry({ identityAccess: identityAccess as never });
-  registerAutomationStudioApi(registry, service, identityAccess as never, undefined, clientGateway as never, llmExecutionGrants);
+  registerAutomationStudioApi(registry, service, identityAccess as never, undefined, clientGateway as never);
   const endpoints = registry.endpoints().filter((entry) => entry.programId === "automation-studio");
   const classifications = new Map(endpoints.map((entry) => [entry.endpoint, entry.classification]));
   const actor: ProgramApiActor = {
@@ -216,7 +202,6 @@ export async function openContractWorld(): Promise<ContractWorld> {
   };
 
   const close = async () => {
-    llmExecutionGrants.close();
     await service.close();
     await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   };
@@ -224,7 +209,7 @@ export async function openContractWorld(): Promise<ContractWorld> {
     const project = await service.createProject({ name: "Contract project" });
     const created = await service.createFlow({ projectId: project.id, name: "Contract Flow" });
     // A Flow with a model key chosen in its settings, as the panel's own build
-    // button requires before it will ask for a grant.
+    // button requires before it offers a build.
     const withModelKey = <T extends { metadata?: unknown }>(flow: T) => ({ ...flow, metadata: { ...((flow.metadata as Record<string, unknown> | undefined) ?? {}), llmProvider: "deepseek", llmModel: "deepseek-flash", llmSecretKeyId: LLM_KEY_ID } });
     await service.saveFlow({ projectId: project.id, flow: withModelKey(created) as never });
     const flow = created;
@@ -262,20 +247,6 @@ export async function openContractWorld(): Promise<ContractWorld> {
     const blankCreated = await service.createFlow({ projectId: project.id, name: "Contract blank Flow" });
     await service.saveFlow({ projectId: project.id, flow: withModelKey(blankCreated) as never });
     await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: blankCreated.flowId, instruction: "Create a deterministic Start to End Flow." });
-    // A build grant, issued by Core's grant service to this person's session,
-    // as the panel's own build button issues one.
-    const grant = await llmExecutionGrants.issue({
-      actorUserId: actor.userId,
-      actorSessionId: SESSION_ID,
-      keyId: LLM_KEY_ID,
-      projectId: project.id,
-      flowId: blankCreated.flowId,
-      provider: "deepseek",
-      model: "deepseek-flash",
-      purpose: "build_and_adapt",
-      maxCalls: 1,
-      maxUses: 1
-    } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]);
     return {
       service,
       transport,
@@ -291,8 +262,7 @@ export async function openContractWorld(): Promise<ContractWorld> {
         adaptationId: adaptation.adaptationId,
         routeId,
         trustedClientId: TRUSTED_CLIENT_ID,
-        version,
-        llmExecutionGrantId: grant.grantId
+        version
       },
       close
     };

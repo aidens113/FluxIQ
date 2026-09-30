@@ -61,12 +61,14 @@ scope-aware registry context.
 
 ## Permission on the authoring path
 
-A build carries a grant, and the grant says which lasting consequences its
-actions may have. The domain declares, action by action, what one would do --
+A build may carry `permittedConsequences`, the lasting consequences the person
+allowed its actions to have. The build's model calls need no authorization of
+their own: they run on the caller's own unlocked Secret Keys key. The domain
+declares, action by action, what one would do --
 for a step the build takes now while exploring, and for a step the finished Flow
 would take each time it runs -- and
-`AutomationStudioActionPermissionGate` answers from the grant and from what the
-person's own instruction already asks for. An action whose consequences the
+`AutomationStudioActionPermissionGate` answers from `permittedConsequences` and
+from what the person's own instruction already asks for. An action whose consequences the
 build does not hold raises an
 `automation-studio.action-permission-request.v1` with `reason.stage: "authoring"`.
 
@@ -75,22 +77,13 @@ build does not hold raises an
 `delete`, and `send_or_publish` (`action-permissions/destructive.ts`): completing
 a purchase or checkout, moving money, deleting, and sending or publishing on the
 person's behalf. `modify_existing` and `create_new` do not cause an authoring
-permission question solely from their class. Before 2026-09-24 all five gated,
-and builds on realistic sites spent
-days ending at `flow_bootstrap.permission_required` with nobody there to
-answer, for adding an item to a basket, saving a listing for later or
-confirming a request -- work the instruction named in so many words. The
-derivation in `instructed.ts` was meant
-to cover that and cannot be relied on to: it needs a provider call, the model
-has to name the class, and a claim survives only where its quote is the person's
-own words, so any one of those missing stopped the run. Narrowing what is gated
-removes the failure mode for the classes that never needed a person, and leaves
-the derivation authorising a high-risk act the person did ask for. Nothing
-about what is *recorded* narrowed: every class is still declared, still kept in
-the declaration record, and still compared with the instruction below. Only an
+permission question solely from their class. The derivation in
+`instructed.ts` authorises a high-risk act the person's instruction did ask for;
+it needs a provider call, the model has to name the class, and a claim survives
+only where its quote is the person's own words. Every class is still declared,
+kept in the declaration record, and compared with the instruction below. Only an
 uncovered high-risk subset produces an
-`automation-studio.action-permission-request.v1`; the parked-question and
-apply-refusal lifecycle below is unchanged.
+`automation-studio.action-permission-request.v1`.
 
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask
@@ -109,8 +102,8 @@ an answer; absent, the question is still opened in the thread and the build
 carries on without waiting. The API handler passes
 `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS`, because somebody
 has just pressed build; an unattended caller passes nothing. The caller decides
-whether to wait; how long is capped at that same constant, since a build holds a
-provider grant and its caller's request open while it waits.
+whether to wait; how long is capped at that same constant, since a build holds
+its caller's request open while it waits.
 
 **A build may propose while carrying an unanswered request.** It ends on the
 request only when it produced nothing; a plan the completion check accepted is
@@ -192,7 +185,8 @@ rules; the schema does not weaken or replace parser and registry validation.
 Core rejects unknown fields and validates all untrusted output against the same
 scope-aware registry used to form the catalog. Validation covers:
 
-- schema, UTF-8 bytes, counts, and graph depth;
+- schema, UTF-8 bytes, counts, and graph depth, each derived from the Flow's
+  size setting (see "Flow Size" below);
 - exactly one primary Subflow and valid symbolic Router targets;
 - definition availability and exact version pins;
 - required, unknown, typed, constrained, and state-bound parameters;
@@ -205,6 +199,32 @@ scope-aware registry used to form the catalog. Validation covers:
 This is deliberately stricter than general hand-authored Flow validation.
 Bootstrap graphs are finite DAGs so a model cannot introduce an implicit
 unbounded loop during first authoring.
+
+## Flow Size
+
+How large a Flow may be is one setting a person changes: the most nodes one
+Subflow may hold, `flowSizeSettings.maxNodesPerSubflow` in the Flow's metadata,
+shown in Flow Settings as "Maximum nodes per Subflow". It defaults to 100 and
+accepts a whole number from 1 through 1,000; a Flow saved before the setting
+existed reads the default. The model is `model/flow-size/`.
+
+Every bound on a Flow's size is derived from it in
+`runtime/flow-bootstrap/plan/size-limits.ts`, so raising it raises all of them:
+two edges per node in a Subflow, eight full Subflows in total, a graph depth
+equal to the node setting (a straight chain of every node fits), two kilobytes
+of plan per node (never below 65,536 bytes), and one kilobyte per node for one
+reply's result (never below 12,000 bytes). Parsing, registry validation, the
+reply and draft profile limits, the output and evidence completion schemas the
+model is shown, and the deterministic recovery path all read it. A refusal over
+a bound names the setting and the value it had. A reader of a record written
+earlier -- a published trace, a stored incomplete draft -- has no Flow in hand
+and bounds by the setting's largest value instead, so a record any Flow's
+setting allowed stays readable. The setting is part of the Flow's settings
+revision whenever it differs from the default, so changing it makes a proposal
+built under the old value stale rather than applying it; a Bootstrap context
+built for a non-default Flow carries `maxNodesPerSubflow`, which is how the
+provider adapters, holding only the request, size the schema they check and the
+plan they parse.
 
 ## Plan handles
 
@@ -252,7 +272,7 @@ code of Core's own:
 
 A refused node fails the plan and never reaches dispatch. In evidence-guided
 generation the refusal is fed back to the model (see
-[Grant-bound generation command](#grant-bound-generation-command)).
+[Generation command](#generation-command)).
 `createFlowBootstrapAdaptation` and Bootstrap apply both run
 `assertAutomationStudioFlowBootstrapPlanHandlesResolved`, so a plan that
 reaches either without resolution is refused if any handle survives.
@@ -266,7 +286,7 @@ stable symbolic-key order using fixed spacing. The result is deterministic and
 contains no overlapping positions.
 
 The validated plan is the only input accepted by the dedicated Bootstrap
-Adaptation lifecycle. Provider execution grants, UI controls, and same-run
+Adaptation lifecycle. Provider resolution, UI controls, and same-run
 execution remain separate concerns and must consume this boundary rather than
 bypass it.
 ## Provider transport
@@ -325,7 +345,7 @@ also compensate back to the complete applied topology. Lifecycle transitions app
 bootstrap_adaptation identity and deterministic, standard-shaped audit events
 (created, approved, rejected, applied, and rollback) to the dedicated proposal
 document. Audit reasons and detail are canonical and contain no provider key,
-grant, session, prompt, or response data. Standard Adaptation Inbox queries
+session, prompt, or response data. Standard Adaptation Inbox queries
 merge these dedicated summaries with ordinary adaptations by adaptation ID, so
 proposals remain discoverable after restart without duplicating their topology
 or changing the ordinary-adaptation persistence path. The dedicated proposal
@@ -335,54 +355,52 @@ AutomationStudioService.getLlmExecutionBinding(projectId, flowId) exposes the
 current execution dependency digest together with the canonical numeric Flow
 settings revision. Persistent projects use the SQL settings revision; the
 memory-only fallback derives a stable numeric fingerprint from the effective
-settings content and never uses wall-clock time. Grant minting and provider
-execution remain outside the Bootstrap Adaptation persistence path.
-## Grant-bound generation command
+settings content and never uses wall-clock time. Provider execution remains
+outside the Bootstrap Adaptation persistence path.
+## Generation command
 
 The public service command generateFlowBootstrapAdaptation is the only Core
 command that joins production provider resolution to the strict bootstrap
-contract. Its input is deliberately narrow: project ID, blank Flow ID, and a
-build_and_adapt grant handle containing actor/session identity plus the exact
-execution digest and settings revision that were authorized. Runtime flags,
-dry-run flags, side-effect authorization, provider overrides, and arbitrary
-metadata are rejected before provider resolution.
+contract. Its input is deliberately narrow: project ID, blank Flow ID, the
+`caller` (`AutomationStudioLlmModelCaller`, the actor whose unlocked Secret Keys
+key pays), and optional `permittedConsequences`. The API endpoint takes the
+caller from the request's authenticated actor. Runtime flags, dry-run flags,
+side-effect authorization, provider overrides, and arbitrary metadata are
+rejected before provider resolution. No grant, purpose, execution digest, or
+settings revision is supplied or compared: the model call needs no
+authorization beyond the caller's own key.
 
 Before any provider call, the command serializes generation for the parent
 Flow and verifies all of the following:
 
 - the parent is a blank top-level orchestration Flow with no Router or Subflow;
-- grant purpose, execution digest, and canonical settings revision are exact;
 - no proposed or validated Bootstrap Adaptation is already pending;
 - at least one active global, project, or target-Flow instruction resolves
   without instruction conflicts;
 - the scope/capability/permission-filtered node catalog is nonempty and remains
   inside the bootstrap contract's count and byte bounds;
-- the configured resolver returns a grant-resolved provider with bounded
+- the configured resolver returns a provider for the caller with bounded
   execution settings.
 
-Without `evidenceGuided`, the command invokes the harness exactly once with
-task and expected output flow_bootstrap. The harness packs only active scoped
-instructions and the compact catalog/schema context. Provider output is parsed,
-its node parameters are resolved through the bound domain (see
-[Plan handles](#plan-handles)), and it is registry-validated as untrusted data.
-Nothing was explored on this path, so a plan that names a handle is refused.
-Core then rechecks the exact Flow binding before persistence. Provider or
-validation failures create no proposal.
-The execution grant is closed after the command so unused reveal capacity does
-not outlive the operation; provider-wrapper accounting is committed or revoked
-according to the grant lifecycle.
+It reads the Flow's dependency digest and settings revision as they stand as
+the proposal's base binding. Without `evidenceGuided`, the command invokes the
+harness exactly once with task and expected output flow_bootstrap. The harness
+packs only active scoped instructions and the compact catalog/schema context.
+Provider output is parsed, its node parameters are resolved through the bound
+domain (see [Plan handles](#plan-handles)), and it is registry-validated as
+untrusted data. Nothing was explored on this path, so a plan that names a
+handle is refused. Core then rechecks the Flow's base binding before
+persistence. Provider or validation failures create no proposal.
 
-Grant issuance relies on the authenticated actor session rather than accepting
-the account password or PIN again. A successful web login asks Secret Keys to
-derive per-key decryption buffers for that session and retain them only in
-memory, bounded by the session expiry. One-use reveal authorizations copy only
-the selected derived buffer; logout, session expiry, key mutation, and runtime
-close revoke and zero the applicable buffers. Neither the login password nor
-the unlock state is persisted. Grant issue revalidates the actor/session/key
-binding. A grant whose run token budget (`maxTotalTokensPerRun`), or whose
-per-call total limit, is above 100,000 tokens additionally requires an explicit
-high-token confirmation flag. The per-request ceiling is 50,000 tokens, so in
-practice only a run budget can require it.
+The caller's key is released per call by a one-use Secret Keys session reveal
+authorization against the unlock established at web login; the account
+password or PIN is never asked for again. Secret Keys derives per-key
+decryption buffers for that session and retains them only in memory, bounded
+by the session expiry. One-use reveal authorizations copy only the selected
+derived buffer; logout, session expiry, key mutation, and runtime close revoke
+and zero the applicable buffers. Neither the login password nor the unlock state
+is persisted. The per-request ceiling is 50,000 tokens, and the build's spend is
+bounded by its loop budget.
 
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
@@ -396,7 +414,7 @@ persistence. Only phases after a successful provider response carry its bounded
 request/usage accounting; call and response states remain conservative when the
 harness throws unexpectedly. Deterministic pre-provider gates use a closed,
 public reason-code taxonomy for invalid input, blank-target requirements,
-canonical settings binding, stale grants, pending adaptations, active
+canonical settings binding, pending adaptations, active
 instructions, node-catalog availability, and required capabilities. Provider
 resolution separately distinguishes an unavailable resolver, resolver failure,
 and malformed resolution. The parser rejects known reason codes paired with a
@@ -409,16 +427,17 @@ cut off by the configured output-token limit
 envelope structure. A length stop containing only empty or whitespace padding
 uses the narrower `flow_bootstrap.provider_output_padding_truncated` code;
 substantive partial content retains `flow_bootstrap.provider_output_truncated`.
-Both are received, non-retryable results under the current grant. Diagnostics
+Both are received, non-retryable results of the call that was made. Diagnostics
 expose only the closed reason code and bounded accounting, never provider
 content.
 
 Evidence-guided Bootstrap completion uses a separate self-contained,
 reference-free schema while retaining the canonical public Bootstrap plan
 shape. This avoids dangling local references when the plan schema is nested
-inside an evidence decision. The evidence completion is capped at 12,000 UTF-8
-bytes, a 240-character summary, four Subflows, eight Router rules, sixteen
-nodes and twenty-four edges per Subflow, and sixteen parameters per node. Its
+inside an evidence decision. The evidence completion is held to a
+240-character summary, four Subflows, eight Router rules and sixteen parameters
+per node; how many nodes and edges it may carry, and its UTF-8 byte budget, come
+from the Flow's size setting (see "Flow Size" below). Its
 instruction asks for one primary Subflow with Router fallback by default and
 permits extra topology only when the active instruction requires it. Core
 rechecks these bounds after parsing and before registry validation. The ranked
@@ -580,7 +599,7 @@ Router, Subflow, graph Flow, node, or edge. The return value contains only
 project/Flow/adaptation identifiers, proposed status, Core risk, source
 instruction IDs, base binding, and sanitized request/token/cost accounting. It
 does not return the plan, prompt, instruction bodies, provider credential/key
-identity, execution grant ID, or secret material. Explicit review and apply are
+identity, or secret material. Explicit review and apply are
 still required to materialize topology.
 
 Successful DeepSeek usage accounting includes a conservative finite
@@ -591,7 +610,7 @@ USD 0.3 per million input tokens, a peak cache-hit rate of USD 0.006, and USD
 1.2 per million output tokens; `deepseek-v4-pro` costs USD 1.32, 0.044 and 3.96
 on the same three axes. Core prices per model and does not assume the off-peak
 discount, which halves every rate outside 01:00-04:00 and 06:00-10:00 UTC on
-weekdays: a grant reserves before a call is made, so an off-peak run is billed
+weekdays: the run budget reserves before a call is made, so an off-peak run is billed
 less than Core estimated and never more. These provider-owned prices are a dated
 maintenance input and must be reviewed when DeepSeek changes its line-up or
 pricing.
@@ -608,10 +627,10 @@ and `prompt_cache_miss_tokens` (or `prompt_tokens_details.cached_tokens`) into
 `cacheHitInputTokens` and `cacheMissInputTokens` on the usage summary. A report
 whose two halves do not add up to the input tokens is dropped and the call is
 priced as though none of it was cached. **Reservations never see the hit rate.**
-A grant reserves against `estimateAutomationStudioDeepSeekInputTokens`, which
-measures the bytes about to be sent and knows nothing about caching, so a grant
-still holds back the cache-miss price for every call it authorizes; the hit rate
-prices only a call that has already been made.
+The run budget reserves against `estimateAutomationStudioDeepSeekInputTokens`,
+which measures the bytes about to be sent and knows nothing about caching, so it
+still holds back the cache-miss price for every call; the hit rate prices only a
+call that has already been made.
 
 Because every decision of an evidence loop is a fresh, stateless request, the
 whole of that cache turns on the order of the user message, and
@@ -631,23 +650,22 @@ The authenticated, read-only `get-flow-bootstrap-generation-readiness` endpoint
 is requested with HTTP `GET` (and no request payload) and returns the exact
 `automation-studio.flow-bootstrap-generation-readiness.v1`
 capability document before any build authorization or provider work. The
-handler reads only a pure runtime-wiring snapshot: whether the grant service and
-provider resolver are configured and whether a nonempty native node registry is
-bound. It does not inspect or claim a grant, read secret-key metadata, create a
-reveal authorization, invoke the provider resolver or LLM harness, or perform
-persistence or revision mutation. `supported` is true only when all three
-runtime-wiring checks pass. Registry readiness requires the canonical Start and End controls plus at least one non-control executable native domain definition; an empty or control-only registry fails closed.
+handler reads only a pure runtime-wiring snapshot: whether a provider resolver
+is configured and whether a nonempty native node registry is bound. It does not
+read secret-key metadata, create a reveal authorization, invoke the provider
+resolver or LLM harness, or perform persistence or revision mutation.
+`supported` is true only when the runtime-wiring checks pass. Registry readiness requires the canonical Start and End controls plus at least one non-control executable native domain definition; an empty or control-only registry fails closed.
 
-The capability document pins generation, preflight, grant-issue, and review
-endpoint identities plus the `build_and_adapt` grant
-purpose, `flow_bootstrap` task and output, canonical execution-binding fields,
+The capability document pins the generation and review endpoint identities,
+the `flow_bootstrap` task and output, canonical execution-binding fields,
 native node-registry-context requirement, and the complete structured-failure
 diagnostic version, stages, provider call states, and accounting field
 allowlist. Clients must compare the whole bounded document and fail closed on a
-missing, older, newer, malformed, or unequal response. The same pure readiness predicate runs for `build_and_adapt` preflight and grant issuance before any grant-service, password/PIN, key-summary, or reveal-authorization work, and for direct generation before grant inspection. Readiness is a build
-compatibility assertion, not authorization; generation still performs the
-existing digest, settings-revision, registry, grant, and post-provider TOCTOU
-checks.
+missing, older, newer, malformed, or unequal response. The same pure readiness
+predicate runs for generation before any key-summary or reveal-authorization
+work. Readiness is a build compatibility assertion, not authorization;
+generation still performs its blank-Flow, registry, and post-provider
+base-binding checks.
 
 ## Blank-Flow authoring UI
 
@@ -661,12 +679,12 @@ other domain-specific execution behavior.
 
 The authenticated authoring sequence first saves the user's bounded text with
 `save-flow-generation-instruction`. Core upserts one active, required,
-Flow-scoped generation instruction before LLM preflight so the subsequently
-issued grant binds its exact revision. The normal
+Flow-scoped generation instruction before generation, so the build reads its
+exact revision. The normal
 `generate-flow-bootstrap-adaptation` request then opts in with
 `evidenceGuided: true`; it does not carry another instruction body.
 
-Evidence-guided generation uses the grant-resolved provider for a bounded series
+Evidence-guided generation uses the caller's provider for a bounded series
 of `evidence_tool_decision` tasks. Every task carries the current filtered node
 catalog, strict dynamic decision schema, allowlisted tools, and prior sanitized
 evidence. A decision either requests one registered tool or completes with a
@@ -674,10 +692,13 @@ evidence. A decision either requests one registered tool or completes with a
 Bootstrap schema. Unknown tools, duplicate calls, cancellation, iteration
 exhaustion, and evidence-byte overflow fail closed. An unusable reply and a
 refused completion are asked again, up to three in a row, as described above.
-The series has no fixed length of its own. It makes at most one decision per
-call the grant authorizes, and at most 64, with at most one more tool call than
-decisions. Each decision reserves the grant's total estimated cost divided by
-its calls, and the grant enforces its token and cost totals on every call. The
+The series has no fixed length of its own. It makes at most 64 decisions, or
+fewer when the resolution declares a call count, with at most one more tool
+call than decisions. Each decision reserves the build's total estimated cost
+divided by its decisions, and the loop's budget holds the build's token and
+cost totals on every call. The build's total cost ceiling is the Flow setting
+`adaptationPolicySettings.maxEstimatedCostUsdPerRun` when set, and the
+resolution's default otherwise. The
 ordinary proposed Bootstrap Adaptation is written only from a completion the
 completion check accepted.
 
@@ -808,13 +829,9 @@ categorical result code, effect-applied state, evidence-byte, and usage
 accounting. Public failure diagnostics may project at most 65 content-free
 `{toolId, effectApplied?, resultCode?}` steps: the loop's 64-decision ceiling
 plus its initial observation. Raw tool inputs, call IDs, and
-collected evidence are not copied into that diagnostic. A grant's aggregate
-token exposure is its run token budget, `maxTotalTokensPerRun`. By default that
-is `maxTotalTokens * maxCalls` held to 100,000, and it is never less than one
-call's total limit. The grant charges each call what it reported using, or its
-worst case when that report is missing or inconsistent. Explicit
-high-token confirmation is required only when that budget, or one call's total
-limit, is greater than 100,000 tokens.
+collected evidence are not copied into that diagnostic. The loop's budget
+charges each call what it reported using, or its worst case when that report is
+missing or inconsistent.
 
 The success audit exposes `providerCallCount` and `decisionCount` from trace
 entries whose iteration is greater than zero, excluding the deterministic
@@ -855,16 +872,16 @@ current Flow and deterministically replaces any other model-selected node ID
 before evidence resolution. Only categorical `targetNodeResolution` provenance
 is retained outside the patch.
 
-Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled key that passes purpose-aware preflight, and saved limits that exactly match the build profile: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, 20 seconds, USD 0.25, and zero provider retries. The build always asks Core for one call; the Flow's saved call count is not consulted. Ordinary Run remains unavailable while the Flow has no executable topology.
+Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled DeepSeek key, and saved limits that exactly match the build profile: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, 20 seconds, USD 0.25, and zero provider retries. The build always asks Core for one call; the Flow's saved call count is not consulted. Ordinary Run remains unavailable while the Flow has no executable topology.
 
-The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call, and USD 1 in total. It names no call count and ignores the Flow's saved one, so Core applies its iterating default of 26 calls. Server preflight and grant issuance remain authoritative. Core's default run token budget for that request is 100,000 tokens (12,000 per call times 26 calls, held to 100,000), which does not exceed the high-token confirmation threshold. The browser waits for the generation reply for the grant's 60-second claim window plus its 600-second run lease and 15 seconds more. The panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the 10-minute lease) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by its loop budget -- the build's total cost ceiling, which is the Flow's `maxEstimatedCostUsdPerRun` when set, its token budget, and its deadline -- and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
-The authoring action uses the current authenticated session to issue its bounded grant and does not ask for the account password or PIN again. An additional confirmation dialog opens only when the preflight's run token budget, or its per-call total-token limit if that is larger, exceeds 100,000. A preflight that carries no run budget is judged as per-call total tokens times calls, and one whose run budget cannot be read asks for confirmation. Confirmation is carried as a boolean grant-request field, and Core requires it only when the run token budget, or one call's total limit, exceeds 100,000. Preflight and grant issuance use `build_and_adapt`; the browser route adds the authenticated session ID, so browser code never derives or exposes it. The surface keeps availability checks visible instead of disappearing while preflight is pending or rejected, and a rejected check offers an explicit retry.
+The authoring action runs on the current authenticated session's own unlocked key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
 
 Website exploration distinguishes its two safety boundaries in the interface: bounded browser actions happen immediately against the connected tab, while the generated Router, Subflows, and actions remain an unapplied proposal. Preparing and exploring states expose an accessible indeterminate progress indicator, elapsed time, and a reminder to keep the target tab connected. Shared LLM progress vocabulary uses `Checking prior evidence`, `Inspecting live target`, `Generating proposal`, and `Ready for review`; the current authoring surface renders only phases supported by observable state. In particular, prior-evidence wording and controls remain hidden until reusable-context candidate data exists. Successful generation states explicitly confirm that no generated change has been applied. Failures map only allowlisted diagnostic codes to fixed, actionable recovery guidance; raw service errors, provider output, prompts, and page evidence are never rendered.
 
-Successful generation opens the returned proposed Bootstrap Adaptation in the existing Adaptations view. A typed compatibility bridge projects the dedicated Bootstrap document through the standard `get-flow-adaptation` DTO without copying it into standard Adaptation persistence. The projection exposes only the source instruction IDs, Core-derived risk, summarized Router/Subflow changes, bounded request/token/cost accounting, and the base/current Core execution digests and settings revisions. It never exposes a key identity, grant, session, prompt, instruction body, or raw provider response.
+Successful generation opens the returned proposed Bootstrap Adaptation in the existing Adaptations view. A typed compatibility bridge projects the dedicated Bootstrap document through the standard `get-flow-adaptation` DTO without copying it into standard Adaptation persistence. The projection exposes only the source instruction IDs, Core-derived risk, summarized Router/Subflow changes, bounded request/token/cost accounting, and the base/current Core execution digests and settings revisions. It never exposes a key identity, session, prompt, instruction body, or raw provider response.
 
 The authoring surface cannot approve or apply the proposal. The standard review endpoint, `review-flow-adaptation`, detects the Bootstrap identity and delegates only approve, reject, apply, and revert to the dedicated lifecycle; the Adaptations UI hides unsupported standard actions. Review responses re-project the new lifecycle state immediately. An applied response includes the canonical post-apply execution digest, which must match the dedicated application record. Only explicit application materializes the deterministic Core-owned Router, Subflows, and graph Flows; existing Router/Subflow mutation subscriptions then refresh Runtime Debug readiness and allow a deterministic Run.
 
-The browser request policy marks preflight, grant authorization, and generation as explicit mutations. No bootstrap provider request is part of ordinary preload or summary hydration.
+The browser request policy marks generation as an explicit mutation. No bootstrap provider request is part of ordinary preload or summary hydration.

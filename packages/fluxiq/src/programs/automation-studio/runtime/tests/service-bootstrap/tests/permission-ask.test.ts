@@ -16,7 +16,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, grant, mockProvider, plan } from "./fixtures.ts";
+import { blankFixture, caller, mockProvider, plan } from "./fixtures.ts";
 
 const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_existing"];
 /**
@@ -125,10 +125,9 @@ describe("a build that never explored", () => {
     });
     services.add(instance);
     const { project, flow } = await blankFixture(instance, "active", "example");
-    const executionGrant = await grant(instance, project.id, flow.flowId);
 
     // No `evidenceGuided`: one call, a whole plan, nothing explored.
-    await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant }))
+    await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() }))
       .rejects.toThrow("Flow Bootstrap generation failed (flow_bootstrap.permission_required).");
     expect(asked).toEqual(["refused"]);
 
@@ -169,10 +168,9 @@ async function build(options: { waitMs?: number } = {}) {
   });
   services.add(instance);
   const { project, flow } = await blankFixture(instance, "active", "example");
-  const executionGrant = await grant(instance, project.id, flow.flowId);
   // The control's name has to have been shown before a request may carry it.
   const generation = instance.generateFlowBootstrapAdaptation({
-    projectId: project.id, flowId: flow.flowId, evidenceGuided: true, executionGrant,
+    projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(),
     ...(options.waitMs === undefined ? {} : { permissionAskTimeoutMs: options.waitMs })
   });
   return { instance, project, flow, acted, generation };

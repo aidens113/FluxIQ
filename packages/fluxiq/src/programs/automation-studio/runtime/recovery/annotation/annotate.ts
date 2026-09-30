@@ -39,18 +39,18 @@ import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import {
   AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
-  automationStudioLlmExecutionGrantRefusalCode,
   AutomationStudioLlmRunBudgetLedger,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
-  type AutomationStudioLlmProvider
+  type AutomationStudioLlmProvider,
+  type AutomationStudioRuntimeSessionLlm
 } from "../../llm/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "../../live-patch.ts";
 import { flowRunSummaryWithInterventionSummaries } from "../../service/index.ts";
 import type {
   AutomationStudioLlmProviderResolution,
-  AutomationStudioLlmProviderResolverInput,
   AutomationStudioRuntimeAdaptationContext
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
@@ -83,7 +83,10 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
   failedTraceAttempt?: Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"] | undefined;
   authorizedExternalSideEffects?: boolean | undefined;
   graphOptions?: AutomationStudioGraphExecutionOptions | undefined;
-  executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"] | undefined;
+  /** Present when a person asked the model into this run: who asked (whose key pays), and what for. */
+  llmExecution?: AutomationStudioRuntimeSessionLlm | undefined;
+  /** The lasting consequences the run's caller already allowed its actions to have. Absent, none: each is asked about. */
+  permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
   useReusableContext?: true | undefined;
   /**
    * What the run produced, and the shape of the Flow that produced it. Present
@@ -102,19 +105,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const ports = input.ports;
   if (!input.context) return input.detail;
   if (input.detail.summary.status !== "failed") return input.detail;
-  // A person who authorized this run said what it may spend, so the run is held
-  // to that rather than to the training settings' no-grant budget -- including
-  // an exploring run, whose grant is the one most likely to need more than it.
-  const grantPurpose = input.executionGrant?.purpose;
-  const explicitGrantBudget = grantPurpose === "diagnose_and_adapt" || grantPurpose === "diagnosis_only" || grantPurpose === "explore_and_adapt";
-  const executionPurpose = grantPurpose === "diagnose_and_adapt" || grantPurpose === "explore_and_adapt" ? { executionPurpose: grantPurpose } : {};
+  // A person who asked the model into this run is held to the run's own budget
+  // -- the Flow's configured cost ceiling, else the resolver's default -- rather
+  // than to the training settings' budget for runs nobody asked about.
+  const intent = input.llmExecution?.intent;
+  const explicitRunBudget = intent === "diagnose_and_adapt" || intent === "diagnosis_only" || intent === "explore_and_adapt";
+  // The metadata key the provider reads to shape a proposal-only patch schema.
+  const executionPurpose = intent === "diagnose_and_adapt" || intent === "explore_and_adapt" ? { executionPurpose: intent } : {};
   // The one early return that used to leave no trace. A run refused here is a
   // run nothing will ever repair, so it has to say so in the same four-stage
   // vocabulary as every other outcome; without that, a Flow created with LLM
   // intervention off looked exactly like a Flow whose recovery ran and found
   // nothing to change. The `code` is the same answer for a reader that must
   // not carry a sentence, such as an evaluation.
-  if (!input.context.behavior.invokeLlm || (!explicitGrantBudget && !input.context.budgetDecision.ok)) {
+  if (!input.context.behavior.invokeLlm || (!explicitRunBudget && !input.context.budgetDecision.ok)) {
     const trainingRefused = !input.context.behavior.invokeLlm;
     const refusal = trainingRefused
       ? "Current training mode or settings do not allow LLM intervention."
@@ -146,7 +150,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       projectId: input.context.projectId,
       flowId: input.context.flowId,
       providerId,
-      ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
+      ...(input.llmExecution ? { caller: { actorUserId: input.llmExecution.actorUserId, actorSessionId: input.llmExecution.actorSessionId } } : {}),
       ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
     });
     if (resolvedProvider && "provider" in resolvedProvider) {
@@ -155,20 +159,11 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     } else {
       provider = resolvedProvider;
     }
-  } catch (error) {
-    // The cause, where Core owns one. This was a bare `catch {}`, so a run whose
-    // repair could not start recorded the step that failed and not one thing
-    // about why: live run `run-muexhp0k-73172f73` (2026-09-24) built a Flow,
-    // replayed it, extracted every record, had its result correctly refuted, and
-    // then died here with most of its calls and nearly all of its purse unspent
-    // and its run well inside the grant's window -- so none of the obvious
-    // answers fit and nothing on the record could settle it.
-    //
-    // Only Core's own grant codes are kept. A thrown value from further down --
-    // a provider client, a transport -- may carry anything, so its message never
-    // travels; the absence of a cause is itself the finding that the refusal
-    // came from somewhere Core does not yet name.
-    const cause = automationStudioLlmExecutionGrantRefusalCode(error);
+  } catch {
+    // A thrown value from the resolver -- a key store, a provider client -- may
+    // carry anything, so its message never travels; the run records that the
+    // provider would not resolve, in the same four-stage vocabulary as every
+    // other outcome.
     const reason = "LLM provider resolution failed.";
     return {
       ...input.detail,
@@ -180,17 +175,17 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         projectId: input.context.projectId,
         kind: "diagnosis",
         reason,
-        validation: { ok: false, issues: [`llm.provider_resolution_failed: ${reason}`, ...(cause ? [`${cause}: the execution grant would not be claimed.`] : [])] },
+        validation: { ok: false, issues: [`llm.provider_resolution_failed: ${reason}`] },
         createdAt: input.detail.summary.updatedAt || Date.now()
       }],
-      metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason, code: "llm.provider_resolution_failed", ...(cause ? { cause } : {}) }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: reason }) as unknown as JsonObject }
+      metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason, code: "llm.provider_resolution_failed" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: reason }) as unknown as JsonObject }
     };
   }
-  // Nobody granted this run anything, and the host resolved nothing without a
-  // grant -- which is every unattended run in the shipped host. The Flow's own
-  // standing authorization is the last authority such a run has, so it is read
-  // here: after the person's grant, never instead of it, and only where the
-  // model would otherwise be missing. A refusal is recorded either way, below.
+  // Nobody asked the model into this run, and the host resolves nothing without
+  // a caller whose key pays -- which is every unattended run in the shipped
+  // host. The Flow's own standing authorization is the last authority such a run
+  // has, so it is read here: after the caller's key, never instead of it, and
+  // only where the model would otherwise be missing. A refusal is recorded either way, below.
   let repairAuthority: AutomationStudioUnattendedRepairRedemption | undefined;
   if (!provider && ports.resolveUnattendedRepairAuthority) {
     const authority = await ports.resolveUnattendedRepairAuthority();
@@ -224,7 +219,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // count only a runaway backstop. `run-budget.ts` says why each number is what
   // it is; the clock and the progress guard live in the exploration ledger.
   const budget = resolveAutomationStudioRecoveryRunBudget({
-    explicitGrantBudget,
+    explicitRunBudget,
     resolution: providerResolution,
     maxTokensPerRun: input.context.settings.budgets?.maxTokensPerRun,
     policyMaxEstimatedCostUsdPerRun: input.context.policy.maxEstimatedCostUsdPerRun
@@ -283,7 +278,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // instruction asks for. The subflow graph that ran carries neither.
   const recoveryFlow = provider ? await ports.flowForRecovery(input.context.projectId, input.context.flowId) : undefined;
   // One gate for the whole recovery, built once the provider has resolved,
-  // because the resolution is where the grant's permitted set arrives.
+  // over the consequences the run's caller already allowed.
   // Where a request this recovery raises reaches a person: the run's own
   // thread, already bound by the executor for every other question a run asks.
   // Absent, nobody is asked and a request ends the recovery, as it always did.
@@ -295,7 +290,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     }
     : undefined;
   const permissions = provider ? automationStudioRecoveryPermissionGate({
-    granted: providerResolution?.permittedConsequences,
+    granted: input.permittedConsequences,
     storedInstructed: recoveryFlow?.metadata?.bootstrapInstructedConsequences,
     instructions,
     failureEvidence,
@@ -309,7 +304,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
       ...(input.subflowId ? { subflowId: input.subflowId } : {}), freshEvidence: failureEvidence, freshEvidenceCount: 1,
       maxInputTokens: resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens,
-      ...(input.executionGrant?.actorUserId ? { actorId: input.executionGrant.actorUserId } : {}), now: input.detail.summary.updatedAt || Date.now()
+      ...(input.llmExecution?.actorUserId ? { actorId: input.llmExecution.actorUserId } : {}), now: input.detail.summary.updatedAt || Date.now()
     })
     : input.useReusableContext === true && ports.reusableLlmContextEnabled
       ? { metadata: { status: "miss", reason: "fresh_evidence_required", freshContributionCount: 0, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } as JsonObject }
@@ -360,20 +355,20 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
   const plannedBeforeLooking = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
-  const explicitProposalGrant = input.executionGrant?.purpose === "diagnose_and_adapt";
+  const explicitProposalRun = intent === "diagnose_and_adapt";
   // A refusal the page could overturn is not the end of the plan stage. The
   // model said the step's result can no longer be reached, about a page it had
   // not seen; the exploration runs anyway, and the plan is built again from what
   // it found (`replan.ts`). Without this the one claim a look could settle was
   // the one claim that cancelled the look.
   const refusalIsCheckable = automationStudioRuntimePatchRefusalIsCheckableByExploration(plannedBeforeLooking.patchRequest);
-  // A `diagnose_and_adapt` grant buys one target override and nothing else, so a
-  // failure it could not serve is neither explored nor asked about. It is
+  // A `diagnose_and_adapt` run asks for one target override and nothing else, so
+  // a failure it could not serve is neither explored nor asked about. It is
   // decided once, here, from the plan's allowed kinds and the failure class --
   // both of which come from Core's own classification, so no look can change
   // either, and re-deciding it after the exploration would only spend the
-  // grant's purse to reach the same answer.
-  const grantRefusal = explicitProposalGrant ? grantSkipReason(plannedBeforeLooking) : undefined;
+  // run's budget to reach the same answer.
+  const intentRefusal = explicitProposalRun ? intentSkipReason(plannedBeforeLooking) : undefined;
   // What a patch would still need after the exploration, whichever plan is
   // standing by then. It bounds the reserve, so the share held back is held for
   // a patch that could actually be made.
@@ -381,7 +376,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // Stage C. `explorationRequested` is the plan's word and this is the only
   // thing that acts on it; before this the flag was recorded and never read.
   let explorationResult: AutomationStudioRecoveryExplorationResult | undefined;
-  if (plannedBeforeLooking.explorationRequested && (plannedBeforeLooking.patchRequest.request || refusalIsCheckable) && !grantRefusal && provider && ports.llmEvidenceRuntime) {
+  if (plannedBeforeLooking.explorationRequested && (plannedBeforeLooking.patchRequest.request || refusalIsCheckable) && !intentRefusal && provider && ports.llmEvidenceRuntime) {
     const scope = recoveryFlow?.scope;
     // Every call that comes after the exploration has its call, its tokens and
     // its money set aside before the exploration may spend anything, and handed
@@ -478,10 +473,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     })
     : undefined;
   const plan = replan?.plan ?? plannedBeforeLooking;
-  // The grant's refusal is recorded only where the plan would otherwise have
+  // The intent's refusal is recorded only where the plan would otherwise have
   // asked, so a plan that declined on its own keeps its own, more specific code.
-  const grantSkip = plan.patchRequest.request ? grantRefusal : undefined;
-  const patchWillFollow = Boolean(plan.patchRequest.request && !grantSkip && patchCouldFollow);
+  const intentSkip = plan.patchRequest.request ? intentRefusal : undefined;
+  const patchWillFollow = Boolean(plan.patchRequest.request && !intentSkip && patchCouldFollow);
   // Why no patch call follows, and which rung decided it. The code was one word
   // -- `llm.runtime_patch_not_requested` -- for every clause of the plan's
   // refusal, so a reader that keeps codes and drops sentences could not tell a
@@ -489,14 +484,15 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // kind. The plan now carries its own code and rung, and both are recorded --
   // and after a re-plan the rung is `exploration`, which is how a reader tells
   // a refusal given before the look from one that survived it.
-  const plannedPatchSkippedCode = grantSkip
+  // The code keeps its stored spelling: run records and the Lab match on it.
+  const plannedPatchSkippedCode = intentSkip
     ? "llm.runtime_patch_grant_scope_refused"
     : !plan.patchRequest.request
       ? plan.patchRequest.code ?? "llm.runtime_patch_not_requested"
       : !patchWillFollow
         ? "llm.runtime_patch_unavailable"
         : undefined;
-  const plannedPatchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = grantSkip
+  const plannedPatchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = intentSkip
     ? "plan"
     : !plan.patchRequest.request
       ? plan.patchRequest.rung ?? "plan"
@@ -527,7 +523,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       // A repair that may run is judged by the gate, not by the side-effect
       // flag, so it is told what the gate permits and that anything else is
       // asked of the person. A proposal runs nothing, and keeps the policy.
-      ...(permissions && !explicitProposalGrant ? { actionPermissions: permissions.summary() } : {}),
+      ...(permissions && !explicitProposalRun ? { actionPermissions: permissions.summary() } : {}),
       provider,
       runBudget,
       ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
@@ -561,7 +557,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       failedAttempt: input.failedTraceAttempt,
       patches: patchResult.response.patches,
       allowedPatchKinds: plan.allowedPatchKinds,
-      explicitProposalGrant,
+      explicitProposalRun,
       ...(failureEvidence ? { failureEvidence } : {}),
       // What the request carried, not what the exploration returned: a handle
       // is checked only against a packet the model was actually shown.
@@ -604,7 +600,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
-        ...(grantSkip ? { patchSkipped: grantSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(intentSkip ? { patchSkipped: intentSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         ...(patchSkippedCode ? { patchSkippedCode } : {}),
         // Which rung declined, beside the code for why. A run that repaired
         // nothing and named no rung is the silence this pair exists to end.
@@ -636,15 +632,15 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
 }
 
 /**
- * Why a patch call is not worth making under a `diagnose_and_adapt` grant,
- * which buys one target override and nothing else.
+ * Why a patch call is not worth making in a `diagnose_and_adapt` run, which
+ * asks for one target override and nothing else.
  *
  * Two cases. The plan allows no target override at all for this failure -- a
  * guarded destination, a retired page, a record only a person can unlock -- so
  * the call could only return a substitute. Or the failure is a tie between
  * controls the page describes alike, which the matcher already read the page to
- * decide: a model shown the same page cannot break the tie, and under this
- * grant its only answer would be one of them. Both are refusals the run records
+ * decide: a model shown the same page cannot break the tie, and in this run
+ * its only answer would be one of them. Both are refusals the run records
  * without paying for a call.
  *
  * The first clause is also what refuses every run that executed cleanly and
@@ -657,12 +653,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
  * belongs in the exploration-and-authoring loop rather than in the patch
  * planner at all (see the t124 report).
  */
-function grantSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis: { failureClass: string } }): string | undefined {
+function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis: { failureClass: string } }): string | undefined {
   if (!plan.allowedPatchKinds.includes("temporary_target_override")) {
-    return `The diagnose_and_adapt grant buys only a target override, and the recovery plan allows none for a ${plan.diagnosis.failureClass.replace(/_/gu, " ")} failure, so no patch was requested.`;
+    return `A diagnose_and_adapt run asks for only a target override, and the recovery plan allows none for a ${plan.diagnosis.failureClass.replace(/_/gu, " ")} failure, so no patch was requested.`;
   }
   if (plan.diagnosis.failureClass === "target_ambiguous") {
-    return `The diagnose_and_adapt grant buys only a target override, and ${AUTOMATION_STUDIO_NO_REPAIR_REASONS.several_alike}, so no patch was requested.`;
+    return `A diagnose_and_adapt run asks for only a target override, and ${AUTOMATION_STUDIO_NO_REPAIR_REASONS.several_alike}, so no patch was requested.`;
   }
   return undefined;
 }
