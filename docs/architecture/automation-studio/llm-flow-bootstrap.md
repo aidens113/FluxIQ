@@ -528,6 +528,28 @@ no lossless candidate fits. An input rejected by the existing 512-byte input
 bound remains in object form as `inputTooLarge: true`, distinct from budget
 withholding.
 
+From the model's first decision, every provider decision also receives the
+decision history beside entry, `core.evidence_history`
+(`runtime/llm/decision-context/`). It is one row per decision the loop answered,
+oldest first: the initial look; each executed call with its closed result code,
+whether it changed anything and whether the tool refused it; each failed call;
+each request answered from memory with the call that answered it; each
+amendment with its refusals (marked when repeated), the positions of withdrawn
+steps that had applied an effect, the iteration an undo returned the draft to
+and the step it reran; each completion with the draft revision it was checked
+against, its issue codes, the closed codes of the check's feedback and the
+steps the dry run refused (or `clean`, or `not_run`); each unusable reply; and,
+beside the rows, each no-progress redirect. Rows hold only closed codes, ids
+and integers, never page content or model prose. Identical decisions are
+grouped with their iterations and carry `sameAs`, the first iteration the same
+decision was made. The entry is capped at `min(4,000, floor(context / 6))`
+UTF-8 bytes and compresses by a fixed ladder: detail trimmed to codes, plain
+successful calls folded oldest first, identical refusals joined, and last a
+least form that lists only refusals, answers, failures and unusable decisions
+and counts the rest. The least form is sent even when it exceeds the cap. The
+beside entries are ordered `[...window, history, draft, budget]`, and each one's
+serialized bytes come off the window's allowance before the window is chosen.
+
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
 trace holds tool IDs, byte counts, effect state, and categorical result codes.
@@ -685,7 +707,43 @@ draft cap. The packing correction does not change provider-call, token, cost,
 timeout, decision, or retry ceilings. Provider-free deterministic fixtures
 establish exact measurement and input retention under those limits; they do not
 establish provider convergence or a live product outcome. Evidence is never
-split into malformed partial JSON to fit the window.
+split into malformed partial JSON to fit the window. The window carries whole
+entries only and no longer lists the calls it leaves out: the decision history
+beside it records every decision.
+
+Core's own notes are superseded rather than accumulated. Before a
+`core.request_check`, `core.no_progress`, `core.decision_check`,
+`core.amendment_check` or `core.completion_check` note is added, earlier notes
+of that tool id leave the evidence. Each completion attempt removes the earlier
+`core.completion_check`, `core.dry_run` and `core.dry_run.page` entries before
+the check and the gate run, and whichever still refuses shows a fresh one, so a
+check that now passes leaves no stale refusal beside a dry run that still
+refuses. A tool call that runs removes the `core.request_check` and
+`core.decision_check` notes, whose moment the build has left, and a call that
+makes progress removes the `core.no_progress` redirect. Tool results never leave
+this way. Each removed note's trace is its row in the decision history.
+
+A request answered from memory says what it repeats. Its `core.request_check`
+note carries `timesAsked` and `askedAt` (every iteration the same request was
+made over the same state, the executed one included: the history keys a call on
+its repeat-policy request signature, which carries the epoch it was asked in),
+`answeredAt`, and `lastActionBefore`, the
+newest action that ran before it. Its instruction says that no action has run
+since it was answered (for a tool that acts and is keyed on what has changed,
+that no action has changed anything), and from the second ask that this is the
+Nth time and it will be answered the same way until an action runs. Before a look is answered,
+when the host supplies `captureStateDigest` and the answering call recorded the
+state it left, Core takes one fresh digest under a call id of its own
+(`core.answer_check.<iteration>`). An equal digest answers the request with
+`pageUnchanged: true`. A different one means the page moved with no action, so
+the request is run instead, at most once per request signature and epoch. A
+digest that throws, or no digest, leaves the answer as it was. The second time
+one request is answered from the same result, the no-progress redirect is given
+at once, below `redirectAt`. A completion refused for the same issue codes over
+the same draft revision as an earlier one -- whatever its summary said, since
+that is prose the model rewords -- is still checked and replayed; its
+`core.completion_check` feedback gains `sameAsIteration` and `timesSent` unless
+the check already wrote those keys.
 The coordinator canonicalizes each tool ID and JSON input and terminates with
 a closed `evidence_duplicate_tool_request` diagnostic before executing the
 same effective request twice, even when a provider changes only the call ID.

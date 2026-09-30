@@ -63,6 +63,11 @@ export {
 } from "./grant-capabilities.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
+// The decision history: every decision a loop made and what it answered, the
+// entry that shows it beside the window, and what one decision is shown
+// (`decision-context/`). Public because a caller reading a run's evidence has
+// to be able to name the entry and read its rows.
+export * from "./decision-context/index.ts";
 // What the model is told when the draft refuses one of its amendments, and the
 // entry it arrives under. Published beside the loop for the same reason the
 // decision and completion feedback are: a caller reading a run's evidence has
