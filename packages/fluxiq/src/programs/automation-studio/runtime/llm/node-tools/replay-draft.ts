@@ -30,6 +30,7 @@ import {
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import {
+  AUTOMATION_STUDIO_NODE_REPLAY_KEY,
   AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
   automationStudioNodeReplayResetCall,
   automationStudioNodeReplayStatus,
@@ -63,6 +64,21 @@ export type AutomationStudioFlowDraftReplayResult = {
    */
   evidence?: { callId: string; toolId: string; value: JsonValue };
 };
+
+/**
+ * What a replay call answers once a person has cleared a check it met.
+ *
+ * A check is not the step failing to run again: the domain describes the step
+ * as it stands once the check is cleared, and the build hands the check to the
+ * person (`../../flow-bootstrap/person-needed.ts`). Read the way the replay reads
+ * everything else, a cleared step would carry no code and count as `failed`,
+ * and the model would be asked to amend a Flow with nothing wrong in it. So a
+ * step answers `replayed`; a reset answers nothing, because the replay reads a
+ * reset from `effectApplied`, which the domain's own statement already carries.
+ */
+export function automationStudioFlowDraftReplayClearedCode(value: JsonObject): string | undefined {
+  return value[AUTOMATION_STUDIO_NODE_REPLAY_KEY] === "step" ? AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed : undefined;
+}
 
 /** Run the draft again, from the state its first step found. */
 export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlowDraftReplayInput): Promise<AutomationStudioFlowDraftReplayResult> {

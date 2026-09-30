@@ -15,6 +15,7 @@ import {
 } from "./defensive/index.ts";
 import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
+import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep } from "./person-needed.ts";
 import { automationStudioRecordedState } from "./recorded-state.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { failureMessageForRecoveryStop } from "./recovery-ladder.ts";
@@ -485,13 +486,22 @@ async function executeAutomationStudioGraph(
       // domain answering a dispatch, a gate. It is read here rather than at the
       // node, which is what makes asking a property of a run and not of one node
       // definition.
-      const ask = automationStudioAskInEffects(attempt.effects, {
+      const raised = automationStudioAskInEffects(attempt.effects, {
         askId: attempt.attemptId,
         stage: "execution",
         nodeId: currentNode.id,
         definitionId: currentNode.definitionId,
         attemptId: attempt.attemptId
       });
+      // A step only a person can get past asks one (`person-needed.ts`), and
+      // neither the ladder nor a repair runs on it.
+      const personStep = automationStudioPersonNeededStep({ attempt, node: currentNode, attempts, raised, parkingBound: Boolean(options.parking) });
+      if (personStep.kind === "exhausted") {
+        recordDefendedFault(runState, currentNode.id, attempt, arrival.attempts, automationStudioAssessAttemptFault(attempt, currentNode, now()), "stopped", 0);
+        return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: personStep.message };
+      }
+      const ask = raised ?? (personStep.kind === "ask" ? personStep.ask : undefined);
+      const personNeeded = automationStudioIsPersonNeededAsk(ask);
       let routeOverride: string | undefined;
       if (ask) {
         const parked = automationStudioParkedRun({
@@ -508,13 +518,13 @@ async function executeAutomationStudioGraph(
             ...(options.callFlowAttemptPath?.length ? { callFlowAttemptPath: [...options.callFlowAttemptPath] } : {})
           }
         });
-        attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: { askId: ask.askId, kind: ask.kind, parks: ask.parks, status: "pending" } };
+        attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: { askId: ask.askId, kind: ask.kind, parks: ask.parks, status: "pending", ...(personNeeded ? { personNeeded: true as const } : {}) } };
         const undelivered = await openAutomationStudioAsk(options, ask);
         if (undelivered) {
           return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
         }
         if (ask.parks) {
-          emitAutomationStudioActivity({ phase: "waiting_permission", label: "Waiting for an answer before going on", detail: { kind: "ask", title: `Asked a question (${ask.kind})`, status: "started", ref: currentNode.id } });
+          emitAutomationStudioActivity({ phase: "waiting_permission", label: personNeeded ? ask.text : "Waiting for an answer before going on", detail: { kind: "ask", title: personNeeded ? "Waiting for a person" : `Asked a question (${ask.kind})`, status: "started", ref: currentNode.id } });
           const settlement = await settleAskInPlace(options, parked);
           if (!settlement) {
             return { status: "waiting", startedAt, currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, parked, ...(attempt.message ? { message: attempt.message } : {}) };
@@ -525,8 +535,9 @@ async function executeAutomationStudioGraph(
           attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: settledAskRecord(ask, settlement) };
           // What the person said is data the rest of the Flow can read, put
           // where every other node output goes so a binding reaches it the
-          // ordinary way.
-          if (settlement.outcome === "answered" && settlement.answer.value !== null) {
+          // ordinary way. Not "Continue" on a person-needed ask: that is no data,
+          // and written under the bare `answer` key it would overwrite an output.
+          if (settlement.outcome === "answered" && settlement.answer.value !== null && !personNeeded) {
             values[`${currentNode.id}.answer`] = settlement.answer.value;
             values.answer = settlement.answer.value;
           }
@@ -651,6 +662,10 @@ async function executeAutomationStudioGraph(
 
     const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, route, currentNode.definitionId);
     if (!nextEdge) {
+      // Stop, or nobody answering, on a person-needed ask the Flow has no failed
+      // route for. Checked first: a last node must not "succeed" by it.
+      const personEnding = automationStudioPersonNeededEnding(attempts, currentNode, route);
+      if (personEnding) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: personEnding };
       const outgoingRoutes = flow.edges
         .filter((edge) => edge.sourceNodeId === currentNode!.id)
         .map((edge) => edge.sourcePortId ?? "success")
@@ -736,6 +751,7 @@ function settledAskRecord(ask: AutomationStudioAsk, settlement: Extract<Automati
     parks: ask.parks,
     status: settlement.outcome === "answered" ? "answered" : "expired",
     route: settlement.route,
-    settledAtMs: settlement.settledAtMs
+    settledAtMs: settlement.settledAtMs,
+    ...(automationStudioIsPersonNeededAsk(ask) ? { personNeeded: true as const } : {})
   };
 }

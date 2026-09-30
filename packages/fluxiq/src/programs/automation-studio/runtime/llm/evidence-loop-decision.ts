@@ -67,9 +67,9 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "nodeId", "stateDigests", "routeState", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
@@ -97,6 +97,13 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       // the first answer of a run is not a repeat of anything.
       ...(typeof value.repeatedAnswer === "number" && Number.isInteger(value.repeatedAnswer) && value.repeatedAnswer >= 2
         ? { repeatedAnswer: value.repeatedAnswer } : {}),
+      // The caller saying only a person can get past what this call met. Kept
+      // only as the literal `true`, like the flag it is: anything else is
+      // dropped rather than fatal, and the call reads as the ordinary result it
+      // then is. Reading it is not acting on it -- the build's wrapper
+      // (`../flow-bootstrap/person-needed.ts`) is what puts the question to the
+      // person before any of this reaches the model.
+      ...(value.personNeeded === true ? { personNeeded: true as const } : {}),
       ...(closedCode(value.nodeId) ? { nodeId: value.nodeId as string } : {}),
       // The states the call saw, from its own captures. Dropped side by side
       // rather than fatal: a malformed digest leaves that side unobserved, and
