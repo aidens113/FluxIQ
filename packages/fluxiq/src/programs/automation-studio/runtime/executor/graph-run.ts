@@ -452,7 +452,7 @@ async function executeAutomationStudioGraph(
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
-      emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label });
+      emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
       const executed = remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
         : await executeWithRegionTimeout(

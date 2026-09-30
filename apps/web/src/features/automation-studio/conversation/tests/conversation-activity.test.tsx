@@ -1,5 +1,6 @@
-// The chat's live activity: the status header, the rows between the turns,
-// and the backoff that keeps reading while Core is working.
+// The chat's live activity: the status drawn in place under the turn, the
+// steps folded between the turns, and the backoff that keeps reading while
+// Core is working.
 
 import React from "react";
 import { readFileSync } from "node:fs";
@@ -107,33 +108,57 @@ describe("the chat's live activity", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("heads the chat with Core's phase, its own sentence and the step, read for the project on screen", async () => {
+  it("draws Core's work in place under the turn that asked for it, read for the project on screen", async () => {
     const api = commands([event(1)]);
     const renderer = await mount(api);
     expect(api.loadActivity).toHaveBeenCalledWith({ projectId: "project.one" });
-    const header = renderer.root.findByProps({ role: "status" });
-    const text = textOf(header.children);
-    expect(textOf(renderer.toJSON())).toContain("Running step 2 of 5");
-    expect(text).toContain("Running");
-    expect(text).toContain("Step 2 of 5 - Open the listing");
+    const transcript = renderer.root.findByProps({ "aria-label": "Conversation transcript" });
+    const status = transcript.findByProps({ role: "status" });
+    const text = textOf(status.children);
+    expect(text).toContain("Running your Flow");
+    expect(text).toContain("Running step 2 of 5");
+    // One status, in the stream: no banner over the transcript as well.
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(1);
   });
 
-  it("says just the step number when the index runs past the count", async () => {
-    const renderer = await mount(commands([event(1, { label: "Running step 7", step: { index: 7, count: 5 } })]));
-    const header = textOf(renderer.root.findByProps({ role: "status" }).children);
-    expect(header).toContain("Step 7");
-    expect(header).not.toContain("of 5");
+  it("says what Core did in words, never a tool id, a node id or a result code", async () => {
+    const raw = event(1, {
+      label: "Using core.run_node: web.action.succeeded",
+      detail: { kind: "tool", title: "core.run_node", status: "succeeded", ref: "core.run_node", text: "Result: web.action.succeeded · Node: n3" }
+    });
+    const renderer = await mount(commands([raw]));
+    const text = textOf(renderer.toJSON());
+    expect(text).toContain("Working on the page");
+    for (const leak of ["core.run_node", "web.action", "Result:", "n3", "Status:"]) expect(text).not.toContain(leak);
   });
 
-  it("puts a row between the turns by time, which expands to its text, ref and status", async () => {
-    const renderer = await mount(commands([event(1), event(2, { detail: undefined, label: "Thinking" })]));
-    const items = renderer.root.findAllByType("li");
-    expect(items.map((item) => item.props["data-turn-id"] ?? `activity:${item.props["data-activity-sequence"]}`)).toEqual(["turn.1", "activity:1", "turn.2"]);
-    const details = renderer.root.findByType("details");
-    const expanded = textOf(details.children);
-    expect(expanded).toContain("Reached the listing.");
-    expect(expanded).toContain("tool.navigate");
-    expect(expanded).toContain("Status: succeeded");
+  it("folds the rows between two turns into one quiet group and hides Core's bookkeeping", async () => {
+    const renderer = await mount(commands([
+      event(1),
+      event(2, { label: "Clicking “Get a quote” — done", detail: { kind: "tool", title: "Clicking “Get a quote”", status: "succeeded" }, at: new Date(1_790_000_015_000).toISOString() }),
+      event(3, { label: "Putting the page back", detail: { kind: "note", title: "Putting the page back to where the Flow starts" } }),
+      event(4, { phase: "done", label: "Finished", final: true, detail: undefined })
+    ]));
+    const items = renderer.root.findAllByType("li").filter((item) => item.props["data-turn-id"] || item.props["data-activity-group"]);
+    expect(items.map((item) => item.props["data-turn-id"] ?? "activity")).toEqual(["turn.1", "activity", "turn.2"]);
+    const fold = renderer.root.findByType("details");
+    expect(textOf(fold.findByType("summary").children)).toBe("Worked for 5s · 2 steps");
+    const steps = textOf(fold.findByType("ol").children);
+    expect(steps).toContain("Running step 2 of 5");
+    expect(steps).toContain("Clicking “Get a quote”");
+    expect(textOf(renderer.toJSON())).not.toContain("Putting the page back");
+    // Settled: the fold says how it went, and no live status is left behind.
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
+  });
+
+  it("leads a failed group with how it ended", async () => {
+    const renderer = await mount(commands([event(1), event(2, { phase: "failed", label: "The run stopped", final: true, detail: undefined })]));
+    expect(textOf(renderer.root.findByType("summary").children)).toBe("Run failed · 1 step");
+  });
+
+  it("keeps the status for its own thread", async () => {
+    const renderer = await mount(commands([event(1, { conversationId: "conversation.other", detail: undefined })]));
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
   });
 
   it("reads again on the fast beat while Core's latest event is not its last", async () => {
@@ -146,7 +171,7 @@ describe("the chat's live activity", () => {
     expect(delays).not.toContain(1_000);
   });
 
-  it("shows no header and no rows where the surface cannot read activity", async () => {
+  it("shows no status and no steps where the surface cannot read activity", async () => {
     const renderer = await mount(commands(null));
     expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
     expect(renderer.root.findAllByType("details")).toHaveLength(0);
@@ -161,8 +186,9 @@ describe("the activity reader stays on the backoff poller", () => {
     expect(reader).toContain('document.addEventListener("visibilitychange"');
     for (const path of [
       "../activity/useConversationActivity.ts",
-      "../components/ConversationActivityHeader.tsx",
-      "../components/ConversationActivityRow.tsx",
+      "../activity/usePacedConversationActivity.ts",
+      "../activity/pacer.ts",
+      "../components/ConversationActivityBlock.tsx",
       "../components/ConversationViewContent.tsx",
       "../components/ConversationThread.tsx"
     ]) {

@@ -13,3 +13,4 @@ export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";
 export { emitAutomationStudioActivityStep } from "./step.ts";
+export { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityToolCall } from "./wording/index.ts";
