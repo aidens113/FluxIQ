@@ -3,8 +3,16 @@ import { safeSegment } from "../../../../_shared/storage.ts";
 import type { AutomationStudioProjectArtifactKind } from "../../../model/index.ts";
 
 // Every path under a project's storage root. The root is fixed at construction:
-// an in-memory service has none, and each helper then resolves to the empty
-// string exactly as the monolithic service did.
+// an in-memory service -- `new AutomationStudioService()` with no `dataDir` or
+// `storageRootDir` -- has none.
+//
+// Without a root there is no file to name. `projectDirectory` answers the empty
+// string, which every caller already reads as "no storage", and every file
+// helper refuses: it used to join its parts onto that empty string, which named
+// a path relative to the process's working directory, so a root-less service
+// wrote partial `indexes/` and `recordings/` trees wherever the process
+// happened to be started. A caller that reaches a file helper without checking
+// `root` is a bug, and now says so instead of writing somewhere nobody chose.
 export class AutomationStudioProjectPaths {
   constructor(readonly root: string | undefined) {}
 
@@ -14,6 +22,7 @@ export class AutomationStudioProjectPaths {
   }
 
   projectFile(projectId: string, ...parts: string[]): string {
+    if (!this.root) throw new Error(`This Automation Studio service has no storage root, so it keeps project ${projectId} in memory and names no file for it.`);
     return path.join(this.projectDirectory(projectId), ...parts);
   }
 

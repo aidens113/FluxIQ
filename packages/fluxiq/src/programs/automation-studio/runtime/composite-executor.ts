@@ -45,7 +45,8 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
       if (!snapshot) return { result: { status: "failed", route: "failed", effects: [] } };
       // A composite is a real typed boundary: no ambient parent values cross it.
       const childInputs: Record<string, JsonValue> = {};
-      for (const port of snapshot.interface.inputs) if (port.defaultValue !== undefined) childInputs[port.id] = port.defaultValue;
+      const declaredInputDefaults: Record<string, JsonValue> = {};
+      for (const port of snapshot.interface.inputs) if (port.defaultValue !== undefined) childInputs[port.id] = declaredInputDefaults[port.id] = port.defaultValue;
       for (const binding of call.inputBindings ?? []) {
         const value = callInputs[binding.valueKey];
         if (value !== undefined) childInputs[binding.targetPortId] = value;
@@ -59,7 +60,8 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
       // id across the boundary, where nothing would match it and the child would
       // fail with "No start node is available in this flow."
       const { startNodeId: _parentStartNodeId, ...childBase } = parentOptions;
-      const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
+      // The child's defaults come from its published interface: authored, not supplied (`trace-withholding.ts`, `supply`).
+      const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
       const maxAttempts = Math.max(1, Number((node.parameterValues?.retry as { maxAttempts?: unknown } | undefined)?.maxAttempts ?? 1));
       let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

@@ -677,11 +677,18 @@ the way out:
   replaced in place by `AUTOMATION_STUDIO_WITHHELD_VALUE` (`[withheld]`): in
   effect payloads, outputs, inputs, run values, and state diffs, and inside the
   prose of messages and failure records.
-- **A run input** is withheld by position: in the trace's `values` and in each
+- **A run input** is withheld by position -- in the trace's `values` and in each
   attempt's `inputs`, wherever the entry still holds the value the caller
-  supplied, whether or not a node reads it. A value the run computed that equals
-  an input is kept. An input no binding reads, copied by a node into an output
-  under another key, is not withheld at that copy.
+  supplied, whether or not a node reads it -- and by value: each of its texts and
+  numbers is recorded for the same rewrite as a resolved value
+  (`trace-withholding.ts`, `supply`), so a copy a node makes under another key
+  is withheld too, and every dispatch is told to withhold it in its command
+  attempt. The cost is that a value the run computed that equals a supplied
+  input also reads `[withheld]` in the saved trace; the executed trace keeps it.
+  An input still equal to the default the Flow's published interface declares
+  is authored, not supplied (`declaredInputDefaults`, which
+  `composite-executor.ts` sets for a Call Flow child), so it is withheld only by
+  position.
 - **A Call Flow child's withheld values** are withheld from its parent's saved
   trace as well, and the attempt keeps the child's saved trace.
 
@@ -1517,6 +1524,14 @@ scale procedures pass on documented hardware.
 Canonical storage ownership, recording pipeline documents, Flow artifacts,
 adaptation compatibility data, and runtime-session persistence are documented in
 the [persistence guide](automation-studio/persistence.md).
+
+A service constructed with no `dataDir` or `storageRootDir` --
+`new AutomationStudioService()`, the public default -- is in memory: it keeps
+its project catalogue and recordings for its own lifetime and writes no project
+file. `AutomationStudioProjectPaths` refuses to name a file without a root,
+because a path joined onto an empty root is relative to the process's working
+directory, where the default service used to leave partial `indexes/` and
+`recordings/` trees. Production always passes a root.
 
 ## Flow-first Authoring UI
 

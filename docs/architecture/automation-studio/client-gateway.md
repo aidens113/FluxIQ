@@ -269,20 +269,27 @@ The web shell exposes global client-gateway endpoints:
 A paired client's credential is also an HTTP bearer token, on two routes only.
 `GET /api/recordings` accepts it for the extension's recordings list. The
 program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
-these Automation Studio endpoints, which are what the extension's panel needs to
-talk to FluxIQ and to stop a run:
+these endpoints, which are what the extension's panel needs to talk to FluxIQ,
+stop a run, and work its Simple Mode:
 
-- `list-conversations`, `open-conversation`, `get-conversation`, `append-turn`,
-  `answer-ask`
-- `list-runtime-sessions`, `cancel-runtime-session`
+- Automation Studio: `list-conversations`, `open-conversation`,
+  `get-conversation`, `append-turn`, `answer-ask`
+- Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`
+- Automation Studio, Simple Mode: `list-flow-summaries`, `list-flow-runs`,
+  `get-flow-run-detail`, `list-flow-adaptations`, `export-run-dataset`,
+  `run-runtime-session`, `generate-recording-proposal`,
+  `review-recording-flow-proposal`, `remove-recording-entry`
+- Secret Keys: `snapshot`, projected (below)
 
 The allowlist lives in `apps/web/src/lib/program-route.ts`, and four rules
 bound it:
 
 - A token call runs as the person who approved the pairing
   (`operatorUserId` on the ready session), with that person's role permissions
-  narrowed to `programs.read`, `programs.write` and `runtime.control`. A
-  disabled or deleted person's clients reach nothing.
+  narrowed to `programs.read`, `programs.write`, `runtime.control` and
+  `flows.write`. `flows.write` is there only because
+  `generate-recording-proposal` and `review-recording-flow-proposal` require it.
+  A disabled or deleted person's clients reach nothing.
 - It is scoped to the domain the client declared in `client.hello`
   (`metadata.domainId`). A URL that names another domain is refused with 403.
 - The route refuses any endpoint the registry classifies as other than `read`
@@ -293,6 +300,36 @@ bound it:
   answers is still gated where it happens.
 - No auth session is injected into a token call's payload, and one the caller
   names is removed, so a PIN check a handler runs fails closed.
+
+A token call's request is also narrowed (`narrowPairedClientRequest`), and a
+refusal is 403 with a sentence naming the field, never its value:
+
+- `run-runtime-session` must name a saved Flow by `flowId`, and may not carry an
+  inline `flow`, `inputs`, `llmExecutionGrantId`, `runIntent`, `dryRunLlm`,
+  `useReusableContext`, or `authorizedExternalSideEffects` other than `false`.
+  Its `adaptiveMode` must be `no_llm_intervention` or `deterministic`; an absent
+  mode, which would mean fully adaptive, is set to `no_llm_intervention`. A
+  paired token therefore never holds an LLM grant. One LLM call remains
+  possible: a Flow's standing result check, which the person authorized on
+  that Flow in the web panel, runs on a token run as on any other.
+- `generate-recording-proposal` may not be `llm_assisted` and may not carry
+  `instructions` or `constraints`.
+- `review-recording-flow-proposal` may only approve, and may not carry
+  `policyOverride`, `reviewerId` or `destination`.
+
+And a token call's answer is projected (`projectPairedClientResponse`): Secret
+Keys' `snapshot` answers `{ keys: [{ kind, provider, enabled }] }`, with no key
+name, id, description, metadata or value.
+
+`remove-recording-entry` (`runtime.control`, `authoring`) takes
+`{ projectId, recordingId, eventId }` and removes every entry of a recording
+that is still open whose `metadata.eventId` is `eventId` -- the id the IO
+recorder copies from the gateway envelope -- answering
+`{ removedCount, recording }` with the recording as a summary. A finalized
+recording refuses it. Entries appended as domain events carry the event id as
+their entry id and correlation id instead, so they are not matched. Run
+summaries (`list-flow-runs`) carry `durableBehaviorChanged`, computed by the
+same helper as `run-runtime-session`'s answer (`runtime/durable-behavior/`).
 
 Every other program endpoint refuses the token with 403 before the token is
 looked up. A valid login cookie always takes precedence over a bearer header.

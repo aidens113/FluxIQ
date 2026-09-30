@@ -173,9 +173,11 @@ export type FluxIQRuntimeDispatchContext = FluxIQRuntimeExecutionContext & {
   preferredSessionId?: string;
   /**
    * Withheld from the command attempt the runtime keeps and saves: from the
-   * command's `parameters`, and from the result's `message` and `error`. The
-   * adapter or transport still executes the command as given, and is never
-   * handed this list.
+   * command's `parameters`, `target` and `metadata`, and from the result's
+   * `message`, `error`, `payload`, `target`, `metadata` and the `expected` and
+   * `actual` prose of its `failure`, each replaced in place. The adapter or
+   * transport still executes the command as given, and is never handed this
+   * list.
    */
   withheldValues?: FluxIQRuntimeWithheldValues;
   /**

@@ -23,7 +23,8 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 // browser extension has no cookie: it holds the client-gateway token the
 // person approved when they paired it, the same token `/api/recordings`
 // already accepts. The extension's panel needs a handful of endpoints to talk
-// to FluxIQ and to stop a run, so exactly those accept the token, acting as the
+// to FluxIQ, to stop a run, and for Simple Mode to run a saved Flow, read its
+// history and turn a recording into one, so exactly those accept the token, acting as the
 // person who approved the pairing. Every other endpoint still requires the
 // cookie, and a token on one of them is refused rather than ignored.
 //
@@ -40,9 +41,13 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 //   `authoring`: it is how a person answers a question in their own thread, and
 //   the act it answers is still gated where it happens.
 // - **Only the permissions these endpoints need.** The actor carries the
-//   approving person's role permissions intersected with the three the
+//   approving person's role permissions intersected with the four the
 //   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
-//   whatever the person's role.
+//   whatever the person's role. Where an allowlisted endpoint's body could
+//   still reach further -- an LLM, an inline Flow, a side-effect authorization,
+//   another reviewer -- `narrowPairedClientRequest` refuses that field, and
+//   where its answer holds more than a token should read,
+//   `projectPairedClientResponse` cuts it down.
 // - **The session's own domain.** A paired client is scoped to the domain it
 //   declared when it connected. A request whose URL names a different domain is
 //   refused, so a web-automation client cannot point itself at another
@@ -63,11 +68,38 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "answer-ask",
     "list-runtime-sessions",
     "cancel-runtime-session",
+    // Simple Mode's Flow picker, `read`.
+    "list-flow-summaries",
+    // Simple Mode's run history for a Flow, `read`.
+    "list-flow-runs",
+    // Opening one run from that history, `read`.
+    "get-flow-run-detail",
+    // Showing what a run learned, `read`; reviewing an adaptation stays cookie-only.
+    "list-flow-adaptations",
+    // Downloading a run's captured rows, `read`. No stored row holds an encrypted field: the store refuses an `encrypt` schema until record keys exist (K11).
+    "export-run-dataset",
+    // Running a saved Flow, `authoring`. Narrowed: a stored Flow by id, with no LLM, no inputs and no side-effect authorization.
+    "run-runtime-session",
+    // Turning a finished recording into a Flow proposal, `authoring`. Narrowed: the direct mapper only, never the LLM-assisted one.
+    "generate-recording-proposal",
+    // Accepting that proposal as a Flow, `authoring`. Narrowed: approve only, as the paired person, with no policy override or destination.
+    "review-recording-flow-proposal",
+    // Undoing one captured step while the recording is still open, `authoring`; a finalized recording refuses it.
+    "remove-recording-entry",
+  ]),
+  "secret-keys": Object.freeze([
+    // Whether an LLM key is configured, `read`. Projected: kind, provider and enabled only, nothing that names or identifies a key.
+    "snapshot",
   ]),
 });
 
-/** The permissions a paired client's actor may hold: exactly those the allowlisted endpoints require. */
-const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control"];
+/**
+ * The permissions a paired client's actor may hold: exactly those the
+ * allowlisted endpoints require. `flows.write` is here only because
+ * `generate-recording-proposal` and `review-recording-flow-proposal` require
+ * it; no other `flows.write` endpoint is on the allowlist.
+ */
+const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
 
 /** The registry classifications a token call may reach. Anything destructive or credential-gated is refused. */
 const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
@@ -136,4 +168,109 @@ export function pairedClientDomainScope(requestUrl: string, session: PairedSessi
   const requested = programDomainScope(requestUrl).domainId;
   if (requested !== null && requested !== domainId) return undefined;
   return { domainId };
+}
+
+/** A token call's payload after narrowing, or the refusal that names the field it may not carry. */
+export type PairedClientRequestNarrowing =
+  | { ok: true; payload: unknown }
+  | { ok: false; errorCode: "authorization.forbidden"; error: string };
+
+/**
+ * The run modes a token may ask for. Absent, `default`, `fully_adaptive` and
+ * `manual_approval` all let the run invoke an LLM for diagnosis
+ * (`normalizeAutomationStudioRuntimeInterventionMode` reads absent and
+ * `default` as `fully_adaptive`, and `runtimeAdaptationContextWithRunOverride`
+ * turns `invokeLlm` off only for `no_llm_intervention`), so a token's run with
+ * no mode is pinned to `no_llm_intervention` and any other mode is refused.
+ */
+const PAIRED_CLIENT_RUN_MODES: readonly string[] = ["no_llm_intervention", "deterministic"];
+
+/**
+ * What a paired client may put in the request body of an endpoint whose
+ * handler would otherwise let it reach further than the allowlist means. The
+ * rule is least privilege: no token call carries an LLM grant or reaches an
+ * LLM, runs an inline Flow document, authorizes an external side effect, or
+ * speaks for a reviewer other than the person the actor already is. A refused
+ * field is named, never its value. Endpoints not listed here pass unchanged.
+ */
+export function narrowPairedClientRequest(programId: string, endpoint: string, payload: unknown): PairedClientRequestNarrowing {
+  const program = programId.trim().toLowerCase();
+  const name = endpoint.trim().toLowerCase();
+  if (program !== "automation-studio") return { ok: true, payload };
+  if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
+  if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
+  if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
+  return { ok: true, payload };
+}
+
+function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
+  for (const field of ["flow", "llmExecutionGrantId", "runIntent", "dryRunLlm", "useReusableContext", "inputs"] as const) {
+    if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
+  }
+  if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {
+    return forbidden("A paired client's run may not carry authorizedExternalSideEffects.");
+  }
+  if (body.adaptiveMode === undefined) return { ok: true, payload: { ...body, adaptiveMode: "no_llm_intervention" } };
+  if (typeof body.adaptiveMode !== "string" || !PAIRED_CLIENT_RUN_MODES.includes(body.adaptiveMode)) {
+    return forbidden("A paired client's run may not carry an adaptiveMode that lets it invoke an LLM.");
+  }
+  return { ok: true, payload: body };
+}
+
+function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  if (body.mode === "llm_assisted") return forbidden("A paired client's proposal may not carry mode llm_assisted.");
+  for (const field of ["instructions", "constraints"] as const) {
+    if (field in body) return forbidden(`A paired client's proposal may not carry ${field}.`);
+  }
+  return { ok: true, payload };
+}
+
+function narrowReviewRecordingFlowProposal(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  // `destination` names where the approved Flow is written, which can be over
+  // an existing one; the panel saves a new automation, so a token never names it.
+  for (const field of ["policyOverride", "reviewerId", "destination"] as const) {
+    if (field in body) return forbidden(`A paired client's review may not carry ${field}.`);
+  }
+  if ("decision" in body && body.decision !== "approved") return forbidden("A paired client's review may only carry decision approved.");
+  return { ok: true, payload };
+}
+
+function payloadRecord(payload: unknown): Record<string, unknown> | null {
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : null;
+}
+
+function forbidden(error: string): PairedClientRequestNarrowing {
+  return { ok: false, errorCode: "authorization.forbidden", error };
+}
+
+/**
+ * What a paired client is answered, where the endpoint's full answer holds
+ * more than a token should read. The secret-keys snapshot is cut to whether a
+ * key of each kind and provider exists and is enabled: never its id, name,
+ * scope, description, dates or metadata (where a fingerprint or hint would
+ * live), and never a value, which the snapshot does not hold either. Every
+ * other answer passes unchanged.
+ */
+export function projectPairedClientResponse<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
+  if (programId.trim().toLowerCase() !== "secret-keys" || endpoint.trim().toLowerCase() !== "snapshot" || !response.ok) return response;
+  const keys = payloadRecord(response.payload)?.keys;
+  return {
+    ...response,
+    payload: {
+      keys: Array.isArray(keys)
+        ? keys.map((key) => {
+          const summary = payloadRecord(key) ?? {};
+          return {
+            kind: typeof summary.kind === "string" ? summary.kind : null,
+            provider: typeof summary.provider === "string" ? summary.provider : null,
+            enabled: summary.enabled === true,
+          };
+        })
+        : [],
+    },
+  };
 }

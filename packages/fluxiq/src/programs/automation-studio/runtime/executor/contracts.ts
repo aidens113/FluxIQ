@@ -314,6 +314,13 @@ export type AutomationStudioRecordBatch = {
 export type AutomationStudioGraphExecutionOptions = {
   startNodeId?: string;
   inputs?: Record<string, JsonValue>;
+  /**
+   * The defaults the Flow's declared interface gives its inputs, when the caller
+   * filled `inputs` from them. An input still equal to its declared default is
+   * authored -- the published Flow holds it -- so the saved trace withholds it at
+   * its own position but not by value (`trace-withholding.ts`, `supply`).
+   */
+  declaredInputDefaults?: Record<string, JsonValue>;
   variables?: Record<string, JsonValue>;
   maxSteps?: number;
   random?: () => number;
