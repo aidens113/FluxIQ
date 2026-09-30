@@ -395,13 +395,27 @@ describe("every check on every attempt", () => {
     expect(feedback.instruction).toContain("keep it in the draft as the first step");
   });
 
+  // A Subflow's node count is the Flow's size setting, which the structural
+  // parse holds a plan to before this check runs; the limits only this check
+  // names are the shape of one reply, such as how many Subflows it holds.
   it("names the limit a result is over, its maximum and the actual value", async () => {
-    const nodes = Array.from({ length: 17 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" }));
-    const { verdict, feedback } = await refusal({ summary: "Candidate.", plan: { ...planWith({ extractList }), subflows: [{ key: "primary", name: "Primary", role: "primary", nodes, edges: [] }] } });
+    const subflows = Array.from({ length: 5 }, (_unused, index) => ({
+      key: `part_${index}`, name: `Part ${index}`, role: index === 0 ? "primary" : "utility",
+      nodes: [{ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" }], edges: []
+    }));
+    const { verdict, feedback } = await refusal({ summary: "Candidate.", plan: { ...planWith({ extractList }), subflows } });
 
     expect(verdict.codes).toContain("flow_bootstrap.evidence_completion_profile_limit_exceeded");
-    expect((feedback as unknown as { limitsExceeded: JsonObject[] }).limitsExceeded).toContainEqual({ limit: "maxNodesPerSubflow", max: 16, actual: 17, path: "plan.subflows.0.nodes" });
+    expect((feedback as unknown as { limitsExceeded: JsonObject[] }).limitsExceeded).toContainEqual({ limit: "maxSubflows", max: 4, actual: 5, path: "plan.subflows" });
     expect(feedback.instruction).toContain("limitsExceeded names each limit");
+  });
+
+  it("refuses a Subflow over the Flow's size setting, naming the setting and its value", async () => {
+    const nodes = Array.from({ length: 101 }, (_unused, index) => ({ key: `n${index}`, definitionId: "builtin.control.end", definitionVersion: "1.0.0" }));
+    const { verdict } = await refusal({ summary: "Candidate.", plan: { ...planWith({ extractList }), subflows: [{ key: "primary", name: "Primary", role: "primary", nodes, edges: [] }] } });
+
+    expect(verdict.codes).toContain("flow_bootstrap.evidence_completion_plan_invalid");
+    expect(verdict.issues.map((issue) => issue.message)).toContain("Subflow has 101 nodes; this Flow allows 100 (flowSizeSettings.maxNodesPerSubflow, Flow Settings > Maximum nodes per Subflow).");
   });
 });
 

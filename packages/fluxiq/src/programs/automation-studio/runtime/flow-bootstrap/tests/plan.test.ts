@@ -7,6 +7,7 @@ import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
   automationStudioFlowBootstrapCatalogByteBudget,
+  automationStudioFlowBootstrapSizeLimits,
   buildAutomationStudioFlowBootstrapContext,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
@@ -173,7 +174,8 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens)).toBe(12_000);
     expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(12_000)).toBe(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens);
     // 248 bytes fewer than before 2026-09-18: the schema now carries each route rule's condition.
-    expect(firstLiveCatalogBytes).toBe(5_118);
+    // One fewer again since 2026-09-29: a Subflow's node count is the size setting's 100, not 64.
+    expect(firstLiveCatalogBytes).toBe(5_117);
   });
 
   it("publishes the strict parser shape and conditional catalog-bound node fields", () => {
@@ -190,8 +192,9 @@ describe("Automation Studio Flow bootstrap contract", () => {
       expect.objectContaining({ additionalProperties: false, required: ["kind", "targetSubflowKey"] }),
       expect.objectContaining({ additionalProperties: false, required: ["kind"] })
     ]);
-    expect(defs.subflow.properties.nodes).toMatchObject({ minItems: 1, maxItems: 64 });
-    expect(defs.subflow.properties.edges).toMatchObject({ minItems: 0, maxItems: 128 });
+    // The Flow size setting's default (`model/flow-size/`), two edges a node.
+    expect(defs.subflow.properties.nodes).toMatchObject({ minItems: 1, maxItems: 100 });
+    expect(defs.subflow.properties.edges).toMatchObject({ minItems: 0, maxItems: 200 });
     expect(defs.node).toMatchObject({
       additionalProperties: false,
       required: ["key", "definitionId", "definitionVersion"],
@@ -397,11 +400,14 @@ describe("Automation Studio Flow bootstrap contract", () => {
     const cyclicCodes = validateAutomationStudioFlowBootstrapPlan({ plan: cyclic, registry: registry(), resolution }).issues.map((issue) => issue.code);
     expect(cyclicCodes).toContain("bootstrap.cyclic_graph");
 
+    // The depth bound is the Flow's size setting, which no chain it allows can
+    // exceed; a size with a shallower bound is what reaches the check.
     const deepRegistry = registry();
     const deep = plan();
+    const shallow = { ...automationStudioFlowBootstrapSizeLimits(), maxGraphDepth: 16 };
     deep.subflows[0]!.nodes = [];
     deep.subflows[0]!.edges = [];
-    for (let index = 0; index <= AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxGraphDepth; index += 1) {
+    for (let index = 0; index <= shallow.maxGraphDepth; index += 1) {
       deep.subflows[0]!.nodes.push({ key: `node_${index}`, definitionId: "domain.demo.source", definitionVersion: "1.0.0" });
       if (index > 0) deep.subflows[0]!.edges.push({
         key: `edge_${index}`,
@@ -409,7 +415,8 @@ describe("Automation Studio Flow bootstrap contract", () => {
         target: { nodeKey: `node_${index}`, portId: "value" }
       });
     }
-    expect(validateAutomationStudioFlowBootstrapPlan({ plan: deep, registry: deepRegistry, resolution }).issues.map((issue) => issue.code)).toContain("bootstrap.graph_too_deep");
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: deep, registry: deepRegistry, resolution }).issues.map((issue) => issue.code)).not.toContain("bootstrap.graph_too_deep");
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: deep, registry: deepRegistry, resolution, size: shallow }).issues.map((issue) => issue.code)).toContain("bootstrap.graph_too_deep");
   });
 
   it("rejects plans exceeding the structural count and byte ceilings", () => {
@@ -420,7 +427,7 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(parseAutomationStudioFlowBootstrapPlan(tooMany).issues.map((issue) => issue.code)).toContain("bootstrap.too_many_subflows");
 
     const tooLarge = plan() as unknown as JsonObject;
-    (tooLarge.router as JsonObject).name = "x".repeat(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxPlanBytes);
+    (tooLarge.router as JsonObject).name = "x".repeat(automationStudioFlowBootstrapSizeLimits().maxPlanBytes);
     const codes = parseAutomationStudioFlowBootstrapPlan(tooLarge).issues.map((issue) => issue.code);
     expect(codes).toEqual(expect.arrayContaining(["bootstrap.invalid_text", "bootstrap.plan_too_large"]));
   });

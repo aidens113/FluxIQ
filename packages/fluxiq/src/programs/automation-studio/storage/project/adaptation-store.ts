@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationRiskLevel, AutomationStudioChangeProposalPatch, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeEntryPoint } from "../../model/index.ts";
-import { parseAutomationStudioDeterministicPath, parseAutomationStudioFlowChangeOrigin, validateAutomationStudioFlowAdaptation } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, parseAutomationStudioDeterministicPath, parseAutomationStudioFlowChangeOrigin, validateAutomationStudioFlowAdaptation } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION } from "../../runtime/compiled-plan.ts";
 import { actionTargetParameterValues, decideAutomationStudioChangeConfidence, withAutomationStudioNodeAdaptationId, type AutomationStudioChangeConfidence } from "../../runtime/flow-change/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
@@ -61,7 +61,8 @@ export class AutomationStudioProjectAdaptationStore {
   async close(): Promise<void> { await this.content.close(); await this.lease.release(); }
 
   async putAdaptation(input: { adaptation: AutomationStudioFlowAdaptation; approvalMode?: AutomationStudioAdaptationApprovalMode; prompt?: unknown; response?: unknown; evidence?: unknown; statusReason?: string; actorId?: string; changedAt?: number }): Promise<AutomationStudioStoredAdaptationDetail> {
-    const validation = validateAutomationStudioFlowAdaptation(input.adaptation);
+    // The service checked the Flow's own size setting before recording; the store only refuses what no setting allows.
+    const validation = validateAutomationStudioFlowAdaptation(input.adaptation, AUTOMATION_STUDIO_FLOW_SIZE_SETTING.maximum);
     if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const now = input.changedAt ?? input.adaptation.updatedAt ?? Date.now();
     const graphTarget = await this.graphTransactionTarget(input.adaptation);
@@ -513,7 +514,11 @@ async function deterministicPathOperations(
 ): Promise<AutomationStudioGraphPatchOperation[]> {
   const failedNodeId = stringValue(patch.targetId);
   if (!failedNodeId) throw new Error(`Patch insert_deterministic_path requires the node whose failure it recovers; ${adaptation.adaptationId} refused.`);
-  const path = parseAutomationStudioDeterministicPath(patch.after);
+  // Read back from the store with no Flow in hand: bounded by the Flow size
+  // setting's largest value, since the path was checked against a Flow size
+  // setting (or its default) when it was recorded, and a later, lower setting
+  // must not strand a change a reviewer already approved.
+  const path = parseAutomationStudioDeterministicPath(patch.after, AUTOMATION_STUDIO_FLOW_SIZE_SETTING.maximum);
   if (!path) throw new Error(`Patch insert_deterministic_path for ${failedNodeId} does not carry a readable recovery path; ${adaptation.adaptationId} refused.`);
   const failed = await liveGraphNode(graph, failedNodeId, targetFlowId);
   if (!failed) throw new Error(`Unknown node: ${failedNodeId}`);

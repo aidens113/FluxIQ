@@ -6,7 +6,7 @@ import {
 } from "../harness.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapOutputSchema, automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import { automationStudioDeepSeekExpectedOutput } from "./output-schema.ts";
 import { isRecord } from "./json-record.ts";
@@ -86,7 +86,7 @@ function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["cont
       || context.metadata.source !== "generateFlowBootstrapAdaptation")) return false;
   const bootstrap = context.flowBootstrap;
   if (!isRecord(bootstrap)
-    || JSON.stringify(bootstrap.outputSchema) !== JSON.stringify(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA)
+    || JSON.stringify(bootstrap.outputSchema) !== JSON.stringify(automationStudioFlowBootstrapOutputSchema(automationStudioFlowBootstrapSizeLimitsOfContext(bootstrap)))
     || !Array.isArray(bootstrap.nodeCatalog)
     || bootstrap.nodeCatalog.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries
     || typeof bootstrap.catalogTruncated !== "boolean"

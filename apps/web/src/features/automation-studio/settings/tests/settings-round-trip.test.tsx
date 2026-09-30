@@ -71,6 +71,7 @@ const SETTINGS_ROUND_TRIP_VALUES: FlowSettingsDraft = {
   maxRetriesPerAction: "5",
   maxRecoveryAttemptsPerSubflow: "6",
   maxReroutesPerRun: "7",
+  maxNodesPerSubflow: "150",
   interfaceInputs: [{ id: "input.order", name: "Order", valueKind: "json", required: true, description: "Order payload", defaultValue: '{"id":1}' }],
   interfaceOutputs: [{ id: "output.result", name: "Result", valueKind: "string", required: false, description: "The answer", defaultValue: "none" }],
   dependencyPins: [],
