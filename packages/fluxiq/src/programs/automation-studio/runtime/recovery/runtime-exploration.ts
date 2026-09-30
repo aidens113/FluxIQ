@@ -69,6 +69,7 @@
 // allows, the exploration ends `user_intervention_required` with the
 // person-needed code as `endedBy`, and the model is asked nothing further.
 
+import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
@@ -287,6 +288,7 @@ export async function runAutomationStudioRuntimeExploration(
     tools: input.loop.tools,
     stage: "recovery",
     subject: "exploration",
+    newAskId: () => `person-needed.${randomUUID()}`,
     // The port a permission question goes through, and nothing else of that
     // ask: a person completing a check is given Core's own person-needed wait.
     ...(input.ask ? { ask: { port: input.ask.port, now: input.ask.now ?? now } } : {}),

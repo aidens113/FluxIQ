@@ -39,6 +39,7 @@
 // the stage it asks from, what the person is shown while it waits, and the
 // `flow_bootstrap.user_intervention_required` ending.
 
+import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
 import { emitAutomationStudioActivity, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../llm/index.ts";
@@ -100,7 +101,7 @@ export function automationStudioFlowBootstrapPersonNeeded(input: {
     signal: input.signal,
     clearedResultCode: input.clearedResultCode,
     maxAsks: input.maxAsks,
-    newAskId: input.newAskId,
+    newAskId: input.newAskId ?? (() => `person-needed.${randomUUID()}`),
     onAsk: (ask) => emitAutomationStudioActivityWaitingOnAsk(ask),
     onCleared: (call) => emitAutomationStudioActivity({ phase: "building", label: "The person completed the check; building goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } })
   });

@@ -35,7 +35,6 @@
 // through `onAsk` and `onCleared`: `../activity/` reads this directory's
 // constants, and a value import back from here would close a module cycle.
 
-import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskStage } from "./ask.ts";
@@ -110,7 +109,12 @@ export function automationStudioPersonNeededToolCalls(input: {
    */
   clearedResultCode?: ((value: JsonObject) => string | undefined) | undefined;
   maxAsks?: number | undefined;
-  newAskId?: (() => string) | undefined;
+  /**
+   * Names each new question. Required, and supplied by the caller, because this
+   * directory's barrel reaches the browser bundle (`ask-effect.ts`), which cannot
+   * load `node:crypto`.
+   */
+  newAskId: () => string;
   /** Told of each question just before it is put, so the caller can show it. */
   onAsk?: ((ask: AutomationStudioAsk) => void) | undefined;
   /** Told when the person said Continue and the work goes on. */
@@ -118,7 +122,7 @@ export function automationStudioPersonNeededToolCalls(input: {
 }): AutomationStudioPersonNeededToolCalls {
   const stopped = new AbortController();
   const maxAsks = input.maxAsks ?? AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS;
-  const newAskId = input.newAskId ?? (() => `person-needed.${randomUUID()}`);
+  const newAskId = input.newAskId;
   const look = input.tools.find((tool) => tool.initialObservation);
   let asks = 0;
   let ended: AutomationStudioPersonNeededEnding | undefined;
