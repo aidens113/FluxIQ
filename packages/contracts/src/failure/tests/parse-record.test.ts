@@ -100,6 +100,28 @@ describe("parseAutomationStudioFailureRecord", () => {
     expect(parseAutomationStudioFailureRecord({ category: "target_not_found", code: "c", retryable: true })).not.toBeNull();
   });
 
+  it("round-trips a producer's statement that the act did not happen, and the wait it was told to leave", () => {
+    // A page that refused a press as "too fast" (`web.action.rate_limited`): the
+    // act demonstrably did not happen, and the page said when to try again.
+    const refused = { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted", retryAfterMs: 12_500 };
+    const parsed = parseAutomationStudioFailureRecord(refused);
+    expect(parsed).toEqual(refused);
+    expect(parseAutomationStudioFailureRecord(JSON.parse(JSON.stringify(parsed)))).toEqual(refused);
+    expect(parseAutomationStudioFailureRecord({ category: "action_failed", code: "c", retryable: true, effect: "ambiguous" })).toEqual({ category: "action_failed", code: "c", retryable: true, effect: "ambiguous" });
+    expect(parseAutomationStudioFailureRecord({ category: "timeout", code: "c", retryable: true, retryAfterMs: 0 })).not.toBeNull();
+    expect(parseAutomationStudioFailureRecord({ category: "timeout", code: "c", retryable: true, retryAfterMs: AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.retryAfterMsMax })).not.toBeNull();
+  });
+
+  it("rejects an unknown effect, an unreadable wait, and a wait on a record that says retrying cannot help", () => {
+    const base = { category: "action_failed", code: "web.action.rate_limited", retryable: true };
+    expect(parseAutomationStudioFailureRecord({ ...base, effect: "none" })).toBeNull();
+    expect(parseAutomationStudioFailureRecord({ ...base, effect: "UNACTED" })).toBeNull();
+    for (const retryAfterMs of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "12000", AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.retryAfterMsMax + 1]) {
+      expect(parseAutomationStudioFailureRecord({ ...base, retryAfterMs })).toBeNull();
+    }
+    expect(parseAutomationStudioFailureRecord({ ...base, retryable: false, retryAfterMs: 1_000 })).toBeNull();
+  });
+
   it("returns null instead of throwing for hostile inputs", () => {
     const hostile = new Proxy({}, { ownKeys: () => { throw new Error("boom"); } });
     expect(parseAutomationStudioFailureRecord(hostile)).toBeNull();

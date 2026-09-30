@@ -53,7 +53,11 @@ export function automationStudioAssessAttemptFault(
     ?? (attempt.failure ? faultFromRecord(attempt.failure) : undefined)
     ?? automationStudioFaultFromResultMessage(attempt.message);
   if (!base) return undefined;
-  const hinted = base.hintedWaitMs ?? automationStudioRetryHintMs(attempt.outputs, now);
+  // The producer's own record states its wait before anything the node returned
+  // is searched for one: a page's "try again in 12 seconds" travels there.
+  const hinted = base.hintedWaitMs
+    ?? (attempt.failure ? automationStudioRetryHintMs(attempt.failure, now) : undefined)
+    ?? automationStudioRetryHintMs(attempt.outputs, now);
   const fault: AutomationStudioFaultAssessment = { ...base, ...(hinted === undefined ? {} : { hintedWaitMs: hinted }) };
   if (fault.disposition === "refuse") return fault;
   const stage = fault.stage ?? attempt.failure?.stage;
@@ -97,14 +101,19 @@ export function automationStudioAttemptFaultIsAbsorbed(
  * The producer's own record, read as an assessment.
  *
  * `retryable` is the producer answering exactly this question, so it decides the
- * disposition. The effect reading is conservative: only a failure while resolving
- * the action's target demonstrably happened before anything could act, so
- * everything else is ambiguous and a mutating node keeps its protection.
+ * disposition. The effect is the producer's when it states one: a record marked
+ * `unacted` says the act demonstrably did not happen -- a page that refused a
+ * press as "too fast" and confirmed nothing -- so a mutating node may make it
+ * again. Without that statement the reading is conservative: only a failure
+ * while resolving the action's target demonstrably happened before anything
+ * could act, so everything else is ambiguous and a mutating node keeps its
+ * protection.
  */
 function faultFromRecord(record: AutomationStudioFailureRecord): AutomationStudioFaultAssessment {
-  const effect: AutomationStudioFaultEffect = record.stage === "target_resolution" || record.category === "target_not_found" || record.category === "target_ambiguous"
-    ? "unacted"
-    : "ambiguous";
+  const effect: AutomationStudioFaultEffect = record.effect
+    ?? (record.stage === "target_resolution" || record.category === "target_not_found" || record.category === "target_ambiguous"
+      ? "unacted"
+      : "ambiguous");
   return {
     disposition: record.retryable ? "retry" : "refuse",
     category: record.category,

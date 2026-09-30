@@ -20,7 +20,8 @@
 //   only_if     check.failed -> join         check.success falls into the step
 //   on_failed   step.failed -> the other     step.success -> join
 //   repeat      a Merge at the head of the loop, a Merge at its exit, and the
-//               last step of the span wired back to the head
+//               last step of the span wired back to the head; over a list,
+//               For Each's `item` also goes to each step that declares `item`
 //
 // **A loop is a cycle and Core's plan validation refuses cycles**, which is
 // right for everything except this. So the back edge arrives at the head
@@ -52,6 +53,13 @@ import { matchAuthoringDefinition } from "./matching.ts";
  */
 const MERGE_NODE_ID = "builtin.control.merge";
 const FOR_EACH_NODE_ID = "builtin.control.for-each";
+
+/**
+ * The port a list loop's current row travels on: For Each's `item` output, and
+ * the optional input of the same name that a node able to act on "the row this
+ * pass is on" declares after its control input.
+ */
+const ROW_PORT = "item";
 
 /** One step of the draft, already written down in the caller's vocabulary. */
 export type AutomationStudioFlowDraftRoutedStep = {
@@ -190,8 +198,16 @@ function repeat(input: {
     const each = input.nextDerived("each");
     head.branches = [...head.branches, branch("success", loop, "branches"), branch(rows, each, "items")];
     head.routed = true;
+    // Each pass's row goes to every step of the span that can act on it --
+    // one whose node declares an `item` input -- so a pass clicks the row it
+    // is on rather than the same fixed element every time (live run
+    // run-munnyvbr-11c28a0f). A step that declares none is left alone: its
+    // node would have nowhere to put the row.
+    const rowed = body
+      .filter((member) => takesRow(member, input.registry, input.resolution))
+      .map((member) => branch(ROW_PORT, input.label(automationStudioFlowDraftStepId(member.step)), ROW_PORT));
     emitted.push(mergeStep(loop, "each pass of the loop starts here"));
-    emitted.push({ label: each, description: "run the span once for each row", node: FOR_EACH_NODE_ID, entries: [], branches: [branch("body", first), branch("done", exit)], routed: true, line: 0 });
+    emitted.push({ label: each, description: "run the span once for each row", node: FOR_EACH_NODE_ID, entries: [], branches: [branch("body", first), branch("done", exit), ...rowed], routed: true, line: 0 });
   } else {
     // A check is re-run every pass, so it belongs inside the loop rather than
     // before it: it is lifted out of the line it was written in and put after
@@ -228,9 +244,26 @@ function listPort(
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): string | undefined {
+  return writtenDefinition(entry, registry, resolution)?.outputs.find((port) => port.valueType === "array")?.id;
+}
+
+/** Whether a step's node declares the input a loop hands the current row to. */
+function takesRow(
+  entry: AutomationStudioFlowDraftRoutedStep,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): boolean {
+  return writtenDefinition(entry, registry, resolution)?.inputs.some((port) => port.id === ROW_PORT) === true;
+}
+
+/** The definition a step names, matched the way the assembler will match it. */
+function writtenDefinition(
+  entry: AutomationStudioFlowDraftRoutedStep,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioNodeDefinition | undefined {
   const written = entry.written.node ?? entry.written.description;
-  const definition: AutomationStudioNodeDefinition | undefined = matchAuthoringDefinition(written, registry.list(resolution)).definition;
-  return definition?.outputs.find((port) => port.valueType === "array")?.id;
+  return matchAuthoringDefinition(written, registry.list(resolution)).definition;
 }
 
 function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | undefined): AutomationStudioFlowScriptStep {
