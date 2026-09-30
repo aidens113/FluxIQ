@@ -130,7 +130,7 @@ describe("a recovery under its permission gate", () => {
       consequences: ["delete"],
       missing: ["delete"],
       reason: { stage: "recovery" },
-      sentence: expect.stringMatching(/^To repair the step that failed, the Flow would press "Pick and pack" \(button\) each time it runs/)
+      sentence: expect.stringMatching(/^To fix the step that failed, the Flow would press "Pick and pack" \(button\) each time it runs/)
     });
     const gate = run.detail.metadata?.llmGate as JsonObject;
     expect(gate.patchHeldCode).toBe("llm.runtime_patch_permission_required");

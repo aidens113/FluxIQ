@@ -119,11 +119,36 @@ describe("building a Flow that needs an action a person has not allowed", () => 
 });
 
 describe("the same build, when the instruction itself asks for it", () => {
-  it("goes ahead with nothing permitted, and keeps what the instruction asked for with the proposal and the Flow", async () => {
-    const run = await build([pressDecision(REFUND.handle), complete(pressPlan(REFUND.handle))], undefined, [
-      { consequence: "move_money", quote: "Refund the first line" },
-      { consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }
-    ]);
+  const INSTRUCTED: JsonObject[] = [
+    { consequence: "move_money", quote: "Refund the first line" },
+    { consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }
+  ];
+
+  // The user's rule since 2026-09-30 (`action-permissions/destructive.ts`):
+  // moving money asks a person every time; the instruction asking for it is
+  // recorded on the request, and is not a permission.
+  it("still asks before moving money with nothing permitted, carrying what the instruction asked for on the request", async () => {
+    const run = await build([pressDecision(REFUND.handle), complete(pressPlan(REFUND.handle))], undefined, INSTRUCTED);
+    const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+
+    expect(diagnostic).toMatchObject({
+      code: "flow_bootstrap.permission_required",
+      permissionRequest: {
+        missing: ["move_money"],
+        authority: {
+          granted: [],
+          instructed: [
+            { consequence: "move_money", instructionId: "instruction.build", quote: "Refund the first line" },
+            { consequence: "modify_existing", instructionId: "instruction.build", quote: "refund the first line of Ada Lovelace's order" }
+          ]
+        }
+      }
+    });
+    expect(run.pressed).toEqual([]);
+  });
+
+  it("keeps what the instruction asked for with the proposal and the Flow once the person permits the money", async () => {
+    const run = await build([pressDecision(REFUND.handle), complete(pressPlan(REFUND.handle))], ["move_money"], INSTRUCTED);
     const result = await run.generation;
 
     expect(run.pressed).toEqual([REFUND.handle]);
