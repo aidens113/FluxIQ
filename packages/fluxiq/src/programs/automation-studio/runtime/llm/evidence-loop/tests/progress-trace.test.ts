@@ -37,6 +37,15 @@ describe("the evidence loop's progress trace", () => {
     expect(lines.join("\n")).not.toContain("Kettle");
   });
 
+  // `run-muntmwvx-0d53884a` printed model-written call ids that spelled out the
+  // instruction's words; only numbered ids and Core's own reach the log.
+  it("prints a call id only when it is numbered or Core's own", async () => {
+    const lines: string[] = [];
+    const traced = automationStudioLlmEvidenceLoopProgressTrace(loopInput(), { FLUXIQ_BUILD_PROGRESS_TRACE: "1" }, (line) => lines.push(line));
+    for (const callId of ["c18", "initial.core.run_node", "add_kettle_to_cart", "pick_Millbrook_store"]) await traced.executeTool({ callId, toolId: "web.look", value: { text: "" } });
+    expect(lines.filter((line) => line.includes("tool start")).map((line) => /callId=(\S+)/u.exec(line)?.[1])).toEqual(["c18", "initial.core.run_node", "-", "-"]);
+  });
+
   it("names a refused completion by its issue codes", async () => {
     const lines: string[] = [];
     const traced = automationStudioLlmEvidenceLoopProgressTrace(loopInput(), { FLUXIQ_BUILD_PROGRESS_TRACE: "1" }, (line) => lines.push(line));
