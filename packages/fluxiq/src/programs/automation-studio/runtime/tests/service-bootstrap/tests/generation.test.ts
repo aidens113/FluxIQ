@@ -2,7 +2,7 @@ import { AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES } from "../../../loop-limits/i
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -10,9 +10,25 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
-import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 let tempRoot: string;
+type Fixture = Awaited<ReturnType<typeof blankFixture>>;
+
+// Every case needs a blank project. Writing one through the service costs about a
+// second on an idle machine and several under load, inside each case's 15 s budget,
+// so it is written once per file by a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
+let seedRoot: string;
+/** One blank project with no domain. */
+let single: DataDirSeed<Fixture>;
+/** One blank `domain.test`-domain project. */
+let domainTest: DataDirSeed<Fixture>;
+
+/** Copies a seed into this case's data directory; call it before any service there is constructed. */
+async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
+  return structuredClone(await copyDataDirSeed(seed, tempRoot));
+}
 
 const services = new Set<AutomationStudioService>();
 
@@ -41,6 +57,16 @@ function createService(input: {
 }
 
 describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
+  beforeAll(async () => {
+    seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
+    single = await seedDataDir(path.join(seedRoot, "single"), (instance) => blankFixture(instance));
+    domainTest = await seedDataDir(path.join(seedRoot, "domainTest"), (instance) => blankFixture(instance, "active", "domain.test"));
+  }, SEEDING_TIMEOUT_MS);
+
+  afterAll(async () => {
+    if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-generation-"));
   });
@@ -48,7 +74,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   afterEach(async () => {
     await Promise.all([...services].map((instance) => instance.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   it("does not mark a missing or control-only native registry as bootstrap-ready", () => {
@@ -99,8 +125,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 20_000
     });
+    const { project, flow } = await seeded(single);
     const instance = createService({ provider, resolver });
-    const { project, flow } = await blankFixture(instance);
     const binding = await instance.getLlmExecutionBinding(project.id, flow.flowId);
 
     const result = await instance.generateFlowBootstrapAdaptation({
@@ -165,12 +191,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       };
     });
     const executeTool = vi.fn().mockResolvedValue({ privatePageContent: "not persisted", factCount: 1 });
+    const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
       evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
     });
-    const { project, flow } = await blankFixture(instance);
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
     expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision"]);
@@ -216,6 +242,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     });
+    const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }),
@@ -226,7 +253,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         executeTool: async (input) => ({ area: String(input.value.area) })
       }
     });
-    const { project, flow } = await blankFixture(instance);
     const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
     if (finishes) {
@@ -254,6 +280,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       return { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision: { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } } } };
     });
     const contentProtection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "test.key", key: Buffer.alloc(32, 6) }));
+    const { project, flow } = await seeded(domainTest);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
@@ -267,7 +294,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         }
       }
     });
-    const { project, flow } = await blankFixture(instance, "active", "domain.test");
     await instance.putReusableLlmContext({ projectId: project.id, actorId: "fixture", record: {
       recordId: "context.creation", flowId: flow.flowId, domainId: "domain.test", evidenceKind: "exploration", evidenceSchemaVersion: "evidence.v1", sanitizerVersion: "sanitizer.v1",
       compatibilityTags: [{ name: "surface", value: "same" }], promptProjection: { facts: [{ kind: "element", role: "button" }] }, outcome: "succeeded", reviewerState: "approved",
@@ -291,12 +317,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       response: { kind: "evidence_tool_decision", summary: "Use a tool.", decision: { kind: "tool_call", callId: "call.unknown", toolId: "unregistered", input: {} } },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
     }));
+    const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
       evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
     });
-    const { project, flow } = await blankFixture(instance);
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,

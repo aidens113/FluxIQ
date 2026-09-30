@@ -11,12 +11,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, plan } from "./fixtures.ts";
+import { blankFixture, caller, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_existing"];
 /**
@@ -27,7 +27,31 @@ const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_exist
 const ASKED_ABOUT: AutomationStudioActionConsequence[] = ["move_money"];
 
 let tempRoot: string;
+type Fixture = Awaited<ReturnType<typeof blankFixture>>;
+
+// Every case needs a blank project. Writing one through the service costs about a
+// second on an idle machine and several under load, inside each case's 15 s budget,
+// so it is written once per file by a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
+let seedRoot: string;
+/** One blank `example`-domain project. */
+let example: DataDirSeed<Fixture>;
+
+/** Copies a seed into this case's data directory; call it before any service there is constructed. */
+async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
+  return structuredClone(await copyDataDirSeed(seed, tempRoot));
+}
+
 const services = new Set<AutomationStudioService>();
+
+beforeAll(async () => {
+  seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
+  example = await seedDataDir(path.join(seedRoot, "example"), (instance) => blankFixture(instance, "active", "example"));
+}, SEEDING_TIMEOUT_MS);
+
+afterAll(async () => {
+  if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-ask-"));
@@ -104,6 +128,7 @@ describe("a build that never explored", () => {
   // was the empty declaration. It goes through the same gate now.
   it("asks for its plan's permission too, rather than refusing with nobody to ask", async () => {
     const asked: string[] = [];
+    const { project, flow } = await seeded(example);
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
       llmProviderResolver: (() => ({ provider: mockProvider(), maxCallsPerRun: 2 })) as never,
@@ -124,7 +149,6 @@ describe("a build that never explored", () => {
       } satisfies AutomationStudioLlmEvidenceRuntimeBinding
     });
     services.add(instance);
-    const { project, flow } = await blankFixture(instance, "active", "example");
 
     // No `evidenceGuided`: one call, a whole plan, nothing explored.
     await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() }))
@@ -161,13 +185,13 @@ async function build(options: { waitMs?: number } = {}) {
       return { kind: "llm_evidence_tool_execution", evidence: { refunded: true }, effectApplied: true };
     }
   };
+  const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
     llmEvidenceRuntime: binding
   });
   services.add(instance);
-  const { project, flow } = await blankFixture(instance, "active", "example");
   // The control's name has to have been shown before a request may carry it.
   const generation = instance.generateFlowBootstrapAdaptation({
     projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(),

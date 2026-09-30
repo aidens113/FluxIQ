@@ -1,15 +1,31 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
 import { automationStudioFlowBootstrapSizeLimits } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
 
 let tempRoot: string;
+type Fixture = Awaited<ReturnType<typeof blankFixture>>;
+
+// Every case needs a blank project. Writing one through the service costs about a
+// second on an idle machine and several under load, inside each case's 15 s budget,
+// so it is written once per file by a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
+let seedRoot: string;
+/** One blank project with no domain. */
+let single: DataDirSeed<Fixture>;
+/** Two blank projects in one data directory, each written by a service of its own. */
+let pair: DataDirSeed<[Fixture, Fixture]>;
+
+/** Copies a seed into this case's data directory; call it before any service there is constructed. */
+async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
+  return structuredClone(await copyDataDirSeed(seed, tempRoot));
+}
 
 const services = new Set<AutomationStudioService>();
 
@@ -38,6 +54,17 @@ function createService(input: {
 }
 
 describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
+  beforeAll(async () => {
+    seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
+    single = await seedDataDir(path.join(seedRoot, "single"), (instance) => blankFixture(instance));
+    const pairDir = path.join(seedRoot, "pair");
+    pair = await seedDataDir(pairDir, async (instance) => await blankFixturesPerService(pairDir, instance, 2) as [Fixture, Fixture]);
+  }, SEEDING_TIMEOUT_MS);
+
+  afterAll(async () => {
+    if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-generation-"));
   });
@@ -45,7 +72,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   afterEach(async () => {
     await Promise.all([...services].map((instance) => instance.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   // A completed result that fails a check is handed back to the model with the
@@ -106,6 +133,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
     }));
+    const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
@@ -114,7 +142,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         executeTool: vi.fn().mockResolvedValue({ factCount: 1 })
       }
     });
-    const { project, flow } = await blankFixture(instance);
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
@@ -165,8 +192,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   ])("rejects %s before provider resolution or invocation", async (_label, expectedCode, mutate) => {
     const providerRun = vi.fn();
     const resolver = vi.fn().mockReturnValue({ provider: mockProvider(providerRun) });
+    const { project, flow } = await seeded(single);
     const instance = createService({ resolver });
-    const { project, flow } = await blankFixture(instance);
     const input: Record<string, unknown> = {
       projectId: project.id,
       flowId: flow.flowId,
@@ -227,8 +254,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
   it("rejects nonblank topology and an empty catalog before provider resolution", async () => {
     const resolver = vi.fn();
+    const [first, second] = await seeded(pair);
     const nonblank = createService({ resolver });
-    const first = await blankFixture(nonblank);
     await nonblank.createFlowSubflow({ projectId: first.project.id, flowId: first.flow.flowId, name: "Existing", role: "primary" });
     const nonblankDiagnostic = await rejectedGenerationDiagnostic(nonblank.generateFlowBootstrapAdaptation({
       projectId: first.project.id,
@@ -245,7 +272,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(resolver).not.toHaveBeenCalled();
 
     const emptyCatalog = createService({ resolver });
-    const second = await blankFixture(emptyCatalog);
     (emptyCatalog as any).nativeNodeRuntime = {
       sdk: { nodes: new AutomationStudioNodeRegistry([]) },
       getRuntimeCapabilities: () => [],
@@ -270,8 +296,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const providerRun = vi.fn(async () => ({
       response: { kind: "flow_bootstrap", summary: "Build once.", plan: plan() }
     }));
+    const { project, flow } = await seeded(single);
     const instance = createService({ provider: mockProvider(providerRun) });
-    const { project, flow } = await blankFixture(instance);
     await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() });
 
     await expect(instance.generateFlowBootstrapAdaptation({
@@ -284,8 +310,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   });
 
   it("detects a persisted pending duplicate after service restart without another provider call", async () => {
+    const { project, flow } = await seeded(single);
     const first = createService();
-    const { project, flow } = await blankFixture(first);
     await first.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
@@ -310,8 +336,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   it("fails closed on key resolver rejection without invoking a provider", async () => {
     const providerRun = vi.fn();
     const resolver = vi.fn().mockRejectedValue(new Error("LLM key is no longer valid."));
+    const { project, flow } = await seeded(single);
     const instance = createService({ resolver, provider: mockProvider(providerRun) });
-    const { project, flow } = await blankFixture(instance);
 
     await expect(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,

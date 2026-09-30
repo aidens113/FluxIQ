@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
@@ -15,18 +15,34 @@ import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntime
 // to the OS temp directory instead: on a slow working-disk the case took 50 to
 // 62 s against its 60 s budget, and on the OS disk it takes about a third of
 // that. Everything the case proves is about sequence order, not disk location.
-const rootDir = path.join(os.tmpdir(), "fluxiq-automation-studio-project-runtime-stream-store-test");
+//
+// Each test gets its own root, and every pool it opens is closed after it,
+// passed or not. With one shared root, a test that timed out left its
+// databases open and still writing, so every later test failed with EBUSY
+// removing a `-shm` it could not delete. Closing the pool also stops such a
+// writer: a closing pool refuses the next acquire.
+let rootDir: string;
+const pools = new Set<AutomationStudioProjectDatabasePool>();
+
+function openPool(): AutomationStudioProjectDatabasePool {
+  const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+  pools.add(pool);
+  return pool;
+}
 
 describe("AutomationStudioProjectRuntimeStreamStore", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-project-runtime-stream-store-test-"));
   });
 
-  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await Promise.all([...pools].map((pool) => pool.closeAll()));
+    pools.clear();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
 
   it("stores run summaries and one ordered runtime event stream without legacy JSONL rewrites", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     await store.putRunDetail({
@@ -50,7 +66,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("lists run summaries from SQL metadata without reading event chunk payloads", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     await store.putRunDetail({
@@ -76,7 +92,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("pages scalar action summaries and loads action and event JSON only on demand", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     const detailedAction = {
@@ -120,7 +136,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("stores recording summaries and recording timelines as chunk streams", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedProject(pool, "project.recording");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.recording" });
     await store.putRecording({
@@ -148,7 +164,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("stores state bodies as objects and path metadata in SQL", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedProject(pool, "project.state");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.state" });
     const snapshot = stateWithValues("state.checkout", 42);
@@ -162,7 +178,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("tails and reconnects runtime streams by sequence at a million events", { timeout: 60_000 }, async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.million", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.million" });
     await store.upsertRunSummary(runSummary({ runId: "run.million", actionAttemptCount: 0, updatedAt: 1 }));
@@ -182,7 +198,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("keeps each run input's key and withholds its value in the envelope a run-summary event persists", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     const withheldInputs = { "web.secret.password": AUTOMATION_STUDIO_WITHHELD_VALUE, retries: AUTOMATION_STUDIO_WITHHELD_VALUE };
@@ -208,7 +224,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("joins the run's dataset summaries into compact and full run detail, and writes no datasets for a run that stored none", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     await store.putRunDetail(emptyRunDetail("run.checkout"));
@@ -241,7 +257,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("holds a Call Flow attempt, whose definition id carries the called Flow's version", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     const call = { ...action("call.attempt.1", 1, 40), nodeId: "call", definitionId: "composite.flow.flow.orders.child%2Fgraph@1.0.0" };
@@ -254,7 +270,7 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
   });
 
   it("refuses a detail it cannot hold before writing any of it, and keeps the run's stream consistent", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
     await store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: { ...runSummary({ actionAttemptCount: 0 }), status: "running" }, metadata: { stage: "queued" } });

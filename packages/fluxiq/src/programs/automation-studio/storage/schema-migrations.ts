@@ -118,7 +118,7 @@ export class AutomationStudioSchemaMigrationRunner {
       }
       for (const migration of pending) {
         await this.database.transaction(async (sql) => {
-          for (const statement of migration.statements) await sql.run(statement);
+          await runStatements(sql, migration.statements);
           await sql.run(
             "insert into automation_schema_migrations (migration_id, checksum, applied_at_ms) values (?, ?, ?)",
             [migration.id, automationStudioMigrationChecksum(migration), this.now()]
@@ -151,7 +151,7 @@ export class AutomationStudioSchemaMigrationRunner {
 
   private async ensureLifecycleSchema(): Promise<void> {
     await this.database.execute(async (sql) => {
-      for (const statement of LIFECYCLE_SCHEMA) await sql.run(statement);
+      await runStatements(sql, LIFECYCLE_SCHEMA);
       await sql.run(
         "insert into automation_schema_state (singleton, status, lock_token, lock_acquired_at_ms, failure_message, updated_at_ms) values (1, 'ready', null, null, null, ?) on conflict(singleton) do nothing",
         [this.now()]
@@ -201,6 +201,20 @@ export class AutomationStudioSchemaMigrationRunner {
 
 export function automationStudioMigrationChecksum(migration: AutomationStudioSchemaMigration): string {
   return createHash("sha256").update(JSON.stringify({ id: migration.id, statements: migration.statements })).digest("hex");
+}
+
+/**
+ * The statements, in order, as one script when the executor offers `exec`
+ * (one SQLite round trip), otherwise one `run` each. Joined with a newline, ";" and a newline so a
+ * trailing `--` comment cannot swallow the separator; an empty statement left
+ * by a statement's own trailing ";" is a no-op to SQLite.
+ */
+async function runStatements(sql: AutomationStudioSqlExecutor, statements: readonly string[]): Promise<void> {
+  if (sql.exec) {
+    await sql.exec(statements.join("\n;\n"));
+    return;
+  }
+  for (const statement of statements) await sql.run(statement);
 }
 
 async function readState(sql: AutomationStudioSqlExecutor): Promise<AutomationStudioSchemaState> {
