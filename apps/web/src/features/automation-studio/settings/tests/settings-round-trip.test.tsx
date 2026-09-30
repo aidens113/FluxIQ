@@ -136,12 +136,28 @@ describe("Flow settings round trip", () => {
       const flow = flowOf(metadata);
       const draft = flowSettingsDraftFromFlow(flow);
       expect(draft.maxAdaptationInterventionsPerRun, JSON.stringify(metadata)).toBe("3");
-      expect(draft.maxAdaptationCostUsdPerRun, JSON.stringify(metadata)).toBe("1");
+      expect(draft.maxAdaptationCostUsdPerRun, JSON.stringify(metadata)).toBe("0.25");
       const once = flowSettingsDraftFromFlow(buildFlowSettingsSavePayload(flow, draft));
       expect(flowSettingsNotPersisted(draft, once), JSON.stringify(metadata)).toEqual([]);
       const twice = flowSettingsDraftFromFlow(buildFlowSettingsSavePayload(buildFlowSettingsSavePayload(flow, draft), once));
       expect(flowSettingsNotPersisted(once, twice), JSON.stringify(metadata)).toEqual([]);
     }
+  });
+
+  // The user's rule: a run costs at most $0.25. Core holds every build and
+  // recovery to that ceiling whatever a Flow stores, so a form defaulting to $1
+  // described a limit that does not exist. Pinned to Core's source, as the
+  // permission defaults below are, because Core exports no constant to import.
+  it("defaults a Flow's adaptation cost per run to Core's $0.25 run ceiling, and accepts it", () => {
+    const coreSource = (file: string) => readFileSync(new URL(`../../../../../../../packages/fluxiq/src/programs/automation-studio/${file}`, import.meta.url), "utf8");
+    const ceiling = coreSource("runtime/llm/flow-execution-limits/run-cost-ceiling.ts").match(/AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD = ([0-9.]+);/)?.[1];
+    const coreDefault = coreSource("model/flows.ts").match(/maxEstimatedCostUsdPerRun: ([0-9.]+)/)?.[1];
+    const draft = flowSettingsDraftFromFlow(flowOf());
+    expect(draft.maxAdaptationCostUsdPerRun).toBe("0.25");
+    expect(Number(draft.maxAdaptationCostUsdPerRun)).toBe(Number(ceiling));
+    expect(Number(draft.maxAdaptationCostUsdPerRun)).toBe(Number(coreDefault));
+    expect(flowLimitsInterfaceErrors(draft).filter((error) => error.startsWith("Adaptation cost per run"))).toEqual([]);
+    expect((buildFlowSettingsSavePayload(flowOf(), draft).metadata as any).adaptationPolicySettings.maxEstimatedCostUsdPerRun).toBe(0.25);
   });
 
   it("shows the permission defaults Core actually runs a Flow under", () => {

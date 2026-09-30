@@ -13,11 +13,24 @@
 // whether it is still getting anywhere. The last two live in the exploration
 // ledger. The first two are sized here, and the call count survives only as a
 // runaway backstop.
+//
+// The cost ceiling is the run cost ceiling, $0.25
+// (`../../llm/flow-execution-limits/run-cost-ceiling.ts`), whoever asked for
+// the run. What the resolver, the Flow's configured
+// `maxEstimatedCostUsdPerRun` or an unattended repair's authorization says may
+// lower it and never raise it. A run a person asked for used to take the Flow's
+// figure, else the resolver's $2 default total, up to a $2 recovery ceiling of
+// its own.
 
 import {
-  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
+  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
+  automationStudioLlmRunCostCeilingUsd,
+  estimateAutomationStudioDeepSeekCostUsd,
+  isAutomationStudioDeepSeekModel,
+  resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmRunBudgetLimits,
   type AutomationStudioLlmTokenLimits
 } from "../../llm/index.ts";
@@ -44,17 +57,6 @@ export const AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE = 6_000;
  */
 export const AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES = 24;
 
-/**
- * The most one recovery may be estimated to cost, whoever asked for it.
- *
- * In a run nobody asked the model into, the purse is the policy's and at most
- * $0.25, which this does not touch. In a run a person asked for, it is the
- * Flow's configured ceiling, else the resolver's default total, and this is the
- * ceiling over a resolver that gives a per-call cost and no total -- which
- * would otherwise be multiplied by the shares into a purse nobody chose.
- */
-export const AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN = 2;
-
 export type AutomationStudioRecoveryRunBudgetInput = {
   /** A run a person asked the model into, held to the run's own budget rather than the training settings'. */
   explicitRunBudget: boolean;
@@ -72,6 +74,15 @@ export type AutomationStudioRecoveryRunBudgetInput = {
   maxTokensPerRun?: number | undefined;
   /** The Flow's configured cost ceiling (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`), when it has one. */
   policyMaxEstimatedCostUsdPerRun?: number | undefined;
+  /**
+   * What is left of a larger repair's purse, when this recovery is one part of
+   * one (`../refuted-result/purse.ts`). It lowers the total like any other
+   * limit here. A recovery with nothing left is refused before it gets this far
+   * (`annotate.ts`), because a limit of zero is ignored here rather than trusted.
+   */
+  costLeftUsd?: number | undefined;
+  /** The model the resolved provider calls, which prices one call's worst case. Absent or unpriced, Core's default model is. */
+  model?: string | undefined;
 };
 
 export type AutomationStudioRecoveryRunBudget = {
@@ -110,27 +121,43 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
       : Math.min(input.maxTokensPerRun ?? AUTOMATION_STUDIO_RECOVERY_DEFAULT_TOKENS_PER_SHARE * tokenShares, requestedTotalTokens)
   )));
   const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (tokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * tokenShares)));
-  const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (resolution?.maxEstimatedCostUsd ?? 0.25) * costShares;
-  // A run a person asked for spends up to the Flow's configured ceiling when
-  // one is set, and the resolver's default total when none is.
-  const policyCeiling = positiveCost(input.policyMaxEstimatedCostUsdPerRun);
-  const maxEstimatedCostUsdPerRun = Math.min(
-    AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN,
-    input.explicitRunBudget
-      ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, policyCeiling ?? requestedCost)
-      : Math.min(0.25, input.policyMaxEstimatedCostUsdPerRun ?? 0.25, requestedCost)
-  );
+  // A resolver that gives a per-call cost and no total is multiplied into a
+  // purse, which the ceiling then holds to $0.25 like any other.
+  const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (resolution?.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) * costShares;
+  // Whoever asked for the run: the ceiling, lowered by the resolver's total, by
+  // the Flow's configured limit and by what a repair has left, and raised by none.
+  const maxEstimatedCostUsdPerRun = automationStudioLlmRunCostCeilingUsd(requestedCost, input.policyMaxEstimatedCostUsdPerRun, input.costLeftUsd);
+  // What one call reserves before it knows what it spent: its worst case --
+  // the per-request token limits priced at the model's peak rates, all input a
+  // cache miss -- and never less than an even share of the purse. The ledger
+  // counts a call that reports more than it reserved as a budget breach
+  // (`../../llm/run-budget.ts`), so a reservation below what a call can really
+  // cost reads an ordinary call as a breach: an even share of $0.25 over 64
+  // declared calls is $0.0039, and live repairs' $0.0041 and $0.0044 diagnoses
+  // failed `run-munutuvf-6a1c548a` and `run-munv9eqy-1827b928` for it. The total
+  // is still what binds: a call is admitted only while what was spent and what
+  // is reserved leave room for this reservation, so a recovery stops at most one
+  // worst-case call short of its purse, and never past it. A resolver's
+  // per-call cost, when it names one, caps the reservation, and so does the
+  // purse itself.
+  const share = maxEstimatedCostUsdPerRun / costShares;
+  const perCallCap = typeof resolution?.maxEstimatedCostUsd === "number" && Number.isFinite(resolution.maxEstimatedCostUsd) && resolution.maxEstimatedCostUsd > 0 ? resolution.maxEstimatedCostUsd : AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  const reservation = Math.min(maxEstimatedCostUsdPerRun, perCallCap, Math.max(share, worstCaseCallCostUsd(tokenLimits, input.model)));
   return {
     ledger: { maxCallsPerRun, maxTotalTokensPerRun, maxOutputTokensPerRun, maxEstimatedCostUsdPerRun },
-    // Rounded down to the billionth the ledger rounds its running total to, so
-    // every declared call's reservation still fits on the last call.
-    maxEstimatedCostUsdPerCall: Math.floor((maxEstimatedCostUsdPerRun / costShares) * 1_000_000_000) / 1_000_000_000,
+    // The one per-call cap a ledger enforces, rounded down to the billionth the
+    // ledger rounds its running total to.
+    maxEstimatedCostUsdPerCall: Math.floor(reservation * 1_000_000_000) / 1_000_000_000,
     ...(declaredCalls !== undefined ? { declaredCallsPerRun: declaredCalls } : {})
   };
 }
 
-function positiveCost(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+/** One call at the per-request token limits, every input token a cache miss, at the model's peak rates. */
+function worstCaseCallCostUsd(tokenLimits: Partial<AutomationStudioLlmTokenLimits> | undefined, model: string | undefined): number {
+  const limits = resolveAutomationStudioLlmTokenLimits(tokenLimits).limits;
+  const outputTokens = Math.min(limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
+  const inputTokens = Math.max(0, Math.min(limits.maxInputTokens, limits.maxTotalTokens - outputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST - outputTokens));
+  return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, isAutomationStudioDeepSeekModel(model) ? model : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL);
 }
 
 function positiveInteger(value: unknown): number | undefined {

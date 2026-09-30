@@ -29,10 +29,19 @@
 // field in one line.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
-import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
+import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
 import { automationStudioPageLimit } from "../../storage/index.ts";
 import {
+  automationStudioConversationCommandPort,
+  automationStudioConversationPageShown,
+  automationStudioConversationCommandVocabulary,
   parseAutomationStudioPanelCapabilities,
+  runConfirmedAutomationStudioConversationCommand,
+  startAutomationStudioConversationCommand,
+  AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX,
+  type AutomationStudioConversationAsk,
+  type AutomationStudioConversationCommandContext,
+  type AutomationStudioConversationCommandExecution,
   type AutomationStudioConversationFlowReference,
   type AutomationStudioConversationOnScreen
 } from "../../runtime/index.ts";
@@ -176,15 +185,23 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       };
       // With the panel's vocabulary, the turn is an instruction as well as a
       // record: Core reads it, decides, and writes the answer into the thread.
+      // Core's own descriptor stands in for any capability Core runs itself,
+      // and when the decision is one of those Core runs it here, for whichever
+      // client asked (`runtime/conversations/commands/`). `execution` says
+      // what came of it, and is null when the client is to run what was chosen.
       if (Array.isArray(payload.capabilities)) {
+        const onScreen = requestedOnScreen(payload.onScreen);
+        const caller = request.actor ? conversations().callerFor(request.actor) : null;
         const answer = await conversations().respondToPersonTurn({
           ...personTurn,
-          capabilities: parseAutomationStudioPanelCapabilities(payload.capabilities),
+          capabilities: automationStudioConversationCommandVocabulary(parseAutomationStudioPanelCapabilities(payload.capabilities)),
           flows: await projectFlows(service, projectId),
-          onScreen: requestedOnScreen(payload.onScreen),
-          caller: request.actor ? { userId: request.actor.userId, sessionId: request.actor.sessionId } : null
+          onScreen,
+          caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null
         });
-        return { ok: true, payload: { turn: answer.turn, response: answer.response, problem: answer.problem } };
+        const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null });
+        const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;
+        return { ok: true, payload: { turn: answer.turn, response: answer.response ? { ...answer.response, execution } : null, problem: answer.problem } };
       }
       const turn = await conversations().appendTurn(personTurn);
       return { ok: true, payload: { turn } };
@@ -200,14 +217,22 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const askId = String(payload.askId ?? "");
+      const kind = requiredAnswerKind(payload.kind);
+      // A question a conversation command asked ("apply this change?") is
+      // Core's to act on when granted. It is read before the answer is written
+      // so that only the answer that settles it runs anything: an exact resend
+      // replays the stored answer and must not apply the change a second time.
+      const commandAsk = askId.startsWith(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX) ? await conversations().getAsk({ projectId, askId }) : null;
       const ask = await conversations().answerAsk({
         projectId,
-        askId: String(payload.askId ?? ""),
-        kind: requiredAnswerKind(payload.kind),
+        askId,
+        kind,
         value: typeof payload.value === "string" ? payload.value : undefined,
         actorId: request.actor?.userId
       });
-      return { ok: true, payload: { ask } };
+      if (commandAsk?.status !== "pending") return { ok: true, payload: { ask } };
+      return { ok: true, payload: { ask, execution: await confirmedExecution(dependencies, request, projectId, ask) } };
     }
   });
 
@@ -231,6 +256,45 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
 }
 
 /**
+ * What a conversation command runs with, for this request: the registry,
+ * called as this request's actor in its scope, under the session a paired
+ * client's person has unlocked (`commands/caller.ts`), and the page on screen
+ * as a build's start. Null without an actor, which the registry never lets
+ * through, so there is always someone the work is done as.
+ */
+function commandContext(
+  dependencies: AutomationStudioConversationApiDependencies,
+  request: ProgramApiRequest,
+  target: { projectId: string; conversationId: string; startLocation: string | null }
+): AutomationStudioConversationCommandContext | null {
+  if (!request.actor) return null;
+  const conversations = dependencies.service.conversations;
+  const caller = conversations.callerFor(request.actor);
+  return {
+    port: automationStudioConversationCommandPort({ registry: dependencies.registry, actor: { ...request.actor, sessionId: caller.sessionId }, scope: request.scope }),
+    host: conversations,
+    projectId: target.projectId,
+    conversationId: target.conversationId,
+    sessionId: caller.sessionId,
+    keyLocked: caller.keyLocked,
+    startLocation: target.startLocation
+  };
+}
+
+/** Runs what a granted conversation-command ask carries, or sets aside what a declined one offered, and says what came of it. Null for any other answer. */
+async function confirmedExecution(
+  dependencies: AutomationStudioConversationApiDependencies,
+  request: ProgramApiRequest,
+  projectId: string,
+  ask: AutomationStudioConversationAsk
+): Promise<AutomationStudioConversationCommandExecution | null> {
+  const context = commandContext(dependencies, request, { projectId, conversationId: ask.conversationId, startLocation: null });
+  if (!context || (ask.answer?.kind !== "grant" && ask.answer?.kind !== "deny")) return null;
+  const turn = await dependencies.service.conversations.getTurn({ projectId, conversationId: ask.conversationId, turnId: ask.turnId });
+  return runConfirmedAutomationStudioConversationCommand({ ask, attachment: turn?.attachment ?? null, context });
+}
+
+/**
  * The project's Flows by name, or null when they could not be listed. Null is
  * not an empty project: the model is told the list is missing and passes a
  * named Flow on as written, so a failed listing costs the person a lookup, not
@@ -247,7 +311,15 @@ async function projectFlows(service: AutomationStudioConversationApiDependencies
   }
 }
 
-/** What the panel has open. Anything that is not a non-empty string is left out rather than refused. */
+/** The longest page address carried as a build's start location. */
+const PAGE_ADDRESS_MAX = 2_048;
+
+/**
+ * What the panel has open. Anything that is not a non-empty string is left out
+ * rather than refused, and so is a page address that is not http or https or
+ * is longer than a start location may be: it is context, and a message is not
+ * refused for the context it came with.
+ */
 function requestedOnScreen(value: unknown): AutomationStudioConversationOnScreen {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const record = value as Record<string, unknown>;
@@ -256,6 +328,10 @@ function requestedOnScreen(value: unknown): AutomationStudioConversationOnScreen
     const entry = record[key];
     if (typeof entry === "string" && entry.trim()) onScreen[key] = entry.trim();
   }
+  const pageUrl = typeof record.pageUrl === "string" ? record.pageUrl.trim() : "";
+  // A control character or space in an address that reaches a prompt is a mistake or an attempt to break out of it.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point.
+  if (pageUrl && pageUrl.length <= PAGE_ADDRESS_MAX && automationStudioConversationPageShown(pageUrl) !== null && !/[\s\u0000-\u001f\u007f]/u.test(pageUrl)) onScreen.pageUrl = pageUrl;
   return onScreen;
 }
 

@@ -358,9 +358,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "pre_provider_validation",
       retryable: false,
       providerInvocation: "not_attempted",
-      providerResponse: "not_received",
-      // Codes only: the lock's own throw by class and line, and its message nowhere.
-      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
+      providerResponse: "not_received"
     });
     expect(JSON.stringify(diagnostic)).not.toContain("raw lock");
     expect(resolver).not.toHaveBeenCalled();

@@ -6,3 +6,4 @@ export { AUTOMATION_STUDIO_DEFAULT_ASK_ROUTES, automationStudioParkedRun, type A
 export { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioAskedAndGranted, automationStudioPermissionAskWaitMs, type AutomationStudioPermissionAsk } from "./permission-ask.ts";
 export type { AutomationStudioParkingPort } from "./port.ts";
 export { automationStudioAskSettlement, type AutomationStudioAskSettlement, type AutomationStudioParkRefusalReason } from "./settlement.ts";
+export { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, automationStudioAskedPersonNeeded, automationStudioPersonNeededAnswerIsDone, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioPersonNeededOutcome } from "./person-needed-ask.ts";

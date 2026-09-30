@@ -66,6 +66,14 @@ describe("saying when a step runs", () => {
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "on_failed", to: 4 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "not_a_kept_step" }] });
   });
 
+  // Live run run-munuj2os-c205ee3a put repeat on the listing, over itself.
+  it("refuses a repeat whose over is not before the step it goes on, and says so as its own reason", () => {
+    const draft = steps(3);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 2 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 3 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 1, refused: [] });
+  });
+
   it("refuses a guard for the first step, which has nothing before it", () => {
     const draft = steps();
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "only_if" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "no_step_before_it" }] });
@@ -112,6 +120,29 @@ describe("a replay of a draft that branches", () => {
     });
 
     expect(verdict.ok).toBe(false);
+  });
+
+  // Lane t195, run-munq51ik-a7ebd077: a Confirm repeated over request rows
+  // replays on the row the build already confirmed, which a fresh start does
+  // not undo, and nine of ten completions were refused for it.
+  it("counts every step of a repeating span as conditional, and not the listing it repeats over", () => {
+    const draft = steps(4);
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", through: 3, over: 1 }]);
+
+    expect([...automationStudioFlowDraftConditionalStepIds(draft)].sort()).toEqual(["d2", "d3"]);
+    const verdict = automationStudioFlowDraftDryRunVerdict({
+      attempt: 1,
+      reset: "ok",
+      outcomes: [
+        { step: 1, stepId: "d1", actionId: "press", status: "replayed" },
+        { step: 2, stepId: "d2", actionId: "press", status: "unreproducible" },
+        { step: 3, stepId: "d3", actionId: "press", status: "failed" },
+        { step: 4, stepId: "d4", actionId: "press", status: "replayed" }
+      ],
+      asked: new Set(),
+      conditional: automationStudioFlowDraftConditionalStepIds(draft)
+    });
+    expect(verdict.ok).toBe(true);
   });
 
   it("counts the guard of a conditional step, and the step a failure recovers into, as conditional too", () => {

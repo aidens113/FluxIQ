@@ -28,26 +28,26 @@ describe("the Flow Bootstrap deadline", () => {
 describe("the Flow Bootstrap budget", () => {
   it("is the resolution's token budget, its per-call worst case, its cost ceiling and the deadline", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({
-      maxCallsPerRun: 64, maxTotalTokensPerRun: 600_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2,
+      maxCallsPerRun: 64, maxTotalTokensPerRun: 600_000, maxTotalEstimatedCostUsd: 0.2,
       tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }
     });
 
-    expect(limits.loop.budget).toEqual({ maxTotalTokens: 600_000, maxTokensPerDecision: 56_000, maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
+    expect(limits.loop.budget).toEqual({ maxTotalTokens: 600_000, maxTokensPerDecision: 56_000, maxCostUsd: 0.2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
     expect(limits.loop.maxIterations).toBe(64);
   });
 
-  it("names only the bounds the resolution declared, and keeps a cost ceiling under a dollar", () => {
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({}).loop.budget).toEqual({ maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 0.5 }).loop.budget).toMatchObject({ maxCostUsd: 0.5 });
+  it("names only the token bounds the resolution declared, and always the run cost ceiling", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({}).loop.budget).toEqual({ maxCostUsd: 0.25, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 0.5 }).loop.budget).toMatchObject({ maxCostUsd: 0.25 });
   });
 
   // Spend safety is a plain configured limit read from Flow settings
-  // (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`), not a grant.
-  it("takes the Flow's configured cost ceiling over the resolution's default total, and splits it across the calls", () => {
-    const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }, 0.5);
-
-    expect(limits.loop.budget).toMatchObject({ maxCostUsd: 0.5 });
-    expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(0.05, 9);
+  // (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`), not a grant, and it
+  // can only lower the ceiling.
+  it("takes the smallest of the ceiling, the resolution's total and the Flow's configured limit", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, 0.5).loop.budget).toMatchObject({ maxCostUsd: 0.25 });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 0.2 }, 0.15).loop.budget).toMatchObject({ maxCostUsd: 0.15 });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 0.12 }, 0.15).loop.budget).toMatchObject({ maxCostUsd: 0.12 });
   });
 
   // `run-munnq7vz-98c3481c`: the Lab saved `maxCalls: 48`, the host's resolver
@@ -64,9 +64,9 @@ describe("the Flow Bootstrap budget", () => {
     expect(limits.loop.maxToolCalls).toBe(49);
   });
 
-  it("keeps the resolution's default total when the Flow sets no usable ceiling", () => {
+  it("keeps the run cost ceiling when the Flow sets no usable limit", () => {
     for (const unset of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, unset).loop.budget).toMatchObject({ maxCostUsd: 2 });
+      expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, unset).loop.budget).toMatchObject({ maxCostUsd: 0.25 });
     }
   });
 });
@@ -92,19 +92,12 @@ describe("the unusable-decision streak", () => {
 
 // The Flow Bootstrap loop used to stop at `min(calls, 8)` decisions, four when
 // nothing was declared. It now takes the resolution's call count, or the loop's
-// own ceiling, and splits the run's purse so every call it allows can pay.
+// own ceiling.
 describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
   it("lets a 26-call resolution iterate 26 times, past the old cap of eight", () => {
-    const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 });
+    const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes, maxEvidenceContextBytes: 24_000, budget: { maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
-    // Each decision reserves a twenty-sixth of $2, never the $0.25 per-call
-    // cap: at $0.25 the purse would refuse the ninth decision on cost.
-    expect(limits.maxEstimatedCostUsdPerCall).toBeCloseTo(2 / 26, 8);
-    const rounded = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000_000;
-    let committed = 0;
-    for (let call = 0; call < 26; call += 1) committed = rounded(committed + limits.maxEstimatedCostUsdPerCall!);
-    expect(committed).toBeLessThanOrEqual(2);
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, maxEvidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes, maxEvidenceContextBytes: 24_000, budget: { maxCostUsd: 0.25, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
   });
 
   it("falls back to the loop's own ceiling, not to a small default, when nothing is declared", () => {
@@ -138,10 +131,32 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
     expect(limits.loop.maxToolCalls).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls);
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 3 }).loop).toMatchObject({ maxIterations: 3, maxToolCalls: 4 });
   });
+});
 
-  it("keeps a per-call cost that is already the smaller of the two, and passes one through when no total is given", () => {
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 2, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 2 }).maxEstimatedCostUsdPerCall).toBe(0.1);
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 4, maxEstimatedCostUsd: 0.2 }).maxEstimatedCostUsdPerCall).toBe(0.2);
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 4, maxTotalEstimatedCostUsd: 1 }).maxEstimatedCostUsdPerCall).toBe(0.25);
+// The user's rule: a run costs at most $0.25. The build's total used to be the
+// Flow's configured figure -- $1 as the web app saves it -- or else the
+// resolver's $2, and the Flow's figure won even when it was the higher.
+describe("the build's cost ceiling", () => {
+  const provider = { metadata: { provider: "mock", model: "mock" }, runTask: async () => ({}) };
+  const hostDefaults = { provider, ...AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, tokenLimits: { ...AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits } };
+
+  it("defaults the total to $0.25 under the host's resolver, and when nothing names a total", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits(hostDefaults).loop.budget.maxCostUsd).toBe(0.25);
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({}).loop.budget.maxCostUsd).toBe(0.25);
+  });
+
+  it("never lets the Flow's setting raise it: a Flow set to $1 still gets $0.25", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits(hostDefaults, 1).loop.budget.maxCostUsd).toBe(0.25);
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 2 }, 5).loop.budget.maxCostUsd).toBe(0.25);
+  });
+
+  it("lets the Flow's setting lower it: a Flow set to $0.10 gets $0.10", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits(hostDefaults, 0.1).loop.budget.maxCostUsd).toBe(0.1);
+  });
+
+  // Nothing enforced a per-call figure in a build: the build has no ledger, and
+  // the loop's total is what stops it. The derived share only duplicated it.
+  it("hands the build no per-call share of the total", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits(hostDefaults, 1)).not.toHaveProperty("maxEstimatedCostUsdPerCall");
   });
 });

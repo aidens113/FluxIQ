@@ -226,6 +226,13 @@ export type AutomationStudioNodeAttemptTrace = {
     status: "pending" | "answered" | "expired";
     route?: string;
     settledAtMs?: number;
+    /**
+     * Set when the question was the person-needed one (`control.kind`
+     * `person_check`): only a person could get past what the step met. A
+     * resumed run reads it to end with a person-needed ending, and the run
+     * counts it to stop asking the same person forever.
+     */
+    personNeeded?: true;
   };
   logs?: AutomationStudioNativeLogEntry[];
   stateRefs?: {

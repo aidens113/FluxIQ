@@ -1,4 +1,5 @@
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
 import {
   automationStudioLlmRunCallRecord,
   type AutomationStudioLlmRunCallDescription,
@@ -59,6 +60,7 @@ export type AutomationStudioLlmRunBudgetLimits = {
   maxCallsPerRun?: number;
   maxTotalTokensPerRun: number;
   maxOutputTokensPerRun: number;
+  /** The run's cost total, held against every reservation. Absent means the run cost ceiling, $0.25. */
   maxEstimatedCostUsdPerRun?: number;
 };
 
@@ -67,6 +69,7 @@ export type AutomationStudioLlmRunBudgetReservationInput = {
   requestId: string;
   estimatedInputTokens: number;
   maxOutputTokens: number;
+  /** What this call reserves against the run's total before it knows what it spent. Absent means the whole ceiling. */
   maxEstimatedCostUsd?: number;
   /** What kind of call this is, for the receipt. Absent means an ordinary run call. */
   allowance?: AutomationStudioLlmRunBudgetAllowance;
@@ -142,14 +145,15 @@ export class AutomationStudioLlmRunBudgetLedger {
         if (!Number.isFinite(value) || value <= 0) throw new Error(`${key} must be a positive finite number.`);
       } else if (!Number.isInteger(value) || value <= 0) throw new Error(`${key} must be a positive integer.`);
     }
-    if ((limits.maxEstimatedCostUsdPerRun ?? 0.25) > 10) throw new Error("maxEstimatedCostUsdPerRun exceeds the server ceiling.");
+    if ((limits.maxEstimatedCostUsdPerRun ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) > 10) throw new Error("maxEstimatedCostUsdPerRun exceeds the server ceiling.");
     this.maxCallsPerRun = limits.maxCallsPerRun ?? AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
   }
 
   reserve(input: AutomationStudioLlmRunBudgetReservationInput): AutomationStudioLlmRunBudgetReservation {
+    const requestedCost = input.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
     if (!/^[a-z0-9_.:-]{1,200}$/i.test(input.runId) || !/^[a-z0-9_.:-]{1,200}$/i.test(input.requestId)
       || !Number.isSafeInteger(input.estimatedInputTokens) || input.estimatedInputTokens < 0
-      || !Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens <= 0 || !Number.isFinite(input.maxEstimatedCostUsd ?? 0.25) || (input.maxEstimatedCostUsd ?? 0.25) <= 0 || (input.maxEstimatedCostUsd ?? 0.25) > 10) {
+      || !Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens <= 0 || !Number.isFinite(requestedCost) || requestedCost <= 0 || requestedCost > 10) {
       return { ok: false, diagnostic: { code: "llm_budget.invalid_reservation", message: "LLM budget reservation fields are invalid." } };
     }
     const state = this.states.get(input.runId) ?? createRunState();
@@ -173,12 +177,12 @@ export class AutomationStudioLlmRunBudgetLedger {
     if (state.outputTokens + reservedOutput + input.maxOutputTokens > this.limits.maxOutputTokensPerRun) {
       return { ok: false, diagnostic: { code: "llm_budget.run_output_limit", message: "The per-run LLM output-token budget cannot reserve this request." } };
     }
-    if (state.estimatedCostUsd + reservedCost + (input.maxEstimatedCostUsd ?? 0.25) > (this.limits.maxEstimatedCostUsdPerRun ?? 0.25)) return { ok: false, diagnostic: { code: "llm_budget.run_cost_limit", message: "The per-run LLM estimated-cost budget cannot reserve this request." } };
+    if (state.estimatedCostUsd + reservedCost + requestedCost > (this.limits.maxEstimatedCostUsdPerRun ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD)) return { ok: false, diagnostic: { code: "llm_budget.run_cost_limit", message: "The per-run LLM estimated-cost budget cannot reserve this request." } };
     state.pending.set(input.requestId, {
       inputTokens: input.estimatedInputTokens,
       outputTokens: input.maxOutputTokens,
       totalTokens: requestedTotal,
-      estimatedCostUsd: input.maxEstimatedCostUsd ?? 0.25,
+      estimatedCostUsd: requestedCost,
       allowance: input.allowance ?? "run",
       ...(input.call ? { call: input.call } : {})
     });
