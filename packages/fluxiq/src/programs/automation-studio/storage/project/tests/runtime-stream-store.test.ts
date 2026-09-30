@@ -10,11 +10,11 @@ import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../run-dataset-store.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntimeStreamEvent } from "../runtime-stream-store.ts";
 
-// Sibling storage tests keep their scratch root under the working directory.
-// This one writes about 158 MB, for the million-event stream case, so it goes
-// to the OS temp directory instead: on a slow working-disk the case took 50 to
-// 62 s against its 60 s budget, and on the OS disk it takes about a third of
-// that. Everything the case proves is about sequence order, not disk location.
+// This file writes about 158 MB, for the million-event stream case, which is
+// one reason it keeps its scratch root in the OS temp directory: on a slow
+// working disk the case took 50 to 62 s against its 60 s budget, and on the OS
+// disk it takes about a third of that. Everything the case proves is about
+// sequence order, not disk location.
 //
 // Each test gets its own root, and every pool it opens is closed after it,
 // passed or not. With one shared root, a test that timed out left its

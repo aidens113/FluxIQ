@@ -1,4 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
@@ -6,12 +7,14 @@ import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION } from "../schema/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-administration-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 
 describe("AutomationStudioProjectAdministration", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-administration-test-"));
   });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
 

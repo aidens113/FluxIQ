@@ -3,14 +3,18 @@
 // have to carry a conversation id: it names its subject once, and the thread
 // is opened on the first thing it says and reused for the rest.
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 import { AutomationStudioConversations } from "../conversations.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversations-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.conversations";
 
 const PERMISSION_REQUEST: AutomationStudioActionPermissionRequest = {
@@ -30,8 +34,7 @@ let pool: AutomationStudioProjectDatabasePool | undefined;
 
 describe("AutomationStudioConversations", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversations-test-"));
   });
 
   afterEach(async () => {

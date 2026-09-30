@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioFlowAdaptation } from "../../../model/index.ts";
@@ -9,14 +10,17 @@ import { AutomationStudioProjectAdaptationStore } from "../adaptation-store.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectGraphRepository } from "../graph-store.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-adaptation-store-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 // The gates every apply path runs; the service passes the same function.
 const gates = { promotionGates: evaluateFlowAdaptationPromotionGates };
 
 describe("AutomationStudioProjectAdaptationStore", () => {
   let pools: AutomationStudioProjectDatabasePool[] = [];
 
-  beforeEach(async () => { await rm(rootDir, { recursive: true, force: true }); await mkdir(rootDir, { recursive: true }); pools = []; });
+  beforeEach(async () => { rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-adaptation-store-test-")); pools = []; });
   afterEach(async () => { await Promise.all(pools.map((pool) => pool.closeAll())); await rm(rootDir, { recursive: true, force: true }); });
 
   it("stores typed metadata plus patch, prompt, response, and evidence as objects", async () => {

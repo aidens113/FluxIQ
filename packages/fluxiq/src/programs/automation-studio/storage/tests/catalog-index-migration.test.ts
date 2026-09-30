@@ -1,14 +1,18 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioCatalog } from "../catalog.ts";
 import { migrateAutomationStudioLegacyProjectCatalog } from "../catalog-index-migration.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-catalog-index-migration-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 
 describe("migrateAutomationStudioLegacyProjectCatalog", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-catalog-index-migration-test-"));
     await mkdir(path.join(rootDir, "projects"), { recursive: true });
   });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));

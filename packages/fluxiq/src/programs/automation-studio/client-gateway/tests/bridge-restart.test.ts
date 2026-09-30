@@ -1,6 +1,7 @@
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../../../client-gateway/index.ts";
 import { defineInput, defineOutput, IoRegistry } from "../../../../io/index.ts";
 import { AutomationStudioService } from "../../runtime/service.ts";
@@ -9,7 +10,14 @@ import { AutomationStudioClientGatewayBridge } from "../bridge.ts";
 // A client that stops one recording and starts the next while Core is still handling
 // what came before. Each message stays with the recording it was sent for.
 
-const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-client-gateway-bridge-restart-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let tempRoot = "";
+
+beforeEach(async () => {
+  tempRoot = await mkdtemp(path.join(os.tmpdir(), "automation-studio-client-gateway-bridge-restart-test-"));
+});
 
 afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true });

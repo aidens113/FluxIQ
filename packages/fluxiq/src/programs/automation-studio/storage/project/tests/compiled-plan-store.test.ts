@@ -1,18 +1,21 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectCompiledPlanStore } from "../compiled-plan-store.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-compiled-plan-store-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 
 describe("AutomationStudioProjectCompiledPlanStore", () => {
   let pools: AutomationStudioProjectDatabasePool[] = [];
 
   beforeEach(async () => {
     pools = [];
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-compiled-plan-store-test-"));
   });
   afterEach(async () => {
     await Promise.all(pools.map((pool) => pool.closeAll().catch(() => undefined)));
