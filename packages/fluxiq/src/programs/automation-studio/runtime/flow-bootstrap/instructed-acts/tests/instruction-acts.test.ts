@@ -9,7 +9,7 @@ import { automationStudioInstructedActs } from "../instruction-acts.ts";
 const CONSEQUENTIAL: ReadonlyArray<[string, string, Array<[string, string]>]> = [
   ["local-classifieds tables", "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then give me a table of everything in my saved items, cheapest first, with columns title, price and status.", [["save", "save"], ["open", "give"]]],
   ["crossborder hub to cart", "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.", [["add_to", "put"], ["claim", "collect"]]],
-  ["bigbox pickup cart", "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.", [["set", "switch"], ["add_to", "add"]]],
+  ["bigbox pickup cart", "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.", [["set", "switch"], ["add_to", "add"], ["add_to", "add"]]],
   ["job board save week", "Save every job Halvard Systems has posted on Rolefinch in the last 7 days to my saved jobs, without unsaving anything that is already there, and then open my saved jobs so the list is showing.", [["save", "save"], ["open", "open"]]],
   ["auction watch endings", "On Hammerline, add to my watchlist every auction for a Kestrel 35 camera that ends before midnight at the end of Tuesday 22 September and whose current bid is under £100, counting a listing priced in another currency at the pound estimate the site shows for it. Only the original Kestrel 35 itself counts, not the 35S, the Mark II, the 350 or an accessory, and nothing listed as for parts or not working. Then list everything on my watchlist, in the order the watchlist shows it, with columns title and price exactly as the watchlist shows them.", [["add_to", "add"], ["open", "list"]]],
   ["auction place bid", "On Hammerline, place a maximum bid of £85 on the Kestrel 35 camera that the seller harrow_cameras has up for auction. I mean the original Kestrel 35, not the 35S. Make sure the bid went through.", [["submit", "place"]]],
@@ -60,6 +60,20 @@ describe("the lasting acts an instruction asks for", () => {
     expect(act?.quote.length).toBeLessThanOrEqual(200);
   });
 
+  it("gives each act its own clause, not the whole sentence", () => {
+    const acts = automationStudioInstructedActs("Save every job Halvard Systems has posted to my saved jobs, and then open my saved jobs so the list is showing.");
+    expect(acts.map((act) => act.quote)).toEqual(["Save every job Halvard Systems has posted to my saved jobs", "open my saved jobs so the list is showing"]);
+  });
+
+  it("keeps coordinated verbs over one object as one act", () => {
+    const acts = automationStudioInstructedActs("Collect and use that store's coupon, and pay with my saved Visa card.");
+    expect(acts.map((act) => [act.kind, act.verb])).toEqual([["claim", "collect"]]);
+  });
+
+  it("does not split objects that are not each counted", () => {
+    expect(automationStudioInstructedActs("Add the kettle and the toaster to my cart.").map((act) => act.kind)).toEqual(["add_to"]);
+  });
+
   it("reads nothing from nothing", () => {
     expect(automationStudioInstructedActs("")).toEqual([]);
     expect(automationStudioInstructedActs(undefined as unknown as string)).toEqual([]);
@@ -77,5 +91,27 @@ describe("an instruction's title", () => {
 
   it("still counts when it is the only place the act is asked for", () => {
     expect(automationStudioInstructedActs("Save cheap tables\nThe tables must be within 5 miles of Kelford.").map((act) => act.kind)).toEqual(["save"]);
+  });
+});
+
+// Run 6 (`run-muncqlr0-3348202b`): one "add" over two counted products was
+// read as one act quoting the whole sentence, so a Flow that added only the
+// towels satisfied the check. Each product is its own act with its own quote.
+describe("one verb over coordinated objects", () => {
+  const RUN_6 = "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.";
+
+  it("reads one act per counted object, each quoting its own", () => {
+    const acts = automationStudioInstructedActs(RUN_6);
+    expect(acts.map((act) => [act.id, act.kind, act.verb])).toEqual([["a1", "set", "switch"], ["a2", "add_to", "add"], ["a3", "add_to", "add"]]);
+    const [store, towels, napkins] = acts.map((act) => act.quote);
+    expect(store).toContain("Millbrook");
+    expect(store).not.toContain("Paper Towels");
+    expect(store).not.toContain("Napkins");
+    expect(towels).toContain("Paper Towels");
+    expect(towels).not.toContain("Napkins");
+    expect(napkins).toContain("Napkins");
+    expect(napkins).not.toContain("Paper Towels");
+    expect(new Set(acts.map((act) => act.quote)).size).toBe(acts.length);
+    expect(acts.some((act) => act.kind === "submit")).toBe(false);
   });
 });

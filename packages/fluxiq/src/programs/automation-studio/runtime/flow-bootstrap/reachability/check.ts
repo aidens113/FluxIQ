@@ -39,8 +39,8 @@ import type { AutomationStudioFlowBootstrapReachability } from "./contracts.ts";
 import { automationStudioFlowBootstrapLibraryTakesALocation } from "./library-locations.ts";
 import { automationStudioFlowBootstrapPlanLocations } from "./plan-locations.ts";
 
-/** Steps named in the feedback. A plan holds at most sixteen per subflow. */
-const MAX_FEEDBACK_STEPS = 24;
+/** Steps named in the feedback. A Flow holds at most a hundred nodes per Subflow. */
+const MAX_FEEDBACK_STEPS = 100;
 
 /**
  * What the model is told to do, which matters as much as the refusal.
@@ -89,8 +89,9 @@ export function checkAutomationStudioFlowBootstrapReachesStartLocation(input: {
       starts: startLocation,
       lacks: "no step of this Flow goes to where it starts",
       steps: found.steps.slice(0, MAX_FEEDBACK_STEPS),
-      // Said rather than hidden: a longer Flow is shown its first steps only.
-      ...(found.steps.length > MAX_FEEDBACK_STEPS ? { stepsWithheld: true } : {})
+      // Said rather than hidden: a longer Flow is shown its first steps only,
+      // and how many it was not shown.
+      ...(found.steps.length > MAX_FEEDBACK_STEPS ? { stepsWithheld: found.steps.length - MAX_FEEDBACK_STEPS } : {})
     },
     instruction: CANNOT_REACH_INSTRUCTION
   };

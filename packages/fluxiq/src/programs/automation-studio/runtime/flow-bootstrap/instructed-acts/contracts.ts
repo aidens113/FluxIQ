@@ -49,7 +49,11 @@ export type AutomationStudioInstructedAct = {
   kind: AutomationStudioInstructedActKind;
   /** The verb that asks for it, as the person wrote it, lowercased. */
   verb: string;
-  /** The person's sentence that asks for it, bounded. */
+  /**
+   * The person's own words for this act alone, bounded: its verb up to the
+   * next act's verb, or, for one of several counted objects of one verb, the
+   * verb, that object and where it goes (`./instruction-acts.ts`).
+   */
   quote: string;
 };
 
@@ -58,7 +62,7 @@ export type AutomationStudioInstructedActClaim = { action: string; step: string 
 
 /** Why an act has no step that does it. */
 export type AutomationStudioInstructedActMissingReason =
-  /** No claim names this act. */
+  /** No claim names this act, by its id, a word of its own, its verb or its kind. */
   | "no_step_named"
   /** The step named is not in the draft. */
   | "no_such_step"
