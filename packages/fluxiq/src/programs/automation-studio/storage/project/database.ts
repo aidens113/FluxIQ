@@ -11,6 +11,12 @@ export type AutomationStudioSqlExecutor = {
   run(sql: string, params?: readonly unknown[]): Promise<AutomationStudioSqlRunResult>;
   get<T>(sql: string, params?: readonly unknown[]): Promise<T | undefined>;
   all<T>(sql: string, params?: readonly unknown[]): Promise<T[]>;
+  /**
+   * Runs a script of parameterless statements in one call, stopping at the
+   * first error. Offered by the project database so schema work reaches SQLite
+   * as one round trip instead of one per statement; other executors may omit it.
+   */
+  exec?(script: string): Promise<void>;
 };
 
 export type AutomationStudioProjectDatabaseLease = {
@@ -109,13 +115,14 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
     const handle = await openDatabase(input.filePath, input.busyTimeoutMs);
     const database = new AutomationStudioProjectDatabase(handle, input);
     try {
-      await database.execute(async (sql) => {
-        await sql.run("pragma foreign_keys = ON");
-        await sql.run("pragma journal_mode = WAL");
-        await sql.run("pragma synchronous = NORMAL");
-        await sql.run("pragma temp_store = MEMORY");
-        await sql.run(`pragma busy_timeout = ${Math.max(100, Math.trunc(input.busyTimeoutMs))}`);
-      });
+      // One script, in the same order: every open pays one round trip here, not five.
+      await database.execute((sql) => sql.exec!([
+        "pragma foreign_keys = ON",
+        "pragma journal_mode = WAL",
+        "pragma synchronous = NORMAL",
+        "pragma temp_store = MEMORY",
+        `pragma busy_timeout = ${Math.max(100, Math.trunc(input.busyTimeoutMs))}`
+      ].join(";\n")));
     } catch (error) {
       await database.close().catch(() => undefined);
       throw error;
@@ -195,7 +202,8 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
     return {
       run: (sql, params = []) => run(this.handle, sql, params),
       get: <T>(sql: string, params: readonly unknown[] = []) => get<T>(this.handle, sql, params),
-      all: <T>(sql: string, params: readonly unknown[] = []) => all<T>(this.handle, sql, params)
+      all: <T>(sql: string, params: readonly unknown[] = []) => all<T>(this.handle, sql, params),
+      exec: (script: string) => exec(this.handle, script)
     };
   }
 }
@@ -250,6 +258,17 @@ function all<T>(handle: sqlite3.Database, sql: string, params: readonly unknown[
       recordSqlPerformance({ operation: "all", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error ? 0 : rows.length, ok: !error });
       if (error) reject(error);
       else resolve(rows);
+    });
+  });
+}
+
+function exec(handle: sqlite3.Database, script: string): Promise<void> {
+  const startedAt = performance.now();
+  return new Promise((resolve, reject) => {
+    handle.exec(script, (error) => {
+      recordSqlPerformance({ operation: "run", sql: script, elapsedMs: performance.now() - startedAt, rowsChanged: 0, ok: !error });
+      if (error) reject(error);
+      else resolve();
     });
   });
 }

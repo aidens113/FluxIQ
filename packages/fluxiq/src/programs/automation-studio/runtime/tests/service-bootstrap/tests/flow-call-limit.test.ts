@@ -6,14 +6,30 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, caller, copyDataDirSeed, mockProvider, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+
+// The case needs a project holding a blank Flow and its active instruction. Writing it through the service costs about a second on an idle
+// machine and several under load, inside each case's 15s budget, so it is written once
+// per file from a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
 
 let tempRoot: string;
+let seedRoot: string;
+let single: DataDirSeed<Awaited<ReturnType<typeof blankFixture>>>;
 const services = new Set<AutomationStudioService>();
+
+beforeAll(async () => {
+  seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-call-limit-seed-"));
+  single = await seedDataDir(path.join(seedRoot, "single"), (instance) => blankFixture(instance));
+}, SEEDING_TIMEOUT_MS);
+
+afterAll(async () => {
+  if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-call-limit-"));
@@ -38,6 +54,7 @@ describe("a Flow build under the Flow's configured call count", () => {
     });
     // What the host's session-key resolver returns since grants went: its defaults and no call count.
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
+    const { project, flow } = structuredClone(await copyDataDirSeed(single, tempRoot));
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
       llmProviderResolver: (() => ({ provider, tokenLimits: { ...defaults.tokenLimits }, timeoutMs: defaults.timeoutMs, maxEstimatedCostUsd: defaults.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd })) as never,
@@ -49,7 +66,6 @@ describe("a Flow build under the Flow's configured call count", () => {
       }
     });
     services.add(instance);
-    const { project, flow } = await blankFixture(instance);
     await instance.saveFlow({
       projectId: project.id,
       flow: {

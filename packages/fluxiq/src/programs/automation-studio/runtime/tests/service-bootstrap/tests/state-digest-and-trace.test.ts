@@ -10,16 +10,40 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, plan } from "./fixtures.ts";
+import { blankFixture, caller, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 type DigestAsk = { projectId: string; flowId: string; callId: string; toolId: string; phase: string };
 
 let tempRoot: string;
+type Fixture = Awaited<ReturnType<typeof blankFixture>>;
+
+// Every case needs a blank project. Writing one through the service costs about a
+// second on an idle machine and several under load, inside each case's 15 s budget,
+// so it is written once per file by a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
+let seedRoot: string;
+/** One blank `example`-domain project. */
+let example: DataDirSeed<Fixture>;
+
+/** Copies a seed into this case's data directory; call it before any service there is constructed. */
+async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
+  return structuredClone(await copyDataDirSeed(seed, tempRoot));
+}
+
 const services = new Set<AutomationStudioService>();
+
+beforeAll(async () => {
+  seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
+  example = await seedDataDir(path.join(seedRoot, "example"), (instance) => blankFixture(instance, "active", "example"));
+}, SEEDING_TIMEOUT_MS);
+
+afterAll(async () => {
+  if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-digest-"));
@@ -82,13 +106,13 @@ async function build(options: { digests?: boolean } = {}) {
     response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
     usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
   }));
+  const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
     llmEvidenceRuntime: binding(asked, options.digests !== false)
   });
   services.add(instance);
-  const { project, flow } = await blankFixture(instance, "active", "example");
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
   return { instance, project, flow, asked, generation };
 }

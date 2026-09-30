@@ -147,7 +147,7 @@ describe("the Flow size setting, end to end", () => {
   afterEach(async () => {
     await Promise.all([...services].map((instance) => instance.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   it("accepts a straight 100-node chain at the default and refuses 101, naming the setting", async () => {

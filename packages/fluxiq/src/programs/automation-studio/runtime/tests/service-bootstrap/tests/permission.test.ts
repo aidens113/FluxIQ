@@ -11,21 +11,45 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const PRESS_ID = "domain.example.press";
 const REFUND = { handle: "c4", name: "Refund line 1" };
 const OPEN = { handle: "c1", name: "Open order ORD-40100" };
 
 let tempRoot: string;
+type Fixture = Awaited<ReturnType<typeof blankFixture>>;
+
+// Every case needs a blank project. Writing one through the service costs about a
+// second on an idle machine and several under load, inside each case's 15 s budget,
+// so it is written once per file by a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
+let seedRoot: string;
+/** One blank `example`-domain project. */
+let example: DataDirSeed<Fixture>;
+
+/** Copies a seed into this case's data directory; call it before any service there is constructed. */
+async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
+  return structuredClone(await copyDataDirSeed(seed, tempRoot));
+}
+
 const services = new Set<AutomationStudioService>();
+
+beforeAll(async () => {
+  seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-permission-seed-"));
+  example = await seedDataDir(path.join(seedRoot, "example"), (instance) => blankFixture(instance, "active", "example"));
+}, SEEDING_TIMEOUT_MS);
+
+afterAll(async () => {
+  if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-permission-"));
@@ -187,13 +211,13 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
   });
+  const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
     llmEvidenceRuntime: refundingBinding(pressed)
   }).bindNativeNodeRuntime(pressRuntime());
   services.add(instance);
-  const { project, flow } = await blankFixture(instance, "active", "example");
   const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
   await instance.saveFlowInstruction(project.id, { ...instruction!, body: "Refund the first line of Ada Lovelace's order.", updatedAt: Date.now() });
   const generation = instance.generateFlowBootstrapAdaptation({

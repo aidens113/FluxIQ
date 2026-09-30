@@ -6,15 +6,31 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowBootstrapIncompleteDraftStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../service/index.ts";
-import { blankFixture, expectNoTopology, caller, mockProvider, plan, rejectedGenerationDiagnostic } from "./fixtures.ts";
+import { blankFixture, copyDataDirSeed, expectNoTopology, caller, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+
+// The case needs an `example`-domain project holding a blank Flow and its active instruction. Writing it through the service costs about a second on an idle
+// machine and several under load, inside each case's 15s budget, so it is written once
+// per file from a closed service and each case runs on its own copy.
+const SEEDING_TIMEOUT_MS = 60_000;
 
 let tempRoot: string;
+let seedRoot: string;
+let example: DataDirSeed<Awaited<ReturnType<typeof blankFixture>>>;
 const services = new Set<AutomationStudioService>();
+
+beforeAll(async () => {
+  seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-incomplete-seed-"));
+  example = await seedDataDir(path.join(seedRoot, "example"), (instance) => blankFixture(instance, "active", "example"));
+}, SEEDING_TIMEOUT_MS);
+
+afterAll(async () => {
+  if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-incomplete-"));
@@ -39,6 +55,7 @@ describe("a Flow build that runs out, and the build after it", () => {
     let continuedAt: number | undefined;
     let call = 0;
     const requests: AutomationStudioLlmTaskRequest[] = [];
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const provider = mockProvider(async (request) => {
       requests.push(request);
       call += 1;
@@ -59,7 +76,6 @@ describe("a Flow build that runs out, and the build after it", () => {
       }
     });
     services.add(instance);
-    const { project, flow } = await blankFixture(instance, "active", "example");
 
     // The first build never finishes.
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
