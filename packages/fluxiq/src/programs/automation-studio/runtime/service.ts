@@ -202,11 +202,13 @@ import {
   AutomationStudioRecordingPaths,
   AutomationStudioRunDatasets,
   AutomationStudioServiceIndexes,
+  pipelineIndexWithoutRecording,
   type AutomationStudioProjectIndex,
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements
+  type RuntimeIndex, automationStudioFlowBootstrapInstructionAuthority, recordAutomationStudioFlowGraphJudgements,
+  AutomationStudioRecordingEntryRemoval
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
@@ -270,7 +272,7 @@ import { executionPublicationDependencyState } from "./service/publication-depen
 import { countRecordingEntryTypes, recordingProposalReplacementBase, recordingSummaryFromSession, recordingUpdatedAt, summaryRecordingSession, type RecordingSummaryItem, type RecordingSummaryList } from "./service/recording-projections/index.ts";
 import { buildRecordingStateIndex, missingRecordingStateLookup, recordingEntryIsActionLike, resolveRecordingStateIndexItem, type RecordingEntryStateLookupInput, type RecordingEntryStateLookupResult, type RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
 import { reusableLlmContextSummary, type AutomationStudioReusableLlmContextFeatureStatus, type AutomationStudioReusableLlmContextFreshEvidenceInput, type AutomationStudioReusableLlmContextHostConfiguration, type AutomationStudioReusableLlmContextOption, type AutomationStudioReusableLlmContextSelection, type AutomationStudioReusableLlmContextSummary } from "./service/reusable-context/index.ts";
-import { applyAutomationStudioRuntimeReauthorAndContinueGrant, automationStudioRefutedResultRepairPort, automationStudioRepairedRunResultCheck, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider, resolveAutomationStudioUnattendedRepairAuthority, resolveAutomationStudioRuntimeAdaptationContext, type AutomationStudioResultCheckProviderRequest, type AutomationStudioResultCheckProviderResolution, type AutomationStudioRunResultCheck, normalizeAutomationStudioRuntimeInterventionMode, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, rerunAutomationStudioSessionAfterRepair, runtimeRunDetailWithAdaptationContext, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode, type AutomationStudioRuntimeReauthorGrantContinuation } from "./service/runtime-adaptation/index.ts";
+import { applyAutomationStudioRuntimeReauthorAndContinueGrant, automationStudioAdaptationReplayRecorder, automationStudioRefutedResultRepairPort, automationStudioRepairedRunResultCheck, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider, resolveAutomationStudioUnattendedRepairAuthority, resolveAutomationStudioRuntimeAdaptationContext, type AutomationStudioResultCheckProviderRequest, type AutomationStudioResultCheckProviderResolution, type AutomationStudioRunResultCheck, normalizeAutomationStudioRuntimeInterventionMode, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, rerunAutomationStudioSessionAfterRepair, runtimeRunDetailWithAdaptationContext, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode, type AutomationStudioRuntimeReauthorGrantContinuation } from "./service/runtime-adaptation/index.ts";
 import { clampNumber, normalizePositiveInteger } from "./service/scalar-readings/index.ts";
 export type { AutomationStudioChangeProposalSummaryPage, ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
 export type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
@@ -741,6 +743,9 @@ export class AutomationStudioService {
       return next;
     });
   }
+
+  // t182: undo one captured step of an open recording (`service/recordings/entry-removal-command.ts`). A collaborator, not a method: the ports run only when called.
+  readonly recordingEntryRemoval = new AutomationStudioRecordingEntryRemoval({ lock: (projectId, recordingId, run) => this.locks.withRecordingMutationLock(projectId, recordingId, run), read: (projectId, recordingId) => this.recordings.getRawRecordingSession(recordingId, projectId), save: async (projectId, recording) => { await this.repositories.recordingSessions.put(recording); await this.writeProjectRecordingSession(projectId, recording); await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline); } });
 
   summarizeRecordingSession(recording: RecordingSession): RecordingSession {
     return summaryRecordingSession(recording);
@@ -2634,7 +2639,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const abortController = new AbortController();
     // What this run's result check came to: set once the adaptation context is resolved below, and read lazily by `resolveProvider` after the run finishes, which is when "is *this* run checked" can be answered at all.
     let runResultCheck: AutomationStudioRunResultCheck | null = null;
-    const verificationGrant = input.llmExecution, resultPorts: AutomationStudioResultVerificationPorts = { flowInstructionSet: (request) => this.getFlowInstructionSet(request), getFlowRunDetail: (projectId, runId) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved) => this.saveFlowRunDetail(saved), writeRuntimeSession: (projectId, written) => this.writeRuntimeSession(projectId, written), ...(this.runDatasets.available ? { listRunDatasets: (request) => this.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => this.runDatasets.getRunDatasetPage(request) } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), ...(this.runtimeProjectDatabasePool ? { recordFlowGraphJudgements: async (judged: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => await recordAutomationStudioFlowGraphJudgements({ pool: this.runtimeProjectDatabasePool!, ...judged }) } : {}), resolveProvider: async (scope: { projectId: string; flowId: string }) => await resolveAutomationStudioResultCheckProvider({
+    const verificationGrant = input.llmExecution, resultPorts: AutomationStudioResultVerificationPorts = { flowInstructionSet: (request) => this.getFlowInstructionSet(request), getFlowRunDetail: (projectId, runId) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved) => this.saveFlowRunDetail(saved), recordAdaptationReplays: automationStudioAdaptationReplayRecorder({ getFlowBootstrapAdaptation: (projectId, flowId, adaptationId) => this.bootstrapAdaptations.getFlowBootstrapAdaptation(projectId, flowId, adaptationId), saveFlowBootstrapAdaptation: (adaptation) => this.bootstrapAdaptations.saveFlowBootstrapAdaptation(adaptation), getFlowAdaptation: (projectId, flowId, adaptationId) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation) => this.saveFlowAdaptation(adaptation) }), writeRuntimeSession: (projectId, written) => this.writeRuntimeSession(projectId, written), ...(this.runDatasets.available ? { listRunDatasets: (request) => this.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => this.runDatasets.getRunDatasetPage(request) } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), ...(this.runtimeProjectDatabasePool ? { recordFlowGraphJudgements: async (judged: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => await recordAutomationStudioFlowGraphJudgements({ pool: this.runtimeProjectDatabasePool!, ...judged }) } : {}), resolveProvider: async (scope: { projectId: string; flowId: string }) => await resolveAutomationStudioResultCheckProvider({
       scope,
       check: runResultCheck,
       // A person's grant still wins. It used to have to name `loop_verification`
@@ -4388,19 +4393,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await rm(recordingProposalRoot, { recursive: true, force: true });
     if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId));
     else await rm(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
-    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
-      pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
-      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.normalizationReviews.has(item.reviewId)),
-      miningRuns: (index.miningRuns ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.miningRuns.has(item.miningRunId)),
-      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceFacts.has(item.factId)),
-      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceObservations.has(item.observationId)),
-      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.stateActionCorrelations.has(item.correlationId)),
-      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.evidenceClaims.has(item.claimId)),
-      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.learnedTaskModels.has(item.learnedTaskModelId)),
-      policyProposals: (index.policyProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.policyProposals.has(item.proposalId)),
-      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.recordingFlowProposals.has(item.proposalId)),
-      replayResults: (index.replayResults ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.replayResults.has(item.replayId))
-    }));
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => pipelineIndexWithoutRecording(index, recordingId, artifactIds));
     await this.recordings.prunePhysicalPipelineIndex(projectId, recordingId, artifactIds);
   }
 
@@ -4449,6 +4442,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: no storage root, so the in-memory repository is the only copy
     await this.projects.ensureProjectStructure(projectId);
     const sessionDir = this.recordingPaths.recordingSessionDirectory(projectId, recording.recordingId);
     const recordingDocument = { ...recording, timeline: [] };
@@ -4473,6 +4467,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingIndexSummary(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     await this.projects.ensureProjectStructure(projectId);
     await this.recordings.ensureProjectRecordingPipeline(projectId, recording);
     await this.indexes.writeRecordingIndex(projectId, (index) => ({
@@ -4536,6 +4531,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRecordingTimeline(projectId: string, recordingId: string, timeline: RecordingSession["timeline"]): Promise<void> {
+    if (!this.projectPaths.root) return; // t182: as writeProjectRecordingSession
     const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
     await mkdir(path.dirname(filePath), { recursive: true });
     const text = timeline.map((entry) => JSON.stringify(entry)).join("\n");

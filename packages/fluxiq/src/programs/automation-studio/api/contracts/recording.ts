@@ -1,5 +1,5 @@
 import type { NormalizationOptions } from "../../normalization/index.ts";
-import type { AppendRecordingEntryInput, CreateRecordingSessionInput, RecordingDomainDefinition, RecordingDomainEventInput, StateSnapshot } from "../../model/index.ts";
+import type { AppendRecordingEntryInput, CreateRecordingSessionInput, RecordingDomainDefinition, RecordingDomainEventInput, RecordingSession, StateSnapshot } from "../../model/index.ts";
 
 export type RecordingProjectRequest = {
   projectId?: string | null;
@@ -69,6 +69,24 @@ export type AppendRecordingMarkerRequest = RecordingProjectRequest & {
   label?: unknown;
   monotonicOffsetMs?: unknown;
   linkedEntryId?: unknown;
+};
+
+/**
+ * Removes every entry of a still-open recording that was recorded from one
+ * gateway event: each entry whose `metadata.eventId` is `eventId`, the id
+ * `runtime/io-bridge.ts` copies from the recorded event's envelope. A
+ * finalized recording is refused.
+ */
+export type RemoveRecordingEntryRequest = {
+  projectId: string;
+  recordingId: string;
+  eventId: string;
+};
+
+/** How many entries were removed, and the recording as a summary: no timeline, notes or state. */
+export type RemoveRecordingEntryResponse = {
+  removedCount: number;
+  recording: RecordingSession;
 };
 
 export type ListRecordingDomainsResponse = {

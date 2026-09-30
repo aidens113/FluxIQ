@@ -143,6 +143,22 @@ describe("what Core's own arithmetic finds wrong with a result", () => {
     expect(directive.fix[0]).toContain("n2 (web.extract.list)");
   });
 
+  // t176, measured provider-free: a Flow as a person or a build saves it ends in
+  // its end node, and the fix told the re-author "the Flow's last step is end
+  // (builtin.control.end)" -- a node no build authors or edits, named as the
+  // place to look. The step named is the last one a build could have written.
+  it("never names the Flow's derived start or end node as its last step", () => {
+    const directive = automationStudioResultRepairDirective({ summary: result({ flowShape: [
+      { nodeId: "start", definitionId: "builtin.control.start" },
+      { nodeId: "n2", definitionId: "web.extract.list" },
+      { nodeId: "end", definitionId: "builtin.control.end" }
+    ] }) });
+    expect(directive.fix[0]).toContain("the Flow's last step is n2 (web.extract.list)");
+    expect(directive.fix[0]).not.toContain("builtin.control");
+    const onlyControl = automationStudioResultRepairDirective({ summary: result({ flowShape: [{ nodeId: "end", definitionId: "builtin.control.end" }] }) });
+    expect(onlyControl.fix[0]).not.toContain("last step");
+  });
+
   it("holds itself to its own bounds", () => {
     const limits = AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS;
     const directive = automationStudioResultRepairDirective({
