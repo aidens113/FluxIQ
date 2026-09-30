@@ -481,7 +481,7 @@ history fail closed until divergence detection provides that history.
 
 `state.*` is what the host observes where the run starts, not what a caller
 passed. Before routing, `runRuntimeSession` asks the bound host runtime's
-optional `observeRouteState` for the state (`runtime/route-state.ts`), but only
+optional `observeRouteState` for the state (`runtime/route-state/`), but only
 when an active rule reads a `state.*` path; keys the host returns replace the
 same keys in a caller's `inputs.state`. A host declares the paths it fills in
 `routeStatePaths`, so a model can write a condition on a path that is absent
@@ -505,6 +505,17 @@ the router decides, the Flow's current structure, every path a condition can
 test with its description, and the distinct states the host observed -- where
 a run starts, then after each exploration step -- screened with the domain's
 denied evidence keys, with credential-shaped values left out.
+A build learns those states from its own calls. An execution result may carry
+`routeState`, the route state of the page the call left, which the web domain
+projects from the capture the call already took exactly as `observeRouteState`
+projects a fresh one; the build routing (`runtime/route-state/build-routing.ts`)
+records it from every call it is handed, dry-run replay steps included, and
+before a decision records the newest call's state when a call ran since the
+last one -- Core's own notes and a shifting window record nothing. It asks the
+host for a capture only when the newest call carried none. An evidence-guided
+build takes the start state from its free first look (captured right after it
+only when the look carried none); a build that writes its Flow in one reply
+observes the start before anything runs.
 
 A draft step that repeats a span over a list
 (`runtime/flow-bootstrap/authoring/draft-routing.ts`) is wired through

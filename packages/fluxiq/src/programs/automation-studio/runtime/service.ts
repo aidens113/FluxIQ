@@ -70,7 +70,7 @@ import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResu
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
-import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state.ts";
+import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state/index.ts";
 import {
   behaviorForAutomationStudioTrainingMode,
   computeAutomationStudioStabilityMetrics,
@@ -1531,7 +1531,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
         let accounting: AutomationStudioBootstrapAccounting;
         let incomplete: ReturnType<typeof automationStudioFlowBootstrapIncompleteDraftKeeper> | undefined; // A stopped build keeps its draft, and a later one continues it (`flow-bootstrap/incomplete-draft/`).
-        const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs });
+        const routing = await startAutomationStudioBuildRouting({ hostRuntime: this.hostRuntime, projectId, flowId, flowInputs: parent.interface.inputs, start: input.evidenceGuided ? "first_look" : "now" }); // An evidence-guided build reads its route states off its calls (`route-state/build-routing.ts`).
         // `startLocation` reaches the domain on every call this registry makes,
         // including the free first look: that look is where the domain says
         // "you are not there yet" instead of trying to read a target nobody opened.
@@ -1595,7 +1595,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             }),
-            executeTool: permissions.executeTool
+            executeTool: routing.recording(permissions.executeTool)
           })));
           // A request ends the build only when the build produced nothing. A
           // plan the completion check accepted is still a Flow worth having,
