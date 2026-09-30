@@ -28,7 +28,7 @@ describe("the browser-safe action-permissions subpath", () => {
   // read Core's own decision rather than keep a copy of it: a copy goes stale
   // the day the gate changes, with every test on both sides still green.
   it("publishes the classes that still stop for a person, so the browser cannot hold a stale copy", () => {
-    expect([...AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES].sort()).toEqual(["delete", "move_money"]);
+    expect([...AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES].sort()).toEqual(["delete", "move_money", "send_or_publish"]);
   });
 
   it("has no Node, package, gate, service or storage runtime dependency", async () => {

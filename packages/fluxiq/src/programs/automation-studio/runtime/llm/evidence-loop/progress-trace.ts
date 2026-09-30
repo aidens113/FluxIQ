@@ -10,6 +10,15 @@
 // Off unless `FLUXIQ_BUILD_PROGRESS_TRACE=1`. Content-free when on: iteration
 // numbers, tool ids, decision kinds, durations, and error names and codes --
 // never evidence, inputs, instructions, messages or page text.
+//
+// Since 2026-09-30 (lane t195) it also says what an amendment changed and why a
+// completion was refused, in the same closed vocabulary: `amend=` lists each
+// amendment's step number and change word (with the step numbers `over`,
+// `through`, `to` and `check` name), `acts=` a completion's act claims as
+// act:step identifiers, and `missing=` each missing act's id and reason code.
+// Run `run-munsxchc-15523952` ended on four `bootstrap.instructed_act_missing`
+// refusals and 13 amendments, and the log could say neither which act nor what
+// any amendment tried.
 
 // Method signatures, so any loop input whose own requests carry more fields fits.
 type Traceable = {
@@ -28,7 +37,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     log(`decide start iteration=${request.iteration}`);
     try {
       const decision = await input.decide(request);
-      log(`decide end iteration=${request.iteration} ms=${Date.now() - started} kind=${codeOf((decision as { kind?: unknown } | undefined)?.kind)}`);
+      log(`decide end iteration=${request.iteration} ms=${Date.now() - started} kind=${codeOf((decision as { kind?: unknown } | undefined)?.kind)}${decisionDetail(decision)}`);
       return decision;
     } catch (error) {
       log(`decide throw iteration=${request.iteration} ms=${Date.now() - started} ${errorCodes(error)}`);
@@ -49,12 +58,54 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
   };
   const check = input.checkCompletion;
   const checkCompletion = check === undefined ? undefined : async (...args: Parameters<NonNullable<T["checkCompletion"]>>) => {
-    const verdict = await (check as (...inner: typeof args) => unknown).apply(input, args) as { ok?: unknown; issueCodes?: unknown } | undefined;
+    const verdict = await (check as (...inner: typeof args) => unknown).apply(input, args) as { ok?: unknown; issueCodes?: unknown; feedback?: unknown } | undefined;
     const issues = Array.isArray(verdict?.issueCodes) ? verdict.issueCodes.map(codeOf).join(",") || "-" : "-";
-    log(`completion check ok=${verdict?.ok === true} issues=${issues}`);
+    log(`completion check ok=${verdict?.ok === true} issues=${issues}${missingActs(verdict?.feedback)}`);
     return verdict;
   };
   return { ...input, decide, executeTool, ...(checkCompletion ? { checkCompletion } : {}) } as T;
+}
+
+/** At most this many amendments, claims or missing acts are named on one line. */
+const MAX_LISTED = 16;
+
+/** What an amendment or a completion carried, in step numbers and closed words; empty for any other decision. */
+function decisionDetail(decision: unknown): string {
+  const record = asRecord(decision);
+  if (record?.kind === "amend_draft" && Array.isArray(record.amendments)) {
+    const listed = record.amendments.slice(0, MAX_LISTED).map((item) => {
+      const amendment = asRecord(item) ?? {};
+      const named = ["over", "through", "to", "check"].flatMap((key) => (numberOf(amendment[key]) === "-" ? [] : [`${key}=${numberOf(amendment[key])}`]));
+      return `${numberOf(amendment.step)}:${codeOf(amendment.change)}${named.length ? `(${named.join(",")})` : ""}`;
+    });
+    return ` amend=${listed.join(",") || "-"}`;
+  }
+  if (record?.kind === "complete") {
+    const acts = asRecord(record.result)?.acts;
+    const claims = Array.isArray(acts)
+      ? acts.slice(0, MAX_LISTED).map((item) => {
+        const claim = asRecord(item) ?? {};
+        return `${codeOf(claim.action ?? claim.act ?? claim.name)}>${codeOf(typeof claim.step === "number" ? `${claim.step}` : claim.step)}`;
+      })
+      : asRecord(acts) ? Object.entries(asRecord(acts)!).slice(0, MAX_LISTED).map(([act, step]) => `${codeOf(act)}>${codeOf(typeof step === "number" ? `${step}` : step)}`) : [];
+    return ` acts=${claims.join(",") || "-"}`;
+  }
+  return "";
+}
+
+/** Each missing act of a refused completion as id:reason, from the feedback's own `missingActs`. */
+function missingActs(feedback: unknown): string {
+  const acts = asRecord(asRecord(feedback)?.missingActs)?.acts;
+  if (!Array.isArray(acts) || !acts.length) return "";
+  return ` missing=${acts.slice(0, MAX_LISTED).map((item) => `${codeOf(asRecord(item)?.id)}:${codeOf(asRecord(item)?.reason)}`).join(",")}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function numberOf(value: unknown): string {
+  return typeof value === "number" && Number.isSafeInteger(value) ? `${value}` : "-";
 }
 
 /** A code-shaped value, or `-`: never a sentence, so nothing but an identifier reaches the log. */

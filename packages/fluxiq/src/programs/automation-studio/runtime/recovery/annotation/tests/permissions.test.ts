@@ -35,12 +35,15 @@ describe("automationStudioRecoveryPermissionGate", () => {
     expect(built.gate.request).toBeUndefined();
   });
 
-  it("takes the instruction's authority from the set stored with the Flow while the instruction still reads the same", async () => {
+  // Kept and reported, not a permission (the user's rule, 2026-09-30): the
+  // stored instruction reads the same, and deleting still asks.
+  it("carries the instruction's stored set while the instruction still reads the same, and still asks before deleting", async () => {
     const current = instruction();
     const built = automationStudioRecoveryPermissionGate({ granted: [], storedInstructed: [stored(current)], instructions: [current] });
 
     expect(built.summary()).toEqual({ granted: [], instructed: ["delete"], lapsed: [] });
-    expect(await built.gate.checkFor({ kind: "exploration_step", id: "web.press", ref: "call.1" })({ ...PRESS, consequences: ["delete"] })).toEqual({ permitted: true });
+    expect(await built.gate.checkFor({ kind: "exploration_step", id: "web.press", ref: "call.1" })({ ...PRESS, consequences: ["delete"] })).toMatchObject({ permitted: false, missing: ["delete"] });
+    expect(built.gate.request?.authority.instructed.map((entry) => entry.consequence)).toEqual(["delete"]);
   });
 
   it("lets that authority lapse once the instruction is edited or no longer active, and asks", async () => {

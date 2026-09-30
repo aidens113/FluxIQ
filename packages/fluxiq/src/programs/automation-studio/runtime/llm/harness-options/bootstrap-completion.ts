@@ -88,6 +88,7 @@ import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/i
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
+import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
@@ -298,7 +299,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   if (!acts.ok) {
     // Filed under the cannot-answer code: a Flow that does not do what it was
     // told cannot answer the instruction, and the issue code says which way.
-    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: acts.missingActs, instruction: acts.instruction } });
+    // An act that needs a repeat is told the one amendment that gives it one (`./repeat-suggestion.ts`).
+    const repeat = drafted && draftSteps ? automationStudioRepeatSuggestion({ missingActs: acts.missingActs, draftSteps, registry: input.registry, resolution: input.resolution }) : undefined;
+    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: repeat ? { ...acts.missingActs, repeatWith: repeat.amendment } : acts.missingActs, instruction: `${acts.instruction}${repeat?.instruction ?? ""}` } });
   }
   const restoredField = restoredStep ? { restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {
