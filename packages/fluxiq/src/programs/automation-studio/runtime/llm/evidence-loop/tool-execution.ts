@@ -49,6 +49,21 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    */
   repeatedAnswer?: number;
   /**
+   * True when the call met something only a person can get past -- a robot
+   * check, in the web domain's words -- and the caller did not act on it.
+   *
+   * Core never shows such a result to the model as it stands, because a model
+   * told "that failed, try again" knocks on the check until it is locked out
+   * (`run-munp80f5-c31ea417`). The build puts the person-needed question in the
+   * Flow's thread (`../../parking/person-needed-ask.ts`) and waits. If the
+   * person completes the check and presses Continue, the call stands as though
+   * it had succeeded, with the `draft` given here, and a fresh look at the page
+   * replaces its evidence; so a caller setting this describes in `draft` the
+   * step as it would stand once the check is cleared. Otherwise the build ends
+   * `flow_bootstrap.user_intervention_required`.
+   */
+  personNeeded?: true;
+  /**
    * The node this call ran, resolved by the caller against its own catalog.
    *
    * Only a name the caller resolved may be reported here. A name the model
