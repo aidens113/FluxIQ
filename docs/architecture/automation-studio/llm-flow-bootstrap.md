@@ -557,7 +557,9 @@ amendment with its refusals (marked when repeated), the positions of withdrawn
 steps that had applied an effect, the iteration an undo returned the draft to
 and the step it reran; each completion with the draft revision it was checked
 against, its issue codes, the closed codes of the check's feedback and the
-steps the dry run refused (or `clean`, or `not_run`); each unusable reply; and,
+steps the dry run refused (or `clean`, `reused_clean` when the gate answered
+from an earlier clean replay of the same draft, or `not_run`); each unusable
+reply; and,
 beside the rows, each no-progress redirect. Rows hold only closed codes, ids
 and integers, never page content or model prose. Identical decisions are
 grouped with their iterations and carry `sameAs`, the first iteration the same
@@ -731,6 +733,26 @@ establish provider convergence or a live product outcome. Evidence is never
 split into malformed partial JSON to fit the window. The window carries whole
 entries only and no longer lists the calls it leaves out: the decision history
 beside it records every decision.
+
+Before a completed result is accepted, the draft is dry-run
+(`runtime/flow-draft/dry-run.ts`, `runtime/llm/node-tools/dry-run-gate.ts`):
+the target is reset to where the first proposed step started and every
+proposed step is run again in order with the argument the Flow will use, with
+no model attached. Each step answers `replayed`, `failed`, `changed` or
+`unreproducible` (its target was not there on the replay, which the domain
+cannot tell apart from a site that remembers an earlier answer). Every answer
+but `replayed` refuses the completion, on every attempt: finishing again with
+the step unchanged is refused again. The only exemptions are a step the Flow
+would not always run (marked `optional`, made `only_if` on a check, the check
+guarding such a step, or a step another falls back to) and a step no longer
+proposed (dropped, exploratory or failed), which is not replayed. A step
+reported before is marked `again: true` on the next refusal, which changes no
+verdict. Until 2026-09-30 an `unreproducible` step stopped blocking once it had
+been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
+that way with a step that did not replay. A clean verdict is remembered by the
+draft's replay signature (the proposed steps, in order, with what each runs
+with), so a completion over the same unchanged draft is not replayed again; its
+history row says `reused_clean`.
 
 Core's own notes are superseded rather than accumulated. Before a
 `core.request_check`, `core.no_progress`, `core.decision_check`,

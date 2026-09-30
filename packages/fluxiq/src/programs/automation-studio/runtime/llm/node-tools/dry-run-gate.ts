@@ -2,8 +2,9 @@
 //
 // The rule and the verdict are in `../../flow-draft/dry-run.ts`; the replay
 // itself is in `./replay-draft.ts`; this is the piece between them that the
-// loop holds -- what has already replayed clean, what has already been put to
-// the model, and what a refusal does to the evidence the next decision sees.
+// loop holds -- what has already replayed clean, which steps the model has
+// already been told did not replay, and what a refusal does to the evidence the
+// next decision sees.
 //
 // It is a closure over the loop's own bookkeeping rather than a function the
 // loop calls with everything, because three of those things are the loop's and
@@ -51,6 +52,12 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
    * newest look at it and no earlier request is still answered by what it has.
    */
   targetMoved(): void;
+  /**
+   * Tell the loop this answer reused an earlier clean replay of the same draft
+   * instead of replaying, so a record of the attempt can say so rather than
+   * reading as a dry run that never ran.
+   */
+  reusedClean?(): void;
   signal?: AbortSignal;
 };
 
@@ -61,22 +68,29 @@ export function automationStudioFlowDraftDryRunGate(
   let attempts = 0;
   // What a clean verdict was a verdict about. A draft edited since then has not
   // replayed clean, and a draft completed twice unchanged is not replayed twice.
+  // Only ever set by a replay whose verdict had nothing blocking (every step
+  // replayed, or is one the Flow would not always run), so an unconditional
+  // step that did not replay is never carried past a later completion on it.
   let cleanSignature: string | undefined;
-  // Steps already put to the model as unreproducible. Asked once: a model told
-  // that putting the target back could not undo a step's own effect, and that
-  // finishes again with the step kept, has answered.
+  // Steps an earlier dry run already told the model did not replay. It marks
+  // their feedback lines `again` and nothing more. It used to let an
+  // unreproducible step through the second time it was reported, and live
+  // runs 18, 21 and 33 were accepted or passed a dry run that way with a step
+  // that did not replay (`../../flow-draft/dry-run.ts`).
   const asked = new Set<string>();
   return async () => {
     if (!input.enabled || !automationStudioFlowDraftReplayable(input.steps)) return undefined;
     const signature = automationStudioFlowDraftReplaySignature(input.steps);
-    if (signature === cleanSignature) return undefined;
+    if (signature === cleanSignature) {
+      input.reusedClean?.();
+      return undefined;
+    }
     attempts += 1;
     let replay: Awaited<ReturnType<typeof replayAutomationStudioFlowDraft>>;
     try {
       replay = await replayAutomationStudioFlowDraft({
         steps: input.steps,
         attempt: attempts,
-        asked,
         maxEvidenceBytes: input.maxEvidenceBytes,
         executeTool: input.executeTool,
         ...(input.signal ? { signal: input.signal } : {})
@@ -92,7 +106,6 @@ export function automationStudioFlowDraftDryRunGate(
     for (const outcome of replay.verdict.outcomes) {
       const step = input.steps.find((candidate) => candidate.position === outcome.step);
       if (step) step.replayed = { ...outcome };
-      if (outcome.status === "unreproducible") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
     }
     input.targetMoved();
     if (replay.verdict.ok) {
@@ -105,7 +118,10 @@ export function automationStudioFlowDraftDryRunGate(
       if (input.reserveEvidence(replay.evidence.value) === undefined) return "evidence_limit";
       input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
     }
-    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict);
+    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked);
+    for (const outcome of replay.verdict.outcomes) {
+      if (outcome.status !== "replayed") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
+    }
     if (input.reserveEvidence(feedback) === undefined) return "evidence_limit";
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
     return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(replay.verdict) };

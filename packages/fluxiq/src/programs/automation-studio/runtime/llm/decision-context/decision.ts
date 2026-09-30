@@ -29,10 +29,12 @@ export type AutomationStudioLlmDecisionContextDryRunRefusal = { step: number; st
 
 /**
  * What the replay of the draft said when a completion reached it: every step
- * replayed (`clean`), the check refused before it (`not_run`), or the steps it
+ * replayed (`clean`), the same draft had already replayed clean and was not
+ * replayed again (`reused_clean`), no replay applied to it (`not_run`: the dry
+ * run is off, or the draft does not say how to replay), or the steps it
  * refused.
  */
-export type AutomationStudioLlmDecisionContextDryRun = "clean" | "not_run" | readonly AutomationStudioLlmDecisionContextDryRunRefusal[];
+export type AutomationStudioLlmDecisionContextDryRun = "clean" | "reused_clean" | "not_run" | readonly AutomationStudioLlmDecisionContextDryRunRefusal[];
 
 /** One amendment the draft refused, and whether it had refused the same one before. */
 export type AutomationStudioLlmDecisionContextAmendmentRefusal = { step: number; reason: string; repeated: boolean };

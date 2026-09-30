@@ -79,10 +79,11 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   lastAction: { callId: string; iteration: number } | undefined;
   /**
    * What the dry run did during the current completion attempt: whether it
-   * replayed at all, and the verdict it showed when it refused. The handler
+   * replayed at all, whether it reused an earlier clean replay instead, and the
+   * verdict it showed when it refused. The handler
    * clears it before the attempt; the loop's gate callbacks fill it.
    */
-  dryRunSeen: { ran: boolean; verdict?: JsonValue };
+  dryRunSeen: { ran: boolean; reused?: boolean; verdict?: JsonValue };
   /**
    * Requests already asked again once, and run then to see whether the page
    * was as the answering call left it (`./answer-check.ts`). Keyed on the

@@ -43,8 +43,6 @@ export type AutomationStudioFlowDraftReplayInput = {
   steps: readonly AutomationStudioFlowDraftStep[];
   /** 1 for the first replay of this build. */
   attempt: number;
-  /** Steps already put to the model as unreproducible (`../../flow-draft/dry-run.ts`). */
-  asked: ReadonlySet<string>;
   /** What one replayed step's evidence may cost, the same bound a tool call gets. */
   maxEvidenceBytes: number;
   executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
@@ -126,7 +124,6 @@ function verdictOf(
     attempt: input.attempt,
     reset,
     outcomes,
-    asked: input.asked,
     conditional: automationStudioFlowDraftConditionalStepIds(input.steps)
   });
 }

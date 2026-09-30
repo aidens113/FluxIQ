@@ -351,7 +351,9 @@ describe("route-state captures per recorded build", () => {
     expect(rows).toEqual({
       "bigbox-run6": { decisions: 37, before: 7, afterReported: 0, afterUnreported: 17, callsBeforeUnseen: 13 },
       crossborder: { decisions: 22, before: 5, afterReported: 0, afterUnreported: 11, callsBeforeUnseen: 8 },
-      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 32, callsBeforeUnseen: 28 }
+      // Run 4's completion 47 now replays the draft (dry run 5; `recorded-runs.ts` says why), so
+      // decision 48 is one more a call ran before: 33 and 29 where the log's own run gave 32 and 28.
+      "everything-store-run4": { decisions: 48, before: 6, afterReported: 0, afterUnreported: 33, callsBeforeUnseen: 29 }
     });
   });
 

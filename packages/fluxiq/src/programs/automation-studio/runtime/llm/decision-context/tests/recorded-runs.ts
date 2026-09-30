@@ -94,6 +94,13 @@ export type RecordedRunReplay = {
   rebuilt: string[];
   /** The log's transcription, in the same format. */
   logged: string[];
+  /**
+   * What the current code is expected to rebuild: `logged`, with each line the
+   * run's `now` names replaced. The replay is held to this, line for line.
+   */
+  expected: string[];
+  /** The iterations whose expected line is not the logged one, and why. */
+  diverges: Readonly<Record<number, string>>;
   /** Iterations scripted as a request answered from memory. */
   answered: number[];
   /**
@@ -129,6 +136,13 @@ type RecordedRun = {
   checks: Readonly<Record<number, CheckScript>>;
   /** Whether this run's build logged its completion checks. */
   logsChecks: boolean;
+  /**
+   * Decisions the current code answers differently from the build that was
+   * logged, each as the line it now traces and why. The rest of the log is
+   * still what the replay must rebuild exactly; a line here is a known,
+   * deliberate change of Core's, never a gap in the replay.
+   */
+  now?: Readonly<Record<number, { line: string; why: string }>>;
 };
 
 // ---------------------------------------------------------------------------
@@ -411,7 +425,20 @@ D47 complete
     46: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
     47: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")])
   },
-  logsChecks: false
+  logsChecks: false,
+  now: {
+    // The live build accepted nothing here, but its gate had waved steps 3 and
+    // 6 through from dry run 2 on (an unreproducible step was asked about once),
+    // so dry runs 2-4 were "clean" and 47, over dry run 4's draft, was not
+    // replayed at all. An unreproducible step now refuses every completion
+    // (`../../../flow-draft/dry-run.ts`), dry runs 2-4 refuse as dry run 1 did,
+    // nothing clean is cached, and 47 replays the same draft: dry run 5, the
+    // same positions and answers as dry run 4.
+    47: {
+      line: "D47 complete | dryrun.5.reset core.replay.replayed | dryrun.5.2 core.replay.replayed | dryrun.5.3 core.replay.unreproducible | dryrun.5.4 core.replay.replayed | dryrun.5.5 core.replay.replayed | dryrun.5.6 core.replay.unreproducible | dryrun.5.14 core.replay.replayed | dryrun.5.18 core.replay.replayed | dryrun.5.20 core.replay.replayed | dryrun.5.25 core.replay.replayed | dryrun.5.27 core.replay.replayed | dryrun.5.28 core.replay.replayed | dryrun.5.29 core.replay.replayed | dryrun.5.30 core.replay.replayed",
+      why: "an unreproducible step blocks every completion, so the gate cached no clean verdict to skip 47's replay on"
+    }
+  }
 };
 
 const RUNS: Readonly<Record<RecordedRunName, RecordedRun>> = {
@@ -493,9 +520,18 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
   const pageBytes = options.pageBytes ?? 5_800;
   const detectBytes = options.detectBytes ?? 2_000;
   const logged = readLog(run.log);
-  const byIteration = new Map(logged.map((decision) => [decision.iteration, decision] as const));
-  // Every logged call's result code, by call id: the model's calls, the reruns, and each dry-run call.
-  const codes = new Map(logged.flatMap((decision) => decision.events.flatMap((event) => event.kind === "call" ? [[event.callId, event.code] as const] : [])));
+  // The log, with each decision the current code is known to answer differently
+  // replaced by what it now traces. The model's decisions are the log's either way.
+  const now = new Map(Object.entries(run.now ?? {}).map(([iteration, change]) => {
+    const [line] = readLog(change.line);
+    if (!line || line.iteration !== Number(iteration)) throw new Error(`recorded run ${name}: the line expected at ${iteration} is for another decision`);
+    if (!logged.some((decision) => decision.iteration === line.iteration && decision.kind === line.kind)) throw new Error(`recorded run ${name}: the log has no ${line.kind} at ${iteration} to replace`);
+    return [line.iteration, line] as const;
+  }));
+  const expected = logged.map((decision) => now.get(decision.iteration) ?? decision);
+  const byIteration = new Map(expected.map((decision) => [decision.iteration, decision] as const));
+  // Every expected call's result code, by call id: the model's calls, the reruns, and each dry-run call.
+  const codes = new Map(expected.flatMap((decision) => decision.events.flatMap((event) => event.kind === "call" ? [[event.callId, event.code] as const] : [])));
   const kindOf = (callId: string, toolId: string, code: string): CallKind =>
     toolId === DETECT_TOOL_ID ? "detect" : run.reads.has(callId) ? "read" : code.startsWith("web.inspect.") || callId === `initial.${RUN_NODE_TOOL_ID}` ? "snapshot" : "action";
 
@@ -651,6 +687,8 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     result,
     rebuilt: rebuilt.map(logLine),
     logged: logged.map(logLine),
+    expected: expected.map(logLine),
+    diverges: Object.fromEntries(Object.entries(run.now ?? {}).map(([iteration, change]) => [iteration, change.why])),
     answered,
     coreEntries: coreEntries(shown, result.trace)
   };

@@ -424,6 +424,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // What the gate did is also what the history records of a completion attempt.
     showEvidence: (entry) => { evidence.push(entry); if (entry.toolId === AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID) handling.dryRunSeen.verdict = entry.value; },
     targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; },
+    reusedClean: () => { handling.dryRunSeen.reused = true; },
     ...(input.signal ? { signal: input.signal } : {})
   });
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).

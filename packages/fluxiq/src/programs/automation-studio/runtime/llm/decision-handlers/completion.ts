@@ -38,7 +38,7 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   // that now passes does not leave its old refusal in front of the model beside
   // a dry run that still refuses.
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID);
-  context.dryRunSeen = { ran: false };
+  context.dryRunSeen = { ran: false, reused: false };
   // The caller's check and the draft's dry run, both asked and answered
   // together (`../evidence-loop/completion-attempt.ts` says why both).
   const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun: context.dryRun, signal: input.signal });
@@ -88,16 +88,20 @@ function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: num
 /**
  * What the dry run said during the attempt: the steps its verdict refused, as
  * the `core.dry_run` entry the gate showed lists them; `clean` when it
- * replayed and showed nothing; `not_run` when the gate did not replay.
+ * replayed and showed nothing; `reused_clean` when the gate answered from an
+ * earlier clean replay of the same draft; `not_run` when no replay applied.
+ * Run 18's completion 48 was accepted on a reused verdict and recorded
+ * `not_run`, which hid that the acceptance rested on dry run 5.
  */
-function dryRunSaid(seen: { ran: boolean; verdict?: JsonValue }): AutomationStudioLlmDecisionContextDryRun {
+function dryRunSaid(seen: { ran: boolean; reused?: boolean; verdict?: JsonValue }): AutomationStudioLlmDecisionContextDryRun {
   if (seen.verdict !== undefined) {
     const steps = isObject(seen.verdict) && Array.isArray(seen.verdict.steps) ? seen.verdict.steps : [];
     return steps.flatMap((step) => isObject(step) && typeof step.step === "number" && typeof step.replayed === "string" && step.replayed !== "replayed"
       ? [{ step: step.step, status: step.replayed }]
       : []);
   }
-  return seen.ran ? "clean" : "not_run";
+  if (seen.ran) return "clean";
+  return seen.reused ? "reused_clean" : "not_run";
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
