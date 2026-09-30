@@ -20,7 +20,7 @@
 // nothing is asked of a model. The conditions, all of which must hold:
 //
 // - the run failed, at a step whose failure record parses;
-// - that failure is target-level (`TARGET_LEVEL_FAILURE_CATEGORIES`);
+// - that failure is target-level (`step-failure-target.ts`);
 // - the ladder ran -- it reached a model (`llmGate.invoked`) -- and executed
 //   no patch and made no adaptation;
 // - it stopped for none of the reasons that must end a repair: a question for
@@ -31,38 +31,11 @@
 // A run any of this does not hold for is left exactly as it was: the decision
 // says why, and nothing is written.
 
-import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "./reauthor.ts";
-
-/**
- * The failure categories a re-author answers: the two Core's taxonomy decides
- * while resolving the action's target (`@fluxiq/contracts` refuses either at
- * any other stage). Each says the control the step addresses is not on the
- * surface as it was recorded -- gone, renamed, moved, or no longer told apart
- * from its neighbours -- which is what a site that changed since the build
- * looks like, and what re-finding the step answers.
- *
- * Not included, each for its reason:
- * - `page_changed`: the surface was replaced between resolving and acting, a
- *   race the ladder retries deterministically, not a redesign.
- * - `auth_required`, `user_intervention_required`,
- *   `external_side_effect_denied`, `blocked_by_capability_or_policy`: a person
- *   or a policy must act, and a rebuilt Flow would meet the same gate.
- * - `timeout`, `navigation_unexpected`, `output_not_observed`,
- *   `expected_state_missing`, `unexpected_state`, `action_failed`,
- *   `ambiguous_or_unknown`: the step's control was found, so re-finding it
- *   answers nothing the failure asked.
- * - `missing_router_or_subflow_target`, `graph_validation_or_unknown_node`:
- *   the Flow is structurally broken, which is the build's own validation's
- *   business, not a site change.
- */
-const TARGET_LEVEL_FAILURE_CATEGORIES: ReadonlySet<AutomationStudioAdaptiveFailureClass> = new Set<AutomationStudioAdaptiveFailureClass>([
-  "target_not_found",
-  "target_ambiguous"
-]);
+import { automationStudioStepFailureTarget } from "./step-failure-target.ts";
 
 /** What a re-author for a failed step is recorded under, on its attempt's brief record. */
 const FAILED_STEP_TRIGGER = "failed_step";
@@ -130,10 +103,10 @@ export function automationStudioStepFailureReauthorDecision(input: {
 }): AutomationStudioStepFailureReauthorDecision {
   const detail = input.detail;
   if (detail.summary.status !== "failed") return refused("run_not_failed");
-  const attempt = [...(detail.actionAttempts ?? [])].reverse().find((candidate) => candidate.status === "failed" || candidate.status === "unknown");
-  const failure = attempt ? parseAutomationStudioFailureRecord(attempt.failure) : null;
-  if (!attempt || !failure) return refused("no_failed_step");
-  if (!TARGET_LEVEL_FAILURE_CATEGORIES.has(failure.category)) return refused("not_target_level");
+  const failed = automationStudioStepFailureTarget(detail.actionAttempts);
+  if (!failed) return refused("no_failed_step");
+  if (!failed.targetLevel) return refused("not_target_level");
+  const { attempt, failure } = failed;
   const metadata = detail.metadata ?? {};
   const gate = record(metadata.llmGate);
   if (gate?.invoked !== true) return refused("ladder_not_run");
