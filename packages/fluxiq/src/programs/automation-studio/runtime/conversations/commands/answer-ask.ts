@@ -8,11 +8,20 @@
 // the panel's buttons use, so a parked build wakes exactly as it would for a
 // click.
 //
-// An ask that would delete something or move money is not granted from
-// words. Those are the two things Core asks a person to re-authorize, and the
-// control that asks takes the PIN; a typed "yes" would skip it.
+// An ask that would move money, delete something, or send or publish
+// something is not settled from words, except by a no. Those are the classes
+// Core asks a person about every time (`action-permissions/destructive.ts`,
+// read here rather than restated), and the control that asks takes the PIN; a
+// typed "yes" would skip it. "Except by a no" is the whole rule: a grant, a
+// chosen option or passed-on words could each be the answer that commits the
+// act, and only a refusal is safe to take in passing.
+//
+// **History.** Until 2026-09-30 this said "delete something or move money",
+// because `send_or_publish` was not gated then; lane D (t195) gated it again
+// and the test here still granted a publish by typing (t201).
 
-import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../action-permissions/client/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../action-permissions/client/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioConversationAsk } from "../ask.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { automationStudioConversationAnswerFromWords } from "./answer-words.ts";
@@ -48,8 +57,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK: AutomationStudioConversa
     if (ask.status !== "pending") return progress.failed("that question has already been answered");
     const answer = automationStudioConversationAnswerFromWords(ask, words);
     if (!answer) return progress.failed(unreadable(ask));
-    if (answer.kind === "grant" && reauthorizes(ask)) {
-      return progress.failed("saying yes to that would delete something or move money, which is confirmed with your PIN on the question itself, not by typing");
+    const gated = gatedClasses(ask);
+    if (answer.kind !== "deny" && gated.length) {
+      return progress.failed(`answering that would ${gated.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]).join(", or ")}, which is confirmed with your PIN on the question itself, not by typing`);
     }
     const settled = await context.port.call("answer-ask", {
       projectId: context.projectId,
@@ -77,9 +87,14 @@ async function askMeant(
   return pending[pending.length - 1] ?? null;
 }
 
-function reauthorizes(ask: AutomationStudioConversationAsk): boolean {
+/**
+ * The classes Core gates that answering this ask would commit, in Core's
+ * order. A permission ask commits what it lacks (`missing`); any other ask
+ * commits what it says it does.
+ */
+function gatedClasses(ask: AutomationStudioConversationAsk): AutomationStudioActionConsequence[] {
   const classes = ask.kind === "permission" ? (ask.missing ?? ask.consequences ?? []) : (ask.consequences ?? []);
-  return classes.some((consequence) => (AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES as readonly string[]).includes(consequence));
+  return AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES.filter((consequence) => classes.includes(consequence));
 }
 
 function unreadable(ask: AutomationStudioConversationAsk): string {

@@ -287,27 +287,45 @@ describe("conversation commands", () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);
     const { port, calls } = fakePort({
-      "answer-ask": async (payload) => ({ ok: true, payload: { ask: await conversations.answerAsk({ projectId: PROJECT, askId: String(payload.askId), kind: payload.kind as "grant" }) } })
+      "answer-ask": async (payload) => ({ ok: true, payload: { ask: await conversations.answerAsk({ projectId: PROJECT, askId: String(payload.askId), kind: payload.kind as "grant" | "deny" | "choice", ...(typeof payload.value === "string" ? { value: payload.value } : {}) }) } })
     });
     const context = contextFor(conversations, conversationId, port);
-    const confirm = (askId: string, consequences: Array<"delete" | "send_or_publish">) => conversations.appendAutomationTurn({
+    type Consequence = "delete" | "send_or_publish" | "move_money" | "modify_existing";
+    const ask = (askId: string, kind: "confirm" | "choice", consequences: Consequence[]) => conversations.appendAutomationTurn({
       projectId: PROJECT, conversationId, text: "May I?", attachment: null,
-      ask: { askId, kind: "confirm", parks: false, timeoutMs: null, onTimeout: null, options: null, routes: null, consequences, missing: null, control: null, permissionRequest: null }
+      ask: {
+        askId, kind, parks: false, timeoutMs: null, onTimeout: null, routes: null, consequences, missing: null, control: null, permissionRequest: null,
+        options: kind === "choice" ? [{ id: "opt.go", label: "Go ahead", route: null }, { id: "opt.stop", label: "Stop", route: null }] : null
+      }
     });
-    await confirm("ask.publish", ["send_or_publish"]);
+    const answer = (words: string, askId?: string) => executeAutomationStudioConversationCommand({ command: command("ask.answer"), context, arguments: { answer: words, ...(askId ? { askId } : {}) } });
 
-    const answered = await executeAutomationStudioConversationCommand({ command: command("ask.answer"), context, arguments: { answer: "Yes, go ahead." } });
-    expect(answered).toMatchObject({ status: "done", summary: "Answered yes." });
-    expect(calls).toEqual([{ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.publish", kind: "grant" } }]);
-    expect((await conversations.getAsk({ projectId: PROJECT, askId: "ask.publish" }))?.status).toBe("answered");
+    // A question whose yes changes nothing Core gates is answered from words.
+    await ask("ask.change", "confirm", ["modify_existing"]);
+    expect(await answer("Yes, go ahead.")).toMatchObject({ status: "done", summary: "Answered yes." });
+    expect(calls).toEqual([{ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.change", kind: "grant" } }]);
+    expect((await conversations.getAsk({ projectId: PROJECT, askId: "ask.change" }))?.status).toBe("answered");
 
-    await confirm("ask.delete", ["delete"]);
-    const refused = await executeAutomationStudioConversationCommand({ command: command("ask.answer"), context, arguments: { answer: "yes" } });
-    expect(refused.status).toBe("failed");
-    expect(refused.summary).toContain("PIN");
+    // Moving money, deleting and sending or publishing ask every time
+    // (`action-permissions/destructive.ts`), and a typed yes grants none of them.
+    for (const [askId, consequence, said] of [["ask.delete", "delete", "delete or remove something"], ["ask.publish", "send_or_publish", "send or publish something"], ["ask.pay", "move_money", "spend, refund or move money"]] as const) {
+      await ask(askId, "confirm", [consequence]);
+      const refused = await answer("yes", askId);
+      expect(refused.status, askId).toBe("failed");
+      expect(refused.summary, askId).toContain("PIN");
+      expect(refused.summary, askId).toContain(said);
+      expect((await conversations.getAsk({ projectId: PROJECT, askId }))?.status, askId).toBe("pending");
+    }
+    // Nor does naming the option of a choice that deletes.
+    await ask("ask.choose-delete", "choice", ["delete"]);
+    expect((await answer("go ahead", "ask.choose-delete")).status).toBe("failed");
     expect(calls).toHaveLength(1);
 
-    const unclear = await executeAutomationStudioConversationCommand({ command: command("ask.answer"), context, arguments: { answer: "hmm, maybe later on" } });
+    // A no is always safe to take in passing.
+    expect(await answer("no", "ask.delete")).toMatchObject({ status: "done", summary: "Answered no." });
+    expect(calls[1]).toEqual({ endpoint: "answer-ask", payload: { projectId: PROJECT, askId: "ask.delete", kind: "deny" } });
+
+    const unclear = await answer("hmm, maybe later on", "ask.publish");
     expect(unclear.summary).toContain("could not tell whether that was a yes or a no");
   });
 
