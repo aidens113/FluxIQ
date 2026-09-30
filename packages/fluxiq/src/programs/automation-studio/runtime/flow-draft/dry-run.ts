@@ -86,6 +86,17 @@ export type AutomationStudioFlowDraftReplayOutcome = {
   status: AutomationStudioFlowDraftReplayStatus;
   /** The caller's code for the answer, carried and never read. */
   resultCode?: string;
+  /**
+   * `verify` when the step was checked rather than run again, because running
+   * it would have repeated a lasting effect (`./verify-only.ts`). Absent, it
+   * was run again.
+   */
+  mode?: "verify";
+  /**
+   * The position of the verified step before this one whose effect the dry run
+   * withheld, set only on a step that then did not replay (`./verify-only.ts`).
+   */
+  withheldBy?: number;
 };
 
 /** One whole replay of the draft. */

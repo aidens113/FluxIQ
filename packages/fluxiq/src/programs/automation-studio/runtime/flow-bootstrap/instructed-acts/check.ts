@@ -40,17 +40,30 @@
 // by a step the Flow repeats -- one carrying `repeat`, or one inside the span a
 // kept step repeats (`act_needs_repeat`).
 //
+// **Choosing is not adding.** Live run 28 (`run-munvvc3z-3eadc185`) was told
+// to add two packs of one product in one size and a pack of another in
+// another size. It pressed add to cart once on each product page as the page
+// loaded -- first size, quantity one -- named each press for its add, and
+// passed. A quantity above one and a named variant of an added item are now
+// requirements of their own (`requires`, `./instruction-choices.ts`), each held
+// to what an act is held to, and to one thing more: the step claimed for the
+// act -- or for anything else -- does not also answer a choice unless its own
+// input sets it (`./choice-evidence.ts`), which a plain press of add does not
+// (`choice_is_the_act_step`).
+//
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
+import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
 import type {
   AutomationStudioInstructedAct,
   AutomationStudioInstructedActClaim,
   AutomationStudioInstructedActMissing,
-  AutomationStudioInstructedActsVerdict
+  AutomationStudioInstructedActsVerdict,
+  AutomationStudioInstructedChoice
 } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 
@@ -89,6 +102,11 @@ const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named
 const OPTIONAL_INSTRUCTION = " A reason of step_is_optional means the step named is marked optional, so the Flow carries on without it when it fails and the act may never be done: "
   + "make it always run with amend_draft keep on that step, or name a step that always runs.";
 
+/** Said only when a choice of an item is missing: how many, or which size, colour or version. */
+const CHOICE_INSTRUCTION = " An id like a2.quantity or a2.size is a choice the person made for the item of that act (of): how many of it, or which size, colour, count or version -- quote is their words for it. "
+  + "The press that adds does not make it: choose the size or set the quantity with its own step before adding -- press that option, or set the quantity control to the number -- keep that step, and name that step for the choice's id, e.g. {\"action\": \"a2.quantity\", \"step\": \"d9\"}. "
+  + "A reason of choice_is_the_act_step means the step named is the one named for the act itself, and nothing it was given sets the choice.";
+
 /** Said only when an act over a whole set was claimed by a step that acts once; the way to repeat is the draft's own telling of it. */
 const REPEAT_INSTRUCTION = " A reason of act_needs_repeat means the act is asked for every item of a list (plural) and the step named does it once: "
   + "run the step that lists the items (keeping only those to act on), act on one item, then amend_draft repeat over the listing step through the act's last step, and name the repeated step for the act.";
@@ -106,13 +124,16 @@ export function checkAutomationStudioInstructedActs(input: {
 }): AutomationStudioInstructedActsVerdict {
   const acts = automationStudioInstructedActs(input.instructionText ?? "");
   if (!acts.length || !input.draftSteps) return { ok: true, acts };
+  const choices = acts.flatMap((act) => act.requires ?? []);
   const steps = input.draftSteps;
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
     startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
   const claims = readClaims(input.result.acts);
-  const assigned = assign(acts, claims);
+  const assigned = assign(acts, choices, claims);
   const used = new Set<AutomationStudioFlowDraftStep>();
+  // The step each act was accepted for, so a choice given the same one is told it is its act's press.
+  const actSteps = new Map<string, AutomationStudioFlowDraftStep>();
   const missing: AutomationStudioInstructedActMissing[] = [];
   for (const act of acts) {
     const claim = assigned.get(act.id);
@@ -122,16 +143,32 @@ export function checkAutomationStudioInstructedActs(input: {
     }
     const step = findStep(steps, claim.step);
     const named = { step: claim.step.slice(0, 16) };
-    if (!step) missing.push({ ...act, reason: "no_such_step", ...named });
-    else if (step.disposition !== "kept") missing.push({ ...act, reason: "step_not_kept", ...named });
-    else if (step.effect !== "mutate" || !automationStudioFlowDraftStepIsProposable(step)) missing.push({ ...act, reason: "step_changed_nothing", ...named });
-    else if (act.kind !== "open" && onlyArrives(step)) missing.push({ ...act, reason: "step_only_arrives", ...named });
-    else if (step.routing?.kind === "optional") missing.push({ ...act, reason: "step_is_optional", ...named });
+    const refused = step ? whyNot(step, act.kind !== "open" && onlyArrives(step)) : "no_such_step";
+    if (refused || !step) missing.push({ ...act, reason: refused ?? "no_such_step", ...named });
     else if (act.plural && !repeated(step, steps)) missing.push({ ...act, reason: "act_needs_repeat", ...named });
     else if (used.has(step)) missing.push({ ...act, reason: "step_claimed_twice", ...named });
+    else {
+      used.add(step);
+      actSteps.set(act.id, step);
+    }
+  }
+  for (const choice of choices) {
+    const claim = assigned.get(choice.id);
+    if (!claim) {
+      missing.push({ ...choice, reason: "no_step_named" });
+      continue;
+    }
+    const step = findStep(steps, claim.step);
+    const named = { step: claim.step.slice(0, 16) };
+    const refused = step ? whyNot(step, onlyArrives(step)) : "no_such_step";
+    if (refused || !step) missing.push({ ...choice, reason: refused ?? "no_such_step", ...named });
+    else if (used.has(step) && !automationStudioInstructedChoiceSetBy(step, choice)) missing.push({ ...choice, reason: actSteps.get(choice.of) === step ? "choice_is_the_act_step" : "step_claimed_twice", ...named });
     else used.add(step);
   }
   if (!missing.length) return { ok: true, acts };
+  // Each act, then its choices, as the instruction asks for them.
+  const order = acts.flatMap((act) => [act.id, ...(act.requires ?? []).map((choice) => choice.id)]);
+  missing.sort((left, right) => order.indexOf(left.id) - order.indexOf(right.id));
   const kept = steps.filter((step) => step.disposition === "kept" && step.effect === "mutate" && automationStudioFlowDraftStepIsProposable(step));
   return {
     ok: false,
@@ -146,7 +183,15 @@ export function checkAutomationStudioInstructedActs(input: {
       path: "acts"
     },
     missingActs: {
-      acts: missing.map((act) => ({ id: act.id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true } : {}), reason: act.reason, ...(act.step ? { step: act.step } : {}) })),
+      acts: missing.map((act) => ({
+        id: act.id,
+        kind: act.kind,
+        ...("of" in act ? { of: act.of, choice: act.choice } : { verb: act.verb }),
+        quote: act.quote,
+        ...("plural" in act && act.plural ? { plural: true } : {}),
+        reason: act.reason,
+        ...(act.step ? { step: act.step } : {})
+      })),
       // The steps that could be named: kept, and changed something.
       stepsThatChangedSomething: kept.slice(0, MAX_LISTED_STEPS).map((step) => step.id ?? `${step.position}`),
       // Said rather than hidden, so a model does not take a cut list for all of them.
@@ -156,6 +201,7 @@ export function checkAutomationStudioInstructedActs(input: {
       .filter(([reason]) => missing.some((act) => act.reason === reason))
       .map(([, said]) => said)
       .join("")
+      + (missing.some((act) => "of" in act) ? CHOICE_INSTRUCTION : "")
   };
 }
 
@@ -165,6 +211,19 @@ const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedAct
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION]
 ];
+
+/**
+ * Why a named step cannot answer anything, whatever it is named for: it was
+ * dropped, changed nothing, only arrived (`arrives`, which the caller decides,
+ * since arriving is an act of opening), or may be skipped. Undefined when it can.
+ */
+function whyNot(step: AutomationStudioFlowDraftStep, arrives: boolean): AutomationStudioInstructedActMissing["reason"] | undefined {
+  if (step.disposition !== "kept") return "step_not_kept";
+  if (step.effect !== "mutate" || !automationStudioFlowDraftStepIsProposable(step)) return "step_changed_nothing";
+  if (arrives) return "step_only_arrives";
+  if (step.routing?.kind === "optional") return "step_is_optional";
+  return undefined;
+}
 
 /**
  * Whether the Flow runs this step once per item: it carries `repeat`, or it
@@ -204,26 +263,61 @@ function readClaims(value: unknown): AutomationStudioInstructedActClaim[] {
 }
 
 /**
- * Which claim answers which act. Only a claim that names an act answers it:
- * by id, then by a word only its quote holds among acts of its kind, then by
- * verb, then by kind. A claim that names none is left unassigned.
+ * Which claim answers which act or choice. Only a claim that names one answers
+ * it: an act by id, then by a word only its quote holds among acts of its
+ * kind, then by verb, then by kind; a choice by id (`a2.quantity`, `a2 size`),
+ * or by a word of what it fixes (`./check.ts` `choiceNamedBy`), before any act
+ * is named in words -- so "set the quantity" is not taken for a store switch.
+ * A claim that names none is left unassigned.
  */
-function assign(acts: readonly AutomationStudioInstructedAct[], claims: readonly AutomationStudioInstructedActClaim[]): Map<string, AutomationStudioInstructedActClaim> {
+function assign(acts: readonly AutomationStudioInstructedAct[], choices: readonly AutomationStudioInstructedChoice[], claims: readonly AutomationStudioInstructedActClaim[]): Map<string, AutomationStudioInstructedActClaim> {
   const assigned = new Map<string, AutomationStudioInstructedActClaim>();
   const free = [...claims];
-  const take = (act: AutomationStudioInstructedAct, matches: (action: string) => boolean): void => {
-    if (assigned.has(act.id)) return;
+  const take = (id: string, matches: (action: string) => boolean): void => {
+    if (assigned.has(id)) return;
     const index = free.findIndex((claim) => matches(claim.action.toLowerCase()));
-    if (index >= 0) assigned.set(act.id, free.splice(index, 1)[0]!);
+    if (index >= 0) assigned.set(id, free.splice(index, 1)[0]!);
   };
-  for (const act of acts) take(act, (action) => action === act.id);
+  for (const act of acts) take(act.id, (action) => action === act.id);
+  for (const choice of choices) take(choice.id, (action) => choiceId(action) === choice.id);
+  for (const choice of choices) take(choice.id, (action) => choiceNamedBy(action, choice, choices, acts));
   for (const act of acts) {
     const own = distinctiveWords(act, acts);
-    if (own.length) take(act, (action) => own.some((ownWord) => containsWord(action, ownWord)));
+    if (own.length) take(act.id, (action) => own.some((ownWord) => containsWord(action, ownWord)));
   }
-  for (const act of acts) take(act, (action) => containsWord(action, act.verb));
-  for (const act of acts) take(act, (action) => KIND_WORDS[act.kind].some((kindWord) => containsWord(action, kindWord)) || action === act.kind);
+  for (const act of acts) take(act.id, (action) => containsWord(action, act.verb));
+  for (const act of acts) take(act.id, (action) => KIND_WORDS[act.kind].some((kindWord) => containsWord(action, kindWord)) || action === act.kind);
   return assigned;
+}
+
+/** A claim's action read as a choice's id: `a2.quantity`, `a2 quantity`, `a2-size`, `a3.color`. */
+function choiceId(action: string): string {
+  return action.trim().replace(/[\s._:-]+/gu, ".").replace(/\.colou?r$/u, ".colour").replace(/\.flavou?r$/u, ".flavour");
+}
+
+/** Words that name what a choice fixes, beside the word its id carries. */
+const CHOICE_WORDS: Readonly<Record<AutomationStudioInstructedChoice["choice"], readonly string[]>> = Object.freeze({
+  quantity: ["quantity", "qty", "how many", "amount"],
+  variant: ["variant", "option"]
+});
+
+/**
+ * Whether a claim names a choice in words: it says what the choice fixes
+ * ("quantity", "size", "colour", "option"), not the verb of the act it
+ * qualifies ("add ... in the 12 Double Rolls size" is the add), and, where
+ * several choices fix the same thing, which one -- by its value, its act's id,
+ * or a word only its act's quote holds.
+ */
+function choiceNamedBy(action: string, choice: AutomationStudioInstructedChoice, choices: readonly AutomationStudioInstructedChoice[], acts: readonly AutomationStudioInstructedAct[]): boolean {
+  const act = acts.find((each) => each.id === choice.of);
+  const fixes = (other: AutomationStudioInstructedChoice): boolean => {
+    const own = other.id.slice(other.of.length + 1);
+    return containsWord(action, own) || (own === "colour" && containsWord(action, "color")) || CHOICE_WORDS[other.choice].some((word) => containsWord(action, word));
+  };
+  if (!act || !fixes(choice) || containsWord(action, act.verb)) return false;
+  const rivals = choices.filter((other) => other !== choice && other.choice === choice.choice && fixes(other));
+  if (!rivals.length) return true;
+  return containsWord(action, choice.value.toLowerCase()) || containsWord(action, act.id) || distinctiveWords(act, acts).some((word) => containsWord(action, word));
 }
 
 /**

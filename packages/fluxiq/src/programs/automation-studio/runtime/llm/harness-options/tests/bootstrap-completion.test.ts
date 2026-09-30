@@ -468,8 +468,11 @@ describe("a completed draft that does not do what the instruction asks", () => {
     expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_cannot_answer"]);
     expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
     const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[]; keptSteps: string[] } };
+    // "Put two ... in sage green" also asks for a quantity and a colour, each a choice of a1's item with no verb of its own.
     expect(feedback.missingActs.acts.map((act) => [act.id, act.kind, act.verb, act.reason])).toEqual([
       ["a1", "add_to", "put", "no_step_named"],
+      ["a1.quantity", "set", undefined, "no_step_named"],
+      ["a1.colour", "set", undefined, "no_step_named"],
       ["a2", "move", "move", "no_step_named"],
       ["a3", "open", "give", "no_step_named"]
     ]);
@@ -484,7 +487,7 @@ describe("a completed draft that does not do what the instruction asks", () => {
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
-    expect(feedback.missingActs.acts.map((act) => act.id)).toEqual(["a1", "a2"]);
+    expect(feedback.missingActs.acts.map((act) => act.id)).toEqual(["a1", "a1.quantity", "a1.colour", "a2"]);
   });
 
   it("refuses the read of the cart claimed as putting the kettles in it", async () => {
@@ -493,7 +496,7 @@ describe("a completed draft that does not do what the instruction asks", () => {
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
-    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_changed_nothing"]]);
+    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_changed_nothing"], ["a1.quantity", "no_step_named"], ["a1.colour", "no_step_named"]]);
   });
 
   it("is accepted once each act has a kept step of its own that changed something", async () => {
@@ -502,9 +505,11 @@ describe("a completed draft that does not do what the instruction asks", () => {
       ran(4, "web.dom.click", { selector: "#add-to-cart" }),
       ran(5, "web.browser.navigate", { url: "https://store.test/cart" }),
       ran(6, "web.dom.click", { selector: "#save-for-later" }),
-      ran(7, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe")
+      ran(7, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe"),
+      ran(8, "web.dom.click", { selector: "#colour-sage-green" }),
+      ran(9, "web.dom.type", { selector: "#quantity", text: "2" })
     ];
-    const verdict = await complete(didTheJob, [{ action: "put the kettles in my cart", step: "d4" }, { action: "move the phone case", step: "d6" }, { action: "give", step: "d5" }]);
+    const verdict = await complete(didTheJob, [{ action: "put the kettles in my cart", step: "d4" }, { action: "move the phone case", step: "d6" }, { action: "give", step: "d5" }, { action: "choose the sage green colour", step: "d8" }, { action: "set the quantity", step: "d9" }]);
 
     expect(verdict.ok).toBe(true);
   });
@@ -521,14 +526,16 @@ describe("a completed draft whose acts are named for arriving where it starts", 
     position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
     input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept"
   });
-  const arrivals = [ran(1, "web.browser.navigate", { url: START }), ran(2, "web.browser.navigate", { url: START })];
+  // "Put three of" also asks for a quantity, set here by a step of its own (d9), so each case is about the arrivals.
+  const arrivals = [ran(1, "web.browser.navigate", { url: START }), ran(2, "web.browser.navigate", { url: START }), ran(9, "web.dom.type", { selector: "#quantity", text: "3" })];
+  const quantity = { action: "a1.quantity", step: "d9" };
   const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
     result: { summary: "Puts the hubs in the cart.", acts },
     projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: HUBS, startLocation: START
   });
 
   it("is refused, naming each act as only arrived at", async () => {
-    const verdict = await complete(arrivals, [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }]);
+    const verdict = await complete(arrivals, [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity]);
 
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -540,7 +547,7 @@ describe("a completed draft whose acts are named for arriving where it starts", 
 
   it("is accepted once each act is named for a press after the arrival", async () => {
     const pressed = [...arrivals, ran(3, "web.dom.click", { selector: "#add-to-cart" }), ran(4, "web.dom.click", { selector: "#collect-coupon" })];
-    const verdict = await complete(pressed, [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }]);
+    const verdict = await complete(pressed, [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }, quantity]);
 
     expect(verdict.ok).toBe(true);
   });

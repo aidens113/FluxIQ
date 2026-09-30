@@ -20,6 +20,7 @@ import {
   automationStudioFlowDraftReplayable,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftReplaySignature,
+  automationStudioFlowDraftVerifiedFeedback,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
@@ -105,7 +106,9 @@ export function automationStudioFlowDraftDryRunGate(
       if (input.reserveEvidence(replay.evidence.value) === undefined) return "evidence_limit";
       input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
     }
-    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict);
+    // Verified steps are named as verified, so the model can tell a step that
+    // was checked from one that was run again (`../../flow-draft/verify-only.ts`).
+    const feedback = automationStudioFlowDraftVerifiedFeedback(replay.verdict, automationStudioFlowDraftDryRunFeedback(replay.verdict));
     if (input.reserveEvidence(feedback) === undefined) return "evidence_limit";
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
     return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(replay.verdict) };

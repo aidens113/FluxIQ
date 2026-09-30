@@ -100,16 +100,19 @@ describe("a claim answers an act only if it names it", () => {
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.missing.length).toBeGreaterThan(0);
-    expect(verdict.missing.length).toBe(verdict.acts.length);
+    // Every act, and every choice of an item (run 6 is run 28's instruction: a quantity and two sizes).
+    expect(verdict.missing.length).toBe(verdict.acts.length + verdict.acts.flatMap((act) => act.requires ?? []).length);
     expect(new Set(verdict.missing.map((act) => act.reason))).toEqual(new Set(["no_step_named"]));
     expect(verdict.instruction).toContain("by its id");
   });
 
   it("accepts the same clicks once each claim names its act by id", () => {
     const acts = checkAutomationStudioInstructedActs({ instructionText: RUN_6, result: { summary: "x" }, draftSteps: RUN_6_DRAFT }).acts;
-    const kept = ["d4", "d11"];
-    const draft = acts.length > 2 ? [...RUN_6_DRAFT, step(13)] : RUN_6_DRAFT;
-    const claims = acts.map((act, index) => ({ action: act.id, step: kept[index] ?? "d13" }));
+    // Each act, then each choice of an item, gets a kept step of its own: d4, d11, then d13 onwards.
+    const ids = [...acts.map((act) => act.id), ...acts.flatMap((act) => (act.requires ?? []).map((choice) => choice.id))];
+    const kept = ["d4", "d11", ...ids.slice(2).map((_unused, index) => `d${13 + index}`)];
+    const draft = [...RUN_6_DRAFT, ...ids.slice(2).map((_unused, index) => step(13 + index))];
+    const claims = ids.map((id, index) => ({ action: id, step: kept[index]! }));
     expect(checkAutomationStudioInstructedActs({ instructionText: RUN_6, result: { summary: "x", acts: claims }, draftSteps: draft }).ok).toBe(true);
   });
 
@@ -140,9 +143,11 @@ describe("a step that only arrives where the Flow starts", () => {
   const arrivesByRun = step(1, { actionId: "web.output.browser-navigate", ranWith: { node: "web.output.browser-navigate", parameters: { url: START } } });
   const arrivesAsWritten = step(2, { actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url: `${START}/` } } });
   const press = (position: number) => step(position, { input: { node: "web.output.dom-click", parameters: { selector: `#control-${position}` } } });
+  // "Put three of" asks for a quantity too, which a step of its own sets (d9), so each case here is about the arrivals.
+  const quantity = { action: "a1.quantity", step: "d9" };
 
   it("refuses run 15's two arrivals named for the add to cart and the coupon", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }] }, draftSteps: [arrivesByRun, arrivesAsWritten] });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(9)] });
     expect(verdict.acts.map((act) => act.kind)).toEqual(["add_to", "claim"]);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -152,7 +157,7 @@ describe("a step that only arrives where the Flow starts", () => {
   });
 
   it("accepts the same acts named for presses that are not arrivals", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(3), press(4)] });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(3), press(4), press(9)] });
     expect(verdict.ok).toBe(true);
   });
 
@@ -170,7 +175,7 @@ describe("a step that only arrives where the Flow starts", () => {
   });
 
   it("holds nothing to a start location the build was not given", () => {
-    expect(checkAutomationStudioInstructedActs({ instructionText: HUBS, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }] }, draftSteps: [arrivesByRun, arrivesAsWritten] }).ok).toBe(true);
+    expect(checkAutomationStudioInstructedActs({ instructionText: HUBS, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(9)] }).ok).toBe(true);
   });
 });
 
@@ -238,5 +243,74 @@ describe("an act over every member of a set, and a step the Flow may skip", () =
     if (plain.ok) return;
     expect(plain.instruction).not.toContain("amend_draft repeat");
     expect(plain.instruction).not.toContain("amend_draft keep");
+  });
+});
+
+// Live run 28 (`run-munvvc3z-3eadc185`, bigbox-retail): the Flow switched the
+// store and pressed add to cart once on each product page, and chose no size
+// and set no quantity. It passed with one step per act, and missed the goal.
+// A quantity above one and a named size are now each claimed by a step of
+// their own, which may be the add press only where its own input sets them.
+describe("a quantity or a size the instruction attaches to an item", () => {
+  const RUN_28 = "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.";
+  const START = "http://127.0.0.1:59700";
+  const go = (position: number, url: string) => step(position, { actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url } } });
+  const press = (position: number) => step(position, { actionId: "web.output.dom-click", input: { node: "web.output.dom-click", parameters: { target: { handle: `h${position}` } } } });
+  // s1 arrives; s2 consent; s4-s5 the store; s7-s8 search; s9 and s14 product pages; s12 and s15 the add presses.
+  const RUN_28_DRAFT = [go(1, START), press(2), press(4), press(5), step(7, { actionId: "web.output.dom-type" }), press(8), go(9, `${START}/p/1`), press(10), press(12), go(14, `${START}/p/2`), press(15)];
+  const RUN_28_CLAIMS = [{ action: "a1", step: "d5" }, { action: "a2", step: "d12" }, { action: "a3", step: "d15" }];
+  const check = (draftSteps: AutomationStudioFlowDraftStep[], acts: unknown) => checkAutomationStudioInstructedActs({ instructionText: RUN_28, startLocation: START, result: { summary: "x", acts: acts as never }, draftSteps });
+
+  it("refuses run 28's Flow, naming the quantity and both sizes no step chooses", () => {
+    const verdict = check(RUN_28_DRAFT, RUN_28_CLAIMS);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((missing) => [missing.id, missing.kind, missing.reason])).toEqual([["a2.quantity", "set", "no_step_named"], ["a2.size", "set", "no_step_named"], ["a3.size", "set", "no_step_named"]]);
+    const shown = JSON.stringify(verdict.missingActs);
+    expect(shown).toContain("\"of\":\"a2\"");
+    expect(shown).toContain("in the 12 Double Rolls size");
+    expect(verdict.instruction).toContain("choose the size or set the quantity with its own step before adding");
+    expect(verdict.instruction).toContain("name that step");
+  });
+
+  it("refuses the add press named for its own quantity and size", () => {
+    const verdict = check(RUN_28_DRAFT, [...RUN_28_CLAIMS, { action: "a2.quantity", step: "d12" }, { action: "a2.size", step: "d12" }, { action: "a3.size", step: "d15" }]);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.missing.map((missing) => [missing.id, missing.reason])).toEqual([["a2.quantity", "choice_is_the_act_step"], ["a2.size", "choice_is_the_act_step"], ["a3.size", "choice_is_the_act_step"]]);
+  });
+
+  it("refuses the arrival, or a step claimed for another act, named for a choice", () => {
+    const verdict = check(RUN_28_DRAFT, [...RUN_28_CLAIMS, { action: "a2.quantity", step: "d1" }, { action: "a2.size", step: "d5" }, { action: "a3.size", step: "d15" }]);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.missing.map((missing) => [missing.id, missing.reason])).toEqual([["a2.quantity", "step_only_arrives"], ["a2.size", "step_claimed_twice"], ["a3.size", "choice_is_the_act_step"]]);
+  });
+
+  it("accepts a Flow that chooses each size and sets the quantity with steps of its own", () => {
+    const draft = [...RUN_28_DRAFT, press(20), press(21), press(22)];
+    expect(check(draft, [...RUN_28_CLAIMS, { action: "a2.size", step: "d20" }, { action: "a2.quantity", step: "d21" }, { action: "a3.size", step: "d22" }]).ok).toBe(true);
+  });
+
+  it("accepts choices named in words rather than by id", () => {
+    const draft = [...RUN_28_DRAFT, press(20), press(21), press(22)];
+    const claims = [{ action: "switch store", step: "d5" }, { action: "add towels", step: "d12" }, { action: "add napkins", step: "d15" }, { action: "choose the 12 Double Rolls size", step: "d20" }, { action: "set quantity to two", step: "d21" }, { action: "choose the 250 Count size", step: "d22" }];
+    expect(check(draft, claims).ok).toBe(true);
+  });
+
+  it("lets the add step answer a choice only where its own input sets it", () => {
+    const addWith = (quantity: string) => step(12, { actionId: "shop.add", input: { node: "shop.add", parameters: { amount: quantity, option: "12 Double Rolls" } } });
+    const withInput = (quantity: string) => RUN_28_DRAFT.map((each) => each.position === 12 ? addWith(quantity) : each);
+    const claims = [...RUN_28_CLAIMS, { action: "a2.quantity", step: "d12" }, { action: "a2.size", step: "d12" }, { action: "a3.size", step: "d20" }];
+    expect(check([...withInput("2"), press(20)], claims).ok).toBe(true);
+    const wrong = check([...withInput("3"), press(20)], claims);
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.missing.map((missing) => [missing.id, missing.reason])).toEqual([["a2.quantity", "choice_is_the_act_step"]]);
+  });
+
+  it("asks for no choice where the instruction names none, and says nothing about choosing", () => {
+    const plain = checkAutomationStudioInstructedActs({ instructionText: "Add one pack of the paper towels to my cart.", result: { summary: "x", acts: [{ action: "a1", step: "d2" }] }, draftSteps: [press(2)] });
+    expect(plain.ok).toBe(true);
+    expect(plain.acts[0]).not.toHaveProperty("requires");
+    const tables = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x" }, draftSteps: HALF_A_JOB });
+    if (!tables.ok) expect(tables.instruction).not.toContain("set the quantity");
   });
 });

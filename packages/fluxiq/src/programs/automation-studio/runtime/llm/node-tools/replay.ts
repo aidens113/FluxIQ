@@ -10,6 +10,10 @@
 //   { replay: "step", ...ranWith }   run this step again with exactly what the
 //                                    Flow will run it with, and say whether it
 //                                    reproduced `produced`.
+//   { replay: "verify", ...ranWith } check this step could run now, and run
+//                                    nothing: its effect lasts, and a dry run
+//                                    never repeats a lasting effect
+//                                    (`../../flow-draft/verify-only.ts`).
 //
 // **Why the executor rather than a seam of its own.** Everything a replay needs
 // is already on that path and already right there: the permission gate wraps
@@ -32,13 +36,17 @@
 // happened, in the caller's own words, belongs in the evidence beside it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftReplayStatus, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
+  type AutomationStudioFlowDraftReplayStatus,
+  type AutomationStudioFlowDraftStep
+} from "../../flow-draft/index.ts";
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KEY = "replay";
 
 /** What one replay call asks for. */
-export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step"] as const;
+export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step", "verify"] as const;
 
 export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPLAY_KINDS)[number];
 
@@ -46,6 +54,11 @@ export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPL
 export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   /** It ran, and produced what it produced before. */
   replayed: "core.replay.replayed",
+  /**
+   * Asked to verify, it could run now and was not run: the target is there and
+   * would take the action, or the effect is already in place.
+   */
+  verified: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
   /** It did not run. */
   failed: "core.replay.failed",
   /** It ran and produced nothing where it had produced something. */
@@ -58,6 +71,9 @@ export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
 
 const STATUS_BY_CODE: Readonly<Record<string, AutomationStudioFlowDraftReplayStatus>> = Object.freeze({
   [AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed]: "replayed",
+  // A verified step passes the dry run as a replayed one does; the outcome's
+  // `mode` and code are what tell a reader it was only checked.
+  [AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.verified]: "replayed",
   [AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.failed]: "failed",
   [AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.changed]: "changed",
   [AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.unreproducible]: "unreproducible"
@@ -85,6 +101,19 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
     ...(step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
   };
+}
+
+/**
+ * The call that checks one step without running it.
+ *
+ * The same argument the step would run with, so the host resolves the same
+ * target the Flow would act on, and no `produced`: nothing is run, so there is
+ * nothing to compare.
+ */
+export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep): JsonObject | undefined {
+  const ranWith = step.ranWith;
+  if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
+  return { ...ranWith, [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify" };
 }
 
 /** Which tool a step's replay is sent to: the one that ran it. */
