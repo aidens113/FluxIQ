@@ -16,6 +16,8 @@ export type ProblemsCurrentObject = {
 
 export type ProblemsViewHostModel = {
   projectId?: string | null;
+  /** The running FluxIQ's version, for "Report problem" (`diagnostic-report.ts`). */
+  fluxiqVersion?: string;
   problems: readonly AutomationProblemSource[];
   currentObject?: ProblemsCurrentObject | null;
   currentObjectId?: string | null;

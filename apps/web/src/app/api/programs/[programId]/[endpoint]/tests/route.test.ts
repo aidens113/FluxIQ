@@ -37,6 +37,15 @@ const ALLOWLISTED = [
   "answer-ask",
   "list-runtime-sessions",
   "cancel-runtime-session",
+  "list-flow-summaries",
+  "list-flow-runs",
+  "get-flow-run-detail",
+  "list-flow-adaptations",
+  "export-run-dataset",
+  "run-runtime-session",
+  "generate-recording-proposal",
+  "review-recording-flow-proposal",
+  "remove-recording-entry",
 ];
 
 const CLASSIFICATIONS: Record<string, string> = {
@@ -47,7 +56,21 @@ const CLASSIFICATIONS: Record<string, string> = {
   "answer-ask": "authoring",
   "list-runtime-sessions": "read",
   "cancel-runtime-session": "authoring",
+  "list-flow-summaries": "read",
+  "list-flow-runs": "read",
+  "get-flow-run-detail": "read",
+  "list-flow-adaptations": "read",
+  "export-run-dataset": "read",
+  "run-runtime-session": "authoring",
+  "generate-recording-proposal": "authoring",
+  "review-recording-flow-proposal": "authoring",
+  "remove-recording-entry": "authoring",
 };
+
+/** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */
+function forwardedPayload(endpoint: string, body: Record<string, unknown>) {
+  return endpoint === "run-runtime-session" ? { ...body, adaptiveMode: "no_llm_intervention" } : body;
+}
 
 function params(endpoint: string, programId = "automation-studio") {
   return { params: Promise.resolve({ programId, endpoint }) };
@@ -133,8 +156,10 @@ describe("a paired client's bearer token", () => {
         },
       ],
     });
+    // Every allowlisted endpoint is registered, whether or not the built
+    // `fluxiq` package the endpoint list is read from has caught up with it.
     endpoints.mockReturnValue(
-      Object.values(AUTOMATION_STUDIO_ENDPOINTS).map((endpoint) => ({
+      [...new Set([...Object.values(AUTOMATION_STUDIO_ENDPOINTS), ...ALLOWLISTED])].map((endpoint) => ({
         programId: "automation-studio",
         endpoint,
         permission: "programs.read",
@@ -145,7 +170,8 @@ describe("a paired client's bearer token", () => {
   });
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
-    const response = await POST(tokenRequest(endpoint, { body: { projectId: "project-1" } }), params(endpoint));
+    const body = { projectId: "project-1", flowId: "flow-1" };
+    const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
     expect(authorizeToken).toHaveBeenCalledWith(TOKEN);
@@ -157,9 +183,9 @@ describe("a paired client's bearer token", () => {
         sessionId: "client-gateway:gateway-session-1",
         userId: "user:owner",
         roleId: "role:admin",
-        permissions: ["programs.read", "programs.write", "runtime.control"],
+        permissions: ["programs.read", "programs.write", "flows.write", "runtime.control"],
       },
-      payload: { projectId: "project-1" },
+      payload: forwardedPayload(endpoint, body),
     });
     expect(await response.json()).toEqual({ ok: true, payload: { conversation: { id: "c1" } } });
   });
@@ -257,5 +283,54 @@ describe("a paired client's bearer token", () => {
 
     for (const body of bodies) expect(body).not.toContain(TOKEN);
     expect(JSON.stringify(call.mock.calls)).not.toContain(TOKEN);
+  });
+
+  it("refuses a run body that would reach an LLM, naming the field and never its value, before any handler runs", async () => {
+    const response = await POST(tokenRequest("run-runtime-session", { body: { projectId: "p", flowId: "f", llmExecutionGrantId: "llm-grant:do-not-echo" } }), params("run-runtime-session"));
+
+    expect(response.status).toBe(403);
+    const answer = await response.text();
+    expect(JSON.parse(answer)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry llmExecutionGrantId." });
+    expect(answer).not.toContain("do-not-echo");
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("refuses a run by GET, which names no saved Flow", async () => {
+    const response = await GET(new Request("http://127.0.0.1/api/programs/automation-studio/run-runtime-session", { headers: { authorization: `Bearer ${TOKEN}` } }), params("run-runtime-session"));
+
+    expect(response.status).toBe(403);
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("refuses an LLM-assisted proposal and a rejecting review", async () => {
+    const proposal = await POST(tokenRequest("generate-recording-proposal", { body: { projectId: "p", recordingId: "r", mode: "llm_assisted" } }), params("generate-recording-proposal"));
+    const review = await POST(tokenRequest("review-recording-flow-proposal", { body: { projectId: "p", proposalId: "x", decision: "rejected" } }), params("review-recording-flow-proposal"));
+
+    expect([proposal.status, review.status]).toEqual([403, 403]);
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("does not narrow a signed-in person's run", async () => {
+    cookieValue = "authenticated-session";
+    validateSession.mockResolvedValue({ user: { id: "user:test" }, role: { id: "role:test", permissions: ["runtime.control"] } });
+    const response = await POST(tokenRequest("run-runtime-session", { body: { projectId: "p", flowId: "f", adaptiveMode: "fully_adaptive" } }), params("run-runtime-session"));
+
+    expect(response.status).toBe(200);
+    expect(call).toHaveBeenCalledWith(expect.objectContaining({ payload: { projectId: "p", flowId: "f", adaptiveMode: "fully_adaptive", authSessionId: "authenticated-session" } }));
+  });
+
+  it("answers the secret-keys snapshot with kind, provider and enabled only", async () => {
+    endpoints.mockReturnValue([{ programId: "secret-keys", endpoint: "snapshot", permission: "programs.read", classification: "read" }]);
+    call.mockResolvedValue({
+      ok: true,
+      payload: { keys: [{ id: "secret:1", name: "Work OpenAI", kind: "llm", provider: "openai", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { hint: "sk-...9" } }] },
+    });
+
+    const response = await GET(new Request("http://127.0.0.1/api/programs/secret-keys/snapshot", { headers: { authorization: `Bearer ${TOKEN}` } }), params("snapshot", "secret-keys"));
+
+    expect(response.status).toBe(200);
+    const answer = await response.text();
+    expect(JSON.parse(answer)).toEqual({ ok: true, payload: { keys: [{ kind: "llm", provider: "openai", enabled: true }] } });
+    for (const leaked of ["secret:1", "Work OpenAI", "sk-...9"]) expect(answer).not.toContain(leaked);
   });
 });

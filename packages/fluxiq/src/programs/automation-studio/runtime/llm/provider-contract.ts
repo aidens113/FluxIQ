@@ -117,8 +117,8 @@ export class AutomationStudioLlmProviderError extends Error {
      * What the provider said, for a caller keeping a local diagnostic.
      *
      * **It is whatever the adapter put here, and by itself it is never
-     * published.** It exists because a 400 is a client error â€” the request was
-     * wrong â€” and the only thing that says *how* is the body the provider sends
+     * published.** It exists because a 400 is a client error — the request was
+     * wrong — and the only thing that says *how* is the body the provider sends
      * back with it. Two live runs died on their first call with an unexplained
      * 400 and this was thrown away unread one line after being in hand.
      *
@@ -139,8 +139,8 @@ export class AutomationStudioLlmProviderError extends Error {
      * adapter and bounded by `refusal-record.ts`.
      *
      * This is the field a refusal should arrive on. It is provider-neutral on
-     * purpose â€” a refusal is a status, what the provider said about it, the
-     * shape of the request it refused, and what was deliberately left out â€” so
+     * purpose — a refusal is a status, what the provider said about it, the
+     * shape of the request it refused, and what was deliberately left out — so
      * no reader downstream has to know which adapter produced it, and no reader
      * has to re-parse a string of unknown shape to find out.
      */
@@ -225,8 +225,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
  *
  * Read from a real `AutomationStudioLlmProviderError` and never from a
  * structurally typed clone, for the same reason `provenance` is: a clone comes
- * from outside this module's guarantees â€” another bundle, a provider's own
- * object, a test double â€” and its `code`, `retryable` and `status` are read
+ * from outside this module's guarantees — another bundle, a provider's own
+ * object, a test double — and its `code`, `retryable` and `status` are read
  * because each is checked against Core's own vocabulary and ranges. A refusal
  * record cannot be checked that way. It carries the provider's sentence, and
  * the one thing that makes that sentence publishable is that the adapter which

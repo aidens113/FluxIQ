@@ -1,25 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { COMMAND_ANSWER_MARGIN_MS } from "../client-gateway/service/index.ts";
-import type { JsonObject } from "../core/index.ts";
-import {
-  FLUXIQ_RUNTIME_WITHHELD_VALUE,
-  type FluxIQRuntimeAdapter,
-  type FluxIQRuntimeCapability,
-  type FluxIQRuntimeClient,
-  type FluxIQRuntimeCommand,
-  type FluxIQRuntimeCommandAttempt,
-  type FluxIQRuntimeCommandAttemptResult,
-  type FluxIQRuntimeCommandResult,
-  type FluxIQRuntimeDispatchContext,
-  type FluxIQRuntimeEvent,
-  type FluxIQRuntimeEventHandler,
-  type FluxIQRuntimeRun,
-  type FluxIQRuntimeSnapshot,
-  type FluxIQRuntimeTransport,
-  type FluxIQRuntimeWithheldValues
+import type {
+  FluxIQRuntimeAdapter,
+  FluxIQRuntimeCapability,
+  FluxIQRuntimeClient,
+  FluxIQRuntimeCommand,
+  FluxIQRuntimeCommandAttempt,
+  FluxIQRuntimeCommandResult,
+  FluxIQRuntimeDispatchContext,
+  FluxIQRuntimeEvent,
+  FluxIQRuntimeEventHandler,
+  FluxIQRuntimeRun,
+  FluxIQRuntimeSnapshot,
+  FluxIQRuntimeTransport
 } from "./contracts.ts";
+import { type WithheldLookup, withheldCommand, withheldLookup, withheldResult } from "./attempt-withholding.ts";
 import type { RuntimeStore } from "./storage.ts";
-import { fluxiqRuntimeTextWithholding } from "./text-withholding.ts";
 
 export type RuntimeServiceOptions = {
   runtimeId?: string;
@@ -396,60 +392,6 @@ function rejectedResult(commandId: string, message: string, completedAt: number)
 
 function cancelledResult(commandId: string, completedAt: number): FluxIQRuntimeCommandResult {
   return { commandId, status: "cancelled", completedAt, message: "Runtime command cancelled.", error: "Runtime command cancelled." };
-}
-
-/**
- * How deep the parameter walk descends before it withholds a subtree whole. The
- * only caller that withholds resolves bindings no deeper than 16 levels, so this
- * is headroom; a command that reached it would be pathological.
- */
-const MAXIMUM_WITHHOLDING_DEPTH = 64;
-
-type WithheldLookup = { text: (text: string) => string; numbers: Set<number> };
-
-/**
- * A caller's withheld values, ready to look up, or `null` when there is nothing
- * to withhold. Texts follow the one rule `fluxiqRuntimeTextWithholding` holds,
- * which Automation Studio's run traces share.
- */
-function withheldLookup(values: FluxIQRuntimeWithheldValues | undefined): WithheldLookup | null {
-  const texts = (values?.texts ?? []).filter((text) => text.length > 0);
-  const numbers = new Set((values?.numbers ?? []).filter((value) => Number.isFinite(value)));
-  return texts.length || numbers.size ? { text: fluxiqRuntimeTextWithholding(texts), numbers } : null;
-}
-
-/**
- * The attempt's copy of a command. Every withheld value in its parameters is
- * replaced in place, keeping every key and every other value; the command's own
- * structure -- kind, ids, timeout -- is not a value a caller supplied.
- */
-function withheldCommand(command: FluxIQRuntimeCommand & { commandId: string }, withheld: WithheldLookup | null): FluxIQRuntimeCommand & { commandId: string } {
-  if (!withheld || !command.parameters) return command;
-  return { ...command, parameters: withheldJson(command.parameters, withheld, 0) as JsonObject };
-}
-
-/**
- * The attempt's copy of a result: every withheld text replaced inside the prose
- * an adapter or client wrote, and the payload replaced whole when the caller
- * withheld it. A result with no payload gains none.
- */
-function withheldResult(result: FluxIQRuntimeCommandResult, withheld: WithheldLookup | null, withholdPayload: boolean): FluxIQRuntimeCommandAttemptResult {
-  const payloadWithheld = withholdPayload && result.payload !== undefined;
-  if (!withheld && !payloadWithheld) return result;
-  const kept: FluxIQRuntimeCommandAttemptResult = { ...result };
-  if (payloadWithheld) kept.payload = FLUXIQ_RUNTIME_WITHHELD_VALUE;
-  if (withheld && result.message !== undefined) kept.message = withheld.text(result.message);
-  if (withheld && result.error !== undefined) kept.error = withheld.text(result.error);
-  return kept;
-}
-
-function withheldJson(value: unknown, withheld: WithheldLookup, depth: number): unknown {
-  if (typeof value === "string") return withheld.text(value);
-  if (typeof value === "number") return withheld.numbers.has(value) ? FLUXIQ_RUNTIME_WITHHELD_VALUE : value;
-  if (!value || typeof value !== "object") return value;
-  if (depth >= MAXIMUM_WITHHOLDING_DEPTH) return FLUXIQ_RUNTIME_WITHHELD_VALUE;
-  if (Array.isArray(value)) return value.map((item) => withheldJson(item, withheld, depth + 1));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withheldJson(item, withheld, depth + 1)]));
 }
 
 function cloneCommandAttempt(attempt: FluxIQRuntimeCommandAttempt): FluxIQRuntimeCommandAttempt {

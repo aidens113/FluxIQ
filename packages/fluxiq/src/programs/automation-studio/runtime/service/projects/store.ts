@@ -12,6 +12,10 @@ export class AutomationStudioProjectStore {
   readonly indexStore?: ProgramJsonStore<AutomationStudioProjectIndex>;
   private readonly legacyStore?: ProgramJsonStore<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProjectRecord[] }>;
   private storageReady?: Promise<void>;
+  // A service with no storage root keeps its project catalogue here, for its
+  // own lifetime. Without it every write was answered and then forgotten, so a
+  // project created on the default service could not be found the next moment.
+  private memoryIndex: AutomationStudioProjectIndex = { categories: [], projects: [] };
 
   constructor(private readonly paths: AutomationStudioProjectPaths, legacyDataDir?: string) {
     if (this.paths.root) this.indexStore = new ProgramJsonStore(path.join(this.paths.root, "index.json"), () => ({ categories: [], projects: [] }));
@@ -20,13 +24,17 @@ export class AutomationStudioProjectStore {
 
   async readProjectIndex(): Promise<AutomationStudioProjectIndex> {
     await this.ensureStorageReady();
-    const state = this.indexStore ? await this.indexStore.read() : { categories: [], projects: [] };
+    const state = this.indexStore ? await this.indexStore.read() : structuredClone(this.memoryIndex);
     return { categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] };
   }
 
   async writeProjectIndex(mutator: (state: AutomationStudioProjectIndex) => AutomationStudioProjectIndex): Promise<AutomationStudioProjectIndex> {
     await this.ensureStorageReady();
-    if (!this.indexStore) return mutator({ categories: [], projects: [] });
+    if (!this.indexStore) {
+      const next = mutator({ categories: normalizeProjectCategories(this.memoryIndex.categories ?? []), projects: structuredClone(this.memoryIndex.projects ?? []) });
+      this.memoryIndex = structuredClone(next);
+      return next;
+    }
     return await this.indexStore.update((state) => mutator({ categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] }));
   }
 
