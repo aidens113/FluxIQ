@@ -141,7 +141,7 @@ describe("what the projection admits", () => {
   });
 
   it("keeps every pagination stop word, and renames one it does not know rather than dropping the read", () => {
-    const words = ["control_absent", "control_disabled", "no_following_page", "scrolled_to_end", "list_vanished", "page_limit", "item_limit", "deadline", "list_unchanged", "page_repeated", "control_not_clickable", "page_fault"];
+    const words = ["control_absent", "control_disabled", "no_following_page", "scrolled_to_end", "list_vanished", "page_limit", "item_limit", "deadline", "rate_limited", "list_unchanged", "page_repeated", "control_not_clickable", "page_fault"];
     for (const paginationStop of words) {
       expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop } } })).toEqual({ ...READ, paginationStop });
     }

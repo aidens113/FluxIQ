@@ -419,9 +419,16 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     // is carried into the verdict so the run says what went wrong.
     return { outcome: unreadableResult(error), interventions: [] };
   }
+  // Read before the summary, not only for the model's call: its recorded
+  // attempts carry each list read's own account of itself -- pages, why paging
+  // stopped, what each condition rejected -- and a summary without them told
+  // `run-munq5s8x-6d620cdf`'s judge "8 records stored" of a read that had
+  // already paged and filtered, so it advised adding both.
+  const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
     ...(input.flow ? { flowNodes: input.flow.nodes } : {}),
+    ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;
@@ -439,7 +446,6 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const instructionDigest = automationStudioFlowInstructionDigest(instructions);
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
-  const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   return withResult(await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
@@ -456,6 +462,25 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   }), instructionDigest);
+}
+
+/**
+ * The recorded attempts this session made, and no other.
+ *
+ * A re-run keeps its run's id, so the record read by that id can still hold the
+ * attempts of the run it repaired; a read account taken from one of those would
+ * describe the Flow that was just replaced. The session's own trace names its
+ * attempts. A session with no trace at all has nothing to tell them apart by,
+ * and its record is taken as it stands.
+ */
+function attemptsOfThisSession(
+  attempts: NonNullable<AutomationStudioFlowRunDetail["actionAttempts"]>,
+  session: AutomationStudioRuntimeSession
+): NonNullable<AutomationStudioFlowRunDetail["actionAttempts"]> {
+  const traced = session.trace?.attempts;
+  if (!traced) return attempts;
+  const ids = new Set(traced.map((attempt) => attempt.attemptId));
+  return attempts.filter((attempt) => ids.has(attempt.attemptId));
 }
 
 /**

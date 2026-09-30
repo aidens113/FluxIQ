@@ -79,6 +79,33 @@ describe("a step the Flow does not always take", () => {
     ]));
   });
 
+  it("joins at the Merge already written after an optional step rather than adding a second", () => {
+    // A Flow read back as a draft carries its own join as the step after the
+    // optional one (`llm/node-tools/draft-from-flow.ts`, run-munq5s8x-6d620cdf).
+    const withJoin = (draftStep: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftWrittenStep | undefined =>
+      draftStep.actionId === "join" ? { description: "the paths meet here", node: "builtin.control.merge" } : write(draftStep);
+    const assembled = assembleAutomationStudioFlowDraftPlan({
+      steps: [
+        step(1, "press", { target: "#soft-check" }, { kind: "optional" }),
+        step(2, "join", {}),
+        step(3, "press", { target: "#search-submit" })
+      ],
+      write: withJoin, registry, resolution, summary: "Collect the first page of results"
+    });
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.plan?.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual([
+      "web.output.dom-click", "builtin.control.merge", "web.output.dom-click"
+    ]);
+    expect(wiring(assembled.plan!)).toEqual(expect.arrayContaining([
+      "web.output.dom-click:failed -> builtin.control.merge:in",
+      "web.output.dom-click:success -> builtin.control.merge:branches"
+    ]));
+    // The join is the draft's own step, so it is traced back to it (the
+    // presses are written here by alias, which that trace does not count).
+    expect(assembled.draftStepIdByNodeKey).toEqual({ s2: "d2" });
+  });
+
   it("runs a guarded step only when the check before it succeeded", () => {
     const assembled = assemble([
       step(1, "look", { target: "#consent" }),

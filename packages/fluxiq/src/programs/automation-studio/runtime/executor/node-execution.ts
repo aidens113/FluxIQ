@@ -347,8 +347,10 @@ function iterationFor(runState: AutomationStudioRunState, nodeId: string): NonNu
 // The child run a Call Flow attempt starts keys its record batches under this
 // attempt, so they never share a key with the parent's or with another
 // invocation's.
+/** A child Flow numbers its own attempts from one: the parent's prior count describes the parent's run, not the child's. */
 function callFlowChildOptions(options: AutomationStudioGraphExecutionOptions, attemptId: string): AutomationStudioGraphExecutionOptions {
-  return { ...options, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
+  const { priorAttemptCount: _parentPriorAttemptCount, ...childBase } = options;
+  return { ...childBase, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
 }
 
 type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];

@@ -36,6 +36,16 @@
 // appended afterwards in document order rather than dropped: a step that exists
 // and is missing from the draft is exactly the failure the draft was built to
 // make impossible.
+//
+// **Routing is the Flow's own too.** A step the Flow runs only when it can --
+// the store's one-time "Continue shopping" check, a consent banner -- is a node
+// whose `failed` and `success` both lead into the same Merge. The seed used to
+// read that node back as a plain step, so the re-authored Flow ran it
+// unconditionally and stopped on it the first time the page did not show it
+// (`run-munq5s8x-6d620cdf`, s4). So a node wired that way is seeded `optional`,
+// exactly as the build's own draft said it, and the Merge it joins at is kept
+// as the step after it, which `flow-bootstrap/authoring/draft-routing.ts`
+// joins at rather than adding a second.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -51,6 +61,9 @@ import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
  * as a step would ask the model to keep a node the assembler will not emit.
  */
 const DERIVED_CONTROL_NODES = new Set(["builtin.control.start", "builtin.control.end"]);
+
+/** The join a Flow's optional step leads both of its ways into. */
+const MERGE_NODE_ID = "builtin.control.merge";
 
 /** Where a seeded step's own name starts, kept clear of the `d<n>` the loop mints. */
 const SEED_STEP_ID_PREFIX = "f";
@@ -88,6 +101,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
 }): AutomationStudioFlowDraftFlowSeed {
   const authored = input.nodes.filter((node) => !DERIVED_CONTROL_NODES.has(node.definitionId));
   const ordered = orderedNodes(authored, input.edges);
+  const optional = optionalNodeIds(authored, input.edges);
   const steps: AutomationStudioFlowDraftStep[] = [];
   const nodeIdByStepId: Record<string, string> = {};
   for (const node of ordered) {
@@ -107,7 +121,10 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       // written rather than read off the effect for exactly that reason.
       effect: "mutate",
       proposes: true,
-      disposition: "kept"
+      disposition: "kept",
+      // What the Flow already says about when this node runs. Without it the
+      // re-authored Flow would run it unconditionally.
+      ...(optional.has(node.id) ? { routing: { kind: "optional" as const } } : {})
     });
     nodeIdByStepId[id] = node.id;
   }
@@ -140,6 +157,30 @@ export function automationStudioFlowDraftPlanNodeIds(input: {
     if (nodeId !== undefined) nodeIdByKey[`s${index + 1}`] = nodeId;
   }
   return nodeIdByKey;
+}
+
+/**
+ * The nodes the Flow carries on past when they fail: both the node's `failed`
+ * and its `success` lead into the same Merge, which is the shape an `optional`
+ * step is assembled into (`flow-bootstrap/authoring/draft-routing.ts`).
+ *
+ * Both ways are required. A node whose failure alone goes to a Merge is a check
+ * guarding the step it falls into, or a step recovering into another, and
+ * reading either as optional would run a step the Flow means to skip.
+ */
+function optionalNodeIds(
+  nodes: readonly AutomationStudioFlowNode[],
+  edges: readonly AutomationStudioFlowEdge[]
+): ReadonlySet<string> {
+  const merges = new Set(nodes.filter((node) => node.definitionId === MERGE_NODE_ID).map((node) => node.id));
+  const leadsInto = (source: string, port: string, merge: string): boolean => edges.some((edge) =>
+    edge.sourceNodeId === source && (edge.sourcePortId ?? "success") === port && edge.targetNodeId === merge);
+  const optional = new Set<string>();
+  for (const edge of edges) {
+    if (edge.sourcePortId !== "failed" || !merges.has(edge.targetNodeId) || merges.has(edge.sourceNodeId)) continue;
+    if (leadsInto(edge.sourceNodeId, "success", edge.targetNodeId)) optional.add(edge.sourceNodeId);
+  }
+  return optional;
 }
 
 /**

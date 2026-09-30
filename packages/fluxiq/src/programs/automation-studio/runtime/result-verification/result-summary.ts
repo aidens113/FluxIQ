@@ -49,7 +49,7 @@
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioFlowNode } from "../../model/index.ts";
+import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../model/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS } from "../loop-limits/index.ts";
 // Re-exported from the module that applies every one of these bounds, so a
@@ -62,6 +62,7 @@ import type {
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
 } from "./contracts.ts";
+import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 
 /** Stands in, in a sampled row, for a value too deep or too long to carry. */
 const WITHHELD_VALUE = "[withheld]";
@@ -88,6 +89,11 @@ export type AutomationStudioRunResultSummaryInput = {
   recordSets: readonly AutomationStudioResultRecordSetInput[];
   /** The Flow's authored nodes, in order: the shape of what it can do at all. */
   flowNodes?: readonly AutomationStudioFlowNode[];
+  /**
+   * The run's recorded attempts, for how each list read went
+   * (`read-account/`). Absent, the summary carries no reads.
+   */
+  actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   /**
    * The bound domain's declared denied keys, exactly as declared. Absent means
    * no declaration was made, and no row is sampled at all.
@@ -119,6 +125,8 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const flowNodes = input.flowNodes ?? [];
   const flowShape = flowNodes.slice(0, limits.maxSteps).map(namedStep);
   if (flowNodes.length > flowShape.length) withheld = true;
+  const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys });
+  if (accounted.withheld) withheld = true;
   const summary: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount,
@@ -126,10 +134,11 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     totalRowsMissingRequired: recordSets.reduce((total, set) => total + set.rowsMissingRequired, 0),
     recordSetCount: input.recordSets.length,
     recordSets,
+    ...(accounted.reads.length ? { reads: accounted.reads } : {}),
     flowShape,
     withheld
   };
-  const bounded = withinByteBudget(summary) ? summary : { ...summary, recordSets: recordSets.map(withoutSample), withheld: true };
+  const bounded = fittedToBudget(summary);
   // Spent last, out of whatever the rest of the summary left. The sample is the
   // data the judgement is about and keeps its priority; the parameters say what
   // the Flow did to produce it and take the remainder, step by step, until the
@@ -137,6 +146,38 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   // evidence in, for the same reason: a slot that can only have what is left has
   // to be filled after the slots that cannot.
   return withParameters(bounded, flowNodes, input.deniedEvidenceKeys);
+}
+
+/**
+ * The summary cut to its byte budget, in the order its parts matter least.
+ *
+ * The row sample goes first, as it always has. Then the step list, from the
+ * end, sparing the steps a read speaks for, and only then the wording of the
+ * reads' conditions -- their counts stay -- and last the reads themselves.
+ * `run-munq5s8x-6d620cdf` is the order's reason: the judge of an extraction that
+ * already followed five pages and filtered on four conditions was shown a list
+ * of definition ids with the parameters cut, advised adding the paging and the
+ * filter the step already had, and the re-author was told the same. A step's
+ * name says only that it exists; its read says what it did.
+ */
+function fittedToBudget(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
+  if (withinByteBudget(summary)) return summary;
+  let fitted: AutomationStudioRunResultSummary = { ...summary, recordSets: summary.recordSets.map(withoutSample), withheld: true };
+  const spoken = new Set((summary.reads ?? []).map((read) => read.nodeId));
+  const flowShape = [...fitted.flowShape];
+  for (let index = flowShape.length - 1; index >= 0 && !withinByteBudget({ ...fitted, flowShape }); index -= 1) {
+    if (!spoken.has(flowShape[index]!.nodeId)) flowShape.splice(index, 1);
+  }
+  fitted = { ...fitted, flowShape };
+  const reads = [...(fitted.reads ?? [])];
+  for (let index = reads.length - 1; index >= 0 && !withinByteBudget({ ...fitted, reads }); index -= 1) {
+    const read = reads[index]!;
+    reads[index] = { ...read, ...(read.conditions ? { conditions: read.conditions.map((condition) => condition.rejected !== undefined ? { rejected: condition.rejected } : {}) } : {}) };
+  }
+  if (reads.length) fitted = { ...fitted, reads };
+  if (withinByteBudget(fitted)) return fitted;
+  const { reads: _reads, ...withoutReads } = fitted;
+  return withoutReads;
 }
 
 /** One step, with the name the Flow gave it. Parameters are added later, if there is room. */

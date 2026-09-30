@@ -113,7 +113,9 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const retryTrace = await runCanonicalAutomationStudioFlow(
     updatedFlow,
     await input.ports.listPublishedFlowSnapshots(),
-    { ...(input.graphOptions ?? {}), ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
+    // Numbered after the first pass's attempts: the re-run is kept under the
+    // same run id, and an attempt id it repeated would be dropped by the store.
+    { ...(input.graphOptions ?? {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
     await input.ports.deprecatedPublicationIds()
   );
   const retrySession: AutomationStudioRuntimeSession = {

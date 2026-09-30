@@ -31,6 +31,10 @@
 // catalog entry the model is already shown supplies the names.
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
+// The read-account barrel and not the result-verification one: the value edge
+// to that barrel would close a cycle, because `result-verification/run-outcome.ts`
+// already calls into this directory (`reauthor.ts` says the same of its code).
+import { automationStudioResultReadSentence } from "../../result-verification/read-account/index.ts";
 import type { AutomationStudioResultRepairHistoryEntry } from "./history.ts";
 import { automationStudioResultRepairUnchangedInARow } from "./history.ts";
 
@@ -68,7 +72,7 @@ export function automationStudioReauthorBrief(input: {
     "What to do:",
     "1. Read the request clause by clause. For every clause that narrows the answer -- which items to keep or drop (by a value, a range, a word or a pattern), how many pages or items to read, which order to put them in, or that an item may appear only once -- put it into the parameters of the step that reads the items, using the parameters that step's catalog entry lists (a condition list, a pagination setting, a limit). Leaving a clause out to be narrowed later is no longer right: this repair is the later.",
     "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
-    "3. Act on the check's findings and advice above. Where the advice names a fix, make it.",
+    "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. A condition that rejected rows the request wanted is the one to correct.",
     "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
     "5. Change only what the findings require; keep the steps that reach the page as they are unless the findings say they are wrong."
   ];
@@ -92,6 +96,9 @@ export function automationStudioReauthorBrief(input: {
 function refutationLines(entry: AutomationStudioResultRepairHistoryEntry): string[] {
   const lines = [`- Core's verdict: ${entry.reason}`, `- Stored: ${producedText(entry)}.`];
   if (entry.step) lines.push(`- The rows came out of step ${entry.step.nodeId} (${entry.step.definitionId})${entry.step.parameters ? `, authored with parameters ${entry.step.parameters}` : ""}.`);
+  // How the read went, before anyone's advice: advice written without it once
+  // asked for a paging loop and a filter around a step that already had both.
+  for (const read of entry.reads ?? []) lines.push(`- How the read went: ${automationStudioResultReadSentence(read, "full")}`);
   for (const line of entry.directive?.fix ?? []) lines.push(`- Core's fix: ${line}`);
   const judgement = entry.directive?.judgement;
   if (judgement?.expected) lines.push(`- The check read the request as asking for: ${judgement.expected}`);

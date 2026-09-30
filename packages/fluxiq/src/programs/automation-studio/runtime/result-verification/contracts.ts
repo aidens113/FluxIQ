@@ -131,6 +131,59 @@ export type AutomationStudioResultFlowStepSummary = {
 };
 
 /**
+ * How one read of a list went, as the judgement and the repair read it.
+ *
+ * **Why it exists.** `run-munq5s8x-6d620cdf`: the Flow's extraction followed
+ * five pages, filtered on four conditions and kept one row per link, and the
+ * check refuted its eight rows -- correctly -- then advised "add a pagination
+ * loop ... and a filter/dedup step", every part of which the step already had.
+ * It had been told "8 records stored" and a list of definition ids; the step's
+ * parameters had been cut to fit the call. The re-author was told the same. So
+ * neither could see that the read already paged, nor which of its conditions
+ * rejected the rows the request wanted.
+ *
+ * Two sources, joined by node id. The counts are the read's own account of
+ * itself, which the run record already holds (`service/summaries/
+ * extraction-summary.ts` admits it on the attempt as `metadata.extraction`);
+ * the conditions, the paging and the dedupe key are what the Flow authored the
+ * step with. Counts, closed words, column ids and the model's own condition
+ * wording -- no locator and no page value.
+ */
+export type AutomationStudioResultReadAccount = {
+  nodeId: string;
+  definitionId: string;
+  /** Pages the read covered, the first included. */
+  pagesRead: number;
+  /** The most pages (or loads) the step was authored to read, when it pages and says. */
+  pageLimit?: number;
+  /** Why paging stopped: the read's own closed word (`page_limit`, `control_absent`, `rate_limited`, ...). Absent when it did not say. */
+  stop?: string;
+  /** True when a cap cut the read short. */
+  truncated: boolean;
+  /** Items the read looked at before its conditions, when it counted them. */
+  itemsSeen?: number;
+  /** Rows the read kept. */
+  kept: number;
+  /** Whether the step is authored to follow pages. Absent when its authored parameters were not in reach. */
+  paginates?: boolean;
+  /** Whether the step is authored to keep one row per key. Absent when its authored parameters were not in reach. */
+  dedupes?: boolean;
+  /** The column ids a row is identified by, when the step names them. */
+  dedupeBy?: string[];
+  /**
+   * The step's conditions, in authored order, each with the rows it rejected
+   * across the whole read. A row can fail more than one, so the counts need not
+   * add up to what was dropped. `condition` is absent where the wording could
+   * not be carried; the count still is.
+   */
+  conditions?: Array<{ condition?: string; rejected?: number }>;
+  /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
+  unfiltered?: boolean;
+  /** How many attempts of this step reported a read. Absent when one did; the account is the last one's. */
+  attempts?: number;
+};
+
+/**
  * The bounded account of what a run produced, and of the shape of the Flow that
  * produced it.
  *
@@ -151,6 +204,13 @@ export type AutomationStudioRunResultSummary = {
   /** Record sets the run stored, including the ones not summarized. */
   recordSetCount: number;
   recordSets: AutomationStudioResultRecordSetSummary[];
+  /**
+   * How each list read went: pages, why paging stopped, items seen and kept,
+   * and what each of its conditions rejected. Kept ahead of the step list and
+   * the steps' parameters when the byte budget is short, because it is the one
+   * part that says what the steps actually did. Absent when no step reported a read.
+   */
+  reads?: AutomationStudioResultReadAccount[];
   /** The steps the Flow is built from, in authored order: what it can do at all. */
   flowShape: AutomationStudioResultFlowStepSummary[];
   /**
@@ -164,7 +224,7 @@ export type AutomationStudioRunResultSummary = {
    * cannot tell them apart.
    */
   flowParametersWithheld?: boolean;
-  /** True when a record set, a row sample, a column list or the Flow shape was cut to fit. */
+  /** True when a record set, a row sample, a column list, a read's condition wording or the Flow shape was cut to fit. */
   withheld: boolean;
 };
 

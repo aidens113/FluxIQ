@@ -92,6 +92,8 @@ const PAGINATION_STOPS = new Set([
   "page_limit",
   "item_limit",
   "deadline",
+  // A 429 or 503 the read waited out and was refused again (the extension's refused-page retry).
+  "rate_limited",
   "list_unchanged",
   "page_repeated",
   "control_not_clickable",
