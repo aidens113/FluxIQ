@@ -6,6 +6,8 @@ import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResu
 import { resolveAutomationStudioLlmInstructions } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID, automationStudioReauthorBrief } from "../brief.ts";
 import { automationStudioResultRepairHistoryEntry } from "../history.ts";
+import { automationStudioResultReadAccounts } from "../../../result-verification/read-account/index.ts";
+import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "../../../result-verification/read-account/tests/earbuds-read.ts";
 
 const ADVICE = "Fix the title field so it holds the item's text rather than its address, and add filtering, dedupe and sort.";
 
@@ -56,6 +58,22 @@ describe("the repair brief", () => {
   it("does not claim an unchanged answer for an attempt that changed it", () => {
     const brief = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: entry(2, "Senior Engineer"), history: [entry(1)], maxAttempts: 3, now: 5 });
     expect(brief.body).not.toContain("exactly the same answer");
+  });
+
+  it("says how the read went: its pages, its stop, and the rows each of its conditions rejected", () => {
+    // run-munq5s8x-6d620cdf: the re-author was told "8 records stored" of a read
+    // that had paged five times and filtered on four conditions, while the step's
+    // own parameters had been cut for room. It could not know which condition
+    // dropped the true earbuds, nor that paging already existed.
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    const refuted = automationStudioResultRepairHistoryEntry({ attempt: 1, outcome, summary: { ...summary(), reads }, nodeId: "node.s3" });
+    const brief = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: refuted, history: [], maxAttempts: 3, now: 5 });
+    expect(brief.body).toContain(`How the read went: Step ${EARBUDS_NODE_ID} read 5 pages of at most 5, paging stopped on page_limit and kept 8 of 56 items seen.`);
+    expect(brief.body).toContain("It already follows pages");
+    expect(brief.body).toContain("It already keeps one row per url.");
+    expect(brief.body).toContain("attribute data-sponsored is absent rejected 13 rows; rating atLeast 4 rejected 20 rows; price lessThan 50 rejected 27 rows; name not contains [\"ear tips\", \"charging case\"] rejected 16 rows");
+    expect(brief.body).toContain("change that setting or condition in place instead of adding a step for it");
+    for (const locator of EARBUDS_LOCATORS) expect(brief.body).not.toContain(locator);
   });
 
   it("sorts after the person's own instruction and never pushes it out of the budget", () => {

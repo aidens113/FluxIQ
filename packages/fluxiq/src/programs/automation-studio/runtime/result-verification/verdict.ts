@@ -36,6 +36,7 @@ import {
   type AutomationStudioRunResultSummary
 } from "./contracts.ts";
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
+import { automationStudioResultReadSentence } from "./read-account/index.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
 
 /**
@@ -152,7 +153,11 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   const rest = summary.flowShape.length > listed.length ? `, and ${summary.flowShape.length - listed.length} more` : "";
   const shape = listed.length > 0 ? `; the Flow's steps were ${listed.join(", ")}${rest}` : "";
   const cut = summary.withheld ? "; part of the summary was withheld to fit the call" : "";
-  return `${stored}${refused}${sets}${shape}${cut}.`;
+  // How each read went, ahead of the step list: this line becomes the failure
+  // record's bounded `actual`, and a read's pages, stop and rejections are what
+  // a repair acts on, where a definition id only says the step exists.
+  const reads = (summary.reads ?? []).map((read) => `; ${automationStudioResultReadSentence(read, "brief")}`).join("");
+  return `${stored}${refused}${sets}${reads}${shape}${cut}.`;
 }
 
 /**

@@ -320,6 +320,8 @@ export type AutomationStudioRecordBatch = {
 
 export type AutomationStudioGraphExecutionOptions = {
   startNodeId?: string;
+  /** Attempts the run kept before this execution (a repair's re-run, same run id); ids are numbered after them so none repeats, as the store drops a repeated id. */
+  priorAttemptCount?: number;
   inputs?: Record<string, JsonValue>;
   /**
    * The defaults the Flow's declared interface gives its inputs, when the caller

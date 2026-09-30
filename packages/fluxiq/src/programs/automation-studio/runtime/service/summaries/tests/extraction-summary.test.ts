@@ -141,7 +141,7 @@ describe("what the projection admits", () => {
   });
 
   it("keeps every pagination stop word, and renames one it does not know rather than dropping the read", () => {
-    const words = ["control_absent", "control_disabled", "no_following_page", "scrolled_to_end", "list_vanished", "page_limit", "item_limit", "deadline", "list_unchanged", "page_repeated", "control_not_clickable", "page_fault"];
+    const words = ["control_absent", "control_disabled", "no_following_page", "scrolled_to_end", "list_vanished", "page_limit", "item_limit", "deadline", "rate_limited", "list_unchanged", "page_repeated", "control_not_clickable", "page_fault"];
     for (const paginationStop of words) {
       expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, paginationStop } } })).toEqual({ ...READ, paginationStop });
     }
@@ -182,6 +182,18 @@ describe("what the projection admits", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, fieldNames: ["Ships in 2 days"] } } })).toBeUndefined();
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, missingFields: ["discount"] } } })).toBeUndefined();
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, fieldNames: ["__proto__"] } } })).toBeUndefined();
+  });
+
+  it("copies what each condition's own read found, cut to sixty characters, and refuses a malformed list", () => {
+    const counts = { applied: 30, kept: 4, rejected: [26, 2], unfiltered: false };
+    const admitted = (seen: unknown) => extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { ...counts, seen } } } });
+    expect(admitted(["Brightaisle Plus", null])?.conditions).toEqual({ ...counts, seen: ["Brightaisle Plus", null] });
+    expect(admitted(["x".repeat(500), null])?.conditions).toEqual({ ...counts, seen: ["x".repeat(60), null] });
+    // Absent is a producer that predates it, and the report still arrives.
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: counts } } })?.conditions).toEqual(counts);
+    for (const malformed of [["Brightaisle Plus"], ["Brightaisle Plus", 3], [{ label: "Plus" }, null], "Brightaisle Plus", null]) {
+      expect(admitted(malformed), JSON.stringify(malformed)).toBeUndefined();
+    }
   });
 
   it("refuses a condition report that kept more than it looked at, or whose rejections are unbounded", () => {

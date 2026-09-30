@@ -38,6 +38,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
 import type { AutomationStudioLlmTaskResult } from "./harness.ts";
+import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
@@ -90,15 +91,24 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
  * Thrown by a decision callback to say "the provider was asked and its answer
  * cannot be acted on, for a reason another attempt could fix". It carries
  * issue codes only, never a model's words.
+ *
+ * Where the provider's reply arrived and could not be read, it also carries
+ * the reply's account: which malformed case it was, its finish reason, its
+ * length and what it cost (`./reply-account.ts`). One code for seven
+ * cases is what left 14 refused decisions of `run-munw7ffn-fe1cecd2`
+ * unexplained; the loop writes this onto the decision's row.
  */
 export class AutomationStudioLlmUnusableDecisionError extends Error {
   readonly name = "AutomationStudioLlmUnusableDecisionError";
   readonly issueCodes: readonly string[];
+  readonly reply?: AutomationStudioLlmProviderReplyAccount;
 
-  constructor(issueCodes: readonly string[]) {
+  constructor(issueCodes: readonly string[], reply?: AutomationStudioLlmProviderReplyAccount) {
     const codes = issueCodes.filter((code) => ISSUE_CODE.test(code));
     super(`The decision call returned nothing usable${codes.length ? `: ${codes.join(", ")}` : "."}`);
     this.issueCodes = Object.freeze([...codes]);
+    const account = automationStudioLlmProviderReplyAccount(reply);
+    if (account) this.reply = account;
   }
 }
 
@@ -122,9 +132,9 @@ export function automationStudioLlmTaskResultSpentWithoutDecision(result: Automa
  */
 export function automationStudioLlmUnusableDecisionError(result: AutomationStudioLlmTaskResult): AutomationStudioLlmUnusableDecisionError | undefined {
   if (!automationStudioLlmTaskResultSpentWithoutDecision(result)) return undefined;
-  return new AutomationStudioLlmUnusableDecisionError(result.diagnostics
-    .filter((diagnostic) => diagnostic.severity === "error")
-    .map((diagnostic) => diagnostic.code));
+  const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  const reply = errors.map((diagnostic) => providerReply(diagnostic.metadata)).find((account) => account !== undefined);
+  return new AutomationStudioLlmUnusableDecisionError(errors.map((diagnostic) => diagnostic.code), reply);
 }
 
 /**
@@ -158,6 +168,11 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
  */
 export function automationStudioLlmUnusableDecisionIssueSet(issueCodes: readonly string[]): string {
   return JSON.stringify([...new Set(issueCodes)].sort());
+}
+
+/** The harness's account of a reply it could not read (`./harness/run.ts`), bounded again. */
+function providerReply(metadata: unknown): AutomationStudioLlmProviderReplyAccount | undefined {
+  return metadata && typeof metadata === "object" ? automationStudioLlmProviderReplyAccount((metadata as { providerReply?: unknown }).providerReply) : undefined;
 }
 
 function providerStatus(metadata: unknown): number | undefined {

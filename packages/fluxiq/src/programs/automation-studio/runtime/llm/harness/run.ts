@@ -203,7 +203,10 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
           ...(failure.status !== undefined ? { providerStatus: failure.status } : {}),
           // Metadata, never the diagnostic's message: the message is what an
           // intervention's validation line prints.
-          ...(providerThrow ? { providerThrow } : {})
+          ...(providerThrow ? { providerThrow } : {}),
+          // A reply that arrived and could not be read: which case, its finish
+          // reason, length and cost, never its content (`../reply-account.ts`).
+          ...(failure.reply ? { providerReply: failure.reply } : {})
         }
       },
       // After the failure, never before it, and never as an error. The projection

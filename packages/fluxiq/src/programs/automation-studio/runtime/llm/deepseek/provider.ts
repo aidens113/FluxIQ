@@ -25,7 +25,7 @@ import { buildAutomationStudioDeepSeekRequestBody, estimateAutomationStudioDeepS
 import { automationStudioDeepSeekRequestShape } from "./request-shape.ts";
 import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusal } from "./refusal.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
-import { parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
+import { automationStudioDeepSeekMalformedReply, parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
 
 export const AUTOMATION_STUDIO_DEEPSEEK_ORIGIN = "https://api.deepseek.com";
 export const AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL = `${AUTOMATION_STUDIO_DEEPSEEK_ORIGIN}/chat/completions`;
@@ -157,14 +157,14 @@ async function runDeepSeekTask(input: {
     }
     if (!response.ok) throw await deepSeekRefusalFailure(response, input, body, secret);
     if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
-      throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek returned a non-JSON media type.");
+      throw automationStudioDeepSeekMalformedReply({ case: "media_type" }, "DeepSeek returned a non-JSON media type.");
     }
     const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, input.maxResponseBytes);
     let envelope: unknown;
     try {
       envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
     } catch {
-      throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek returned malformed JSON.");
+      throw automationStudioDeepSeekMalformedReply({ case: "envelope_not_json" }, "DeepSeek returned malformed JSON.");
     }
     return parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model);
   } catch (error) {

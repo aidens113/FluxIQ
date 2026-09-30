@@ -17,6 +17,8 @@
 // port of the step that parts them.
 //
 //   optional    step.failed -> join          step.success -> join
+//               (the join is the step after it when that step is already a
+//               Merge -- a Flow read back as a draft carries its own)
 //   only_if     check.failed -> join         check.success falls into the step
 //   on_failed   step.failed -> the other     step.success -> join
 //   repeat      a Merge at the head of the loop, a Merge at its exit, and the
@@ -109,6 +111,15 @@ export function routeAutomationStudioFlowDraftSteps(input: {
       continue;
     }
     if (routing.kind === "optional") {
+      // A Flow read back as a draft already holds the Merge its optional step
+      // joins at, as the step after it (`llm/node-tools/draft-from-flow.ts`).
+      // Joining there keeps that node, and its id, rather than adding a second
+      // join and leaving the first with one way in.
+      const held = heldJoin(input.steps[index + 1], consumed, input.registry, input.resolution);
+      if (held) {
+        emitted.push({ ...scriptStep(entry, label(id)), branches: [branch("failed", label(held))] });
+        continue;
+      }
       const join = nextDerived("join");
       emitted.push({ ...scriptStep(entry, label(id)), branches: [branch("failed", join)] });
       emitted.push(mergeStep(join, "the paths after an optional step meet here"));
@@ -229,6 +240,22 @@ function repeat(input: {
   }
   emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));
   return undefined;
+}
+
+/**
+ * The id of the step after an optional one when that step is itself a Merge
+ * nothing else routes, which is where the optional step's paths already meet.
+ */
+function heldJoin(
+  next: AutomationStudioFlowDraftRoutedStep | undefined,
+  consumed: ReadonlySet<string>,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): string | undefined {
+  if (!next || next.step.routing !== undefined) return undefined;
+  const id = automationStudioFlowDraftStepId(next.step);
+  if (consumed.has(id)) return undefined;
+  return writtenDefinition(next, registry, resolution)?.id === MERGE_NODE_ID ? id : undefined;
 }
 
 /**

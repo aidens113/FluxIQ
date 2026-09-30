@@ -40,6 +40,7 @@ import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions } from "../../flow-version/index.ts";
 import { canonicalFlowDocument } from "../flows/index.ts";
+import { isTerminalRuntimeSessionStatus, type AutomationStudioRunRecoveryState } from "../runtime-session/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
 import { runtimeRunDetailWithAdaptationContext } from "./context.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
@@ -106,6 +107,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
     if ("declined" in decision) return { declinedCode: decision.declined.notResumableCode };
   }
   const resumeNodeId = decision && !("declined" in decision) ? decision.resume.nodeId : undefined;
+  const rerunStartedAt = Date.now();
   const found = await changedFlow(input);
   if ("declinedCode" in found) return found;
   const updatedFlow = found.flow;
@@ -113,7 +115,9 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const retryTrace = await runCanonicalAutomationStudioFlow(
     updatedFlow,
     await input.ports.listPublishedFlowSnapshots(),
-    { ...(input.graphOptions ?? {}), ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
+    // Numbered after the first pass's attempts: the re-run is kept under the
+    // same run id, and an attempt id it repeated would be dropped by the store.
+    { ...(input.graphOptions ?? {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
     await input.ports.deprecatedPublicationIds()
   );
   const retrySession: AutomationStudioRuntimeSession = {
@@ -181,10 +185,37 @@ export async function rerunAutomationStudioSessionAfterRepair(
         attempted: true,
         status: retryTrace.status,
         attemptCount: retryTrace.attempts.length
-      }
+      },
+      ...rerunRecoveryState(input.detail, retryTrace.status, rerunStartedAt, retryTrace.finishedAt ?? Date.now())
     }
   });
   return { session: retrySession, flow: canonicalFlowDocument(updatedFlow) };
+}
+
+/**
+ * The recovery marker a finished re-run's detail carries
+ * (`metadata.recoveryState`, `runtime-session/recovery-state.ts`).
+ *
+ * A reader of a failed run waits for Core's recovery to say it is over. A
+ * resumed re-run inherits that from the recovery that repaired it: the ladder's
+ * detail already says `ended`, and the carry-forward keeps it. A re-run of a
+ * re-authored Flow inherits nothing, because its first pass succeeded and no
+ * recovery ever ran; its failure then read as a recovery still to come, and the
+ * Lab waited five minutes for a record Core was never going to write
+ * (`run-munw7ffn-fe1cecd2`). Nothing recovers a re-run -- a repaired run is not
+ * repaired again -- so a finished one says its recovery has ended. A marker the
+ * first pass already wrote is kept, since it describes the recovery that ran.
+ */
+function rerunRecoveryState(
+  detail: AutomationStudioFlowRunDetail,
+  status: AutomationStudioRuntimeSession["status"],
+  startedAt: number,
+  endedAt: number
+): { recoveryState?: AutomationStudioRunRecoveryState } {
+  if (!isTerminalRuntimeSessionStatus(status)) return {};
+  const existing = detail.metadata?.recoveryState as { state?: unknown } | undefined;
+  if (existing && typeof existing === "object" && (existing.state === "ended" || existing.state === "threw")) return {};
+  return { recoveryState: { state: "ended", startedAt, endedAt: Math.max(startedAt, endedAt) } };
 }
 
 /**

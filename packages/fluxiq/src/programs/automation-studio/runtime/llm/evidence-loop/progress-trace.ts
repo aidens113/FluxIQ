@@ -131,8 +131,21 @@ function codeOf(value: unknown): string {
   return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,120}$/u.test(value) ? value : "-";
 }
 
+/**
+ * A thrown decision's name, code and issue codes, and for a reply the provider
+ * sent that could not be read, which malformed case it was, its finish reason,
+ * its length and its output tokens (`../reply-account.ts`) -- counts
+ * and codes, never the reply. An unusable decision carries its issue codes on
+ * itself rather than under `diagnostic`, which is why `run-munw7ffn-fe1cecd2`
+ * printed `issues=-` for all 14 of its.
+ */
 function errorCodes(error: unknown): string {
-  const record = (typeof error === "object" && error !== null ? error : {}) as { name?: unknown; code?: unknown; diagnostic?: { code?: unknown; issueCodes?: unknown } };
-  const issues = Array.isArray(record.diagnostic?.issueCodes) ? record.diagnostic.issueCodes.map(codeOf).join(",") : "-";
-  return `name=${codeOf(record.name)} code=${codeOf(record.code ?? record.diagnostic?.code)} issues=${issues}`;
+  const record = (typeof error === "object" && error !== null ? error : {}) as { name?: unknown; code?: unknown; issueCodes?: unknown; reply?: unknown; diagnostic?: { code?: unknown; issueCodes?: unknown } };
+  const listed = Array.isArray(record.issueCodes) ? record.issueCodes : record.diagnostic?.issueCodes;
+  const issues = Array.isArray(listed) && listed.length ? listed.slice(0, MAX_LISTED).map(codeOf).join(",") : "-";
+  const reply = asRecord(record.reply);
+  const replied = reply
+    ? ` reply=${codeOf(reply.case)} finish=${codeOf(reply.finishReason)} chars=${numberOf(reply.contentChars)} out=${numberOf(asRecord(reply.usage)?.outputTokens)}`
+    : "";
+  return `name=${codeOf(record.name)} code=${codeOf(record.code ?? record.diagnostic?.code)} issues=${issues}${replied}`;
 }

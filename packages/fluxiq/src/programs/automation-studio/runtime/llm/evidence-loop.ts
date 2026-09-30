@@ -372,11 +372,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
     iteration: number,
     issueCodes: readonly string[],
     offers: { tools: boolean; complete: boolean; amend: boolean },
-    usage?: AutomationStudioLlmEvidenceLoopTrace["usage"]
+    usage?: AutomationStudioLlmEvidenceLoopTrace["usage"],
+    resultReason?: string
   ): "ask_again" | "evidence_limit" | { error: unknown } => {
     const resultCode = issueCodes[0];
     history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
-    const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(usage ? { usage } : {}) }, issueCodes);
+    const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(resultReason ? { resultReason } : {}), ...(usage ? { usage } : {}) }, issueCodes);
     if (stalled) return stalled;
     // The model is told what was wrong, as evidence, before it is asked again.
     const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers });
@@ -550,7 +551,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
-        const refused = refuseDecision(iteration, thrown.issueCodes, { tools: offered.length > 0, complete: canComplete, amend: canAmend });
+        // A reply that arrived unreadable was still paid for: its cost counts,
+        // and its row says which malformed case it was (`./unusable-decision.ts`).
+        automationStudioLlmEvidenceLoopAddUsage(accounting, thrown.reply?.usage);
+        if (thrown.reply?.usage) reportedDecisions += 1;
+        const refused = refuseDecision(iteration, thrown.issueCodes, { tools: offered.length > 0, complete: canComplete, amend: canAmend }, thrown.reply?.usage, thrown.reply?.case);
         if (refused === "ask_again") continue;
         if (refused === "evidence_limit") return failure(draftSteps, "llm_evidence_loop.evidence_limit", trace, accounting);
         error = refused.error;

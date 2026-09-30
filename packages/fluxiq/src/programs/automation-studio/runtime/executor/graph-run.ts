@@ -379,6 +379,10 @@ async function executeAutomationStudioGraph(
   const now = options.now ?? Date.now;
   const startedAt = seed?.startedAt ?? now();
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
+  // An attempt's id is its node's id and its number in the run. A re-run of the
+  // same run numbers after the attempts its first pass kept, or it would reuse
+  // their ids, and the run store keeps the first record under an id it has seen.
+  const nextAttemptNumber = () => (options.priorAttemptCount ?? 0) + attempts.length + 1;
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are
   // withheld, and a host that supplies them again gets the real ones back.
@@ -449,19 +453,19 @@ async function executeAutomationStudioGraph(
       // The wait ceiling, gated by the state the node expects to find. It never
       // fails the node: an unsatisfied gate is a mark on the attempt, because the
       // recording is evidence the action was possible at that point.
-      const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${attempts.length + 1}`);
+      const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${nextAttemptNumber()}`);
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
       emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
       const executed = remainingMs === undefined
-        ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
+        ? await executeAutomationStudioNode(flow, currentNode, values, options, nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding, runState),
+          (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, nextAttemptNumber(), withholding, runState),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } })
+          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } })
         );
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
@@ -577,7 +581,7 @@ async function executeAutomationStudioGraph(
           consumed: arrival.consumed,
           mayAbsorb,
           executeNode: async (interference) => {
-            const cleared = await executeAutomationStudioNode(flow, interference, values, options, attempts.length + 1, withholding, runState);
+            const cleared = await executeAutomationStudioNode(flow, interference, values, options, nextAttemptNumber(), withholding, runState);
             attempts.push(regionId ? { ...cleared, regionId } : cleared);
             for (const [key, value] of Object.entries(cleared.outputs)) {
               values[`${interference.id}.${key}`] = value;

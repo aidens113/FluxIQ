@@ -7,6 +7,7 @@ import {
   type AutomationStudioLlmUsageSummary
 } from "../harness.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
+import type { AutomationStudioLlmProviderReplyAccount } from "../reply-account.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapSizeLimitsOfContext, parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
@@ -20,17 +21,21 @@ export function parseAutomationStudioDeepSeekEnvelope(
   request: AutomationStudioLlmTaskRequest,
   model: AutomationStudioDeepSeekModel
 ): { response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary } {
-  if (!isRecord(value) || !Array.isArray(value.choices) || value.choices.length !== 1) malformed();
+  // What the reply cost is read before anything can refuse it: a reply Core
+  // cannot use was still paid for, and its account says so.
+  const paid = isRecord(value) ? replyUsage(value.usage, model) : undefined;
+  if (!isRecord(value) || !Array.isArray(value.choices) || value.choices.length !== 1) malformed({ case: "envelope_shape" }, paid);
   const choice = value.choices[0];
-  if (!isRecord(choice) || !isRecord(choice.message) || typeof choice.message.content !== "string") malformed();
+  if (!isRecord(choice) || !isRecord(choice.message)) malformed({ case: "envelope_shape", ...finishReasonOf(choice) }, paid);
+  if (typeof choice.message.content !== "string") malformed({ case: "content_missing", ...finishReasonOf(choice) }, paid);
   if (choice.finish_reason === "length") {
     if (choice.message.content.trim() === "") {
       throw new AutomationStudioLlmProviderError("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.");
     }
     throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.");
   }
-  if (choice.finish_reason !== "stop") malformed();
-  const structured = parseDeepSeekJsonContent(choice.message.content);
+  if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
+  const structured = parseDeepSeekJsonContent(choice.message.content, paid);
   const usage = value.usage;
   if (!isRecord(usage)) usageInvalid();
   const inputTokens = nonNegativeInteger(usage.prompt_tokens);
@@ -104,18 +109,56 @@ function parseDeepSeekStructuredResponse(structured: unknown, request: Automatio
  * not itself parse is still malformed, and the value is fully validated by the
  * caller either way.
  */
-function parseDeepSeekJsonContent(content: string): unknown {
+function parseDeepSeekJsonContent(content: string, paid: AutomationStudioLlmProviderReplyAccount["usage"]): unknown {
   try {
     return JSON.parse(content) as unknown;
   } catch {
     const end = firstTopLevelJsonObjectEnd(content);
-    if (end === undefined || !/^[\s}\]]*$/u.test(content.slice(end))) malformed();
+    const refused: () => never = () => malformed({ case: automationStudioDeepSeekContentCase(content, end), finishReason: "stop", contentChars: content.length }, paid);
+    if (end === undefined || !/^[\s}\]]*$/u.test(content.slice(end))) refused();
     try {
       return JSON.parse(content.slice(0, end)) as unknown;
     } catch {
-      malformed();
+      refused();
     }
   }
+}
+
+/**
+ * Which kind of damage a reply's content has, read from its structure alone:
+ * where its first `{` is, and whether the object that starts there closes
+ * (`../reply-account.ts` names each case). `end` is where the first
+ * complete top-level object ends, as `firstTopLevelJsonObjectEnd` found it.
+ */
+export function automationStudioDeepSeekContentCase(content: string, end: number | undefined): AutomationStudioLlmProviderReplyAccount["case"] {
+  const text = content.trimStart();
+  if (text === "") return "content_empty";
+  if (text.startsWith("```")) return "content_fenced";
+  if (!text.startsWith("{")) return text.includes("{") ? "content_prefixed" : "content_not_object";
+  if (end === undefined) return "content_unclosed";
+  if (!/^[\s}\]]*$/u.test(content.slice(end))) return "content_trailing";
+  return bracketsMismatch(content) ? "content_mismatched" : "content_invalid";
+}
+
+/** Whether a bracket outside a string closes the other kind, or closes nothing. */
+function bracketsMismatch(content: string): boolean {
+  const open: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (const char of content) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{" || char === "[") open.push(char);
+    else if (char === "}" || char === "]") {
+      if (open.pop() !== (char === "}" ? "{" : "[")) return true;
+    }
+  }
+  return false;
 }
 
 /** The index just past the first complete top-level object in `content`, or `undefined` when there is none. */
@@ -145,8 +188,44 @@ function firstTopLevelJsonObjectEnd(content: string): number | undefined {
   return undefined;
 }
 
-function malformed(): never {
-  throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek returned an invalid response envelope.");
+/**
+ * The refusal of a reply Core could not read, carrying which case it was, its
+ * finish reason, its length and what it cost -- never its content. Used by the
+ * adapter's call as well, for the two cases it meets before the envelope.
+ */
+export function automationStudioDeepSeekMalformedReply(reply: AutomationStudioLlmProviderReplyAccount, message = "DeepSeek returned an invalid response envelope."): AutomationStudioLlmProviderError {
+  return new AutomationStudioLlmProviderError("llm.provider_malformed_response", message, false, undefined, undefined, undefined, undefined, reply);
+}
+
+function malformed(reply: AutomationStudioLlmProviderReplyAccount, paid: AutomationStudioLlmProviderReplyAccount["usage"]): never {
+  throw automationStudioDeepSeekMalformedReply({ ...reply, ...(paid ? { usage: paid } : {}) });
+}
+
+/** The provider's finish reason, where it gave a code-shaped one; the account bounds it again. */
+function finishReasonOf(choice: unknown): { finishReason?: string } {
+  const reason = isRecord(choice) ? choice.finish_reason : undefined;
+  return typeof reason === "string" && /^[a-z0-9_.:-]{1,40}$/i.test(reason) ? { finishReason: reason } : {};
+}
+
+/**
+ * What a reply cost, read leniently for the account of one Core refused: the
+ * same figures and price the accepted path computes, or nothing where the
+ * provider's usage does not add up. The accepted path keeps its strict checks.
+ */
+function replyUsage(value: unknown, model: AutomationStudioDeepSeekModel): AutomationStudioLlmProviderReplyAccount["usage"] {
+  if (!isRecord(value)) return undefined;
+  const inputTokens = nonNegativeInteger(value.prompt_tokens);
+  const outputTokens = nonNegativeInteger(value.completion_tokens);
+  const totalTokens = nonNegativeInteger(value.total_tokens);
+  if (inputTokens === undefined || outputTokens === undefined || totalTokens !== inputTokens + outputTokens) return undefined;
+  const cacheHitInputTokens = automationStudioDeepSeekCacheHitInputTokens(value, inputTokens);
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(cacheHitInputTokens === undefined ? {} : { cacheHitInputTokens, cacheMissInputTokens: inputTokens - cacheHitInputTokens }),
+    estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, cacheHitInputTokens ?? 0, model)
+  };
 }
 
 function outputInvalid(): never {

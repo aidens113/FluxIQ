@@ -542,3 +542,41 @@ describe("what the model is told after an unusable reply", () => {
     expect(stalled.mock.calls[0]![0].accounting.evidenceBytes).toBe(0);
   });
 });
+
+// `run-munw7ffn-fe1cecd2`: 14 of 35 re-author decisions were stored as
+// `llm.provider_malformed_response` and nothing more. The reply's account --
+// which malformed case, the finish reason, the length, the cost -- now travels
+// from the harness's diagnostic onto the unusable decision's row, and the call
+// it was paid for counts.
+describe("the account of an unreadable reply on an unusable decision", () => {
+  const usage = { inputTokens: 21_424, outputTokens: 571, totalTokens: 21_995, cacheHitInputTokens: 19_584, cacheMissInputTokens: 1_840, estimatedCostUsd: 0.0012 };
+  const reply = { case: "content_unclosed", finishReason: "stop", contentChars: 2_140, usage } as const;
+
+  it("reads the account off the harness's diagnostic, bounded", () => {
+    const result = failed([{ code: "llm.provider_malformed_response" }]);
+    (result.diagnostics.at(-1) as { metadata?: unknown }).metadata = { retryable: false, providerReply: { ...reply, content: "PRIVATE_PAGE_TEXT" } };
+    const error = automationStudioLlmUnusableDecisionError(result);
+    expect(error?.reply).toEqual(reply);
+    expect(JSON.stringify(error?.reply)).not.toContain("PRIVATE_PAGE_TEXT");
+  });
+
+  it("carries no account where the diagnostic has none, or one that is not an account", () => {
+    expect(automationStudioLlmUnusableDecisionError(failed([{ code: "llm.provider_timeout" }]))?.reply).toBeUndefined();
+    expect(new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "a sentence the model wrote" } as never).reply).toBeUndefined();
+  });
+
+  it("writes the case and the paid usage on the row, and counts the usage", async () => {
+    const decide = vi.fn()
+      .mockRejectedValueOnce(new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], reply))
+      .mockResolvedValueOnce({ ...complete, usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.0001 } });
+
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, minToolCalls: 0,
+      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+    });
+
+    expect(result.trace[0]).toMatchObject({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage });
+    expect(result.accounting).toMatchObject({ inputTokens: 21_524, outputTokens: 581, totalTokens: 22_105 });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.0013, 10);
+  });
+});

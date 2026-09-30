@@ -8,9 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { automationStudioFlowDraftStepIsProposed } from "../../../flow-draft/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
+import { assembleAutomationStudioFlowDraftPlan } from "../../../flow-bootstrap/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../draft-step.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run-node.ts";
 
 function node(id: string, definitionId: string, parameterValues?: Record<string, string>): AutomationStudioFlowNode {
   return { id, definitionId, ...(parameterValues ? { parameterValues } : {}) };
@@ -100,5 +104,94 @@ describe("the plan keys an amended draft maps back to", () => {
     const seed = automationStudioFlowDraftSeedFromFlow(flow());
     const steps = [{ ...seed.steps[0]!, disposition: "dropped" as const }, { ...seed.steps[1]!, position: 1 }];
     expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId })).toEqual({ s1: "node.extract" });
+  });
+});
+
+// `run-munq5s8x-6d620cdf`: the build wired the store's one-time "Continue
+// shopping" press as optional (both ways into a Merge). The re-author seeded
+// the Flow back as a draft with that press as a plain step, so the re-authored
+// Flow ran it unconditionally, and the re-run -- whose session had already
+// passed the check -- stopped on a press the page no longer showed.
+describe("a re-authored Flow keeps the routing it inherited", () => {
+  const MERGE = "builtin.control.merge";
+  const CLICK = "web.output.dom-click";
+  const EXTRACT = "web.output.dom-extract_list";
+  const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...webDomainNodeDefinitionsFixture()]);
+  const extractList = { item: "li.product", fields: { name: ".name", url: "a@href" } };
+
+  /** navigate -> type -> press Go -> press Continue (optional) -> join -> extract, as the build assembled it. */
+  function built(): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    const at = (id: string, definitionId: string, parameterValues: NonNullable<AutomationStudioFlowNode["parameterValues"]>): AutomationStudioFlowNode => ({ id, definitionId, parameterValues });
+    const wire = (id: string, source: string, sourcePortId: string, target: string, targetPortId: string): AutomationStudioFlowEdge =>
+      ({ id, sourceNodeId: source, targetNodeId: target, sourcePortId, targetPortId });
+    return {
+      nodes: [
+        at("node.s1", "web.output.browser-navigate", { url: "https://shop.test/" }),
+        at("node.s2", "web.output.dom-type", { selector: "#search", text: "wireless earbuds" }),
+        at("node.s3", CLICK, { selector: "#go" }),
+        at("node.s4", CLICK, { selector: "[data-testid=\"soft-check\"] > button" }),
+        at("node.s5", MERGE, {}),
+        at("node.s6", EXTRACT, { extractList })
+      ],
+      // In the order the build's graph lists them, failure first.
+      edges: [
+        wire("e1", "node.s4", "failed", "node.s5", "in"),
+        wire("e2", "node.s1", "success", "node.s2", "in"),
+        wire("e3", "node.s2", "success", "node.s3", "in"),
+        wire("e4", "node.s3", "success", "node.s4", "in"),
+        wire("e5", "node.s4", "success", "node.s5", "branches"),
+        wire("e6", "node.s5", "success", "node.s6", "in")
+      ]
+    };
+  }
+
+  function assemble(steps: readonly AutomationStudioFlowDraftStep[]) {
+    return assembleAutomationStudioFlowDraftPlan({
+      steps: steps.filter(automationStudioFlowDraftStepIsProposed),
+      write: automationStudioFlowBootstrapDraftNodeStep,
+      registry,
+      resolution,
+      summary: "Read the earbuds"
+    });
+  }
+
+  function wiring(plan: NonNullable<ReturnType<typeof assemble>["plan"]>): string[] {
+    const subflow = plan.subflows[0]!;
+    return subflow.edges.map((item) => `${item.source.nodeKey}:${item.source.portId} -> ${item.target.nodeKey}:${item.target.portId}`);
+  }
+
+  it("seeds a press whose failure and success both reach a Merge as optional, and nothing else", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(built());
+    expect(seed.steps.map((step) => seed.nodeIdByStepId[step.id!])).toEqual(["node.s1", "node.s2", "node.s3", "node.s4", "node.s5", "node.s6"]);
+    expect(seed.steps.map((step) => step.routing?.kind ?? null)).toEqual([null, null, null, "optional", null, null]);
+  });
+
+  it("does not read a check whose failure alone reaches the Merge as optional", () => {
+    const flow = built();
+    // s4's success goes on to s6 instead: s4 now guards, it is not optional.
+    flow.edges = flow.edges.map((item) => item.id === "e5" ? { ...item, targetNodeId: "node.s6", targetPortId: "in" } : item);
+    expect(automationStudioFlowDraftSeedFromFlow(flow).steps.some((step) => step.routing !== undefined)).toBe(false);
+  });
+
+  it("keeps the optional press's failed -> merge when the re-author leaves it alone and changes another step", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(built());
+    // The re-author reran the read with a corrected list and dropped the old one.
+    const reread: AutomationStudioFlowDraftStep = {
+      position: 7, id: "d1", iteration: 3, callId: "call.1", actionId: EXTRACT, toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+      input: { node: EXTRACT, parameters: { extractList: { ...extractList, fields: { ...extractList.fields, price: ".price" } } } },
+      effect: "observe", effectApplied: true, proposes: true, disposition: "kept"
+    };
+    const steps = [...seed.steps.slice(0, 5), { ...seed.steps[5]!, disposition: "dropped" as const }, reread];
+    const assembled = assemble(steps);
+
+    expect(assembled.issues.filter((item) => item.severity === "error")).toEqual([]);
+    const subflow = assembled.plan!.subflows[0]!;
+    // One join, the Flow's own, still at s5: no second Merge was added beside it.
+    expect(subflow.nodes.map((node) => node.definitionId)).toEqual(["web.output.browser-navigate", "web.output.dom-type", CLICK, CLICK, MERGE, EXTRACT]);
+    expect(wiring(assembled.plan!)).toEqual(expect.arrayContaining(["s4:failed -> s5:in", "s4:success -> s5:branches", "s5:success -> s6:in"]));
+    // And every node the Flow already had keeps its id, the join included.
+    expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId }))
+      .toEqual({ s1: "node.s1", s2: "node.s2", s3: "node.s3", s4: "node.s4", s5: "node.s5" });
   });
 });

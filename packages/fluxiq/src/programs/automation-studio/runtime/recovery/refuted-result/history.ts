@@ -27,7 +27,12 @@
 
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import type {
+  AutomationStudioResultReadAccount,
+  AutomationStudioResultRepairDirective,
+  AutomationStudioResultVerificationOutcome,
+  AutomationStudioRunResultSummary
+} from "../../result-verification/index.ts";
 
 /**
  * How many times one run's answer may be re-authored.
@@ -71,6 +76,13 @@ export type AutomationStudioResultRepairHistoryEntry = {
   produced: { totalRecordCount: number; recordSets: Array<{ recordCount: number; columns: string[] }> };
   /** The step the rows came out of, with the parameters it was authored with, as the result summary carried them (already screened). */
   step?: { nodeId: string; definitionId: string; parameters?: string };
+  /**
+   * How each list read went, as the result summary carried it: pages, why
+   * paging stopped, and what each condition rejected. The step's parameters
+   * above can be cut for room; this is what says the read already paged and
+   * which of its conditions dropped the rows (`run-munq5s8x-6d620cdf`).
+   */
+  reads?: AutomationStudioResultReadAccount[];
   /** A stable digest of the answer: rows, columns, sampled values and findings. Equal digests are the same answer. */
   answerDigest: string;
 };
@@ -102,6 +114,7 @@ export function automationStudioResultRepairHistoryEntry(input: {
       recordSets: input.summary.recordSets.map((set) => ({ recordCount: set.recordCount, columns: [...set.columns] }))
     },
     ...(shape ? { step: { nodeId: shape.nodeId, definitionId: shape.definitionId, ...(parameters ? { parameters: parameters.slice(0, MAX_PARAMETERS_CHARS) } : {}) } } : {}),
+    ...(input.summary.reads?.length ? { reads: input.summary.reads } : {}),
     answerDigest: answerDigest(input.summary, directive)
   };
 }
