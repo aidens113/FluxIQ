@@ -4,7 +4,7 @@ import {
   automationStudioLlmTaskExpectsDiagnosis,
   type AutomationStudioLlmTaskRequest
 } from "../harness.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapOutputSchema, automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/index.ts";
 
 /** The longest summary an evidence decision may answer with. */
 export const AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH = 240;
@@ -56,7 +56,7 @@ export function automationStudioDeepSeekOutputSchema(request: AutomationStudioLl
       decision: request.context.evidenceLoop.decisionSchema
     }
   };
-  if (request.taskKind !== "runtime_patch") return request.taskKind === "flow_bootstrap" ? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA : undefined;
+  if (request.taskKind !== "runtime_patch") return request.taskKind === "flow_bootstrap" ? automationStudioFlowBootstrapOutputSchema(automationStudioFlowBootstrapSizeLimitsOfContext(request.context.flowBootstrap)) : undefined;
   // Two shapes, always: a patch, or the answer that there is no repair (`harness/runtime-patch-schema.ts`).
   return automationStudioRuntimePatchOutputSchema({ proposalOnly: request.metadata?.executionPurpose === "diagnose_and_adapt" });
 }

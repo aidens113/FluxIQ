@@ -13,7 +13,7 @@ import { parseAutomationStudioActionPermissionRequest } from "../../action-permi
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
@@ -215,8 +215,12 @@ const EVIDENCE_LOOP_BUDGET_BOUNDS: readonly string[] = ["iterations", "tokens", 
 /**
  * The most draft steps an exhausted record may claim: a seeded extend build
  * keeps a whole supported Flow and may append one step in every iteration.
+ *
+ * Bounded by the Flow size setting's largest value rather than one Flow's: a
+ * stored diagnostic is read back with no Flow in hand, and one written while
+ * the Flow's setting was higher must still parse after it is lowered.
  */
-const EVIDENCE_LOOP_MAX_DRAFT_STEPS = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+const EVIDENCE_LOOP_MAX_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
 
 /**
  * What the loop ran out of, read back, or `null` for anything that is not that.

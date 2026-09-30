@@ -233,3 +233,96 @@ describe("Automation Studio Flow settings: the intervention mode a caller names"
     }
   });
 });
+
+// The Flow size setting (`model/flow-size/flow-size-settings.ts`): the most
+// nodes one Subflow may hold. It is saved through the same settings patch as
+// the rest, and the settings view reads it back from the settings detail, which
+// is the SQL row and has no column for it -- so the detail must carry it.
+describe("Automation Studio Flow settings: maximum nodes per Subflow", () => {
+  const writer: ProgramApiActor = { ...cacheActor("user.size"), permissions: ["programs.read", "programs.write", "flows.write"] };
+  const reader: ProgramApiActor = { ...cacheActor("user.size.read"), permissions: ["programs.read"] };
+
+  async function sizeApi() {
+    const { service, cleanup } = await createCacheApiTestService();
+    const project = await service.createProject({ name: "Flow size API" });
+    const flow = await service.createFlow({ projectId: project.id, name: "Sized Flow" });
+    const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin: vi.fn() } as any });
+    registerAutomationStudioApi(registry, service);
+    const saveSettings = (flowSizeSettings: unknown) => registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings,
+      scope: {},
+      actor: writer,
+      payload: { projectId: project.id, flowId: flow.flowId, flow: { flowId: flow.flowId, metadata: { flowSizeSettings } } }
+    });
+    const save = (value: unknown) => saveSettings({ maxNodesPerSubflow: value });
+    const readDetail = () => registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowMetadataDetail,
+      scope: {},
+      actor: reader,
+      payload: { projectId: project.id, flowId: flow.flowId }
+    });
+    return { service, cleanup, project, flow, save, saveSettings, readDetail };
+  }
+
+  it("gives a new Flow the default of 100 and reports it on read", async () => {
+    const { cleanup, flow, readDetail } = await sizeApi();
+    try {
+      expect(flow.metadata?.flowSizeSettings).toEqual({ maxNodesPerSubflow: 100 });
+      expect(await readDetail()).toMatchObject({ ok: true, payload: { flow: { flowId: flow.flowId, flowSizeSettings: { maxNodesPerSubflow: 100 } } } });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("saves 150, returns it from the save, and returns it again on a reload", async () => {
+    const { service, cleanup, project, flow, save, readDetail } = await sizeApi();
+    try {
+      const saved = await save(150);
+      expect(saved.ok, saved.error).toBe(true);
+      expect(saved).toMatchObject({ payload: { flow: { flowSizeSettings: { maxNodesPerSubflow: 150 } } } });
+      expect((await service.getFlow(project.id, flow.flowId)).metadata?.flowSizeSettings).toEqual({ maxNodesPerSubflow: 150 });
+      expect(await readDetail()).toMatchObject({ ok: true, payload: { flow: { flowSizeSettings: { maxNodesPerSubflow: 150 } } } });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it.each([[0, "between 1 and 1000"], [1.5, "whole number"], [1001, "between 1 and 1000"], ["150", "whole number"]])("refuses %s, naming the setting, and keeps the stored value", async (value, reason) => {
+    const { service, cleanup, project, flow, save } = await sizeApi();
+    try {
+      const refused = await save(value);
+      expect(refused.ok).toBe(false);
+      expect(refused.error).toContain("flowSizeSettings.maxNodesPerSubflow");
+      expect(refused.error).toContain(reason);
+      expect((await service.getFlow(project.id, flow.flowId)).metadata?.flowSizeSettings).toEqual({ maxNodesPerSubflow: 100 });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("refuses a settings value that is not an object, naming it", async () => {
+    const { service, cleanup, project, flow, saveSettings } = await sizeApi();
+    try {
+      const refused = await saveSettings(150);
+      expect(refused.ok).toBe(false);
+      expect(refused.error).toContain("flowSizeSettings must be an object holding maxNodesPerSubflow");
+      expect((await service.getFlow(project.id, flow.flowId)).metadata?.flowSizeSettings).toEqual({ maxNodesPerSubflow: 100 });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reads 100 for a Flow saved before the setting existed", async () => {
+    const { service, cleanup, project, flow, readDetail } = await sizeApi();
+    try {
+      const { flowSizeSettings: _dropped, ...legacyMetadata } = flow.metadata ?? {};
+      await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: legacyMetadata } });
+      expect((await service.getFlow(project.id, flow.flowId)).metadata?.flowSizeSettings).toBeUndefined();
+      expect(await readDetail()).toMatchObject({ ok: true, payload: { flow: { flowSizeSettings: { maxNodesPerSubflow: 100 } } } });
+    } finally {
+      await cleanup();
+    }
+  });
+});

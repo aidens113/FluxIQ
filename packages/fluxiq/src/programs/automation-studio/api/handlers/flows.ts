@@ -2,7 +2,7 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../contracts.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, withAutomationStudioInterventionMode } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, automationStudioFlowMaxNodesPerSubflow, automationStudioFlowSizeSettingIssue, withAutomationStudioInterventionMode, type AutomationStudioFlowArtifact } from "../../model/index.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -46,7 +46,12 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowIdProjectRequest> : {};
-      return { ok: true, payload: { flow: await service.getFlowMetadataDetail(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
+      const projectId = String(payload.projectId ?? "");
+      const flowId = String(payload.flowId ?? "");
+      const detail = await service.getFlowMetadataDetail(projectId, flowId);
+      // A detail exists only for a Flow that does, so its read is not guarded:
+      // a Flow that cannot be read must not report the default size as stored.
+      return { ok: true, payload: { flow: withFlowSizeSettings(detail, detail ? await service.getFlow(projectId, flowId) : null) } };
     }
   });
   registry.register({
@@ -94,6 +99,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       const patch = payload.flow as Record<string, any>;
       const metadata = patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {};
       assertFlowLlmExecutionSettings(metadata as Record<string, unknown>);
+      assertFlowSizeSettings(metadata as Record<string, unknown>);
       const next = {
         ...current,
         ...(typeof patch.name === "string" ? { name: patch.name } : {}),
@@ -111,7 +117,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
         flow: next,
         ...(typeof payload.expectedUpdatedAt === "number" ? { expectedUpdatedAt: payload.expectedUpdatedAt } : {})
       });
-      return { ok: true, payload: { flow: await service.getFlowMetadataDetail(projectId, flowId) } };
+      return { ok: true, payload: { flow: withFlowSizeSettings(await service.getFlowMetadataDetail(projectId, flowId), await service.getFlow(projectId, flowId)) } };
     }
   });
   registry.register({
@@ -163,6 +169,30 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       };
     }
   });
+}
+
+/**
+ * Refuses a Flow size setting no reader could use, naming it. Absent is fine:
+ * the patch merges over the stored metadata, so it keeps what is stored.
+ */
+function assertFlowSizeSettings(metadata: Record<string, unknown>): void {
+  const { metadataKey, field } = AUTOMATION_STUDIO_FLOW_SIZE_SETTING;
+  const settings = metadata[metadataKey];
+  if (settings === undefined) return;
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error(`${metadataKey} must be an object holding ${field}.`);
+  const issue = automationStudioFlowSizeSettingIssue((settings as Record<string, unknown>)[field]);
+  if (issue) throw new Error(issue);
+}
+
+/**
+ * The settings detail with the Flow size setting beside the rest. The detail is
+ * the SQL settings row, which has no column for it, and the settings view reads
+ * only this: without it a saved size redrew as whatever the view held before
+ * the save. A Flow with none reads the default, as every size bound does.
+ */
+function withFlowSizeSettings<T extends object>(detail: T | null, flow: AutomationStudioFlowArtifact | null): (T & { flowSizeSettings: JsonObject }) | null {
+  if (!detail) return null;
+  return { ...detail, [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.metadataKey]: { [AUTOMATION_STUDIO_FLOW_SIZE_SETTING.field]: automationStudioFlowMaxNodesPerSubflow(flow?.metadata) } } as T & { flowSizeSettings: JsonObject };
 }
 
 /**

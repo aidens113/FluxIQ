@@ -7,7 +7,7 @@ import {
   type AutomationStudioLlmUsageSummary
 } from "../harness.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapSizeLimitsOfContext, parseAutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH } from "./output-schema.ts";
@@ -87,7 +87,7 @@ function parseDeepSeekStructuredResponse(structured: unknown, request: Automatio
     || typeof structured.summary !== "string"
     || structured.summary.trim().length === 0
     || structured.summary.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxStringLength) outputInvalid();
-  const parsed = parseAutomationStudioFlowBootstrapPlan(structured.plan);
+  const parsed = parseAutomationStudioFlowBootstrapPlan(structured.plan, automationStudioFlowBootstrapSizeLimitsOfContext(request.context.flowBootstrap));
   if (!parsed.plan || parsed.issues.some((issue) => issue.severity === "error")) outputInvalid();
   return { kind: "flow_bootstrap", summary: structured.summary, plan: parsed.plan };
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../../decision-step-ids.ts";
+import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
   flowBootstrapEvidenceLoopFailure,
   flowBootstrapEvidenceUnusableDecisionFailure,
@@ -127,6 +128,29 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     ])("refuses a stored exhaustion naming %s", (_name, override) => {
       const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
       stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, ...override };
+
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
+    });
+
+    // A Flow is no longer capped at sixty-four nodes, so an exploration of a
+    // Flow whose setting allows a hundred or more steps must still be read
+    // back with its account intact. The reader has no Flow in hand and bounds
+    // by the largest Flow the setting allows.
+    it.each([100, 150])("reads back a stored exhaustion and kept-draft pointer of %i draft steps", (draftSteps) => {
+      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown>; incompleteDraft?: unknown } };
+      stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, draftSteps, proposableSteps: draftSteps };
+      stored.evidenceLoop.incompleteDraft = { revision: 1, steps: draftSteps };
+
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)?.evidenceLoop).toMatchObject({
+        exhausted: { draftSteps, proposableSteps: draftSteps },
+        incompleteDraft: { revision: 1, steps: draftSteps }
+      });
+    });
+
+    it("refuses a stored exhaustion claiming more draft steps than any Flow could hold", () => {
+      const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 2;
+      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
+      stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, draftSteps: beyond, proposableSteps: 1 };
 
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
     });
@@ -359,7 +383,8 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
         { callId: "an id with spaces in it" },
         { progress: { ...widenedStep.progress, draftRevisionAfter: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1 } },
         { draftChange: { ...widenedStep.draftChange, targetedStepIds: ["private id"] } },
-        { draft: { ...widenedStep.draft, unlisted: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 } },
+        // More listed and unlisted steps than the largest Flow the size setting allows could represent.
+        { draft: { ...widenedStep.draft, unlisted: automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 } },
         { answerability: { ...widenedStep.answerability, issueCode: "private prose" } },
         { usage: { inputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } },
         { usage: { estimatedCostUsd: 11 } },

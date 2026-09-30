@@ -10,16 +10,18 @@
 // parameter descriptions pushed the required end node out of a 3,000-token
 // catalog, and every Flow creation in that context was refused. The nodes it
 // prefers come next, whole or else condensed, and then the rest, whole.
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapCatalogEntry, AutomationStudioFlowBootstrapContext } from "./contracts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "./output-schema.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, automationStudioFlowBootstrapOutputSchema } from "./output-schema.ts";
 import {
   automationStudioFlowBootstrapParameterTextAccount,
   boundedCatalogText,
   type AutomationStudioFlowBootstrapCatalogEntryForm
 } from "./parameter-text.ts";
 import { rankBootstrapDefinitions } from "./ranking.ts";
+import type { AutomationStudioFlowBootstrapSizeLimits } from "./size-limits.ts";
 
 export function buildAutomationStudioFlowBootstrapContext(input: {
   registry?: AutomationStudioNodeRegistry;
@@ -29,6 +31,14 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   maxCatalogEntries?: number;
   /** Where the Flow starts, when the build was told (`../start-location.ts`). Carried into the context unread. */
   startLocation?: string;
+  /**
+   * The Flow's size bounds (`./size-limits.ts`), which the output schema's
+   * node and edge counts are. Omitted, the schema is the default-size constant.
+   * A size other than the default is also carried as `maxNodesPerSubflow`, so
+   * a provider adapter holding only the request sizes the schema it checks and
+   * the plan it parses the same way (`automationStudioFlowBootstrapSizeLimitsOfContext`).
+   */
+  size?: AutomationStudioFlowBootstrapSizeLimits;
 }): AutomationStudioFlowBootstrapContext {
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
   const definitions = registry.list(input.resolution).sort((left, right) => left.id.localeCompare(right.id));
@@ -90,7 +100,8 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
   const nodeCatalog = [...selected.values()].sort((left, right) => left.id.localeCompare(right.id));
   const withheldParameterText = withheldParameterTextOf(nodeCatalog, withheld);
   return {
-    outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
+    outputSchema: input.size ? automationStudioFlowBootstrapOutputSchema(input.size) : AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
+    ...(input.size && input.size.maxNodesPerSubflow !== AUTOMATION_STUDIO_FLOW_SIZE_SETTING.defaultValue ? { maxNodesPerSubflow: input.size.maxNodesPerSubflow } : {}),
     nodeCatalog,
     // Placed before the catalog's own fields for a reader, and carried whatever
     // the catalog budget did: where the Flow starts is not a node, so the

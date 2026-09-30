@@ -1,15 +1,18 @@
-// Numeric bounds for Flow Bootstrap. The canonical limits bound a full
-// bootstrap call; the evidence limits bound the smaller evidence-guided
-// completion. Both are read by the schemas, the parser, and the validator.
+// Fixed bounds for Flow Bootstrap: how many Subflows, catalog entries, rules,
+// names and parameters a plan or a reply may carry, and the layout spacing.
+//
+// **No bound here counts a Flow's nodes, edges, depth or bytes.** Those grow
+// with the Flow and are derived from its size setting (`./size-limits.ts`,
+// from `model/flow-size/flow-size-settings.ts`). A node cap left in these
+// constants is one some reader would pick up, which is how a reply came to be
+// held to sixteen nodes and a Flow to sixty-four; so none is here to be read.
+//
+// The canonical limits bound a full bootstrap call; the evidence limits bound
+// the shape of the smaller evidence-guided reply. Both are read by the schemas,
+// the parser, and the validator.
 
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS = {
   maxSubflows: 8,
-  maxNodesPerSubflow: 64,
-  maxEdgesPerSubflow: 128,
-  maxTotalNodes: 64,
-  maxTotalEdges: 128,
-  maxGraphDepth: 16,
-  maxPlanBytes: 65_536,
   maxCatalogEntries: 100,
   maxCatalogBytes: 49_152,
   firstLiveMaxInputTokens: 4_000,
@@ -20,13 +23,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS = {
 } as const;
 
 export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS = {
-  maxResultBytes: 12_000,
   maxSummaryLength: 240,
   maxNameLength: 120,
   maxSubflows: 4,
   maxRules: 8,
   maxRouteTags: 8,
-  maxNodesPerSubflow: 16,
-  maxEdgesPerSubflow: 24,
   maxParametersPerNode: 16
 } as const;
