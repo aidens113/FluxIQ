@@ -57,7 +57,7 @@ import type {
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
-import { automationStudioRuntimePatchRefusalIsCheckableByExploration, type AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
+import { AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES, automationStudioRuntimePatchRefusalIsCheckableByExploration, type AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
@@ -165,6 +165,24 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
   if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, code: `llm.gate.${invocation.requiredPriorAction}`, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
   const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+  // Nothing failed that a diagnosis could be about, and nothing a patch could be
+  // applied to. The diagnosis call used to be made anyway, billed, and followed
+  // by a plan that asked for a patch and then ended `llm.runtime_patch_unavailable`
+  // at `resolution` for want of an attempt (t193 wK, C9, live run munyzo8z). It
+  // is decided here, before a provider is resolved, so the run's standing repair
+  // authority is not drawn on either.
+  if (!input.failedTraceAttempt && !failedAttempt) {
+    const reason = "No failed attempt reached the recovery, so no model was asked.";
+    const code = AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES.no_failed_attempt;
+    return {
+      ...input.detail,
+      metadata: {
+        ...(input.detail.metadata ?? {}),
+        llmGate: { invoked: false, code, reason, patchSkipped: reason, patchSkippedCode: code, patchSkippedRung: "diagnosis" },
+        recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, patchSkippedCode: code }) as unknown as JsonObject
+      }
+    };
+  }
   const providerId = settingString(input.context.policy.metadata?.llmProvider, settingString(input.context.policy.policyId, "host"));
   let provider: AutomationStudioLlmProvider | undefined;
   let providerResolution: AutomationStudioLlmProviderResolution | undefined;
@@ -561,7 +579,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
       expectedOutput: "runtime_patch",
       now,
-      metadata: { source: "runRuntimeSession", expectedOutput: "runtime_patch", ...executionPurpose }
+      // The kinds this plan may ask for, so the provider offers the model those
+      // and no others. It was shown all five and wrote kinds the plan refused
+      // (t193 wK, C3): a patch the model is never shown cannot be one it wastes the call on.
+      metadata: { source: "runRuntimeSession", expectedOutput: "runtime_patch", allowedPatchKinds: [...plan.allowedPatchKinds], ...executionPurpose }
     })
     : null;
   // The model's own refusal: an answer to the patch call rather than a failure

@@ -10,7 +10,9 @@
 //
 // It runs only on a run that reported success. A run that already failed is
 // already telling the truth, and spending a model call to add a second reason
-// to it would buy nothing.
+// to it would buy nothing. The one thing a failed run is handed to here is the
+// failed-step re-author (`repairFailedStep` below): a step the patch ladder
+// could not repair is re-found by the build loop, and the re-run is judged.
 //
 // A run whose result could not be put to a model at all keeps the status its
 // steps earned and is recorded `unverified`, never `confirmed`
@@ -68,6 +70,7 @@ import {
   automationStudioRefutedResultFlowWasReauthored,
   automationStudioResultRepairSettled,
   repairAutomationStudioRefutedRunResult,
+  type AutomationStudioFailedStepRepairPort,
   type AutomationStudioRefutedResultRepairPort,
   type AutomationStudioResultRepairHistoryEntry,
   type AutomationStudioResultRepairOutcome
@@ -149,6 +152,15 @@ export type AutomationStudioResultVerificationPorts = {
    * configured has nowhere to hand it.
    */
   repairRefutedResult?: AutomationStudioRefutedResultRepairPort | undefined;
+  /**
+   * Re-authors a Flow whose run failed at a step the patch ladder could not
+   * repair, and answers the run with the attempt on it -- or nothing, when the
+   * run is not one it routes (`recovery/refuted-result/step-failure-decision.ts`).
+   * An applied edit is then re-run through `rerunRepairedFlow` and the re-run
+   * judged, exactly as a repaired wrong answer is. Absent, a failed run is
+   * handed back as the ladder left it.
+   */
+  repairFailedStep?: AutomationStudioFailedStepRepairPort | undefined;
   /**
    * Runs the Flow again once a repair has actually changed it, and answers the
    * run that produced.
@@ -236,7 +248,7 @@ export type AutomationStudioRuntimeSessionVerificationInput = {
 export async function verifyAutomationStudioRuntimeSessionResult(
   input: AutomationStudioRuntimeSessionVerificationInput
 ): Promise<AutomationStudioRuntimeSession> {
-  if (input.session.status !== "succeeded") return input.session;
+  if (input.session.status !== "succeeded") return await repairFailedStep(input);
   // Which graphs this run executed, and at which revision, as the run itself
   // recorded when its session was written. Read from the session rather than
   // re-read from storage: a second read could answer with a revision this run
@@ -350,6 +362,42 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     if (settled) await input.ports.saveFlowRunDetail(settled);
   }
   return next;
+}
+
+/**
+ * A run that failed at a step, after the patch ladder has had it.
+ *
+ * Until t193 this was the first line of the verification and the end of the
+ * run: a failed run is already telling the truth about its steps, so it was
+ * handed back. That is still what happens to every failed run the failed-step
+ * route does not take. What the route takes -- a step whose target is gone
+ * from a changed site, which the ladder could not re-point -- is re-authored,
+ * and an edit that reached the Flow is run again and the re-run verified like
+ * any other run, which is what closes the loop for a failed step as
+ * `rerunRepairedFlow` closes it for a wrong answer. The attempt is saved on the
+ * run before the re-run, so a re-run that throws still leaves it on record.
+ * The route re-authors a run once (`step-failure-decision.ts`), so a re-run
+ * that fails at a step again comes back here and is handed back failed.
+ */
+async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSession> {
+  const port = input.ports.repairFailedStep;
+  if (input.session.status !== "failed" || !port) return input.session;
+  const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
+  if (!detail) return input.session;
+  const failedTraceAttempt = [...(input.session.trace?.attempts ?? [])].reverse().find((attempt) => attempt.status === "failed");
+  const repaired = await port({
+    detail,
+    ...(failedTraceAttempt ? { failedTraceAttempt } : {}),
+    ...(input.flow ? { flow: input.flow } : {}),
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    ...(input.ports.deniedEvidenceKeys ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
+  });
+  if (!repaired) return input.session;
+  await input.ports.saveFlowRunDetail(repaired.detail);
+  if (!repaired.reauthored || !input.ports.rerunRepairedFlow) return input.session;
+  const rerun = await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+  if (!rerun) return input.session;
+  return await verifyAutomationStudioRuntimeSessionResult({ ...input, session: rerun.session, ...(rerun.flow ? { flow: rerun.flow } : {}) });
 }
 
 /** How a repair ends when the answer its re-run gave is not repaired again. */

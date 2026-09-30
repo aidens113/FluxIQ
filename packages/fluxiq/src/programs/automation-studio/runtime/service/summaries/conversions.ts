@@ -277,20 +277,21 @@ function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSessio
 }
 
 /**
- * Core's code for the ladder's last rung, recorded and not yet answered.
+ * Core's code for the ladder selecting its model rung: a record, not a verdict.
  *
  * Every other issue Core writes onto an intervention begins with a code, and a
  * reader -- the web UI, the Lab's run-detail parser -- takes the code and drops
- * the sentence. This one issue was a bare sentence, so it reduced to *nothing*:
- * the Lab's evaluation of run `run-muesyox4-930bef98` (2026-09-23) recorded
- * `{ validationOk: false, validationCodes: [] }`, which reads as "something
- * rejected the diagnosis and would not say what". Nothing had rejected
- * anything. The sentence also claimed no provider was configured, and in that
- * run one was: the recovery stage called it moments later and its answer
- * validated. A code, and a sentence that describes the rung rather than
- * guessing at the deployment.
+ * the sentence. This one was a bare sentence, so it reduced to *nothing*: the
+ * Lab's evaluation of run `run-muesyox4-930bef98` (2026-09-23) recorded
+ * `{ validationOk: false, validationCodes: [] }`. It then gained a code,
+ * `recovery.ladder_diagnosis_unanswered`, but kept `ok: false`, and that still
+ * read as a failed diagnosis call at the start of every step-failure run (t193
+ * wK, K7: thirteen runs). Nothing was called and nothing failed: the executor
+ * records that its deterministic rungs ran out and the model rung was selected,
+ * and the run's recovery stage is what answers it. So the record is
+ * informational -- `ok: true` -- and its code says what happened.
  */
-export const AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE = "recovery.ladder_diagnosis_unanswered";
+export const AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE = "recovery.ladder_model_rung_selected";
 
 function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): AutomationStudioFlowIntervention[] {
   return recoveryAttempts
@@ -308,7 +309,7 @@ function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRunti
         nodeId: attempt.nodeId,
         candidateCount: attempt.candidateCount
       },
-      validation: { ok: false, issues: [`${AUTOMATION_STUDIO_LADDER_DIAGNOSIS_UNANSWERED_CODE}: The recovery ladder exhausted its deterministic rungs and selected its LLM diagnosis rung. The executor records the selection and calls no provider; the run's recovery stage is what answers it.`] },
+      validation: { ok: true, issues: [`${AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE}: The recovery ladder exhausted its deterministic rungs and selected its model rung. The executor records the selection and calls no provider; the run's recovery stage is what answers it.`] },
       createdAt: attempt.createdAt,
       metadata: { recoveryId: attempt.recoveryId }
     }));

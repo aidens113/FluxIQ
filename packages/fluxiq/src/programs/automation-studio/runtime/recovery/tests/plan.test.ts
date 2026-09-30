@@ -231,6 +231,52 @@ describe("planAutomationStudioRuntimeRecovery", () => {
   });
 });
 
+// t193 wK, C6 and C9: two ends of the ladder that stopped with the wrong word.
+describe("planAutomationStudioRuntimeRecovery after the model rung was selected", () => {
+  // Live run munzl2eh answered yes/yes/false/false. `model_required` already
+  // means the deterministic rungs ran and failed, so the deterministic recovery
+  // the model names can only be carried out as a patch. It ended
+  // `llm.runtime_patch_diagnosis_asked_for_none` instead.
+  it("asks for a patch when the diagnosis names a deterministic recovery and asks for neither patch nor look", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "yes", deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest.request).toBe(true);
+    expect(plan.patchRequest.code).toBeUndefined();
+    expect(plan.steps.map((step) => step.action)).toEqual(["request_patch"]);
+  });
+
+  it("still stops on a diagnosis that asked for nothing and named no deterministic recovery", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "yes", deterministicRecoveryPossible: "no", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_diagnosis_asked_for_none", rung: "plan" });
+  });
+
+  it("still stops when the diagnosis says the goal is gone, whatever it says of a deterministic recovery", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "no", deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_goal_unachievable" });
+  });
+
+  it("does not turn a named deterministic recovery into a patch request when the policy permits no kind", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }), policy: policy({ allowRuntimeRecovery: false }) });
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_diagnosis_asked_for_none" });
+    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+  });
+
+  // Live run munyzo8z: no failed attempt, a validated diagnosis, and a plan that
+  // passed the diagnosis chain's `request: true` straight through, so the run
+  // ended `llm.runtime_patch_unavailable` at `resolution`.
+  it("refuses under its own code at the diagnosis rung when no failed attempt was classified, even after a validated diagnosis", () => {
+    for (const result of [diagnosisResult(), undefined]) {
+      const plan = planAutomationStudioRuntimeRecovery({ ...(result ? { result } : {}), policy: policy() });
+
+      expect(plan.patchRequest).toEqual({ request: false, reason: "No failed attempt reached the diagnosis, so no patch was requested.", code: "llm.runtime_patch_no_failed_attempt", rung: "diagnosis" });
+      expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+    }
+  });
+});
+
 /** The default plan -- a `target_not_found` under a permissive policy -- for one diagnosis result. */
 function planFor(result: AutomationStudioLlmTaskResult | undefined) {
   return planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), ...(result ? { result } : {}), policy: policy() });
