@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentFluxIQUser } from "../../../lib/auth";
 import { getFluxIQ } from "../../../lib/fluxiq";
 import { ProgramWorkspace } from "../[programId]/ProgramWorkspace";
+import { LoginPanel } from "../../AuthShell";
 
 type AutomationStudioPageProps = {
   searchParams: Promise<{ domainId?: string | string[] }>;
@@ -10,7 +11,7 @@ type AutomationStudioPageProps = {
 
 export default async function AutomationStudioPage(context: AutomationStudioPageProps) {
   const auth = await currentFluxIQUser();
-  if (!auth) redirect("/");
+  if (!auth) return <LoginPanel />;
 
   const query = await context.searchParams;
   const requestedDomainId = typeof query.domainId === "string" ? query.domainId : null;
