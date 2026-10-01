@@ -76,6 +76,7 @@ export function BlankFlowAuthoringPanel(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [instruction, setInstruction] = useState("");
+  const [proposal, setProposal] = useState<{ flowId: string; adaptationId: string } | null>(null);
   const [explorationPhase, setExplorationPhase] = useState<"idle" | "authorizing" | "exploring" | "review">("idle");
   const [explorationElapsedSeconds, setExplorationElapsedSeconds] = useState(0);
   const [permissionContinuation, setPermissionContinuation] = useState<PendingPermissionContinuation | null>(null);
@@ -83,6 +84,11 @@ export function BlankFlowAuthoringPanel(props: {
   const permissionContextRef = useRef<PermissionContext>({ projectId: props.projectId ?? "", flowId: props.flow?.flowId ?? "", instructionBody: instruction.trim() });
   permissionContextRef.current = { projectId: props.projectId ?? "", flowId: props.flow?.flowId ?? "", instructionBody: instruction.trim() };
   const permissionRequest = permissionContinuation?.request ?? null;
+  const scopeKey = JSON.stringify([props.projectId, props.flow?.flowId]);
+  const scopeRef = useRef(scopeKey);
+  const generationRef = useRef(0);
+  if (scopeRef.current !== scopeKey) { scopeRef.current = scopeKey; generationRef.current += 1; }
+  useEffect(() => () => { generationRef.current += 1; }, []);
 
   useEffect(() => {
     setError("");
@@ -91,6 +97,8 @@ export function BlankFlowAuthoringPanel(props: {
 
   useEffect(() => {
     setInstruction("");
+    setBusy(false);
+    setProposal(null);
     setPermissionContinuation(null);
     setPermissionOpen(false);
   }, [props.projectId, props.flow?.flowId]);
@@ -116,11 +124,14 @@ export function BlankFlowAuthoringPanel(props: {
       return;
     }
     setBusy(true);
+    const generation = ++generationRef.current;
+    const current = () => generationRef.current === generation;
     setError("");
     if (mode === "explore") setExplorationPhase("authorizing");
     try {
       if (mode === "explore") {
         const saved = await props.commands.saveGenerationInstruction({ projectId: request.payload.projectId, flowId: request.payload.flowId, instruction: normalizedInstruction });
+        if (!current()) return;
         if (!saved.ok || saved.payload?.instruction?.status !== "active") { setExplorationPhase("idle"); setError("The website task could not be saved for exploration."); return; }
       }
       if (continuation && !permissionMatchesContext(continuation, permissionContextRef.current)) {
@@ -136,6 +147,7 @@ export function BlankFlowAuthoringPanel(props: {
       const generated = mode === "explore"
         ? await props.commands.generateFromWebsite({ projectId: request.payload.projectId, flowId: request.payload.flowId, ...permitted })
         : await props.commands.generateBootstrap({ projectId: request.payload.projectId, flowId: request.payload.flowId, ...permitted });
+      if (!current()) return;
       const adaptation = generated.payload?.adaptation;
       if (!generated.ok || adaptation?.status !== "proposed" || typeof adaptation?.adaptationId !== "string") {
         const requested = generated.payload?.diagnostic?.code === "flow_bootstrap.permission_required"
@@ -158,12 +170,14 @@ export function BlankFlowAuthoringPanel(props: {
       setPermissionOpen(false);
       setError("");
       if (mode === "explore") setExplorationPhase("review");
+      setProposal({ flowId: adaptation.flowId ?? request.payload.flowId, adaptationId: adaptation.adaptationId });
       props.onOpenAdaptation?.(adaptation.flowId ?? request.payload.flowId, adaptation.adaptationId);
     } catch {
+      if (!current()) return;
       if (mode === "explore") setExplorationPhase("idle");
       setError("Something went wrong while building this. Try again.");
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   };
 
@@ -173,7 +187,7 @@ export function BlankFlowAuthoringPanel(props: {
     <div className="automation-runtime-run-command"><div><small>Browser actions happen on the connected website while FluxIQ tries this out. What it writes stays a draft until you review it.</small><small>{EXPLORATION_BOUNDS_TEXT}</small></div><button className="button button-primary" disabled={busy || !instruction.trim()} onClick={() => void generate("explore")} type="button">{explorationPhase === "authorizing" ? "Preparing exploration..." : explorationPhase === "exploring" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Explore and create proposal"}</button></div></> : null}
     {explorationPhase === "authorizing" ? <div className="automation-flow-exploration-progress"><progress aria-label="Preparing website exploration" /> <span aria-atomic="true" aria-live="polite" role="status">Preparing a bounded exploration request. The generated Flow will still require review.</span></div> : null}
     {explorationPhase === "exploring" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Collecting bounded page evidence; {AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal.toLowerCase()} follows in this request. Keep the browser and target tab connected.</span> <span aria-hidden="true">({explorationElapsedSeconds}s elapsed)</span></div> : null}
-    {explorationPhase === "review" ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> No generated changes have been applied. Review the Router, Subflows, and actions before applying the Adaptation.</p> : null}
+    {proposal ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> No generated changes have been applied. Review the Router, Subflows, and actions before applying the Adaptation. <button className="button" disabled={busy || !props.onOpenAdaptation} onClick={() => props.onOpenAdaptation?.(proposal.flowId, proposal.adaptationId)} type="button">Review suggested change</button></p> : null}
     {permissionRequest && !permissionOpen ? <p className="automation-runtime-message" role="status"><strong>Flow action approval is still required.</strong> No proposal was created. <button className="button" disabled={busy} onClick={() => setPermissionOpen(true)} type="button">Review requested permissions</button></p> : null}
     {buildRequest.ok ? <div className="automation-runtime-run-command"><div><small>Or draft it from the notes already written for this automation, without opening a website.</small></div><button className="button" disabled={busy} onClick={() => void generate("build")} type="button">{busy && explorationPhase === "idle" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : "Build proposal from active instructions"}</button></div> : null}
     {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}

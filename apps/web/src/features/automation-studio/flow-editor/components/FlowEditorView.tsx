@@ -28,6 +28,7 @@ export type FlowEditorViewProps = FlowEditorProps & {
    * that has nothing to show offers the thing it is waiting for.
    */
   onCreateFlow?(): void;
+  onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void;
 };
 
 type StartPaneReadiness = { loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string };
@@ -53,7 +54,7 @@ export const FlowEditorView = memo(function FlowEditorView(props: FlowEditorView
     );
   }
   if (!props.taskGraph) {
-    return <FlowEditorStartPane flow={props.authoringFlow ?? null} onCreateFlow={props.onCreateFlow} projectId={props.projectId ?? null} />;
+    return <FlowEditorStartPane flow={props.authoringFlow ?? null} onCreateFlow={props.onCreateFlow} onOpenAdaptation={props.onOpenAdaptation} projectId={props.projectId ?? null} />;
   }
   return <HydratedFlowEditorView {...props} />;
 });
@@ -63,7 +64,7 @@ export const FlowEditorView = memo(function FlowEditorView(props: FlowEditorView
  * words while the chosen automation is still empty, and otherwise says in one
  * sentence what to do next. It is never a blank pane.
  */
-function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCreateFlow: (() => void) | undefined }) {
+function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCreateFlow: (() => void) | undefined; onOpenAdaptation: FlowEditorViewProps["onOpenAdaptation"] }) {
   const commands = useRuntimeExecutionCommands();
   const improvementCommands = useFlowImprovementCommands();
   const [readiness, setReadiness] = useState<StartPaneReadiness>(idleReadiness);
@@ -121,10 +122,10 @@ function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCre
         ? <div className="automation-view-loading"><span aria-hidden className="automation-view-loading-indicator" /><span>Checking this automation...</span></div>
         : null}
       {canDescribeTheJob
-        ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} projectId={props.projectId} readiness={readiness} />
+        ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} onOpenAdaptation={props.onOpenAdaptation} projectId={props.projectId} readiness={readiness} />
         : null}
       {canImprove
-        ? <ImproveFlowPanel commands={improvementCommands} flow={props.flow} projectId={props.projectId} readiness={readiness} />
+        ? <ImproveFlowPanel commands={improvementCommands} flow={props.flow} onOpenAdaptation={props.onOpenAdaptation} projectId={props.projectId} readiness={readiness} />
         : null}
     </section>
   );

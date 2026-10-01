@@ -41,14 +41,20 @@ export function ImproveFlowPanel(props: {
   const request = useMemo(() => existingFlowImprovementRequest(props.projectId, props.flow, props.readiness), [props.flow, props.projectId, props.readiness]);
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
+  const [proposal, setProposal] = useState<{ flowId: string; adaptationId: string } | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Continuation | null>(null);
   const saved = useRef<{ instructionId: string; text: string } | null>(null);
   const flowKey = `${props.projectId ?? ""}/${props.flow?.flowId ?? ""}`;
+  const scopeRef = useRef(flowKey);
+  const generationRef = useRef(0);
+  if (scopeRef.current !== flowKey) { scopeRef.current = flowKey; generationRef.current += 1; }
+  useEffect(() => () => { generationRef.current += 1; }, []);
 
   useEffect(() => {
     setText("");
     setPhase("idle");
+    setProposal(null);
     setError("");
     setPending(null);
     saved.current = null;
@@ -65,6 +71,8 @@ export function ImproveFlowPanel(props: {
       return;
     }
     const { projectId, flowId } = request.payload;
+    const generation = ++generationRef.current;
+    const current = () => generationRef.current === generation;
     setPending(null);
     setError("");
     setPhase("preparing");
@@ -73,6 +81,7 @@ export function ImproveFlowPanel(props: {
       // replaces, so the Flow is never left asked for two versions of it.
       if (saved.current?.text !== wording) {
         const stored = await props.commands.saveImprovementInstruction({ projectId, flowId, instruction: wording, ...(saved.current ? { instructionId: saved.current.instructionId } : {}) });
+        if (!current()) return;
         const instructionId = stored?.payload?.instruction?.instructionId;
         if (!stored?.ok || typeof instructionId !== "string" || stored.payload.instruction.status !== "active") {
           setPhase("idle");
@@ -84,9 +93,11 @@ export function ImproveFlowPanel(props: {
       setPhase("improving");
       // Only what the person allowed in answer to this improvement's own request.
       const generated = await props.commands.improveFromWebsite({ projectId, flowId, ...(continuation ? { permittedConsequences: [...continuation.permission.missing] } : {}) });
+      if (!current()) return;
       const adaptation = generated?.payload?.adaptation;
       if (generated?.ok && adaptation?.status === "proposed" && typeof adaptation.adaptationId === "string") {
         setPhase("review");
+        setProposal({ flowId: adaptation.flowId ?? flowId, adaptationId: adaptation.adaptationId });
         props.onOpenAdaptation?.(adaptation.flowId ?? flowId, adaptation.adaptationId);
         return;
       }
@@ -100,6 +111,7 @@ export function ImproveFlowPanel(props: {
       }
       setError(improvementFailureMessage(generated));
     } catch (failure) {
+      if (!current()) return;
       setPhase("idle");
       const reported = failure instanceof Error && failure.message ? failure.message : String(failure);
       setError(`Something went wrong while improving this automation: ${reported}`);
@@ -113,7 +125,7 @@ export function ImproveFlowPanel(props: {
     <label className="automation-flow-exploration-task"><span>What should change</span><textarea aria-describedby="improvement-help" aria-label="What should change" disabled={busy} maxLength={IMPROVEMENT_INSTRUCTION_MAX_LENGTH} onChange={(event) => { setText(event.target.value); setError(""); setPending(null); if (phase === "review") setPhase("idle"); }} placeholder="For example: Sometimes a What's new window covers the page. When it is showing, close it first; when it is not, carry on as before." rows={4} value={text} /><small id="improvement-help">{text.length}/{IMPROVEMENT_INSTRUCTION_MAX_LENGTH} characters. This is kept with the automation as one more thing it has been asked to do.</small></label>
     <div className="automation-runtime-run-command"><div><small>The steps it already has stay as they are until you accept the suggested change.</small></div><button className="button button-primary" disabled={busy || !wording} onClick={() => void improve()} type="button">{phase === "preparing" ? "Getting ready..." : phase === "improving" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Improve automation"}</button></div>
     {phase === "improving" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Keep the browser and the website's tab connected.</span></div> : null}
-    {phase === "review" ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> Nothing has changed yet. Check the suggested change and accept it to keep it.</p> : null}
+    {proposal ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> Nothing has changed yet. Check the suggested change and accept it to keep it. <button className="button" disabled={busy || !props.onOpenAdaptation} onClick={() => props.onOpenAdaptation?.(proposal.flowId, proposal.adaptationId)} type="button">Review suggested change</button></p> : null}
     {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
     {confirmingPermission ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm what the change may do" onClose={() => setPending(null)}><div className="automation-modal-form">
       <p className="automation-router-modal-intro">{confirmingPermission.sentence}</p>
