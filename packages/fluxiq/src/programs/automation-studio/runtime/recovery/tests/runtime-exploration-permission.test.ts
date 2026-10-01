@@ -12,7 +12,7 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
@@ -30,26 +30,38 @@ type Options = {
   decisions?: JsonObject[];
   /** The caller's own gate, handed in whole instead of the fields that build one. */
   gate?: AutomationStudioActionPermissionGate;
-  /** How the person answers the question, when there is a thread to ask in. */
-  answer?: "grant" | "deny" | "nobody";
+  /**
+   * How the person answers each question, in the order they are asked, when
+   * there is a thread to ask in. One answer is the answer to every question.
+   */
+  answer?: Answer | readonly Answer[];
 };
 
+type Answer = "grant" | "deny" | "nobody";
+
+/** The controls the stand-in order shows, by handle. */
+const CONTROLS: Record<string, string> = { c4: "Refund and void line 1", c5: "Refund to store credit" };
+
 /** A thread that records what it was asked and answers the way the row says. */
-function thread(answer: "grant" | "deny" | "nobody"): { port: AutomationStudioParkingPort; opened: AutomationStudioAsk[] } {
+function thread(answers: Answer | readonly Answer[]): { port: AutomationStudioParkingPort; opened: AutomationStudioAsk[] } {
   const opened: AutomationStudioAsk[] = [];
+  const answerTo = (index: number): Answer => typeof answers === "string" ? answers : answers[index] ?? "nobody";
   return {
     opened,
     port: {
       open: (ask) => { opened.push(ask); },
-      awaitAnswer: async (ask): Promise<AutomationStudioAskAnswer | undefined> => answer === "nobody"
-        ? undefined
-        : { askId: ask.askId, kind: answer, value: null, answeredAt: 1_000, actorId: "person.one" }
+      awaitAnswer: async (ask): Promise<AutomationStudioAskAnswer | undefined> => {
+        const answer = answerTo(opened.indexOf(ask));
+        return answer === "nobody" ? undefined : { askId: ask.askId, kind: answer, value: null, answeredAt: 1_000, actorId: "person.one" };
+      }
     }
   };
 }
 
 async function explore(options: Options = {}) {
   const pressed: string[] = [];
+  // What each decision was shown, by call id.
+  const shown: Array<Map<string, JsonValue>> = [];
   let providerCalls = 0;
   const decisions = options.decisions ?? [
     { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
@@ -63,10 +75,15 @@ async function explore(options: Options = {}) {
       tools: TOOLS,
       executeTool: async (input) => {
         if (input.toolId === "shop.look") {
-          return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", controls: [{ handle: "c4", name: "Refund and void line 1" }] }, effectApplied: false };
+          return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", controls: Object.entries(CONTROLS).map(([handle, name]) => ({ handle, name })) }, effectApplied: false };
         }
-        const verdict = await input.permission({ consequences: ["move_money", "delete"], control: { name: "Refund and void line 1", kind: "button" }, verb: "press" });
-        if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, resultCode: "shop.permission_required" };
+        const handle = String(input.value.handle);
+        const verdict = await input.permission({ consequences: ["move_money", "delete"], control: { name: CONTROLS[handle] ?? handle, kind: "button" }, verb: "press" });
+        // What a domain is meant to tell the model: a person's no apart from a question still open.
+        if (!verdict.permitted) {
+          const code = verdict.declined ? "consequences_declined" : "permission_required";
+          return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code, handle }, effectApplied: false, resultCode: `shop.${code}` };
+        }
         pressed.push(String(input.value.handle));
         return { kind: "llm_evidence_tool_execution", evidence: { order: "ORD-40100", status: "Partially refunded" }, effectApplied: true };
       }
@@ -75,7 +92,10 @@ async function explore(options: Options = {}) {
   const asked = options.answer ? thread(options.answer) : undefined;
   const exploration = await runAutomationStudioRuntimeExploration({
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
-    decide: async () => decisions[providerCalls++] ?? { kind: "complete", result: {} },
+    decide: async (decision) => {
+      shown.push(new Map(decision.evidence.map((entry) => [entry.callId, entry.value])));
+      return decisions[providerCalls++] ?? { kind: "complete", result: {} };
+    },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
     ...(options.gate ? { gate: options.gate } : {
       ...(options.permittedConsequences ? { permittedConsequences: options.permittedConsequences } : {}),
@@ -84,7 +104,7 @@ async function explore(options: Options = {}) {
     ...(asked ? { ask: { port: asked.port, timeoutMs: 30_000, now: () => 1_000 } } : {}),
     now: () => 1_000
   });
-  return { exploration, pressed, providerCalls: () => providerCalls, opened: asked?.opened ?? [] };
+  return { exploration, pressed, shown, providerCalls: () => providerCalls, opened: asked?.opened ?? [] };
 }
 
 describe("a recovery exploration that needs permission", () => {
@@ -217,21 +237,74 @@ describe("a repair that can put its question to a person", () => {
     expect(run.exploration.permissionRequest).toBeUndefined();
   });
 
-  it("ends on the request when the person refuses, and never takes the action", async () => {
+  // A no is an answer, not silence (2026-10-01; the build path since t195-w18).
+  // Until then the first decline ended the repair on a request the person had
+  // already refused, and no later question could be asked.
+  it("tells the model the person declined and goes on, without taking the action", async () => {
     const run = await explore({ answer: "deny" });
 
     expect(run.opened).toHaveLength(1);
     expect(run.pressed).toEqual([]);
-    expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", endedBy: "operator_approval_required" });
-    expect(run.exploration.permissionRequest).toBeDefined();
+    // The decision after the press was shown the refusal as a decline.
+    expect(run.providerCalls()).toBe(3);
+    expect(run.shown[2]?.get("call.refund")).toEqual({ ok: false, code: "consequences_declined", handle: "c4" });
+    expect(run.exploration.outcome).toBe("evidence_gathered");
+    expect(run.exploration.permissionRequest).toBeUndefined();
   });
 
-  it("ends on the request when nobody answers, having asked once", async () => {
-    const run = await explore({ answer: "nobody" });
+  it("asks about a different control after a decline, and takes it once granted", async () => {
+    const run = await explore({
+      answer: ["deny", "grant"],
+      decisions: [
+        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
+        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
+        { kind: "tool_call", callId: "call.credit", toolId: "shop.press", input: { handle: "c5" } },
+        { kind: "complete", result: { findings: "Refunded to store credit." } }
+      ]
+    });
+
+    expect(run.opened.map((ask) => ask.control?.name)).toEqual(["Refund and void line 1", "Refund to store credit"]);
+    expect(run.opened[0]?.askId).not.toBe(run.opened[1]?.askId);
+    expect(run.pressed).toEqual(["c5"]);
+    expect(run.exploration.outcome).toBe("evidence_gathered");
+    expect(run.exploration.permissionRequest).toBeUndefined();
+  });
+
+  it("refuses the declined control again without asking", async () => {
+    const run = await explore({
+      answer: "deny",
+      decisions: [
+        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
+        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
+        { kind: "tool_call", callId: "call.refund.again", toolId: "shop.press", input: { handle: "c4", retry: true } },
+        { kind: "complete", result: { findings: "The person declined the refund." } }
+      ]
+    });
 
     expect(run.opened).toHaveLength(1);
     expect(run.pressed).toEqual([]);
-    expect(run.exploration.outcome).toBe("user_intervention_required");
+    expect(run.shown[3]?.get("call.refund.again")).toEqual({ ok: false, code: "consequences_declined", handle: "c4" });
+    expect(run.exploration.outcome).toBe("evidence_gathered");
+    expect(run.exploration.permissionRequest).toBeUndefined();
+  });
+
+  it("ends on the request when nobody answers, having asked once", async () => {
+    const run = await explore({
+      answer: "nobody",
+      decisions: [
+        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
+        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
+        { kind: "tool_call", callId: "call.credit", toolId: "shop.press", input: { handle: "c5" } },
+        { kind: "complete", result: { findings: "Refunded to store credit." } }
+      ]
+    });
+
+    expect(run.opened).toHaveLength(1);
+    expect(run.pressed).toEqual([]);
+    // Ended on the first unanswered question: the model was not asked again.
+    expect(run.providerCalls()).toBe(2);
+    expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", endedBy: "operator_approval_required" });
+    expect(run.exploration.permissionRequest).toBeDefined();
   });
 });
 

@@ -76,6 +76,45 @@ async function mount(authoringCommands: ReturnType<typeof commands>, onOpenAdapt
   return { renderer, onOpenAdaptation };
 }
 describe("blank Flow instruction authoring", () => {
+  for (const transition of ["project", "flow", "unmount"] as const) for (const outcome of ["success", "failure", "reject"] as const) {
+    it(`ignores late ${outcome} after ${transition} during generation`, async () => {
+      let resolve!: (value: any) => void;
+      let reject!: (error: Error) => void;
+      const pending = new Promise((done, fail) => { resolve = done; reject = fail; });
+      const authoringCommands = commands({ generateFromWebsite: vi.fn(() => pending) });
+      const { renderer, onOpenAdaptation } = await mount(authoringCommands);
+      await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Original request" } }));
+      await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+      await act(async () => {
+        if (transition === "unmount") renderer.unmount();
+        else renderer.update(<BlankFlowAuthoringPanel commands={authoringCommands} flow={transition === "flow" ? { ...flow, flowId: "flow.next" } : flow} onOpenAdaptation={onOpenAdaptation} projectId={transition === "project" ? "project.next" : "project.one"} readiness={readiness} />);
+      });
+      await act(async () => {
+        if (outcome === "reject") reject(new Error("Old request failed"));
+        else resolve(outcome === "success" ? { ok: true, payload: { adaptation: { flowId: flow.flowId, adaptationId: "proposal.old", status: "proposed" } } } : { ok: false });
+        await pending.catch(() => undefined);
+      });
+      expect(onOpenAdaptation).not.toHaveBeenCalled();
+      if (transition !== "unmount") {
+        expect(button(renderer, "Review suggested change")).toBeUndefined();
+        expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+        expect(button(renderer, "Explore and create proposal")!.props.disabled).toBe(true);
+        expect(renderer.root.findAllByType("progress")).toHaveLength(0);
+        expect(renderer.root.findByProps({ "aria-label": "Website task" }).props.disabled).toBe(false);
+        await act(async () => renderer.unmount());
+      }
+    });
+  }
+  it("retains a review action after a build, without generating or applying again", async () => {
+    const authoringCommands = commands();
+    const { renderer, onOpenAdaptation } = await mount(authoringCommands);
+    await act(async () => button(renderer, "Build proposal from active instructions")!.props.onClick());
+    expect(button(renderer, "Review suggested change")).toBeDefined();
+    await act(async () => button(renderer, "Review suggested change")!.props.onClick());
+    expect(onOpenAdaptation.mock.calls).toEqual([[flow.flowId, "adaptation.bootstrap.one"], [flow.flowId, "adaptation.bootstrap.one"]]);
+    expect(authoringCommands.generateBootstrap).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
   it("offers a build for a blank Flow with a model key, naming only the Flow", () => {
     expect(blankFlowAuthoringRequest("project.one", flow, readiness)).toEqual({ ok: true, payload: buildPayload });
     expect(blankFlowAuthoringRequest("project.one", { ...flow, nodes: [{ id: "start" }] }, readiness).ok).toBe(false);
@@ -312,7 +351,7 @@ describe("blank Flow instruction authoring", () => {
 
     expect(generateFromWebsite).toHaveBeenCalledTimes(1);
     expect(button(renderer, "Review requested permissions")).toBeUndefined();
-    expect(renderedText(renderer.toJSON())).toContain("Start a new exploration before approving consequences");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     await act(async () => renderer.unmount());
   });
 

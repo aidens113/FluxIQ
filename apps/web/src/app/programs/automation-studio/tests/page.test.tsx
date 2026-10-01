@@ -1,0 +1,14 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ authenticated: false, directory: vi.fn(() => ({ domain: { id: "web", title: "Web" } })), catalog: vi.fn(() => [{ id: "automation-studio", title: "Studio" }]) }));
+vi.mock("../../../../lib/auth", () => ({ currentFluxIQUser: async () => state.authenticated ? { user: { id: "u", displayName: "User", roleId: "r", totpEnabled: false, pinConfigured: false } } : null }));
+vi.mock("../../../../lib/fluxiq", () => ({ getFluxIQ: () => ({ programDirectory: state.directory }) }));
+vi.mock("fluxiq", () => ({ defaultGlobalProgramCatalog: state.catalog }));
+vi.mock("next/navigation", () => ({ redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }) }));
+vi.mock("../../[programId]/ProgramWorkspace", () => ({ ProgramWorkspace: () => null }));
+import AutomationStudioPage from "../page";
+import { LoginPanel } from "../../../AuthShell";
+import { ProgramWorkspace } from "../../[programId]/ProgramWorkspace";
+beforeEach(() => { vi.clearAllMocks(); state.authenticated = false; });
+it("retains an unauthenticated Studio deep-link URL through inline login before loaders", async () => { const result = await AutomationStudioPage({ searchParams: Promise.resolve({ domainId: "web", project: "p", flow: "f", subflow: "s", view: "runtime-debug" }) }); expect(result.type).toBe(LoginPanel); expect(state.directory).not.toHaveBeenCalled(); expect(state.catalog).not.toHaveBeenCalled(); });
+it("preserves authenticated domain validation/workspace composition", async () => { state.authenticated = true; const result = await AutomationStudioPage({ searchParams: Promise.resolve({ domainId: "web" }) }); expect(result.type).toBe(ProgramWorkspace); expect(result.props).toMatchObject({ domainName: "Web", backHref: "/domains/web" }); expect(state.catalog).toHaveBeenCalledWith({ domainId: "web" }); });
+it("preserves authenticated missing-program fallback", async () => { state.authenticated = true; state.catalog.mockReturnValueOnce([]); await expect(AutomationStudioPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("redirect:/"); });

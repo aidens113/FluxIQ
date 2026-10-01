@@ -24,16 +24,18 @@ describe("DocsLive contract", () => {
 
   it("virtualizes the complete source-aware tree and keeps history navigation", () => {
     const source = readFileSync(new URL("../docs.tsx", import.meta.url), "utf8");
+    const tree = readFileSync(new URL("../../documentation-tree/VirtualDocumentationTree.tsx", import.meta.url), "utf8");
+    const model = readFileSync(new URL("../../documentation-tree/useDocumentationTree.ts", import.meta.url), "utf8");
     expect(source).not.toContain("TREE_PAGE_LIMIT");
-    expect(source).toContain("VirtualDocsTree");
-    expect(source).toContain("rows.slice(start, end)");
+    expect(source).toContain("VirtualDocumentationTree");
+    expect(model).toContain("rows.slice(start, end)");
     expect(source).toContain("useDeferredValue");
     expect(source).toContain("const renderedHtml = useMemo");
     expect(source).toContain('searchParams.get("doc")');
     expect(source).toContain("window.history.pushState");
     expect(source).toContain('window.addEventListener("popstate"');
-    expect(source).toContain('role="tree"');
-    expect(source).toContain('"ArrowDown"');
+    expect(tree).toContain('role="tree"');
+    expect(tree).toContain('"ArrowDown"');
     expect(source).toContain("does not match a page");
     expect(source).toContain("Rebuilding documentation");
     expect(source).toContain("<Drawer");

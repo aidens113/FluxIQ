@@ -23,6 +23,8 @@ import {
   automationStudioFlowDraftReplayable,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftReplaySignature,
+  automationStudioFlowDraftSometimesPresentStepIds,
+  automationStudioFlowDraftStepId,
   automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftStep
@@ -149,6 +151,14 @@ export function automationStudioFlowDraftDryRunGate(
       cleanSignature = signature;
       return undefined;
     }
+    // A step the replay found missing and proved the Flow did not need -- a
+    // banner the site remembers having been answered -- is made optional rather
+    // than refused, when that is all that stood in the way
+    // (`../../flow-draft/sometimes-present.ts`).
+    if (madeOptional(input.steps, replay.verdict)) {
+      cleanSignature = signature;
+      return undefined;
+    }
     refused = { signature, verdict: replay.verdict, replays: refused?.signature === signature ? refused.replays + 1 : 1 };
     // The target as it was when the replay broke, which is what a correction
     // has to be made from, and then the verdict that says what to do about it.
@@ -164,4 +174,28 @@ export function automationStudioFlowDraftDryRunGate(
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
     return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(replay.verdict) };
   };
+}
+
+/**
+ * Makes optional the steps this refused replay proved are only sometimes there,
+ * and says whether that leaves nothing in the way. Changes nothing when it does
+ * not: a step is made optional only by a replay the Flow then passes, so a
+ * refusal the model must answer is never half-answered for it.
+ */
+function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): boolean {
+  const sometimesPresent = automationStudioFlowDraftSometimesPresentStepIds({ steps, verdict });
+  if (!sometimesPresent.size) return false;
+  const judged = automationStudioFlowDraftDryRunVerdict({
+    attempt: verdict.attempt,
+    reset: verdict.reset,
+    outcomes: verdict.outcomes,
+    conditional: new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes), ...sometimesPresent])
+  });
+  if (!judged.ok) return false;
+  for (const step of steps) {
+    if (!sometimesPresent.has(automationStudioFlowDraftStepId(step))) continue;
+    step.routing = { kind: "optional" };
+    if (step.replayed) step.replayed = { ...step.replayed, madeOptional: true };
+  }
+  return true;
 }

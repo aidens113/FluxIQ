@@ -115,8 +115,13 @@ to checkout" refused "Place order" -- the press the task needed -- unasked for
 the rest of the build. The domain tells its model `consequences_declined` for a
 declined press rather than `consequences_not_granted`, which says the request
 is still in front of the person. The repair path
-(`recovery/runtime-exploration.ts`) still reads only granted or not, and settles
-everything else as unanswered.
+(`recovery/runtime-exploration.ts`) follows the same rules since 2026-10-01:
+each request is asked once, a decline is told to the repair's model as
+declined and its exploration goes on, a different control is asked, and only
+an unanswered request ends the exploration, with `operator_approval_required`
+carrying it. Before that a repair settled a no as silence and ended on it.
+The gate settles only `granted` and `declined`; any other answer leaves the
+request in force, so nothing is ever granted by default.
 
 **Whether the build waits is the caller's decision.**
 `permissionAskTimeoutMs` on the generation input is how long it holds open for
@@ -868,6 +873,24 @@ loudly before sending with the request's measured size. A Core note is still
 superseded by a newer one of its kind; a tool's result never leaves. A request
 answered from memory names the entry that answers it, which stays where it
 happened.
+
+Each decision is shown the current view of the target whole, and no view the
+target has left (B1, 2026-10-01; `runtime/llm/context-window.ts`). A domain
+declares which top-level keys of its results are its view of the target, as
+`observedStateKeys` on its evidence-runtime binding, beside
+`deniedEvidenceKeys`; the registry's loop binding carries the declaration to
+the build and the repair's exploration alike, and never onto a tool. In every
+result but the newest carrying a view, exactly those keys are replaced by
+`supersededBy`, the callId of the next result that carried a view, and the
+rest of the result -- what the step did, what it read, what changed, why it
+was refused -- stays whole, in its place. A reference names its direct
+successor, never the newest, so once written it never changes and each request
+is a byte prefix of the next through every entry before its current view. The
+decision instruction tells the model once what the reference means. A domain
+that declares nothing is shown every result whole, as before. Live run
+`run-mup2i28c-6c7fc209` is why: three whole pages of one store in its fifth
+decision, 214,853 input tokens, on course to pass a 1M-token window near the
+twenty-second call of a thirty-step build.
 
 A build has three phases (user, 2026-09-30): live exploration and draft
 authoring, testing and judgement, then live repair. In exploration

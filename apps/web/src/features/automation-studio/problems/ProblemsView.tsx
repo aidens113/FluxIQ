@@ -25,13 +25,18 @@ export function ProblemsView(props: ProblemsViewHostProps) {
   const [statusFilter, setStatusFilter] = useState("open");
   const [remotePageIndex, setRemotePageIndex] = useState(0);
   const [remoteCursors, setRemoteCursors] = useState<Array<string | null>>([null]);
-  const [remotePage, setRemotePage] = useState<{ problems: any[]; total: number; counts: Record<AutomationProblemSeverity, number>; nextCursor: string | null; hasMore: boolean } | null>(null);
+  const [remotePage, setRemotePage] = useState<{ projectId: string; problems: any[]; total: number; counts: Record<AutomationProblemSeverity, number>; nextCursor: string | null; hasMore: boolean } | null>(null);
+  const [remoteQuery, setRemoteQuery] = useState<{ key: string; cursor: string | null; pageIndex: number; status: "loading" | "ready" | "error" | "permission-denied" } | null>(null);
   const remoteRequestRef = useRef(0);
   const [selectedProblemKey, setSelectedProblemKey] = useState<string | null>(null);
   const [reportStatus, setReportStatus] = useState<string | null>(null);
-  const sourceProblems = remotePage?.problems ?? (props.projectId ? [] : props.problems);
+  const retainedPage = remotePage?.projectId === props.projectId ? remotePage : null;
+  const sourceProblems = retainedPage?.problems ?? (props.projectId ? [] : props.problems);
   const collection = useMemo(() => collectAutomationProblems(sourceProblems), [sourceProblems]);
   const hostState = resolveProblemsHostState(props, props);
+  const queryKey = JSON.stringify([props.projectId, filter, scope, query, sourceFilter, statusFilter, hostState.currentObject?.id]);
+  const queryStatus = props.projectId ? (remoteQuery?.key === queryKey ? remoteQuery.status : "loading") : null;
+  const queryStale = Boolean(retainedPage && queryStatus !== "ready");
   const localPage = useMemo(() => pageAutomationProblems(collection.items, {
     currentObjectId: hostState.currentObject?.id ?? null,
     filter,
@@ -39,11 +44,11 @@ export function ProblemsView(props: ProblemsViewHostProps) {
     scope,
     offset: pageOffset
   }), [collection.items, filter, hostState.currentObject?.id, pageOffset, query, scope]);
-  const page = remotePage && props.projectId ? {
+  const page = retainedPage && props.projectId ? {
     items: collection.items,
-    filteredCount: remotePage.total,
+    filteredCount: retainedPage.total,
     offset: remotePageIndex * PROBLEMS_PAGE_SIZE,
-    counts: remotePage.counts
+    counts: retainedPage.counts
   } : localPage;
   const grouped = useMemo(() => groupProblemPage(page.items), [page.items]);
 
@@ -54,39 +59,54 @@ export function ProblemsView(props: ProblemsViewHostProps) {
   }, [collection.items, selectedProblemKey]);
   useEffect(() => setPageOffset(0), [filter, scope, query, hostState.currentObject?.id]);
   useEffect(() => {
+    ++remoteRequestRef.current;
     if (!props.projectId) return;
     const timer = setTimeout(() => {
       setRemotePageIndex(0);
       setRemoteCursors([null]);
       void loadRemotePage(null, 0);
     }, 180);
-    return () => clearTimeout(timer);
-  }, [props.projectId, filter, scope, query, sourceFilter, statusFilter, hostState.currentObject?.id]);
+    return () => { clearTimeout(timer); ++remoteRequestRef.current; };
+  }, [queryKey, props.onListProblems]);
 
   const loadRemotePage = async (cursor: string | null, pageIndex: number) => {
     if (!props.projectId) return;
     const requestId = ++remoteRequestRef.current;
-    if (!props.onListProblems) return;
-    const result = await props.onListProblems({
-      projectId: props.projectId,
-      limit: PROBLEMS_PAGE_SIZE,
-      cursor,
-      ...(filter !== "all" ? { severity: filter } : {}),
-      ...(sourceFilter !== "all" ? { source: sourceFilter } : {}),
-      ...(statusFilter !== "all" ? { status: statusFilter } : {}),
-      ...(scope === "current" && hostState.currentObject?.id ? { scopeId: hostState.currentObject.id } : {}),
-      ...(query.trim() ? { search: query.trim() } : {})
-    });
-    if (requestId !== remoteRequestRef.current || !result.ok) return;
-    const remote = result.payload?.page;
-    setRemotePageIndex(pageIndex);
-    setRemotePage({
-      problems: result.payload?.problems ?? remote?.problems ?? [],
-      total: remote?.total ?? 0,
-      counts: { error: remote?.counts?.error ?? 0, warning: remote?.counts?.warning ?? 0, info: remote?.counts?.info ?? 0 },
-      nextCursor: remote?.nextCursor ?? null,
-      hasMore: remote?.hasMore === true
-    });
+    const request = { key: queryKey, cursor, pageIndex };
+    setRemoteQuery({ ...request, status: "loading" });
+    try {
+      const result = await props.onListProblems?.({
+        projectId: props.projectId,
+        limit: PROBLEMS_PAGE_SIZE,
+        cursor,
+        ...(filter !== "all" ? { severity: filter } : {}),
+        ...(sourceFilter !== "all" ? { source: sourceFilter } : {}),
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+        ...(scope === "current" && hostState.currentObject?.id ? { scopeId: hostState.currentObject.id } : {}),
+        ...(query.trim() ? { search: query.trim() } : {})
+      });
+      if (requestId !== remoteRequestRef.current) return;
+      if (!result?.ok) {
+        const denied = result && (("status" in result && result.status === 403) || ("code" in result && result.code === "permission_denied") || /permission|forbidden|access.denied/i.test(result.error ?? ""));
+        setRemoteQuery({ ...request, status: denied ? "permission-denied" : "error" });
+        return;
+      }
+      const remote = result.payload?.page;
+      const problems = result.payload?.problems ?? remote?.problems;
+      if (!Array.isArray(problems)) throw new Error("Invalid problems response");
+      setRemotePageIndex(pageIndex);
+      setRemotePage({
+        projectId: props.projectId,
+        problems,
+        total: remote?.total ?? problems.length,
+        counts: { error: remote?.counts?.error ?? 0, warning: remote?.counts?.warning ?? 0, info: remote?.counts?.info ?? 0 },
+        nextCursor: remote?.nextCursor ?? null,
+        hasMore: remote?.hasMore === true
+      });
+      setRemoteQuery({ ...request, status: "ready" });
+    } catch {
+      if (requestId === remoteRequestRef.current) setRemoteQuery({ ...request, status: "error" });
+    }
   };
 
   // A redacted diagnostic bundle for a problem report (`diagnostic-report.ts`), copied for the person to paste.
@@ -106,7 +126,7 @@ export function ProblemsView(props: ProblemsViewHostProps) {
     || hostState.status === "stale";
 
   return (
-    <section className="automation-problems-workspace" aria-busy={hostState.status === "loading"}>
+    <section className="automation-problems-workspace" aria-busy={queryStatus === "loading" || hostState.status === "loading"}>
       <header className="automation-problems-header">
         <div><AlertTriangle size={16} aria-hidden /><div><strong>Problems</strong><span>Validation, authoring, and runtime issues</span></div></div>
         <span aria-label={page.filteredCount + " problems"}>{page.filteredCount}</span>
@@ -120,6 +140,13 @@ export function ProblemsView(props: ProblemsViewHostProps) {
         onRefresh={props.onRequestValidation}
         status={hostState.status}
       /> : null}
+      {queryStatus && queryStatus !== "ready" ? <div className={"automation-settings-validation " + queryStatus} role={queryStatus === "loading" ? "status" : "alert"}>
+        <div><strong>{queryStatus === "loading" ? "Loading problems" : queryStatus === "permission-denied" ? "Problems unavailable" : "Could not load problems"}</strong>
+          <span>{queryStatus === "permission-denied" ? "You do not have permission to list problems. Retry after access is restored." : queryStatus === "error" ? "The problems query failed. Retry to load the current results." : "Waiting for the current problems query."}</span>
+          {queryStale ? <span>Showing results from the previous query. These results are stale and may not match the current filters.</span> : null}
+        </div>
+        {queryStatus !== "loading" ? <button type="button" onClick={() => void loadRemotePage(remoteQuery?.cursor ?? null, remoteQuery?.pageIndex ?? 0)}>Retry</button> : null}
+      </div> : null}
 
       <div className="automation-problems-controls">
         <div aria-label="Problem scope" className="automation-problem-filters" role="group">
@@ -157,17 +184,17 @@ export function ProblemsView(props: ProblemsViewHostProps) {
             severity={severity}
           />)}
         </section>)}
-      </div> : <ProblemsEmptyState hasAnyProblems={collection.items.length > 0} scope={scope} status={hostState.status} />}
+      </div> : <ProblemsEmptyState hasAnyProblems={collection.items.length > 0} scope={scope} status={queryStatus ?? hostState.status} remote={Boolean(props.projectId)} />}
 
       {page.filteredCount > PROBLEMS_PAGE_SIZE ? <footer className="automation-runtime-pagination-footer">
         <span>{page.offset + 1}-{Math.min(page.filteredCount, page.offset + page.items.length)} of {page.filteredCount}</span>
         <div className="automation-runtime-pagination">
-          <button disabled={page.offset <= 0} onClick={() => {
+          <button disabled={page.offset <= 0 || Boolean(queryStatus && queryStatus !== "ready")} onClick={() => {
             if (!props.projectId) return setPageOffset(Math.max(0, page.offset - PROBLEMS_PAGE_SIZE));
             const nextIndex = Math.max(0, remotePageIndex - 1);
             void loadRemotePage(remoteCursors[nextIndex] ?? null, nextIndex);
           }} type="button"><ChevronLeft size={15} aria-hidden />Previous</button>
-          <button disabled={props.projectId ? !remotePage?.hasMore : page.offset + PROBLEMS_PAGE_SIZE >= page.filteredCount} onClick={() => {
+          <button disabled={props.projectId ? queryStatus !== "ready" || !retainedPage?.hasMore : page.offset + PROBLEMS_PAGE_SIZE >= page.filteredCount} onClick={() => {
             if (!props.projectId) return setPageOffset(page.offset + PROBLEMS_PAGE_SIZE);
             if (!remotePage?.nextCursor) return;
             const nextIndex = remotePageIndex + 1;
@@ -212,11 +239,14 @@ function ProblemSeverityGroup(props: {
   </div>;
 }
 
-function ProblemsEmptyState(props: { hasAnyProblems: boolean; scope: AutomationProblemScope; status: string }) {
+function ProblemsEmptyState(props: { hasAnyProblems: boolean; scope: AutomationProblemScope; status: string; remote?: boolean }) {
+  if (["error", "permission-denied", "stale"].includes(props.status)) return <div className="automation-problems-empty"><AlertCircle aria-hidden size={24} /><strong>Problems have not been confirmed</strong><span>Load current results before checking whether there are matching problems.</span></div>;
   const title = props.status === "loading" ? "Checking for problems" : props.hasAnyProblems ? "No problems in this filter" : "No problems found";
   const detail = props.status === "loading"
     ? "Results will appear here when validation completes."
-    : props.scope === "current"
+    : props.remote
+      ? "No matching problems were returned for the current query."
+      : props.scope === "current"
       ? "The selected object has no matching problems."
       : props.hasAnyProblems
         ? "Choose another scope, severity, or search to review remaining issues."

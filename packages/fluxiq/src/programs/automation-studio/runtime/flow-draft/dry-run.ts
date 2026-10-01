@@ -66,6 +66,14 @@
 // which exempts it through the verdict's `conditional` set. A step dropped,
 // exploratory or that did not work is not proposed, so it is not replayed.
 //
+// **One exception, proved rather than insisted on.** A step whose target was
+// not there, that does none of the person's acts, and without which every
+// later step replayed is made optional by the replay itself, when that is all
+// that stood in the way (`./sometimes-present.ts`): a cookie banner the build
+// answered is not shown again on a reset that keeps site data, and one paid
+// decision to say "optional" was what t194's run `run-mup2u8o3-6697c4be` could
+// not afford.
+//
 // **A step whose effect lasts is checked, not run (decision D1).** The reset
 // is a navigation: it never clears site data or logs the person out, so what
 // the site remembers stays remembered, and replaying a save or an add would do
@@ -133,6 +141,12 @@ export type AutomationStudioFlowDraftReplayOutcome = {
    * not replay (`./verify-only.ts`). Such a step does not refuse the proposal.
    */
   withheldBy?: number;
+  /**
+   * Set on the step's own record when this replay found it missing, proved the
+   * Flow did not need it, and so made it optional (`./sometimes-present.ts`).
+   * It is why an optional step that the model never marked is optional.
+   */
+  madeOptional?: true;
 };
 
 /** One whole replay of the draft. */
@@ -258,6 +272,9 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
   // Insisting used to be accepted the second time; runs 18, 21 and 33 shipped
   // or nearly shipped a step that did not replay that way (see the header).
   + "So a step that does not replay keeps the Flow from being proposed until it replays, is marked optional (or only_if on a check), or is dropped; finishing again with it unchanged is refused again. Drop it only if the Flow does not need it at all. "
+  // The one case the replay answers itself (`./sometimes-present.ts`), said so
+  // the model does not mark by hand what the next test would mark for it.
+  + "A step that does none of the acts, whose target was not there, and without which every later step replayed, is made optional by the test itself once nothing else stands in the way. "
   + "again: true marks a step an earlier dry run already reported as not replaying. "
   // Decision D1: a lasting effect is never repeated (`./verify-only.ts`). The
   // model must not read a checked step as one that was done again.

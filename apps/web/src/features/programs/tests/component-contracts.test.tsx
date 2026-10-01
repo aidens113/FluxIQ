@@ -239,7 +239,12 @@ describe("critical shared UI states", () => {
 
   it("announces shared copy and download command outcomes", () => {
     const source = componentSource;
-    expect(source).toContain("could not be copied");
+    const clipboard = readFileSync(new URL("../components/controls/ClipboardButton.tsx", import.meta.url), "utf8");
+    expect(clipboard).toContain("await navigator.clipboard.writeText(props.value)");
+    expect(clipboard).toContain('role="status"');
+    expect(clipboard).toContain("Copied to clipboard.");
+    expect(clipboard).toContain('role="alert"');
+    expect(clipboard).toContain("copy it manually");
     expect(source).toContain("download started");
     expect(source).toContain("could not be downloaded");
   });

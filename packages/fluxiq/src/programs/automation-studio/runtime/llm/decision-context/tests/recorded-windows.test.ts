@@ -40,7 +40,7 @@ const HISTORY = "core.evidence_history";
 const DIVERGES: Readonly<Record<RecordedRunName, readonly number[]>> = {
   "bigbox-run6": [22, 26],
   crossborder: [19],
-  "everything-store-run4": [40, 44, 46]
+  "everything-store-run4": [29, 40, 44, 46]
 };
 
 /** How each replay ends: after its last logged call, or on the decision after its last logged one. */
@@ -72,7 +72,8 @@ type Old = { entries: number; bytes: number; pages: number; notes: number; noteB
  *   - Run 4 decision 47: the refusals from 40 and 44 and the request check
  *     from 8 dropped with no trace; dry run 1's stale refusal and page shown
  *     although dry runs 2-4 replayed clean. (They were clean only because the
- *     old gate waved steps 3 and 6 through; they refuse now.)
+ *     old gate waved steps 3 and 6 through. None of the five completions is
+ *     tested now: today's check refuses each of them, `./recorded-runs.ts`.)
  */
 const OLD: Readonly<Record<RecordedRunName, Readonly<Record<number, Old>>>> = {
   "bigbox-run6": {
@@ -360,15 +361,14 @@ describe("crossborder decisions 13-14: the identical refusal is caught", () => {
   });
 });
 
-describe("everything-store-run4 decision 47: no refusal is lost, and the stale dry run is gone", () => {
-  it("refusals 40, 44 and 46 are all on the record; dry run 1's refusal and page have left; the newest page is shown", async () => {
+describe("everything-store-run4 decision 47: no refusal is lost, and no dry run stands in the window", () => {
+  it("refusals 29, 40, 44 and 46 are all on the record, none of them tested; the newest page is shown", async () => {
     const run = await replay("everything-store-run4");
     const completions = rowsOf(historyAt(run, 47)).filter((row) => row.kind === "completion");
-    expect(completions.flatMap((row) => row.at)).toEqual(expect.arrayContaining([40, 44, 46]));
-    // Only 29's check passed, so only 29 was tested; 40, 44 and 46 were refused
-    // by the check and, being live work still, not replayed from the first step.
-    expect(completions.find((row) => row.at.includes(29))?.detail?.dryRun).toEqual([[3, "unreproducible"], [6, "unreproducible"]]);
-    for (const at of [40, 44, 46]) {
+    expect(completions.flatMap((row) => row.at)).toEqual(expect.arrayContaining([29, 40, 44, 46]));
+    // Each was refused by the check and, being live work still, not replayed
+    // from the first step (`./recorded-runs.ts` says why 29 is refused now).
+    for (const at of [29, 40, 44, 46]) {
       expect(completions.find((row) => row.at.includes(at))?.detail?.dryRun, `completion ${at}`).toBeUndefined();
     }
     const ids = shownAt(run, 47).map((entry) => entry.callId);

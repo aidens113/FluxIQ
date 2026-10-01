@@ -70,6 +70,7 @@ export function useAutomationConnectorCommands(handlers: AutomationConnectorComm
       // The pane a project opens on hosts the ask, so its call to action has to
       // be able to make the thing it is asking about.
       onCreateFlow: stable.createFlow,
+      onOpenAdaptation: stable.openAdaptation,
       onSaveGraph: stable.saveGraph,
       onGraphDraftChange: stable.updateGraphDraft,
       onDirtyChange: stable.setGraphDirty,

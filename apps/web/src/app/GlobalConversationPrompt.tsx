@@ -22,7 +22,7 @@
 // every route's first load, for a prompt that is a modal.
 //
 // It reads `list-conversations` for open threads, then `get-conversation` for
-// the most recently updated one. It shows one question at a time, and
+// bounded candidates and forward turn pages. It shows one question at a time, and
 // answering or dismissing it reveals the next.
 //
 // **It stands down inside Automation Studio.** The conversation is an overlay
@@ -52,6 +52,9 @@ import {
 const PROGRAM_ENDPOINT = "/api/programs/automation-studio";
 /** Where the conversation is an overlay already, so this prompt keeps quiet. */
 const STUDIO_ROUTE = "/programs/automation-studio";
+const CANDIDATE_LIMIT = 25;
+const DETAIL_READ_LIMIT = 12;
+const THREAD_PAGE_LIMIT = 3;
 
 type PromptState = { conversation: Conversation | null; turn: ConversationTurn | null };
 type PostResult = { ok: true; payload?: any } | { ok: false; error: string };
@@ -81,44 +84,102 @@ async function programPost(endpoint: string, payload: Record<string, unknown>): 
   } catch {
     return { ok: false, error: `${endpoint} answered something this page could not read.` };
   }
-  return result.ok === true ? { ok: true, payload: result.payload } : { ok: false, error: `${endpoint} refused.` };
+  return response.ok && result.ok === true ? { ok: true, payload: result.payload } : { ok: false, error: `${endpoint} refused.` };
 }
 
 export function GlobalConversationPrompt() {
   const pathname = usePathname();
   const inStudio = Boolean(pathname?.startsWith(STUDIO_ROUTE));
   const [state, setState] = useState<PromptState>({ conversation: null, turn: null });
-  const [dismissedAskIds, setDismissedAskIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const dismissedRef = useRef<string[]>([]);
+  const stateRef = useRef(state);
+  const activeRef = useRef(false);
+  const busyRef = useRef(false);
+  const generationRef = useRef(0);
+  const lifetimeRef = useRef(0);
+  const candidateOffsetRef = useRef(0);
+  const cursorsRef = useRef(new Map<string, { version: string; cursor: string | null }>());
   const pollerRef = useRef<{ sync(): void } | null>(null);
-  dismissedRef.current = dismissedAskIds;
+
+  const publish = (next: PromptState) => { stateRef.current = next; setState(next); };
 
   const read = useCallback(async () => {
-    const list = await programPost("list-conversations", { projectId: null, status: "open", limit: 25 });
-    if (!list.ok) return "failed" as const;
-    const conversation = openConversationsFromPayload(list.payload)[0];
-    if (!conversation) {
-      setState({ conversation: null, turn: null });
-      return "idle" as const;
+    if (!activeRef.current || busyRef.current) return "pending" as const;
+    const generation = ++generationRef.current;
+    const current = () => activeRef.current && generation === generationRef.current;
+    const failedMessage = "Questions could not be checked completely. Retry or open Automation Studio to review conversations.";
+    const boundedMessage = "More conversations may contain questions. This prompt checks up to 25 conversations in bounded pages; open Automation Studio to review them now.";
+    const list = await programPost("list-conversations", { projectId: null, status: "open", limit: CANDIDATE_LIMIT });
+    if (!current()) return "failed" as const;
+    if (!list.ok || !Array.isArray(list.payload?.conversations)) {
+      setReadError(failedMessage);
+      return "failed" as const;
     }
-    // The thread's own project, not the page's: this prompt is mounted in the
-    // root layout and never knows where the person is standing, and Core's
-    // detail read is project-scoped.
-    const detail = await programPost("get-conversation", {
-      projectId: conversation.projectId,
-      conversationId: conversation.conversationId,
-      limit: 100
-    });
-    if (!detail.ok) return "failed" as const;
-    const turn = promptableConversationTurn(conversationTurnsFromDetail(detail.payload), dismissedRef.current);
-    setState({ conversation, turn });
-    return turn ? ("pending" as const) : ("idle" as const);
+    const candidates = openConversationsFromPayload(list.payload).slice(0, CANDIDATE_LIMIT)
+      .sort((left, right) => Number(right.pendingAskCount > 0) - Number(left.pendingAskCount > 0));
+    const keys = new Set(candidates.map((entry) => `${entry.projectId}:${entry.conversationId}`));
+    for (const key of cursorsRef.current.keys()) if (!keys.has(key)) cursorsRef.current.delete(key);
+    const offset = candidateOffsetRef.current % Math.max(1, candidates.length);
+    const ordered = [...candidates.slice(offset), ...candidates.slice(0, offset)];
+    const selected = stateRef.current.conversation;
+    if (selected) ordered.sort((left, right) => Number(right.conversationId === selected.conversationId && right.projectId === selected.projectId) - Number(left.conversationId === selected.conversationId && left.projectId === selected.projectId));
+    let failed = false;
+    let incomplete = candidates.length === CANDIDATE_LIMIT;
+    let reads = 0;
+    for (const conversation of ordered) {
+      if (reads >= DETAIL_READ_LIMIT) { incomplete = true; break; }
+      const key = `${conversation.projectId}:${conversation.conversationId}`;
+      const revision = list.payload.conversations.find((entry: any) => entry?.projectId === conversation.projectId && entry?.conversationId === conversation.conversationId)?.revision;
+      const version = `${conversation.updatedAt}:${Number.isSafeInteger(revision) ? revision : ""}`;
+      const saved = cursorsRef.current.get(key);
+      let cursor = saved?.version === version ? saved.cursor : null;
+      for (let page = 0; page < THREAD_PAGE_LIMIT && reads < DETAIL_READ_LIMIT; page++) {
+        reads++;
+        const detail = await programPost("get-conversation", {
+          projectId: conversation.projectId, conversationId: conversation.conversationId, limit: 100,
+          ...(cursor ? { sinceTurnId: cursor } : {})
+        });
+        if (!current()) return "failed" as const;
+        const envelope = detail.ok ? detail.payload?.conversation : null;
+        if (!detail.ok || !Array.isArray(envelope?.turns)) {
+          failed = true;
+          cursorsRef.current.delete(key);
+          break;
+        }
+        const turns = conversationTurnsFromDetail(detail.payload);
+        const turn = promptableConversationTurn(turns.filter((entry) => !entry.ask || !dismissedRef.current.includes(entry.ask.askId)), dismissedRef.current);
+        if (turn) {
+          cursorsRef.current.set(key, { version, cursor });
+          publish({ conversation, turn });
+          setReadError(failed ? failedMessage : candidates.length === CANDIDATE_LIMIT ? boundedMessage : "");
+          return "pending" as const;
+        }
+        const next = turns.at(-1)?.turnId;
+        if (envelope.hasMore !== true) { cursorsRef.current.delete(key); break; }
+        if (!next || next === cursor) { failed = true; cursorsRef.current.delete(key); break; }
+        cursor = next;
+        cursorsRef.current.set(key, { version, cursor });
+        if (page === THREAD_PAGE_LIMIT - 1 || reads >= DETAIL_READ_LIMIT) incomplete = true;
+      }
+      candidateOffsetRef.current = (candidates.indexOf(conversation) + 1) % Math.max(1, candidates.length);
+    }
+    // An unreadable page does not prove a previously shown ask was resolved.
+    if (!failed) publish({ conversation: null, turn: null });
+    setReadError(failed ? failedMessage : incomplete ? boundedMessage : "");
+    return failed ? "failed" as const : incomplete ? "pending" as const : "idle" as const;
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || inStudio) return;
+    activeRef.current = true;
+    busyRef.current = false;
+    publish({ conversation: null, turn: null });
+    setError("");
+    setReadError("");
+    setBusy(false);
     const poller = createBackoffPoller<number>({
       active: () => true,
       hidden: () => document.visibilityState === "hidden",
@@ -133,6 +194,11 @@ export function GlobalConversationPrompt() {
     };
     document.addEventListener("visibilitychange", resume);
     return () => {
+      activeRef.current = false;
+      ++generationRef.current;
+      ++lifetimeRef.current;
+      busyRef.current = false;
+      stateRef.current = { conversation: null, turn: null };
       pollerRef.current = null;
       document.removeEventListener("visibilitychange", resume);
       poller.dispose();
@@ -141,20 +207,29 @@ export function GlobalConversationPrompt() {
 
   const turn = state.turn;
   const ask = turn?.ask ?? null;
+  if (!inStudio && !turn && readError) return <aside role="status"><InlineNotice message={readError} tone="error" /><Button onClick={() => pollerRef.current?.sync()}>Retry</Button><a href={STUDIO_ROUTE}>Open conversations in Automation Studio</a></aside>;
   if (inStudio || !turn || !ask) return null;
 
   const presentation = conversationAskPresentation(ask);
   const copy = conversationPromptCopy(state.conversation, turn);
+  const isCurrentQuestion = () => stateRef.current.conversation?.projectId === state.conversation?.projectId
+    && stateRef.current.conversation?.conversationId === state.conversation?.conversationId
+    && stateRef.current.turn?.ask?.askId === ask.askId;
 
   function dismiss() {
-    if (busy || !ask) return;
-    setDismissedAskIds((current) => withDismissedAsk(current, ask.askId));
-    setState({ conversation: null, turn: null });
+    if (busyRef.current || !ask || !activeRef.current || !isCurrentQuestion()) return;
+    ++generationRef.current;
+    dismissedRef.current = withDismissedAsk(dismissedRef.current, ask.askId);
+    publish({ conversation: null, turn: null });
+    setError("");
     pollerRef.current?.sync();
   }
 
   async function answer(action: ConversationAnswerAction) {
-    if (busy || !turn) return;
+    if (busyRef.current || !turn || !activeRef.current || !isCurrentQuestion() || action.answer.askId !== ask?.askId) return;
+    busyRef.current = true;
+    const lifetime = lifetimeRef.current;
+    ++generationRef.current;
     setBusy(true);
     setError("");
     try {
@@ -162,14 +237,17 @@ export function GlobalConversationPrompt() {
         projectId: state.conversation?.projectId ?? "",
         ...conversationAnswerRequest(action.answer satisfies ConversationAnswer)
       });
+      if (!activeRef.current || lifetime !== lifetimeRef.current) return;
       if (!sent.ok) {
         setError("The answer could not be sent. The question is still waiting.");
         return;
       }
-      setState({ conversation: null, turn: null });
+      dismissedRef.current = withDismissedAsk(dismissedRef.current, action.answer.askId);
+      publish({ conversation: null, turn: null });
+      busyRef.current = false;
       pollerRef.current?.sync();
     } finally {
-      setBusy(false);
+      if (activeRef.current && lifetime === lifetimeRef.current) { busyRef.current = false; setBusy(false); }
     }
   }
 
@@ -190,6 +268,8 @@ export function GlobalConversationPrompt() {
           />
         ) : null}
         {error ? <InlineNotice message={error} title="Answer not sent" tone="error" /> : null}
+        {readError ? <InlineNotice message={readError} title="Question checks incomplete" tone="error" /> : null}
+        {readError ? <a href={STUDIO_ROUTE}>Open conversations in Automation Studio</a> : null}
       </div>
       <div className="modal-actions">
         <Button disabled={busy} onClick={dismiss}>Not now</Button>

@@ -96,6 +96,12 @@ export type AutomationStudioHarnessOptionBundle = {
   domainId?: string;
   options: AutomationStudioHarnessOption[];
   implementations: Record<string, AutomationStudioHarnessOptionImplementation>;
+  /**
+   * The top-level keys of these options' results that are a view of the
+   * target, which a newer view replaces in what each decision is shown
+   * (`AutomationStudioLlmEvidenceRuntimeBinding.observedStateKeys`).
+   */
+  observedStateKeys?: readonly string[];
 };
 
 const OPTION_ID = /^[a-z0-9_.:-]{1,200}$/i;

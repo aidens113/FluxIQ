@@ -34,6 +34,10 @@ import {
 } from "./option.ts";
 
 const DOMAIN_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+/** A key a bundle may declare as part of a view of its target: a plain property name. */
+const OBSERVED_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+/** How many such keys one bundle may declare. */
+const OBSERVED_STATE_KEY_LIMIT = 32;
 
 /**
  * Everything that decides which options this call may be offered. `scope`,
@@ -85,12 +89,21 @@ export type AutomationStudioHarnessOptionLoopBinding = {
      */
     permission?: AutomationStudioActionPermissionCheck;
   }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * The keys of a result that are a view of the target, declared by the
+   * bundles with an option offered here; absent when none declared any. The
+   * loop shows the newest view whole and replaces every earlier one
+   * (`../context-window.ts`).
+   */
+  observedStateKeys?: readonly string[];
 };
 
 export class AutomationStudioHarnessOptionRegistry {
   private readonly options = new Map<string, AutomationStudioHarnessOption>();
   private readonly implementations = new Map<string, AutomationStudioHarnessOptionImplementation>();
   private readonly domains = new Set<string>();
+  /** Each bundle's declared view keys, by the ids of the options it registered. */
+  private readonly observedStateKeysByOption = new Map<string, readonly string[]>();
 
   /** Seeded with Core's own options for the given host, so a domain always
    * registers into a non-empty set and there is something to extend. */
@@ -124,9 +137,14 @@ export class AutomationStudioHarnessOptionRegistry {
     for (const key of Object.keys(bundle.implementations)) {
       if (!bundle.options.some((option) => option.toolId === key)) throw new Error(`Automation Studio harness option implementation "${key}" declares no option.`);
     }
+    const observed = bundle.observedStateKeys;
+    if (observed !== undefined && (!Array.isArray(observed) || observed.length > OBSERVED_STATE_KEY_LIMIT || !observed.every((key) => typeof key === "string" && OBSERVED_STATE_KEY.test(key)))) {
+      throw new Error("Automation Studio harness option bundle observed state keys are invalid.");
+    }
     for (const option of bundle.options) {
       this.options.set(option.toolId, option);
       this.implementations.set(option.toolId, bundle.implementations[option.toolId]!);
+      if (observed?.length) this.observedStateKeysByOption.set(option.toolId, [...observed]);
     }
     if (domainId !== undefined) this.domains.add(domainId);
     return this;
@@ -197,8 +215,13 @@ export class AutomationStudioHarnessOptionRegistry {
     context: { projectId: string; flowId: string; runId?: string },
     resolution: AutomationStudioHarnessOptionResolution
   ): AutomationStudioHarnessOptionLoopBinding {
+    const tools = this.tools(resolution);
+    // Only the declarations of bundles the model is offered something from: a
+    // key means "a view of the target" only in results of the bundle that said so.
+    const observedStateKeys = [...new Set(tools.flatMap((tool) => this.observedStateKeysByOption.get(tool.toolId) ?? []))];
     return {
-      tools: this.tools(resolution),
+      tools,
+      ...(observedStateKeys.length ? { observedStateKeys } : {}),
       executeTool: ({ callId, toolId, value, signal, permission }) => this.execute({
         projectId: context.projectId,
         flowId: context.flowId,
