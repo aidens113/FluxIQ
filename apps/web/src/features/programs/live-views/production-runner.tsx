@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProductionRun, ProductionRunnerSnapshotResponse } from "fluxiq/production-runner";
 import { useProgramApi } from "../program-api";
+import { validateProductionSnapshot } from "../operational-payloads";
 import { DataTable, EmptyState, Field, KeyValue, LoadingState, Panel, Segmented, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
 import { digits, flattenRunLogs, formatTime, type ProductionLogRow } from "./shared";
 import { useOperationLock } from "../use-operation-lock";
@@ -10,7 +11,6 @@ import { OperationalFreshness, useOperationalSnapshot } from "../operational-ref
 
 import { prepareProductionParameters, ProductionParameterFields } from "../production-parameters";
 
-const validSnapshot = (value: unknown): value is ProductionRunnerSnapshotResponse => Boolean(value && typeof value === "object" && Array.isArray((value as ProductionRunnerSnapshotResponse).targets) && Array.isArray((value as ProductionRunnerSnapshotResponse).runs));
 
 export function ProductionRunnerLive() {
   const api = useProgramApi("production-runner");
@@ -37,7 +37,7 @@ function ProductionRunnerWorkspace({ api, ownerCurrent }: { api: ReturnType<type
   const [logFilter, setLogFilter] = useState("all");
   const [status, setStatus] = useState("");
   const read = useCallback((signal: AbortSignal) => mounted.current && ownerCurrent() ? api.get<ProductionRunnerSnapshotResponse>("snapshot", { signal }) : Promise.resolve({ ok: false, aborted: true }), [api, ownerCurrent]);
-  const operational = useOperationalSnapshot({ owner: api, read, validate: validSnapshot, clockMs: 10_000 });
+  const operational = useOperationalSnapshot({ owner: api, read, validate: validateProductionSnapshot, clockMs: 10_000 });
   const { data: snapshot, refresh: refreshSnapshot } = operational;
   const refresh = useCallback(() => mounted.current && ownerCurrent() ? refreshSnapshot() : Promise.resolve(), [ownerCurrent, refreshSnapshot]);
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);

@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, useLayoutEffect } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -35,6 +35,24 @@ afterEach(async () => {
   if (renderer) await act(async () => { renderer!.unmount(); });
   renderer = null;
   vi.unstubAllGlobals();
+});
+
+it.each(["domainId=web%2Fteam&return=https%3A%2F%2Felsewhere.invalid&project=old", "domainId=space+team", ""])("preserves only current domain in Secret Keys setup link for %s", async (scope) => {
+  query.value = scope; stubFetch({ gateway: { ok: true, payload: { sessions: [], webRuntime: { clientGatewayListening: true } } }, keys: { ok: true, payload: { keys: [] } } });
+  const view = await render(); const link = view.root.findByType("a"); const url = new URL(link.props.href, "https://panel.invalid");
+  expect(url.pathname).toBe("/programs/secret-keys"); const expectedDomain = new URLSearchParams(scope).get("domainId"); expect([...url.searchParams]).toEqual(expectedDomain ? [["domainId", expectedDomain]] : []); expect(push).not.toHaveBeenCalled();
+});
+it("rejects retained start after route replacement but permits current activation", async () => {
+  query.value = "domainId=first"; stubFetch({ gateway: { ok: true, payload: { sessions: [] } }, keys: { ok: true, payload: { keys: [] } } });
+  const view = await render(); const retained = view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick;
+  query.value = "domainId=second"; await act(async () => view.update(<GetStartedClient pollMs={0} />)); act(() => retained()); expect(push).not.toHaveBeenCalled();
+  act(() => view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick()); expect(push).toHaveBeenCalledWith("/programs/automation-studio?start=describe&domainId=second");
+});
+it("rejects retained start during route unmount layout commit", async () => {
+  stubFetch({ gateway: { ok: true, payload: { sessions: [] } }, keys: { ok: true, payload: { keys: [] } } }); let retained = () => {};
+  function Parent({ show }: { show: boolean }) { useLayoutEffect(() => { if (!show) retained(); }, [show]); return show ? <GetStartedClient pollMs={0} /> : null; }
+  await act(async () => { renderer = create(<Parent show />); }); retained = renderer!.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick;
+  await act(async () => renderer!.update(<Parent show={false} />)); expect(push).not.toHaveBeenCalled();
 });
 
 async function render() {

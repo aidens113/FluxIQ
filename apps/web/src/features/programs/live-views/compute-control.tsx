@@ -4,13 +4,13 @@ import { RefreshCcw, Search, Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComputeCommand, ComputeControlSnapshotResponse, ComputeNode } from "fluxiq/compute-control";
 import { useProgramApi } from "../program-api";
+import { validateComputeSnapshot } from "../operational-payloads";
 import { EmptyState, KeyValue, LoadingState, StatusBadge, StatusText } from "../shared-ui";
 import { formatTime, shortJson } from "./shared";
 import { reconcileVisibleSelection } from "../program-selection";
 import { OperationalFreshness, useOperationalSnapshot } from "../operational-refresh";
 
 type HealthFilter = "all" | "healthy" | "degraded" | "offline";
-const validSnapshot = (value: unknown): value is ComputeControlSnapshotResponse => Boolean(value && typeof value === "object" && ["nodes", "commands", "leases"].every((key) => Array.isArray((value as Record<string, unknown>)[key])));
 
 export function ComputeControlLive() {
   const api = useProgramApi("compute-control");
@@ -20,7 +20,7 @@ export function ComputeControlLive() {
   const [capability, setCapability] = useState("all");
   const [status, setStatus] = useState("");
   const read = useCallback((signal: AbortSignal) => api.get<ComputeControlSnapshotResponse>("snapshot", { signal }), [api]);
-  const operational = useOperationalSnapshot({ owner: api, read, validate: validSnapshot, clockMs: 10_000 });
+  const operational = useOperationalSnapshot({ owner: api, read, validate: validateComputeSnapshot, clockMs: 10_000 });
   const { data: snapshot, refresh, nowMs } = operational;
 
   const nodes = snapshot?.nodes ?? [];

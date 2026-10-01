@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Pause, Play, RefreshCcw, Search } from "luci
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BackgroundTaskDefinition, BackgroundTaskRun, BackgroundTasksSnapshotResponse } from "fluxiq/background-tasks";
 import { useProgramApi } from "../program-api";
+import { validateBackgroundSnapshot, validateBackgroundRunPage, validateBackgroundRun } from "../operational-payloads";
 import { EmptyState, KeyValue, LoadingState, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
 import { formatCountdown, formatDuration, formatTime, scheduleProgress, shortJson } from "./shared";
 import { reconcileVisibleSelection } from "../program-selection";
@@ -12,8 +13,6 @@ import { OperationalFreshness, useOperationalSnapshot } from "../operational-ref
 type RunPage = { task?: BackgroundTaskDefinition; runs: BackgroundTaskRun[]; total: number; limit: number; offset: number };
 type TaskFilter = "all" | "enabled" | "disabled";
 type RunFilter = "all" | BackgroundTaskRun["status"];
-const validSnapshot = (value: unknown): value is BackgroundTasksSnapshotResponse => Boolean(value && typeof value === "object" && Array.isArray((value as BackgroundTasksSnapshotResponse).tasks) && (value as BackgroundTasksSnapshotResponse).scheduler);
-const validPage = (value: unknown): value is RunPage => Boolean(value && typeof value === "object" && Array.isArray((value as RunPage).runs) && Number.isInteger((value as RunPage).total) && (value as RunPage).total >= 0 && (value as RunPage).limit === 50 && Number.isInteger((value as RunPage).offset) && (value as RunPage).offset >= 0);
 
 export function BackgroundTasksLive() {
   const api = useProgramApi("background-tasks");
@@ -37,7 +36,7 @@ function BackgroundTasksWorkspace({ api, ownerCurrent }: { api: ReturnType<typeo
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const read = useCallback((signal: AbortSignal) => mounted.current && ownerCurrent() ? api.get<BackgroundTasksSnapshotResponse>("snapshot", { signal }) : Promise.resolve({ ok: false, aborted: true }), [api, ownerCurrent]);
-  const operational = useOperationalSnapshot({ owner: api, read, validate: validSnapshot, clockMs: 1000 });
+  const operational = useOperationalSnapshot({ owner: api, read, validate: validateBackgroundSnapshot, clockMs: 1000 });
   const { data: snapshot, refresh: refreshSnapshot, nowMs } = operational;
   const refresh = useCallback(() => mounted.current && ownerCurrent() ? refreshSnapshot() : Promise.resolve(), [ownerCurrent, refreshSnapshot]);
   const tasks = snapshot?.tasks ?? [];
@@ -60,7 +59,7 @@ function BackgroundTasksWorkspace({ api, ownerCurrent }: { api: ReturnType<typeo
   const offset = selectedTaskId === visibleTaskId ? pageOffset : 0;
   const historyOwner = useMemo(() => ({ api, taskId: visibleTaskId, offset, runFilter }), [api, visibleTaskId, offset, runFilter]);
   const readRuns = useCallback((signal: AbortSignal) => visibleTaskId && mounted.current && ownerCurrent() ? api.post<RunPage>("detail", { taskId: visibleTaskId, limit: 50, offset, status: runFilter }, { signal }) : Promise.resolve({ ok: true, payload: { runs: [], total: 0, limit: 50, offset: 0 } }), [api, visibleTaskId, offset, runFilter, ownerCurrent]);
-  const history = useOperationalSnapshot({ owner: historyOwner, read: readRuns, validate: validPage });
+  const history = useOperationalSnapshot({ owner: historyOwner, read: readRuns, validate: validateBackgroundRunPage });
   const { data: runPage, loading: loadingRuns } = history;
   const selectedRun = selection?.owner === historyOwner ? runPage?.runs.find((run) => run.id === selection.run.id) ?? (selection.page === runPage ? selection.run : null) : null;
   const setSelectedRun = (run: BackgroundTaskRun | null) => { if (current() && viewOwner.current.historyOwner === historyOwner) setSelection(run ? { owner: historyOwner, run, page: runPage } : null); };
@@ -83,8 +82,9 @@ function BackgroundTasksWorkspace({ api, ownerCurrent }: { api: ReturnType<typeo
     try {
       const result = await api.post<BackgroundTaskRun>("run", { taskId });
       if (!current() || viewOwner.current.taskId !== taskId) return;
-      setStatus(result.ok ? "Task run accepted. Snapshot confirmation is separate." : result.error ?? "Task run failed.");
-      if (result.payload && viewOwner.current.historyOwner === historyOwner) setSelectedRun(result.payload);
+      const malformedDetail = result.payload != null && !validateBackgroundRun(result.payload);
+      setStatus(result.ok ? (malformedDetail ? "Task run accepted, but its returned detail could not be shown. Snapshot confirmation is separate." : "Task run accepted. Snapshot confirmation is separate.") : result.error ?? "Task run failed.");
+      if (validateBackgroundRun(result.payload) && viewOwner.current.historyOwner === historyOwner) setSelectedRun(result.payload);
       if (result.ok) await Promise.all([refresh(), loadRuns()]);
     } catch { if (current() && viewOwner.current.taskId === taskId) setStatus("Task run failed. Retry the action."); }
     finally { busyRef.current = false; if (current()) setBusy(false); }

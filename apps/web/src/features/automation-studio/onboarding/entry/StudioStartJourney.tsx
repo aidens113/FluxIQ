@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { OnboardingStartOptionId } from "..";
 
 export function StudioStartJourney(props: {
@@ -21,9 +21,10 @@ export function StudioStartJourney(props: {
   const current = useRef(props); current.current = props;
   const mounted = useRef(false);
   const activated = useRef<object | null>(null);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const consume = (nextStep: boolean) => {
-    if (!mounted.current || scopeRef.current !== scope || activated.current === scope || !current.current.intent) return;
+    if (!mounted.current || scopeRef.current !== scope || activated.current === scope || !current.current.intent
+      || current.current.consumeIntent !== props.consumeIntent || current.current.createAutomation !== props.createAutomation || current.current.openConnectedBrowsers !== props.openConnectedBrowsers) return;
     if (nextStep && (current.current.state !== "project" || !current.current.projectId)) return;
     const action = current.current;
     if (!action.consumeIntent()) return;

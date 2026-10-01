@@ -267,6 +267,24 @@ Only the current entry can consume its start parameter. Dismissal preserves the
 mounted workspace and its state; recording and extraction still belong to the
 connected browser and extension.
 
+Onboarding masks readings from replaced source owners during the first render.
+Gateway and key checks settle independently, validate consumed metadata and use
+fixed feedback for injected exceptions while preserving fulfilled endpoint
+refusals. Manual checks coalesce with pending reads; unfinished automatic checks
+wait for completion and pause while hidden. Complete checklists stop automatic
+polling and retain manual refresh. Domain-aware Get started setup links preserve
+the encoded domain on the fixed Secret Keys route. Entry/view/router callbacks
+are scoped to current render ownership and layout lifetime without remounting
+the existing guided workspace or replaying navigation.
+
+Compute, Background and Production validate directly rendered records/scalars
+before publishing a snapshot or history page. Malformed successful responses
+use the existing recoverable read channel and retain confirmed content/drafts.
+Arbitrary private metadata/results are not traversed; Production's parameter
+policy remains separate. Acknowledged Background runs with malformed returned
+detail keep acceptance feedback and withhold unsafe selection, then reconcile
+through ordinary reads; they are never automatically submitted again.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,

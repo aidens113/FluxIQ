@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Eighth source frozen after root182 integrated tests; full gates running, next Core plans held.
+Status detail: Eighth full gates complete; ninth operational and onboarding workers released.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -23,20 +23,21 @@ protected service4506/4505. No config/baseline relaxation. Production parameter,
 Deployment and Docs recovery are independently reviewed and validated by these
 gates; root local Docs acknowledgement regression was reproduced and fixed.
 
-Eighth source frozen: Identity, Secret UI/reveal/catalog and Docs tree reviewed.
-Root combined45942 observed16files182pass/native0/12.31s, including unchanged
-clipboard/gate and current shared request contracts. Root owns global contracts,
-authored docs and full gates next. All Core worker product remains held during
-gates; next operational/onboarding plans are read-only. Separate extension owner
-worker implementation is released against independently verified extension1833.
+Eighth Complete: source checkpoint fe0165c7. Identity, Secret UI/reveal/catalog and
+Docs tree independently reviewed. Root45942 observed16files182pass/native0/
+12.31s, including unchanged clipboard/gate and current shared request contracts.
+Full36851 native0,333files2342tests/173.54s; types59270 native0/35422ms;
+production8087 native0/190162ms. Structure56016 native1 only inherited protected
+service4506/4505; no baseline/config relaxation. Next operational/onboarding
+worker implementation is now released. Separate extension owner worker also
+active; root owns integration, authored docs and verification.
 
 Eighth supervisor review: Docs tree root96439 observed42pass/native0/10.79s;
 strict actual-config nine-root5272 native0 after hint removal. Identity root73193
-observed61pass/native0/8.91s after bound-subject caption refinement. Its original
-cross-lane Secret-copy4 remains provisional until Secret source freezes and full
-gates run; owning Identity paths are frozen. Secret worker expands boundary
-coverage. Operational payload recovery is design-only/held; Studio and extension
-automation ownership audits use separate own reports and no product changes.
+observed61pass/native0/8.91s after bound-subject caption refinement. Its provisional
+cross-lane Secret-copy4 was superseded by frozen integrated182 and full2342.
+Operational payload and onboarding recovery now implement separate released
+partitions with own downstream reports; source audits stay preserved.
 
 Extension utility root41 tests pass; full1821/types/build/structure all native0.
 Previous sixth extension1791 and all
@@ -50,6 +51,12 @@ with meaningful audits/plans/fixes; preserve progress as it happens.
 [Superseded Current State](./codex-ui-ux-review-2026-09-30/archive/2026-10-01-pre-eighth-current-state.md)
 retains prior detailed batch evidence; downstream ledgers/reports retain full
 cross-repository validation and ownership history.
+
+Ninth operational/onboarding source independently reviewed and frozen: owning
+root105tests/native0/3.87s (including strengthened direct Retry assertions) and
+onboarding91/native0/12.33s. Dialog keyboard/entry four-path worker now addresses
+source-confirmed Cancel/Close Enter confirmation and explicit autofocus ordering
+before coordinated full Core gates. Core source/paired docs checkpoint follows.
 
 ## Work Ledger
 

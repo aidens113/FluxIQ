@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useLayoutEffect, useState, type ComponentProps } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { StudioStartJourney } from "../StudioStartJourney";
@@ -69,4 +69,17 @@ it("preserves child state and mount when the banner is consumed or returns", asy
   expect(text()).toContain("newer draft"); expect(mounted).toHaveBeenCalledTimes(1); expect(unmounted).not.toHaveBeenCalled();
   await act(async () => renderer!.update(<StudioStartJourney {...input} intent="extract" entryKey="new-start" />));
   expect(text()).toContain("newer draft"); expect(mounted).toHaveBeenCalledTimes(1);
+});
+it.each(["Create automation", "Dismiss"])("rejects retained %s during the unmount layout commit", async (label) => {
+  const input = props(); let retained = () => {};
+  function Parent({ show }: { show: boolean }) { useLayoutEffect(() => { if (!show) retained(); }, [show]); return show ? <StudioStartJourney {...input} /> : null; }
+  await act(async () => { renderer = create(<Parent show />); }); retained = button(label).props.onClick;
+  await act(async () => renderer!.update(<Parent show={false} />));
+  expect(input.consumeIntent).not.toHaveBeenCalled(); expect(input.createAutomation).not.toHaveBeenCalled(); expect(input.openConnectedBrowsers).not.toHaveBeenCalled();
+});
+it("rejects retained actions after a same-scope callback replacement", async () => {
+  const input = props(); await mount(input); const next = button("Create automation").props.onClick; const dismiss = button("Dismiss").props.onClick;
+  const replacement = props(); await act(async () => renderer!.update(<StudioStartJourney {...replacement} />));
+  await act(async () => { next(); dismiss(); }); expect(input.consumeIntent).not.toHaveBeenCalled(); expect(replacement.consumeIntent).not.toHaveBeenCalled();
+  await act(async () => button("Create automation").props.onClick()); expect(replacement.consumeIntent).toHaveBeenCalledTimes(1); expect(replacement.createAutomation).toHaveBeenCalledTimes(1);
 });
