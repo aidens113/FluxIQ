@@ -295,6 +295,21 @@ panel. Hidden/inert/effectively disabled candidates are skipped and environment
 acquisition uses the panel's owner document. Shared stack/trap/return and
 authorization readiness contracts remain unchanged.
 
+Menu keyboard entry chooses the first/last eligible item for ArrowDown/ArrowUp;
+current items use one roving tab stop and native Enter/Space activation. Disabled
+navigation options expose non-link menu items. Current option/lifetime guards
+retire removed callbacks. Tab closes from the trigger as its native departure
+point without preventing traversal, while action/outside/teardown suppress old
+trigger restoration. Shared capture ignores handled/composing/modified Escape
+and stale keyboard targets. Tab uses current visible, effectively enabled
+sequential candidates, with owned panel/invalid-position fallback; unrelated
+outside focus remains with its owner. Return focus requires an interactive
+document, eligible target and closing-overlay focus ownership, while minimal
+connected focus proxies retain their original contract. Stack, isolation,
+scroll locking and listener restoration remain unchanged.
+Database record tables identify their selected database/kind and column headers
+semantically, preserving all record requests and authorization behavior.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,

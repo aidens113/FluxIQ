@@ -11,6 +11,13 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
+Tenth execution Active: Menu/database checkpoint687ddc58; independent130/25
+pass. Core types59550 and build36861 passed; full46495 failed2547pass/1EPERM
+in unchanged login-lock concurrent test. Exact two-path login fix now active;
+shared environment two-path independently195/native0/2.54s and source frozen.
+Root will rerun owning broad gates only after login freeze. Three worker slots
+remain assigned across paired repositories. No full tenth/browser certification.
+
 Continuous UI/UX execution is active in paired isolated task t224 worktrees.
 Claude owns integration: no merge/push or protected runtime/storage/conversations/
 context-packet edits; no live/provider/browser/panel operation or private data.
@@ -62,6 +69,14 @@ service4506/4505. All ninth units Complete. Menu two-path worker now released;
 downstream mounted Chat/extraction source active after independent1878full gates.
 
 ## Work Ledger
+
+### 2026-10-01 - Tenth Menu verified; full failure preserved
+- Agent: supervisor
+- Changed: local687ddc58 Menu keyboard recovery and database table semantics; authored architecture.
+- Why: preserve completed UI work while tracing a real existing concurrency failure.
+- Validation: independent Menu130/native0/2.62s and database25/native0/8.70s. Core types59550/native0/96912ms; build36861/native0/209084ms. Full46495 native1:2547pass/1EPERM login-lock test failure/196.07s. Structure11002 native1 only protected4506/4505.
+- Outcome: Narrow UI accepted and checkpointed; tenth broad test certification incomplete, no merge/push.
+- Follow-up: exact shared environment two-path worker now active; login-lock worker read-only diagnosis. Downstream root verifies frozen Chat and continues receipt/control integration; three worker slots assigned.
 
 ### 2026-09-30 - Final initial-batch handoff
 - Agent: supervisor
