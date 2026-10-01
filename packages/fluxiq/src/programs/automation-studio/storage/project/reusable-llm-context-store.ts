@@ -62,7 +62,10 @@ export type AutomationStudioReusableLlmContextList = {
   compatibilityTags?: readonly AutomationStudioReusableLlmContextTag[];
   compatibilityMode?: "includes" | "exact";
   now?: number;
+  /** One page's size, 1 to 100 (25 by default). `listEvery` reads every page. */
   limit?: number;
+  /** How many records, in the list's order, the page starts after. */
+  offset?: number;
 };
 
 export type AutomationStudioReusableLlmContextAuditEvent = {
@@ -188,8 +191,21 @@ export class AutomationStudioProjectReusableLlmContextStore {
       params.push(tag.name, tag.value);
     }
     if (input.compatibilityMode === "exact") { clauses.push("json_array_length(compatibility_tags_json) = ?"); params.push(requiredTags.length); }
-    const rows = await this.lease.database.all<ContextRow>(`select * from reusable_llm_contexts where ${clauses.join(" and ")} order by created_at_ms desc, record_id limit ?`, [...params, integerInRange(input.limit ?? 25, 1, 100, "limit")]);
+    const rows = await this.lease.database.all<ContextRow>(`select * from reusable_llm_contexts where ${clauses.join(" and ")} order by created_at_ms desc, record_id limit ? offset ?`, [...params, integerInRange(input.limit ?? 25, 1, 100, "limit"), integerInRange(input.offset ?? 0, 0, Number.MAX_SAFE_INTEGER, "offset")]);
     return Promise.all(rows.map((row) => this.record(row)));
+  }
+
+  /**
+   * Every record `list` would page through, page after page, in its order. What a
+   * model is offered reads this (2026-09-30): it read one page of 100.
+   */
+  async listEvery(input: Omit<AutomationStudioReusableLlmContextList, "limit" | "offset"> = {}): Promise<AutomationStudioReusableLlmContextRecord[]> {
+    const all: AutomationStudioReusableLlmContextRecord[] = [];
+    for (;;) {
+      const page = await this.list({ ...input, limit: 100, offset: all.length });
+      all.push(...page);
+      if (page.length < 100) return all;
+    }
   }
 
   async updateDisposition(recordId: string, input: { outcome: AutomationStudioReusableLlmContextOutcome; reviewerState: AutomationStudioReusableLlmContextReviewerState; validationState?: AutomationStudioReusableLlmContextValidationState; actorId?: string; changedAt?: number }): Promise<boolean> {

@@ -234,14 +234,14 @@ describe("the feedback an amendment refusal is shown as", () => {
 
   // Positions are read off the draft rather than assumed from its length, and
   // the newest are the ones an edit is usually about.
-  it("reads the positions off the draft, and keeps the newest of a long one", () => {
+  // Every position since 2026-09-30: it kept the newest 32.
+  it("reads every position off the draft, however long", () => {
     const long = Array.from({ length: 40 }, (_unused, index) => ({ position: index + 1 }));
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 99, reason: "no_such_step" }], applied: 0, steps: long, stepsWithoutProgress: 2, maxStepsWithoutProgress: 8
     });
     expect(feedback.steps).toBe(40);
-    expect(feedback.positions).toHaveLength(32);
-    expect((feedback.positions as number[])[31]).toBe(40);
+    expect(feedback.positions).toEqual(long.map((step) => step.position));
   });
 
   it("carries codes, Core's own sentences and integers, and stays well under two kilobytes", () => {
@@ -250,8 +250,9 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(Buffer.byteLength(JSON.stringify(feedback), "utf8")).toBeLessThan(2_048);
   });
 
-  it("lists no more refusals than one decision may carry", () => {
+  // Every refusal since 2026-09-30: it listed at most 16.
+  it("lists every refusal it is given", () => {
     const feedback = built(Array.from({ length: 20 }, (_unused, index) => ({ step: index + 40, reason: "no_such_step" as const })));
-    expect(feedback.refused).toHaveLength(16);
+    expect(feedback.refused).toHaveLength(20);
   });
 });

@@ -40,7 +40,7 @@ function createService(input: {
   const provider = input.provider ?? mockProvider();
   const resolver = input.resolver ?? (() => ({
     provider,
-    tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+    tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
     maxCallsPerRun: 1,
     maxEstimatedCostUsd: 0.1,
     timeoutMs: 20_000
@@ -119,7 +119,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     const resolver = vi.fn().mockReturnValue({
       provider,
-      tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+      tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
       maxCallsPerRun: 1,
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 20_000
@@ -199,7 +199,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
     expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision"]);
-    expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 8_000)).toBe(true);
+    // Within the model's window, the only bound on a request since 2026-09-30; it was 8,000 tokens.
+    expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 992_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
     expect(requests[0]?.context).not.toHaveProperty("reusableContext");
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" } }));

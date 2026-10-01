@@ -146,7 +146,7 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   // whole Flow.
   const listed = summary.flowShape.map((step) => step.definitionId);
   const shape = listed.length > 0 ? `; the Flow's steps were ${listed.join(", ")}` : "";
-  const cut = summary.withheld ? "; some of it was withheld: a value secret-shaped or under a denied key, a set the store reported truncated, or a read left unaccounted" : "";
+  const cut = summary.withheld ? "; some of it was withheld: a value secret-shaped or under a denied key, or a set the store reported truncated" : "";
   // How each read went, ahead of the step list: this line becomes the failure
   // record's `actual`, and a read's pages, stop and rejections are what a
   // repair acts on, where a definition id only says the step exists.

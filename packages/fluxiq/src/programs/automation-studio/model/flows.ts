@@ -5,6 +5,7 @@ import type { AutomationStudioPublishedFlowSnapshot } from "./composites.ts";
 import type { AutomationStudioFlowExpansionReferences } from "./flow-adaptation.ts";
 import type { AutomationStudioFlowRegion, AutomationStudioFlowRegionHandoff } from "./regions.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "./flow-size/index.ts";
+import { AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY } from "./tokens-per-run/index.ts";
 
 /** The workspace in which a canonical Flow is authored and may execute. */
 export type AutomationStudioFlowScope =
@@ -258,9 +259,10 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
       maxRecoveryAttemptsPerSubflow: 2,
       maxReroutesPerRun: 2
     },
+    // No `maxTokensPerRun`: a run's tokens are bounded by its cost ceiling, not by
+    // a count (see `AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY`).
     budgets: {
       maxInterventionsPerRun: 2,
-      maxTokensPerRun: 12000,
       maxCostUsdPerTrainingWindow: 5,
       exhaustedBehavior: "ask"
     }
@@ -305,6 +307,7 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     adaptationPolicyId: "policy.default",
     budgetExhaustedBehavior: "ask",
     frozenScopeCount: 0,
+    [AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY]: true,
     // How many nodes one Subflow may hold (`flow-size/flow-size-settings.ts`).
     // Written into a new Flow so its settings say so; a Flow saved before the
     // setting existed has none and reads the same default.

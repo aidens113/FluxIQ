@@ -24,8 +24,7 @@ function plusNode() {
 
 describe("a read's account", () => {
   it("says the pages, the stop, the items, and each condition as written with the rows it rejected", () => {
-    const { reads, withheld } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
-    expect(withheld).toBe(false);
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     expect(reads).toEqual([{
       nodeId: EARBUDS_NODE_ID,
       definitionId: "web.output.dom-extract_list",
@@ -120,5 +119,55 @@ describe("a read's account", () => {
     expect(full).toContain("It already follows pages");
     expect(full).toContain("It already keeps one row per url.");
     expect(full).toContain("name not contains [\"ear tips\", \"charging case\"] rejected 16 rows");
+  });
+});
+
+// The user's order, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER OF
+// ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION." Until then a judge saw four
+// reads, eight conditions each, six dedupe keys, six compared values of a list,
+// sixty characters of a value and two hundred of a condition's wording.
+describe("a read's account has no caps", () => {
+  it("accounts for every read of a run, not the first four", () => {
+    const attempts = Array.from({ length: 12 }, (_unused, index) => earbudsAttempt({ attemptId: `attempt.${index}`, nodeId: `node.read.${index}` }));
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: attempts, flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    expect(reads.map((read) => read.nodeId)).toEqual(attempts.map((attempt) => attempt.nodeId));
+  });
+
+  it("says every condition, every dedupe key and every compared value, each whole", () => {
+    const node = earbudsNode();
+    const read = node.parameterValues!.extractList as { where: Array<Record<string, unknown>>; dedupe: { by: string[] } };
+    const words = Array.from({ length: 20 }, (_unused, index) => `accessory word number ${index} ${"long ".repeat(30).trim()}`);
+    read.where = Array.from({ length: 20 }, (_unused, index) => ({ field: "name", contains: words, not: index % 2 === 0 }));
+    read.dedupe = { by: ["name", "price", "rating", "url", "name_two", "price_two", "rating_two", "url_two"] };
+    const attempt = earbudsAttempt();
+    const extraction = attempt.metadata!.extraction as Record<string, unknown>;
+    const rejected = Array.from({ length: 20 }, (_unused, index) => index);
+    const many = earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), rejected } } } as never });
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [many], flowNodes: [node], deniedEvidenceKeys: [] });
+    const conditions = reads[0]?.conditions ?? [];
+    expect(conditions).toHaveLength(20);
+    expect(conditions.map((condition) => condition.rejected)).toEqual(rejected);
+    // Every compared value of the list, each whole: no "and N more", no ellipsis.
+    for (const condition of conditions) {
+      for (const word of words) expect(condition.condition).toContain(JSON.stringify(word));
+      expect(condition.condition).not.toContain("…");
+      expect(condition.condition).not.toContain("more]");
+    }
+    expect(reads[0]?.dedupeBy).toEqual(["name", "price", "rating", "url", "name_two", "price_two", "rating_two", "url_two"]);
+  });
+
+  it("says what a condition's own read found whole, however long", () => {
+    const found = `Brightaisle Plus member price ${"and a long badge label ".repeat(10).trim()}`;
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [withSeen([found, null, null, null])], flowNodes: [plusNode()], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions?.[0]?.condition).toBe(`attribute aria-label (read ${JSON.stringify(found)} on a row it kept) is present`);
+  });
+
+  it("names a column or attribute of any length", () => {
+    const node = plusNode();
+    const read = node.parameterValues!.extractList as { where: Array<Record<string, unknown>> };
+    const attribute = `data-${"very-long-attribute-name-".repeat(5)}flag`;
+    read.where[0] = { read: { kind: "attribute", selector: ".result-card .plus-badge i", attribute, required: false }, is: "present" };
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions?.[0]?.condition).toBe(`attribute ${attribute} is present`);
   });
 });

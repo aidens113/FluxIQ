@@ -58,14 +58,14 @@
 // yes/no question about whether the selector ever named an element, so that set
 // is closed by what it means and has nowhere to grow.
 //
-// **One member carries page text, bounded: `conditions.seen`.** A condition that
+// **One member carries page text, whole: `conditions.seen`.** A condition that
 // names its value by a read of its own is described without the part that
 // addresses the page, so `attribute aria-label is present` is all the judge of
 // `run-munw7ffn-fe1cecd2` knew of a Brightaisle Plus badge, and it advised adding
 // the condition the Flow already had. So the read reports, per condition, the
 // first value that condition's read found on an item it held of, or `null`, and
-// this projection copies it cut to `MAXIMUM_SEEN_CHARACTERS`. It is screened
-// where it is said, not here (`result-verification/read-account/condition.ts`).
+// this projection copies it whole: nothing is cut (user, 2026-09-30). It is
+// screened where it is said, not here (`result-verification/read-account/condition.ts`).
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
@@ -112,17 +112,6 @@ const PAGINATION_STOPS = new Set([
 
 /** What a pagination stop word outside the set above is published as, on the rule `WAIT_STOP_UNKNOWN` states. */
 const PAGINATION_STOP_UNKNOWN = "unknown";
-
-/**
- * How many `where` conditions a read may report rejections for. A read carries
- * one count per condition it was given, and a list of more than this is not one
- * the product writes -- so an unbounded array arriving from a downstream host
- * is refused rather than republished at whatever length it came in.
- */
-const MAXIMUM_CONDITIONS = 64;
-
-/** The longest `conditions.seen` value carried: the producer's own bound (`domain/src/actions/extraction/seen-values.ts`), restated. */
-const MAXIMUM_SEEN_CHARACTERS = 60;
 
 /**
  * The read's summary, rebuilt member by member, or `undefined` when the attempt
@@ -223,7 +212,7 @@ function conditionReport(value: unknown): JsonObject | undefined {
   if (!isJsonRecord(value)) return undefined;
   const applied = count(value.applied);
   const kept = count(value.kept);
-  const rejected = Array.isArray(value.rejected) && value.rejected.length <= MAXIMUM_CONDITIONS && value.rejected.every((entry) => count(entry) !== undefined)
+  const rejected = Array.isArray(value.rejected) && value.rejected.every((entry) => count(entry) !== undefined)
     ? value.rejected as number[]
     : undefined;
   if (applied === undefined || kept === undefined || rejected === undefined || typeof value.unfiltered !== "boolean") return undefined;
@@ -234,11 +223,11 @@ function conditionReport(value: unknown): JsonObject | undefined {
   return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered, ...(seen ? { seen } : {}) };
 }
 
-/** One string or `null` per condition, each string cut to its bound, or `undefined` for anything else. */
+/** One string or `null` per condition, each string whole, or `undefined` for anything else. */
 function seenValues(value: unknown, conditions: number): Array<string | null> | undefined {
   if (!Array.isArray(value) || value.length !== conditions) return undefined;
   if (!value.every((entry) => entry === null || typeof entry === "string")) return undefined;
-  return (value as Array<string | null>).map((entry) => (entry === null ? null : entry.slice(0, MAXIMUM_SEEN_CHARACTERS)));
+  return [...(value as Array<string | null>)];
 }
 
 function count(value: unknown): number | undefined {

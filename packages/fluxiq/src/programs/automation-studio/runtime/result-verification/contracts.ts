@@ -206,9 +206,8 @@ export type AutomationStudioRunResultSummary = {
   recordSets: AutomationStudioResultRecordSetSummary[];
   /**
    * How each list read went: pages, why paging stopped, items seen and kept,
-   * and what each of its conditions rejected. Kept ahead of the step list and
-   * the steps' parameters when the byte budget is short, because it is the one
-   * part that says what the steps actually did. Absent when no step reported a read.
+   * and what each of its conditions rejected: every read and every condition.
+   * Absent when no step reported a read.
    */
   reads?: AutomationStudioResultReadAccount[];
   /** The steps the Flow is built from, in authored order: what it can do at all. */

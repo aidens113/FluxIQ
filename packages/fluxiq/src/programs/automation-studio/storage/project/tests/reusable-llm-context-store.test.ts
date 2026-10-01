@@ -117,6 +117,21 @@ describe("AutomationStudioProjectReusableLlmContextStore", () => {
     }))).resolves.toMatchObject({ recordId: "context.safe-shape" });
     await store.close(); await pool.closeAll();
   });
+
+  // What a model is offered reads every record (2026-09-30): it read one page of 100.
+  it("pages by offset, and listEvery reads every page in the list's order", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: "project.pages", enabled: true, contentProtection });
+    for (let index = 0; index < 120; index += 1) {
+      await store.put(write({ recordId: `context.${String(index).padStart(3, "0")}`, createdAt: 1_000 + index, promptProjection: { facts: [index] } }));
+    }
+    const newestFirst = Array.from({ length: 120 }, (_, index) => `context.${String(119 - index).padStart(3, "0")}`);
+    expect((await store.list({ now: 1_500, limit: 100, offset: 100 })).map((record) => record.recordId)).toEqual(newestFirst.slice(100));
+    expect((await store.listEvery({ now: 1_500 })).map((record) => record.recordId)).toEqual(newestFirst);
+    await expect(store.list({ now: 1_500, offset: -1 })).rejects.toThrow("offset");
+    await store.close(); await pool.closeAll();
+    // 120 encrypted writes, each audited: slower than the file's other cases.
+  }, 60_000);
 });
 
 function write(overrides: Partial<AutomationStudioReusableLlmContextWrite> = {}): AutomationStudioReusableLlmContextWrite {

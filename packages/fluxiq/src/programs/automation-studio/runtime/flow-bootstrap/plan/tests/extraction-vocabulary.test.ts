@@ -78,12 +78,11 @@ function withGrammar(parameter: AutomationNodeParameter, grammar: string): Autom
   return parameter.id === "extractList" ? { ...parameter, description: grammar } : parameter;
 }
 
-function catalogAt(maxCatalogBytes: number, grammar: string = EXTRACT_LIST_GRAMMAR) {
+function catalogAt(grammar: string = EXTRACT_LIST_GRAMMAR) {
   return buildAutomationStudioFlowBootstrapContext({
     registry: new AutomationStudioNodeRegistry(definitionsWithGrammar(grammar)),
     resolution,
-    instructionText: INSTRUCTION,
-    maxCatalogBytes
+    instructionText: INSTRUCTION
   });
 }
 
@@ -95,14 +94,14 @@ function extractListText(context: ReturnType<typeof catalogAt>): string | undefi
   return extractionEntry(context)?.parameters.find((parameter) => parameter.id === "extractList")?.description;
 }
 
-// The budget an evidence-guided build is given: 16,000 input tokens, from which
-// `automationStudioFlowBootstrapCatalogByteBudget` leaves about 42,000 bytes for
-// the catalog. Measured on 2026-09-26, the whole library used 18,090 of them.
-const EVIDENCE_LOOP_CATALOG_BYTES = 42_087;
+// The catalog is every offered node, whole, with no byte budget (2026-09-30).
+// Until then an evidence-guided build's catalog was fitted to about 42,000
+// bytes, a first live bootstrap's to about 5,000, and a parameter description
+// stopped at 900 characters.
 
 describe("the vocabulary a model writes an extraction filter from", () => {
   it("reaches the model whole, for every clause of the instruction", () => {
-    const context = catalogAt(EVIDENCE_LOOP_CATALOG_BYTES);
+    const context = catalogAt();
 
     expect(extractListText(context)).toBe(EXTRACT_LIST_GRAMMAR);
     for (const { clause, token } of CLAUSE_VOCABULARY) {
@@ -111,7 +110,7 @@ describe("the vocabulary a model writes an extraction filter from", () => {
   });
 
   it("is sent with the request the value is written into, not held back for a later one", () => {
-    const context = catalogAt(EVIDENCE_LOOP_CATALOG_BYTES);
+    const context = catalogAt();
     const entry = extractionEntry(context);
 
     expect(entry?.parameters.find((parameter) => parameter.id === "extractList")?.example).toBeDefined();
@@ -119,37 +118,14 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // What that costs, so a change that doubles it is visible here rather than
     // in a bill: the entry, and the grammar as a share of it.
     expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(3_000);
-    expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBeLessThanOrEqual(context.catalogSelection.byteBudget);
+    expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 
-  it("survives a description of 900 characters and is cut at 901, saying so both times", () => {
-    const atBound = catalogAt(EVIDENCE_LOOP_CATALOG_BYTES, "d".repeat(900));
-    expect(extractListText(atBound)).toBe("d".repeat(900));
-    expect(atBound.catalogSelection.withheldParameterText).toBeUndefined();
-
-    const past = catalogAt(EVIDENCE_LOOP_CATALOG_BYTES, "d".repeat(901));
-    expect(extractListText(past)).toBe(`${"d".repeat(897)}...`);
-    expect(past.catalogSelection.withheldParameterText).toContain(`${EXTRACTION_NODE_ID}.extractList`);
-  });
-
-  it("is named as withheld when the budget condenses the node that carries it", () => {
-    // 3,000 bytes keeps the extraction node and can only afford its condensed
-    // form, which carries no parameter authoring text at all. That is the state
-    // in which a model really has not been shown how to write the filter, and it
-    // is now a fact the request states rather than one nothing records.
-    const condensed = catalogAt(3_000);
-
-    expect(condensed.nodeCatalog.map((entry) => entry.id)).toContain(EXTRACTION_NODE_ID);
-    expect(extractListText(condensed)).toBeUndefined();
-    expect(condensed.catalogSelection.withheldParameterText).toContain(`${EXTRACTION_NODE_ID}.extractList`);
-  });
-
-  it("names a withheld parameter once per parameter and stops at twelve", () => {
-    const named = catalogAt(3_000).catalogSelection.withheldParameterText ?? [];
-
-    expect(named.length).toBeLessThanOrEqual(12);
-    expect(new Set(named).size).toBe(named.length);
-    for (const name of named) expect(name).toMatch(/^[A-Za-z0-9._-]+\.[A-Za-z0-9_-]+$/u);
+  it("reaches the model whole however long it is, with nothing named as withheld", () => {
+    const grammar = `${EXTRACT_LIST_GRAMMAR} ${"More vocabulary. ".repeat(400)}`.trim();
+    const context = catalogAt(grammar);
+    expect(extractListText(context)).toBe(grammar);
+    expect(context.catalogSelection.withheldParameterText).toBeUndefined();
   });
 });
 

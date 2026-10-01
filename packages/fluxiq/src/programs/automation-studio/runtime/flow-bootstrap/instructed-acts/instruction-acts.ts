@@ -50,9 +50,6 @@
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActKind } from "./contracts.ts";
 import { automationStudioInstructedChoices } from "./instruction-choices.ts";
 
-const MAX_ACTS = 8;
-const MAX_QUOTE = 200;
-
 /** Words that may stand before a verb in command position. */
 const LEADING_WORDS: ReadonlySet<string> = new Set(["then", "and", "please", "also", "first", "next", "finally", "now", "just"]);
 const NEGATION = /(?<![A-Za-z])(?:not|don't|dont|never|without|nor|no)(?![A-Za-z])/iu;
@@ -161,10 +158,10 @@ export function automationStudioInstructedActs(instructionText: string): Automat
       const plural = PLURAL_KINDS.has(act.kind) && EVERY.test(rest) ? { plural: true as const } : {};
       const objects = act.kind === "add_to" || act.kind === "save" ? coordinatedObjects(rest) : undefined;
       if (!objects) {
-        found.push({ kind: act.kind, verb, quote: bounded(act.written + rest), at: start + act.index, object: rest, ...plural });
+        found.push({ kind: act.kind, verb, quote: quoted(act.written + rest), at: start + act.index, object: rest, ...plural });
         return;
       }
-      for (const object of objects) found.push({ kind: act.kind, verb, quote: bounded(`${act.written} ${object.quote}`), at: start + act.index + object.offset, object: ` ${object.quote}`, ...plural });
+      for (const object of objects) found.push({ kind: act.kind, verb, quote: quoted(`${act.written} ${object.quote}`), at: start + act.index + object.offset, object: ` ${object.quote}`, ...plural });
     });
   }
   // A build reads its instruction as its title, a newline, then its body
@@ -178,7 +175,6 @@ export function automationStudioInstructedActs(instructionText: string): Automat
   return found
     .filter((act) => !(titleEnd >= 0 && act.at < titleEnd && body.some((other) => other.kind === act.kind)))
     .sort((left, right) => left.at - right.at)
-    .slice(0, MAX_ACTS)
     .map((act, index) => {
       const id = `a${index + 1}`;
       const requires = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : [];
@@ -209,9 +205,9 @@ function coordinatedObjects(rest: string): Array<{ quote: string; offset: number
   return bounds.map((bound) => ({ quote: `${rest.slice(bound.from, bound.to).trim()} ${place}`, offset: bound.from }));
 }
 
-/** A quote in the person's words: whitespace folded, what only joins it to the next act trimmed, bounded. */
-function bounded(quote: string): string {
-  return quote.replace(/\s+/gu, " ").trim().replace(TRAILING, "").slice(0, MAX_QUOTE).trimEnd();
+/** A quote in the person's words, whole: whitespace folded, and what only joins it to the next act trimmed. */
+function quoted(quote: string): string {
+  return quote.replace(/\s+/gu, " ").trim().replace(TRAILING, "").trimEnd();
 }
 
 /**

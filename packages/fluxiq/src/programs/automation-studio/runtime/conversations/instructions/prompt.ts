@@ -11,8 +11,6 @@ import { automationStudioPanelCapabilityVocabulary } from "../../panel-capabilit
 import { automationStudioConversationPageShown } from "../commands/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 
-const LISTED_FLOWS = 60;
-
 const ANSWER_SHAPE = [
   "Answer with one JSON object and nothing else, in one of these three shapes:",
   '  {"do": "<capability id>", "with": {"<argument>": "<value>"}}   to do something in the panel. Leave out any argument you do not know.',
@@ -36,8 +34,8 @@ export function automationStudioConversationInstructions(
 function flowSection(context: AutomationStudioConversationDecisionContext): string {
   if (context.flows === null) return "The project's Flows could not be listed just now. If the person names one, pass the name on as they wrote it.";
   if (!context.flows.length) return "This project has no Flows yet.";
-  const lines = context.flows.slice(0, LISTED_FLOWS).map((flow) => `  - ${flow.name} (${flow.flowId})`);
-  if (context.flows.length > LISTED_FLOWS) lines.push(`  ...and ${context.flows.length - LISTED_FLOWS} more.`);
+  // Every Flow (2026-09-30): it was the first 60 and a count of the rest.
+  const lines = context.flows.map((flow) => `  - ${flow.name} (${flow.flowId})`);
   return ["The Flows in this project:", ...lines].join("\n");
 }
 

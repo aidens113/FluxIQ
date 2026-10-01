@@ -72,10 +72,8 @@
       "apps/web/src/features/automation-studio/sync/project-sync.ts::classes": 2,
       "apps/web/src/features/automation-studio/workspace/cache/backends.ts::classes": 2,
       "apps/web/src/features/automation-studio/workspace/overlays/DataInspectorOverlaySubscriber.tsx::components": 2,
-      "apps/web/src/features/automation-studio/workspace/overlays/HierarchyCreateOverlaySurface.tsx::components": 2,
       "apps/web/src/features/automation-studio/workspace/overlays/LayoutPickerOverlaySubscriber.tsx::components": 2,
       "apps/web/src/features/automation-studio/workspace/overlays/PreferencesOverlaySubscriber.tsx::components": 2,
-      "apps/web/src/features/automation-studio/workspace/overlays/ProjectOverlaySubscriber.tsx::components": 2,
       "apps/web/src/features/automation-studio/workspace/overlays/ViewAdderOverlaySubscriber.tsx::components": 2,
       "apps/web/src/features/automation-studio/workspace/overlays/WorkspaceDrawerSubscribers.tsx::components": 2,
       "apps/web/src/features/automation-studio/workspace/shell/ResponsiveDrawers.tsx::components": 2,
@@ -150,7 +148,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4558,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4505,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {
@@ -273,7 +271,6 @@
       "apps/web/src/features/automation-studio/views/tests/TimelineView.test.ts": 1,
       "apps/web/src/features/automation-studio/workspace/cache/coordinator.ts": 1,
       "apps/web/src/features/automation-studio/workspace/commands/pane-choice.ts": 1,
-      "apps/web/src/features/automation-studio/workspace/commands/workspace-commands.ts": 1,
       "apps/web/src/features/automation-studio/workspace/components/view-container.tsx": 1,
       "apps/web/src/features/automation-studio/workspace/layout/defaults.ts": 1,
       "apps/web/src/features/automation-studio/workspace/layout/normalization.ts": 1,
@@ -294,7 +291,6 @@
       "packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/nodes/random/jitter.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/nodes/random/random-number.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/tests/plan.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/native-node-runtime.ts": 1,
@@ -344,7 +340,6 @@
       "packages/fluxiq/src/programs/automation-studio/storage/project/database.ts": 2,
       "packages/fluxiq/src/programs/automation-studio/storage/recording-index-store.ts": 2,
       "packages/fluxiq/src/programs/identity-access/runtime/run-credential-change.ts": 2,
-      "apps/web/src/features/automation-studio/authoring/BlankFlowAuthoringPanel.tsx": 1,
       "apps/web/src/features/automation-studio/graph/viewport-store.ts": 1,
       "apps/web/src/features/automation-studio/live/hooks/useGatewayRecordingBridge.ts": 1,
       "apps/web/src/features/automation-studio/project/use-project-catalog-loader.ts": 1,

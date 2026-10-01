@@ -16,21 +16,17 @@
 // carries (`web.handle.misplaced:extractList.fields.0`); that parameter's shape
 // is given for it.
 //
-// Bounded: at most sixteen issues, each path printable and at most 300
-// characters, a parameter's shape given once however many issues it has, and
-// the shapes together within a byte budget that keeps the whole feedback well
-// inside the evidence window a Flow creation shows the model.
+// Whole: every issue, each path printable, each authored message whole, and a
+// parameter's shape given once however many issues it has. Until 2026-09-30 it
+// was at most sixteen issues, paths cut at 300 characters, messages at 400, and
+// the shapes held to 3,000 bytes (user: "Remove ANY AND ALL LIMITS ON THE
+// NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION").
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "./contracts.ts";
 import { automationStudioFlowBootstrapParameterText } from "./parameter-text.ts";
 import { automationStudioFlowBootstrapRecordOutputContract } from "./record-output-contract.ts";
 import { AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } from "./route-condition.ts";
-
-const MAX_FEEDBACK_ISSUES = 16;
-const MAX_FEEDBACK_PATH_LENGTH = 300;
-const MAX_ACCEPTED_BYTES = 3_000;
-const MAX_ROUTE_MESSAGE_LENGTH = 400;
 
 /**
  * The refusals about routes. A code and a line number do not say how to write
@@ -128,12 +124,11 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
   resolution?: AutomationStudioNodeRegistryResolution | undefined;
 }): JsonObject[] {
   const described = new Set<string>();
-  let acceptedBytes = 0;
-  return input.issues.slice(0, MAX_FEEDBACK_ISSUES).map((issue) => {
+  return input.issues.map((issue) => {
     const entry: JsonObject = {
       code: issue.code,
-      ...(issue.path ? { path: boundedPath(issue.path) } : {}),
-      ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message.slice(0, MAX_ROUTE_MESSAGE_LENGTH) } : {})
+      ...(issue.path ? { path: printablePath(issue.path) } : {}),
+      ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message } : {})
     };
     if (ROUTE_CODES.has(issue.code)) {
       return { ...entry, accepted: { condition: AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } };
@@ -143,9 +138,6 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
     const definition = definitionAt(input, target);
     const accepted = definition ? acceptedShape(definition, target) : undefined;
     if (!accepted) return entry;
-    const bytes = Buffer.byteLength(JSON.stringify(accepted), "utf8");
-    if (acceptedBytes + bytes > MAX_ACCEPTED_BYTES) return entry;
-    acceptedBytes += bytes;
     described.add(target.key);
     return { ...entry, accepted };
   });
@@ -197,13 +189,13 @@ function acceptedShape(definition: AutomationStudioNodeDefinition, target: Param
     const contract = automationStudioFlowBootstrapRecordOutputContract(definition);
     return { parameter: parameter.id, keys: contract.keys, requiredKeys: contract.requiredKeys, shape: contract.text, example: contract.example };
   }
-  const { id, ...shape } = automationStudioFlowBootstrapParameterText(definition, parameter, "whole");
+  const { id, ...shape } = automationStudioFlowBootstrapParameterText(definition, parameter);
   return { parameter: id, ...shape } as JsonObject;
 }
 
-/** A plan path is the plan's own structure; still, it is bounded and printable. */
-function boundedPath(path: string): string {
-  return path.replace(/[ -]/gu, "").slice(0, MAX_FEEDBACK_PATH_LENGTH);
+/** A plan path is the plan's own structure; still, it is printable. */
+function printablePath(path: string): string {
+  return path.replace(/[ -]/gu, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

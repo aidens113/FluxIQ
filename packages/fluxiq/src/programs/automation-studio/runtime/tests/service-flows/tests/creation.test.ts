@@ -98,12 +98,14 @@ describe("AutomationStudioService recording persistence", () => {
         allowPromotion: true,
         budgets: {
           maxInterventionsPerRun: 2,
-          maxTokensPerRun: 12000,
           maxCostUsdPerTrainingWindow: 5,
           exhaustedBehavior: "ask"
         }
       }
     });
+    // No token cap (user, 2026-09-30): a run's tokens are bounded by its cost.
+    expect((flow.metadata?.trainingModeSettings as { budgets?: object } | undefined)?.budgets).not.toHaveProperty("maxTokensPerRun");
+    expect(flow.metadata?.tokensPerRunDefaultCleared).toBe(true);
   });
 
   it("lists persisted Flow metadata from the project SQL index", async () => {

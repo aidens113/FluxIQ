@@ -16,6 +16,11 @@
 // signal names; and what the step was expected to produce, as ids. No page
 // content, and nothing the recovery would not already have shown a model.
 //
+// **Whole.** No value and not the brief is cut (user, 2026-09-30: "Remove ANY
+// AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE
+// INFORMATION"). Until then a value stopped at 1,200 characters and the brief
+// at 6,000.
+//
 // **Why an instruction.** For the reason `brief.ts` gives: the instruction list
 // is the one part of the context every provider renders on every build call.
 // It is marked as Core's and never stored.
@@ -27,11 +32,6 @@ import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 
 /** The id every failed-step brief carries, so a reader can tell it from an instruction a person wrote. */
 const STEP_FAILURE_BRIEF_INSTRUCTION_ID = "core.step_failure_repair.brief";
-
-/** The most characters the brief spends, as `brief.ts` bounds its own. */
-const MAX_BRIEF_CHARS = 6_000;
-/** The most characters any one carried value spends. */
-const MAX_VALUE_CHARS = 1_200;
 
 /**
  * The brief for one failed-step re-author.
@@ -70,12 +70,12 @@ export function automationStudioStepFailureReauthorBrief(input: {
     "The failed step, as the run recorded it:",
     `- Step: ${input.nodeId} (${definitionId})${label ? `, labelled "${label}"` : ""}.`,
     `- Failure: ${text(failed?.category) ?? "unknown"} (${text(failed?.code) ?? "no code"}).`,
-    ...(text(failed?.expected) ? [`- Expected: ${bounded(failed!.expected!)}`] : []),
-    ...(text(failed?.actual) ? [`- Actual: ${bounded(failed!.actual!)}`] : []),
-    ...(step?.parameters !== undefined ? [`- What the step was authored to act on and with (screened): ${bounded(step.parameters)}`] : ["- The step's authored parameters are not carried here; read them from the step in your draft."]),
-    ...(step?.parametersWithheld !== undefined ? [`- Parameters withheld from this brief: ${bounded(step.parametersWithheld)}`] : []),
-    ...(target ? [`- How its target resolved: ${bounded(target)}`] : []),
-    ...(expected ? [`- What it was expected to produce: ${bounded(expectedText(expected))}`] : []),
+    ...(text(failed?.expected) ? [`- Expected: ${rendered(failed!.expected!)}`] : []),
+    ...(text(failed?.actual) ? [`- Actual: ${rendered(failed!.actual!)}`] : []),
+    ...(step?.parameters !== undefined ? [`- What the step was authored to act on and with (screened): ${rendered(step.parameters)}`] : ["- The step's authored parameters are not carried here; read them from the step in your draft."]),
+    ...(step?.parametersWithheld !== undefined ? [`- Parameters withheld from this brief: ${rendered(step.parametersWithheld)}`] : []),
+    ...(target ? [`- How its target resolved: ${rendered(target)}`] : []),
+    ...(expected ? [`- What it was expected to produce: ${rendered(expectedText(expected))}`] : []),
     "",
     "What to do:",
     `1. Re-find step ${input.nodeId} on the site as it is now. Look at it, find what now does what this step was meant to do, and rewrite the step to act on that. It may carry a different name than the one recorded, or sit behind something that has to be opened first; if so, add the step that opens it before this one.`,
@@ -87,7 +87,7 @@ export function automationStudioStepFailureReauthorBrief(input: {
     schemaVersion: "0.1",
     instructionId: STEP_FAILURE_BRIEF_INSTRUCTION_ID,
     title: "Repair brief from Core: a step failed on the site as it is now",
-    body: lines.join("\n").slice(0, MAX_BRIEF_CHARS),
+    body: lines.join("\n"),
     scope: { kind: "flow", projectId: input.projectId, flowId: input.flowId },
     priority: Number.MIN_SAFE_INTEGER,
     status: "active",
@@ -115,9 +115,8 @@ function expectedText(expected: JsonObject): JsonObject {
     .map((key) => [key, expected[key]!])) as JsonObject;
 }
 
-function bounded(value: JsonValue): string {
-  const rendered = typeof value === "string" ? value : JSON.stringify(value);
-  return rendered.length > MAX_VALUE_CHARS ? `${rendered.slice(0, MAX_VALUE_CHARS)}...` : rendered;
+function rendered(value: JsonValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function text(value: JsonValue | undefined): string | undefined {

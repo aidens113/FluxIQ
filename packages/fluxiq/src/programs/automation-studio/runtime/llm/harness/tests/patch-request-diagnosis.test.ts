@@ -27,7 +27,8 @@ describe("carrying the diagnosis into the patch request", () => {
     expect(packed.diagnosis).not.toBe(DIAGNOSIS);
   });
 
-  it("carries only the fields the diagnosis channel names, and bounds each text", () => {
+  // Each text whole since 2026-09-30: it was cut at 500 characters.
+  it("carries only the fields the diagnosis channel names, each text whole", () => {
     const packed = packAutomationStudioLlmContext(patchInput({
       diagnosis: {
         ...DIAGNOSIS,
@@ -38,7 +39,7 @@ describe("carrying the diagnosis into the patch request", () => {
         stillAchievable: "maybe"
       } as never
     }));
-    expect(packed.diagnosis?.expected).toHaveLength(500);
+    expect(packed.diagnosis?.expected).toBe("x".repeat(900));
     expect(Object.keys(packed.diagnosis ?? {}).sort()).toEqual([
       "changed", "deterministicRecoveryPossible", "expected", "explorationNeeded", "observed", "patchNeeded"
     ]);

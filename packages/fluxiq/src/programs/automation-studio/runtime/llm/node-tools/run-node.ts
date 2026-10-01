@@ -19,13 +19,11 @@
 // its argument names the node, and the names it may take are read from the
 // registry at the moment the tool is built.
 //
-// **The names are the whole library, not the described part of it.** The node
-// catalog the model is shown beside its evidence is fitted to a byte budget and
-// says so (`flow-bootstrap/plan/catalog.ts`, `catalogTruncated`). That was
-// tolerable while the catalog only had to help the model *write* a node. It is
-// not tolerable now that it also decides what the model can *run*, so the
-// enumerated names here are every available node, and the truncated catalog
-// governs only how much prose accompanies them.
+// **The names are the whole library.** The enumerated names here are every
+// available node, as is the catalog the model is shown beside its evidence,
+// which carries each of them whole (`flow-bootstrap/plan/catalog.ts`). Until
+// 2026-09-30 that catalog was fitted to a byte budget, so this list was what
+// kept a node the catalog dropped runnable.
 //
 // **What the tool does not decide.** Whether a call looked or changed, what it
 // should be recorded as, and whether it belongs in the result are properties of
@@ -39,9 +37,6 @@ import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 
 /** The one verb that runs a node from the library. */
 export const AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID = "core.run_node";
-
-/** How many node names the tool will enumerate before it stops naming them. */
-const MAX_ENUMERATED_NODES = 400;
 
 /**
  * The class the worked example names.
@@ -97,11 +92,9 @@ export function automationStudioLlmRunNodeTool(input: {
 }): AutomationStudioLlmEvidenceTool | undefined {
   const nodeIds = [...new Set(input.nodeIds)].filter((id) => typeof id === "string" && id.length > 0).sort();
   if (!nodeIds.length) return undefined;
-  // Past the bound the names are left to the catalog rather than enumerated,
-  // so a library of thousands does not put its whole index in every request.
-  const node: JsonObject = nodeIds.length <= MAX_ENUMERATED_NODES
-    ? { enum: [...nodeIds], description: "The node's id, copied exactly from the catalog." }
-    : { type: "string", minLength: 1, maxLength: 200, description: "The node's id, copied exactly from the catalog." };
+  // Every node is enumerated, however many (2026-09-30): past 400 the names
+  // used to be left to the catalog.
+  const node: JsonObject = { enum: [...nodeIds], description: "The node's id, copied exactly from the catalog." };
   return {
     toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
     description: DESCRIPTION,

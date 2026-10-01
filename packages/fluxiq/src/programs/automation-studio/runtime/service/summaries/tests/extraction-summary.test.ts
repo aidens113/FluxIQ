@@ -184,11 +184,12 @@ describe("what the projection admits", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, fieldNames: ["__proto__"] } } })).toBeUndefined();
   });
 
-  it("copies what each condition's own read found, cut to sixty characters, and refuses a malformed list", () => {
+  it("copies what each condition's own read found, whole, and refuses a malformed list", () => {
     const counts = { applied: 30, kept: 4, rejected: [26, 2], unfiltered: false };
     const admitted = (seen: unknown) => extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { ...counts, seen } } } });
     expect(admitted(["Brightaisle Plus", null])?.conditions).toEqual({ ...counts, seen: ["Brightaisle Plus", null] });
-    expect(admitted(["x".repeat(500), null])?.conditions).toEqual({ ...counts, seen: ["x".repeat(60), null] });
+    // No character cut (user, 2026-09-30).
+    expect(admitted(["x".repeat(5_000), null])?.conditions).toEqual({ ...counts, seen: ["x".repeat(5_000), null] });
     // Absent is a producer that predates it, and the report still arrives.
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: counts } } })?.conditions).toEqual(counts);
     for (const malformed of [["Brightaisle Plus"], ["Brightaisle Plus", 3], [{ label: "Plus" }, null], "Brightaisle Plus", null]) {
@@ -196,9 +197,11 @@ describe("what the projection admits", () => {
     }
   });
 
-  it("refuses a condition report that kept more than it looked at, or whose rejections are unbounded", () => {
+  it("refuses a condition report that kept more than it looked at, and admits any number of conditions", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 3, rejected: [], unfiltered: false } } } })).toBeUndefined();
-    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 1, rejected: Array.from({ length: 65 }, () => 0), unfiltered: false } } } })).toBeUndefined();
+    // No count cap: a read of two hundred conditions reports all two hundred (user, 2026-09-30).
+    const many = Array.from({ length: 200 }, (_unused, index) => index);
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 1, rejected: many, unfiltered: false } } } })?.conditions).toMatchObject({ rejected: many });
   });
 
   it("carries nothing extra the host put beside the members it knows", () => {

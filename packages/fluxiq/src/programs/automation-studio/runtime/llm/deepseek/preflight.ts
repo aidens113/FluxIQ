@@ -1,13 +1,12 @@
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
-  AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   automationStudioLlmRequestEvidenceRefusal,
   isAutomationStudioLlmRecentActionContext,
   type AutomationStudioLlmTaskRequest
 } from "../harness.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapOutputSchema, automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapOutputSchema, automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import { automationStudioDeepSeekExpectedOutput } from "./output-schema.ts";
 import { isRecord } from "./json-record.ts";
@@ -55,7 +54,8 @@ function refuse(code: AutomationStudioLlmProviderPreflightErrorCode, message: st
 /** The packet's own projection, checked by the packet's own rule. */
 function validRecentActions(actions: unknown): boolean {
   if (!actions) return true;
-  return Array.isArray(actions) && actions.length <= AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS && actions.every(isAutomationStudioLlmRecentActionContext);
+  // Every action the run took, however many (2026-09-30): no count is checked.
+  return Array.isArray(actions) && actions.every(isAutomationStudioLlmRecentActionContext);
 }
 
 function boundedJson(root: unknown): boolean {
@@ -92,17 +92,15 @@ function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["cont
   if (!isRecord(bootstrap)
     || JSON.stringify(bootstrap.outputSchema) !== JSON.stringify(automationStudioFlowBootstrapOutputSchema(automationStudioFlowBootstrapSizeLimitsOfContext(bootstrap)))
     || !Array.isArray(bootstrap.nodeCatalog)
-    || bootstrap.nodeCatalog.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries
     || typeof bootstrap.catalogTruncated !== "boolean"
     || !isRecord(bootstrap.catalogSelection)) return false;
   const selection = bootstrap.catalogSelection;
   const catalogBytes = Buffer.byteLength(JSON.stringify(bootstrap.nodeCatalog), "utf8");
-  return Number.isInteger(selection.byteBudget)
-    && Number.isInteger(selection.usedBytes)
-    && selection.byteBudget > 0
-    && selection.byteBudget <= AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes
+  // No entry count and no byte budget: the catalog is every offered node,
+  // whole (`../../flow-bootstrap/plan/catalog.ts`), and the request's only
+  // bound is the model's window. What is checked is that it says its own size.
+  return Number.isInteger(selection.usedBytes)
     && selection.usedBytes === catalogBytes
-    && catalogBytes <= selection.byteBudget
     && Array.isArray(selection.requiredTerms)
     && selection.requiredTerms.every((term) => typeof term === "string" && term.length > 0 && term.length <= 64)
     && Array.isArray(selection.missingRequiredTerms)

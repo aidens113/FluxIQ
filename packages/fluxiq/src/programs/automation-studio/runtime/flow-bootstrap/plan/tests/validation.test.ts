@@ -256,7 +256,8 @@ describe("a domain's parameter contract", () => {
       .toEqual(["bootstrap.parameter_contract_failed"]);
   });
 
-  it("reports a malformed, borrowed, or excessive code as a bounded generic violation", () => {
+  // Every well-formed code since 2026-09-30: it kept the first eight.
+  it("reports a malformed, borrowed, or excessive code as one generic violation, and every well-formed code", () => {
     const reported = ["Has Spaces", "bootstrap.primary_count", "x".repeat(200), ...Array.from({ length: 20 }, (_, index) => `demo.items.issue_${index}`)];
 
     const result = codes(planWith(extractNode({ items: { item: ".row" } })), registry(() => reported));
@@ -264,6 +265,7 @@ describe("a domain's parameter contract", () => {
     expect(result[0]).toBe("bootstrap.parameter_contract_violation");
     expect(result.filter((code) => code === "bootstrap.parameter_contract_violation")).toHaveLength(1);
     expect(result).not.toContain("bootstrap.primary_count");
-    expect(result).toHaveLength(8);
+    expect(result).toHaveLength(21);
+    expect(result.slice(1)).toEqual(Array.from({ length: 20 }, (_, index) => `demo.items.issue_${index}`));
   });
 });

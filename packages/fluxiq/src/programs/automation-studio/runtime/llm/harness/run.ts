@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
@@ -27,21 +26,14 @@ import {
 export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult> {
   const now = input.now ?? Date.now;
   const tokenLimitResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits);
+  // The instructions are carried whole whatever the task (`./instruction.ts`):
+  // the budget they are reported against is the request's own input limit,
+  // the model's window less the reply. A flow bootstrap was held to 384
+  // instruction tokens and its node catalog to 4,000 input tokens until
+  // 2026-09-30; neither bound remains.
   const context = packAutomationStudioLlmContext({
     ...input,
-    tokenBudget: input.taskKind === "flow_bootstrap"
-      ? Math.min(
-        input.tokenBudget ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.bootstrapInstructionTokens,
-        tokenLimitResolution.limits.maxInputTokens,
-        AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.bootstrapInstructionTokens
-      )
-      : Math.min(input.tokenBudget ?? tokenLimitResolution.limits.maxInputTokens, tokenLimitResolution.limits.maxInputTokens),
-    ...((input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
-      ? { flowBootstrap: {
-        ...input.flowBootstrap,
-        maxInputTokens: Math.min(input.flowBootstrap.maxInputTokens ?? tokenLimitResolution.limits.maxInputTokens, tokenLimitResolution.limits.maxInputTokens)
-      } }
-      : {})
+    tokenBudget: tokenLimitResolution.limits.maxInputTokens
   });
   const expectedOutput = input.expectedOutput ?? expectedOutputForTask(input.taskKind);
   const requestId = validRequestIdentity(input.requestId) ? input.requestId : `llm.${input.taskKind}.${randomUUID()}`;

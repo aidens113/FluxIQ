@@ -37,7 +37,7 @@ function createService(input: {
   const provider = input.provider ?? mockProvider();
   const resolver = input.resolver ?? (() => ({
     provider,
-    tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+    tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
     maxCallsPerRun: 1,
     maxEstimatedCostUsd: 0.1,
     timeoutMs: 20_000

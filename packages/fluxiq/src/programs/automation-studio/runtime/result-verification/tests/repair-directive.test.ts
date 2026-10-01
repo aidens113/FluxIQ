@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
 import {
-  AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS,
   AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES,
   automationStudioResultRepairDirective,
   automationStudioResultRepairFindings
@@ -159,8 +158,8 @@ describe("what Core's own arithmetic finds wrong with a result", () => {
     expect(onlyControl.fix[0]).not.toContain("last step");
   });
 
-  it("holds itself to its own bounds", () => {
-    const limits = AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS;
+  // Whole since 2026-09-30: it was held to 8 findings, 8 fix lines and 8 columns a finding.
+  it("carries every finding, every fix line and every column", () => {
     const directive = automationStudioResultRepairDirective({
       summary: result({
         totalRecordCount: 0,
@@ -178,11 +177,11 @@ describe("what Core's own arithmetic finds wrong with a result", () => {
         withheld: true
       })
     });
-    expect(directive.findings.length).toBeLessThanOrEqual(limits.maxFindings);
-    expect(directive.fix.length).toBeLessThanOrEqual(limits.maxFixLines);
-    expect(directive.fix.every((line) => line.length <= limits.maxFixLineLength)).toBe(true);
-    expect(directive.findings.every((finding) => finding.detail.length <= limits.maxDetailLength)).toBe(true);
-    expect(directive.findings.every((finding) => (finding.columns?.length ?? 0) <= limits.maxColumnsPerFinding)).toBe(true);
+    // Every-row-refused, required-missing, then per set an empty column and truncation (4 x 2), then withheld.
+    expect(directive.findings.length).toBeGreaterThan(8);
+    expect(directive.fix.length).toBeGreaterThan(8);
+    const required = directive.findings.find((finding) => finding.code === AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.requiredValuesMissing);
+    expect(required?.columns).toHaveLength(12);
   });
 });
 
@@ -191,7 +190,7 @@ describe("the judgement's own words, read forgivingly", () => {
     expect(automationStudioResultRepairDirective({ summary: result() }).judgement).toBeUndefined();
   });
 
-  it("carries what the judgement said, bounded to the diagnosis channel's own limit", () => {
+  it("carries what the judgement said, whole", () => {
     const directive = automationStudioResultRepairDirective({
       summary: result(),
       judgement: { expected: "  two members  ", observed: "every member", advice: "y".repeat(800) }
@@ -199,7 +198,7 @@ describe("the judgement's own words, read forgivingly", () => {
     expect(directive.judgement).toEqual({
       expected: "two members",
       observed: "every member",
-      advice: "y".repeat(AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS.maxJudgementLength)
+      advice: "y".repeat(800)
     });
     expect(directive.withheld).toBeUndefined();
   });

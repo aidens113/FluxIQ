@@ -213,9 +213,9 @@ describe("AutomationStudioService recording persistence", () => {
         domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
         executeTool: async () => ({}),
         // 15,000 bytes: two and a half times the 6,000-byte limit that was
-        // removed, and inside this resolver's 8,000-token default and the
-        // fixture Flow's 12,000-token run budget as Core now measures a request
-        // (UTF-8 bytes / 3). A capture past those is refused loudly, with its size.
+        // removed. The resolver names no limits, so the request is bounded by
+        // the model's window alone (2026-09-30); a capture past it is refused
+        // loudly, with its size.
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(15_000) })
       }
     });

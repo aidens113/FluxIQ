@@ -19,6 +19,11 @@
 //
 // A condition is paired with its rejection count by position: the read reports
 // one count per condition it was given, in the order it was given them.
+//
+// **Every read, every condition and every dedupe key** (user, 2026-09-30:
+// "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
+// HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
+// and six dedupe keys, and was told only that more had been left out.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
@@ -27,12 +32,6 @@ import { automationStudioEvidenceKey } from "../../llm/index.ts";
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadConditionText } from "./condition.ts";
 
-/** Reads accounted for. A run with more says so through the summary's `withheld`. */
-const MAX_READS = 4;
-/** Conditions accounted for per read. */
-const MAX_CONDITIONS = 8;
-/** Dedupe keys named per read. */
-const MAX_DEDUPE_KEYS = 6;
 /** The members that mark an object as a read's own parameters. */
 const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
 /** A closed word the read reports, as extraction-summary.ts admits them. */
@@ -47,8 +46,8 @@ export type AutomationStudioResultReadAccountsInput = {
   deniedEvidenceKeys?: readonly string[] | undefined;
 };
 
-/** One account per step that reported a read, in the order each first read, at most `MAX_READS`, plus whether any were left out. */
-export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[]; withheld: boolean } {
+/** One account per step that reported a read, in the order each first read: every one of them. */
+export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[] } {
   const latest = new Map<string, { attempt: AutomationStudioFlowRunActionAttemptRecord; extraction: JsonObject; attempts: number }>();
   for (const attempt of input.actionAttempts ?? []) {
     const extraction = attempt.metadata?.extraction;
@@ -60,9 +59,9 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
     latest.set(attempt.nodeId, replaces ? { attempt, extraction, attempts } : { ...previous, attempts });
   }
   const nodes = new Map((input.flowNodes ?? []).map((node) => [node.id, node]));
-  const reads = [...latest.values()].slice(0, MAX_READS).map(({ attempt, extraction, attempts }) =>
+  const reads = [...latest.values()].map(({ attempt, extraction, attempts }) =>
     account(attempt, extraction, attempts, nodes.get(attempt.nodeId), input.deniedEvidenceKeys));
-  return { reads, withheld: latest.size > reads.length };
+  return { reads };
 }
 
 function account(
@@ -113,7 +112,7 @@ function conditionAccounts(
   const seen = Array.isArray(filter?.seen) ? filter.seen : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
-  const total = Math.min(MAX_CONDITIONS, Math.max(rejected.length, written.length));
+  const total = Math.max(rejected.length, written.length);
   const accounts: NonNullable<AutomationStudioResultReadAccount["conditions"]> = [];
   for (let index = 0; index < total; index += 1) {
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
@@ -141,8 +140,7 @@ function columnKeys(value: JsonValue | undefined, deniedKeys: readonly string[])
   const written = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
   return written
-    .filter((key): key is string => typeof key === "string" && AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.fieldIdPattern.test(key) && !denied.has(automationStudioEvidenceKey(key)))
-    .slice(0, MAX_DEDUPE_KEYS);
+    .filter((key): key is string => typeof key === "string" && AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.fieldIdPattern.test(key) && !denied.has(automationStudioEvidenceKey(key)));
 }
 
 function count(value: unknown): number | undefined {

@@ -37,9 +37,6 @@ export type AutomationStudioConversationInstructionAnswer = {
   problem: string | null;
 };
 
-/** How much of the thread the model reads before the new message. */
-export const AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS = 20;
-const TRANSCRIPT_TURN_TEXT_MAX = 1_500;
 
 /**
  * The attachment kind the panel records what it did under. Read back as the
@@ -49,16 +46,20 @@ const TRANSCRIPT_TURN_TEXT_MAX = 1_500;
  */
 export const AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT = "panel-capability-result";
 
-/** The turns before `excludeTurnId`, bounded, as the model reads them. Empty turns are left out. */
+/**
+ * Every turn but `excludeTurnId`, each whole, as the model reads them. Empty
+ * turns are left out. Until 2026-09-30 the model read the last 20, each cut at
+ * 1,500 characters (user: "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS
+ * PASSED TO MODEL. DO NOT HIDE INFORMATION").
+ */
 export function automationStudioConversationModelTranscript(
   turns: readonly AutomationStudioConversationTurn[],
   excludeTurnId: string
 ): AutomationStudioConversationModelTurn[] {
   return turns
     .filter((entry) => entry.turnId !== excludeTurnId && entry.text.trim())
-    .slice(-AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS)
     .map((entry): AutomationStudioConversationModelTurn => ({
       author: entry.attachment?.kind === AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT ? "panel" : entry.author,
-      text: entry.text.length > TRANSCRIPT_TURN_TEXT_MAX ? `${entry.text.slice(0, TRANSCRIPT_TURN_TEXT_MAX - 1)}…` : entry.text
+      text: entry.text
     }));
 }

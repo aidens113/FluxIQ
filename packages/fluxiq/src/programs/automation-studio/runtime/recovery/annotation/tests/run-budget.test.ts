@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS, AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
   resolveAutomationStudioRecoveryRunBudget
@@ -8,6 +8,10 @@ import {
 // The numbers one recovery runs under. These are the answer to "what is the
 // most one recovery can cost", so they are pinned rather than inferred.
 describe("resolveAutomationStudioRecoveryRunBudget", () => {
+  // A resolver that names no per-call limits gets the harness's default, which
+  // is the model's window: 1,000,000 tokens with an 8,000-token reply reserve
+  // (2026-09-30; it was 10,000 and 2,000).
+  const WINDOW = AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS.maxTotalTokens;
   // Core's own default token pot (6,000 per share, 144,000 in all) is gone:
   // it refused a whole page's diagnosis outright. The purse binds.
   it("bounds a recovery nobody asked for by $0.25 and the per-call limit times the shares, with the call count only a backstop", () => {
@@ -15,8 +19,9 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
 
     expect(budget.ledger).toEqual({
       maxCallsPerRun: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
-      maxTotalTokensPerRun: 10_000 * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
-      maxOutputTokensPerRun: 10_000 * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
+      maxTotalTokensPerRun: WINDOW * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
+      // No per-call output limit was named, so the output pot is the token pot.
+      maxOutputTokensPerRun: WINDOW * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
       maxEstimatedCostUsdPerRun: 0.25
     });
     expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(0.25 / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 8);
@@ -36,7 +41,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   it("takes a resolver's declared call count at its word and sizes the purse to it", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, resolution: { maxCallsPerRun: 2 } });
 
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 2, maxTotalTokensPerRun: 20_000, maxOutputTokensPerRun: 20_000, maxEstimatedCostUsdPerRun: 0.25 });
+    expect(budget.ledger).toEqual({ maxCallsPerRun: 2, maxTotalTokensPerRun: 2 * WINDOW, maxOutputTokensPerRun: 2 * WINDOW, maxEstimatedCostUsdPerRun: 0.25 });
     expect(budget.maxEstimatedCostUsdPerCall).toBe(0.125);
     // Said, so a stage may plan by it; the backstop is never offered as one.
     expect(budget.declaredCallsPerRun).toBe(2);
@@ -45,7 +50,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
 
   it("uses a smaller resolver total for a run a person asked for, and never more than the run cost ceiling", () => {
     const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 10, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.15 } });
-    expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 0.15 });
+    expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 10 * WINDOW, maxOutputTokensPerRun: 10 * WINDOW, maxEstimatedCostUsdPerRun: 0.15 });
     expect(asked.maxEstimatedCostUsdPerCall).toBeCloseTo(0.015, 8);
 
     // A resolver that gives a per-call cost and no total would otherwise be
@@ -63,12 +68,10 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     const total = budget.ledger.maxEstimatedCostUsdPerRun;
     expect(total).toBe(0.25);
     const rounded = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000_000;
-    // A call never reserves less than its own worst case (the default 8,000 /
-    // 2,000 tokens at deepseek-flash's peak rates), so where an even share is
-    // smaller the purse admits fewer worst-case calls than were declared, and
-    // every one of those still fits.
-    const worstCase = estimateAutomationStudioDeepSeekCostUsd(8_000, 2_000);
-    expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(Math.max(total / calls, worstCase), 8);
+    // A resolver that declared no per-call limits has no worst case of its own
+    // to reserve -- the default is the whole window, which no call fills -- so
+    // each call reserves an even share, and every declared call fits.
+    expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(total / calls, 8);
     const admitted = Math.min(calls, Math.floor(total / budget.maxEstimatedCostUsdPerCall));
     let committed = 0;
     for (let call = 0; call < admitted; call += 1) {
@@ -77,7 +80,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     }
     expect(budget.ledger.maxCallsPerRun).toBe(calls);
     // And the token pot is the per-call limit times the calls.
-    expect(budget.ledger.maxTotalTokensPerRun).toBe(10_000 * calls);
+    expect(budget.ledger.maxTotalTokensPerRun).toBe(WINDOW * calls);
   });
 
   it("caps the token pot at a resolver's whole-run token exposure, however many calls it declared", () => {

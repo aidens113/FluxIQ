@@ -36,9 +36,6 @@ import { automationStudioFlowBootstrapInstructionAsk } from "./instruction-ask.t
 import { automationStudioFlowBootstrapLibraryReturnsRecords } from "./library-record-sets.ts";
 import { automationStudioFlowBootstrapPlanRecordSets } from "./plan-record-sets.ts";
 
-/** Steps named in the feedback; a longer plan says `stepsWithheld`. It bounds a prompt listing, not a Flow's size. */
-const MAX_FEEDBACK_STEPS = 24;
-
 /**
  * What the model is told to do, which matters as much as the refusal.
  *
@@ -87,9 +84,8 @@ export function checkAutomationStudioFlowBootstrapAnswersInstruction(input: {
       ...(ask.quote ? { quote: ask.quote } : {}),
       ...(ask.columns.length ? { columns: ask.columns } : {}),
       lacks: "no step of this Flow produces or saves a set of records",
-      steps: found.steps.slice(0, MAX_FEEDBACK_STEPS),
-      // Said rather than hidden: a longer Flow is shown its first steps only.
-      ...(found.steps.length > MAX_FEEDBACK_STEPS ? { stepsWithheld: true } : {})
+      // Every step, however long the Flow (user, 2026-09-30): no count cap.
+      steps: found.steps
     },
     instruction: CANNOT_ANSWER_INSTRUCTION
   };

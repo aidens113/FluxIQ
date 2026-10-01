@@ -166,7 +166,9 @@ async function create(options: {
     ports: sessionKeyPorts(revealed),
     fetchImpl: endpoint(options.reply, sentIterations, observations, registeredRecordProducerIds, options.billed)
   });
-  const tokenLimits = options.tokenLimits ?? { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 };
+  // Small per-call limits, so the run budgets these cases measure bind as they were calibrated. They were 8,000 / 2,000 /
+  // 10,000; the whole node catalog rides in every request since 2026-09-30, and a request that size no longer holds it.
+  const tokenLimits = options.tokenLimits ?? { maxInputTokens: 20_000, maxOutputTokens: 2_000, maxTotalTokens: 22_000 };
   // The host's resolver, with the per-call and run limits each case sets as
   // budget defaults on the resolution. Nothing is issued or checked first.
   service.bindLlmExecutionProvider((input) => {
@@ -596,9 +598,10 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // every call already paid for.
   it("records a build's token totals past one request's ceiling when its budget allows them", async () => {
     const run = await create({
-      // Nine calls at 12,000 is what lets a run's budget reach 100,000.
+      // Nine calls at 22,000 is what lets a run's budget reach 100,000; the whole node catalog in each request
+      // (2026-09-30) no longer fits the 12,000 it once was.
       maxCalls: 9,
-      tokenLimits: { maxInputTokens: 10_000, maxOutputTokens: 2_000, maxTotalTokens: 12_000 },
+      tokenLimits: { maxInputTokens: 20_000, maxOutputTokens: 2_000, maxTotalTokens: 22_000 },
       maxTotalTokensPerRun: 100_000,
       billed: { promptTokens: 10_000, completionTokens: 2_000 },
       reply: (_call, iteration) => iteration <= 4 ? look(iteration) : complete()

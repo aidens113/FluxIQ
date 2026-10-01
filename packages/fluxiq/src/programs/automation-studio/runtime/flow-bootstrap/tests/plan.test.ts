@@ -6,7 +6,6 @@ import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
-  automationStudioFlowBootstrapCatalogByteBudget,
   automationStudioFlowBootstrapSizeLimits,
   buildAutomationStudioFlowBootstrapContext,
   isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
@@ -166,16 +165,9 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(serialized).toContain("flow_bootstrap");
     expect(serialized).not.toMatch(/recording|timeline|event/i);
     expect(Buffer.byteLength(serialized, "utf8")).toBeLessThan(4_700);
-    const firstLiveCatalogBytes = automationStudioFlowBootstrapCatalogByteBudget({
-      maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
-      instructionBytes: 1_536
-    });
     expect(AUTOMATION_STUDIO_LLM_CONSERVATIVE_UTF8_BYTES_PER_TOKEN).toBe(3);
-    expect(automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens)).toBe(12_000);
-    expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(12_000)).toBe(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens);
-    // 248 bytes fewer than before 2026-09-18: the schema now carries each route rule's condition.
-    // One fewer again since 2026-09-29: a Subflow's node count is the size setting's 100, not 64.
-    expect(firstLiveCatalogBytes).toBe(5_117);
+    expect(automationStudioLlmTokenBudgetBytes(4_000)).toBe(12_000);
+    expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(12_000)).toBe(4_000);
   });
 
   it("publishes the strict parser shape and conditional catalog-bound node fields", () => {
@@ -221,7 +213,6 @@ describe("Automation Studio Flow bootstrap contract", () => {
       inputs: [{ id: "input", type: "string" }],
       outputAction: { required: true, allowed: ["demo.click"] }
     });
-    expect(JSON.stringify(context).length).toBeLessThan(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes);
   });
 
   it("publishes every contract needed to author a registry-valid action chain", () => {
@@ -302,8 +293,7 @@ describe("Automation Studio Flow bootstrap contract", () => {
     const context = buildAutomationStudioFlowBootstrapContext({
       registry: new AutomationStudioNodeRegistry([...noise, ...actions]),
       resolution,
-      instructionText: "Enter a value, choose an option, submit the button, and verify the result text.",
-      maxCatalogBytes: 5_000
+      instructionText: "Enter a value, choose an option, submit the button, and verify the result text."
     });
     expect(context.catalogSelection).toMatchObject({
       requiredTerms: ["enter", "choose", "submit", "verify"],
@@ -316,35 +306,20 @@ describe("Automation Studio Flow bootstrap contract", () => {
       "domain.demo.wait_text"
     ]));
   });
-  it("truncates an oversized available catalog deterministically", () => {
-    const definitions = Array.from({ length: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries + 5 }, (_, index) => definition({
+  // No entry cap and no ranking (user, 2026-09-30): until then a catalog stopped
+  // at 100 entries, and 64 for an evidence-guided build, ranked by the instruction.
+  it("lists every offered node, however many, in catalog order, and is never truncated", () => {
+    const definitions = Array.from({ length: 300 }, (_, index) => definition({
       id: `domain.demo.node_${String(index).padStart(3, "0")}`,
+      label: index === 299 ? "Submit" : `Unrelated ${index}`,
       source: { kind: "importer", domainId: "demo", implementationKey: `demo.node_${index}` },
-      outputAction: undefined
+      outputAction: index === 299 ? { fixedOutputId: "demo.click" } : undefined
     }));
-    const context = buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(definitions), resolution });
-    expect(context.catalogTruncated).toBe(true);
-    expect(context.nodeCatalog.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries);
-    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual([...context.nodeCatalog.map((entry) => entry.id)].sort());
-  });
-
-  it("supports a ranked evidence catalog entry cap without changing the ordinary catalog ceiling", () => {
-    const definitions = Array.from({ length: 20 }, (_, index) => definition({
-      id: `domain.demo.node_${String(index).padStart(2, "0")}`,
-      label: index === 19 ? "Submit" : `Unrelated ${index}`,
-      source: { kind: "importer", domainId: "demo", implementationKey: `demo.node_${index}` },
-      outputAction: index === 19 ? { fixedOutputId: "demo.click" } : undefined
-    }));
-    const limited = buildAutomationStudioFlowBootstrapContext({
-      registry: new AutomationStudioNodeRegistry(definitions), resolution,
-      instructionText: "Submit the form", maxCatalogEntries: 12
-    });
-    const ordinary = buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(definitions), resolution });
-    expect(limited.nodeCatalog.length).toBeLessThanOrEqual(12);
-    expect(limited.nodeCatalog.length).toBeGreaterThan(0);
-    expect(limited.nodeCatalog.some((entry) => entry.id === "domain.demo.node_19")).toBe(true);
-    expect(limited.catalogSelection.missingRequiredTerms).toEqual([]);
-    expect(ordinary.nodeCatalog).toHaveLength(20);
+    const context = buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(definitions), resolution, instructionText: "Submit the form" });
+    expect(context.catalogTruncated).toBe(false);
+    expect(context.nodeCatalog.map((entry) => entry.id)).toEqual(definitions.map((item) => item.id));
+    expect(context.catalogSelection.usedBytes).toBe(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8"));
+    expect(context.catalogSelection.missingRequiredTerms).toEqual([]);
   });
 
   it("rejects recording fields and durable-looking symbolic keys at the parser boundary", () => {

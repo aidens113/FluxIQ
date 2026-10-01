@@ -314,7 +314,7 @@ function loopRequest(iteration: number, gathered: Array<{ callId: string; toolId
         outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
         nodeCatalog,
         catalogTruncated: true,
-        catalogSelection: { byteBudget: 42_132, usedBytes: Buffer.byteLength(JSON.stringify(nodeCatalog), "utf8"), requiredTerms: [], missingRequiredTerms: [] }
+        catalogSelection: { usedBytes: Buffer.byteLength(JSON.stringify(nodeCatalog), "utf8"), requiredTerms: [], missingRequiredTerms: [] }
       },
       evidenceLoop
     }

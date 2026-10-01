@@ -12,8 +12,6 @@ import type {
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import {
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
-  automationStudioFlowBootstrapCatalogByteBudget,
   buildAutomationStudioFlowBootstrapContext,
   type AutomationStudioFlowBootstrapRoutingContext
 } from "../../flow-bootstrap/index.ts";
@@ -29,7 +27,7 @@ import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExplor
 import { automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
-import { AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH, type AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
 
@@ -115,8 +113,6 @@ export type AutomationStudioLlmActionPermissions = {
  * and ended the recovery with no request, the silent refusal this replaces.
  */
 const ACTION_PERMISSIONS_OTHERWISE = "An action with any other lasting consequence is still within reach: when the recovery needs one, the run asks the person for permission at that step instead of taking it. Needing permission never makes a step's result unachievable.";
-
-export const AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS = 12;
 
 /**
  * The calls that are looking at a finished run, and so may be shown what it
@@ -246,12 +242,9 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
       // instruction a person writes names it: they say what they want done, and
       // only the caller knows where the Flow is meant to do it.
       ...(input.flowBootstrap.startLocation === undefined ? {} : { startLocation: input.flowBootstrap.startLocation }),
-      instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
-      maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
-        maxInputTokens: input.flowBootstrap.maxInputTokens ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
-        instructionBytes: Buffer.byteLength(JSON.stringify(instructions), "utf8"),
-        ...(input.flowBootstrap.size ? { size: input.flowBootstrap.size } : {})
-      })
+      // Every offered node, whole: the catalog is not fitted to any budget
+      // (`../../flow-bootstrap/plan/catalog.ts`).
+      instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n")
     })
     : undefined;
   const routing = catalogContext && input.flowBootstrap?.routing ? packRoutingContext(input.flowBootstrap.routing, deniedEvidenceKeys) : undefined;
@@ -270,7 +263,11 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // Page-derived, so carried whole: every state diff and every route visited.
     ...(input.stateDiffs?.length ? { stateDiffs: [...input.stateDiffs] } : {}),
     ...(input.routeHistory?.length ? { routeHistory: [...input.routeHistory] } : {}),
-    ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS).map(compactRecentActionForLlm) } : {}),
+    // Every action the run took, in order, and every relevant run, adaptation,
+    // Subflow and available action below: nothing is cut to a count (user,
+    // 2026-09-30). These were the last 12 actions, 25 runs, 25 adaptations, 100
+    // Subflows and 100 actions.
+    ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.map(compactRecentActionForLlm) } : {}),
     ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence, deniedEvidenceKeys) } : {}),
     // Held to the same task-kind rule as the failure evidence it sits beside: a
     // flow-bootstrap packet describes a Flow that has never run, so a record of
@@ -289,11 +286,11 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.conversation?.length && AUTOMATION_STUDIO_FINISHED_RUN_TASK_KINDS.has(input.taskKind)
       ? conversationSlot(input.conversation)
       : {}),
-    ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
-    ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
+    ...(input.relevantRuns?.length ? { relevantRuns: [...input.relevantRuns] } : {}),
+    ...(input.relevantAdaptations?.length ? { relevantAdaptations: [...input.relevantAdaptations] } : {}),
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),
-    ...(input.subflows?.length ? { subflows: input.subflows.slice(0, 100).map(compactSubflowForLlm) } : {}),
-    ...(input.availableActions?.length ? { availableActions: input.availableActions.slice(0, 100) } : {}),
+    ...(input.subflows?.length ? { subflows: input.subflows.map(compactSubflowForLlm) } : {}),
+    ...(input.availableActions?.length ? { availableActions: [...input.availableActions] } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
     ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: packEvidenceLoop(input.evidenceLoop, deniedEvidenceKeys) } : {}),
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
@@ -352,8 +349,9 @@ function packDiagnosisFields(
   if (taskKind !== "runtime_patch" && taskKind !== "runtime_diagnosis") throw new AutomationStudioLlmRequestRefusedError("llm.request.diagnosis_misplaced", "The model's diagnosis is carried only to a runtime patch or a re-planning runtime diagnosis request.");
   const verdict = (value: unknown): "yes" | "no" | "unknown" | undefined =>
     value === "yes" || value === "no" || value === "unknown" ? value : undefined;
+  // Whole (2026-09-30): it was cut at the 500 characters the reply contract allows.
   const text = (value: unknown): string | undefined =>
-    typeof value === "string" && value.trim() ? value.slice(0, AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) : undefined;
+    typeof value === "string" && value.trim() ? value : undefined;
   const flag = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
   const packed: AutomationStudioLlmDiagnosisFields = {
     ...(text(diagnosis.expected) !== undefined ? { expected: text(diagnosis.expected)! } : {}),

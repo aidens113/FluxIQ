@@ -109,7 +109,7 @@ export function adaptiveTrainingMetadata(): JsonObject {
       proposalApprovalMode: "auto",
       allowPromotion: true,
       requireFirstManualReviewBeforeAutoPromotion: false,
-      budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
+      budgets: { maxInterventionsPerRun: 2, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
     }
   };
 }

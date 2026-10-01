@@ -20,6 +20,8 @@ export {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD,
+  AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS,
+  AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmTokenLimits
 } from "./token-limits.ts";
@@ -50,7 +52,6 @@ export {
   isAutomationStudioExploredEvidenceLabel
 } from "./explored-evidence-label.ts";
 export {
-  AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   isAutomationStudioLlmRecentActionContext,
   packAutomationStudioLlmContext,
   type AutomationStudioLlmActionPermissions,
@@ -64,8 +65,6 @@ export {
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
 export {
-  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES,
-  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS,
   type AutomationStudioLlmConversationContext,
   type AutomationStudioLlmConversationTurn
 } from "./conversation.ts";
