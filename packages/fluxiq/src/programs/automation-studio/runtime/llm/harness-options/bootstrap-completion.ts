@@ -121,9 +121,6 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
     };
   };
 
-/** Issues the model is shown at once; the rest are dropped, not summarised. */
-const MAX_FEEDBACK_ISSUES = 16;
-
 const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was created. Correct every listed issue and complete again. "
   + "Where an issue carries accepted, it is what that parameter takes: write only the keys it names, beside a handle where one belongs, and follow its example. "
   + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} instead of writing a locator of your own; `
@@ -147,9 +144,6 @@ const SEVERAL_INSTRUCTION = "Every check was run and refusals lists each one tha
 
 /** Said of a profile limit, since what to do about one is not a parameter's business. */
 const LIMITS_INSTRUCTION = "limitsExceeded names each limit the result is over, its max and the actual value: shorten the summary, or drop or split what that limit counts.";
-
-/** What the refused script may cost in the feedback before it is left out. */
-const MAX_PREVIOUS_SCRIPT_LENGTH = 6_000;
 
 /** Every check a completed evidence-guided result must pass before it is built. */
 export async function checkAutomationStudioFlowBootstrapCompletion(input: {
@@ -411,16 +405,11 @@ function refused(
   answerability?: AutomationStudioLlmEvidenceLoopAnswerability
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const all = failures.length ? failures : [{ code: "flow_bootstrap.evidence_completion_plan_invalid" as const, issues: [issue("bootstrap.invalid_plan", "plan")] }];
-  let room = MAX_FEEDBACK_ISSUES;
-  const shownIssues: AutomationStudioFlowBootstrapIssue[] = [];
-  const feedbackIssues = all.flatMap((failure) => {
-    const shown = failure.issues.slice(0, Math.max(0, room));
-    room -= shown.length;
-    shownIssues.push(...shown);
-    return shown.length
-      ? automationStudioFlowBootstrapIssueFeedback({ issues: shown, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
-      : [];
-  });
+  // Every issue, and the refused script however long (2026-09-30): the model
+  // was shown the first 16 issues, and the script only under 6,000 characters.
+  const feedbackIssues = all.flatMap((failure) => failure.issues.length
+    ? automationStudioFlowBootstrapIssueFeedback({ issues: failure.issues, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
+    : []);
   const codes = [...new Set(all.map((failure) => failure.code))];
   const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
   // A failure with no account of its own is about how the plan was written, and
@@ -429,7 +418,7 @@ function refused(
     ...(all.length > 1 ? [SEVERAL_INSTRUCTION] : []),
     ...all.map((failure) => failure.detail?.instruction ?? FEEDBACK_INSTRUCTION)
   ])];
-  const previous = previousScript && previousScript.length <= MAX_PREVIOUS_SCRIPT_LENGTH ? { previous: previousScript } : {};
+  const previous = previousScript ? { previous: previousScript } : {};
   const baseCheck: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> = {
     ok: false,
     issueCodes: [...new Set(all.flatMap((failure) => failure.issues.map((item) => item.code)))],

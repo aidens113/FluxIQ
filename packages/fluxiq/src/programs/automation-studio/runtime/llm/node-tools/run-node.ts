@@ -38,9 +38,6 @@ import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 /** The one verb that runs a node from the library. */
 export const AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID = "core.run_node";
 
-/** How many node names the tool will enumerate before it stops naming them. */
-const MAX_ENUMERATED_NODES = 400;
-
 /**
  * The class the worked example names.
  *
@@ -95,11 +92,9 @@ export function automationStudioLlmRunNodeTool(input: {
 }): AutomationStudioLlmEvidenceTool | undefined {
   const nodeIds = [...new Set(input.nodeIds)].filter((id) => typeof id === "string" && id.length > 0).sort();
   if (!nodeIds.length) return undefined;
-  // Past the bound the names are left to the catalog rather than enumerated,
-  // so a library of thousands does not put its whole index in every request.
-  const node: JsonObject = nodeIds.length <= MAX_ENUMERATED_NODES
-    ? { enum: [...nodeIds], description: "The node's id, copied exactly from the catalog." }
-    : { type: "string", minLength: 1, maxLength: 200, description: "The node's id, copied exactly from the catalog." };
+  // Every node is enumerated, however many (2026-09-30): past 400 the names
+  // used to be left to the catalog.
+  const node: JsonObject = { enum: [...nodeIds], description: "The node's id, copied exactly from the catalog." };
   return {
     toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
     description: DESCRIPTION,

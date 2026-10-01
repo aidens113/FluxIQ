@@ -68,16 +68,11 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   countsLookRight: "result.counts_look_right"
 } as const);
 
-/** The bounds this directive holds itself to. Its own, because nothing else reads them. */
-export const AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS = Object.freeze({
-  maxFindings: 8,
-  maxFixLines: 8,
-  maxFixLineLength: 300,
-  maxDetailLength: 240,
-  maxColumnsPerFinding: 8,
-  /** The same 500 characters the diagnosis channel bounds a description to. */
-  maxJudgementLength: 500
-});
+// **Whole.** Every finding, every fix line, every column and every word of the
+// judgement reach the repair. Until 2026-09-30 the directive held itself to 8
+// findings, 8 fix lines of 300 characters, 240-character details, 8 columns a
+// finding and a 500-character judgement (user: "Remove ANY AND ALL LIMITS ON
+// THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION").
 
 /** What the model said, as the verdict reader hands it over: read forgivingly, never required. */
 export type AutomationStudioResultJudgementText = {
@@ -104,14 +99,10 @@ export type AutomationStudioResultRepairDirectiveInput = {
  * most -- a Flow that returned everything when the request asked for some of it.
  */
 export function automationStudioResultRepairDirective(input: AutomationStudioResultRepairDirectiveInput): AutomationStudioResultRepairDirective {
-  const limits = AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS;
-  const found = automationStudioResultRepairFindings(input.summary);
-  const findings = found.slice(0, limits.maxFindings);
+  const findings = automationStudioResultRepairFindings(input.summary);
   const fix = findings
     .map((finding) => fixLine(finding, input.summary))
-    .filter((line): line is string => line !== undefined)
-    .map((line) => line.slice(0, limits.maxFixLineLength))
-    .slice(0, limits.maxFixLines);
+    .filter((line): line is string => line !== undefined);
   const judged = screenedJudgement(input.judgement);
   return {
     schemaVersion: "automation-studio.result-repair-directive.v1",
@@ -170,7 +161,7 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
     findings.push({
       code: codes.requiredValuesMissing,
       detail: `${summary.totalRowsMissingRequired} stored ${summary.totalRowsMissingRequired === 1 ? "row carries" : "rows carry"} no value for a field the Flow's own record schema declares required.`,
-      ...(columns.length ? { columns: columns.slice(0, AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS.maxColumnsPerFinding) } : {})
+      ...(columns.length ? { columns } : {})
     });
   }
   for (const set of summary.recordSets) findings.push(...recordSetFindings(set));
@@ -180,7 +171,7 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
   if (!findings.some((finding) => finding.code !== codes.summaryWithheld)) {
     findings.unshift({ code: codes.countsLookRight, detail: "No count is wrong on its own, so what is wrong is which rows, or which values, were kept." });
   }
-  return findings.map(boundedFinding);
+  return findings;
 }
 
 /** What one record set's own numbers and sample say about it. */
@@ -227,8 +218,7 @@ function alwaysEmptyColumns(set: AutomationStudioResultRecordSetSummary): string
   if (!sample?.length || !set.columns.length) return [];
   const named = new Set(set.missingRequiredColumns);
   return set.columns
-    .filter((column) => !named.has(column) && sample.every((row) => !carriesValue(row, column)))
-    .slice(0, AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS.maxColumnsPerFinding);
+    .filter((column) => !named.has(column) && sample.every((row) => !carriesValue(row, column)));
 }
 
 /** Whether every sampled row is the same row. Two rows at least, or there is nothing to compare. */
@@ -298,12 +288,8 @@ function lastStep(summary: AutomationStudioRunResultSummary): string {
   return step ? ` -- the Flow's last step is ${step.nodeId} (${step.definitionId})` : "";
 }
 
-function boundedFinding(finding: AutomationStudioResultRepairFinding): AutomationStudioResultRepairFinding {
-  return { ...finding, detail: finding.detail.slice(0, AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS.maxDetailLength) };
-}
-
 /**
- * What the model said, as much of it as may be carried.
+ * What the model said, every word of it that passes the screens.
  *
  * Read forgivingly on purpose: anything that is not a non-empty string is
  * absent, and nothing here can refuse the verdict. A credential-shaped value is
@@ -340,8 +326,7 @@ function screenedText(value: unknown): { text?: string; withheld: boolean } {
   if (typeof value !== "string") return { withheld: false };
   const trimmed = value.trim();
   if (!trimmed) return { withheld: false };
-  const bounded = trimmed.slice(0, AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS.maxJudgementLength);
-  if (screenAutomationStudioLlmEvidence(bounded, []).secretShaped) return { withheld: true };
-  if (!automationStudioLocatorShapedText(bounded)) return { text: bounded, withheld: false };
-  return { text: automationStudioWithoutLocators(bounded), withheld: true };
+  if (screenAutomationStudioLlmEvidence(trimmed, []).secretShaped) return { withheld: true };
+  if (!automationStudioLocatorShapedText(trimmed)) return { text: trimmed, withheld: false };
+  return { text: automationStudioWithoutLocators(trimmed), withheld: true };
 }
