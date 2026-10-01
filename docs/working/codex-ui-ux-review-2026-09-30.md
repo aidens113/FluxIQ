@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Eighth full gates complete; ninth operational and onboarding workers released.
+Status detail: Ninth operational, onboarding and dialog sources independently reviewed and frozen for full gates.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -52,11 +52,13 @@ with meaningful audits/plans/fixes; preserve progress as it happens.
 retains prior detailed batch evidence; downstream ledgers/reports retain full
 cross-repository validation and ownership history.
 
-Ninth operational/onboarding source independently reviewed and frozen: owning
+Ninth operational/onboarding source checkpoint9d2eb6fa independently reviewed:
 root105tests/native0/3.87s (including strengthened direct Retry assertions) and
-onboarding91/native0/12.33s. Dialog keyboard/entry four-path worker now addresses
-source-confirmed Cancel/Close Enter confirmation and explicit autofocus ordering
-before coordinated full Core gates. Core source/paired docs checkpoint follows.
+onboarding91/native0/12.33s. Dialog keyboard/entry four-path root88/native0/2.16s
+confirms Cancel/Close Enter and explicit autofocus correction while preserving
+original authorization/OperationGate/Studio overlay contracts. All Core source
+now frozen for full gates. Workers prepare held Menu, mounted Chat and extraction
+plans; no product source changes during respective repository gates.
 
 ## Work Ledger
 

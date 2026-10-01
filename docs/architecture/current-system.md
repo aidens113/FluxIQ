@@ -285,6 +285,16 @@ policy remains separate. Acknowledged Background runs with malformed returned
 detail keep acceptance feedback and withhold unsafe selection, then reconcile
 through ordinary reads; they are never automatically submitted again.
 
+Modal quick-submit handles only plain unhandled noncomposing Enter from a
+focused eligible owned single-line text input outside a native form. Cancel,
+Close, links, selects, other native controls and another overlay retain their
+native activation; busy or unavailable confirmations cannot be triggered by
+the convenience handler. Initial dialog focus selects eligible explicit
+autofocus before ordinary content inputs and controls, then falls back to the
+panel. Hidden/inert/effectively disabled candidates are skipped and environment
+acquisition uses the panel's owner document. Shared stack/trap/return and
+authorization readiness contracts remain unchanged.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,
