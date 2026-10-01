@@ -18,15 +18,25 @@ long-string guidance reproduced3fail/4pass before local flag fix. Nine-root
 strict83805 native0, nine roots and two declarations,0diagnostics; checkpoint
 91a29dd2. DataInspector/settings exact four paths frozen and source/tests read;
 root owning22293 native0 fivefiles79/21.19s and strict80956 fourroots plus two
-declarations0diagnostics. Core full31117/types65532/build34521 active, all
-source frozen; structure46579 solely inherited protected4506/4505.
+declarations0diagnostics, checkpointb1dfc40e. Broad CLOSED: full31117 failed
+2807pass3fail/350files/358.11s (oldlogin/flowcreate); types65532 native0/127109ms,
+build34521 native0/286125ms/17pages; structure46579 onlyprotected4506/4505.
+Unchanged narrow31353 passedlogin8 butfailedrecording.delete[several] EPERM
+in syntheticfixture (67pass1fail/152.34s). No timeout/assertion/waiver changes.
 Root owns shared docs/review;
 exact reports and briefs are downstream, latest twelfth-supervisor-verification.
 Extension root208/strict17roots0; full58454 failed2062pass1lazy-tailfailure,
 unchanged narrow6pass leaves full unresolved. Public state alias restored after
 types/build failures; corrected types1691/build11533 native0, structure12361
 native0. New downstream AskControls two-path unit and test-only lazy-tail
-ordering probe released; third worker audits hierarchy dialog readiness.
+ordering probe independently8passed and actual race/deadline behavior observed;
+worker local list-wait+NEWregressions recovery now active. Ask local keyboard
+unit independently54/native0/338.26ms and two-root strict0. Three workers now
+own hierarchy dialog recovery, lazy-list completion and ProjectTree keyboard
+ownership in disjoint paths after all broad sessions closed. Read-only deletion
+fixture audit found no confirmed fixture cause; protected bulk-deletion/service
+quiescence handoff is recorded downstream. Hierarchy owning correction is active
+for visible failure feedback and StrictMode regression. Protected storage/runtime remains untouched.
 No browser certification or push.
 
 Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
