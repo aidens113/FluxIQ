@@ -6,6 +6,7 @@ import type { ComputeCommand, ComputeControlSnapshotResponse, ComputeNode } from
 import { useProgramApi, type ApiResponse } from "../program-api";
 import { EmptyState, KeyValue, LoadingState, StatusBadge, StatusText } from "../shared-ui";
 import { formatTime, shortJson } from "./shared";
+import { reconcileVisibleSelection } from "../program-selection";
 
 type HealthFilter = "all" | "healthy" | "degraded" | "offline";
 
@@ -36,7 +37,11 @@ export function ComputeControlLive() {
       return (healthFilter === "all" || health === healthFilter) && (capability === "all" || node.capabilities.includes(capability)) && (!needle || (node.label + " " + node.id + " " + (node.host ?? "") + " " + node.domainIds.join(" ")).toLocaleLowerCase().includes(needle));
     });
   }, [capability, healthFilter, nodes, nowMs, search]);
-  const selected = nodes.find((node) => node.id === selectedId) ?? filtered[0];
+  const visibleSelectedId = reconcileVisibleSelection(filtered, selectedId, (node) => node.id);
+  const selected = filtered.find((node) => node.id === visibleSelectedId);
+  useEffect(() => {
+    if (selectedId !== visibleSelectedId) setSelectedId(visibleSelectedId);
+  }, [selectedId, visibleSelectedId]);
   const nodeCommands = commands.filter((command) => command.targetComputeId === selected?.id).slice(0, 50);
   const nodeLeases = leases.filter((lease) => lease.computeId === selected?.id);
 
