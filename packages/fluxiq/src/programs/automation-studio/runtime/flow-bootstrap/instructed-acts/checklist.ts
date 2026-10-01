@@ -11,11 +11,15 @@
 // act's state against the draft as it stands: `done` naming the step of the
 // Flow that does it, or `todo` saying why nothing does yet.
 //
-// **One rule, not two.** An act is done here exactly when the check would
-// accept the step the model said does it (`./check.ts`,
-// `automationStudioInstructedActStepFault`), so the checklist never shows done
-// what a completion then refuses. A step says which act it does when the model
-// adds it (`act`), which is also the claim the check reads.
+// **One loop, not two.** An act is done here exactly when the check would
+// accept a step the model said does it: both try every step named for it, by
+// one loop (`./standing.ts`), so the checklist never shows done what a
+// completion then refuses. Live run 36 (`run-muq3uozx-3153564b`) showed a1
+// done while the check, judging only the first step naming it, refused 24
+// completions. A step says which act it does when the model adds it (`act`),
+// which is also the claim the check reads. An act whose every named step only
+// reads the page is `step_only_reads`: the check refuses it as changing
+// nothing, and says the same.
 //
 // **Each act's choices stand beside it (t208).** How many, and which size,
 // colour or version (`./instruction-choices.ts`), are requirements the check
@@ -31,10 +35,9 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
-import { automationStudioInstructedActStepFault } from "./check.ts";
-import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
-import type { AutomationStudioInstructedAct, AutomationStudioInstructedChoice } from "./contracts.ts";
+import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
 
 /** Why an act on the checklist is not done yet. */
 export type AutomationStudioInstructedActTodo =
@@ -42,6 +45,8 @@ export type AutomationStudioInstructedActTodo =
   | "no_step_added"
   | "step_not_kept"
   | "step_changed_nothing"
+  /** Every step that says it does this act only reads the page. */
+  | "step_only_reads"
   | "step_only_arrives"
   | "step_is_optional"
   | "act_needs_repeat"
@@ -93,70 +98,19 @@ export function automationStudioInstructedActsChecklist(input: {
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
     startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
-  // A kept step that says it does an act or makes a choice is that act's step, as the check reads the draft's claims.
-  const claimed = (step: AutomationStudioFlowDraftStep): boolean => step.disposition === "kept" && (step.acts?.length ?? 0) > 0;
-  const used = new Set<AutomationStudioFlowDraftStep>();
-  // The step each act is done by, so a choice given the same one is told it is its act's press.
-  const actSteps = new Map<string, AutomationStudioFlowDraftStep>();
-  // Every act first, then their choices: the order the check reaches its verdict in.
-  const items = acts.map((act): AutomationStudioInstructedActChecklistItem => {
-    const item: AutomationStudioInstructedActChecklistItem = { id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}) };
-    const saying = sayingSteps(input.draftSteps, act.id);
-    for (const step of saying) {
-      const fault = automationStudioInstructedActStepFault(act, step, input.draftSteps, onlyArrives, claimed);
-      if (!fault && !used.has(step)) {
-        used.add(step);
-        actSteps.set(act.id, step);
-        return { ...item, done: step.position };
-      }
-    }
-    const first = saying[0];
-    const fault = first ? automationStudioInstructedActStepFault(act, first, input.draftSteps, onlyArrives, claimed) : undefined;
-    return fault && first ? { ...item, todo: fault, step: first.position } : { ...item, todo: "no_step_added" };
-  });
-  return items.map((item, index) => {
-    const requires = acts[index]!.requires;
-    if (!requires?.length) return item;
-    return { ...item, choices: requires.map((choice) => choiceItem(choice, input.draftSteps, { used, actStep: actSteps.get(choice.of), onlyArrives, claimed })) };
+  const standing = automationStudioInstructedActsStanding({ acts, steps: input.draftSteps, onlyArrives });
+  return acts.map((act) => {
+    const item: AutomationStudioInstructedActChecklistItem = { id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(standing.get(act.id)) };
+    if (!act.requires?.length) return item;
+    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)) })) };
   });
 }
 
-/** Every step that says it does this act or makes this choice, in the Flow first. */
-function sayingSteps(steps: readonly AutomationStudioFlowDraftStep[], id: string): AutomationStudioFlowDraftStep[] {
-  return steps
-    .filter((step) => step.acts?.includes(id))
-    .sort((left, right) => Number(right.disposition === "kept") - Number(left.disposition === "kept"));
-}
-
-/**
- * One choice, by the check's rule (`./check.ts`): a kept step that says it
- * makes it and changed something, and -- when that step already does an act --
- * one whose own input sets the value.
- */
-function choiceItem(
-  choice: AutomationStudioInstructedChoice,
-  steps: readonly AutomationStudioFlowDraftStep[],
-  held: {
-    used: Set<AutomationStudioFlowDraftStep>;
-    actStep: AutomationStudioFlowDraftStep | undefined;
-    onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean;
-    claimed: (step: AutomationStudioFlowDraftStep) => boolean;
-  }
-): AutomationStudioInstructedChoiceChecklistItem {
-  const item: AutomationStudioInstructedChoiceChecklistItem = { id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote };
-  // A choice is a setting, held to what any act of setting is and never repeated.
-  const asAct: AutomationStudioInstructedAct = { id: choice.id, kind: "set", verb: choice.choice, quote: choice.quote };
-  let named: { step: AutomationStudioFlowDraftStep; todo: AutomationStudioInstructedActTodo } | undefined;
-  for (const step of sayingSteps(steps, choice.id)) {
-    const fault = automationStudioInstructedActStepFault(asAct, step, steps, held.onlyArrives, held.claimed);
-    const shared = !fault && held.used.has(step) && !automationStudioInstructedChoiceSetBy(step, choice);
-    if (!fault && !shared) {
-      held.used.add(step);
-      return { ...item, done: step.position };
-    }
-    named ??= { step, todo: fault ?? (held.actStep === step ? "choice_is_the_act_step" : "step_claimed_twice") };
-  }
-  return named ? { ...item, todo: named.todo, step: named.step.position } : { ...item, todo: "no_step_added" };
+/** An act or choice as the checklist shows it: the step that does it, or why none does and the step judged. */
+function shown(stood: AutomationStudioInstructedStanding | undefined): { done: number } | { todo: AutomationStudioInstructedActTodo; step?: number } {
+  if (!stood) return { todo: "no_step_added" };
+  if ("done" in stood) return { done: stood.done.position };
+  return { todo: stood.reads ? "step_only_reads" : stood.fault, step: stood.step.position };
 }
 
 /** The ids of the acts and choices the checklist shows as not done, each act before its choices. */

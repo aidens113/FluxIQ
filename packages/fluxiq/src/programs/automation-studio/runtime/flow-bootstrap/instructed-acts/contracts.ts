@@ -119,7 +119,11 @@ export type AutomationStudioInstructedActMissingReason =
   | "no_such_step"
   /** The step named was dropped or marked exploratory. */
   | "step_not_kept"
-  /** The step named changed nothing, or failed. */
+  /**
+   * The step named changed nothing: it only reads the page, or it failed. A
+   * refusal says which steps only read (`./check.ts`), and the checklist shows
+   * an act whose every named step only reads as `step_only_reads`.
+   */
   | "step_changed_nothing"
   /** The step named is already claimed for another act. */
   | "step_claimed_twice"

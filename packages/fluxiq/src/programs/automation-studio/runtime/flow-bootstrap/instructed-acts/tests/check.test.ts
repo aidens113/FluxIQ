@@ -129,7 +129,7 @@ describe("a claim answers an act only if it names it", () => {
     // The towels claim names a dropped step, so which act it answered shows.
     const verdict = checkAutomationStudioInstructedActs({ instructionText: TWO_ADDS, result: { summary: "x", acts: [{ action: "add napkins", step: "d3" }, { action: "add paper towels", step: "d4" }] }, draftSteps: draft });
     expect(verdict.ok).toBe(false);
-    if (!verdict.ok) expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_not_kept", "d4"]]);
+    if (!verdict.ok) expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_not_kept", "4"]]);
     expect(checkAutomationStudioInstructedActs({ instructionText: TWO_ADDS, result: { summary: "x", acts: [{ action: "add napkins", step: "d3" }, { action: "add paper towels", step: "d2" }] }, draftSteps: draft }).ok).toBe(true);
   });
 });
@@ -155,7 +155,7 @@ describe("a step that only arrives where the Flow starts", () => {
     expect(verdict.acts.map((act) => act.kind)).toEqual(["add_to", "claim"]);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_only_arrives", "d1"], ["a2", "step_only_arrives", "d2"]]);
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_only_arrives", "1"], ["a2", "step_only_arrives", "2"]]);
     expect(verdict.instruction).toContain("does not do the act");
     expect(verdict.instruction).toContain("press or set the control");
   });
@@ -198,7 +198,7 @@ describe("an act over every member of a set, and a step the Flow may skip", () =
     expect(verdict.acts.map((act) => [act.kind, act.plural])).toEqual([["submit", true]]);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_needs_repeat", "d3"]]);
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_needs_repeat", "3"]]);
     expect(verdict.instruction).toContain("amend_draft repeat over the listing step through the act's last step");
     expect(JSON.stringify(verdict.missingActs)).toContain("\"plural\":true");
   });
@@ -228,7 +228,7 @@ describe("an act over every member of a set, and a step the Flow may skip", () =
     const verdict = checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: claim, draftSteps: [step(1, { actionId: "web.navigate" }), listing, confirm({ routing: { kind: "optional" } })] });
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_is_optional", "d3"]]);
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_is_optional", "3"]]);
     expect(verdict.instruction).toContain("amend_draft keep");
   });
 
@@ -337,7 +337,7 @@ describe("a repeat that stops one step short, and an act declared as a class nob
     const verdict = checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: [listing, rowPress("d2"), declaring(3, ["delete"])] });
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.missing.map((act) => [act.id, act.reason, act.step, act.after])).toEqual([["a1", "span_stops_short", "d2", 3]]);
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step, act.after])).toEqual([["a1", "span_stops_short", "2", 3]]);
     expect(JSON.stringify(verdict.missingActs)).toContain("\"after\":3");
     expect(verdict.instruction).toContain("repeat through it");
   });
@@ -368,7 +368,7 @@ describe("a repeat that stops one step short, and an act declared as a class nob
     expect(undeclared.acts.map((act) => act.consequence)).toEqual(["delete"]);
     expect(undeclared.ok).toBe(false);
     if (undeclared.ok) return;
-    expect(undeclared.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_consequence_undeclared", "d2"]]);
+    expect(undeclared.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_consequence_undeclared", "2"]]);
     expect(JSON.stringify(undeclared.missingActs)).toContain("\"consequence\":\"delete\"");
     expect(undeclared.instruction).toContain("the person will be asked");
     expect(checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: draft(["delete"]) }).ok).toBe(true);
@@ -436,5 +436,56 @@ describe("a choice the item's page already opens chosen", () => {
   it("accepts the colour named by the step that opened the item's page", () => {
     const verdict = checkAutomationStudioInstructedActs({ instructionText: HUB, result: { summary: "x", acts: [...CLAIMS, { action: "a1.colour", step: "d4" }] }, draftSteps: HONEST, startLocation: START });
     expect(verdict.ok).toBe(true);
+  });
+});
+
+// Live run 36 (`run-muq3uozx-3153564b`, social-network-feed): the model named
+// a1 on the list read that picks the requests and on the Confirm repeated over
+// it. The check judged only the first step naming a1 -- the read -- refused 24
+// completions `step_changed_nothing step 11`, dropped the model's own result
+// claims for a1, and named steps by ids (`d15`) the model is never shown.
+describe("every step named for an act, by the numbers the draft shows", () => {
+  const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
+  const listing = (acts?: string[]) => step(1, { actionId: "web.dom.extract_list", effect: "observe", proposes: true, ...(acts ? { acts } : {}) });
+  const confirm = (acts?: string[]) => step(2, { routing: { kind: "repeat", over: "d1", through: "d2" }, ...(acts ? { acts } : {}) });
+  const check = (draftSteps: AutomationStudioFlowDraftStep[], acts?: unknown) => checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: { summary: "x", ...(acts ? { acts: acts as never } : {}) }, draftSteps });
+
+  it("accepts run 36's draft: the read and the repeated Confirm both named for a1", () => {
+    expect(check([listing(["a1"]), confirm(["a1"])]).ok).toBe(true);
+  });
+
+  it("tries the model's result claim for an act after the draft's own, never dropping it", () => {
+    expect(check([listing(["a1"]), confirm()], [{ action: "a1", step: "2" }]).ok).toBe(true);
+  });
+
+  it("refuses a1 named only on the read, saying the step only reads, by its position", () => {
+    const verdict = check([listing(["a1"]), confirm()]);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_changed_nothing", "1"]]);
+    expect(verdict.instruction).toContain("For a1, step 1 only reads: drop the act from it, or name it on the step that does the act.");
+  });
+
+  it("judges the press, not the read, when neither does the act", () => {
+    const verdict = check([listing(["a1"]), step(2, { acts: ["a1"] })]);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_needs_repeat", "2"]]);
+    expect(verdict.instruction).not.toContain("only reads");
+  });
+
+  it("names steps by position, never by id, in everything the model is shown", () => {
+    // Ids as a long build leaves them: no longer the positions the draft shows.
+    const draft = [
+      step(1, { id: "d14", actionId: "web.dom.extract_list", effect: "observe", proposes: true, acts: ["a1"] }),
+      step(2, { id: "d15" }),
+      step(3, { id: "d16", routing: { kind: "optional" } })
+    ];
+    const verdict = check(draft, [{ action: "a1", step: "d16" }]);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "step_is_optional", "3"]]);
+    expect(verdict.missingActs.stepsThatChangedSomething).toEqual([2, 3]);
+    expect(JSON.stringify(verdict.missingActs) + verdict.instruction).not.toMatch(/\bd1[456]\b/u);
   });
 });
