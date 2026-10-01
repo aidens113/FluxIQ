@@ -86,7 +86,7 @@ import {
   type AutomationStudioLlmProviderResolverInput,
 } from "./llm/index.ts";
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
+import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmResolutionWithinFlowSettings, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
@@ -1387,7 +1387,7 @@ export class AutomationStudioService {
 
   async packReusableLlmContexts(input: { projectId: string; flowId: string; subflowId?: string | null; domainId: string; evidenceKind: string; evidenceSchemaVersion: string; sanitizerVersion: string; compatibilityTags?: AutomationStudioReusableLlmContextList["compatibilityTags"]; maxInputTokens: number; actorId?: string; now?: number }): Promise<AutomationStudioReusableLlmContextPackingResult> {
     return this.withReusableLlmContextStore(input.projectId, async (store) => {
-      const candidates = await store.list({ flowId: input.flowId, subflowId: input.subflowId ?? null, domainId: input.domainId, evidenceKind: input.evidenceKind, evidenceSchemaVersion: input.evidenceSchemaVersion, sanitizerVersion: input.sanitizerVersion, compatibilityTags: input.compatibilityTags ?? [], compatibilityMode: "exact", ...(input.now === undefined ? {} : { now: input.now }), limit: 100 });
+      const candidates = await store.listEvery({ flowId: input.flowId, subflowId: input.subflowId ?? null, domainId: input.domainId, evidenceKind: input.evidenceKind, evidenceSchemaVersion: input.evidenceSchemaVersion, sanitizerVersion: input.sanitizerVersion, compatibilityTags: input.compatibilityTags ?? [], compatibilityMode: "exact", ...(input.now === undefined ? {} : { now: input.now }) }); // Every page (2026-09-30): it was one page of 100.
       const packed = packAutomationStudioReusableLlmContext({ candidates, maxInputTokens: input.maxInputTokens });
       await store.appendAudit({ eventType: "packed", flowId: input.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), domainId: input.domainId, ...(input.actorId ? { actorId: input.actorId } : {}), detail: { consideredCount: packed.consideredCount, selectedCount: packed.selectedRecordIds.length, deduplicatedCount: packed.deduplicatedCount, excludedDispositionCount: packed.excludedDispositionCount, packedBytes: packed.packedBytes, estimatedTokens: packed.estimatedTokens, selectedRecordIds: packed.selectedRecordIds.join(","), sourceRunIds: packed.selectedSourceRunIds.join(","), sourceAdaptationIds: packed.selectedSourceAdaptationIds.join(",") }, ...(input.now === undefined ? {} : { createdAt: input.now }) });
       return packed;
@@ -1483,8 +1483,7 @@ export class AutomationStudioService {
         failureCode = "flow_bootstrap.instruction_resolution_failed";
         const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
         // A repair's brief rides beside the Flow's own instructions on every call the model sees, and nowhere else: not in the authority, the permission gate or the stored adaptation (`recovery/refuted-result/brief.ts`).
-        // Carried whole, with no instruction token budget (2026-09-30; `llm/harness/instruction.ts`).
-        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions };
+        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions }; // Whole: no instruction token budget (2026-09-30).
         const resolvedInstructions = resolveAutomationStudioLlmInstructions({ instructions, projectId, flowId });
         if (!resolvedInstructions.instructions.length
           || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
@@ -1589,8 +1588,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               const decision = await runHarness({
                 taskKind: "evidence_tool_decision", projectId, flowId, ...promptInstructions,
                 evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
-                // The node catalog is every offered node, whole: no 16,000-token
-                // allocation of its own any more (2026-09-30).
+                // The node catalog is every offered node, whole: no 16,000-token allocation of its own (2026-09-30).
                 flowBootstrap: { registry, resolution, size, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
@@ -2992,8 +2990,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowInstructionSet(input: { projectId: string; flowId?: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]> {
-    const page = await this.listFlowInstructionSummaries({ ...input, limit: 100, offset: 0 });
-    const instructions = await Promise.all(page.instructions.map((item) => this.getFlowInstruction(input.projectId, item.instructionId)));
+    const ids: string[] = []; // Every instruction, page after page: the judgement and the repair read this set, and it was the first 100 (2026-09-30).
+    for (let offset = 0, total = 1; offset < total; offset += 100) { const page = await this.listFlowInstructionSummaries({ ...input, limit: 100, offset }); total = page.instructions.length ? page.total : 0; ids.push(...page.instructions.map((item) => item.instructionId)); }
+    const instructions = await Promise.all(ids.map((id) => this.getFlowInstruction(input.projectId, id)));
     return instructions.filter((item): item is AutomationStudioFlowInstruction => Boolean(item));
   }
 

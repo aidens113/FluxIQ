@@ -56,9 +56,6 @@ const SKIPPED_NESTED_KEYS = new Set(["router", "routing", "routes", "summary", "
 const DEFINITION_KEYS = new Set(["definitionid", "definition", "node", "nodeid", "type"]);
 /** How deep the scan for a misplaced node list goes before giving up. */
 const MAX_NESTED_DEPTH = 2;
-/** How many of a refused plan's keys the refusal names before it counts the rest. */
-const MAX_DESCRIBED_KEYS = 12;
-const MAX_DESCRIBED_KEY_LENGTH = 40;
 
 /** The shapes a plan may be written in, spelled out for a model that has to rewrite one. */
 export const AUTOMATION_STUDIO_AUTHORING_PLAN_SHAPES =
@@ -254,7 +251,7 @@ function itemKind(value: readonly JsonValue[]): string {
   return kinds.size === 1 ? [...kinds][0]! : "values";
 }
 
+/** Every key the refused plan has, each whole (2026-09-30): it was the first 12, each cut at 40 characters. */
 function describeKeys(keys: readonly string[]): string {
-  const shown = keys.slice(0, MAX_DESCRIBED_KEYS).map((key) => key.replace(/\s+/gu, " ").slice(0, MAX_DESCRIBED_KEY_LENGTH));
-  return keys.length > shown.length ? `${shown.join(", ")} (+${keys.length - shown.length} more)` : shown.join(", ");
+  return keys.map((key) => key.replace(/\s+/gu, " ")).join(", ");
 }

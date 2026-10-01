@@ -14,23 +14,14 @@
 // reader renders and the model cannot, and who typed it is identity the repair
 // has no use for.
 //
-// **Newest first in, oldest first out.** A thread outgrows any budget, and the
-// end of it is the part that bears on what just happened, so the packer takes
-// from the end and then puts what it kept back in reading order. What it left
-// behind is counted rather than dropped silently, for the reason the recovery
-// context keeps its `omitted` list: "there was nothing more" and "there was
-// more and it did not fit" are different facts about the same request.
+// **Every turn, whole, in reading order** (user, 2026-09-30: "Remove ANY AND ALL
+// LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION").
+// Until then the packer kept the last 20 turns that fit 4,000 bytes, each cut
+// at 1,500 characters. Only an empty turn is left out: it says nothing.
+// `withheldTurns` and `textCut` stay on the slot, always 0 and false, so a
+// reader of a stored request reads it as it always did.
 
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
-
-/** The longest a single turn may be in a request before it is cut. */
-export const AUTOMATION_STUDIO_LLM_CONVERSATION_TURN_MAX_LENGTH = 1_500;
-
-/** The most turns a request may carry, whatever the byte budget allows. */
-export const AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS = 20;
-
-/** The bytes a request's conversation may take. Sits beside the recovery context's own 4,000. */
-export const AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES = 4_000;
 
 /** One turn, as a request carries it. */
 export type AutomationStudioLlmConversationTurn = {
@@ -39,12 +30,12 @@ export type AutomationStudioLlmConversationTurn = {
   text: string;
 };
 
-/** The thread, bounded, with what was left out of it counted. */
+/** The thread, every turn of it. */
 export type AutomationStudioLlmConversationContext = {
   turns: AutomationStudioLlmConversationTurn[];
-  /** Turns the bound left behind, all of them older than the ones carried. */
+  /** Always 0: no turn is left out. Kept for a stored request that still reads it. */
   withheldTurns: number;
-  /** True when at least one carried turn's text was cut to its length bound. */
+  /** Always false: no turn is cut. Kept for a stored request that still reads it. */
   textCut: boolean;
 };
 
@@ -57,29 +48,13 @@ export type AutomationStudioLlmConversationContext = {
  * spends bytes to state an absence the packet already states by omission.
  */
 export function packAutomationStudioLlmConversation(
-  turns: readonly AutomationStudioConversationTurn[],
-  maxBytes: number = AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES
+  turns: readonly AutomationStudioConversationTurn[]
 ): AutomationStudioLlmConversationContext | undefined {
-  let textCut = false;
   const kept: AutomationStudioLlmConversationTurn[] = [];
-  let bytes = 0;
-  // From the end: the turns nearest the failure are the ones that bear on it.
-  for (const turn of [...turns].reverse()) {
-    if (kept.length >= AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS) break;
+  for (const turn of turns) {
     const text = turn.text.trim();
-    if (!text) continue;
-    const cut = text.length > AUTOMATION_STUDIO_LLM_CONVERSATION_TURN_MAX_LENGTH;
-    const packed: AutomationStudioLlmConversationTurn = {
-      ordinal: turn.ordinal,
-      author: turn.author,
-      text: cut ? `${text.slice(0, AUTOMATION_STUDIO_LLM_CONVERSATION_TURN_MAX_LENGTH - 1)}…` : text
-    };
-    const cost = Buffer.byteLength(JSON.stringify(packed), "utf8");
-    if (kept.length && bytes + cost > maxBytes) break;
-    bytes += cost;
-    textCut ||= cut;
-    kept.push(packed);
+    if (text) kept.push({ ordinal: turn.ordinal, author: turn.author, text });
   }
   if (!kept.length) return undefined;
-  return { turns: kept.reverse(), withheldTurns: Math.max(0, turns.length - kept.length), textCut };
+  return { turns: kept, withheldTurns: 0, textCut: false };
 }

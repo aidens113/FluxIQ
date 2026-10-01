@@ -48,9 +48,6 @@ export type AutomationStudioFlowBootstrapLimitExceeded = {
  */
 export type AutomationStudioFlowBootstrapPlanSource = "reply" | "draft";
 
-/** The most exceeded limits one refusal lists. */
-const MAX_REPORTED = 12;
-
 /** Every limit the result exceeds, in the order they are measured. Empty when it is within all of them. */
 export function automationStudioEvidenceFlowBootstrapLimitsExceeded(
   value: { summary: string; plan: AutomationStudioFlowBootstrapPlan },
@@ -63,7 +60,7 @@ export function automationStudioEvidenceFlowBootstrapLimitsExceeded(
   const setting = automationStudioFlowBootstrapSizeSetting(size);
   const found: AutomationStudioFlowBootstrapLimitExceeded[] = [];
   const over = (limit: string, max: number, actual: number, path: string, sized = false): void => {
-    if (actual > max && found.length < MAX_REPORTED) found.push({ limit, max, actual, path, ...(sized ? { setting } : {}) });
+    if (actual > max) found.push({ limit, max, actual, path, ...(sized ? { setting } : {}) });
   };
   over("maxSummaryLength", reply.maxSummaryLength, value.summary.length, "summary");
   over(drafted ? "maxPlanBytes" : "maxResultBytes", drafted ? size.maxPlanBytes : size.maxResultBytes, Buffer.byteLength(JSON.stringify(value), "utf8"), "result", true);

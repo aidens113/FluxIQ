@@ -210,7 +210,8 @@ context. Of two records with the same content digest the newer is kept, so a
 duplicate contributes zero additional prompt bytes. Every other eligible record
 the store returns is packed whole: the five-record cap and the byte cap (the
 smaller of 8,192 bytes or ten percent of `maxInputTokens`) were removed on
-2026-09-30. The store's own page of candidates is still at most 100 records.
+2026-09-30. The store pages by `limit` (at most 100) and `offset`, and packing
+reads every page (`listEvery`); until 2026-09-30 it read one page of 100.
 
 Creation and runtime-adaptation entrypoints can request this packet explicitly,
 but retrieval remains a service responsibility: the provider-neutral harness

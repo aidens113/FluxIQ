@@ -21,7 +21,7 @@ function fullHost(): AutomationStudioHarnessOptionHost {
     listAvailableNodes: async () => ({ definitions: [] }),
     captureStateSnapshot: async () => ({ stateRef: "state.one" }),
     inspectStateDiff: async ({ beforeRef, afterRef }) => ({ beforeRef, afterRef }),
-    listPriorAdaptations: async ({ limit, failureSignature }) => ({ limit, failureSignature: failureSignature ?? null })
+    listPriorAdaptations: async ({ limit, failureSignature }) => ({ limit: limit ?? null, failureSignature: failureSignature ?? null })
   };
 }
 
@@ -87,7 +87,9 @@ describe("Automation Studio built-in harness options", () => {
     await expect(implementations[ids.nodeDetail]!(call(ids.nodeDetail, { nodeId: "node.one" }))).resolves.toEqual({ nodeId: "node.one" });
     await expect(implementations[ids.stateDiff]!(call(ids.stateDiff, { beforeRef: "state.one", afterRef: "state.two" })))
       .resolves.toEqual({ beforeRef: "state.one", afterRef: "state.two" });
-    await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, {}))).resolves.toEqual({ limit: 5, failureSignature: null });
+    // No limit asked is every adaptation, not five; and no maximum caps one asked (2026-09-30).
+    await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, {}))).resolves.toEqual({ limit: null, failureSignature: null });
+    await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, { limit: 99 }))).resolves.toEqual({ limit: 99, failureSignature: null });
     await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, { limit: 3, failureSignature: "sig.one" })))
       .resolves.toEqual({ limit: 3, failureSignature: "sig.one" });
 
@@ -96,6 +98,6 @@ describe("Automation Studio built-in harness options", () => {
     await expect(implementations[ids.nodeDetail]!(call(ids.nodeDetail, { nodeId: "node one!" }))).resolves.toEqual(rejected);
     await expect(implementations[ids.flowGraph]!(call(ids.flowGraph, { extra: true }))).resolves.toEqual(rejected);
     await expect(implementations[ids.stateDiff]!(call(ids.stateDiff, { beforeRef: "state.one" }))).resolves.toEqual(rejected);
-    await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, { limit: 99 }))).resolves.toEqual(rejected);
+    await expect(implementations[ids.priorAdaptations]!(call(ids.priorAdaptations, { limit: 0 }))).resolves.toEqual(rejected);
   });
 });

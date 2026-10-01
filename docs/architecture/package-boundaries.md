@@ -170,6 +170,56 @@ test pins a limit below.
 - Instruction truncation. The harness carries every instruction whole; it cut
   them to 2,000 tokens by default, 384 for a flow bootstrap and 4,000 for a
   repair build. `tokenBudget` is now only the request's input limit, reported.
+- The context packet's counts: `AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS` (the
+  last 12 actions) and the DeepSeek pre-flight's check of it, and the 25
+  relevant runs, 25 relevant adaptations, 100 Subflows and 100 available
+  actions. A packet carries every one, in order. A runtime diagnosis's
+  `expected`, `observed` and `changed` are carried back whole, not cut at 500
+  characters.
+- The conversation caps: `AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS` (20),
+  `AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES` (4,000) and the 1,500-character
+  turn cut on a request's `conversation` slot (`packAutomationStudioLlmConversation`
+  takes no `maxBytes` argument); `AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS`
+  (the chat's instruction reader read the last 20 turns, each cut at 1,500
+  characters); and `AUTOMATION_STUDIO_RECOVERY_CONVERSATION_TURN_LIMIT` (a
+  recovery read the first 40). A model that reads a thread reads all of it,
+  page after page (`automationStudioConversationWholeThread`). The slot keeps
+  `withheldTurns` and `textCut`, always `0` and `false`, so a stored request
+  still reads. `AutomationStudioRecoveryConversationReader.getConversation`
+  takes `sinceTurnId` and returns `hasMore`.
+- The chat's instruction prompt's 60-Flow list: the model is told every Flow.
+- The caps on what a refused build decision is told: the completion refusal's
+  16 issues and its 6,000-character limit on quoting the refused script back;
+  the issue feedback's 16 issues, 300-character paths, 400-character messages
+  and 3,000-byte budget on accepted shapes; the 12 exceeded limits listed; a
+  parameter contract's first 8 codes; an amendment refusal's 16 refusals and 32
+  positions; an unusable decision's 8 issue codes; a refused plan's 12 keys, each
+  cut at 40 characters; and the provider-output check's 200 findings
+  (`llm_output.finding_limit` is no longer produced). A step name that matches
+  several nodes names every near match, in id order; it named the five sharing
+  the most words.
+- `core.run_node`'s node enum stops at no count; past 400 ids it used to leave
+  the names to the catalog.
+- `core.prior_adaptations` has no maximum `limit` (it was 20) and no default
+  (it was 5): asked without one, the host is asked for every adaptation, and
+  `AutomationStudioHarnessOptionHost.listPriorAdaptations` receives `limit`
+  only when the model gave one.
+- `AUTOMATION_STUDIO_RESULT_REPAIR_DIRECTIVE_LIMITS`. A refutation's repair
+  directive carries every finding, every fix line, every column and the
+  judgement's own words whole; it held them to 8 findings, 8 fix lines of 300
+  characters, 240-character details, 8 columns and 500 characters.
+- `getFlowInstructionSet`, which the judgement and the repair read, returns
+  every instruction, not the first 100.
+- `AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT` (25). A run's adaptation
+  context reads every adaptation summary, page after page (it read the newest
+  100), and loads every record, which the recovery context shows the model. The
+  context port's `listFlowAdaptationSummaries` may return `total`; paging stops
+  at a short page or at `total`. The stability metrics are computed over all of
+  them.
+- The reusable-context store's single page. `AutomationStudioReusableLlmContextList`
+  gains `offset`, and `AutomationStudioProjectReusableLlmContextStore.listEvery`
+  reads every page; `packReusableLlmContexts` uses it, so a model is offered
+  every eligible record, not the newest 100.
 
 **Changed.**
 - The per-request ceiling

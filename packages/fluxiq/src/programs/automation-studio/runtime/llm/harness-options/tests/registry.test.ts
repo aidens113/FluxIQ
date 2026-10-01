@@ -51,7 +51,7 @@ function fullHost(): AutomationStudioHarnessOptionHost {
     listAvailableNodes: async () => ({ definitions: [{ id: "definition.one", label: "Post entry" }] }),
     captureStateSnapshot: async () => ({ stateRef: "state.after", summary: { open: true } }),
     inspectStateDiff: async ({ beforeRef, afterRef }) => ({ beforeRef, afterRef, changed: ["open"] }),
-    listPriorAdaptations: async ({ limit }) => ({ limit, adaptations: [] })
+    listPriorAdaptations: async ({ limit }) => ({ limit: limit ?? null, adaptations: [] })
   };
 }
 

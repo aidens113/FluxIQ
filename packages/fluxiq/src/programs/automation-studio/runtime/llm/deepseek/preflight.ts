@@ -1,6 +1,5 @@
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
-  AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   automationStudioLlmRequestEvidenceRefusal,
   isAutomationStudioLlmRecentActionContext,
   type AutomationStudioLlmTaskRequest
@@ -55,7 +54,8 @@ function refuse(code: AutomationStudioLlmProviderPreflightErrorCode, message: st
 /** The packet's own projection, checked by the packet's own rule. */
 function validRecentActions(actions: unknown): boolean {
   if (!actions) return true;
-  return Array.isArray(actions) && actions.length <= AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS && actions.every(isAutomationStudioLlmRecentActionContext);
+  // Every action the run took, however many (2026-09-30): no count is checked.
+  return Array.isArray(actions) && actions.every(isAutomationStudioLlmRecentActionContext);
 }
 
 function boundedJson(root: unknown): boolean {

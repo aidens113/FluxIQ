@@ -7,7 +7,6 @@
 // assertion about. The service method that remains is the binding of the four
 // things this needs from it.
 
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT } from "../../recovery/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact, AutomationStudioFlowRunSummary } from "../../../model/index.ts";
 import type { AutomationStudioTrainingAdaptationSummary } from "../../training-modes.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../../result-check-schedule/index.ts";
@@ -20,7 +19,8 @@ import { automationStudioResultCheckEpoch, automationStudioResultCheckStateFromR
 /** What assembling a context reaches outside itself. */
 export type AutomationStudioRuntimeAdaptationContextPorts = {
   listFlowRunSummaries(input: { projectId: string; flowId: string; limit: number; offset: number }): Promise<{ runs: AutomationStudioFlowRunSummary[] }>;
-  listFlowAdaptationSummaries(input: { projectId: string; flowId: string; limit: number; offset: number }): Promise<{ adaptations: AutomationStudioTrainingAdaptationSummary[] }>;
+  /** One page; `total`, when given, is how many there are in all. Read page after page until a short page or `total`. */
+  listFlowAdaptationSummaries(input: { projectId: string; flowId: string; limit: number; offset: number }): Promise<{ adaptations: AutomationStudioTrainingAdaptationSummary[]; total?: number }>;
   getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null>;
   /** The Flow's run rows at this epoch, or null where the project has no typed run store. */
   readResultCheckState(input: { projectId: string; flowId: string; epoch: number }): Promise<{ ordinal: number; lastCheckedOrdinal: number | null; checksPassed: number; lastStatus: string | null } | null>;
@@ -38,14 +38,18 @@ export async function resolveAutomationStudioRuntimeAdaptationContext(input: {
   // Each history read below propagates its failure, which fails the run's start. Read as empty, a failed read
   // would reset the training budget and the stability score, and hide every known adaptation from the gate.
   const recentRuns = await input.ports.listFlowRunSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.runs.filter((run) => run.runId !== input.currentRunId));
-  const recentAdaptations = await input.ports.listFlowAdaptationSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.adaptations);
+  // Every adaptation the Flow has, page after page (2026-09-30): it was the newest 100.
+  const recentAdaptations = await everyAdaptationSummary(input.ports, input.projectId, input.flow.flowId);
   const metrics = computeAutomationStudioStabilityMetrics({ runs: recentRuns, adaptations: recentAdaptations, now: Date.now() });
   const budgetState = runtimeTrainingBudgetStateFromSummaries(recentRuns);
   const behavior = behaviorForAutomationStudioTrainingMode(settings, recentRuns.length, metrics.stabilityScore);
   const budgetDecision = decideAutomationStudioTrainingBudget(settings, budgetState);
   // Summaries carry no failed action, so the records themselves are loaded: a
-  // classifier given no adaptations can never match one. Only an absent record is skipped.
-  const knownAdaptations = (await Promise.all(recentAdaptations.slice(0, AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT).map((summary) => input.ports.getFlowAdaptation(input.projectId, summary.flowId, summary.adaptationId)))).filter((adaptation): adaptation is AutomationStudioFlowAdaptation => Boolean(adaptation));
+  // classifier given no adaptations can never match one. Only an absent record is
+  // skipped. Every record is loaded and reaches the recovery context the model
+  // reads (2026-09-30): it was the newest 25
+  // (`AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT`, removed).
+  const knownAdaptations = (await Promise.all(recentAdaptations.map((summary) => input.ports.getFlowAdaptation(input.projectId, summary.flowId, summary.adaptationId)))).filter((adaptation): adaptation is AutomationStudioFlowAdaptation => Boolean(adaptation));
   // The epoch is the Flow's own graph revision, so a landed repair restarts the
   // checking window with no bookkeeping. `runtime_runs.flow_revision` cannot
   // serve: nothing in Core ever sets `AutomationStudioFlowRunSummary.flowVersion`,
@@ -70,4 +74,17 @@ export async function resolveAutomationStudioRuntimeAdaptationContext(input: {
     resultCheckEpoch,
     diagnostics: runtimeAdaptationContextDiagnostics(settings, policy, behavior, budgetDecision)
   };
+}
+
+/** The page size asked for: the summary store's own maximum. */
+const ADAPTATION_PAGE = 100;
+
+/** Every adaptation summary of the Flow, newest first as the store orders them. */
+async function everyAdaptationSummary(ports: AutomationStudioRuntimeAdaptationContextPorts, projectId: string, flowId: string): Promise<AutomationStudioTrainingAdaptationSummary[]> {
+  const all: AutomationStudioTrainingAdaptationSummary[] = [];
+  for (;;) {
+    const page = await ports.listFlowAdaptationSummaries({ projectId, flowId, limit: ADAPTATION_PAGE, offset: all.length });
+    all.push(...page.adaptations);
+    if (page.adaptations.length < ADAPTATION_PAGE || (page.total !== undefined && all.length >= page.total)) return all;
+  }
 }

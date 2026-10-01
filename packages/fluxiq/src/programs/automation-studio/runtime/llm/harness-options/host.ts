@@ -33,6 +33,6 @@ export type AutomationStudioHarnessOptionHost = {
   captureStateSnapshot?(input: AutomationStudioHarnessOptionHostContext): Promise<JsonObject>;
   /** What changed between two captured states. Requires `state-diff`. */
   inspectStateDiff?(input: AutomationStudioHarnessOptionHostContext & { beforeRef: string; afterRef: string }): Promise<JsonObject>;
-  /** Adaptations already recorded for this Flow, and whether each one worked. */
-  listPriorAdaptations?(input: AutomationStudioHarnessOptionHostContext & { limit: number; failureSignature?: string }): Promise<JsonObject>;
+  /** Adaptations already recorded for this Flow, and whether each one worked: every one when `limit` is absent, the model's own ask otherwise. */
+  listPriorAdaptations?(input: AutomationStudioHarnessOptionHostContext & { limit?: number; failureSignature?: string }): Promise<JsonObject>;
 };

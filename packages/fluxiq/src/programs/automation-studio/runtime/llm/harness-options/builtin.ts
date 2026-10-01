@@ -34,7 +34,6 @@ export const AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS = {
 } as const;
 
 const IDENTIFIER = /^[A-Za-z0-9._:-]{1,200}$/;
-const MAX_PRIOR_ADAPTATIONS = 20;
 
 /**
  * Core's bundle for one host, holding only the options that host can serve.
@@ -139,20 +138,21 @@ export function builtinAutomationStudioHarnessOptions(host: AutomationStudioHarn
         type: "object",
         additionalProperties: false,
         properties: {
-          limit: { type: "integer", minimum: 1, maximum: MAX_PRIOR_ADAPTATIONS },
+          // No maximum and no default of five (2026-09-30): absent, the model reads every adaptation.
+          limit: { type: "integer", minimum: 1 },
           failureSignature: { type: "string", pattern: IDENTIFIER.source }
         }
       }
     }), async (input) => {
       const { limit, failureSignature } = input.value;
       if (!exactKeys(input.value, ["limit", "failureSignature"])
-        || (limit !== undefined && (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > MAX_PRIOR_ADAPTATIONS))
+        || (limit !== undefined && (!Number.isInteger(limit) || (limit as number) < 1))
         || (failureSignature !== undefined && (typeof failureSignature !== "string" || !IDENTIFIER.test(failureSignature)))) {
         return rejection("harness_option.input_invalid");
       }
       return listPriorAdaptations({
         ...hostContext(input),
-        limit: typeof limit === "number" ? limit : 5,
+        ...(typeof limit === "number" ? { limit } : {}),
         ...(typeof failureSignature === "string" ? { failureSignature } : {})
       });
     });

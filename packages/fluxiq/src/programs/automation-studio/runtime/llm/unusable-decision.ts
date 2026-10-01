@@ -46,9 +46,6 @@ const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 /** The evidence entry an unusable decision's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID = "core.decision_check";
 
-/** The most issue codes one piece of feedback names. */
-const MAX_FEEDBACK_ISSUE_CODES = 8;
-
 /**
  * The decision shapes an evidence loop accepts, as the model is shown them
  * after a reply that was not one. Written as an example of each variant, not
@@ -165,7 +162,8 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
    */
   unreadable?: { reply?: AutomationStudioLlmProviderReplyAccount | undefined; inARow: number; maxInARow: number };
 }): JsonObject {
-  const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_FEEDBACK_ISSUE_CODES);
+  // Every well-formed issue code (2026-09-30): it was the first eight.
+  const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))];
   if (input.unreadable) {
     const { reply, inARow, maxInARow } = input.unreadable;
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });

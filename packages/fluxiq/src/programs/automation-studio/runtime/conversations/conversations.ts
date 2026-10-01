@@ -27,7 +27,6 @@ import type { AutomationStudioConversationAttachment, AutomationStudioConversati
 import {
   interpretAutomationStudioConversationTurn,
   respondToAutomationStudioConversationTurn,
-  AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS,
   automationStudioConversationModelTranscript,
   type AutomationStudioConversationInstructionAnswer,
   type AutomationStudioConversationInstructionRequest,
@@ -41,6 +40,7 @@ import {
   type AutomationStudioConversationOpenRequest,
   type AutomationStudioConversationWriter
 } from "./writer.ts";
+import { automationStudioConversationWholeThread } from "./whole-thread.ts";
 
 const STORAGE_UNAVAILABLE = "Conversations require project storage.";
 /** How far back a thread is searched for asks still waiting. */
@@ -351,10 +351,11 @@ export class AutomationStudioConversations {
     return subject?.kind === "flow" ? { ...input.onScreen, flowId: subject.id } : input.onScreen;
   }
 
-  /** The end of the thread before `turnId`, as the model reads it, or a note that it could not be read. */
+  /** The thread before `turnId`, every turn of it, as the model reads it, or a note that it could not be read. */
   private async earlierTurns(input: { projectId: string; conversationId: string }, turnId: string): Promise<{ transcript: AutomationStudioConversationModelTurn[]; withheld: boolean }> {
     try {
-      const turns = await this.withStore(input.projectId, (store) => store.recentTurns(input.conversationId, AUTOMATION_STUDIO_CONVERSATION_TRANSCRIPT_TURNS + 1));
+      // The whole thread (2026-09-30): it was the last 20 turns.
+      const turns = await this.withStore(input.projectId, (store) => automationStudioConversationWholeThread((page) => store.getConversation(page), input.conversationId));
       const transcript = automationStudioConversationModelTranscript(turns, turnId);
       return { transcript, withheld: false };
     } catch (error) {

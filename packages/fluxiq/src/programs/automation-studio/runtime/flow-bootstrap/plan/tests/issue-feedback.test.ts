@@ -148,7 +148,8 @@ describe("the feedback on a refused plan", () => {
     expect(JSON.stringify(feedback)).not.toContain("does not satisfy");
   });
 
-  it("stays bounded: sixteen issues, printable paths of at most 300 characters, and accepted shapes within a budget", () => {
+  // Whole since 2026-09-30: it was held to sixteen issues, 300-character paths and a 3,000-byte budget on shapes.
+  it("carries every issue, each whole path printable, and every parameter's accepted shape once", () => {
     const plan = {
       schemaVersion: "0.1",
       router: { name: "Many", rules: [], fallback: { kind: "fail" } },
@@ -164,11 +165,10 @@ describe("the feedback on a refused plan", () => {
 
     const feedback = automationStudioFlowBootstrapIssueFeedback({ issues: [issues[40]!, ...issues], plan, registry, resolution });
 
-    expect(feedback).toHaveLength(16);
-    expect(feedback[0]!.path).toHaveLength(300);
+    expect(feedback).toHaveLength(42);
+    expect(feedback[0]!.path).toBe(`plan.${"x".repeat(400)}`);
     expect(feedback[0]!.path).not.toContain(" ");
-    expect(feedback.filter((item) => item.accepted !== undefined).length).toBeGreaterThan(1);
-    expect(feedback.filter((item) => item.accepted !== undefined).length).toBeLessThan(15);
-    expect(Buffer.byteLength(JSON.stringify(feedback), "utf8")).toBeLessThanOrEqual(6_000);
+    // One shape per node's record output, all forty: the shape is given once per parameter, never cut to a budget.
+    expect(feedback.filter((item) => item.accepted !== undefined)).toHaveLength(40);
   });
 });

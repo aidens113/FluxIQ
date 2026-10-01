@@ -152,7 +152,8 @@ describe("automationStudioResultVerdict", () => {
     expect(verification.code).toBe("core.result.does_not_answer_request");
     expect(verification.repair?.judgement?.expected).toBeUndefined();
     expect(verification.repair?.judgement?.observed).toBeUndefined();
-    expect(verification.repair?.judgement?.advice?.length).toBe(500);
+    // Carried whole since 2026-09-30; it was cut at 500 characters.
+    expect(verification.repair?.judgement?.advice).toBe(`every row was kept ${"x".repeat(900)}`);
     expect(verification.repair?.findings.length).toBeGreaterThan(0);
   });
 
