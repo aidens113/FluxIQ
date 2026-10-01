@@ -35,7 +35,9 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
   "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled",
   // A build ends this way through its phases, with a message (`../unfinished-build/replies-unreadable.ts`);
   // a caller that publishes the loop's ending itself has only the code, and it names what happened.
-  "llm_evidence_loop.unreadable_replies": "flow_bootstrap.provider_response_malformed"
+  "llm_evidence_loop.unreadable_replies": "flow_bootstrap.provider_response_malformed",
+  // The same for a provider that stopped answering (`../unfinished-build/provider-unavailable.ts`).
+  "llm_evidence_loop.provider_unavailable": "flow_bootstrap.provider_timeout"
 };
 
 /**

@@ -49,7 +49,8 @@ describe("exploration outcomes", () => {
       "llm_evidence_loop.evidence_limit",
       "llm_evidence_loop.iteration_limit",
       "llm_evidence_loop.cancelled",
-      "llm_evidence_loop.unreadable_replies"
+      "llm_evidence_loop.unreadable_replies",
+      "llm_evidence_loop.provider_unavailable"
     ]],
     ["run-budget diagnostics", AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET, [
       "llm_budget.run_call_limit",

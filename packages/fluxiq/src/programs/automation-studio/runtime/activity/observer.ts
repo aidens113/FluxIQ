@@ -39,6 +39,23 @@ function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefine
   return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
 }
 
+/**
+ * A decision that never came closes its own row, so the chat is not left
+ * "Thinking about the next step". A model provider that gave no answer at all
+ * is said in words, and that it is being asked again: during an outage every
+ * request of live run `run-muq05kas-058193f0` waited out its deadline while the
+ * chat said only that it was thinking.
+ */
+function decisionFailed(error: unknown): void {
+  // Read by shape (`AutomationStudioLlmUnusableDecisionError.providerUnanswered`):
+  // a value import of the llm barrel from here closes an import cycle.
+  const unanswered = (error as { providerUnanswered?: unknown } | null)?.providerUnanswered === true;
+  const title = "Deciding the next step";
+  emitAutomationStudioActivity(unanswered
+    ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title, status: "failed", text: "The AI model provider did not answer this request. Asking it again; the build stops if it keeps not answering." } }
+    : { phase: "thinking", label: `${title} — didn't work`, detail: { kind: "thought", title, status: "failed" } });
+}
+
 function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode?: string): void {
   const words = automationStudioActivityToolCall(call);
   const record = [resultCode ? `Result: ${resultCode}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
@@ -73,7 +90,13 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
     ...input,
     decide: async (request) => {
       emitAutomationStudioActivity({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } });
-      const decision = await decide.call(input, request);
+      let decision: unknown;
+      try {
+        decision = await decide.call(input, request);
+      } catch (error) {
+        decisionFailed(error);
+        throw error;
+      }
       const chose = automationStudioActivityDecision(decision);
       if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: automationStudioActivityDecisionReason.of(decision) });
       return decision;
