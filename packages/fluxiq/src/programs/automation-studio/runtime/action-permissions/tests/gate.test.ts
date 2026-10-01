@@ -180,6 +180,91 @@ describe("what a request may carry out to a person", () => {
   });
 });
 
+// A person's no and nobody answering used to settle the same way: the first
+// request stayed raised and refused everything after it with its own id. So a
+// build told no about "Continue to checkout" could never ask about "Place
+// order" (t195-w18). A no is now remembered for its question only.
+describe("how a person's answer settles a request", () => {
+  const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
+  const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
+
+  function asking() {
+    let next = 0;
+    const built = new AutomationStudioActionPermissionGate({ stage: "authoring", endsOnRequest: false, newRequestId: () => `permission-request:${++next}` });
+    built.observe({ controls: ["Continue to checkout", "Place order"] });
+    return built;
+  }
+
+  it("asks about a different control after a decline, and a grant there permits it", async () => {
+    const run = asking();
+    expect(await run.checkFor(STEP)(CHECKOUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1" });
+    run.settle("declined");
+
+    const place = run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.9" });
+    expect(await place(PLACE)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:2" });
+    expect(run.request).toMatchObject({ requestId: "permission-request:2", control: { name: "Place order" } });
+    run.settle("granted");
+
+    expect(await place(PLACE)).toEqual({ permitted: true });
+    expect(run.request).toBeUndefined();
+  });
+
+  it("refuses the declined question again unasked, with its own request, even after a grant of the same class elsewhere", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("declined");
+    await run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.9" })(PLACE);
+    run.settle("granted");
+
+    const again = await run.checkFor({ kind: "flow_step", id: "demo.press", ref: "main.s2" })(CHECKOUT);
+    expect(again).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1", declined: true });
+    // The request the run now ends on is the one that refused it, not a new one.
+    expect(run.request?.requestId).toBe("permission-request:1");
+    expect(run.raisedDuring("call.7")).toBe(true);
+  });
+
+  // A decline is an answer, not a question still standing. Carried on, it ended
+  // every later stalled round as that question and made a Flow that never
+  // presses the control unapprovable; only a Flow step that needs it puts it back.
+  it("carries a declined request only while a step of the Flow needs it", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("declined");
+    expect(run.request).toBeUndefined();
+
+    const explored = await run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.8" })(CHECKOUT);
+    expect(explored).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1", declined: true });
+    expect(run.request).toBeUndefined();
+
+    await run.checkFor({ kind: "flow_step", id: "demo.press", ref: "main.s3" })(CHECKOUT);
+    expect(run.request?.requestId).toBe("permission-request:1");
+  });
+
+  it("is a new question when the same control is asked about other classes", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("declined");
+
+    const deleting = await run.checkFor(STEP)({ ...CHECKOUT, consequences: ["delete"] });
+    expect(deleting).toEqual({ permitted: false, missing: ["delete"], requestId: "permission-request:2" });
+    // And the money it was refused stays refused, with the request the person answered.
+    run.settle("granted");
+    expect(await run.checkFor(STEP)(CHECKOUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1", declined: true });
+  });
+
+  it("keeps a request nobody answered in force, so nothing after it is asked", async () => {
+    for (const answer of ["unanswered", "refused"] as const) {
+      const run = asking();
+      await run.checkFor(STEP)(CHECKOUT);
+      run.settle(answer);
+
+      const later = await run.checkFor({ kind: "flow_step", id: "demo.press", ref: "main.s2" })(PLACE);
+      expect(later, answer).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1" });
+      expect(run.request?.requestId, answer).toBe("permission-request:1");
+    }
+  });
+});
+
 describe("the check an action gets with no run behind it", () => {
   it("permits nothing it cannot take back and names no request", async () => {
     expect(await automationStudioActionPermissionDenied(REFUND)).toEqual({ permitted: false, missing: ["move_money"], requestId: null });

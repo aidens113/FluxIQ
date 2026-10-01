@@ -21,8 +21,12 @@
 // stops wherever the check was called from. A caller that can put it to a
 // person parks instead: it opens the request as an ask, waits, and calls
 // `settle` with what came back. A granted request widens what this run holds
-// and lets the work go on; a refused one stays recorded, so every later check
-// reports the same refusal rather than asking the same person again.
+// and lets the work go on. One nobody answered stays in force, so every later
+// check reports that same refusal and the run never waits on an absent person
+// twice. A person's explicit no is remembered for that question alone -- the
+// same control, the same kind, the same classes -- and a different question
+// raises a request of its own (t195-w18: one declined press on "Continue to
+// checkout" used to refuse "Place order", the press the task needed, unasked).
 //
 // **Fail closed.** No permitted set, an empty one and one naming something Core
 // does not recognise all permit nothing. There is no consequence the gate
@@ -103,8 +107,14 @@ export class AutomationStudioActionPermissionGate {
   private readonly shown: string[] = [];
   private shownCharacters = 0;
   private readonly records: AutomationStudioActionDeclarationRecord[] = [];
-  private raised: AutomationStudioActionPermissionRequest | undefined;
-  private raisedRef: string | undefined;
+  /** Raised and not declined: still waiting, or nobody answered. While it stands, no new request is raised. */
+  private outstanding: AutomationStudioActionPermissionRequest | undefined;
+  /** The request the latest refusal carried: the one the run ends on, or is proposed with. */
+  private latest: AutomationStudioActionPermissionRequest | undefined;
+  /** The control each raised request was about, by request id, so a decline can be remembered against it. */
+  private readonly askedAbout = new Map<string, { controlName: string; controlKind: string | null }>();
+  /** Questions a person answered no, each with the control it was asked about. */
+  private readonly declined: Array<{ request: AutomationStudioActionPermissionRequest; controlName: string; controlKind: string | null }> = [];
   private readonly stopped = new AbortController();
   private instructedEntries: readonly AutomationStudioInstructedConsequence[] | undefined;
   private deriving: Promise<{ derived: true; entries: readonly AutomationStudioInstructedConsequence[] } | { derived: false; reason: unknown }> | undefined;
@@ -141,13 +151,23 @@ export class AutomationStudioActionPermissionGate {
     return this.instructedFor();
   }
 
-  /** The first request raised, which is the one the run ends on. */
+  /**
+   * The request the run ends on, and the one stored with whatever it produced.
+   * Until a person declines something it is the first request raised. A
+   * declined request is carried only while a step of the Flow itself needs it:
+   * a `flow_step` refused as declined puts it back. An exploration press of a
+   * declined control is refused without carrying it, because the person has
+   * answered and the build may still finish another way -- carrying it made
+   * every later stalled round end as that question, and made a finished Flow
+   * that never presses that control unapprovable
+   * (`flow-bootstrap/adaptation.ts`, `assertAutomationStudioBootstrapPermissionRequestAnswered`).
+   */
   get request(): AutomationStudioActionPermissionRequest | undefined {
-    return this.raised;
+    return this.latest;
   }
 
   /**
-   * Take the person's answer to the request this gate raised.
+   * Take the answer to the request this gate raised and has not settled.
    *
    * `granted` adds exactly the classes the request said were missing, and
    * forgets the request, so the same check asked again permits the action and a
@@ -155,23 +175,42 @@ export class AutomationStudioActionPermissionGate {
    * beyond `missing` is permitted: an answer widens the run by what was asked
    * about and by nothing else.
    *
-   * `refused` keeps the request. It is then what every later refusal reports,
-   * which is what stops a run asking one person the same question repeatedly,
-   * and it is what the caller stores with whatever the run produced.
+   * `declined` is a person saying no. It is remembered for that question --
+   * the same control name and kind, asked about the same classes -- which is
+   * refused from then on without asking, carrying this request's id and
+   * `declined: true`. It no longer stands in front of other questions: a
+   * different control, or the same one asked about other classes, raises a new
+   * request. A later grant of the same classes on another control does not lift
+   * it; the person refused this control by name.
+   *
+   * `unanswered` -- a timeout, a thread that could not be reached, a wait that
+   * was cancelled -- keeps the request in force. It is then what every later
+   * refusal reports and no new request is raised, so a run nobody is watching
+   * waits once, not once per action. `refused` is the same answer under the
+   * name a caller that cannot tell a person's no from silence has always used
+   * (`recovery/runtime-exploration.ts`).
    *
    * Only for a caller that set `endsOnRequest: false`; a caller that ended on
    * the request has nothing to settle.
    */
-  settle(answer: "granted" | "refused"): void {
-    if (!this.raised || answer === "refused") return;
-    for (const consequence of this.raised.missing) this.permitted.add(consequence);
-    this.raised = undefined;
-    this.raisedRef = undefined;
+  settle(answer: "granted" | "declined" | "unanswered" | "refused"): void {
+    const settled = this.outstanding;
+    if (!settled || answer === "unanswered" || answer === "refused") return;
+    this.outstanding = undefined;
+    const control = this.askedAbout.get(settled.requestId);
+    if (answer === "declined") {
+      if (control) this.declined.push({ request: settled, ...control });
+      // Answered, so no longer what the run stands on; a Flow step that needs it puts it back.
+      if (this.latest === settled) this.latest = undefined;
+      return;
+    }
+    for (const consequence of settled.missing) this.permitted.add(consequence);
+    if (this.latest === settled) this.latest = undefined;
   }
 
-  /** Whether the request was raised for this action: a call, or a plan step. */
+  /** Whether the request the run carries was raised for this action: a call, or a plan step. */
   raisedDuring(ref: string): boolean {
-    return this.raised !== undefined && this.raisedRef === ref;
+    return this.latest !== undefined && this.latest.action.ref === ref;
   }
 
   /**
@@ -259,11 +298,27 @@ export class AutomationStudioActionPermissionGate {
       // these acts independently require a person's authority; until
       // 2026-09-30 an instructed class went ahead unasked, so whether Place
       // order asked depended on how the model happened to read the instruction).
+      // A question a person already answered no is not asked again, and is not
+      // answered from what the run was granted since either: the person
+      // refused this control by name. It is the same question when the control
+      // is, and the action still declares every class they refused.
+      const gated = automationStudioDestructiveConsequences(consequences);
+      const declined = this.declined.find((entry) => entry.controlName === read.controlName
+        && entry.controlKind === read.controlKind
+        && entry.request.missing.every((consequence) => gated.includes(consequence)));
+      if (declined) {
+        // Only a step of the Flow makes the run stand on it again (see `request`).
+        if (action.kind === "flow_step") this.latest = declined.request;
+        return record({ permitted: false, missing: [...declined.request.missing], requestId: declined.request.requestId, declined: true });
+      }
       const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence)));
       if (!missing.length) return record({ permitted: true });
-      if (this.raised) return record({ permitted: false, missing, requestId: this.raised.requestId });
+      if (this.outstanding) {
+        this.latest = this.outstanding;
+        return record({ permitted: false, missing, requestId: this.outstanding.requestId });
+      }
       const stage = this.input.stage;
-      this.raised = {
+      const raised: AutomationStudioActionPermissionRequest = {
         schemaVersion: AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
         requestId: this.input.newRequestId?.() ?? `permission-request:${randomUUID()}`,
         requestedAtMs: Math.trunc(this.input.now?.() ?? Date.now()),
@@ -278,9 +333,12 @@ export class AutomationStudioActionPermissionGate {
         },
         sentence: automationStudioActionPermissionSentence({ stage, kind: action.kind, verb: read.verb, controlName, controlKind: read.controlKind, missing })
       };
-      this.raisedRef = action.ref;
+      this.outstanding = this.latest = raised;
+      // The name as the domain gave it, not as the request carries it: two
+      // controls whose names were both withheld are still two questions.
+      this.askedAbout.set(raised.requestId, { controlName: read.controlName, controlKind: read.controlKind });
       if (this.input.endsOnRequest !== false) this.stopped.abort();
-      return record({ permitted: false, missing, requestId: this.raised.requestId });
+      return record({ permitted: false, missing, requestId: raised.requestId });
     };
   }
 
