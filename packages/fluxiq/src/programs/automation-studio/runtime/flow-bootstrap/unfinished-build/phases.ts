@@ -131,7 +131,19 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
 
 export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
   /** A Flow the loop accepted, and what every round spent. */
-  | { kind: "finished"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
+  | {
+    kind: "finished";
+    loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>;
+    accounting: AutomationStudioLlmEvidenceLoopAccounting;
+    rounds: number;
+    /**
+     * Every round's trace rows, numbered across the build: what a Flow
+     * accepted after a repair stores as its record. `loop.trace` is the last
+     * round's alone, which is how a build that explored, was judged and was
+     * repaired kept only its repair's decisions (t214).
+     */
+    trace: AutomationStudioLlmEvidenceLoopTrace[];
+  }
   /**
    * An ending this lifecycle does not reach past, as the round's loop reported
    * it: cancelled, a refused configuration, the evidence backstop. Never a
@@ -181,11 +193,12 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       outcome = error;
     }
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
-    // Every round that stopped short publishes its rows: unfinished, out of budget, or out of readable replies.
-    if (ending.kind !== "finished" && ending.kind !== "other") record.push(...numberedAcrossBuild(ending.progress.trace, spent.iterations));
+    // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
+    if (ending.kind === "finished") record.push(...numberedAcrossBuild(ending.loop.trace, spent.iterations));
+    else if (ending.kind !== "other") record.push(...numberedAcrossBuild(ending.progress.trace, spent.iterations));
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
-    if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds };
+    if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
     if (ending.kind === "other") return { kind: "ended", loop: ending.loop, accounting: spent, rounds };
     const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
     const asked = input.callerEnding?.(ending.progress);

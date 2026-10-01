@@ -79,7 +79,7 @@ async function build(repairs: "finish" | "refuse") {
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
-  return { requests, generation };
+  return { requests, generation, instance, projectId: project.id, flowId: flow.flowId };
 }
 
 /**
@@ -145,11 +145,18 @@ describe("a Flow build that stops with nothing in its Flow", () => {
 
 describe("a Flow build that stops before its Flow is ready", () => {
   it("tests and judges what it has, then repairs it live, and the repaired Flow is proposed", async () => {
-    const { requests, generation } = await build("finish");
+    const { requests, generation, instance, projectId, flowId } = await build("finish");
 
     const result = await generation;
 
     expect(result.status).toBe("proposed");
+    // The Flow keeps the whole build's record, not the repair's alone: every
+    // decision of the exploration and the repair, numbered across the build (t214).
+    const decisions = requests.filter((request) => request.context.evidenceLoop).length;
+    const stored = await instance.getFlowBootstrapAdaptation(projectId, flowId, result.adaptationId);
+    const numbered = [...new Set((stored?.evidenceTrace ?? []).flatMap((row) => row.iteration > 0 ? [row.iteration] : []))];
+    expect(numbered).toEqual(Array.from({ length: decisions }, (_, index) => index + 1));
+    expect(stored?.auditEvents[0]?.detail).toMatchObject({ decisionCount: decisions, providerCallCount: decisions });
     const repair = requests.map(repairEntry).find(Boolean);
     expect(repair).toMatchObject({ code: "llm_evidence_loop.repair", stopped: "unusable_decisions", judgement: { stepsInFlow: 1 }, instruction: expect.stringContaining("This is the repair") });
     // The repair starts from the Flow as far as it got: the one step added.

@@ -623,10 +623,15 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(run.failure).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
       retryable: true,
-      evidenceLoop: { iterationCount: 20, toolCallCount: 17 },
+      // Twenty decisions paid for, twenty in the record: the last, a look on a
+      // decision offered only completion, leaves its row like the rest. It
+      // used to leave none, publishing 19 decisions beside 20 paid (t214).
+      evidenceLoop: { iterationCount: 20, decisionCount: 20, toolCallCount: 17 },
       ending: { kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 20, stepsInFlow: 0 } }
     });
     expect(run.failure?.ending?.message).toMatch(/^The build stopped at its limit of 20 model calls before the Flow was finished\./u);
+    expect(run.failure?.evidenceLoop?.steps?.filter((step) => step.resultCode === "llm_evidence_loop.not_offered").map((step) => step.iteration)).toEqual([18, 19, 20]);
+    expect(run.failure?.evidenceLoop?.steps?.at(-1)).toMatchObject({ toolId: LOOK_TOOL_ID, iteration: 20, resultCode: "llm_evidence_loop.not_offered", usage: expect.objectContaining({ outputTokens: 150 }) });
   }, 120_000);
 
   it("reproduces the measured 26-decision creation exhaustion with exact feedback, trace, and accounting", async () => {

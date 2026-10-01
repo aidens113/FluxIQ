@@ -10,7 +10,7 @@ import {
   type AutomationStudioFlowBootstrapEvidenceTraceRow
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
 // The evidence loop trace an audit event records: validated first, then
@@ -46,7 +46,9 @@ const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
 /**
  * The most rows one trace may carry: two per decision, plus the deterministic
- * iteration-0 observation.
+ * iteration-0 observation -- for each live round the build ran. A Flow
+ * accepted after a repair stores every round's rows, its decisions numbered
+ * across the build (`../../flow-bootstrap/unfinished-build/phases.ts`, t214).
  *
  * It was one per decision, which is not what the loop writes. An `amend_draft`
  * decision that carries a `rerun` pushes its own row and then the row for the
@@ -56,14 +58,22 @@ const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * a build that had completed. Two is the loop's real ceiling: no path writes a
  * third row for one iteration (`runtime/llm/evidence-loop.ts`).
  */
-const MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
+function maxTraceRows(): number {
+  return (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1) * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+}
+
+/** The highest decision number a stored row may carry: one round's ceiling for each round. Read at call time, like the rows. */
+function maxTraceIteration(): number {
+  return AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+}
 
 export function sanitizeEvidenceLoopTrace(
   trace: readonly AutomationStudioFlowBootstrapEvidenceTraceRow[]
 ): AutomationStudioFlowBootstrapEvidenceTraceRow[] {
-  if (!Array.isArray(trace) || trace.length > MAX_TRACE_ROWS) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  const maxIteration = maxTraceIteration();
+  if (!Array.isArray(trace) || trace.length > maxTraceRows()) throw new Error("Flow Bootstrap evidence trace is invalid.");
   return trace.map((item) => {
-    if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations || !["tool_call", "complete", "unusable", "amend_draft"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
+    if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > maxIteration || !["tool_call", "complete", "unusable", "amend_draft"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
     const clean: AutomationStudioFlowBootstrapEvidenceTraceRow = { iteration: item.iteration, decision: item.decision };
     if (item.callId !== undefined) clean.callId = requiredBootstrapCommandId(item.callId, "evidence call");
     if (item.toolId !== undefined) clean.toolId = requiredBootstrapCommandId(item.toolId, "evidence tool");
@@ -175,7 +185,8 @@ function amendmentRefusals(value: AutomationStudioFlowBootstrapEvidenceTraceRow[
  *
  * They are published beside `providerCallCount` rather than inside it, and
  * that is a constraint rather than a preference. A reader holds this record to
- * `decisionCount === providerCallCount` and `iterationCount` within one of it
+ * `decisionCount === providerCallCount` and `iterationCount` within a round's
+ * opening observation of it, one for each live round
  * (`packages/test-runner/src/existing-fluxiq-control/adaptation-evidence-loop.ts`
  * in the downstream testing facility), so folding the extra call into
  * `providerCallCount` makes every evidence-guided build fail that contract
@@ -185,8 +196,9 @@ function amendmentRefusals(value: AutomationStudioFlowBootstrapEvidenceTraceRow[
  *
  * **The four counts are three different things and must not be confused.**
  * `providerCallCount` and `decisionCount` are the loop's paid calls, one per
- * iteration. `iterationCount` is those plus the deterministic iteration-0
- * observation where there was one. `traceStepCount` is the rows, which is the
+ * iteration. `iterationCount` is those plus each live round's deterministic
+ * iteration-0 observation where it made one: one for a build of one round, one
+ * more for each repair or exploring-again that opened with its own look (t214). `traceStepCount` is the rows, which is the
  * only one of the four that a decision editing the draft and re-running a step
  * moves by two.
  */
@@ -204,12 +216,15 @@ export function evidenceTraceAuditDetail(trace: readonly AutomationStudioFlowBoo
   const extra = Number.isSafeInteger(additionalProviderCalls) && additionalProviderCalls > 0 ? additionalProviderCalls : 0;
   return {
     evidenceGuided: true,
-    // Every iteration the loop ran, including the deterministic iteration-0
-    // observation where it made one -- so this is the loop's decisions plus at
-    // most one, which is exactly what its name says and what a reader holds it
-    // to. `traceStepCount` beside it is the rows, and the two differ by
-    // however many decisions edited the draft and re-ran a step.
-    iterationCount: providerIterations.size + (clean.some((item) => item.iteration === 0) ? 1 : 0),
+    // Every iteration the loop ran, including each round's deterministic
+    // iteration-0 observation where it made one -- so this is the loop's
+    // decisions plus one per live round at most, which is exactly what its
+    // name says and what a reader holds it to. A build that finished after a
+    // repair stores every round's rows (t214), and counting its several opening
+    // looks as one published fewer iterations than tool calls. `traceStepCount`
+    // beside it is the rows, and the two differ by however many decisions
+    // edited the draft and re-ran a step.
+    iterationCount: providerIterations.size + clean.filter((item) => item.iteration === 0).length,
     traceStepCount: clean.length,
     providerCallCount: providerIterations.size,
     decisionCount: providerIterations.size,
