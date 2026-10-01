@@ -104,6 +104,8 @@ describe("a Flow build whose model provider stops answering", () => {
     const last = seen.at(-1)!;
     expect(last).toMatchObject({ phase: "failed", label: "Build stopped: the AI model provider is not responding", final: true, detail: { status: "failed", text: diagnostic.ending?.message } });
     // Nothing after the ending, and every "Deciding the next step" closed.
+    // What the person asked is on the build's activity in their own words, for the chat to show as theirs.
+    expect(seen.filter((event) => event.request !== undefined).map((event) => event.request)).toEqual(["Create a deterministic Start to End Flow."]);
     const decided = seen.filter((event) => event.detail?.title === "Deciding the next step");
     expect(decided.filter((event) => event.detail?.status === "started")).toHaveLength(3);
     expect(decided.filter((event) => event.detail?.status === "failed")).toHaveLength(3);

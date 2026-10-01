@@ -26,7 +26,8 @@ export function emitAutomationStudioActivity(emission: AutomationStudioActivityE
       ...(emission.step === undefined ? {} : { step: emission.step }),
       ...(emission.detail === undefined ? {} : { detail: emission.detail }),
       ...(conversationId === undefined ? {} : { conversationId }),
-      ...(emission.final === undefined ? {} : { final: emission.final })
+      ...(emission.final === undefined ? {} : { final: emission.final }),
+      ...(emission.request === undefined ? {} : { request: emission.request })
     });
   } catch { /* best-effort: the activity stream must never fail the work it reports */ }
 }

@@ -30,6 +30,25 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
   });
 }
 
+/** The most of the person's words one build's request carries. */
+export const AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS = 4_000;
+
+/**
+ * Says what the person asked this build, in their own words, once the build
+ * has read its instructions: the bodies of the Flow's own instructions, or of
+ * every instruction it read when none is the Flow's own. A chat shows it as
+ * the person's message (`ClientGatewayActivity.request`). Live runs 34 and 35
+ * (`run-mup2i28c-6c7fc209`, `run-muq05kas-058193f0`) were built from an
+ * instruction the chat never showed: the person's side of the conversation
+ * was empty while FluxIQ worked on it.
+ */
+export function emitAutomationStudioBuildRequest(instructions: ReadonlyArray<{ body: string; scopeKind: string }>): void {
+  const own = instructions.filter((instruction) => instruction.scopeKind === "flow");
+  const words = (own.length ? own : instructions).map((instruction) => instruction.body.trim()).filter(Boolean).join("\n\n");
+  if (!words) return;
+  emitAutomationStudioActivity({ phase: "building", label: "Building the Flow", request: words.slice(0, AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS) });
+}
+
 const ENDING_TITLES = Object.freeze({
   not_doable: "Not doable: this Flow could not be built",
   budget_exhausted: "Build stopped: a budget ran out",
