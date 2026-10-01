@@ -40,6 +40,11 @@
 // by a step the Flow repeats -- one carrying `repeat`, or one inside the span a
 // kept step repeats (`act_needs_repeat`).
 //
+// Withdraw run 3 (`run-munnyvbr-11c28a0f`) repeated the row's Withdraw but not
+// the confirmation it opens (`span_stops_short`, `./span.ts`), and declared the
+// withdrawal a class nobody is asked about (`act_consequence_undeclared`,
+// `./act-consequence.ts`). Both are now refused.
+//
 // **Choosing is not adding.** Live run 28 (`run-munvvc3z-3eadc185`) was told
 // to add two packs of one product in one size and a pack of another in
 // another size. It pressed add to cart once on each product page as the page
@@ -55,8 +60,9 @@
 // to name, so it is left where it stood before this check existed.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
+import { automationStudioDraftStepDeclaresConsequence } from "./act-consequence.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
 import type {
   AutomationStudioInstructedAct,
@@ -66,6 +72,7 @@ import type {
   AutomationStudioInstructedChoice
 } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedActRepeatSpans, automationStudioInstructedActSpanStopsShort } from "./span.ts";
 
 /** The issue a missing act refuses completion under. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.instructed_act_missing";
@@ -109,6 +116,12 @@ const CHOICE_INSTRUCTION = " An id like a2.quantity or a2.size is a choice the p
 const REPEAT_INSTRUCTION = " A reason of act_needs_repeat means the act is asked for every item of a list (plural) and the step named does it once: "
   + "run the step that lists the items (keeping only those to act on), act on one item, then amend_draft repeat over the listing step through the act's last step, and name the repeated step for the act.";
 
+/** Said only when a repeat ended one step before the press that finishes the act on each item. */
+const SPAN_INSTRUCTION = " A reason of span_stops_short means the step right after your repeat (after) does part of the act on each item, such as the confirmation the repeated press opened, but runs once after the loop: repeat through it -- amend_draft repeat on the repeat's first step with through set to after.";
+
+/** Said only when an act's verb names a class a person is asked about and no step of it declared that class. */
+const CONSEQUENCE_INSTRUCTION = " A reason of act_consequence_undeclared means the person's words ask for an act of that class of consequence (consequence) and no step that does it declares it: rerun the step that does it declaring that class in its consequences, and keep it; the person will be asked before it happens.";
+
 /** Every act, and whether the draft has a step for each. Nothing here calls a provider. */
 export function checkAutomationStudioInstructedActs(input: {
   instructionText?: string | undefined;
@@ -134,6 +147,9 @@ export function checkAutomationStudioInstructedActs(input: {
   const annotated = new Set(fromDraft.map((claim) => claim.action.toLowerCase()));
   const claims = [...fromDraft, ...readClaims(input.result.acts).filter((claim) => !annotated.has(claim.action.toLowerCase()))];
   const assigned = assign(acts, choices, claims);
+  // Steps named for any act or choice: a lasting step after a repeat that one names is the next act, not this one's end.
+  const named = new Set([...assigned.values()].flatMap((claim) => findStep(steps, claim.step) ?? []));
+  const claimed = (step: AutomationStudioFlowDraftStep): boolean => named.has(step);
   const used = new Set<AutomationStudioFlowDraftStep>();
   // The step each act was accepted for, so a choice given the same one is told it is its act's press.
   const actSteps = new Map<string, AutomationStudioFlowDraftStep>();
@@ -145,10 +161,11 @@ export function checkAutomationStudioInstructedActs(input: {
       continue;
     }
     const step = findStep(steps, claim.step);
-    const named = { step: claim.step.slice(0, 16) };
-    const fault = step ? automationStudioInstructedActStepFault(act, step, steps, onlyArrives) : "no_such_step";
-    if (fault || !step) missing.push({ ...act, reason: fault ?? "no_such_step", ...named });
-    else if (used.has(step)) missing.push({ ...act, reason: "step_claimed_twice", ...named });
+    const said = { step: claim.step.slice(0, 16) };
+    const fault = step ? automationStudioInstructedActStepFault(act, step, steps, onlyArrives, claimed) : "no_such_step";
+    const after = fault === "span_stops_short" && step ? { after: automationStudioInstructedActSpanStopsShort(step, steps, claimed)!.after.position } : {};
+    if (fault || !step) missing.push({ ...act, reason: fault ?? "no_such_step", ...said, ...after });
+    else if (used.has(step)) missing.push({ ...act, reason: "step_claimed_twice", ...said });
     else {
       used.add(step);
       actSteps.set(act.id, step);
@@ -161,10 +178,10 @@ export function checkAutomationStudioInstructedActs(input: {
       continue;
     }
     const step = findStep(steps, claim.step);
-    const named = { step: claim.step.slice(0, 16) };
+    const said = { step: claim.step.slice(0, 16) };
     const refused = step ? whyNot(step, onlyArrives(step)) : "no_such_step";
-    if (refused || !step) missing.push({ ...choice, reason: refused ?? "no_such_step", ...named });
-    else if (used.has(step) && !automationStudioInstructedChoiceSetBy(step, choice)) missing.push({ ...choice, reason: actSteps.get(choice.of) === step ? "choice_is_the_act_step" : "step_claimed_twice", ...named });
+    if (refused || !step) missing.push({ ...choice, reason: refused ?? "no_such_step", ...said });
+    else if (used.has(step) && !automationStudioInstructedChoiceSetBy(step, choice)) missing.push({ ...choice, reason: actSteps.get(choice.of) === step ? "choice_is_the_act_step" : "step_claimed_twice", ...said });
     else used.add(step);
   }
   if (!missing.length) return { ok: true, acts };
@@ -191,8 +208,10 @@ export function checkAutomationStudioInstructedActs(input: {
         ...("of" in act ? { of: act.of, choice: act.choice } : { verb: act.verb }),
         quote: act.quote,
         ...("plural" in act && act.plural ? { plural: true } : {}),
+        ...("consequence" in act && act.consequence && act.reason === "act_consequence_undeclared" ? { consequence: act.consequence } : {}),
         reason: act.reason,
-        ...(act.step ? { step: act.step } : {})
+        ...(act.step ? { step: act.step } : {}),
+        ...(act.after !== undefined ? { after: act.after } : {})
       })),
       // The steps that could be named: kept, and changed something.
       // Every one of them (user, 2026-09-30): no count cap.
@@ -209,20 +228,30 @@ export function checkAutomationStudioInstructedActs(input: {
 /**
  * Why this step does not do this act, or nothing when it does as far as the
  * draft can say: in the Flow, an action that changed something, not only the
- * arrival at the start (unless the act is one of opening), not optional, and
- * repeated when the act is over a whole set. The one rule the check and the
- * checklist shown beside the draft both apply (`./checklist.ts`).
+ * arrival at the start (unless the act is one of opening), not optional,
+ * repeated through its last step when over a whole set, and declaring the
+ * class its verb names (`claimed`: whether a step is named for any act). The
+ * one rule the check and the checklist both apply (`./checklist.ts`).
  */
 export function automationStudioInstructedActStepFault(
   act: AutomationStudioInstructedAct,
   step: AutomationStudioFlowDraftStep,
   steps: readonly AutomationStudioFlowDraftStep[],
-  onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean
+  onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean,
+  claimed: (step: AutomationStudioFlowDraftStep) => boolean
 ): Exclude<AutomationStudioInstructedActMissing["reason"], "no_step_named" | "no_such_step" | "step_claimed_twice" | "choice_is_the_act_step"> | undefined {
   const refused = whyNot(step, act.kind !== "open" && onlyArrives(step));
   if (refused) return refused;
-  if (act.plural && !repeated(step, steps)) return "act_needs_repeat";
-  return undefined;
+  const spans = automationStudioInstructedActRepeatSpans(step, steps);
+  if (act.plural && !spans.length) return "act_needs_repeat";
+  if (act.plural && automationStudioInstructedActSpanStopsShort(step, steps, claimed)) return "span_stops_short";
+  const consequence = act.consequence;
+  if (!consequence) return undefined;
+  // The steps that do the act: its own, or every proposed step of a span that repeats it.
+  const doing = spans.length
+    ? steps.filter((each) => automationStudioFlowDraftStepIsProposed(each) && spans.some((span) => each.position >= span.from && each.position <= span.to))
+    : [step];
+  return doing.some((each) => automationStudioDraftStepDeclaresConsequence(each, consequence)) ? undefined : "act_consequence_undeclared";
 }
 
 /**
@@ -238,7 +267,9 @@ export function automationStudioInstructedActDraftClaims(steps: readonly Automat
 const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedActMissing["reason"], string]> = [
   ["step_only_arrives", ARRIVAL_INSTRUCTION],
   ["step_is_optional", OPTIONAL_INSTRUCTION],
-  ["act_needs_repeat", REPEAT_INSTRUCTION]
+  ["act_needs_repeat", REPEAT_INSTRUCTION],
+  ["span_stops_short", SPAN_INSTRUCTION],
+  ["act_consequence_undeclared", CONSEQUENCE_INSTRUCTION]
 ];
 
 /**
@@ -252,21 +283,6 @@ function whyNot(step: AutomationStudioFlowDraftStep, arrives: boolean): "step_no
   if (arrives) return "step_only_arrives";
   if (step.routing?.kind === "optional") return "step_is_optional";
   return undefined;
-}
-
-/**
- * Whether the Flow runs this step once per item: it carries `repeat`, or it
- * lies between a kept step carrying `repeat` and the step that repeat runs
- * through. A repeat on a step the model withdrew is in no Flow, so it counts
- * for nothing.
- */
-function repeated(step: AutomationStudioFlowDraftStep, steps: readonly AutomationStudioFlowDraftStep[]): boolean {
-  if (step.routing?.kind === "repeat") return true;
-  return steps.some((carrier) => {
-    if (carrier.routing?.kind !== "repeat" || !automationStudioFlowDraftStepIsProposed(carrier)) return false;
-    const through = automationStudioFlowDraftStepById(steps, carrier.routing.through)?.position ?? carrier.position;
-    return step.position >= Math.min(carrier.position, through) && step.position <= Math.max(carrier.position, through);
-  });
 }
 
 /** The model's claims, in any of the shapes it may reasonably write them. */

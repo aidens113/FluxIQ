@@ -165,6 +165,33 @@ describe("what a request may carry out to a person", () => {
     expect(run.request?.control.name?.endsWith("...")).toBe(true);
   });
 
+  // t195-w19b #7: the gate stopped recording at its budget, so on a long build
+  // "Place order", shown last, was asked about unnamed and the person said no.
+  it("names a control shown after the budget was spent, by forgetting the oldest text instead", async () => {
+    const run = new AutomationStudioActionPermissionGate({ stage: "authoring" });
+    const filler = Array.from({ length: 40_001 }, (_, index) => `filler line ${String(index).padStart(6, "0")} `.padEnd(100, "x"));
+    expect(filler.reduce((total, text) => total + text.length, 0)).toBeGreaterThan(4_000_000);
+    run.observe(filler);
+    run.observe({ controls: [{ handle: "c9", name: "Place order" }] });
+    await run.checkFor(STEP)({ consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" });
+
+    expect(run.request?.control.name).toBe("Place order");
+  });
+
+  it("counts a string shown again once, so a header on every page does not spend the budget", async () => {
+    // Three million characters: twice over the budget if counted twice, once under it.
+    const header = "Carden Falls Supercenter ".repeat(120_000);
+    const place = { controls: [{ handle: "c9", name: "Place order" }] };
+    // Shown after the header twice, and shown before it: either way the name is kept.
+    for (const order of [[[header], [header], place], [place, [header], [header]]]) {
+      const run = new AutomationStudioActionPermissionGate({ stage: "authoring" });
+      for (const packet of order) run.observe(packet);
+      await run.checkFor(STEP)({ consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" });
+
+      expect(run.request?.control.name).toBe("Place order");
+    }
+  });
+
   it("round-trips through the strict parser, and the parser refuses a request it did not build", async () => {
     const run = gate([]);
     await run.checkFor(STEP)(REFUND);
@@ -250,6 +277,22 @@ describe("how a person's answer settles a request", () => {
     // And the money it was refused stays refused, with the request the person answered.
     run.settle("granted");
     expect(await run.checkFor(STEP)(CHECKOUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1", declined: true });
+  });
+
+  // t195-w19b #6: a control wrongly declared as money and declined is not a
+  // dead end. Declared again as what it does, it goes through, and the press
+  // that really moves money is a question of its own.
+  it("lets a declined control through re-declared as nothing, and still asks about Place order", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("declined");
+
+    expect(await run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.8" })({ ...CHECKOUT, consequences: [] })).toEqual({ permitted: true });
+    const place = run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.9" });
+    expect(await place(PLACE)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:2" });
+    expect(run.request?.control.name).toBe("Place order");
+    run.settle("granted");
+    expect(await place(PLACE)).toEqual({ permitted: true });
   });
 
   it("keeps a request nobody answered in force, so nothing after it is asked", async () => {

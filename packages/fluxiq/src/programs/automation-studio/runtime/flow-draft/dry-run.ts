@@ -42,13 +42,16 @@
 //   failed          -- it did not run. The Flow would not run it either.
 //   changed         -- it ran and produced nothing where it produced something.
 //                      The step before it left the target somewhere else.
-//   unreproducible  -- the step's target was not there when it was run again.
-//                      The domain answers this for any missing target, so it
-//                      covers two different things it cannot tell apart: a
-//                      site that remembers the step's effect beyond the page (a
-//                      consent banner answered once stays answered), and a
-//                      draft whose earlier steps no longer reach the page this
-//                      step acts on.
+//   unreproducible  -- the step's target was not there when it was run again,
+//                      and the replay was not standing on the page the step
+//                      acted on: the draft's earlier steps no longer reach it.
+//
+// A target missing from the very page the step acted on is not one of these.
+// That is the site remembering what the step did -- a consent banner answered
+// once stays answered -- and the host answers it `remembered`, which passes
+// and keeps the step in the Flow (`./site-memory.ts`). Until t195-w20b both
+// were one answer, `unreproducible`, and the refusal offered to drop the step,
+// which built Flows that stopped at the wall the first time they ran.
 //
 // **All three block, every time.** An unreproducible step used to be a question
 // asked once: a model told about it that finished again with the step kept had
@@ -84,6 +87,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REANCHORED_CODE } from "./site-memory.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 /** The entry a dry run's verdict is shown to the model under. */
@@ -136,11 +140,19 @@ export type AutomationStudioFlowDraftReplayOutcome = {
    */
   mode?: "verify";
   /**
-   * The position of the verified step before this one that moved the target
-   * and whose effect the dry run withheld, set only on a step that then did
-   * not replay (`./verify-only.ts`). Such a step does not refuse the proposal.
+   * The position of the verified step before this one whose effect the dry run
+   * withheld and whose effect this step may have needed -- one that moved the
+   * target, or one that would move money, delete, or send or publish -- set
+   * only on a step that then did not replay (`./verify-only.ts`). Such a step
+   * does not refuse the proposal.
    */
   withheldBy?: number;
+  /**
+   * Set when the step was first looked for on another page, after a step that
+   * was not done again, and was asked again on its own page
+   * (`./site-memory.ts`). Its status, code and mode are that second answer.
+   */
+  reanchored?: true;
   /**
    * Set on the step's own record when this replay found it missing, proved the
    * Flow did not need it, and so made it optional (`./sometimes-present.ts`).
@@ -250,7 +262,11 @@ export function automationStudioFlowDraftReplayOutcomeKey(outcome: AutomationStu
 export function automationStudioFlowDraftDryRunIssueCodes(verdict: AutomationStudioFlowDraftDryRun): string[] {
   const codes = verdict.outcomes
     .filter((outcome) => outcome.status !== "replayed")
-    .map((outcome) => outcome.resultCode ?? `core.replay.${outcome.status}`);
+    .flatMap((outcome) => [
+      outcome.resultCode ?? `core.replay.${outcome.status}`,
+      // Looked for on its own page too, and still did not replay there.
+      ...(outcome.reanchored ? [AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REANCHORED_CODE] : [])
+    ]);
   return [...new Set([
     AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
     ...(verdict.reset === "failed" ? ["core.replay.reset_failed"] : []),
@@ -262,7 +278,12 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
   + "A step that does not replay is a step the Flow cannot rely on, so the Flow is not proposed until they all do. Repair it live from where the test stopped -- the draft is not run from the beginning again until you say it is ready again. "
   + "failed: the step did not run this time. Rerun it with a corrected argument (amend_draft rerun), or run the step it needed first and keep that one too. "
   + "changed: it ran, and produced nothing where it produced something before -- almost always the step before it left the target somewhere else, so correct the order or the earlier step rather than this one. "
-  + "unreproducible: the step's target was not there when it was run again. Either the site remembers its effect -- a consent banner answered once stays answered -- or the steps before it no longer reach the page it acts on, and the replay cannot tell which: check that the steps before it still get there. "
+  + "unreproducible: the step's target was not there, and the test was not on the page the step acted on: the steps before it no longer reach that page. Check that they still get there. "
+  // The site's memory is not the draft's fault (`./site-memory.ts`). The
+  // finished Flow runs on a site that has not seen any of this, so a step
+  // dropped for it is a wall the Flow stops at (t195-w19a/b/d/e).
+  + "remembered: the step's target was gone from the very page it acted on, because the site remembers what you did while exploring -- a consent banner answered once stays answered, a sign-in wall passed once stays passed -- and the test never clears what the site remembers. It passes, and it stays in the Flow exactly as it is: the finished Flow runs on a site that has not seen it yet and needs it there. Do not drop, rerun or reorder a remembered step. "
+  + "reanchored: true means the step was first looked for on another page, right after a step that was not done again (verified, present, remembered or afterWithheld), so the test went to the page the step acted on and tried it once more there; what the line shows is that second try. "
   // The honest answer to a step that is not always there. Before routing
   // existed the only answers were "insist" or "delete", and a live build's
   // dismissals were waved through unchecked under the first. Named here rather
@@ -271,15 +292,15 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
   + "A step that is not always needed is not a step to insist on: say so instead, with amend_draft optional, and the Flow carries on when it is not there. Where you ran a check first, amend_draft only_if on this step runs it only when that check succeeded. "
   // Insisting used to be accepted the second time; runs 18, 21 and 33 shipped
   // or nearly shipped a step that did not replay that way (see the header).
-  + "So a step that does not replay keeps the Flow from being proposed until it replays, is marked optional (or only_if on a check), or is dropped; finishing again with it unchanged is refused again. Drop it only if the Flow does not need it at all. "
+  + "So a step that failed, changed or is unreproducible keeps the Flow from being proposed until it replays, is marked optional (or only_if on a check), or is dropped; finishing again with it unchanged is refused again. Drop it only if the Flow does not need it at all. "
   // The one case the replay answers itself (`./sometimes-present.ts`), said so
   // the model does not mark by hand what the next test would mark for it.
-  + "A step that does none of the acts, whose target was not there, and without which every later step replayed, is made optional by the test itself once nothing else stands in the way. "
+  + "An unreproducible step that does none of the acts, and without which every later step replayed, is made optional by the test itself once nothing else stands in the way. "
   + "again: true marks a step an earlier dry run already reported as not replaying. "
   // Decision D1: a lasting effect is never repeated (`./verify-only.ts`). The
   // model must not read a checked step as one that was done again.
   + "verified: the step changes something that lasts, so it was not run again, only checked that it could run now. present: the same kind of step, whose effect is already in place on the page it acted on, so it was not run either. Both pass. "
-  + "afterWithheld names the verified step before this one that moved the page and whose effect was withheld; a step marked with it does not stand in the way of the proposal on its own. "
+  + "afterWithheld names the verified step before this one whose effect was withheld -- one that moved the page, or one that moves money, deletes, or sends or publishes, which the test never does -- so this step may have needed what that step would have done; a step marked with it does not stand in the way of the proposal on its own. "
   + "The target now stands where the replay ended.";
 
 /**
@@ -304,6 +325,7 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
       replayed: automationStudioFlowDraftReplayOutcomeWord(outcome),
       ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
       ...(outcome.withheldBy !== undefined ? { afterWithheld: outcome.withheldBy } : {}),
+      ...(outcome.reanchored ? { reanchored: true } : {}),
       ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
     })),
     instruction: DRY_RUN_INSTRUCTION

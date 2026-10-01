@@ -43,10 +43,20 @@
 // submitting act, the act is `plural` (`EVERY` says what it must not follow or
 // precede), and `./check.ts` wants a step the Flow repeats for it.
 //
+// **Checking out is the order it pays for.** "Order one pack ... Check out as
+// a guest ..." asks for one transaction, and read as two submits it wanted two
+// steps for one press of Place order (pickup audit #5, `run-muny5y17-a927214b`).
+// So a check-out act after an order, buy or purchase in the same instruction is
+// not read again; a check-out asked alone is still an act.
+//
+// **An act carries the class its verb names** (`./act-consequence.ts`), so the
+// check can hold the steps that do it to declaring it.
+//
 // Every pattern was checked against the forty-odd instructions of the ten
 // realistic sites (`apps/scenario-lab/src/scenarios/*/live-tasks.ts` in the web
 // repository): each consequential task yields its acts, and no extraction task
 // yields any. The tests pin both directions.
+import { automationStudioInstructedActImpliedConsequence } from "./act-consequence.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActKind } from "./contracts.ts";
 import { automationStudioInstructedChoices } from "./instruction-choices.ts";
 
@@ -86,6 +96,9 @@ const PLURAL_KINDS: ReadonlySet<AutomationStudioInstructedActKind> = new Set(["s
  * putting it somewhere, or buying it. Saving it, or submitting anything else, chooses nothing.
  */
 const CHOOSING_BUYS = /^(?:buy|purchase|order)$/u;
+
+/** A check-out, which after one of `CHOOSING_BUYS` is that same transaction. */
+const CHECKING_OUT = /^check\s*out$/u;
 const choosesItem = (kind: AutomationStudioInstructedActKind, verb: string): boolean => kind === "add_to" || (kind === "submit" && CHOOSING_BUYS.test(verb));
 
 /** What only joins a quote to the next act, trimmed from its end. */
@@ -172,13 +185,16 @@ export function automationStudioInstructedActs(instructionText: string): Automat
   // file keeps, towards an act missed rather than one invented.
   const titleEnd = text.indexOf(String.fromCharCode(10));
   const body = titleEnd >= 0 && text.slice(titleEnd + 1).trim() ? found.filter((act) => act.at > titleEnd) : [];
-  return found
+  const read = found
     .filter((act) => !(titleEnd >= 0 && act.at < titleEnd && body.some((other) => other.kind === act.kind)))
-    .sort((left, right) => left.at - right.at)
+    .sort((left, right) => left.at - right.at);
+  return read
+    .filter((act) => !(act.kind === "submit" && CHECKING_OUT.test(act.verb) && read.some((other) => other.at < act.at && other.kind === "submit" && CHOOSING_BUYS.test(other.verb))))
     .map((act, index) => {
       const id = `a${index + 1}`;
       const requires = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : [];
-      return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}) };
+      const consequence = automationStudioInstructedActImpliedConsequence(act.verb);
+      return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}), ...(consequence ? { consequence } : {}) };
     });
 }
 

@@ -318,3 +318,81 @@ describe("a quantity or a size the instruction attaches to an item", () => {
     if (!tables.ok) expect(tables.instruction).not.toContain("set the quantity");
   });
 });
+
+// Lane D's withdraw run 3 (`run-munnyvbr-11c28a0f`, professional-network): the
+// listing, then the row's Withdraw (which only opens a confirmation) repeated
+// over it, then the confirmation once after the loop. The check accepted it;
+// playback confirmed once and every later pass met the open confirmation. The
+// same run declared the withdrawal `modify_existing`, which nobody is asked
+// about. Withdraw audit B2 and R2.
+describe("a repeat that stops one step short, and an act declared as a class nobody is asked about", () => {
+  const WITHDRAW = "On Guildline, withdraw every connection request I sent a month or more ago that is still waiting for an answer. Leave the newer requests alone, and don't touch invitations to follow a page or subscribe to a newsletter, or anything people have sent me.";
+  const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
+  const listing = step(1, { actionId: "web.dom.extract_list", effect: "observe", proposes: true });
+  const declaring = (position: number, consequences: string[], overrides: Partial<AutomationStudioFlowDraftStep> = {}) => step(position, { input: { consequences }, ...overrides });
+  const rowPress = (through: string) => declaring(2, [], { routing: { kind: "repeat", over: "d1", through } });
+  const onRowPress = { summary: "x", acts: [{ action: "a1", step: "d2" }] };
+
+  it("refuses run 3's span, which ends at the row's press and leaves the deleting confirmation after the loop, naming the step after it", () => {
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: [listing, rowPress("d2"), declaring(3, ["delete"])] });
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((act) => [act.id, act.reason, act.step, act.after])).toEqual([["a1", "span_stops_short", "d2", 3]]);
+    expect(JSON.stringify(verdict.missingActs)).toContain("\"after\":3");
+    expect(verdict.instruction).toContain("repeat through it");
+  });
+
+  it("accepts the same draft once the repeat runs through the confirmation", () => {
+    expect(checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: [listing, rowPress("d3"), declaring(3, ["delete"])] }).ok).toBe(true);
+  });
+
+  it("accepts a loop of adds followed by the order that pays for them, each claimed for its own act", () => {
+    const instructionText = "Add every discounted kettle on the first page to my cart, then buy them.";
+    const draft = [listing, declaring(2, ["modify_existing"], { routing: { kind: "repeat", over: "d1", through: "d2" } }), declaring(3, ["move_money"])];
+    const verdict = checkAutomationStudioInstructedActs({ instructionText, result: { summary: "x", acts: [{ action: "a1", step: "d2" }, { action: "a2", step: "d3" }] }, draftSteps: draft });
+    expect(verdict.acts.map((act) => [act.kind, act.plural, act.consequence])).toEqual([["add_to", true, undefined], ["submit", undefined, "move_money"]]);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it("accepts a span followed by a step that declares nothing lasting, and refuses one followed by a step that does", () => {
+    const draft = (after: string[]) => [listing, rowPress("d2"), declaring(3, after)];
+    expect(checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: onRowPress, draftSteps: draft([]) }).ok).toBe(true);
+    const lasting = checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: onRowPress, draftSteps: draft(["modify_existing"]) });
+    expect(lasting.ok).toBe(false);
+    if (!lasting.ok) expect(lasting.missing.map((act) => [act.reason, act.after])).toEqual([["span_stops_short", 3]]);
+  });
+
+  it("refuses a withdrawal whose steps declare it modify_existing, and accepts one declared delete", () => {
+    const draft = (confirm: string[]) => [listing, rowPress("d3"), declaring(3, confirm)];
+    const undeclared = checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: draft(["modify_existing"]) });
+    expect(undeclared.acts.map((act) => act.consequence)).toEqual(["delete"]);
+    expect(undeclared.ok).toBe(false);
+    if (undeclared.ok) return;
+    expect(undeclared.missing.map((act) => [act.id, act.reason, act.step])).toEqual([["a1", "act_consequence_undeclared", "d2"]]);
+    expect(JSON.stringify(undeclared.missingActs)).toContain("\"consequence\":\"delete\"");
+    expect(undeclared.instruction).toContain("the person will be asked");
+    expect(checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: draft(["delete"]) }).ok).toBe(true);
+  });
+
+  it("reads what the Flow keeps before what the model wrote, as the dry run does", () => {
+    const kept = declaring(3, ["modify_existing"], { ranWith: { consequences: "delete" } });
+    expect(checkAutomationStudioInstructedActs({ instructionText: WITHDRAW, result: onRowPress, draftSteps: [listing, rowPress("d3"), kept] }).ok).toBe(true);
+  });
+
+  it("holds a single act to its own step's declaration, and an act whose verb names no such class to nothing", () => {
+    const offer = "Send the seller an offer of £140 for the cheapest folding bike.";
+    const send = (consequences: string[]) => checkAutomationStudioInstructedActs({ instructionText: offer, result: { summary: "x", acts: [{ action: "a1", step: "d2" }] }, draftSteps: [listing, declaring(2, consequences)] });
+    expect(send(["send_or_publish"]).ok).toBe(true);
+    const unasked = send([]);
+    expect(unasked.ok).toBe(false);
+    if (!unasked.ok) expect(unasked.missing.map((act) => act.reason)).toEqual(["act_consequence_undeclared"]);
+    expect(checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: onRowPress, draftSteps: [listing, declaring(2, ["modify_existing"], { routing: { kind: "repeat", over: "d1", through: "d2" } })] }).ok).toBe(true);
+  });
+
+  // Pickup audit #5 (`run-muny5y17-a927214b`): the order and its check-out are one act, so Place order holds it alone.
+  it("accepts Place order, declared move_money, as the order, with the size chosen by a step of its own", () => {
+    const pickupOrder = "Order one pack of ValueRidge Essentials Select-A-Size Paper Towels in the 6 Double Rolls size for pickup at my current store, and nothing else: whatever is already in my cart should be saved for later, not bought and not deleted. Check out as a guest as Dana Whitfield, email dana.whitfield@example.com, phone 555-014-2290, take the earliest pickup time on offer, and pay at pickup. Once the order is placed, give me a one-row table with columns order, item, quantity, total and pickup: the order number, the item as the confirmation names it, how many, the order total written like $12.97, and the pickup window exactly as the confirmation writes it.";
+    const draft = [step(1, { actionId: "web.navigate" }), step(2), step(3, { input: { consequences: ["move_money"] } })];
+    expect(checkAutomationStudioInstructedActs({ instructionText: pickupOrder, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a1.size", step: "d2" }] }, draftSteps: draft }).ok).toBe(true);
+  });
+});

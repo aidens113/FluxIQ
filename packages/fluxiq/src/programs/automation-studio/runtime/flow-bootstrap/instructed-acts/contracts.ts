@@ -24,6 +24,7 @@
 // the instruction is the permission -- it is a completeness one, fed back at
 // `complete` like every other correctable refusal.
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 
 /**
@@ -69,6 +70,14 @@ export type AutomationStudioInstructedAct = {
    * a requirement of its own, claimed by a step of its own (`./check.ts`).
    */
   requires?: AutomationStudioInstructedChoice[];
+  /**
+   * Present when the act's verb names a class a person is asked about before
+   * it happens: withdraw, delete or remove is `delete`; order, buy, purchase
+   * or pay is `move_money`; send, post, publish, submit or apply is
+   * `send_or_publish` (`./act-consequence.ts`). The steps that do the act must
+   * declare it (`act_consequence_undeclared`, `./check.ts`).
+   */
+  consequence?: AutomationStudioActionConsequence;
 };
 
 /**
@@ -132,6 +141,19 @@ export type AutomationStudioInstructedActMissingReason =
    */
   | "act_needs_repeat"
   /**
+   * The act is asked for every member of a set and its step repeats, but the
+   * step right after the repeat changes something lasting, runs once after
+   * the loop, and is claimed for no act: the confirmation the repeated press
+   * opened. Withdraw audit B2, run 3 (`run-munnyvbr-11c28a0f`, `./span.ts`).
+   */
+  | "span_stops_short"
+  /**
+   * The act's verb names a class a person is asked about (`consequence`), and
+   * no step that does it declares that class, so nobody is asked and the act
+   * goes ahead unpermitted. Withdraw audit R2 (`./check.ts`).
+   */
+  | "act_consequence_undeclared"
+  /**
    * A choice was claimed by the step claimed for its own act -- the press that
    * adds -- and nothing that step was given sets it. Pressing add chooses no
    * size and sets no quantity (`run-munvvc3z-3eadc185`, `./check.ts`).
@@ -142,6 +164,8 @@ export type AutomationStudioInstructedActMissingReason =
 type AutomationStudioInstructedMissingWhy = {
   reason: AutomationStudioInstructedActMissingReason;
   step?: string;
+  /** `span_stops_short` only: the position of the step after the repeat that does part of the act. */
+  after?: number;
 };
 
 /**
