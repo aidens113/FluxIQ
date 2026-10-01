@@ -56,6 +56,19 @@ const LIFECYCLE_SCHEMA = [
 
 const migrationQueues = new Map<string, Promise<void>>();
 
+/**
+ * Per open connection, the migration sets already checked as applied and ready,
+ * each with the SQLite schema cookie read before that check. A later open of the
+ * same set on the same connection then costs one probe instead of the full check;
+ * see `isStillReady`. Keyed by the connection object, so a closed connection's
+ * memo goes with it and a new connection always runs the full check once.
+ */
+const readyByConnection = new WeakMap<AutomationStudioProjectDatabase, Map<string, number>>();
+const setFingerprints = new WeakMap<readonly AutomationStudioSchemaMigration[], string>();
+
+const READY_PROBE = `select status, (select schema_version from pragma_schema_version) as schemaVersion
+  from automation_schema_state where singleton = 1`;
+
 export class AutomationStudioSchemaMigrationRunner {
   private readonly database: AutomationStudioProjectDatabase;
   private readonly migrations: readonly AutomationStudioSchemaMigration[];
@@ -86,8 +99,18 @@ export class AutomationStudioSchemaMigrationRunner {
   }
 
   private async migrateExclusive(): Promise<AutomationStudioSchemaMigrationResult> {
+    const fingerprint = migrationSetFingerprint(this.migrations);
+    if (await this.isStillReady(fingerprint)) {
+      return { applied: [], skipped: this.migrations.map((migration) => migration.id), backupCreated: false, status: "ready" };
+    }
+    readyByConnection.get(this.database)?.delete(fingerprint);
     await this.ensureLifecycleSchema();
-    const appliedRows = await this.database.all<MigrationRow>("select migration_id as migrationId, checksum from automation_schema_migrations order by migration_id");
+    // The cookie is read in the same statement as the ledger: any schema change
+    // after that read, by this connection or another process, moves it and
+    // forces a full check on the next open.
+    const appliedRows = await this.database.all<MigrationRow & { schemaVersion: number }>(
+      "select migration_id as migrationId, checksum, (select schema_version from pragma_schema_version) as schemaVersion from automation_schema_migrations order by migration_id"
+    );
     const appliedById = new Map(appliedRows.map((row) => [row.migrationId, row.checksum]));
     const skipped: string[] = [];
     const pending: AutomationStudioSchemaMigration[] = [];
@@ -104,6 +127,8 @@ export class AutomationStudioSchemaMigrationRunner {
     }
     if (!pending.length) {
       await this.markReady(null);
+      // An empty ledger here means an empty set, which there is nothing to remember for.
+      if (appliedRows[0]) this.rememberReady(fingerprint, appliedRows[0].schemaVersion);
       return { applied: [], skipped, backupCreated: false, status: "ready" };
     }
 
@@ -134,6 +159,27 @@ export class AutomationStudioSchemaMigrationRunner {
     }
   }
 
+  /**
+   * Whether this connection already checked this exact migration set and nothing
+   * that could change the answer has happened since: the schema cookie is the one
+   * read before that check (any DDL, from any connection or process, moves it, so
+   * a migration elsewhere or a restore forces the full check), and the state row
+   * still says ready (a lock taken or a failure recorded by anyone forces it too,
+   * so a concurrent migration is refused exactly as before).
+   */
+  private async isStillReady(fingerprint: string): Promise<boolean> {
+    const schemaVersion = readyByConnection.get(this.database)?.get(fingerprint);
+    if (schemaVersion === undefined) return false;
+    const row = await this.database.get<{ status: AutomationStudioSchemaState["status"]; schemaVersion: number }>(READY_PROBE);
+    return row?.status === "ready" && row.schemaVersion === schemaVersion;
+  }
+
+  private rememberReady(fingerprint: string, schemaVersion: number): void {
+    let ready = readyByConnection.get(this.database);
+    if (!ready) readyByConnection.set(this.database, ready = new Map());
+    ready.set(fingerprint, schemaVersion);
+  }
+
   async state(): Promise<AutomationStudioSchemaState> {
     await this.ensureLifecycleSchema();
     const row = await this.database.get<{
@@ -150,13 +196,12 @@ export class AutomationStudioSchemaMigrationRunner {
   }
 
   private async ensureLifecycleSchema(): Promise<void> {
-    await this.database.execute(async (sql) => {
-      await runStatements(sql, LIFECYCLE_SCHEMA);
-      await sql.run(
-        "insert into automation_schema_state (singleton, status, lock_token, lock_acquired_at_ms, failure_message, updated_at_ms) values (1, 'ready', null, null, null, ?) on conflict(singleton) do nothing",
-        [this.now()]
-      );
-    });
+    // The seed row rides in the same script, its time inlined as an integer, so
+    // the whole lifecycle setup is one round trip.
+    await this.database.execute((sql) => runStatements(sql, [
+      ...LIFECYCLE_SCHEMA,
+      `insert into automation_schema_state (singleton, status, lock_token, lock_acquired_at_ms, failure_message, updated_at_ms) values (1, 'ready', null, null, null, ${Math.trunc(this.now())}) on conflict(singleton) do nothing`
+    ]));
   }
 
   private async acquireLock(lockToken: string): Promise<void> {
@@ -197,6 +242,15 @@ export class AutomationStudioSchemaMigrationRunner {
       params
     );
   }
+}
+
+/** The set's IDs and checksums in order, computed once per set array. */
+function migrationSetFingerprint(migrations: readonly AutomationStudioSchemaMigration[]): string {
+  const cached = setFingerprints.get(migrations);
+  if (cached !== undefined) return cached;
+  const fingerprint = migrations.map((migration) => `${migration.id}:${automationStudioMigrationChecksum(migration)}`).join("|");
+  setFingerprints.set(migrations, fingerprint);
+  return fingerprint;
 }
 
 export function automationStudioMigrationChecksum(migration: AutomationStudioSchemaMigration): string {
