@@ -10,8 +10,10 @@
 // gated: on that pair the row below that permits "only part of it" would have
 // permitted a class needing no permission, and proved nothing about a partial one.
 
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
@@ -230,5 +232,26 @@ describe("a repair that can put its question to a person", () => {
     expect(run.opened).toHaveLength(1);
     expect(run.pressed).toEqual([]);
     expect(run.exploration.outcome).toBe("user_intervention_required");
+  });
+});
+
+describe("what a repair says while it waits on a permission", () => {
+  it.each([
+    ["grant", "succeeded", "allowed"],
+    ["deny", "failed", "declined"],
+    ["nobody", "failed", "timed_out"]
+  ] as const)("says the wait on the request and its end when the answer is %s", async (answer, status, resolution) => {
+    const seen: ClientGatewayActivity[] = [];
+    const stop = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    try {
+      const run = await runWithAutomationStudioActivity({ kind: "run", id: "r1", projectId: "project.one" }, () => explore({ answer }));
+      const requestId = run.opened[0]!.askId;
+      expect(seen.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.title, event.detail!.status, event.detail!.resolution])).toEqual([
+        ["waiting_permission", requestId, "Asked a question (permission)", "started", undefined],
+        ["repairing", requestId, "Asked a question (permission)", status, resolution]
+      ]);
+    } finally {
+      stop();
+    }
   });
 });

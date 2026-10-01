@@ -48,12 +48,12 @@ export async function dispatchPolicyOutput(
     ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
     ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
   };
-  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) };
-  return failedDispatchResult(outputs, {
+  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+  return { ...failedDispatchResult(outputs, {
     message: confirmationFailureMessage(confirmationResult) ?? result.error,
     failure: dispatchFailure(result.ok, result.status, result.failure, confirmationResult),
     resolution: prepared.resolution
-  });
+  }), ...clearedWaitField(result.clearedWait) };
 }
 
 export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
@@ -116,12 +116,12 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
       ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
     };
-    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution) };
-    return failedDispatchResult(outputs, {
+    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+    return { ...failedDispatchResult(outputs, {
       message: confirmationFailureMessage(confirmationResult) ?? result.message ?? result.error,
       failure: dispatchFailure(result.status === "succeeded", result.status, result.failure, confirmationResult),
       resolution: prepared.resolution
-    });
+    }), ...clearedWaitField(result.clearedWait) };
   };
 }
 
@@ -194,6 +194,13 @@ function failedDispatchResult(
 
 function targetResolutionField(resolution: AutomationNodeTargetResolution | undefined): { targetResolution?: AutomationNodeTargetResolution } {
   return resolution ? { targetResolution: resolution } : {};
+}
+
+// A wait the target reports clearing by itself is carried on to the executor,
+// which tells the run's activity stream; whether it is readable is decided
+// there, so a failed dispatch carries it too. Absent stays absent.
+function clearedWaitField(clearedWait: AutomationNodeExecutionResult["clearedWait"]): Pick<AutomationNodeExecutionResult, "clearedWait"> {
+  return clearedWait !== undefined ? { clearedWait } : {};
 }
 
 function prepareElementTargetAction(

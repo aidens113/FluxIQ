@@ -17,6 +17,7 @@
 
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
+import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
@@ -58,7 +59,10 @@ function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed"
  * action as `detail.title`, its id as `detail.ref`, its result code in
  * `detail.text` when it ends; Core's bookkeeping calls as `note` rows), and
  * `verifying` as a completed result is checked, a refusal said in words
- * rather than issue codes. A check that passes says only
+ * rather than issue codes. A call whose result says a robot check stood on
+ * the page and cleared by itself (`clearedWait`) is told as a wait on the
+ * person that was waited out, before the call's own end (`./ask/waited-out.ts`).
+ * A check that passes says only
  * that: the dry run that follows it can still refuse the result. Every
  * other field is passed through, and each wrapped call returns or throws
  * exactly what the original did.
@@ -78,6 +82,7 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       toolActivity(call, "started");
       try {
         const result = await executeTool.call(input, call);
+        emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
         toolActivity(call, "succeeded", resultCodeOf(result));
         return result;
       } catch (error) {

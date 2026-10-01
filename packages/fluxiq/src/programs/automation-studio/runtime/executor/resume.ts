@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
+import { automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved } from "../activity/index.ts";
 import type { AutomationStudioAskAnswer, AutomationStudioParkedRun, AutomationStudioParkRefusalReason } from "../parking/index.ts";
 import { automationStudioAskSettlement } from "../parking/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
@@ -59,6 +60,8 @@ export async function resumeAutomationStudioGraph(
   if (overdue) return overdue;
   const settlement = automationStudioAskSettlement(parked, request.resumption.kind === "answer" ? request.resumption.answer : undefined, nowMs);
   if (settlement.outcome === "refused") return refused(settlement.reason, settlement.message);
+  // The wait the run announced when it parked is over, and this is where it settles.
+  emitAutomationStudioActivityAskResolved(parked.ask, automationStudioActivityAskResolution(parked.ask, settlement.outcome === "answered" ? settlement.answer : undefined), "running");
   const trace = await resumeAutomationStudioGraphRun(
     request.flow,
     { ...options, startNodeId: parked.nodeId, ...(parked.carried.callFlowAttemptPath ? { callFlowAttemptPath: parked.carried.callFlowAttemptPath } : {}) },

@@ -61,6 +61,27 @@ describe("reading Core's activity snapshot", () => {
     expect(read.current?.detail?.text).toBe("First.\nThen.");
   });
 
+  it("keeps the resolution Core names on an ask row, and leaves any other out without refusing the row", () => {
+    const ask = (resolution: unknown, kind = "ask") => ({ detail: { kind, title: "Asked the person to complete a check", status: "succeeded", ref: "person-needed.1", resolution } });
+    const read = snapshot([
+      wire(1, ask("answered")),
+      wire(2, ask("timed_out")),
+      wire(3, ask("guessed")),
+      wire(4, ask(7)),
+      wire(5, ask("answered", "tool")),
+      wire(6, ask("cancelled"))
+    ], null);
+    expect(read.recent.map((event) => [event.sequence, event.detail?.resolution])).toEqual([
+      [1, "answered"],
+      [2, "timed_out"],
+      [3, undefined],
+      [4, undefined],
+      [5, undefined],
+      [6, "cancelled"]
+    ]);
+    expect(read.recent[2]!.detail).not.toHaveProperty("resolution");
+  });
+
   it("answers an empty snapshot for anything that is not one", () => {
     expect(parseConversationActivitySnapshot(null)).toEqual({ current: null, recent: [] });
     expect(parseConversationActivitySnapshot({ current: null, recent: "no" })).toEqual({ current: null, recent: [] });

@@ -124,6 +124,25 @@ describe("policy output dispatch failures", () => {
   });
 });
 
+describe("a wait the target reports clearing by itself", () => {
+  it("is carried from an IO output result onto the node result, whether the dispatch succeeded or failed", async () => {
+    const succeeded = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", clearedWait: { waitedMs: 2_000 } })), "example", action);
+    expect(succeeded).toMatchObject({ status: "success", clearedWait: { waitedMs: 2_000 } });
+    const failed = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "Gone.", clearedWait: { waitedMs: 9 } })), "example", action);
+    expect(failed).toMatchObject({ status: "failed", message: "Gone.", clearedWait: { waitedMs: 9 } });
+  });
+
+  it("is carried from a runtime command result onto the node result", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", clearedWait: { waitedMs: 5_000 } }))(effect);
+    expect(result).toMatchObject({ status: "success", clearedWait: { waitedMs: 5_000 } });
+  });
+
+  it("stays absent when neither result reports one", async () => {
+    expect(await dispatchPolicyOutput(ioWith(), "example", action)).not.toHaveProperty("clearedWait");
+    expect(await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded" }))(effect)).not.toHaveProperty("clearedWait");
+  });
+});
+
 describe("failure propagation from dispatch to diagnosis", () => {
   it("carries a timed-out runtime action to classification, the run record, and the LLM context", async () => {
     const flow = actionFlow({ elementId: "confirm" });

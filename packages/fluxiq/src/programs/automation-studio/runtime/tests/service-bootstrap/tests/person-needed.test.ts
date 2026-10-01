@@ -88,6 +88,12 @@ describe("a build whose step lands on a check only a person can get past", () =>
     expect(acted?.resultCode).toBeUndefined();
     // While it waited, the build said so in the check's own words.
     expect(activity.find((event) => event.phase === "waiting_permission")).toMatchObject({ label: AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, detail: { kind: "ask", status: "started" } });
+    // The wait is over when the person answers, and the build says so once, on the same ask.
+    expect(askRows()).toEqual([
+      ["waiting_permission", ask!.askId, "started", undefined],
+      ["building", ask!.askId, "succeeded", "answered"]
+    ]);
+    expect(activity.some((event) => event.detail?.title === "Check completed by the person")).toBe(false);
   }, 30_000);
 
   it("ends user_intervention_required when the person presses Stop, and never asks the model again", async () => {
@@ -100,6 +106,7 @@ describe("a build whose step lands on a check only a person can get past", () =>
     expect(run.requests).toHaveLength(1);
     expect(run.requests.some((request) => request.includes(CHECK_MARKER))).toBe(false);
     expect(run.calls).toEqual(["example.look", "example.act"]);
+    expect(askRows().map((row) => row.slice(2))).toEqual([["started", undefined], ["failed", "declined"]]);
   }, 30_000);
 
   it("ends user_intervention_required when nobody answers in time", async () => {
@@ -110,6 +117,7 @@ describe("a build whose step lands on a check only a person can get past", () =>
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.user_intervention_required", issueCodes: ["person_needed.timed_out"] });
     expect(run.requests).toHaveLength(1);
+    expect(askRows().map((row) => row.slice(2))).toEqual([["started", undefined], ["failed", "timed_out"]]);
   }, 30_000);
 
   it("ends user_intervention_required at once when there is no thread to ask in", async () => {
@@ -118,8 +126,15 @@ describe("a build whose step lands on a check only a person can get past", () =>
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.user_intervention_required", issueCodes: ["person_needed.no_thread"] });
     expect(run.requests).toHaveLength(1);
     expect(run.requests.some((request) => request.includes(CHECK_MARKER))).toBe(false);
+    // Nobody was asked, so there was no wait to say.
+    expect(askRows()).toEqual([]);
   }, 30_000);
 });
+
+/** The build's ask rows, as [phase, ref, status, resolution]. */
+function askRows(): unknown[][] {
+  return activity.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.status, event.detail!.resolution]);
+}
 
 type Run = Awaited<ReturnType<typeof build>>;
 

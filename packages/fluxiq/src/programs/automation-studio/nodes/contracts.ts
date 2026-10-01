@@ -161,6 +161,14 @@ export type AutomationNodeExecutionResult = {
   /** Structured failure; Core classifies from it before matching `message`. Parsed where the result becomes an attempt. */
   failure?: AutomationStudioFailureRecord;
   targetResolution?: AutomationNodeTargetResolution;
+  /**
+   * A wait on the target that cleared by itself while the node's output was
+   * dispatched, in whole milliseconds, as the dispatch reported it
+   * (`OutputDispatchResult.clearedWait`, `FluxIQRuntimeCommandResult.clearedWait`).
+   * The executor tells the run's activity stream about it where the dispatch
+   * answers; it is not kept on the attempt.
+   */
+  clearedWait?: { waitedMs: number };
 };
 
 export type AutomationNodeExecutor = (context: AutomationNodeExecutionContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;
