@@ -597,7 +597,7 @@ describe("Automation Studio LLM harness, explored evidence", () => {
     const withoutSlot = await promptFor(undefined);
 
     expect(withPackets.system).toContain("explorationEvidence.packets");
-    expect(withPackets.system).toContain("explored.2:target.3");
+    expect(withPackets.system).toContain("explored.2:t3");
     expect(withPackets.context.explorationEvidence).toMatchObject({ packets: [{ evidenceId: "explored.1" }] });
     expect(withoutSlot.system).not.toContain("explorationEvidence");
     expect(withoutSlot.context).not.toHaveProperty("explorationEvidence");

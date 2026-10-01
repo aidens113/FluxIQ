@@ -6,6 +6,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
+  AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   automationStudioExploredEvidenceHandle,
   automationStudioExploredEvidenceLabel,
   isAutomationStudioExploredEvidenceLabel,
@@ -43,6 +44,16 @@ describe("the explored-packet label", () => {
     for (const ordinal of [0, -1, 1.5, Number.NaN, AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL + 1]) {
       expect(() => automationStudioExploredEvidenceLabel(ordinal), String(ordinal)).toThrow(RangeError);
     }
+  });
+
+  it("reads the compact handle spelling, `tN`, as it reads any other the domain issues", () => {
+    // The web domain issues `t3` where it once issued `target.3` (t223). The
+    // handle grammar is generic, so both pass it, alone and qualified, and a
+    // qualified one carries the handle exactly as the packet printed it.
+    const pattern = new RegExp(AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, "u");
+    for (const handle of ["t3", "t999999", "target.3", "explored.2:t3"]) expect(pattern.test(handle), handle).toBe(true);
+    expect(automationStudioExploredEvidenceHandle(`${automationStudioExploredEvidenceLabel(2)}:t3`)).toEqual({ kind: "qualified", evidenceId: "explored.2", handle: "t3" });
+    expect(automationStudioExploredEvidenceHandle("t3")).toEqual({ kind: "unqualified", handle: "t3" });
   });
 
   it("is the only label the packet builder carries, so every carried label reads back as a qualifier", () => {
