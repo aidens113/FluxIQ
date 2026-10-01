@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Ninth full gates complete; Menu keyboard worker released, extension Chat and extraction workers active.
+Status detail: Tenth Core gates observed; disjoint Combobox and Field workers active; extension full gates running.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -11,12 +11,14 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
-Tenth execution Active: Menu/database checkpoint687ddc58; independent130/25
-pass. Core types59550 and build36861 passed; full46495 failed2547pass/1EPERM
-in unchanged login-lock concurrent test. Exact two-path login fix now active;
-shared environment two-path independently195/native0/2.54s and source frozen.
-Root will rerun owning broad gates only after login freeze. Three worker slots
-remain assigned across paired repositories. No full tenth/browser certification.
+Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
+a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
+is preserved; corrected full61471 native0,340files2629tests/194.11s; types50626
+native0/95150ms; build45474 native0/202003ms. After source freeze root reconciled
+two cleanup-rationale comments; final structure only inherited protected4506/4505.
+Next Core Combobox and Field two-path workers active; downstream source frozen
+for tenth full gates, third worker prepares backend preview ownership read-only.
+No live/browser certification or Claude integration.
 
 Continuous UI/UX execution is active in paired isolated task t224 worktrees.
 Claude owns integration: no merge/push or protected runtime/storage/conversations/
@@ -69,6 +71,14 @@ service4506/4505. All ninth units Complete. Menu two-path worker now released;
 downstream mounted Chat/extraction source active after independent1878full gates.
 
 ## Work Ledger
+
+### 2026-10-01 - Tenth Core corrected full gates complete
+- Agent: supervisor
+- Changed: environment2d9306b6/login a466c972, validation records and next exact worker briefs downstream.
+- Why: resolve the observed lock failure and verify integrated UI behavior before further native-control fixes.
+- Validation: full61471 native0,340files2629tests/194.11s; types50626 native0/95150ms; build45474 native0/202003ms. Final structure only protected4506/4505 after comment-only cleanup rationale reconciliation; no baseline relaxation.
+- Outcome: Tenth Core accepted and locally checkpointed; original failed full gate remains documented. No merge/push/private/live operations.
+- Follow-up: disjoint Combobox and Field workers implement source-confirmed audit findings. Downstream shell independent60/scoped0 and extraction102/scoped0, full extension gates active.
 
 ### 2026-10-01 - Tenth Menu verified; full failure preserved
 - Agent: supervisor
