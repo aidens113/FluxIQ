@@ -204,7 +204,7 @@ describe("the feedback an amendment refusal is shown as", () => {
   // explained there.
   const everyReason: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], true> = {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
-    did_not_work: true, already_in_flow: true, already_out: true
+    did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {

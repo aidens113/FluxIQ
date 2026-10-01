@@ -23,6 +23,7 @@ import type {
   AutomationStudioLlmEvidenceNoProgress,
   AutomationStudioLlmEvidenceTool
 } from "../evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceRepeatGuard } from "../repeat-guard/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, EvidenceLoopLimits } from "../loop-configuration.ts";
 import type { AutomationStudioFlowDraftDryRunRefusal } from "../node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLookWithdrawal } from "./look-withdrawal.ts";
@@ -98,6 +99,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
    * caller's digest hook gave one: what a look asked again is compared with.
    */
   callStates: Map<string, string>;
+  /** What each call did on the page it found, so a call that failed or changed nothing is not made again there (`../repeat-guard/`). */
+  repeats: AutomationStudioLlmEvidenceRepeatGuard;
   /** Looks withdrawn after an ignored redirect (`./look-withdrawal.ts`). */
   looks: AutomationStudioLlmEvidenceLookWithdrawal;
   toolIds: ReadonlySet<string>;

@@ -41,7 +41,9 @@ export type AutomationStudioLlmEvidenceRerunCall = { step: number; toolId: strin
 export function automationStudioLlmEvidenceRerunRequest(
   amendments: readonly AutomationStudioFlowDraftAmendment[],
   steps: readonly AutomationStudioFlowDraftStep[],
-  toolIds: ReadonlySet<string>
+  toolIds: ReadonlySet<string>,
+  /** Whether this exact call already failed or changed nothing on the page as it is now (`../repeat-guard/outcomes.ts`). */
+  ranAlready: (toolId: string, input: JsonObject) => boolean = () => false
 ): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[] } {
   let request: AutomationStudioLlmEvidenceRerunCall | undefined;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
@@ -63,7 +65,13 @@ export function automationStudioLlmEvidenceRerunRequest(
       continue;
     }
     // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
-    request = { step: step.position, toolId, input: automationStudioLlmEvidenceRerunInput(step.input, amendment.input), callId: `rerun.${step.position}` };
+    const input = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
+    // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`).
+    if (ranAlready(toolId, input)) {
+      refused.push({ step: amendment.step, reason: "changes_nothing" });
+      continue;
+    }
+    request = { step: step.position, toolId, input, callId: `rerun.${step.position}` };
   }
   return { request, refused };
 }

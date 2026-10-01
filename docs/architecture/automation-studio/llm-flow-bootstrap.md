@@ -892,6 +892,34 @@ that declares nothing is shown every result whole, as before. Live run
 decision, 214,853 input tokens, on course to pass a 1M-token window near the
 twenty-second call of a thirty-step build.
 
+**A call already tried on this page is not made again** (2026-10-01;
+`runtime/llm/repeat-guard/`, `decision-handlers/refused-repeat.ts`). The loop
+records every call by its tool, its whole input as canonical JSON, and the
+page it found: the domain's `stateDigests.before`, or else the last state seen.
+A call whose key matches an earlier call that failed (a refusal, or an action
+with no effect) or changed nothing (the page after it the same as before) is
+refused before it runs, with nothing spent but the decision. It is recorded as
+`llm_evidence_loop.repeat_refused`, and the model is shown a `core.repeat_check`
+note saying when it was tried, what came of it, and what to do instead. A rerun
+amendment is checked against the same record and refused as `changes_nothing`.
+Three such decisions in a row stall the round, which the build then tests,
+judges and repairs, or ends as not doable with its reason.
+
+The guard is checked before the repeat policy, so every action repeat is
+refused in one place. It never refuses:
+- a look, which the repeat policy still answers from memory;
+- anything after the page changed;
+- an outcome whose code says to try again later (a rate limit, a disabled
+  control, a page still loading);
+- a call that threw.
+
+A dry run moves the page without the loop seeing it, so the last state is
+forgotten until a call reports one. The domain's `answered_the_same_again`
+mark and `repeatedAnswer` stay as what they were, a marking, and the
+no-progress guard stays the far backstop. Live runs `run-muq310ht-ab80eed0`
+(a close button pressed 20 times, one list read rerun 8 times) and
+`run-muq3ubys-4b4dbf5b` are why.
+
 A build has three phases (user, 2026-09-30): live exploration and draft
 authoring, testing and judgement, then live repair. In exploration
 the model writes its draft, and nothing replays the draft
