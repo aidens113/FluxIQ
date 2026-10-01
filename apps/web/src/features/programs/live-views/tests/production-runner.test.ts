@@ -40,6 +40,6 @@ describe("ProductionRunnerLive contract", () => {
     expect(source).toContain('title="Production Runner unavailable"');
     expect(source).toContain('title="No production targets"');
     expect(source).toContain('empty="No execution logs yet."');
-    expect(source).toContain("disabled={!selectedTarget}");
+    expect(source).toContain("disabled={!selectedTarget || launch.busy}");
   });
 });

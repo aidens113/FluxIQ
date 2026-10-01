@@ -107,6 +107,13 @@ runtime and exposes:
 - global alerts;
 - AWS-inspired operational styling.
 
+Production Runner guards workload launch and each active workload's advance or
+cancel request against duplicate activation. Other workloads remain usable while
+one is pending. Refused operations keep editable launch values and show feedback
+beside the affected controls for retry. Parameter drafts belong to the effective
+target type and id; changing or removing a target restores the new target's
+defaults. Snapshot requests ignore older responses and completions after teardown.
+
 Authenticated routes share one session-recovery host in the root layout. When a
 program API request receives HTTP 401, it can ask the person to sign in again
 without replacing the current workspace or its unsaved edits. Successful recovery
