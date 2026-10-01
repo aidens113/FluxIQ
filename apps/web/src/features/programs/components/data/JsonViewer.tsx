@@ -19,7 +19,13 @@ function boundedJsonPreview(value: unknown, maxItems = 600, maxDepth = 10): Json
     if (typeof current === "bigint") return current.toString();
     if (typeof current === "function") return "[Function]";
     if (typeof current === "undefined") return "[Undefined]";
-    if (!current || typeof current !== "object") return typeof current === "string" && current.length > 2_000 ? `${current.slice(0, 2_000)}...[truncated]` : current;
+    if (!current || typeof current !== "object") {
+      if (typeof current === "string" && current.length > 2_000) {
+        truncated = true;
+        return `${current.slice(0, 2_000)}...[truncated]`;
+      }
+      return current;
+    }
     if (seen.has(current)) return "[Circular]";
     seen.add(current);
     if (Array.isArray(current)) {

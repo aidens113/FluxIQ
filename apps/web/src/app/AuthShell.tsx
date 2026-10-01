@@ -2,20 +2,48 @@
 
 import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
+import { localAuthDestination } from "./auth-navigation";
 
 export function AuthStatus(props: { displayName: string; roleId: string }) {
+  const mounted = useRef(false);
+  const generation = useRef(0);
+  const pending = useRef<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; pending.current = null; };
+  }, []);
+
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/";
+    if (!mounted.current || pending.current !== null) return;
+    const request = ++generation.current;
+    pending.current = request;
+    setBusy(true);
+    setFailed(false);
+    const isCurrent = () => mounted.current && generation.current === request;
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!isCurrent()) return;
+      if (response.ok) window.location.href = "/";
+      else setFailed(true);
+    } catch {
+      if (isCurrent()) setFailed(true);
+    } finally {
+      if (isCurrent()) { pending.current = null; setBusy(false); }
+    }
   }
 
   return <div className="auth-status"><Menu icon={<UserRound aria-hidden size={15} />} label={props.displayName} options={[
     { id: "account", label: "Account and access", href: "/programs/identity-access", icon: <Settings aria-hidden size={14} /> },
-    { id: "logout", label: "Log out", onSelect: () => void logout(), icon: <LogOut aria-hidden size={14} /> }
-  ]} /><span className="auth-role">{props.roleId}</span></div>;
+    { id: "logout", label: busy ? "Signing out..." : "Log out", disabled: busy, onSelect: () => void logout(), icon: <LogOut aria-hidden size={14} /> }
+  ]} /><span className="auth-role">{props.roleId}</span>
+    {busy ? <span role="status">Signing out...</span> : null}
+    {failed ? <span role="alert">Sign-out failed. <button className="link-button" onClick={() => void logout()} type="button">Retry sign out</button></span> : null}
+  </div>;
 }
 
 export function GlobalTopbar(props: {
@@ -51,6 +79,31 @@ export function LoginPanel() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [feedback, setFeedback] = useState<{ tone: AlertTone; title: string; message: string } | null>(null);
+  const mounted = useRef(false);
+  const generation = useRef(0);
+  const pending = useRef(false);
+  const destination = useRef<{ scope: string; path: string } | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    destination.current = { scope: currentLoginScope(), path: localAuthDestination(window.location.pathname + window.location.search + window.location.hash, window.location.origin) };
+    return () => { mounted.current = false; generation.current += 1; };
+  }, []);
+  function beginRequest() {
+    if (!mounted.current || pending.current) return null;
+    const scope = currentLoginScope();
+    if (destination.current?.scope !== scope) destination.current = { scope, path: localAuthDestination(window.location.pathname + window.location.search + window.location.hash, window.location.origin) };
+    pending.current = true;
+    const request = ++generation.current;
+    return {
+      path: destination.current.path,
+      isCurrent: () => mounted.current && generation.current === request && scope === currentLoginScope(),
+      finish: () => {
+        // Completing the request can release its own busy state after a route
+        // change; response content and navigation still require the old scope.
+        if (mounted.current && generation.current === request) { pending.current = false; setBusy(false); }
+      }
+    };
+  }
 
   useEffect(() => {
     if (rateLimitSeconds <= 0) return;
@@ -65,6 +118,9 @@ export function LoginPanel() {
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || rateLimitSeconds > 0) return;
+    const request = beginRequest();
+    if (!request) return;
+    const { isCurrent } = request;
     setBusy(true);
     setFeedback(null);
     try {
@@ -80,13 +136,14 @@ export function LoginPanel() {
         retryAfterMs?: number;
         payload?: LoginPayload;
       } | undefined;
+      if (!isCurrent()) return;
       if (response.ok) {
         if (body?.payload?.requiresCredentialSetup && body.payload.user?.id) {
           setSetupUserId(body.payload.user.id);
           setFeedback({ tone: "warning", title: "Replace the temporary password", message: "Choose a new password before opening FluxIQ." });
           return;
         }
-        window.location.href = "/";
+        window.location.href = request.path;
         return;
       }
       if (body?.requiresTotp) {
@@ -105,9 +162,10 @@ export function LoginPanel() {
         setFeedback({ tone: "error", title: "Sign-in failed", message: `${body?.error ?? "Check your username and password."}${remaining}` });
       }
     } catch {
+      if (!isCurrent()) return;
       setFeedback({ tone: "error", title: "FluxIQ is unavailable", message: "The authentication service could not be reached. Check the local runtime and try again." });
     } finally {
-      setBusy(false);
+      request.finish();
     }
   }
 
@@ -115,6 +173,9 @@ export function LoginPanel() {
     event.preventDefault();
     const validation = setupPasswordError(newPassword, confirmPassword);
     if (validation || busy) return;
+    const request = beginRequest();
+    if (!request) return;
+    const { isCurrent } = request;
     setBusy(true);
     setFeedback(null);
     try {
@@ -124,16 +185,18 @@ export function LoginPanel() {
         body: JSON.stringify({ userId: setupUserId, value: newPassword, authorizationPassword: password })
       });
       const result = await response.json().catch(() => undefined) as { ok?: boolean; error?: string } | undefined;
+      if (!isCurrent()) return;
       if (!response.ok || !result?.ok) {
         setFeedback({ tone: "error", title: "Password could not be replaced", message: result?.error ?? "Keep this page open and try again." });
         return;
       }
       setFeedback({ tone: "success", title: "Password updated", message: "Opening FluxIQ with your secured account." });
-      window.location.href = "/";
+      window.location.href = request.path;
     } catch {
+      if (!isCurrent()) return;
       setFeedback({ tone: "error", title: "Setup could not finish", message: "The identity service could not be reached. Your entries have been preserved." });
     } finally {
-      setBusy(false);
+      request.finish();
     }
   }
 
@@ -188,4 +251,8 @@ export function setupPasswordError(password: string, confirmation: string): stri
 
 function digits(value: string, maxLength: number): string {
   return sanitizeAsciiDigits(value, maxLength);
+}
+
+function currentLoginScope(): string {
+  return window.location.origin + window.location.pathname + window.location.search + window.location.hash;
 }

@@ -18,6 +18,7 @@ export default async function HomePage() {
           <p className="page-kicker">Workspace</p>
           <h1 className="page-title">Programs</h1>
           <p className="page-copy">Open an automation workspace or framework service.</p>
+          <a className="button button-secondary" href="/get-started">Get started</a>
         </header>
         <ProgramLauncher domains={domains} label="FluxIQ programs and domains" programs={programs} />
       </div>

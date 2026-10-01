@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { automationLayoutPresetOptions } from "../layout/defaults";
 import type { AutomationLayoutPresetOption } from "../layout/contracts";
 import { automationAreaLabel } from "../components/primitives";
@@ -38,14 +39,27 @@ export function LayoutPickerOverlaySurface(props: {
   request: LayoutPickerOverlayRequest;
 }) {
   const { execute, status } = useAtomicOverlayCommand(props.dispatch);
+  const mounted = useRef(false);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const ownership = useRef({ request: props.request, pending: false, intent: "none" as "none" | "cancel" | "action" });
+  if (ownership.current.request !== props.request) ownership.current = { request: props.request, pending: false, intent: "none" };
+  const owner = ownership.current;
+  const current = () => mounted.current && ownership.current === owner;
+  const closeRef = useRef(props.onClose); closeRef.current = props.onClose;
 
   async function arrange(preset: LayoutPickerOverlayCommand["preset"]) {
-    if (await execute({
-      type: "workspace.layout.arrange",
-      requestId: props.request.id,
-      area: props.request.area,
-      preset
-    })) props.onClose();
+    if (!current() || owner.pending || status.pending || !layoutOptionsForOverlay(props.request).some((option) => option.id === preset)) return;
+    owner.pending = true;
+    try {
+      if (await execute({ type: "workspace.layout.arrange", requestId: props.request.id, area: props.request.area, preset }) && current()) {
+        owner.intent = "action"; closeRef.current();
+      }
+    } finally { owner.pending = false; }
+  }
+
+  function cancel() {
+    if (!current() || owner.pending || status.pending) return;
+    owner.intent = "cancel"; closeRef.current();
   }
 
   return (
@@ -54,7 +68,8 @@ export function LayoutPickerOverlaySurface(props: {
       ariaLabel="Arrange workspace windows"
       busy={status.pending}
       className="automation-layout-picker-panel"
-      onClose={props.onClose}
+      onClose={cancel}
+      shouldReturnFocus={() => ownership.current === owner && owner.intent === "cancel"}
       preferredWidth={320}
     >
       <header><strong>Arrange Windows</strong><span>{automationAreaLabel(props.request.area)}</span></header>

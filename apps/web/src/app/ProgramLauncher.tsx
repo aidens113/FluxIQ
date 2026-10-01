@@ -68,7 +68,7 @@ export function ProgramLauncher(props: { domains?: LaunchDomain[]; programs: Pro
   function remember(href: string) {
     const next = [href, ...recentHrefs.filter((item) => item !== href)].slice(0, 6);
     setRecentHrefs(next);
-    window.localStorage.setItem(recentStorageKey, JSON.stringify(next));
+    try { window.localStorage.setItem(recentStorageKey, JSON.stringify(next)); } catch { /* best-effort: Optional recent history must not interrupt navigation; the in-memory list remains usable. */ }
   }
 
   function moveFocus(event: KeyboardEvent<HTMLDivElement>) {

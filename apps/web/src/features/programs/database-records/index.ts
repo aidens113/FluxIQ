@@ -1,0 +1,1 @@
+export { useDatabaseRecords } from "./useDatabaseRecords";

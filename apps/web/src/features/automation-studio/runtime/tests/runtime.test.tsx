@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -13,6 +14,10 @@ import {
 } from "../run-detail-model";
 import { buildAutomationRuntimeRunPayload, runtimeTypedInputErrors } from "../run-input-model";
 import { getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns, RUNTIME_ACTION_PAGE_SIZE, RUNTIME_EVENT_PAGE_SIZE, RUNTIME_RUN_PAGE_SIZE } from "../run-queries";
+
+// Request and panel ownership lives in the keyed RuntimeLogScope child.
+const runtimeLogSource = readFileSync(new URL("../RunActionLogView.tsx", import.meta.url), "utf8");
+const runtimeLogScopeSource = runtimeLogSource.slice(runtimeLogSource.indexOf("function RuntimeLogScope("));
 
 describe("Automation Studio runtime modules", () => {
   it("builds typed launch payloads without changing adaptive modes", () => {
@@ -44,11 +49,11 @@ describe("Automation Studio runtime modules", () => {
     expect(RunHistoryViewContent.toString()).toContain("historyCommands.listRuns");
     expect(listRuntimeRuns.toString()).toContain("list-flow-runs");
     expect(RunHistoryViewContent.toString()).not.toContain("get-flow-run-detail");
-    expect(RunActionLogViewContent.toString()).toContain("commands.loadDetail");
+    expect(runtimeLogScopeSource).toContain("commands.loadDetail");
     expect(getRuntimeRunDetail.toString()).toContain("get-flow-run-detail");
-    expect(RunActionLogViewContent.toString()).toContain("commands.listActions");
+    expect(runtimeLogScopeSource).toContain("commands.listActions");
     expect(listRuntimeRunActions.toString()).toContain("list-flow-run-actions");
-    expect(RunActionLogViewContent.toString()).toContain("commands.listEvents");
+    expect(runtimeLogScopeSource).toContain("commands.listEvents");
     expect(listRuntimeRunEvents.toString()).toContain("list-flow-run-events");
   });
 

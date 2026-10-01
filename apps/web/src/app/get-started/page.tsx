@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { currentFluxIQUser } from "../../lib/auth";
 import { GetStartedClient } from "./GetStartedClient";
+import { LoginPanel } from "../AuthShell";
 
 /**
  * First-run setup: start the runtime, pair the browser extension, add a
@@ -10,6 +10,6 @@ import { GetStartedClient } from "./GetStartedClient";
  * (`useProgramApi` calls `useSearchParams`).
  */
 export default async function GetStartedPage() {
-  if (!await currentFluxIQUser()) redirect("/");
+  if (!await currentFluxIQUser()) return <LoginPanel />;
   return <Suspense fallback={null}><GetStartedClient /></Suspense>;
 }

@@ -61,6 +61,7 @@ export function acquireOverlayEnvironment(documentRef: Document, options: Overla
     const index = state.entries.indexOf(options);
     if (index < 0) return;
     const wasTop = index === state.entries.length - 1;
+    const active = documentRef.activeElement;
     state.entries.splice(index, 1);
     applyEnvironment(documentRef, state);
     if (!state.entries.length) {
@@ -69,7 +70,7 @@ export function acquireOverlayEnvironment(documentRef: Document, options: Overla
       documentRef.body.style.overflow = state.originalOverflow;
       environmentByDocument.delete(documentRef);
     }
-    if (wasTop && options.returnFocus?.isConnected !== false) {
+    if (wasTop && canRestoreFocus(documentRef, options, active)) {
       options.returnFocus?.focus({ preventScroll: true });
     }
   };
@@ -93,8 +94,10 @@ function installEnvironmentListeners(documentRef: Document, state: OverlayEnviro
   const onKeyDown = (event: Event) => {
     const keyboardEvent = event as globalThis.KeyboardEvent;
     const top = state.entries.at(-1);
-    if (!top) return;
-    if (keyboardEvent.key === "Escape" && top.onEscape && (top.canDismiss?.() ?? true)) {
+    if (!top || !interactiveDocument(documentRef) || !eligibleFocusTarget(top.panel, documentRef)
+      || keyboardEvent.defaultPrevented || keyboardEvent.isComposing || keyboardEvent.keyCode === 229
+      || keyboardEvent.ctrlKey || keyboardEvent.altKey || keyboardEvent.metaKey) return;
+    if (keyboardEvent.key === "Escape" && !keyboardEvent.shiftKey && top.onEscape && (top.canDismiss?.() ?? true)) {
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
       top.onEscape();
@@ -167,8 +170,13 @@ function restoreIsolation(state: OverlayEnvironmentState) {
 }
 
 function trapFocus(event: globalThis.KeyboardEvent, panel: HTMLElement) {
+  const documentRef = panel.ownerDocument;
+  const active = documentRef.activeElement;
+  // Only a current owned keyboard intent may move focus. A connected outside
+  // control belongs to its current owner; this trap never reclaims it.
+  if (event.target !== active || (active && active !== documentRef.body && !panel.contains(active))) return;
   const focusable = Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector))
-    .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+    .filter((element) => eligibleFocusTarget(element, documentRef, true));
   if (!focusable.length) {
     event.preventDefault();
     panel.focus();
@@ -176,13 +184,38 @@ function trapFocus(event: globalThis.KeyboardEvent, panel: HTMLElement) {
   }
   const first = focusable[0]!;
   const last = focusable[focusable.length - 1]!;
-  if (event.shiftKey && panel.ownerDocument.activeElement === first) {
+  if (!focusable.includes(active as HTMLElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus({ preventScroll: true });
+  } else if (event.shiftKey && active === first) {
     event.preventDefault();
     last.focus();
-  } else if (!event.shiftKey && panel.ownerDocument.activeElement === last) {
+  } else if (!event.shiftKey && active === last) {
     event.preventDefault();
     first.focus();
   }
+}
+
+function interactiveDocument(documentRef: Document): boolean {
+  return documentRef.visibilityState !== "hidden" && (typeof documentRef.hasFocus !== "function" || documentRef.hasFocus());
+}
+
+function eligibleFocusTarget(element: HTMLElement, documentRef: Document, sequential = false): boolean {
+  if (element.isConnected === false || (element.ownerDocument && element.ownerDocument !== documentRef)
+    || element.hidden || element.matches?.(":disabled") || element.closest?.('[hidden], [inert], [aria-hidden="true"]')
+    || (element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden") || (sequential && element.tabIndex < 0)) return false;
+  const rectangles = element.getClientRects?.();
+  if (rectangles && !rectangles.length) return false;
+  // Minimal public FocusTarget proxies have no DOM methods. Preserve their
+  // connected-focus contract without passing them to native getComputedStyle.
+  const visibility = rectangles ? documentRef.defaultView?.getComputedStyle?.(element).visibility : undefined;
+  return visibility !== "hidden" && visibility !== "collapse";
+}
+
+function canRestoreFocus(documentRef: Document, options: OverlayEnvironmentOptions, active: Element | null): boolean {
+  return Boolean(options.returnFocus && interactiveDocument(documentRef)
+    && eligibleFocusTarget(options.returnFocus as HTMLElement, documentRef)
+    && (!active || active === documentRef.body || options.panel.contains(active) || options.root.contains(active)));
 }
 
 function isModalMode(mode: OverlayEnvironmentMode): boolean {

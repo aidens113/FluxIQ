@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, useLayoutEffect } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +22,30 @@ let renderer: ReactTestRenderer | null = null;
 afterEach(async () => {
   if (renderer) await act(async () => { renderer!.unmount(); });
   renderer = null;
+});
+
+it("keeps current native setup links and fences obsolete view callbacks", async () => {
+  const originalStart = vi.fn(); const originalConnected = vi.fn(); const source = sources();
+  const view = await mount(source, originalStart, { onOpenConnectedBrowsers: originalConnected, secretKeysHref: "/programs/secret-keys?domainId=web%2Fteam" });
+  const oldStart = view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick;
+  const oldConnected = view.root.find((node) => node.type === "button" && textOf(node) === "Open Connected browsers").props.onClick;
+  const oldRefresh = view.root.find((node) => node.type === "button" && textOf(node) === "Check again").props.onClick;
+  const oldLink = view.root.findByType("a").props.onClick;
+  expect(view.root.findByType("a").props.href).toBe("/programs/secret-keys?domainId=web%2Fteam");
+  const nativeEvent = { ctrlKey: true, metaKey: true, preventDefault: vi.fn() }; oldLink(nativeEvent); expect(nativeEvent.preventDefault).not.toHaveBeenCalled();
+  const newStart = vi.fn(); const newConnected = vi.fn(); await act(async () => view.update(<OnboardingView sources={source} onStart={newStart} onOpenConnectedBrowsers={newConnected} pollMs={0} />));
+  await act(async () => { oldStart(); oldConnected(); oldRefresh(); oldLink(nativeEvent); });
+  expect(originalStart).not.toHaveBeenCalled(); expect(originalConnected).not.toHaveBeenCalled(); expect(newStart).not.toHaveBeenCalled(); expect(newConnected).not.toHaveBeenCalled(); expect(source.loadGatewaySnapshot).toHaveBeenCalledTimes(1); expect(nativeEvent.preventDefault).toHaveBeenCalledTimes(1);
+  act(() => view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick()); expect(newStart).toHaveBeenCalledWith("describe");
+  expect(view.root.findByType("a").props.href).toBe("/programs/secret-keys");
+});
+
+it("rejects retained explicit controls during the unmount layout commit", async () => {
+  const onStart = vi.fn(); const onConnected = vi.fn(); const source = sources(); let retained: Array<() => void> = [];
+  function Parent({ show }: { show: boolean }) { useLayoutEffect(() => { if (!show) retained.forEach((fn) => fn()); }, [show]); return show ? <OnboardingView sources={source} onStart={onStart} onOpenConnectedBrowsers={onConnected} pollMs={0} /> : null; }
+  await act(async () => { renderer = create(<Parent show />); });
+  retained = renderer!.root.findAllByType("button").map((node) => node.props.onClick);
+  await act(async () => renderer!.update(<Parent show={false} />)); expect(onStart).not.toHaveBeenCalled(); expect(onConnected).not.toHaveBeenCalled(); expect(source.loadGatewaySnapshot).toHaveBeenCalledTimes(1);
 });
 
 async function mount(source: OnboardingSources, onStart = vi.fn(), extra: Record<string, unknown> = {}) {
