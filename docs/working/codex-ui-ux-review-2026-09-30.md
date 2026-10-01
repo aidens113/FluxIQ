@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Sixth Core web tests, typing and production build passed; seventh disjoint implementation lanes released.
+Status detail: Seventh source frozen after supervisor150 focused tests; broader gates pending and next workers planning only.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -10,6 +10,15 @@ Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repo
 Related: [current system](../architecture/current-system.md), [working document index](./README.md)
 
 ## Current State
+
+Latest seventh: source frozen after root combined12files150tests/native0/9.43s.
+Production86, Deployment27, Docs35 and global request contract2 pass. Root local
+Docs acknowledgement regression reproduced1fail and corrected in exact view/test;
+source-location contracts now verify owning Docs hook and Deployment fences.
+Full web/types/build/structure gates pending. Next Identity and Docs tree workers
+are design-only until explicit release; no Core source edits during gates.
+Extension Open/report narrow14 and four-root typing pass; Activity feed worker
+owns separate downstream paths. Claude integration/protected boundaries remain.
 
 Latest: sixth Core Complete. Root resumed full53911 native0,319files/2078tests,
 187.86s; types93193 native0; production89166 native0,17pages/203827ms.

@@ -97,6 +97,27 @@ excessive database churn.
 
 ## Control Panel
 
+Production Runner prepares primitive parameters through an explicit local form
+policy: required values, typed defaults/enums and inclusive numeric bounds.
+Unsupported declarations and forms over 30 fields block Start with correction
+feedback; they cannot silently submit partial metadata. Optional numeric blanks
+are omitted and explicit zero remains zero. Same-target edits survive refresh.
+This limited frontend policy does not replace backend validation or claim full
+JSON Schema support; absent schema is allowed and declared null is invalid.
+
+Deployment Sync owns reads, action locks and captured confirmations per API
+workspace. Confirmation retains the chosen target/version and rejects removed
+metadata or obsolete callbacks. Acknowledged actions remain visible when their
+snapshot confirmation fails; Retry reads state without replaying a mutation.
+Absent or unavailable Git state is shown as unknown, never as a clean checkout.
+
+Docs separates confirmed metadata, selected-page reads and explicit rebuilds.
+API replacement clears prior workspace presentation; same-owner refresh retains
+valid selection and drafts. Successful rebuild reloads the selected page even
+when its ID is unchanged, and removed selection reconciles to current metadata.
+Page Retry reads directly; missing indexed pages also offer explicit Rebuild.
+Local rebuild acknowledgement stays visible alongside later page-read errors.
+
 Runtime Action Log scopes reads, selected details and retained callbacks to the
 current project, run and command owner. Read failures have local retry controls;
 page labels advance only after a confirmed response. Known mismatched run data

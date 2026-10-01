@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProductionRun, ProductionRunnerSnapshotResponse } from "fluxiq/production-runner";
-import { useProgramApi, type JsonObject } from "../program-api";
+import { useProgramApi } from "../program-api";
 import { DataTable, EmptyState, Field, KeyValue, LoadingState, Panel, Segmented, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
 import { digits, flattenRunLogs, formatTime, type ProductionLogRow } from "./shared";
 import { useOperationLock } from "../use-operation-lock";
 import { OperationalFreshness, useOperationalSnapshot } from "../operational-refresh";
+
+import { prepareProductionParameters, ProductionParameterFields } from "../production-parameters";
 
 const validSnapshot = (value: unknown): value is ProductionRunnerSnapshotResponse => Boolean(value && typeof value === "object" && Array.isArray((value as ProductionRunnerSnapshotResponse).targets) && Array.isArray((value as ProductionRunnerSnapshotResponse).runs));
 
@@ -61,6 +63,8 @@ function ProductionRunnerWorkspace({ api, ownerCurrent }: { api: ReturnType<type
 
   async function startRun() {
     if (!current() || actions.current.startRun !== startRun || !selectedTarget) return;
+    const parameters = prepareProductionParameters(selectedTarget.metadata?.parameterSchema, parameterValues);
+    if (!parameters.valid) { setLaunchError({ targetKey, message: "Correct the parameter fields or declaration before launching." }); return; }
     await launch.run("start", async () => {
       if (!current()) return;
       setLaunchError(null);
@@ -72,7 +76,7 @@ function ProductionRunnerWorkspace({ api, ownerCurrent }: { api: ReturnType<type
           loopsTotal: Number(loops) || 1,
           waitMs: Number(waitMs) || 0,
           initialDelayMs: Number(initialDelayMs) || 0,
-          metadata: buildProductionParameters(selectedTarget.metadata?.parameterSchema, parameterValues)
+          metadata: parameters.metadata
         });
         if (!current()) return;
         setStatus(result.ok ? `Run started for ${selectedTarget.name}. Snapshot confirmation is separate.` : result.error ?? "Run failed");
@@ -164,12 +168,6 @@ function WorkloadBoard(props: { runs: ProductionRun[]; operations: Record<string
   </div>;
 }
 
-function ProductionParameterFields(props: { schema: unknown; values: Record<string, string>; onChange(value: Record<string, string>): void }) {
-  const fields = productionParameterFields(props.schema);
-  if (!fields.length) return null;
-  return <div className="production-parameter-grid">{fields.map((field) => <Field key={field.name} label={field.label}>{field.type === "boolean" ? <select value={props.values[field.name] ?? String(field.defaultValue ?? false)} onChange={(event) => props.onChange({ ...props.values, [field.name]: event.target.value })}><option value="false">No</option><option value="true">Yes</option></select> : <input inputMode={field.type === "number" ? "decimal" : undefined} value={props.values[field.name] ?? String(field.defaultValue ?? "")} onChange={(event) => props.onChange({ ...props.values, [field.name]: event.target.value })} />}</Field>)}</div>;
-}
-
 export function newestProductionLogRows(runs: ProductionRun[], filter = "all"): ProductionLogRow[] {
   return flattenRunLogs(runs)
     .filter((entry) => filter === "all" || entry.status === filter || entry.type === filter)
@@ -177,14 +175,5 @@ export function newestProductionLogRows(runs: ProductionRun[], filter = "all"): 
 }
 
 export function productionParameterFields(schema: unknown): Array<{ name: string; label: string; type: string; defaultValue?: unknown }> {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
-  const properties = (schema as { properties?: unknown }).properties;
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return [];
-  return Object.entries(properties).slice(0, 30).map(([name, value]) => { const item = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; return { name, label: String(item.title ?? name), type: String(item.type ?? "string"), ...("default" in item ? { defaultValue: item.default } : {}) }; });
-}
-
-function buildProductionParameters(schema: unknown, values: Record<string, string>): JsonObject {
-  const result: JsonObject = {};
-  for (const field of productionParameterFields(schema)) { const raw = values[field.name] ?? String(field.defaultValue ?? ""); result[field.name] = field.type === "number" || field.type === "integer" ? Number(raw) : field.type === "boolean" ? raw === "true" : raw; }
-  return result;
+  return prepareProductionParameters(schema).fields.map((field) => ({ name: field.name, label: field.label, type: field.type, ...(Object.prototype.hasOwnProperty.call(field, "defaultValue") ? { defaultValue: field.defaultValue } : {}) }));
 }

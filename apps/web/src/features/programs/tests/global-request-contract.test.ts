@@ -8,8 +8,24 @@ describe("global program request ownership", () => {
   it("cancels each initial snapshot request on unmount", () => {
     const operational = readFileSync(new URL("../operational-refresh/useOperationalSnapshot.ts", import.meta.url), "utf8");
     const databaseReads = readFileSync(new URL("../database-records/useDatabaseRecords.ts", import.meta.url), "utf8");
+    const documentationReads = readFileSync(new URL("../documentation-workspace/useDocumentationWorkspace.ts", import.meta.url), "utf8");
     for (const view of views) {
       const source = readFileSync(new URL(`../live-views/${view}.tsx`, import.meta.url), "utf8");
+      if (view === "docs") {
+        expect(source, view).toContain("useDocumentationWorkspace({ api, isOwner, requestedPage })");
+        expect(documentationReads, view).toContain("new AbortController()");
+        expect(documentationReads, view).toContain('"snapshot", { signal: request.controller.signal }');
+        expect(documentationReads, view).toContain("mounted.current = false; read.current?.controller.abort()");
+        expect(documentationReads, view).toContain("if (!current() || read.current !== request || request.controller.signal.aborted) return;");
+        continue;
+      }
+      if (view === "deployment-sync") {
+        expect(source, view).toContain("new AbortController()");
+        expect(source, view).toContain('"snapshot", { signal: controller.signal }');
+        expect(source, view).toContain("mounted.current = false; readEpoch.current++; read.current?.controller.abort()");
+        expect(source, view).toContain("if (!alive() || controller.signal.aborted || id !== readEpoch.current) return;");
+        continue;
+      }
       if (view === "database-manager") {
         expect(source, view).toContain("useDatabaseRecords({ api, owner: api");
         expect(databaseReads, view).toContain("new AbortController()");
