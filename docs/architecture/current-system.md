@@ -114,6 +114,10 @@ retries the interrupted request once; cancellation or host teardown settles the
 pending recovery instead of leaving requests waiting indefinitely. The host owns
 its login form and ignores responses arriving after it unmounts.
 
+The Automation Studio chat composer stays editable while a message is being
+sent. A successful send clears only the unchanged submitted draft; later edits
+remain available for the next message, including edits back to identical text.
+
 The panel must be run manually by the user:
 
 ```bash

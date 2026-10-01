@@ -21,7 +21,7 @@ import type { ApiResponse, JsonObject } from "../../../../programs/program-api";
 import type { ProgramCommandTransport } from "../../../data/program-transport";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramEndpointClassification } from "../../../../../../../../packages/fluxiq/src/programs/_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/api/handlers/index.ts";
-import { AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/nodes/index.ts";
 
 export const CONTRACT_PIN = "482915";
@@ -144,7 +144,7 @@ const SCRIPTED_MODEL = {
       usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000, estimatedCostUsd: 0.001 }
     })
   },
-  tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 512, maxTotalTokens: 9_000 },
+  tokenLimits: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits,
   maxCallsPerRun: 1,
   maxEstimatedCostUsd: 0.25,
   timeoutMs: 20_000
