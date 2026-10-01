@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../../decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
@@ -230,11 +230,14 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     // Bounded by the loop's own ceiling -- its decisions plus one opening
     // observation -- not by the sixteen it used to be. A diagnostic from a
     // longer exploration failed to parse at sixteen, and its named reason was
-    // replaced by a generic transport failure.
-    const longest = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+    // replaced by a generic transport failure. And by that ceiling for every
+    // live round a build may run: a build that could not finish publishes all
+    // of its rounds, not the last one's alone (t214).
+    const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+    const longest = (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) * rounds;
     const long = {
       ...valid,
-      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
+      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * rounds, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls * rounds, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
     };
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(long)).toEqual(long);
     // The steps are one per trace row, not one per decision, and the one kind
@@ -242,7 +245,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     // its single iteration. So they are bounded by the rows: at the decision
     // ceiling this refused a record the loop can legitimately write, and threw
     // away the whole named reason for a build that had corrected itself.
-    const mostRows = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
+    const mostRows = (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1) * rounds;
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
       ...long,
       evidenceLoop: { ...long.evidenceLoop, steps: Array.from({ length: mostRows }, () => ({ toolId: "web.click" })) }
@@ -254,6 +257,8 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
     }
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, iterationCount: long.evidenceLoop.iterationCount + 1 } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, toolCallCount: long.evidenceLoop.toolCallCount + 1 } })).toBeNull();
   });
 
   it("names an exploration stopped on unusable decisions, with its progress and why", () => {
@@ -374,7 +379,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       const widenedStep = widened.evidenceLoop.steps[0];
       if (!widenedStep) throw new Error("The widened diagnostic fixture must contain its representative step.");
       const bad: Array<Record<string, unknown>> = [
-        { iteration: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 },
+        { iteration: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS + 1 },
         { iteration: -1 },
         { evidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes + 1 },
         { at: -1 },

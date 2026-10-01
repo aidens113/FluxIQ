@@ -501,42 +501,54 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // off two live traces (`runtime/loop-limits/evidence-loop.ts`), and the
   // difference is visible here: the same script now stops at eight of twelve,
   // four calls unspent, and says what actually happened.
+  //
+  // **What a stall does since t208.** A stalled round no longer ends the build:
+  // nothing is in its Flow, so the build explores again with the four calls
+  // left (the provider sees a second round's decisions 1-4), and ends when the
+  // twelve are spent -- as the budget it is, with the message the person reads
+  // saying the replies could not be read. The guard still stops the first
+  // round at eight; the ending says so by its two rounds.
   it("stops on the no-progress guard while the run still has calls, with a named outcome", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
-    expect(run.sentIterations).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
-    expect(run.revealed).toHaveLength(8);
+    expect(run.sentIterations).toEqual([...Array.from({ length: 8 }, (_, index) => index + 1), 1, 2, 3, 4]);
+    expect(run.revealed).toHaveLength(12);
     expect(run.failure).toMatchObject({
-      // The stall's own ending, not the budget's. `retryable: false` is right
-      // here and wrong for an exhaustion, which is the distinction
-      // `runtime/llm/evidence-loop/exhaustion.ts` exists to keep: a build whose
-      // replies keep coming back unusable is not one a bigger budget fixes.
-      code: "flow_bootstrap.evidence_unusable_decision",
+      code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       // Every malformed reply was paid for, and the record says what it cost.
       // It used to say nothing -- zero tokens after eight paid calls -- and
       // `run-munw7ffn-fe1cecd2`'s re-author left 14 such calls out of its
       // accounting that way (`runtime/llm/reply-account.ts`).
-      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 9_600, outputTokens: 1_200, totalTokens: 10_800 }),
+      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 14_400, outputTokens: 1_800, totalTokens: 16_200 }),
       // One step per decision, each naming the iteration that paid for it --
-      // which is the whole point: eight refusals reading the same code are
-      // told apart by nothing else.
+      // which is the whole point: twelve refusals reading the same code are
+      // told apart by nothing else. Both rounds' decisions, numbered across
+      // the build: the record used to be the last round's alone, its four
+      // decisions beside the whole build's tokens (t214).
       // `at` rides on every step now, a clock reading rather than a value, so
       // the steps are matched on what they say and their moment is asserted
       // as being present at all.
       evidenceLoop: {
-        iterationCount: 8, decisionCount: 8, toolCallCount: 0, evidenceBytes: expect.any(Number),
+        iterationCount: 12, decisionCount: 12, toolCallCount: 0, evidenceBytes: expect.any(Number),
         // Each says which malformed case it was: this script's reply stops
         // inside its object.
-        steps: Array.from({ length: 8 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage: expect.objectContaining({ outputTokens: 150 }), at: expect.any(Number) }))
+        steps: Array.from({ length: 12 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage: expect.objectContaining({ outputTokens: 150 }), at: expect.any(Number) }))
       },
-      issueCodes: ["llm.provider_malformed_response"]
+      issueCodes: ["llm.provider_malformed_response"],
+      ending: {
+        kind: "budget_exhausted",
+        bound: "calls",
+        notDone: [],
+        tried: { rounds: 2, decisions: 12, stepsInFlow: 0, tested: "not_tested" }
+      }
     });
-    // A stall is not an exhaustion, and the record must not carry the other
-    // one's facts: nothing ran out here.
+    expect(run.failure?.ending?.message).toBe("The build stopped at its limit of 12 model calls before the Flow was finished. No step I found belonged in the Flow. I explored live 2 times over 12 decisions, and what held it up was that the model's replies could not be read. Nothing was kept to carry on from.");
+    // Neither round ran out of an allowance of its own: each was stopped by
+    // its stall guard, and the build by its call count.
     expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");
     expect(run.adaptationCount).toBe(0);
   }, 60_000);
@@ -600,7 +612,16 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // Twenty decisions, seventeen tool calls: the eighteenth and nineteenth are
     // the wrap-up and the twentieth the last, none of which offers a tool, so a
     // look asked for on them anyway is not run (t057, `llm/loop-budget.ts`).
-    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 17 } });
+    // Since t208 a round out of decisions is not the build's ending: with
+    // nothing in its Flow and no call left, the build ends as the call budget
+    // it spent, saying so.
+    expect(run.failure).toMatchObject({
+      code: "flow_bootstrap.evidence_budget_exhausted",
+      retryable: true,
+      evidenceLoop: { iterationCount: 20, toolCallCount: 17 },
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 20, stepsInFlow: 0 } }
+    });
+    expect(run.failure?.ending?.message).toMatch(/^The build stopped at its limit of 20 model calls before the Flow was finished\./u);
   }, 120_000);
 
   it("reproduces the measured 26-decision creation exhaustion with exact feedback, trace, and accounting", async () => {
@@ -656,9 +677,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // model's answers blamed for a build that had simply used its twenty-sixth
     // of twenty-six calls. The refusal is still reported, as the issue code it
     // is; the ending is reported as the allowance that ran out, and marked as
-    // something a larger budget can retry.
+    // something a larger budget can retry. Since t208 that allowance is the
+    // build's call budget, published as `evidence_budget_exhausted` with the
+    // message the person reads; what it carries is otherwise unchanged.
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.evidence_iteration_limit",
+      code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
       retryable: true,
       providerInvocation: "attempted",
@@ -673,8 +696,10 @@ describe("creating a Flow through an exploration, with no grant", () => {
         // decision was made and acted on, so the loop reached the end of its
         // `for` rather than refusing a twenty-seventh it could not pay for.
         exhausted: { bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: expect.any(Number), proposableSteps: expect.any(Number), completionAttempts: expect.any(Number) }
-      }
+      },
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 26 } }
     });
+    expect(run.failure?.ending?.message).toMatch(/^The build stopped at its limit of 26 model calls before the Flow was finished\..*what held it up was that the Flow could not give the answer you asked for\./u);
     expect(run.failure?.evidenceLoop?.exhausted?.completionAttempts).toBeGreaterThan(0);
     expect(run.failure?.evidenceLoop?.exhausted?.draftSteps).toBeGreaterThan(0);
     expect(run.failure?.evidenceLoop?.evidenceBytes).toBeGreaterThan(0);

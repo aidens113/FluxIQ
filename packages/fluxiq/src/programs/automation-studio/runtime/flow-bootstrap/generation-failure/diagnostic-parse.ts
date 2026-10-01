@@ -11,7 +11,7 @@ import { parseAutomationStudioActionPermissionRequest } from "../../action-permi
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
@@ -202,9 +202,30 @@ function storedProviderRefusal(value: unknown): AutomationStudioLlmProviderRefus
  * transport failure.
  */
 const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
-const EVIDENCE_LOOP_MAX_TRACE_STEPS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
-/** The published steps are one per trace row, and one decision may write two of them. */
-const EVIDENCE_LOOP_MAX_TRACE_ROWS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1;
+/**
+ * A build that could not finish publishes every live round it ran, the
+ * exploration and each repair or exploring-again, not the last round's alone
+ * (`../unfinished-build/phases.ts`, t214): its counts and its rows are bounded
+ * at one round's ceiling for each round a build may run. `exhausted` stays one
+ * round's, since it says which allowance the last round ran out of.
+ *
+ * Read when a record is parsed, never at module load: this module is reached
+ * inside the `loop-limits` -> `llm` -> `flow-bootstrap` import cycle, where a
+ * constant taken at load can still be unset and turn every bound into `NaN`,
+ * which refuses every diagnostic.
+ */
+function evidenceLoopBuildBounds(): { iterations: number; decisions: number; toolCalls: number; rows: number } {
+  const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+  const { maxIterations, maxToolCalls } = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
+  return {
+    iterations: maxIterations * rounds,
+    // Decisions plus one opening observation, for each round.
+    decisions: (maxIterations + 1) * rounds,
+    toolCalls: maxToolCalls * rounds,
+    // The published steps are one per trace row, and one decision may write two of them.
+    rows: (maxIterations * 2 + 1) * rounds
+  };
+}
 
 type EvidenceLoopExhausted = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]>;
 /**
@@ -258,8 +279,9 @@ function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | nul
 function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps", "exhausted", "incompleteDraft"])) return null;
-  if (!boundedInteger(value.iterationCount, EVIDENCE_LOOP_MAX_ITERATIONS) || !boundedInteger(value.decisionCount, EVIDENCE_LOOP_MAX_TRACE_STEPS)
-    || !boundedInteger(value.toolCallCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls)
+  const bounds = evidenceLoopBuildBounds();
+  if (!boundedInteger(value.iterationCount, bounds.iterations) || !boundedInteger(value.decisionCount, bounds.decisions)
+    || !boundedInteger(value.toolCallCount, bounds.toolCalls)
     || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
   // The steps are parsed by the module that declares them. A step's shape and
   // the allow-list that parses it must move together -- a field the shape gains
@@ -268,7 +290,7 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
   // instead of a convention.
   let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
   if (value.steps !== undefined) {
-    if (!Array.isArray(value.steps) || value.steps.length > EVIDENCE_LOOP_MAX_TRACE_ROWS) return null;
+    if (!Array.isArray(value.steps) || value.steps.length > bounds.rows) return null;
     const parsed = parseAutomationStudioFlowBootstrapEvidenceSteps(value.steps);
     if (!parsed) return null;
     steps = parsed;
