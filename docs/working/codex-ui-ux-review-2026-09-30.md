@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Verified second UX batch; onboarding, Runtime workspace and sensitive-store authorization implementation active.
+Status detail: Third Core UX batch verified; sign-in navigation, operational freshness and clipboard feedback implementation active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -10,6 +10,17 @@ Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repo
 Related: [current system](../architecture/current-system.md), [working document index](./README.md)
 
 ## Current State
+
+Latest continuation: onboarding, read-only Runtime and database authorization
+source complete. Database checkpointd5c979a6; supervisor combined82 and full
+300files/1852tests passed. Corrected third web typecheck69624 passes14708ms;
+corrected audit84320 only inherited service4506/4505. Production build9733 passed
+17pages/101959ms. Onboarding1a5afc47, Runtime d011b0ae and databased5c979a6 are
+durable. Next auth-navigation and operational-refresh/Compute briefs are released;
+supervisor clipboard controls begin in disjoint files. Whole-tree gates wait
+for the next coordinated source freeze.
+Downstream extraction is verified/checkpointed, strip integration8fail under
+repair in that isolated tree. No runtime/backend/security contract changes.
 
 The downstream paired plan is authoritative for coordination, worker briefs and
 reports. This Core task is isolated in task/t224-codex-ui-ux-review. Claude owns

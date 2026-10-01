@@ -147,6 +147,23 @@ a newer question. Read failures and the current summary-list limit are visible
 with a link to review conversations in Studio; no complete-discovery claim is
 made beyond the existing API's returned conversation window.
 
+The program directory links to Get started. Guided Studio entries accept only a
+single describe, demonstrate or extract start choice and preserve the domain
+scope. The journey stays passive until the person chooses a project and an
+explicit next action; canonical flow/subflow/view/detail links take precedence.
+Only the current entry can consume its start parameter. Dismissal preserves the
+mounted workspace and its state; recording and extraction still belong to the
+connected browser and extension.
+
+Runtime has a read-only workspace over the existing global snapshot and get-run
+endpoints. It displays clients, capability entries, runs, observed dispatch paths
+and transports/adapters with client-side pages and explicit snapshot time,
+refresh, stale and retry states. Selected run details load separately and reject
+obsolete or mismatched replies. Display projection retains structural fields and
+omits arbitrary metadata, command parameters, results, traces and error prose.
+The existing API still returns the full global inventory: frontend projection
+and paging do not provide server pagination or reduce sensitive data on the wire.
+
 Authenticated routes share one session-recovery host in the root layout. When a
 program API request receives HTTP 401, it can ask the person to sign in again
 without replacing the current workspace or its unsaved edits. Successful recovery
