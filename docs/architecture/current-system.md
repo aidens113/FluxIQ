@@ -114,6 +114,14 @@ beside the affected controls for retry. Parameter drafts belong to the effective
 target type and id; changing or removing a target restores the new target's
 defaults. Snapshot requests ignore older responses and completions after teardown.
 
+Database Manager authorizations use a synchronous submission lock and a local
+retryable error inside the recheck dialog. Submitted credentials cannot change
+while pending; closing or changing stores clears them and invalidates old
+completions. Accepted grants require a nonempty id and a future expiry. API domain
+changes clear local grants and record state, so authorization from the previous
+scope cannot unlock the new workspace. Dismissing a pending dialog discards its
+late receipt; it does not claim to revoke a grant already issued by the server.
+
 Compute Control resolves selected detail and activity from the visible filtered
 nodes. Search, health or capability changes choose a visible fallback or clear
 the selection when nothing matches; hidden nodes do not retain their detail.

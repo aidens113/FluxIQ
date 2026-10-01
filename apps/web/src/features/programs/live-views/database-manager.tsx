@@ -29,9 +29,16 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
   const [credentialRecheck, setCredentialRecheck] = useState({ password: "", pin: "", totp: "" });
   const [grants, setGrants] = useState<Record<string, SensitiveGrant>>({});
   const [recheckOpen, setRecheckOpen] = useState(false);
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const [recheckError, setRecheckError] = useState("");
+  const recheckRef = useRef({ epoch: 0, busy: false, open: false });
+  const apiRef = useRef(api);
+  const grantApiRef = useRef(api);
+  apiRef.current = api;
   const [nowMs, setNowMs] = useState(() => Date.now());
   const requestRef = useRef(0);
   const detailRequestRef = useRef(0);
+  const recheckEpoch = recheckRef.current.epoch;
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const next = await api.get<DatabaseManagerSnapshotResponse>("snapshot", signal ? { signal } : {});
@@ -42,16 +49,24 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
   useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort(); }, [refresh]);
   useEffect(() => { const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250); return () => window.clearTimeout(timer); }, [searchInput]);
   useEffect(() => { const timer = window.setInterval(() => setNowMs(Date.now()), 1_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    resetSensitiveRecheck(false);
+    grantApiRef.current = api;
+    requestRef.current += 1; detailRequestRef.current += 1;
+    setGrants({}); setSelectedRecord(null); setPage({ records: [], total: 0, limit: 50, offset: 0 }); setStatus("");
+    return () => { recheckRef.current = { epoch: recheckRef.current.epoch + 1, busy: false, open: false }; };
+  }, [api]);
 
   const storeKey = sensitiveStoreKey(kind, selectedDatabase);
-  const activeGrant = grants[storeKey];
+  const scopedGrants = grantApiRef.current === api ? grants : {};
+  const activeGrant = scopedGrants[storeKey];
   const grantValid = Boolean(activeGrant && activeGrant.expiresAtMs > nowMs);
   const sensitive = isSensitiveDatabaseStore(kind);
   const sensitiveLocked = sensitive && !grantValid;
 
   const loadRecords = useCallback(async () => {
     if (!kind) return;
-    const currentGrant = grants[sensitiveStoreKey(kind, selectedDatabase)];
+    const currentGrant = scopedGrants[sensitiveStoreKey(kind, selectedDatabase)];
     if (isSensitiveDatabaseStore(kind) && (!currentGrant || currentGrant.expiresAtMs <= Date.now())) {
       setPage({ records: [], total: 0, limit: 50, offset: 0 });
       setSelectedRecord(null);
@@ -69,7 +84,7 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
       direction,
       ...(currentGrant ? { grantId: currentGrant.grantId } : {})
     });
-    if (requestId !== requestRef.current) return;
+    if (requestId !== requestRef.current || apiRef.current !== api) return;
     setLoading(false);
     if (!result.ok || !result.payload) {
       setPage({ records: [], total: 0, limit: 50, offset: 0 });
@@ -81,7 +96,7 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
     setStatus("");
     setPage(result.payload);
     if (result.payload.offset >= result.payload.total && result.payload.offset > 0) setPage((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }));
-  }, [api, direction, grants, kind, page.offset, search, selectedDatabase, sort]);
+  }, [api, direction, scopedGrants, kind, page.offset, search, selectedDatabase, sort]);
   useEffect(() => void loadRecords(), [loadRecords]);
   useEffect(() => { if (!sensitive || !activeGrant || activeGrant.expiresAtMs > nowMs) return; setGrants((current) => { const next = { ...current }; delete next[storeKey]; return next; }); setPage({ records: [], total: 0, limit: 50, offset: 0 }); setSelectedRecord(null); setStatus("Sensitive-store authorization expired"); }, [activeGrant, nowMs, sensitive, storeKey]);
 
@@ -89,28 +104,47 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
     const requestId = ++detailRequestRef.current;
     const requestedStoreKey = storeKey;
     setSelectedRecord(null);
-    const currentGrant = grants[storeKey];
+    const currentGrant = scopedGrants[storeKey];
     const result = await api.post<RecordEnvelope | null>("get-record", { kind, id, scope: selectedDatabase === "global" ? {} : { domainId: selectedDatabase }, ...(currentGrant ? { grantId: currentGrant.grantId } : {}) });
-    if (requestId !== detailRequestRef.current || requestedStoreKey !== sensitiveStoreKey(kind, selectedDatabase)) return;
+    if (requestId !== detailRequestRef.current || apiRef.current !== api || requestedStoreKey !== sensitiveStoreKey(kind, selectedDatabase)) return;
     if (!result.ok) { setStatus(result.error ?? "Unable to inspect record."); setSelectedRecord(null); return; }
     setSelectedRecord(result.payload ?? null);
   }
 
   async function authorizeSensitiveStore() {
-    const result = await api.post<SensitiveGrant>("authorize-store", { kind, scope: selectedDatabase === "global" ? {} : { domainId: selectedDatabase }, authorizationPassword: credentialRecheck.password, authorizationPin: credentialRecheck.pin, authorizationTotp: credentialRecheck.totp });
-    if (!result.ok || !result.payload) { setStatus(result.error ?? "Recheck failed."); return; }
-    setGrants((current) => ({ ...current, [storeKey]: result.payload! }));
-    setRecheckOpen(false);
-    setCredentialRecheck({ password: "", pin: "", totp: "" });
-    setStatus("Sensitive store authorized for five minutes");
+    if (!recheckRef.current.open || recheckRef.current.busy || recheckRef.current.epoch !== recheckEpoch || apiRef.current !== api) return;
+    const token = recheckRef.current.epoch;
+    const current = () => token === recheckRef.current.epoch && recheckRef.current.open && apiRef.current === api;
+    recheckRef.current.busy = true;
+    setRecheckBusy(true); setRecheckError("");
+    try {
+      const result = await api.post<SensitiveGrant>("authorize-store", { kind, scope: selectedDatabase === "global" ? {} : { domainId: selectedDatabase }, authorizationPassword: credentialRecheck.password, authorizationPin: credentialRecheck.pin, authorizationTotp: credentialRecheck.totp });
+      if (!current()) return;
+      const grant = result.payload;
+      if (!result.ok || !grant || typeof grant.grantId !== "string" || !grant.grantId.trim() || !Number.isFinite(grant.expiresAtMs) || grant.expiresAtMs <= Date.now()) {
+        setRecheckError("Authorization could not be completed. Check your credentials and try again."); return;
+      }
+      setGrants((existing) => ({ ...existing, [storeKey]: grant }));
+      resetSensitiveRecheck(false);
+      setStatus("Sensitive store authorized for five minutes");
+    } catch {
+      if (current()) setRecheckError("Authorization could not be completed. Check your credentials and try again.");
+    } finally {
+      if (current()) { recheckRef.current.busy = false; setRecheckBusy(false); }
+    }
   }
 
-  function requestSensitiveRecheck() { setCredentialRecheck({ password: "", pin: "", totp: "" }); setRecheckOpen(true); }
+  function resetSensitiveRecheck(open: boolean) {
+    recheckRef.current = { epoch: recheckRef.current.epoch + 1, busy: false, open };
+    setRecheckOpen(open); setRecheckBusy(false); setRecheckError("");
+    setCredentialRecheck({ password: "", pin: "", totp: "" });
+  }
+  function requestSensitiveRecheck() { resetSensitiveRecheck(true); }
   function selectStore(database: string, storeKind: string) {
     requestRef.current += 1;
     detailRequestRef.current += 1;
     setSelectedDatabase(database); setKind(storeKind); setSelectedRecord(null); setPage({ records: [], total: 0, limit: 50, offset: 0 }); setSearchInput(""); setSearch(""); setStatus("");
-    if (isSensitiveDatabaseStore(storeKind)) setRecheckOpen(true);
+    resetSensitiveRecheck(isSensitiveDatabaseStore(storeKind));
   }
   useEffect(() => () => {
     requestRef.current += 1;
@@ -141,7 +175,17 @@ export function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser 
         {sensitiveLocked ? <section className="db-locked-state"><VisualAlert tone="warning" title="Sensitive store locked" message="Identity credentials and encrypted secrets never enter summary caches. Complete a fresh security check for a five-minute view grant." /><button className="button button-primary" onClick={requestSensitiveRecheck} type="button"><KeyRound size={14} aria-hidden />Authorize View</button></section> : <><div aria-busy={loading} className="db-grid-wrap">{hiddenColumnCount ? <div className="db-column-notice" role="status">Showing the first 30 matching columns. {hiddenColumnCount} more {hiddenColumnCount === 1 ? "column is" : "columns are"} available in record detail.</div> : null}<table className="db-grid"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{page.records.map((record) => <tr className={selectedRecord?.id === record.id ? "selected" : ""} key={record.id}>{columns.map((column) => <td key={column}>{column === "id" ? <button className="link-button" onClick={() => void inspectRecord(record.id)} type="button">{record.id}</button> : formatDbCell(record.data?.[column])}</td>)}</tr>)}{!loading && !page.records.length ? <tr><td className="empty-cell" colSpan={Math.max(1, columns.length)}>{search ? "No rows match this search." : "This store has no rows."}</td></tr> : null}</tbody></table>{loading ? <LoadingState compact label="Loading rows" /> : null}</div><footer className="db-page-footer"><span>{page.total ? page.offset + 1 : 0}-{Math.min(page.total, page.offset + page.records.length)} of {page.total}</span><div className="inline-actions"><button aria-label="Previous page" className="icon-button" disabled={page.offset === 0 || loading} onClick={() => setPage((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }))} title="Previous page" type="button"><ChevronLeft size={15} aria-hidden /></button><span>Page {pageNumber} of {pageCount}</span><button aria-label="Next page" className="icon-button" disabled={page.offset + page.limit >= page.total || loading} onClick={() => setPage((current) => ({ ...current, offset: current.offset + current.limit }))} title="Next page" type="button"><ChevronRight size={15} aria-hidden /></button></div></footer></>}
       </section>
       <aside className="db-inspector"><div className="db-sidebar-heading"><strong>Record Detail</strong><span>{selectedRecord?.id ?? "none"}</span></div>{selectedRecord ? <><KeyValue rows={[["ID", selectedRecord.id], ["Store", selectedRecord.kind], ["Database", selectedRecord.scope?.domainId ?? "global"], ["Created", formatTime(selectedRecord.createdAtMs)], ["Updated", formatTime(selectedRecord.updatedAtMs)]]} />{selectedData ? <div className="kv-explorer">{Object.entries(selectedData).map(([key, value]) => <div key={key}><span className="db-icon key">K</span><strong>{key}</strong><code>{formatDbCell(value)}</code></div>)}</div> : null}<details className="db-raw-record"><summary>Detailed JSON</summary><pre>{JSON.stringify(selectedRecord.data, null, 2)}</pre></details></> : <EmptyState compact title="No record selected" description="Choose a record ID to load its full detail." />}<StatusText value={status} />{grantValid && activeGrant ? <small className="db-grant-status">Sensitive grant expires in {formatGrantCountdown(activeGrant.expiresAtMs, nowMs)}</small> : null}</aside>
-      {recheckOpen ? <Modal title="Authorize Sensitive Store" description={"Grant five minutes of access to " + kind + " in " + selectedDatabase + "."} onClose={() => setRecheckOpen(false)}><VisualAlert tone="warning" title="Fresh recheck required" message="Encrypted and credential records remain excluded from summaries and browser caches until authorization succeeds." /><div className="dialog-form"><Field label="Password" required><input autoComplete="current-password" data-autofocus type="password" value={credentialRecheck.password} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, password: event.target.value })} /></Field>{currentUser.pinConfigured ? <Field label="PIN" required><input inputMode="numeric" value={credentialRecheck.pin} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, pin: digits(event.target.value) })} /></Field> : null}{currentUser.totpEnabled ? <Field label="2FA code" required><input autoComplete="one-time-code" inputMode="numeric" value={credentialRecheck.totp} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, totp: digits(event.target.value).slice(0, 6) })} /></Field> : null}</div><div className="modal-actions"><button className="button" onClick={() => setRecheckOpen(false)} type="button">Cancel</button><button className="button button-primary" disabled={!credentialRecheck.password || (currentUser.pinConfigured && credentialRecheck.pin.length < 4) || (currentUser.totpEnabled && credentialRecheck.totp.length !== 6)} onClick={() => void authorizeSensitiveStore()} type="button">Authorize for 5 Minutes</button></div></Modal> : null}
+      {recheckOpen ? <Modal title="Authorize Sensitive Store" description={"Grant five minutes of access to " + kind + " in " + selectedDatabase + "."} onClose={() => resetSensitiveRecheck(false)}>
+        <VisualAlert tone="warning" title="Fresh recheck required" message="Encrypted and credential records remain excluded from summaries and browser caches until authorization succeeds." />
+        {recheckError ? <VisualAlert tone="error" title="Authorization failed" message={recheckError} /> : null}
+        <div aria-busy={recheckBusy} className="dialog-form">
+          <Field label="Password" required><input autoComplete="current-password" data-autofocus disabled={recheckBusy} type="password" value={credentialRecheck.password} onChange={(event) => { if (!recheckRef.current.busy) setCredentialRecheck({ ...credentialRecheck, password: event.target.value }); }} /></Field>
+          {currentUser.pinConfigured ? <Field label="PIN" required><input disabled={recheckBusy} inputMode="numeric" value={credentialRecheck.pin} onChange={(event) => { if (!recheckRef.current.busy) setCredentialRecheck({ ...credentialRecheck, pin: digits(event.target.value) }); }} /></Field> : null}
+          {currentUser.totpEnabled ? <Field label="2FA code" required><input autoComplete="one-time-code" disabled={recheckBusy} inputMode="numeric" value={credentialRecheck.totp} onChange={(event) => { if (!recheckRef.current.busy) setCredentialRecheck({ ...credentialRecheck, totp: digits(event.target.value).slice(0, 6) }); }} /></Field> : null}
+        </div>
+        {recheckBusy ? <p role="status">Checking authorization...</p> : null}
+        <div className="modal-actions"><button className="button" onClick={() => resetSensitiveRecheck(false)} type="button">Cancel</button><button className="button button-primary" disabled={recheckBusy || !credentialRecheck.password || (currentUser.pinConfigured && credentialRecheck.pin.length < 4) || (currentUser.totpEnabled && credentialRecheck.totp.length !== 6)} onClick={() => void authorizeSensitiveStore()} type="button">Authorize for 5 Minutes</button></div>
+      </Modal> : null}
     </section>
   );
 }
