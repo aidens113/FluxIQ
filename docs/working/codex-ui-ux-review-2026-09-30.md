@@ -11,109 +11,63 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
-Latest root twelfth narrow checks: floating139/native0/22.78s; combined
-Tooltip23/JsonViewer7/download5/shared contracts20 =55/native0/4.58s.
-CodeViewer cleanup independently19/strict0 checkpoint1d4d2000. JsonViewer
-long-string guidance reproduced3fail/4pass before local flag fix. Nine-root
-strict83805 native0, nine roots and two declarations,0diagnostics; checkpoint
-91a29dd2. DataInspector/settings exact four paths frozen and source/tests read;
-root owning22293 native0 fivefiles79/21.19s and strict80956 fourroots plus two
-declarations0diagnostics, checkpointb1dfc40e. Broad CLOSED: full31117 failed
-2807pass3fail/350files/358.11s (oldlogin/flowcreate); types65532 native0/127109ms,
-build34521 native0/286125ms/17pages; structure46579 onlyprotected4506/4505.
-Unchanged narrow31353 passedlogin8 butfailedrecording.delete[several] EPERM
-in syntheticfixture (67pass1fail/152.34s). No timeout/assertion/waiver changes.
-Root owns shared docs/review;
-exact reports and briefs are downstream, latest twelfth-supervisor-verification.
-Extension root208/strict17roots0; full58454 failed2062pass1lazy-tailfailure,
-unchanged narrow6pass leaves full unresolved. Public state alias restored after
-types/build failures; corrected types1691/build11533 native0, structure12361
-native0. New downstream AskControls two-path unit and test-only lazy-tail
-ordering probe independently8passed and actual race/deadline behavior observed;
-worker local list-wait+NEWregressions recovery now active. Ask local keyboard
-unit independently54/native0/338.26ms and two-root strict0. Three workers now
-own hierarchy dialog recovery, lazy-list completion and ProjectTree keyboard
-ownership in disjoint paths after all broad sessions closed. Read-only deletion
-fixture audit found no confirmed fixture cause; protected bulk-deletion/service
-quiescence handoff is recorded downstream. Hierarchy owning correction is active
-for visible failure feedback and StrictMode regression. Protected storage/runtime remains untouched.
-No browser certification or push.
+Continuous Core UI execution is Active in isolated paired task t224. Claude
+owns integration; root does not merge/push or edit protected runtime/storage/
+conversation/context-packet implementations. No live/browser/Lab/provider/
+panel management or actual private-data access is authorized.
 
-Latest coordination: three workers own disjoint hierarchy-dialog, ProjectTree
-and generic shared Tree source/test units; no broad Core checks during writes.
-Extension lazy completion independently48/native0/41709.8521ms locally committed
-28ee7f6a; Ask54/strict0 committed3a55a8b1. Root extension integrated full45050 and
-lazy scoped57017 remain queued, source frozen. Read-only main history shows Claude
-integrated source snapshots at Corec9518f84 (b1dfc40e) and downstream2d269cd7
-(1884e5e2), round6. Main Core clean; downstream task-tool scripts dirty and left
-untouched. Root has not verified Claude's round6 checks or performed integration.
+Three workers own disjoint Core units; no broad Core gates during their writes:
+- Hierarchy dialog/reducer +NEW recovery test: pending locks and captured-store
+  issued settlement implemented; local visible feedback/StrictMode correction
+  active, source not yet accepted by root.
+- Hierarchy ProjectTree +NEW keyboard ownership test: corrected baseline22fail/
+  3pass, local direct-treeitem guard implemented; owning/types pending.
+- Generic shared Tree +NEW event ownership test: source-confirmed nested
+  keyboard/focus leakage; tests-first baseline queued, original source unchanged.
+Downstream paired reports hold exact briefs; claims require independent review.
 
-Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
-a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
-is preserved; corrected full61471 native0,340files2629tests/194.11s; types50626
-native0/95150ms; build45474 native0/202003ms. After source freeze root reconciled
-two cleanup-rationale comments; final structure only inherited protected4506/4505.
-Eleventh Complete: source10ce95a7/0e868679; root54/51/101 independently passed.
-Full80759 native0,344files2706tests/207.22s; types14622 native0/48883ms;
-production69790 native0/199764ms; structure37927 only protected4506/4505.
-Downstream source86913bca and integration92decca0; full2028/types/build/structure
-all native0. Every gate closed before new source release. Two Core workers now
-implement exact five-path floating close intent and three-path Tooltip behavior;
-third worker implements downstream real session binding. Root owns verification,
-authored docs and local checkpoints. Exact briefs/reports live downstream.
-No live/browser certification or Claude integration.
+Latest verified Core source:1d4d2000 CodeViewer cleanup,91a29dd2 Tooltip/floating
+close/JsonViewer guidance,b1dfc40e DataInspector/settings navigation. Root owning
+checks19/55/139/79 passed; nine-root and four-root actual-config strict0.
+Twelfth full31117 FAILED:350files2807pass3fail/358.11s (old login/flow.create).
+Types65532 native0/127109ms; build34521 native0/286125ms/17pages. Structure46579
+only inherited protected4506/4505, unchanged and unwaived.
+Unchanged focused31353 FAILED67pass1fail/152.34s:login8 and flow.create pass,
+recording.delete[several] returns synthetic-fixture EPERM. Root reviewed relevant
+test/world/argument source:unique physical roots, awaited public lifecycle and
+one-ID bulk variant; no fixture cause confirmed. Protected deletion/service
+quiescence handoff remains open. No refusal/assertion/timeout relaxation.
 
-Continuous UI/UX execution is active in paired isolated task t224 worktrees.
-Claude owns integration: no merge/push or protected runtime/storage/conversations/
-context-packet edits; no live/provider/browser/panel operation or private data.
-The downstream paired working document owns exact worker briefs and reports.
+Eleventh accepted integrated Core gate:344files2706/native0,types/build0,
+structure only protected violations. Prior evidence remains in paired reports.
+Original Claude workload t216/t217/t219/t220/t221 is complete and handed off in
+t221 de2096b1. Read-only main history shows Claude round6 integratedb1dfc40e at
+Corec9518f84 and downstream1884e5e2 at2d269cd7. Root did not observe round6
+validation. Main Core was clean; downstream task-tool edits left untouched.
 
-Seventh Complete: source checkpoint e75c6fcc. Root combined12files150tests/native0/
-9.43s; full68081 native0,325files2199tests/185.26s; types72364 native0/92993ms;
-production76550 native0,17pages/202949ms. Full structure65986 native1 only inherited
-protected service4506/4505. No config/baseline relaxation. Production parameter,
-Deployment and Docs recovery are independently reviewed and validated by these
-gates; root local Docs acknowledgement regression was reproduced and fixed.
+The downstream document owns browser-contract details and gate results. Latest
+extension source3a55a8b1 AskControls and28ee7f6a lazy completion independently
+passed54/48 tests and scoped types0. Extension full45050/build93194 pending,
+source frozen; original full failure remains recorded. Receiver/start/preview
+plans are held for subsequent explicit file-partitioned releases.
 
-Eighth Complete: source checkpoint fe0165c7. Identity, Secret UI/reveal/catalog and
-Docs tree independently reviewed. Root45942 observed16files182pass/native0/
-12.31s, including unchanged clipboard/gate and current shared request contracts.
-Full36851 native0,333files2342tests/173.54s; types59270 native0/35422ms;
-production8087 native0/190162ms. Structure56016 native1 only inherited protected
-service4506/4505; no baseline/config relaxation. Root owns integration, authored
-docs and verification; current released work is recorded below.
-
-Eighth supervisor review: Docs tree root96439 observed42pass/native0/10.79s;
-strict actual-config nine-root5272 native0 after hint removal. Identity root73193
-observed61pass/native0/8.91s after bound-subject caption refinement. Its provisional
-cross-lane Secret-copy4 was superseded by frozen integrated182 and full2342.
-Operational/onboarding source audit evidence stays preserved in own downstream
-reports; subsequent current validation is recorded below.
-
-Extension utility root41 tests pass; full1821/types/build/structure all native0.
-Previous sixth extension1791 and all
-seventh Core gates remain preserved. Browser/focus behavior is not certified.
-
-Original Claude t216/t217/t219/t220/t221 handoff and commits stay recorded in the
-downstream parent; completed work is not reimplemented or integrated here. All
-work stays locally checkpointed until Claude integration. Continue beyond batches
-with meaningful audits/plans/fixes; preserve progress as it happens.
-
-[Superseded Current State](./codex-ui-ux-review-2026-09-30/archive/2026-10-01-pre-eighth-current-state.md)
-retains prior detailed batch evidence; downstream ledgers/reports retain full
-cross-repository validation and ownership history.
-
-Ninth operational/onboarding source checkpoint9d2eb6fa independently reviewed:
-root105tests/native0/3.87s (including strengthened direct Retry assertions) and
-onboarding91/native0/12.33s. Dialog keyboard/entry four-path root88/native0/2.16s
-confirms Cancel/Close Enter and autofocus correction preserving authorization/
-OperationGate/Studio overlay contracts; dialog checkpoint e50a6882. Ninth full
-22516 native0,338files2506tests/182.57s; types74206 native0/103169ms; production
-84386 native0/201922ms. Structure55934 native1 only inherited protected
-service4506/4505. All ninth units Complete. Menu two-path worker now released;
-downstream mounted Chat/extraction source active after independent1878full gates.
+Next: source/test review and independent owning checks for all three Core units;
+update authored documentation, then integrated checks after source freeze.
+Never substitute narrow success for original full failures or browser proof.
+Latest paired progress checkpoints Core5eec244e/6e13961f and downstreama09bef0e/
+220dc1a4/f93a8e1f/14a84cea. Root has made no merge or push.
+Superseded Current State preserved verbatim in
+[the checkpoint archive](./codex-ui-ux-review-2026-09-30/archive/2026-10-01-before-core-tree-current-state.md).
 
 ## Work Ledger
+
+### 2026-10-01 - Current State consolidated before Core tree units
+- Agent: supervisor
+- Changed: paired Current State and verbatim archive; full record owned downstream under same dated ledger title
+- Validation: exact archive comparison and Current State line budget
+- Outcome: Accepted
+- Follow-up: finish three Core units and observe downstream gates
+
 
 ### 2026-10-01 - Twelfth narrow verification and continued workers
 - Agent: supervisor and three workers
