@@ -26,7 +26,9 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
   if (read.dedupes === true) parts.push(read.dedupeBy?.length ? `keeps one row per ${read.dedupeBy.join(" + ")}` : "dedupes");
   const counts = (read.conditions ?? []).map((condition) => condition.rejected);
   if (counts.length) {
-    parts.push(`its ${counts.length} ${counts.length === 1 ? "condition" : "conditions"} rejected ${counts.map((rows) => rows ?? "?").join(", ")} rows`);
+    const alone = (read.conditions ?? []).map((condition) => condition.alone);
+    const byItself = alone.some((rows) => rows !== undefined) ? ` (by itself: ${alone.map((rows) => rows ?? "?").join(", ")})` : "";
+    parts.push(`its ${counts.length} ${counts.length === 1 ? "condition" : "conditions"} rejected ${counts.map((rows) => rows ?? "?").join(", ")} rows${byItself}`);
   }
   if (read.unfiltered) parts.push("every row failed them, so it answered unfiltered");
   return parts.length ? `; ${parts.join(", ")}` : "";
@@ -40,8 +42,12 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   if (read.dedupes === false) lines.push("It does not deduplicate.");
   const conditions = read.conditions ?? [];
   if (conditions.length) {
-    const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows`);
+    const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}`);
     lines.push(`Its conditions, each with the rows it rejected across the whole read (a row can fail more than one): ${said.join("; ")}.`);
+    // The rows a condition removed by itself passed every other condition: if the answer lacks rows the request wanted, they are where they went.
+    if (conditions.some((condition) => (condition.alone ?? 0) > 0)) {
+      lines.push("A row a condition rejected by itself passed every other condition, so if the answer lacks rows the request wanted, a condition with such rows is the first to check against the request's own words.");
+    }
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   return lines.length ? ` ${lines.join(" ")}` : "";

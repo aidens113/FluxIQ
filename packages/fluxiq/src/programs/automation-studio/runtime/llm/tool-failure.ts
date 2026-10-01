@@ -11,7 +11,8 @@
 // with them, and the model could have too, had it been told.
 //
 // A loop configured for it now records the call and tells the model, then asks
-// again. What the model is told is closed: the tool, one of two codes, and how
+// again. What the model is told is closed: the tool, a failure code (for a
+// result that could not be read, the check that refused it), and how
 // close the loop is to stopping. Never the error's text, which is the domain's
 // own words and may quote the page. A domain that knows why its tool failed --
 // a covered control, a page that moved -- says so by returning a refusal with a
@@ -19,8 +20,44 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 
-/** The call threw, or it returned something that is not a tool result. */
-export type AutomationStudioLlmEvidenceToolFailureCode = "llm_evidence_loop.tool_failed" | "llm_evidence_loop.tool_result_invalid";
+/**
+ * Which check a returned value failed when it is not a tool result
+ * (`./evidence-loop-decision.ts`). A closed list: a refusal names the check,
+ * never the member's name or value, which are the caller's and may carry the
+ * page.
+ *
+ * Added after live run `run-mup2u8o3-6697c4be`, where a click that worked was
+ * refused for one member the reader had not learned, and every record of it
+ * said only `tool_result_invalid`: finding which member took the run's dump
+ * and a reproduction.
+ */
+export type AutomationStudioLlmEvidenceToolResultCheck =
+  | "not_json"
+  | "unknown_key"
+  | "evidence_not_json"
+  | "effect_applied_not_boolean"
+  | "targets_unchanged_not_boolean"
+  | "result_code_not_code"
+  | "draft.not_object"
+  | "draft.unknown_key"
+  | "draft.action_id"
+  | "draft.input"
+  | "draft.ran_with"
+  | "draft.effect"
+  | "draft.proposes"
+  | "draft.replay";
+
+/**
+ * The call threw, or it returned something that is not a tool result. A
+ * refused result's code names the check it failed,
+ * `llm_evidence_loop.tool_result_invalid.<check>`, and that one code is what
+ * the model, the trace row, the history and the draft step all carry. The bare
+ * `tool_result_invalid` stays for a caller that cannot say which.
+ */
+export type AutomationStudioLlmEvidenceToolFailureCode =
+  | "llm_evidence_loop.tool_failed"
+  | "llm_evidence_loop.tool_result_invalid"
+  | `llm_evidence_loop.tool_result_invalid.${AutomationStudioLlmEvidenceToolResultCheck}`;
 
 const TOOL_FAILURE_INSTRUCTION = "This call failed and returned no evidence, so nothing it would have shown is known. "
   + "If it was an action, the page may have changed: look again before relying on earlier evidence. "

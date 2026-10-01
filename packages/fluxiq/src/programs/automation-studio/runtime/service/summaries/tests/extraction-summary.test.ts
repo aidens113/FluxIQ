@@ -197,6 +197,21 @@ describe("what the projection admits", () => {
     }
   });
 
+  it("carries per condition how many rows it removed alone, from a playback's own counts, and refuses a malformed list", () => {
+    // run-mup2u8o3-6697c4be: the accessory rule rejected 20 rows and removed 5 by itself.
+    const counts = { applied: 40, kept: 10, rejected: [12, 6, 3, 20], unfiltered: false };
+    const admitted = (alone: unknown) => extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { ...counts, alone } } } });
+    expect(admitted([4, 1, 0, 5])?.conditions).toEqual({ ...counts, alone: [4, 1, 0, 5] });
+    // Counts only: no row text rides on it.
+    expect(JSON.stringify(admitted([4, 1, 0, 5]))).not.toContain("Earbuds");
+    // Absent is a producer that predates it, and the report still arrives without it.
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: counts } } })?.conditions).toEqual(counts);
+    // One count per condition, never above that condition's own rejections.
+    for (const malformed of [[4, 1, 0], [4, 1, 0, 21], [4, 1, 0, -1], [4, 1, 0, "5"], "5", null]) {
+      expect(admitted(malformed), JSON.stringify(malformed)).toBeUndefined();
+    }
+  });
+
   it("refuses a condition report that kept more than it looked at, and admits any number of conditions", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 3, rejected: [], unfiltered: false } } } })).toBeUndefined();
     // No count cap: a read of two hundred conditions reports all two hundred (user, 2026-09-30).

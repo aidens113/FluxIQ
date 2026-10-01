@@ -5,6 +5,7 @@ import {
   AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
 } from "../provider-contract.ts";
 import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
+import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
@@ -147,8 +148,15 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       }
     })
     : null;
-  // A reservation the run's budget refused ends the call here, before the
-  // provider is invoked. Nothing about a provider may be claimed from here on:
+  // The build's purse, when the call is made under one (`../build-purse/`):
+  // this request's worst case -- its measured input all uncached, its whole
+  // reply allowance -- held against what the build has spent and has in flight,
+  // and the call refused, unsent, when that would cross the build's ceiling.
+  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens, maxOutputTokens: request.tokenLimits.maxOutputTokens });
+  if (held && !held.ok && reservation?.ok) reservation.lease.release();
+  // A reservation the run's budget or the build's purse refused ends the call
+  // here, before the provider is invoked. Nothing about a provider may be
+  // claimed from here on:
   // this return used to carry `provider: input.provider.metadata` -- the
   // provider it *would* have called -- and the projection that builds a stored
   // failure reads the presence of that metadata as the request having been made.
@@ -157,11 +165,11 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // named, no usage and no status; they were then read for a day as DeepSeek
   // rejecting our request. No request was ever made. Saying so is one word, and
   // it is the caller's word to say -- a reader cannot infer it from an absence.
-  if (reservation && !reservation.ok) {
-    const diagnostics = [
-      ...context.instructions.diagnostics,
-      { severity: "error" as const, code: reservation.diagnostic.code, message: reservation.diagnostic.message }
-    ];
+  const refusedBy = reservation && !reservation.ok
+    ? { severity: "error" as const, code: reservation.diagnostic.code, message: reservation.diagnostic.message }
+    : held && !held.ok ? held.diagnostic : undefined;
+  if (refusedBy) {
+    const diagnostics = [...context.instructions.diagnostics, refusedBy];
     return {
       ok: false,
       request,
@@ -225,6 +233,8 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       ...retryDiagnostics
     ];
     if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
+    // A request the adapter refused before sending cost nothing; one that may have gone out is charged as held, or as reported.
+    if (held?.ok) { if (failure.provenance.providerInvocation === "not_attempted") held.hold.release(); else held.hold.settle(failure.reply?.usage); }
     return {
       ok: false,
       request,
@@ -245,6 +255,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   } catch {
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
+    if (held?.ok) held.hold.settle();
     return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
@@ -255,6 +266,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // smaller reservation instead and never count the breach, so a run that
   // overspent read as a run that spent exactly what it reserved.
   if (reservation?.ok) reservation.lease.complete(providerResult.usage, callOutcome(diagnostics));
+  if (held?.ok) held.hold.settle(providerResult.usage);
   return {
     ok,
     request,
@@ -345,11 +357,6 @@ function measuredInput(request: AutomationStudioLlmTaskRequest, provider: Automa
  * the ceiling, as every call was before.
  */
 function reservedCostUsd(provider: AutomationStudioLlmProvider, inputTokens: number, outputTokens: number, ceilingUsd: number): number {
-  let priced: number | undefined;
-  try {
-    priced = provider.estimateCostUsd?.({ inputTokens, outputTokens });
-  } catch {
-    priced = undefined;
-  }
-  return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? Math.min(ceilingUsd, priced) : ceilingUsd;
+  const priced = automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens);
+  return priced !== undefined ? Math.min(ceilingUsd, priced) : ceilingUsd;
 }

@@ -193,10 +193,10 @@ export function automationStudioFlowDraftStepIsProposed(step: AutomationStudioFl
  * Whether a step is one the result could contain, before the model's own
  * amendments are consulted.
  *
- * The draft shown to the model lists these, so a step it withdrew is still on
- * the list with `inResult: false` beside it rather than silently gone. A step
- * that only looked, or that failed, is not on it at all: neither is a thing the
- * model could put in the Flow by changing its mind about it.
+ * A step the model withdrew is still in the draft it is shown, with
+ * `inResult: false` beside it rather than silently gone. A step that only
+ * looked, or that failed, is never one of these: neither is a thing the model
+ * could put in the Flow by changing its mind about it.
  */
 export function automationStudioFlowDraftStepIsProposable(step: AutomationStudioFlowDraftStep): boolean {
   return automationStudioFlowDraftStepIsAction(step) && step.effectApplied !== false;
@@ -206,12 +206,13 @@ export function automationStudioFlowDraftStepIsProposable(step: AutomationStudio
  * Whether a step is one of the kind a result is made of, whether or not this
  * attempt worked.
  *
- * This is what the draft *lists*, because the receipt is what makes the draft
- * checkable: a reader can see that the loop pressed six controls, that one of
- * them failed and one was withdrawn, and that the other four are what the
+ * This is what the draft lists as its steps, because the receipt is what makes
+ * the draft checkable: a reader can see that the loop pressed six controls, that
+ * one of them failed and one was withdrawn, and that the other four are what the
  * result contains. A list with the other two silently absent is a claim nobody
- * can audit. A step that only looked is not of that kind at all and is not
- * listed.
+ * can audit. A step that only looked is not of that kind at all: it is listed
+ * as a look only so its number shows (`./entry.ts`), and no amendment puts it in
+ * the Flow (`./amendment.ts`).
  */
 export function automationStudioFlowDraftStepIsAction(step: AutomationStudioFlowDraftStep): boolean {
   return step.proposes ?? step.effect === "mutate";

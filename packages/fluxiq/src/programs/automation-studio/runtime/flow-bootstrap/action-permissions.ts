@@ -44,10 +44,18 @@
 // the answer that let a build finish was the dishonest one. Now declaring leads
 // to being asked and the build carries on, so honesty is the cheap path.
 //
-// One question at a time, and at most one wait. A refusal nobody granted -- a
-// person saying no, or nobody there to say anything -- is remembered, and every
-// later refusal reports that same request rather than asking again. So a build
-// nobody is watching costs one wait, not one per action.
+// One question at a time, and a person is never asked the same question twice.
+// A request nobody answered -- the wait ran out, the thread could not be
+// reached, the build was cancelled -- stays in force, and every later refusal
+// reports that same request rather than asking again. So a build nobody is
+// watching costs one wait, not one per action. A person who answered no is
+// still there, though, and their no was about one control: that question --
+// the same control, the same kind, the same classes -- is refused from then on
+// without asking and is told to the domain as `declined`, while a different
+// question is a new request and is asked. Until t195-w18 one decline ended
+// every later ask too, so a build whose model declared money on "Continue to
+// checkout" and was told no could never ask about "Place order", the press
+// the task actually needed.
 //
 // **What every step declared travels with the build, not only the refused one.**
 // A build's proposal carries the gate's whole record and Core's cross-check of
@@ -80,7 +88,7 @@ import {
 } from "../action-permissions/index.ts";
 import { automationStudioActivityAskPort } from "../activity/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
-import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
+import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioPermissionAskOutcome, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 
 /**
@@ -108,7 +116,7 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
   signal: AbortSignal;
   /** What the instruction was read to ask for, once the build first needed to know; stored with what it builds. */
   instructed(): readonly AutomationStudioInstructedConsequence[] | undefined;
-  /** The request a refusal raised, or `undefined` when none was. Stored with a build that finished anyway. */
+  /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
   /** What every action put to the gate declared about itself, in the order it was asked. */
   declarations(): readonly AutomationStudioActionDeclarationRecord[];
@@ -162,25 +170,30 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   // request -- and wrong for the build, which can carry on exploring. This one
   // fires only for the refusal the loop cannot see.
   const planRefused = new AbortController();
-  // One wait per build. Set the moment a request is put to a person, whatever
-  // they answer, so a refusal nobody granted is never re-asked.
-  let asked = false;
+  // Each request is put to a person once. A request nobody answered stays in
+  // force at the gate and every later refusal carries its id, so a build
+  // nobody is watching still waits once. A person's decline is remembered at
+  // the gate for that question alone; a different question raises a request
+  // with a new id, and that one is asked (t195-w18).
+  const asked = new Set<string>();
   /** The gate's check, with the refusal it would return put to a person first. */
   const asking = (action: { kind: "exploration_step" | "flow_step"; id: string; ref: string }): AutomationStudioActionPermissionCheck => {
     const check = gate.checkFor(action);
     return async (declaration) => {
       const decision = await check(declaration);
       const request = gate.request;
-      if (decision.permitted || !input.ask || asked || !request || request.requestId !== decision.requestId) return decision;
-      asked = true;
+      if (decision.permitted || decision.declined || !input.ask || !request || request.requestId !== decision.requestId || asked.has(request.requestId)) return decision;
+      asked.add(request.requestId);
       // The wait and its answer are said where the port settles them (`../activity/ask/port.ts`).
-      if (!(await automationStudioAskedAndGranted({ ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") }, request))) {
-        gate.settle("refused");
+      const outcome = await automationStudioPermissionAskOutcome({ ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") }, request);
+      if (outcome === "unanswered") {
+        gate.settle("unanswered");
         return decision;
       }
-      gate.settle("granted");
+      gate.settle(outcome);
       // Asked again rather than answered from here: the gate recomputes what is
-      // missing against what it now holds, so nothing decides permission twice.
+      // missing against what it now holds -- permitted after a grant, refused as
+      // `declined` after a no -- so nothing decides permission twice.
       return await check(declaration);
     };
   };

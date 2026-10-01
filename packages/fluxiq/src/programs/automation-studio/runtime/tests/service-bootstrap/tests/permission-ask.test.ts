@@ -138,7 +138,86 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
       ["building", requestId, "succeeded", "allowed"]
     ]);
   }, 30_000);
+
+  // A person's no was once the end of every question in the build: the first
+  // ask set a build-wide flag, and the declined request refused every later
+  // press with its own id. Live, a no to "Continue to checkout" meant "Place
+  // order" was never asked about (t195-w18).
+  it("asks about another control after the person declines one, and presses it once granted", async () => {
+    const run = await checkoutBuild();
+    const answered = answerEach(run, ["deny", "grant"]);
+    const result = await run.generation;
+    const [declinedId, grantedId] = await answered;
+
+    expect(run.acted).toEqual(["Place order"]);
+    expect(result.status).toBe("proposed");
+    expect(result.permissionRequest).toBeUndefined();
+    expect(declinedId).not.toBe(grantedId);
+    expect(askRows()).toEqual([
+      ["waiting_permission", declinedId, "started", undefined],
+      ["building", declinedId, "failed", "declined"],
+      ["waiting_permission", grantedId, "started", undefined],
+      ["building", grantedId, "succeeded", "allowed"]
+    ]);
+  }, 30_000);
 });
+
+/** A build that presses "Continue to checkout" and then "Place order", each declaring money. */
+async function checkoutBuild() {
+  const acted: string[] = [];
+  const decisions: JsonObject[] = [
+    { kind: "tool_call", callId: "call.checkout", toolId: "example.act", input: { control: "Continue to checkout" } },
+    { kind: "tool_call", callId: "call.place", toolId: "example.act", input: { control: "Place order" } },
+    { kind: "complete", result: { summary: "Built.", plan: plan() } }
+  ];
+  let call = 0;
+  const provider = mockProvider(async (request) => ({
+    // The instruction is read once for what it asks for, with no tools; that
+    // call must not use up one of the model's decisions.
+    response: request.context.evidenceLoop?.tools.length === 0
+      ? { kind: "evidence_tool_decision", summary: "Read the instruction.", decision: { kind: "complete", result: { instructed: [] } } }
+      : { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
+    usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
+  }));
+  const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
+    domainId: "example",
+    deniedEvidenceKeys: [],
+    tools: [{ toolId: "example.act", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" }],
+    executeTool: async (input) => {
+      const name = String(input.value.control);
+      const verdict = await input.permission({ consequences: ["move_money"], control: { name, kind: "button" }, verb: "press" });
+      if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, resultCode: "example.permission_required" };
+      acted.push(name);
+      return { kind: "llm_evidence_tool_execution", evidence: { pressed: name }, effectApplied: true };
+    }
+  };
+  const { project, flow } = await seeded(example);
+  const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never, llmEvidenceRuntime: binding });
+  services.add(instance);
+  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 30_000 });
+  return { instance, project, flow, acted, generation };
+}
+
+/** Answers each permission ask the build opens, in the order it opens them, and returns their ids. */
+async function answerEach(run: Awaited<ReturnType<typeof checkoutBuild>>, kinds: Array<"grant" | "deny">): Promise<string[]> {
+  const answered: string[] = [];
+  // A build that stops asking ends the wait for its next question too.
+  let over = false;
+  void run.generation.then(() => { over = true; }, () => { over = true; });
+  for (let attempt = 0; attempt < 600 && answered.length < kinds.length && !over; attempt += 1) {
+    const [conversation] = await run.instance.conversations.listConversations({ projectId: run.project.id, subject: { kind: "flow", id: run.flow.flowId } });
+    const thread = conversation ? await run.instance.conversations.getConversation({ projectId: run.project.id, conversationId: conversation.conversationId }) : null;
+    for (const turn of thread?.turns ?? []) {
+      const askId = turn.ask?.kind === "permission" ? turn.ask.askId : undefined;
+      if (!askId || answered.includes(askId) || answered.length >= kinds.length) continue;
+      await run.instance.conversations.answerAsk({ projectId: run.project.id, askId, kind: kinds[answered.length]! });
+      answered.push(askId);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (answered.length < kinds.length) throw new Error(`The build asked ${answered.length} of the ${kinds.length} expected questions.`);
+  return answered;
+}
 
 describe("a build that never explored", () => {
   // The one-call path resolved its plan with no gate behind it, so every step

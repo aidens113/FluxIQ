@@ -174,9 +174,13 @@ export type AutomationStudioResultReadAccount = {
    * The step's conditions, in authored order, each with the rows it rejected
    * across the whole read. A row can fail more than one, so the counts need not
    * add up to what was dropped. `condition` is absent where the wording could
-   * not be carried; the count still is.
+   * not be carried; the count still is. `alone` is how many of those rows the
+   * condition removed by itself (every other condition kept them): the rows
+   * that say whether the condition is right, where its whole count cannot
+   * (`run-mup2u8o3-6697c4be`: an accessory rule rejected 20, 5 alone, 3 of them
+   * true answers). Absent where the read did not count it.
    */
-  conditions?: Array<{ condition?: string; rejected?: number }>;
+  conditions?: Array<{ condition?: string; rejected?: number; alone?: number }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /** How many attempts of this step reported a read. Absent when one did; the account is the last one's. */
