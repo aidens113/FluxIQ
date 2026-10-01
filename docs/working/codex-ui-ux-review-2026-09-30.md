@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Eleventh gates complete; twelfth floating/Tooltip independently checked, DataInspector and settings navigation implementations active.
+Status detail: Twelfth source verified; hierarchy dialog, ProjectTree and shared Tree event ownership implementations active; original full failures preserved.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -38,6 +38,15 @@ fixture audit found no confirmed fixture cause; protected bulk-deletion/service
 quiescence handoff is recorded downstream. Hierarchy owning correction is active
 for visible failure feedback and StrictMode regression. Protected storage/runtime remains untouched.
 No browser certification or push.
+
+Latest coordination: three workers own disjoint hierarchy-dialog, ProjectTree
+and generic shared Tree source/test units; no broad Core checks during writes.
+Extension lazy completion independently48/native0/41709.8521ms locally committed
+28ee7f6a; Ask54/strict0 committed3a55a8b1. Root extension integrated full45050 and
+lazy scoped57017 remain queued, source frozen. Read-only main history shows Claude
+integrated source snapshots at Corec9518f84 (b1dfc40e) and downstream2d269cd7
+(1884e5e2), round6. Main Core clean; downstream task-tool scripts dirty and left
+untouched. Root has not verified Claude's round6 checks or performed integration.
 
 Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
 a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
