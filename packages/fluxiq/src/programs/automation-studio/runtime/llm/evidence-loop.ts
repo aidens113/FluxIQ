@@ -56,7 +56,7 @@ import {
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress,
-  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace,
+  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopAnswerability,
@@ -656,8 +656,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     }
     counters.unusableInARow = 0;
     // The last decision the budget allowed was offered only completion, and was
-    // spent on something else. The budget is still what ran out.
-    if (finalDecision) return exhausted("budget");
+    // spent on something else. The budget is still what ran out, and the paid decision leaves its row (`./evidence-loop/final-decision-row.ts`).
+    if (finalDecision) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.

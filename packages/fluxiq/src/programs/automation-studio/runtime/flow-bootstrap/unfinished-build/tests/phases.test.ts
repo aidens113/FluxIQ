@@ -226,6 +226,25 @@ describe("a build whose exploration stops before the Flow is ready", () => {
   // The ending's record is the whole build's, not the last round's: a build
   // that explored again after a stall published the second round's decisions
   // beside the whole build's tokens, and the first round's were gone (t214).
+  // A Flow accepted after a repair keeps the exploration's decisions too: its
+  // stored record was the repair's alone (t214).
+  it("finishes with every round's record, its decisions numbered across the build", async () => {
+    const partial = [step(1, { acts: ["a1"] })];
+    const { input } = harness([
+      () => ({ ...outOfDecisions(partial, spent(3, 0.01)), trace: [{ iteration: 0, decision: "tool_call", toolId: "demo.look" }, { iteration: 1, decision: "tool_call", toolId: "web.dom.click" }, { iteration: 2, decision: "complete" }, { iteration: 3, decision: "complete" }] }),
+      (request) => ({ ...finished([...request.repair!.seed, step(2, { id: "d9", acts: ["a1.quantity"] }), step(3, { id: "d10", acts: ["a2"] })], spent(2, 0.01)), trace: [{ iteration: 1, decision: "tool_call", toolId: "web.dom.click" }, { iteration: 2, decision: "complete" }] })
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("finished");
+    if (outcome.kind !== "finished") return;
+    expect(outcome.trace.map((row) => row.iteration)).toEqual([0, 1, 2, 3, 4, 5]);
+    // The loop's own result is still the last round's: what the Flow was accepted from.
+    expect(outcome.loop.trace.map((row) => row.iteration)).toEqual([1, 2]);
+    expect(outcome.accounting).toMatchObject({ iterations: 5 });
+  });
+
   it("ends with every round's record, its decisions numbered across the build", async () => {
     const empty = (request: AutomationStudioFlowBootstrapRoundRequest) => {
       throw request.stalled({

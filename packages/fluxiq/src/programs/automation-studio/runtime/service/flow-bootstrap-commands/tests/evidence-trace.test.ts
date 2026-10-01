@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { bootstrapAdaptationAsFlowAdaptation, type AutomationStudioBootstrapAdaptation } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { bootstrapAdaptationAuditEvent } from "../audit-event.ts";
 import { evidenceTraceAuditDetail, sanitizeEvidenceLoopTrace } from "../evidence-trace.ts";
 
@@ -351,7 +352,35 @@ describe("what a build's created-audit counts", () => {
     expect(() => sanitizeEvidenceLoopTrace(doubled)).not.toThrow();
     expect(evidenceTraceAuditDetail(doubled).providerCallCount).toBe(64);
     expect(evidenceTraceAuditDetail(doubled).traceStepCount).toBe(128);
-    expect(() => sanitizeEvidenceLoopTrace([...doubled, ...doubled])).toThrow("Flow Bootstrap evidence trace is invalid.");
+  });
+
+  // A Flow accepted after a repair stores every live round's rows, its
+  // decisions numbered across the build (t214), so the bounds are one round's
+  // for each round a build may run.
+  it("keeps every round of a build that finished after repairs, numbered across the build, and no more", () => {
+    const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+    const perRound = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
+    const whole: AutomationStudioLlmEvidenceLoopTrace[] = Array.from({ length: perRound * rounds }, (_, index) => [
+      { iteration: index + 1, decision: "amend_draft" as const, resultCode: "llm_evidence_loop.draft_rerun" },
+      { iteration: index + 1, decision: "tool_call" as const, callId: `rerun.${index + 1}`, toolId: "core.run_node", evidenceBytes: 1 }
+    ]).flat();
+
+    expect(() => sanitizeEvidenceLoopTrace(whole)).not.toThrow();
+    expect(evidenceTraceAuditDetail(whole).providerCallCount).toBe(perRound * rounds);
+    expect(() => sanitizeEvidenceLoopTrace([...whole, ...Array.from({ length: rounds + 1 }, () => ({ iteration: 0, decision: "tool_call" as const }))])).toThrow("Flow Bootstrap evidence trace is invalid.");
+    expect(() => sanitizeEvidenceLoopTrace([{ iteration: perRound * rounds + 1, decision: "tool_call" }])).toThrow("Flow Bootstrap evidence trace is invalid.");
+  });
+
+  it("counts each round's opening look as an iteration, so tool calls never outnumber iterations", () => {
+    // An exploration and a repair, each opening with its own look; decisions numbered across the build.
+    const detail = evidenceTraceAuditDetail([
+      { iteration: 0, decision: "tool_call", callId: "initial.web.look", toolId: "web.look" },
+      { iteration: 1, decision: "tool_call", callId: "call.1", toolId: "web.click" },
+      { iteration: 0, decision: "tool_call", callId: "initial.web.look", toolId: "web.look" },
+      { iteration: 2, decision: "tool_call", callId: "call.2", toolId: "web.click" },
+      { iteration: 3, decision: "complete" }
+    ]);
+    expect(detail).toMatchObject({ providerCallCount: 3, decisionCount: 3, iterationCount: 5, toolCallCount: 4, traceStepCount: 5 });
   });
 });
 

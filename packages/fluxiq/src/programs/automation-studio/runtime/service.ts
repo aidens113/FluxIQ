@@ -1631,7 +1631,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
           if (askedPermission && !accepted.verdict) throw askedPermission;
           if (!loop.ok) throw await keeper.exhausted(loop, (kept) => flowBootstrapEvidenceLoopFailure(loop, loopAccounting(built.accounting), kept));
-          evidenceTrace = loop.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
+          evidenceTrace = built.kind === "finished" ? built.trace : loop.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
           failureStage = "provider_output_validation";
           accounting = loopAccounting(built.accounting); // Every round's spend, repairs included.
           failureAccounting = accounting;
