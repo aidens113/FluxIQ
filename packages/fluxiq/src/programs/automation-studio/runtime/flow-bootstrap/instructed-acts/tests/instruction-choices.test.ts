@@ -59,3 +59,21 @@ describe("the choices an instruction attaches to an item it adds", () => {
     for (const act of acts) expect(act, instruction).not.toHaveProperty("requires");
   });
 });
+
+// The user's order, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER OF
+// ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION." Until then an act carried
+// its first four choices and each quote stopped at 120 characters.
+describe("an act's choices have no cap", () => {
+  it("reads every choice of an item, not the first four", () => {
+    expect(choicesOf("On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, the 2 metre length, the braided material, the matte finish, shipped from Spain.")).toEqual([
+      ["a1", [
+        ["a1.quantity", "quantity", "three"],
+        ["a1.colour", "variant", "Space Grey"],
+        ["a1.version", "variant", "7-in-1"],
+        ["a1.length", "variant", "2 metre"],
+        ["a1.material", "variant", "braided"],
+        ["a1.finish", "variant", "matte"]
+      ]]
+    ]);
+  });
+});

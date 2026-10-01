@@ -19,13 +19,11 @@
 // its argument names the node, and the names it may take are read from the
 // registry at the moment the tool is built.
 //
-// **The names are the whole library, not the described part of it.** The node
-// catalog the model is shown beside its evidence is fitted to a byte budget and
-// says so (`flow-bootstrap/plan/catalog.ts`, `catalogTruncated`). That was
-// tolerable while the catalog only had to help the model *write* a node. It is
-// not tolerable now that it also decides what the model can *run*, so the
-// enumerated names here are every available node, and the truncated catalog
-// governs only how much prose accompanies them.
+// **The names are the whole library.** The enumerated names here are every
+// available node, as is the catalog the model is shown beside its evidence,
+// which carries each of them whole (`flow-bootstrap/plan/catalog.ts`). Until
+// 2026-09-30 that catalog was fitted to a byte budget, so this list was what
+// kept a node the catalog dropped runnable.
 //
 // **What the tool does not decide.** Whether a call looked or changed, what it
 // should be recorded as, and whether it belongs in the result are properties of

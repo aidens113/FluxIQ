@@ -70,10 +70,8 @@ import { automationStudioInstructedActs } from "./instruction-acts.ts";
 /** The issue a missing act refuses completion under. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.instructed_act_missing";
 
-const MAX_CLAIMS = 16;
+/** The longest claim string read: an act id or a step reference, never the model's prose. */
 const MAX_CLAIM_TEXT = 200;
-/** Steps listed as nameable. A Flow holds at most a hundred nodes per Subflow. */
-const MAX_LISTED_STEPS = 100;
 /** The shortest word that can tell one act's object from another's. */
 const MIN_DISTINCTIVE_WORD = 4;
 
@@ -197,9 +195,8 @@ export function checkAutomationStudioInstructedActs(input: {
         ...(act.step ? { step: act.step } : {})
       })),
       // The steps that could be named: kept, and changed something.
-      stepsThatChangedSomething: kept.slice(0, MAX_LISTED_STEPS).map((step) => step.id ?? `${step.position}`),
-      // Said rather than hidden, so a model does not take a cut list for all of them.
-      ...(kept.length > MAX_LISTED_STEPS ? { stepsWithheld: kept.length - MAX_LISTED_STEPS } : {})
+      // Every one of them (user, 2026-09-30): no count cap.
+      stepsThatChangedSomething: kept.map((step) => step.id ?? `${step.position}`)
     },
     instruction: INSTRUCTION + REASON_INSTRUCTIONS
       .filter(([reason]) => missing.some((act) => act.reason === reason))
@@ -279,14 +276,14 @@ function readClaims(value: unknown): AutomationStudioInstructedActClaim[] {
     : typeof item === "number" && Number.isSafeInteger(item) ? `${item}` : undefined;
   const claims: AutomationStudioInstructedActClaim[] = [];
   if (Array.isArray(value)) {
-    for (const item of value.slice(0, MAX_CLAIMS)) {
+    for (const item of value) {
       if (!isRecord(item)) continue;
       const step = text(item.step ?? item.stepId ?? item.step_id ?? item.id);
       if (step) claims.push({ action: text(item.action ?? item.act ?? item.name) ?? "", step });
     }
   } else if (isRecord(value)) {
     // `{ "a1": "d7" }`, which is how a model that read a refusal's ids may write it.
-    for (const [action, step] of Object.entries(value).slice(0, MAX_CLAIMS)) {
+    for (const [action, step] of Object.entries(value)) {
       const named = text(step);
       if (named) claims.push({ action: action.slice(0, MAX_CLAIM_TEXT), step: named });
     }

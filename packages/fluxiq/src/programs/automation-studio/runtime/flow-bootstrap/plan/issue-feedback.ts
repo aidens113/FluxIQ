@@ -197,7 +197,7 @@ function acceptedShape(definition: AutomationStudioNodeDefinition, target: Param
     const contract = automationStudioFlowBootstrapRecordOutputContract(definition);
     return { parameter: parameter.id, keys: contract.keys, requiredKeys: contract.requiredKeys, shape: contract.text, example: contract.example };
   }
-  const { id, ...shape } = automationStudioFlowBootstrapParameterText(definition, parameter, "whole");
+  const { id, ...shape } = automationStudioFlowBootstrapParameterText(definition, parameter);
   return { parameter: id, ...shape } as JsonObject;
 }
 

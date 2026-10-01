@@ -64,10 +64,18 @@ describe("the lasting acts an instruction asks for", () => {
     expect(automationStudioInstructedActs("Add the kettle to my cart. Do not buy anything, and do not check out.").map((act) => act.kind)).toEqual(["add_to"]);
   });
 
-  it("quotes the person's own sentence, bounded", () => {
+  // No character cut and no count cap (user, 2026-09-30: "Remove ANY AND ALL
+  // LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION").
+  it("quotes the person's own sentence whole, however long", () => {
     const [act] = automationStudioInstructedActs(`Save ${"the cheapest table ".repeat(30)}to my saved items.`);
-    expect(act?.quote.startsWith("Save the cheapest table")).toBe(true);
-    expect(act?.quote.length).toBeLessThanOrEqual(200);
+    expect(act?.quote).toBe(`Save ${"the cheapest table ".repeat(30)}to my saved items`);
+  });
+
+  it("reads every act of a long instruction, not the first eight", () => {
+    const items = Array.from({ length: 12 }, (_unused, index) => `Save the item number ${index + 1} to my saved items.`);
+    const acts = automationStudioInstructedActs(items.join(" "));
+    expect(acts.map((act) => act.id)).toEqual(items.map((_item, index) => `a${index + 1}`));
+    expect(acts.every((act) => act.kind === "save")).toBe(true);
   });
 
   it("gives each act its own clause, not the whole sentence", () => {

@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, automationStudioFlowMaxNodesPerSubflow, automationStudioInterventionMode, defaultAutomationStudioFlowSettingsMetadata, withAutomationStudioInterventionMode } from "../../../model/index.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { withoutAutomationStudioLockedDefaultSettings } from "./locked-default-migration.ts";
+import { withoutAutomationStudioTokensPerRunDefault } from "./tokens-per-run-default-migration.ts";
 
 // Merging a Flow's stored settings metadata over the defaults, carrying the
 // pre-versioning shape forward without changing what it meant.
@@ -11,9 +12,11 @@ import { withoutAutomationStudioLockedDefaultSettings } from "./locked-default-m
 // as well as at the read in `service/flows/store.ts` because this is where a
 // setting becomes a decision, and a path that reached settings with metadata
 // straight out of storage would otherwise still be gated. Clearing is
-// idempotent, so doing it twice costs a comparison.
+// idempotent, so doing it twice costs a comparison. The 12,000-token cap every
+// Flow was created with before 2026-09-30 is cleared the same way, and for the
+// same reason (`tokens-per-run-default-migration.ts`).
 export function mergedFlowSettingsMetadata(stored: JsonObject | undefined): JsonObject {
-  const metadata = withoutAutomationStudioLockedDefaultSettings(stored);
+  const metadata = withoutAutomationStudioTokensPerRunDefault(withoutAutomationStudioLockedDefaultSettings(stored));
   const defaults = defaultAutomationStudioFlowSettingsMetadata();
   const canonical = withAutomationStudioInterventionMode(metadata, automationStudioInterventionMode(metadata));
   const configuredTrainingMode = jsonObjectFromUnknown(metadata?.trainingModeSettings)?.mode ?? metadata?.trainingMode;

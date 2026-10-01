@@ -185,12 +185,14 @@ describe("what a migrated Flow is then allowed to do", () => {
   });
 
   // The budgets are not gates and were never the defect, so a Flow keeps the
-  // ones it was created with rather than being reset to today's numbers.
-  it("keeps the budgets the Flow was created with", () => {
+  // ones it was created with rather than being reset to today's numbers -- all
+  // but the 12,000-token cap, which was Core's own default and is cleared on its
+  // own account (`../tokens-per-run-default-migration.ts`, 2026-09-30).
+  it("keeps the budgets the Flow was created with, except the retired token cap", () => {
     const training = trainingModeSettingsFromMetadata(settings);
     expect(training.trainForRunCount).toBe(3);
     expect(training.budgets?.maxInterventionsPerRun).toBe(2);
-    expect(training.budgets?.maxTokensPerRun).toBe(12000);
+    expect(training.budgets).not.toHaveProperty("maxTokensPerRun");
     expect(training.recoveryBudget?.maxRetriesPerAction).toBe(2);
   });
 });

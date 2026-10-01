@@ -271,7 +271,7 @@ function bootstrapRequest(): AutomationStudioLlmTaskRequest {
           parameters: [{ id: "value", type: "json" }]
         }],
         catalogTruncated: false,
-        catalogSelection: { byteBudget: 4_096, usedBytes: 256, requiredTerms: [], missingRequiredTerms: [] }
+        catalogSelection: { usedBytes: 256, requiredTerms: [], missingRequiredTerms: [] }
       },
       metadata: { source: "generateFlowBootstrapAdaptation" }
     }

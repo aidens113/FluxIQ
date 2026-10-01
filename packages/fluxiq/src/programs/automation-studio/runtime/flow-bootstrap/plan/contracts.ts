@@ -99,9 +99,10 @@ export type AutomationStudioFlowBootstrapContext = {
    */
   maxNodesPerSubflow?: number;
   nodeCatalog: AutomationStudioFlowBootstrapCatalogEntry[];
+  /** Always false: the catalog is every offered node (`./catalog.ts`). Kept so a request reads as it always did. */
   catalogTruncated: boolean;
   catalogSelection: {
-    byteBudget: number;
+    /** The catalog's size in UTF-8 bytes, as measured, never a budget. */
     usedBytes: number;
     requiredTerms: string[];
     missingRequiredTerms: string[];
@@ -109,9 +110,8 @@ export type AutomationStudioFlowBootstrapContext = {
      * The parameters this catalog does not describe in full, `<node
      * id>.<parameter id>` each (`./catalog.ts`).
      *
-     * Absent when there are none. A parameter named here had authoring text the
-     * catalog cut short, left out with the entry's condensed form, or declined
-     * to send as an example, so a value written for it is written from a
+     * Absent when there are none. A parameter named here had an example that
+     * could not be written as JSON, so a value written for it is written from a
      * vocabulary the model was never shown -- which every campaign that shortened
      * such text to fit had no way of telling.
      */

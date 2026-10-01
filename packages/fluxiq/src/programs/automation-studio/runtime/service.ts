@@ -96,7 +96,7 @@ import { automationStudioResultVerificationProvider, verifyAutomationStudioRunti
 import { automationStudioFlowDraftReplayable } from "./flow-draft/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftContinuation, automationStudioFlowBootstrapIncompleteDraftKeeper, automationStudioInstructedActsChecklist, flowBootstrapBuildEndingFailure, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapRoundRequest, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioEvidenceFlowBootstrapDraftCompletionSchema, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapCatalogByteBudget, automationStudioFlowBootstrapPersonNeeded, automationStudioFlowBootstrapSizeLimitsOf, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
+import { automationStudioEvidenceFlowBootstrapDraftCompletionSchema, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, automationStudioFlowBootstrapSizeLimitsOf, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import { assertAutomationStudioBootstrapHasNoRecordingProvenance, automationStudioBootstrapTargetRefusal, bootstrapAdaptationAsFlowAdaptation, normalizeAutomationStudioFlowBuildPlan, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioBootstrapAdaptation, type AutomationStudioBootstrapAdaptationMode, type AutomationStudioBootstrapAdaptationOrigin, type AutomationStudioBootstrapExistingTopology } from "./flow-bootstrap/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, automationStudioFlowBootstrapEvidenceLoopLimits } from "./loop-limits/index.ts";
@@ -1483,7 +1483,8 @@ export class AutomationStudioService {
         failureCode = "flow_bootstrap.instruction_resolution_failed";
         const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
         // A repair's brief rides beside the Flow's own instructions on every call the model sees, and nowhere else: not in the authority, the permission gate or the stored adaptation (`recovery/refuted-result/brief.ts`).
-        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief], tokenBudget: 4_000 } : { instructions };
+        // Carried whole, with no instruction token budget (2026-09-30; `llm/harness/instruction.ts`).
+        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions };
         const resolvedInstructions = resolveAutomationStudioLlmInstructions({ instructions, projectId, flowId });
         if (!resolvedInstructions.instructions.length
           || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
@@ -1499,12 +1500,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const bootstrapContext = buildAutomationStudioFlowBootstrapContext({
           registry,
           resolution, size,
-          instructionText: bootstrapInstructionText,
-          ...(input.evidenceGuided ? { maxCatalogEntries: 64 } : {}),
-          maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
-            maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
-            instructionBytes: Buffer.byteLength(JSON.stringify(resolvedInstructions), "utf8"), size
-          })
+          // Every offered node, whole and unranked (`flow-bootstrap/plan/catalog.ts`).
+          instructionText: bootstrapInstructionText
         });
         if (!bootstrapContext.nodeCatalog.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.node_catalog_unavailable");
         if (bootstrapContext.catalogSelection.missingRequiredTerms.length) {
@@ -1592,10 +1589,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               const decision = await runHarness({
                 taskKind: "evidence_tool_decision", projectId, flowId, ...promptInstructions,
                 evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
-                // Reserve evidence-decision input capacity for the dynamic tool
-                // schema and accumulated evidence instead of allowing the node
-                // catalog to consume the ordinary Bootstrap input allocation.
-                flowBootstrap: { registry, resolution, size, maxInputTokens: 16_000, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
+                // The node catalog is every offered node, whole: no 16,000-token
+                // allocation of its own any more (2026-09-30).
+                flowBootstrap: { registry, resolution, size, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
@@ -1642,7 +1638,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         } else {
           const result = await runHarness({
             taskKind: "flow_bootstrap", projectId, flowId, ...promptInstructions,
-            flowBootstrap: { registry, resolution, size, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
+            flowBootstrap: { registry, resolution, size, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
             provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
             ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
             ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),

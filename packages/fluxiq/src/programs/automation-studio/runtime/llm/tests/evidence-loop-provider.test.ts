@@ -262,7 +262,7 @@ describe("Automation Studio evidence-loop provider task", () => {
           outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
           nodeCatalog,
           catalogTruncated: false,
-          catalogSelection: { byteBudget: 49_152, usedBytes: catalogBytes, requiredTerms: [], missingRequiredTerms: [] }
+          catalogSelection: { usedBytes: catalogBytes, requiredTerms: [], missingRequiredTerms: [] }
         }
       }
     });

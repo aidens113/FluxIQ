@@ -32,7 +32,7 @@ describe("Automation Studio LLM harness", () => {
     expect(resolution.diagnostics).toEqual([]);
   });
 
-  it("detects conflicting required instructions and truncates to budget", () => {
+  it("detects conflicting required instructions, and carries them whole whatever the budget", () => {
     const resolution = resolveAutomationStudioLlmInstructions({
       instructions: [
         instruction({ instructionId: "always", body: "Always use the recovery route.", requirement: "required", scope: { kind: "flow", projectId: "project.llm", flowId: "flow.checkout" } }),
@@ -44,8 +44,11 @@ describe("Automation Studio LLM harness", () => {
     });
 
     expect(resolution.diagnostics.some((diagnostic) => diagnostic.code === "instruction.conflict")).toBe(true);
-    expect(resolution.diagnostics.some((diagnostic) => diagnostic.code === "instruction.truncated")).toBe(true);
-    expect(resolution.instructions.some((item) => item.truncated)).toBe(true);
+    // No instruction is cut (2026-09-30): the request is refused whole if it is
+    // over the model's window, never trimmed.
+    expect(resolution.diagnostics.some((diagnostic) => diagnostic.code === "instruction.truncated")).toBe(false);
+    expect(resolution.instructions.some((item) => item.truncated)).toBe(false);
+    expect(resolution.instructions.find((item) => item.instructionId === "never")?.body).toBe("Never use the recovery route.".repeat(80));
   });
 
   it("packs compact context with prompt version, recent actions, subflows, and policy gates", () => {
@@ -306,7 +309,8 @@ describe("Automation Studio LLM harness", () => {
 
     expect(result.ok).toBe(true);
     expect(result.provider).toEqual({ provider: "mock", model: "debug-model" });
-    expect(result.request.tokenLimits).toEqual({ maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 });
+    // A caller that names no limits gets the model's window with the 8,000-token reply reserve (2026-09-30).
+    expect(result.request.tokenLimits).toEqual({ maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 });
     expect(result.response).not.toHaveProperty("metadata");
     expect(result.diagnostics).toEqual(expect.arrayContaining([{ severity: "warning", code: "llm.provider_diagnostic", message: "Provider reported a warning diagnostic." }]));
     expect(result.intervention).toMatchObject({
@@ -318,7 +322,7 @@ describe("Automation Studio LLM harness", () => {
         requestId: "request.test.99",
         idempotencyKey: "request.test.idempotent",
         timeoutMs: 1234,
-        tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }
+        tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }
       }
     });
     expect(result.intervention.structuredResult).not.toHaveProperty("summary");

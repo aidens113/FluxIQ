@@ -91,17 +91,17 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
   };
 }
 
-/** The judgement as the repair's first decision reads it (`../../llm/evidence-loop/resume.ts`): codes, counts and ids. */
+/** The judgement as the repair's first decision reads it (`../../llm/evidence-loop/resume.ts`): codes, counts and ids, every one of them. */
 export function automationStudioFlowBootstrapJudgementValue(judgement: AutomationStudioFlowBootstrapJudgement): JsonObject {
   return {
     stopped: judgement.stopped,
     test: judgement.tested,
     ...(judgement.failedSteps.length ? { stepsThatDidNotWork: [...judgement.failedSteps] } : {}),
-    ...(judgement.testIssueCodes.length ? { testIssueCodes: judgement.testIssueCodes.slice(0, 16) } : {}),
+    ...(judgement.testIssueCodes.length ? { testIssueCodes: [...judgement.testIssueCodes] } : {}),
     stepsInFlow: judgement.stepsInFlow,
     actsDone: judgement.done,
-    actsTodo: judgement.todo.slice(0, 16),
-    ...(judgement.lastIssueCodes.length ? { lastRefusedFor: judgement.lastIssueCodes.slice(0, 16) } : {})
+    actsTodo: [...judgement.todo],
+    ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {})
   };
 }
 

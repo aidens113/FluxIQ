@@ -1,5 +1,7 @@
-// Fixed bounds for Flow Bootstrap: how many Subflows, catalog entries, rules,
-// names and parameters a plan or a reply may carry, and the layout spacing.
+// Fixed bounds for Flow Bootstrap: how many Subflows, rules, names and
+// parameters a plan or a reply may carry, and the layout spacing. None bounds
+// the node catalog the model is shown, which is every offered node, whole
+// (`./catalog.ts`).
 //
 // **No bound here counts a Flow's nodes, edges, depth or bytes.** Those grow
 // with the Flow and are derived from its size setting (`./size-limits.ts`,
@@ -13,10 +15,6 @@
 
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS = {
   maxSubflows: 8,
-  maxCatalogEntries: 100,
-  maxCatalogBytes: 49_152,
-  firstLiveMaxInputTokens: 4_000,
-  bootstrapInstructionTokens: 384,
   maxStringLength: 2_000,
   horizontalSpacing: 320,
   verticalSpacing: 180

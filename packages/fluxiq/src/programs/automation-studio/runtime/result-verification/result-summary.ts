@@ -94,7 +94,6 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   // How each list read went (`read-account/`): pages, why paging stopped, and
   // what each condition rejected, so a judge is not shown a step's name alone.
   const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys });
-  if (accounted.withheld) withheld = true;
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount,

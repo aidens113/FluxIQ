@@ -50,7 +50,7 @@ export type AutomationStudioInstructedAct = {
   /** The verb that asks for it, as the person wrote it, lowercased. */
   verb: string;
   /**
-   * The person's own words for this act alone, bounded: its verb up to the
+   * The person's own words for this act alone, whole: its verb up to the
    * next act's verb, or, for one of several counted objects of one verb, the
    * verb, that object and where it goes (`./instruction-acts.ts`).
    */

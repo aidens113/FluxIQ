@@ -22,14 +22,14 @@ import {
 // Read at module evaluation, so from the leaf that imports no value rather than
 // through the barrel, where an import cycle could leave them undefined.
 import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./model-limits/index.ts";
-import type { AutomationStudioLlmTokenLimits } from "./harness/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
 
-/** What one call reserves for the model's reply. */
-const AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS = 8_000;
+/** What one call reserves for the model's reply: the harness's own reply reserve, so the two cannot drift. */
+const AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS = AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS;
 
 /**
  * One call's token limits in a context window of `window` tokens. The reply is

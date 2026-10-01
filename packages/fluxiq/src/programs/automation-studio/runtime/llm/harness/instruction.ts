@@ -1,6 +1,6 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
-import { estimateTokens } from "./token-limits.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, estimateTokens } from "./token-limits.ts";
 
 export type AutomationStudioResolvedInstruction = {
   instructionId: string;
@@ -43,17 +43,20 @@ export type AutomationStudioInstructionResolutionInput = {
  * a request without going through the composer that always emits the ordering
  * statement first.
  *
- * They are budgeted ahead of the Flow's own instructions. A Flow carrying more
- * instruction text than the budget allows therefore loses its own tail rather
- * than the protocol -- the failure mode worth designing against, where the
- * stage a request is for is quietly truncated away and the model is left
- * choosing its own order after all.
+ * They come ahead of the Flow's own instructions, and every instruction is
+ * carried whole (user, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER OF
+ * ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION"). Until then instructions
+ * were cut to a token budget -- 384 tokens for a flow bootstrap, 2,000 by
+ * default and 4,000 for a repair build -- which could cut the person's own
+ * request. `tokenBudget` is now only the request's input limit, reported beside
+ * `estimatedTokens`; a request over the model's window is refused whole before
+ * it is sent (`./run.ts`), never trimmed here.
  */
 export function resolveAutomationStudioLlmInstructions(
   input: AutomationStudioInstructionResolutionInput,
   stageInstructions: readonly AutomationStudioResolvedInstruction[] = []
 ): AutomationStudioInstructionResolution {
-  const tokenBudget = Math.max(128, Math.trunc(input.tokenBudget ?? 2_000));
+  const tokenBudget = Math.trunc(input.tokenBudget ?? AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
   const scoped = input.instructions
     .filter((instruction) => instruction.status === "active")
@@ -81,18 +84,8 @@ export function resolveAutomationStudioLlmInstructions(
       tags: instruction.tags ?? []
     }))
   ];
-  const resolved: AutomationStudioResolvedInstruction[] = [];
-  let estimatedTokens = 0;
-  for (const instruction of candidates) {
-    const baseTokens = estimateTokens(instruction.body) + estimateTokens(instruction.title);
-    const remaining = tokenBudget - estimatedTokens;
-    if (remaining <= 0) break;
-    const truncated = baseTokens > remaining;
-    const body = truncated ? truncateToEstimatedTokens(instruction.body, Math.max(24, remaining - estimateTokens(instruction.title))) : instruction.body;
-    estimatedTokens += Math.min(baseTokens, remaining);
-    resolved.push({ ...instruction, body, ...(truncated ? { truncated: true } : {}) });
-    if (truncated) diagnostics.push({ severity: "warning", code: "instruction.truncated", message: `Instruction ${instruction.instructionId} was truncated to fit context budget.`, path: instruction.instructionId });
-  }
+  const resolved: AutomationStudioResolvedInstruction[] = candidates.map((instruction) => ({ ...instruction }));
+  const estimatedTokens = resolved.reduce((sum, instruction) => sum + estimateTokens(instruction.body) + estimateTokens(instruction.title), 0);
   return {
     instructions: resolved,
     instructionIds: resolved.map((instruction) => instruction.instructionId),
@@ -124,8 +117,4 @@ function compareInstructionsForLlm(left: AutomationStudioFlowInstruction, right:
 
 function scopeRank(scopeKind: string): number {
   return ["global", "project", "flow", "router", "subflow", "node", "on_error", "adaptation_review"].indexOf(scopeKind);
-}
-
-function truncateToEstimatedTokens(value: string, tokens: number): string {
-  return `${value.slice(0, Math.max(0, tokens * 4)).trimEnd()}...`;
 }

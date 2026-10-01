@@ -204,11 +204,26 @@ describe("Flow settings round trip", () => {
 
   it("refuses a blank limit instead of saving it as zero", () => {
     const blank = { ...flowSettingsDraftFromFlow(flowOf()), maxAdaptationInterventionsPerRun: "", maxTokensPerRun: "", maxCostUsdPerTrainingWindow: "" } as FlowSettingsDraft;
-    expect(flowLimitsInterfaceErrors(blank)).toEqual(expect.arrayContaining([
+    const errors = flowLimitsInterfaceErrors(blank);
+    expect(errors).toEqual(expect.arrayContaining([
       "Adaptation interventions per run must be a whole number from 0 to 100.",
-      "LLM tokens per run must be a whole number from 128 to 1,000,000.",
       "Training-window cost must be from 0 to 100,000 USD."
     ]));
+    // The one limit where blank is a setting: no token cap, the default since
+    // 2026-09-30 (a run's tokens are bounded by its cost ceiling).
+    expect(errors.some((error) => error.startsWith("LLM tokens per run"))).toBe(false);
+    expect(flowLimitsInterfaceErrors({ ...blank, maxTokensPerRun: "64" })).toContain("LLM tokens per run must be blank (no limit) or a whole number from 128 to 1,000,000.");
+  });
+
+  it("saves a blank token limit as no cap, and a 12,000 a person types as theirs", () => {
+    const draft = flowSettingsDraftFromFlow(flowOf());
+    const blank = buildFlowSettingsSavePayload(flowOf(), { ...draft, maxTokensPerRun: "" });
+    expect(blank.metadata.trainingModeSettings.budgets?.maxTokensPerRun).toBeUndefined();
+    const typed = buildFlowSettingsSavePayload(flowOf(), { ...draft, maxTokensPerRun: "12000" });
+    expect(typed.metadata.trainingModeSettings.budgets?.maxTokensPerRun).toBe(12000);
+    // Core reads the key as "this Flow's token limit is a person's own", so its
+    // clearing of the old 12,000 default never touches a value typed here.
+    expect(typed.metadata.tokensPerRunDefaultCleared).toBe(true);
   });
 
   it("names a setting the save did not keep, and stays quiet about formatting", () => {

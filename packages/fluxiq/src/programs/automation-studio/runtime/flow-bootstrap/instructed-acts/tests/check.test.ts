@@ -67,19 +67,23 @@ describe("whether the draft does what the instruction asks to be done", () => {
     expect(verdict.ok).toBe(true);
   });
 
-  it("says how many steps it withheld when the list of steps that changed something is cut", () => {
+  // No count cap (user, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER OF
+  // ELEMENTS PASSED TO MODEL"). Until then the list stopped at a hundred.
+  it("lists every step that changed something, however many there are", () => {
     const draft = Array.from({ length: 120 }, (_unused, index) => step(index + 1));
     const verdict = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x" }, draftSteps: draft });
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.missingActs.stepsThatChangedSomething).toHaveLength(100);
-    expect(verdict.missingActs.stepsWithheld).toBe(20);
+    expect(verdict.missingActs.stepsThatChangedSomething).toHaveLength(120);
+    expect(verdict.missingActs).not.toHaveProperty("stepsWithheld");
   });
 
-  it("withholds nothing, and says nothing about it, when every step fits", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x" }, draftSteps: HALF_A_JOB });
-    expect(verdict.ok).toBe(false);
-    if (!verdict.ok) expect(verdict.missingActs).not.toHaveProperty("stepsWithheld");
+  it("reads every claim the model made, not the first sixteen", () => {
+    const draft = Array.from({ length: 30 }, (_unused, index) => step(index + 1));
+    const filler = Array.from({ length: 20 }, (_unused, index) => ({ action: `note `, step: `d${index + 1}` }));
+    const named = [...filler, { action: "bookmark each table", step: "d26" }, { action: "view saved items", step: "d27" }];
+    const all = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x", acts: named }, draftSteps: [...draft.slice(0, 26), step(27, { actionId: "web.navigate" }), ...draft.slice(27)] });
+    expect(all.ok).toBe(true);
   });
 });
 
