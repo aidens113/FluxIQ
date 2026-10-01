@@ -18,9 +18,15 @@ corrected audit84320 only inherited service4506/4505. Production build9733 passe
 17pages/101959ms. Onboarding1a5afc47, Runtime d011b0ae and databased5c979a6 are
 durable. Next auth-navigation and operational-refresh/Compute briefs are released;
 supervisor clipboard controls pass22 focused tests and corrected scoped types.
-Whole-tree gates wait for the next coordinated source freeze. Auth request
-scope-change recovery and refresh cancellation/layout review corrections are
-being checked in their exact worker-owned paths.
+Supervisor fourth combined110tests passed and web types98099 passed67584ms.
+Full10138 completed308files/1943tests with1942pass/1failure: source-only global
+request contract expected an inline controller in Compute, now owned by the
+shared hook. Owning contract follows that boundary; independent focused87610
+passed21tests/8.44s including actual cancellation. Production29706 passed17pages,
+128724ms. Final full21515/types56689 rerun with source frozen; no product fallback
+or assertion relaxation. Auth9d5e2533/refresh e109b226/clipboard0738bc58 saved.
+Corrected documentation audit passes; full structure has
+only protected inherited service4506/4505 after index regeneration.
 Downstream strip is independently verified full1727/types/build/structure and
 checkpointed5e162c36; explicit user navigation focus follows. No runtime/backend
 or security contract changes.

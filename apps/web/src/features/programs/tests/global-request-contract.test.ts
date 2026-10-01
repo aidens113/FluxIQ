@@ -5,8 +5,17 @@ const views = ["background-tasks", "compute-control", "database-manager", "deplo
 
 describe("global program request ownership", () => {
   it("cancels each initial snapshot request on unmount", () => {
+    const operational = readFileSync(new URL("../operational-refresh/useOperationalSnapshot.ts", import.meta.url), "utf8");
     for (const view of views) {
       const source = readFileSync(new URL(`../live-views/${view}.tsx`, import.meta.url), "utf8");
+      if (view === "compute-control") {
+        expect(source, view).toContain("useOperationalSnapshot({ owner: api, read");
+        expect(source, view).toContain('"snapshot", { signal }');
+        expect(operational, view).toContain("new AbortController()");
+        expect(operational, view).toContain("controller?.abort()");
+        expect(operational, view).toContain("active = false; ++generation;");
+        continue;
+      }
       expect(source, view).toContain("new AbortController()");
       expect(source, view).toContain("controller.abort()");
       expect(source, view).toContain("signal ? { signal } : {}");

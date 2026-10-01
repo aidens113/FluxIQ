@@ -122,6 +122,14 @@ changes clear local grants and record state, so authorization from the previous
 scope cannot unlock the new workspace. Dismissing a pending dialog discards its
 late receipt; it does not claim to revoke a grant already issued by the server.
 
+Initial password/TOTP sign-in and temporary-credential replacement return to
+the actual requested local path, query and fragment. A local destination
+validator rejects external authorities and ambiguous encoded separators;
+arbitrary query return paths are data. Protected setup and program routes show
+the inline login gate before loading program state. Old request responses are
+ignored after route changes, while explicit retry uses the current destination.
+This does not restore query data already discarded by a legacy redirect.
+
 Revealed Secret Keys and manual TOTP keys use a shared clipboard control. It
 waits for the browser write acknowledgement before showing success, prevents
 duplicate pending writes and offers manual-copy guidance when access is missing
@@ -132,6 +140,12 @@ cancelled and closing the reveal does not clear the system clipboard.
 Compute Control resolves selected detail and activity from the visible filtered
 nodes. Search, health or capability changes choose a visible fallback or clear
 the selection when nothing matches; hidden nodes do not retain their detail.
+Its operational snapshot refreshes ten seconds after each completed visible
+read, coalesces refresh requests and aborts/pauses while hidden. Failed reads
+retain confirmed data with freshness feedback and capped backoff; permission
+denial pauses automatic retries until manual recovery. Owner changes invalidate
+old reads and callbacks. Heartbeat health remains a sampled estimate using the
+existing thresholds, rather than a claim about current server health.
 
 Automation Studio's Problems view distinguishes remote loading, access denial,
 failed queries and successful empty results. Previous-query rows are labelled
