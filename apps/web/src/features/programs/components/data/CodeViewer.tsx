@@ -1,8 +1,8 @@
 "use client";
 
-import { Copy, Download, WrapText } from "lucide-react";
+import { Download, WrapText } from "lucide-react";
 import { useState } from "react";
-import { IconButton } from "../controls";
+import { ClipboardButton, IconButton } from "../controls";
 import { notifyGlobalAlert } from "../feedback";
 import { Toolbar, Tooltip } from "../layout";
 
@@ -26,11 +26,7 @@ export function CodeViewer(props: { label: string; code: string; language?: stri
         <label className="code-viewer-search"><span className="visually-hidden">Find in {props.label}</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Find" type="search" value={query} /></label>
         {query ? <span className="code-viewer-matches">{matchCount} matches</span> : null}
         <Tooltip content={wrap ? "Use horizontal scrolling" : "Wrap long lines"}><IconButton aria-pressed={wrap} label="Toggle line wrapping" onClick={() => setWrap((current) => !current)}><WrapText aria-hidden size={14} /></IconButton></Tooltip>
-        <Tooltip content="Copy visible source"><IconButton label="Copy source" onClick={() => {
-          void navigator.clipboard?.writeText(props.code)
-            .then(() => notifyGlobalAlert({ id: `copy:${props.label}`, tone: "success", message: `${props.label} copied.` }))
-            .catch(() => notifyGlobalAlert({ id: `copy:${props.label}`, tone: "error", message: `${props.label} could not be copied.` }));
-        }}><Copy aria-hidden size={14} /></IconButton></Tooltip>
+        <ClipboardButton key={props.label} accessibleLabel="Copy source" iconOnly value={props.code} />
         {props.filename ? <Tooltip content={`Download ${props.filename}`}><IconButton label="Download source" onClick={() => {
           try {
             downloadText(props.filename!, props.code);

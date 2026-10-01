@@ -3,7 +3,7 @@
 import { Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-export function ClipboardButton(props: { value: string; label?: string }) {
+export function ClipboardButton(props: { value: string; label?: string; accessibleLabel?: string; iconOnly?: boolean }) {
   const ownerRef = useRef({ value: props.value });
   if (ownerRef.current.value !== props.value) ownerRef.current = { value: props.value };
   const owner = ownerRef.current;
@@ -30,8 +30,8 @@ export function ClipboardButton(props: { value: string; label?: string }) {
   }
 
   return <span className="inline-actions">
-    <button aria-busy={stage === "pending" || undefined} className="button" disabled={!props.value || stage === "pending"} onClick={() => void copy()} type="button">
-      <Copy aria-hidden size={14} />{stage === "copied" ? "Copied" : stage === "pending" ? "Copying..." : props.label ?? "Copy"}
+    <button aria-label={props.accessibleLabel} title={props.accessibleLabel} aria-busy={stage === "pending" || undefined} className={props.iconOnly ? "icon-button" : "button"} disabled={!props.value || stage === "pending"} onClick={() => void copy()} type="button">
+      <Copy aria-hidden size={14} />{props.iconOnly ? null : stage === "copied" ? "Copied" : stage === "pending" ? "Copying..." : props.label ?? "Copy"}
     </button>
     {stage === "copied" ? <span className="visually-hidden" role="status">Copied to clipboard.</span> : null}
     {stage === "failed" ? <small role="alert">Copy failed. Select the value and copy it manually.</small> : null}

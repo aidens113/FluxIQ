@@ -130,11 +130,15 @@ the inline login gate before loading program state. Old request responses are
 ignored after route changes, while explicit retry uses the current destination.
 This does not restore query data already discarded by a legacy redirect.
 
-Revealed Secret Keys and manual TOTP keys use a shared clipboard control. It
+Revealed Secret Keys, manual TOTP keys, source viewers, selected Inspector IDs
+and expanded raw state JSON use a shared clipboard control. It
 waits for the browser write acknowledgement before showing success, prevents
 duplicate pending writes and offers manual-copy guidance when access is missing
 or refused. Changed values, closed reveals and unmounted controls ignore late
-feedback. Reveal expiry remains unchanged; an issued clipboard write cannot be
+feedback. Raw JSON still serializes only while expanded; changing its state
+source/phase or collapsing it discards copy feedback. Source search, wrapping
+and download remain usable during a pending copy. Reveal expiry remains
+unchanged; an issued clipboard write cannot be
 cancelled and closing the reveal does not clear the system clipboard.
 
 Compute Control resolves selected detail and activity from the visible filtered

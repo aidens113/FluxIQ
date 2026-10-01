@@ -13,7 +13,9 @@ describe("State Explorer orchestration", () => {
     expect(source).toContain('aria-expanded="false"');
     expect(source).toContain('aria-expanded="true"');
     expect(source).toContain("aria-controls={regionId}");
-    expect(source).toContain('role="status"');
+    expect(source).toContain("ClipboardButton");
+    const clipboard = readFileSync(new URL("../../../programs/components/controls/ClipboardButton.tsx", import.meta.url), "utf8");
+    expect(clipboard).toContain('role="status"');
   });
 
   it("opens an action state request from the indexed state source", () => {

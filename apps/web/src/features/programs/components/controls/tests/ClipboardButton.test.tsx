@@ -13,6 +13,15 @@ beforeEach(() => vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mo
 afterEach(() => { if (renderer) act(() => renderer.unmount()); vi.unstubAllGlobals(); });
 
 describe("ClipboardButton lifecycle", () => {
+  it("preserves an explicit accessible name for icon-only presentation", async () => {
+    await act(async () => { renderer = create(<ClipboardButton value="synthetic-one" accessibleLabel="Copy source" iconOnly />); });
+    expect(button().props["aria-label"]).toBe("Copy source");
+    expect(button().props.title).toBe("Copy source");
+    expect(button().props.className).toBe("icon-button");
+    await act(async () => button().props.onClick());
+    expect(renderer.root.findByProps({ role: "status" }).children.join("")).toBe("Copied to clipboard.");
+    expect(button().props["aria-label"]).toBe("Copy source");
+  });
   it("waits for acknowledgement and prevents duplicate writes", async () => {
     const pending = deferred(), writeText = vi.fn(() => pending.promise);
     vi.stubGlobal("navigator", { clipboard: { writeText } });

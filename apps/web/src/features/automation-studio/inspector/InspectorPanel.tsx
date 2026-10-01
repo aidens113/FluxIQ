@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Copy, ExternalLink, ListChecks, Search } from "lucide-react";
+import { ExternalLink, ListChecks, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SummaryStrip } from "../../programs/shared-ui";
+import { ClipboardButton } from "../../programs/components";
 import { useUiRenderMetric } from "../../programs/ui-performance";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import { InspectorFilterProvider, InspectorSection } from "./InspectorSection";
@@ -17,18 +18,7 @@ export function InspectorPanel(props: {
 }) {
   useUiRenderMetric("AutomationStudioSelectionBoundary");
   const [searchQuery, setSearchQuery] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => setSearchQuery(""), [props.identity?.id]);
-  const copySelectionId = async () => {
-    if (!props.identity?.id) return;
-    try {
-      await navigator.clipboard.writeText(props.identity.id);
-      setCopyStatus("Copied");
-      window.setTimeout(() => setCopyStatus(""), 1_500);
-    } catch {
-      setCopyStatus("Copy failed");
-    }
-  };
   return (
     <aside className="automation-inspector">
       <header className="automation-inspector-identity">
@@ -39,7 +29,7 @@ export function InspectorPanel(props: {
       </header>
       {props.identity && props.model?.primaryContent ? <div className="automation-inspector-primary">{props.model.primaryContent}</div> : null}
       {props.identity ? <div className="automation-inspector-tools">
-        <button aria-label="Copy selected object ID" className="button" onClick={() => void copySelectionId()} title="Copy selected object ID" type="button">{copyStatus === "Copied" ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}{copyStatus || "Copy ID"}</button>
+        <ClipboardButton key={JSON.stringify([props.selection?.kind, props.selection?.id, props.identity.id])} accessibleLabel="Copy selected object ID" label="Copy ID" value={props.identity.id} />
         {props.identity.href && props.identity.openLabel ? <a className="button" href={props.identity.href}><ExternalLink size={14} aria-hidden />{props.identity.openLabel}</a> : null}
       </div> : null}
       <div className="automation-inspector-search">
