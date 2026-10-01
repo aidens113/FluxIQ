@@ -113,6 +113,19 @@ one is pending. Refused operations keep editable launch values and show feedback
 beside the affected controls for retry. Parameter drafts belong to the effective
 target type and id; changing or removing a target restores the new target's
 defaults. Snapshot requests ignore older responses and completions after teardown.
+Launch failure feedback belongs to the submitted target type/id, so switching
+targets while a request is pending preserves the new draft and hides an old
+target's error. Production and Background snapshots share Compute's visible
+completion-based refresh policy. API identity changes reset foreign drafts,
+operation locks and selection; captured old mutations are rejected before POST.
+
+Background history independently refreshes only the selected task's current
+50-row page. Task, status, offset and API own that request; changed queries hide
+the previous rows and selected detail. Same-id detail resolves from the newest
+confirmed page, and shrinking totals clamp pagination to a valid page. Confirmed
+data remains with stale/retry feedback after transient failure. Mutation
+acceptance is separate from snapshot confirmation: refresh requests coalesce,
+and the next scheduled visible read reconciles a pre-write snapshot.
 
 Database Manager authorizations use a synchronous submission lock and a local
 retryable error inside the recheck dialog. Submitted credentials cannot change

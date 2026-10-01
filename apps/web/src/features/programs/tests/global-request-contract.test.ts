@@ -2,13 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const views = ["background-tasks", "compute-control", "database-manager", "deployment-sync", "docs", "identity-access", "production-runner", "secret-keys"];
+const operationalViews = new Set(["background-tasks", "compute-control", "production-runner"]);
 
 describe("global program request ownership", () => {
   it("cancels each initial snapshot request on unmount", () => {
     const operational = readFileSync(new URL("../operational-refresh/useOperationalSnapshot.ts", import.meta.url), "utf8");
     for (const view of views) {
       const source = readFileSync(new URL(`../live-views/${view}.tsx`, import.meta.url), "utf8");
-      if (view === "compute-control") {
+      if (operationalViews.has(view)) {
         expect(source, view).toContain("useOperationalSnapshot({ owner: api, read");
         expect(source, view).toContain('"snapshot", { signal }');
         expect(operational, view).toContain("new AbortController()");

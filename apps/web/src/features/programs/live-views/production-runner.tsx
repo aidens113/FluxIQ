@@ -1,44 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProductionRun, ProductionRunnerSnapshotResponse } from "fluxiq/production-runner";
-import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
+import { useProgramApi, type JsonObject } from "../program-api";
 import { DataTable, EmptyState, Field, KeyValue, LoadingState, Panel, Segmented, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
 import { digits, flattenRunLogs, formatTime, type ProductionLogRow } from "./shared";
 import { useOperationLock } from "../use-operation-lock";
+import { OperationalFreshness, useOperationalSnapshot } from "../operational-refresh";
 
+const validSnapshot = (value: unknown): value is ProductionRunnerSnapshotResponse => Boolean(value && typeof value === "object" && Array.isArray((value as ProductionRunnerSnapshotResponse).targets) && Array.isArray((value as ProductionRunnerSnapshotResponse).runs));
 
 export function ProductionRunnerLive() {
   const api = useProgramApi("production-runner");
-  const [snapshot, setSnapshot] = useState<ApiResponse<ProductionRunnerSnapshotResponse> | null>(null);
+  const identity = useRef({ api, generation: 0 });
+  if (identity.current.api !== api) identity.current = { api, generation: identity.current.generation + 1 };
+  const ownerCurrent = useCallback(() => identity.current.api === api, [api]);
+  return <ProductionRunnerWorkspace key={identity.current.generation} api={api} ownerCurrent={ownerCurrent} />;
+}
+
+function ProductionRunnerWorkspace({ api, ownerCurrent }: { api: ReturnType<typeof useProgramApi>; ownerCurrent(): boolean }) {
   const [targetType, setTargetType] = useState("task");
   const [targetId, setTargetId] = useState("");
   const [loops, setLoops] = useState("1");
   const [waitMs, setWaitMs] = useState("0");
   const [initialDelayMs, setInitialDelayMs] = useState("0");
   const [parameterDraft, setParameterDraft] = useState<{ targetKey: string; values: Record<string, string> }>({ targetKey: "", values: {} });
-  const [launchError, setLaunchError] = useState("");
+  const [launchFailure, setLaunchError] = useState<{ targetKey: string; message: string } | null>(null);
   const [runOperations, setRunOperations] = useState<Record<string, { busy: boolean; error: string }>>({});
   const pendingRuns = useRef(new Set<string>());
   const mounted = useRef(false);
-  const refreshGeneration = useRef(0);
   const launch = useOperationLock();
   const [selectedRunId, setSelectedRunId] = useState("");
   const [consoleView, setConsoleView] = useState<"workloads" | "logs">("workloads");
   const [logFilter, setLogFilter] = useState("all");
   const [status, setStatus] = useState("");
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    const generation = ++refreshGeneration.current;
-    const result = await api.get<ProductionRunnerSnapshotResponse>("snapshot", signal ? { signal } : {});
-    if (mounted.current && generation === refreshGeneration.current && !result.aborted) setSnapshot(result);
-  }, [api]);
-  useEffect(() => { mounted.current = true; const controller = new AbortController(); void refresh(controller.signal); return () => { mounted.current = false; ++refreshGeneration.current; controller.abort(); }; }, [refresh]);
+  const read = useCallback((signal: AbortSignal) => mounted.current && ownerCurrent() ? api.get<ProductionRunnerSnapshotResponse>("snapshot", { signal }) : Promise.resolve({ ok: false, aborted: true }), [api, ownerCurrent]);
+  const operational = useOperationalSnapshot({ owner: api, read, validate: validSnapshot, clockMs: 10_000 });
+  const { data: snapshot, refresh: refreshSnapshot } = operational;
+  const refresh = useCallback(() => mounted.current && ownerCurrent() ? refreshSnapshot() : Promise.resolve(), [ownerCurrent, refreshSnapshot]);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const current = () => mounted.current && ownerCurrent();
 
-  const targets = snapshot?.payload?.targets ?? [];
-  const runs = snapshot?.payload?.runs ?? [];
+  const targets = snapshot?.targets ?? [];
+  const runs = snapshot?.runs ?? [];
   const targetOptions = targets.filter((target) => target.type === targetType);
   const selectedTarget = targetOptions.find((target) => target.id === targetId) ?? targetOptions[0];
   const targetKey = selectedTarget ? JSON.stringify([selectedTarget.type, selectedTarget.id]) : "";
+  const launchError = launchFailure?.targetKey === targetKey ? launchFailure.message : "";
   const parameterValues = parameterDraft.targetKey === targetKey ? parameterDraft.values : {};
   useEffect(() => {
     setParameterDraft((draft) => draft.targetKey === targetKey ? draft : { targetKey, values: {} });
@@ -48,11 +56,14 @@ export function ProductionRunnerLive() {
   const allLogRows = newestProductionLogRows(runs, logFilter);
   const logRows = allLogRows.slice(0, 500);
   const selectedRun = runs.find((run) => run.id === selectedRunId);
+  const actions = useRef({ startRun, changeRun });
+  actions.current = { startRun, changeRun };
 
   async function startRun() {
-    if (!selectedTarget) return;
+    if (!current() || actions.current.startRun !== startRun || !selectedTarget) return;
     await launch.run("start", async () => {
-      setLaunchError("");
+      if (!current()) return;
+      setLaunchError(null);
       try {
         const result = await api.post("start", {
           name: selectedTarget.name,
@@ -63,41 +74,40 @@ export function ProductionRunnerLive() {
           initialDelayMs: Number(initialDelayMs) || 0,
           metadata: buildProductionParameters(selectedTarget.metadata?.parameterSchema, parameterValues)
         });
-        if (!mounted.current) return;
-        setStatus(result.ok ? `Run started for ${selectedTarget.name}` : result.error ?? "Run failed");
-        if (!result.ok) { setLaunchError(result.error ?? "Run failed. Try again."); return; }
+        if (!current()) return;
+        setStatus(result.ok ? `Run started for ${selectedTarget.name}. Snapshot confirmation is separate.` : result.error ?? "Run failed");
+        if (!result.ok) { setLaunchError({ targetKey, message: result.error ?? "Run failed. Try again." }); return; }
         await refresh();
       } catch {
-        if (mounted.current) setLaunchError("The workload could not be started. Try again.");
+        if (current()) setLaunchError({ targetKey, message: "The workload could not be started. Try again." });
       }
     });
   }
 
   async function changeRun(action: "advance" | "cancel", runId: string) {
-    if (pendingRuns.current.has(runId)) return;
+    if (!current() || actions.current.changeRun !== changeRun || !activeRuns.some((run) => run.id === runId) || pendingRuns.current.has(runId)) return;
     pendingRuns.current.add(runId);
     setRunOperations((current) => ({ ...current, [runId]: { busy: true, error: "" } }));
     try {
       const result = await api.post(action, { runId });
-      if (!mounted.current) return;
+      if (!current()) return;
       if (!result.ok) {
         setRunOperations((current) => ({ ...current, [runId]: { busy: false, error: result.error ?? "The workload action was refused. Try again." } }));
         return;
       }
       await refresh();
     } catch {
-      if (mounted.current) setRunOperations((current) => ({ ...current, [runId]: { busy: false, error: "The workload could not be updated. Try again." } }));
+      if (current()) setRunOperations((current) => ({ ...current, [runId]: { busy: false, error: "The workload could not be updated. Try again." } }));
     } finally {
       pendingRuns.current.delete(runId);
-      if (mounted.current) setRunOperations((current) => ({ ...current, [runId]: { busy: false, error: current[runId]?.error ?? "" } }));
+      if (current()) setRunOperations((current) => ({ ...current, [runId]: { busy: false, error: current[runId]?.error ?? "" } }));
     }
   }
 
-  if (!snapshot) return <LoadingState label="Loading Production Runner" detail="Reading targets, active workloads, and recent execution summaries." />;
-  if (!snapshot.ok) return <EmptyState title="Production Runner unavailable" description={snapshot.error ?? "Production state could not be loaded."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />;
+  if (!snapshot) return <><OperationalFreshness {...operational} refresh={refresh} />{operational.loading ? <LoadingState label="Loading Production Runner" detail="Reading targets, active workloads, and recent execution summaries." /> : <EmptyState title="Production Runner unavailable" description={operational.error || "No snapshot confirmed."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />}</>;
 
   return (
-    <section className="program-workspace-grid">
+    <><OperationalFreshness {...operational} refresh={refresh} /><section className="program-workspace-grid">
       <Panel title="Launch Workload" action={<button aria-busy={launch.busy} className="button button-primary" disabled={!selectedTarget || launch.busy} onClick={startRun} type="button">Run {targetType}</button>}>
         {launchError ? <VisualAlert tone="error" title="Workload not started" message={launchError} /> : null}
         {!targets.length ? <EmptyState compact title="No production targets" description="Register a routine, task, or interface target before launching a workload." /> : null}
@@ -123,7 +133,7 @@ export function ProductionRunnerLive() {
       <Panel title="Targets">
         <DataTable label="Production targets" columns={["Target", "Type", "Domain", "Description"]} rows={targets.map((target) => [target.name, target.type, target.domainId ?? "global", target.description ?? "-"])} empty="No production targets are registered." />
       </Panel>
-    </section>
+    </section></>
   );
 }
 

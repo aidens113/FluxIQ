@@ -25,11 +25,13 @@ const text = () => JSON.stringify(renderer.toJSON());
 const amount = () => renderer.root.findAllByType("input").find((node) => node.props.inputMode === "decimal")!;
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
   payload = { targets: [target("task", "one"), target("routine", "one", 7)], runs: [run("first"), run("second")] };
   api.get.mockReset().mockImplementation(async () => ({ ok: true, payload }));
   api.post.mockReset().mockResolvedValue({ ok: true, payload: {} });
 });
-afterEach(() => { if (renderer) act(() => renderer.unmount()); });
+afterEach(() => { if (renderer) act(() => renderer.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("Production Runner operations", () => {
   it("locks launch immediately across duplicate activation and preserves edited parameters", async () => {
@@ -100,14 +102,14 @@ describe("Production Runner operations", () => {
     expect(text()).not.toContain("The workload could not be updated");
   });
 
-  it("keeps the newest snapshot when an older refresh finishes later", async () => {
+  it("coalesces manual refresh activations and confirms the returned target", async () => {
     await mount();
     const earlier = deferred<any>();
-    const newer = deferred<any>();
-    api.get.mockReturnValueOnce(earlier.promise).mockReturnValueOnce(newer.promise);
+    api.get.mockReturnValueOnce(earlier.promise);
     act(() => { void button("Refresh").props.onClick(); void button("Refresh").props.onClick(); });
-    await act(async () => newer.resolve({ ok: true, payload: { ...payload, targets: [target("task", "newest", 6)] } }));
-    await act(async () => earlier.resolve({ ok: true, payload: { ...payload, targets: [target("task", "older", 3)] } }));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(2);
+    await act(async () => earlier.resolve({ ok: true, payload: { ...payload, targets: [target("task", "newest", 6)] } }));
     expect(amount().props.value).toBe("6");
     await act(async () => button("Run task").props.onClick());
     expect(api.post).toHaveBeenLastCalledWith("start", expect.objectContaining({ targetId: "newest" }));
