@@ -182,8 +182,11 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   }, [flatRows, hierarchyStore]);
 
   const handleTreeKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+      || (event as KeyboardEvent<HTMLElement> & { isComposing?: boolean }).isComposing
+      || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     const item = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
-    if (!item || !event.currentTarget.contains(item)) return;
+    if (!item || event.target !== item || !event.currentTarget.contains(item)) return;
     const keyboardRows = flatRows.filter((row): row is Exclude<AutomationHierarchyFlatRow, { kind: "load-more" }> => row.kind !== "load-more");
     const action = automationHierarchyKeyboardAction({
       items: keyboardRows.map((row) => ({

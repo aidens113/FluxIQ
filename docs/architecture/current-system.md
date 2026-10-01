@@ -361,6 +361,17 @@ omits arbitrary metadata, command parameters, results, traces and error prose.
 The existing API still returns the full global inventory: frontend projection
 and paging do not provide server pagination or reduce sensitive data on the wire.
 
+Hierarchy create and delete dialogs lock editing, navigation and dismissal while
+a request is pending. Retired handlers cannot submit a replacement transaction;
+issued work settles its original store only while the same transaction remains
+pending. Failures retain the draft and show a local alert; an unconfirmed outcome
+asks the user to check the hierarchy before explicitly retrying.
+
+Both hierarchy and shared Tree keyboard handlers accept plain, unhandled keys
+from the focused treeitem. Nested native controls keep their keyboard behavior,
+and child keyboard or focus events do not operate ancestor rows. Composition
+and modified shortcuts leave the event untouched.
+
 Authenticated routes share one session-recovery host in the root layout. When a
 program API request receives HTTP 401, it can ask the person to sign in again
 without replacing the current workspace or its unsaved edits. Successful recovery
