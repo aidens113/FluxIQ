@@ -6,8 +6,10 @@
 // message, or the capability whose id, title and phrases account for most of
 // what was said once the Flow's own name is set aside. A confident match runs,
 // and the thread says it was matched without the model, so a wrong reading is
-// visible and correctable. Anything less confident is answered in words with
-// the way forward, never silence.
+// visible and correctable. A message that names nothing but describes a job
+// for the page the person has open is built there (`describedJobDecision`).
+// Anything else less confident is answered in words with the way forward,
+// never silence.
 
 import { automationStudioClosestName, automationStudioNameWords } from "./closest.ts";
 import type { AutomationStudioConversationDecision } from "./decision.ts";
@@ -16,6 +18,11 @@ import { automationStudioConversationInvocationDecision, type AutomationStudioCo
 
 /** Below this, a match on the words alone is not acted on. */
 export const AUTOMATION_STUDIO_CONVERSATION_FALLBACK_FLOOR = 0.5;
+
+/** The capability that builds an automation from the page the person has open (`commands/create-here.ts`). */
+const CREATE_HERE = "flow.createHere";
+/** The fewest words, filler left out, that a message read without the model must have to be taken as a job to build rather than a remark. */
+const DESCRIBED_JOB_MIN_WORDS = 6;
 
 const ASKING_WHAT = /\b(?:what|which)\b[\s\S]{0,40}\b(?:can|could)\b[\s\S]{0,20}\b(?:you|i)\b|^\s*(?:help|commands?|capabilities)\s*\??\s*$/iu;
 
@@ -40,6 +47,8 @@ export function automationStudioConversationFallbackDecision(
     if (!best || confidence > best.confidence) best = { id: capability.id, confidence };
   }
   if (!best || best.confidence < AUTOMATION_STUDIO_CONVERSATION_FALLBACK_FLOOR) {
+    const described = describedJobDecision(message, context);
+    if (described) return described;
     return {
       kind: "reply",
       text: 'I could not tell what you wanted done from that on my own. Put it as something to do, such as "run the kettle flow", or ask "what can you do?" and I will list everything.'
@@ -48,6 +57,30 @@ export function automationStudioConversationFallbackDecision(
   const mentioned = context.flows ? automationStudioConversationFlowMentioned(message, context.flows) : null;
   const decision = automationStudioConversationInvocationDecision(best.id, mentioned ? { flowId: mentioned.flowId } : {}, context, null);
   if (decision.kind === "invoke") decision.invocation.confidence = best.confidence;
+  return decision;
+}
+
+/**
+ * A job described for the page the person has open, read without the model:
+ * a request to build it there, with the message as what it should do.
+ *
+ * The live Lab run `run-muq2dlhq-96bffb09` (2026-10-01) typed its task --
+ * "Find every pair of wireless earbuds in the store's search results that is
+ * ... priced under $50 ..." -- into the extension's chat while the model was
+ * slow to answer. The reading ran out of time, the words named no capability,
+ * and the person was told "I could not tell what you wanted done": a person on
+ * a shopping site who wrote down a whole job got nothing built. Only when
+ * nothing else matched, a page is open, the build is offered, and the message
+ * is a job rather than a question or a word of thanks. The build reads the
+ * page with the model, and says so if it cannot.
+ */
+function describedJobDecision(message: string, context: AutomationStudioConversationDecisionContext): AutomationStudioConversationDecision | null {
+  const createHere = context.capabilities.find((capability) => capability.id === CREATE_HERE);
+  if (!createHere || !context.onScreen.pageUrl) return null;
+  const text = message.trim();
+  if (text.endsWith("?") || automationStudioNameWords(text).length < DESCRIBED_JOB_MIN_WORDS) return null;
+  const decision = automationStudioConversationInvocationDecision(createHere.id, { instruction: text }, context, null);
+  if (decision.kind === "invoke") decision.invocation.confidence = AUTOMATION_STUDIO_CONVERSATION_FALLBACK_FLOOR;
   return decision;
 }
 

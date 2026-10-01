@@ -316,7 +316,7 @@ export class AutomationStudioConversations {
       message: input.text,
       transcript: earlier.transcript,
       transcriptWithheld: earlier.withheld,
-      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen },
+      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text },
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})
     });

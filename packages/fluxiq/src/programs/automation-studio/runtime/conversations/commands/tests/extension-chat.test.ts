@@ -240,6 +240,27 @@ describe("the extension's chat, end to end in Core", () => {
     expect(built.every((event) => event.conversationId === world!.conversationId)).toBe(true);
   }, 60_000);
 
+  it("builds from a job the person only described, taking their message as what the automation should do", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild(SEARCH_THEN_COMPLETE);
+    const message = "Find every kettle in the catalog that costs under 30 dollars";
+
+    // The model named the capability and left its instruction out, as the person's own message already says it.
+    const response = await world.say(message, { do: "flow.createHere" });
+    expect(response?.decision.kind).toBe("invoke");
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
+
+    const flow = await onlyFlow(world.service, world.project.id);
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
+    const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
+    expect(bodies).toEqual([message]);
+    const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
+    expect(result?.text).toMatch(/Created the Flow/u);
+  }, 60_000);
+
   it("says what an automation should do", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
     const flow = await world.service.createFlow({ projectId: world.project.id, name: "Kettles" });

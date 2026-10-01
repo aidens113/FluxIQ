@@ -8,6 +8,8 @@
 // - Argument names. `flow` where the panel says `flowId` is the same argument,
 //   and is taken as it. A name nothing matches is left out and recorded.
 // - The project, and whatever the panel has open, fill the matching arguments.
+// - A required instruction nothing supplied is the person's own message, when
+//   that message says what to do and not only which capability to start.
 // - A Flow named by its name becomes its id. When the capability needs a Flow
 //   and none can be settled on -- none named and several exist, or a name that
 //   matches nothing -- the answer is one question back, naming the choices.
@@ -17,7 +19,7 @@
 
 import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../action-permissions/client/index.ts";
 import type { AutomationStudioPanelCapability } from "../../panel-capabilities/index.ts";
-import { automationStudioClosestName } from "./closest.ts";
+import { automationStudioClosestName, automationStudioNameWords } from "./closest.ts";
 import type {
   AutomationStudioConversationDecision,
   AutomationStudioConversationFlowReference,
@@ -32,6 +34,12 @@ export type AutomationStudioConversationDecisionContext = {
   /** Null when the Flows could not be listed; a written Flow name is then passed on as written. */
   flows: readonly AutomationStudioConversationFlowReference[] | null;
   onScreen: AutomationStudioConversationOnScreen;
+  /**
+   * What the person wrote. A capability whose required `instruction` is the
+   * person's own words takes it from here when nothing else supplied it
+   * (`fillInstructionFromMessage`). Absent, that argument is asked for.
+   */
+  message?: string;
 };
 
 /** Below this an argument name is not taken as meaning any particular argument. */
@@ -39,6 +47,10 @@ const ARGUMENT_MATCH_FLOOR = 0.25;
 const SECRET_NAME = /pin|password|secret|token|authori[sz]ation|credential/iu;
 const ON_SCREEN_ARGUMENTS = ["subflowId", "runId", "recordingId"] as const;
 const LISTED_FLOWS = 8;
+/** The argument that holds what an automation should do, in the person's own words. */
+const INSTRUCTION_ARGUMENT = "instruction";
+/** A message with fewer words than this once the capability's own name and phrases are set aside asks to start something, and does not say what. */
+const INSTRUCTION_MIN_WORDS = 3;
 
 type MappedArguments = {
   values: Record<string, unknown>;
@@ -66,6 +78,7 @@ export function automationStudioConversationInvocationDecision(
   const flowQuestion = settleFlow(capability, values, context);
   if (flowQuestion) return flowQuestion;
   fillFromContext(capability, values, context);
+  fillInstructionFromMessage(capability, values, context);
   const missingQuestion = askForMissing(capability, values);
   if (missingQuestion) return missingQuestion;
 
@@ -226,6 +239,33 @@ function fillFromContext(capability: AutomationStudioPanelCapability, values: Re
     const open = context.onScreen[name];
     if (open && takes(name)) values[name] = open;
   }
+}
+
+/**
+ * A required instruction nothing supplied, taken from the message itself.
+ *
+ * "Find every pair of wireless earbuds under $50 ..." typed in the chat window
+ * is both the request and what the automation should do. Answering it "I still
+ * need what the automation should do" -- which the words-only reading always
+ * did, because it fills no argument, and a model did whenever it named the
+ * capability alone -- made the person type the same words twice, and a Lab run
+ * that types its task into the chat never reached a build at all. A message
+ * that is no more than the capability's own name or phrases ("automate this
+ * page") says nothing about what to do, and is still asked about.
+ */
+function fillInstructionFromMessage(
+  capability: AutomationStudioPanelCapability,
+  values: Record<string, unknown>,
+  context: AutomationStudioConversationDecisionContext
+): void {
+  if (!capability.arguments.some((argument) => argument.name === INSTRUCTION_ARGUMENT && argument.required)) return;
+  const given = values[INSTRUCTION_ARGUMENT];
+  if (typeof given === "string" ? given.trim() !== "" : given !== undefined && given !== null) return;
+  const message = context.message?.trim();
+  if (!message) return;
+  const named = new Set([capability.title, ...capability.phrases].flatMap(automationStudioNameWords));
+  if (automationStudioNameWords(message).filter((word) => !named.has(word)).length < INSTRUCTION_MIN_WORDS) return;
+  values[INSTRUCTION_ARGUMENT] = message;
 }
 
 function flowChoices(flows: readonly AutomationStudioConversationFlowReference[]): string {
