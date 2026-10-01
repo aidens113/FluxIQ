@@ -107,9 +107,18 @@ const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named
 const OPTIONAL_INSTRUCTION = " A reason of step_is_optional means the step named is marked optional, so the Flow carries on without it when it fails and the act may never be done: "
   + "make it always run with amend_draft keep on that step, or name a step that always runs.";
 
-/** Said only when a choice of an item is missing: how many, or which size, colour or version. */
+/**
+ * Said only when a choice of an item is missing: how many, or which size,
+ * colour or version. An option the item's page already opens chosen must not be
+ * pressed: on crossborder the hub's page opens on Space Grey, pressing a chosen
+ * option clears it, and Add to cart then refuses ("Please select a Color."), so
+ * this refusal's own "press that option" talked the model into undoing the
+ * choice (lane A, `t174-w32` D5). Such a choice is named by the step after
+ * which the page showed it chosen.
+ */
 const CHOICE_INSTRUCTION = " An id like a2.quantity or a2.size is a choice the person made for the item of that act (of): how many of it, or which size, colour, count or version -- quote is their words for it. "
   + "The press that adds does not make it: choose the size or set the quantity with its own step before adding -- press that option, or set the quantity control to the number -- keep that step, and name that step for the choice's id, e.g. {\"action\": \"a2.quantity\", \"step\": \"d9\"}. "
+  + "If the item's page already shows that option chosen, do not press it -- pressing a chosen option can clear it -- and name for the choice's id the step after which the page showed it chosen, such as the one that opened the item's page. "
   + "A reason of choice_is_the_act_step means the step named is the one named for the act itself, and nothing it was given sets the choice.";
 
 /** Said only when an act over a whole set was claimed by a step that acts once; the way to repeat is the draft's own telling of it. */
