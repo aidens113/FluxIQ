@@ -202,3 +202,16 @@ describe("an execution result that says only a person can get past what it met",
     expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...base }, "mutate")).not.toHaveProperty("personNeeded");
   });
 });
+
+describe("a cleared wait on a tool execution result", () => {
+  it.each([true, false])("keeps the execution's outcome when effectApplied is %s", (effectApplied) => {
+    const result = automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied, resultCode: "tool.outcome", clearedWait: { waitedMs: 12 } }, "mutate");
+    expect(result).toEqual({ evidence: {}, effectApplied, resultCode: "tool.outcome" });
+  });
+  it.each([null, "12", { waitedMs: -1 }])("leaves malformed diagnostic values to the activity reader: %s", (clearedWait) => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, clearedWait }, "mutate")).toEqual({ evidence: {}, effectApplied: false });
+  });
+  it("still rejects unknown fields", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, unexpected: true }, "mutate")).toBeUndefined();
+  });
+});

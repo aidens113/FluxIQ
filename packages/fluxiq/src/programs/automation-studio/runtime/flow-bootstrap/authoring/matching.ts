@@ -10,9 +10,6 @@
 import type { AutomationNodeParameter, AutomationNodePort, AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { authoringKey } from "./keys.ts";
 
-/** How many near matches a refusal names. */
-const MAX_CANDIDATES = 5;
-
 /** Keys a model writes for a parameter that is declared under another name. */
 const PARAMETER_SYNONYMS: ReadonlyMap<string, string[]> = new Map([
   ["link", ["url"]],
@@ -62,7 +59,9 @@ export function matchAuthoringDefinition(text: string, definitions: readonly Aut
   const best = scored[0];
   const runnerUp = scored[1];
   if (best && (!runnerUp || runnerUp.score < best.score)) return { definition: best.definition, candidates: [] };
-  return { candidates: scored.slice(0, MAX_CANDIDATES).map((entry) => entry.definition.id) };
+  // Every near match, in id order (2026-09-30): it was the five that shared
+  // the most words, which ranked what the model was shown.
+  return { candidates: scored.map((entry) => entry.definition.id).sort((left, right) => left.localeCompare(right)) };
 }
 
 /** The parameter a written key means, or `undefined`. */

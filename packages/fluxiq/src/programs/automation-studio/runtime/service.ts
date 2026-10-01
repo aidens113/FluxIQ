@@ -86,7 +86,7 @@ import {
   type AutomationStudioLlmProviderResolverInput,
 } from "./llm/index.ts";
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
+import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmResolutionWithinFlowSettings, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
@@ -215,7 +215,7 @@ import {
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus, settleAutomationStudioParkedRunWait } from "./service/runtime-session/index.ts";
+import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -383,6 +383,11 @@ export class AutomationStudioService {
   /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
   readonly runControl = new AutomationStudioRunControlRegistry();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
+  private readonly parkedRunExpiry = new AutomationStudioParkedRunExpiry({
+    read: (projectId, runId) => this.summaries.getRuntimeSession(projectId, runId),
+    list: (projectId) => this.summaries.listRuntimeSessions(projectId),
+    write: (projectId, session) => this.writeRuntimeSession(projectId, session, true)
+  });
   private reusableLlmContextEnabled: boolean;
   private reusableLlmContextContentProtection: AutomationStudioProjectContentProtection | undefined;
   private reusableLlmContextFreshEvidenceSelector: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"];
@@ -471,6 +476,7 @@ export class AutomationStudioService {
   }
 
   async close(): Promise<void> {
+    await this.parkedRunExpiry.close();
     await this.uiCache.close();
     await this.runtimeProjectDatabasePool?.closeAll();
   }
@@ -1387,7 +1393,7 @@ export class AutomationStudioService {
 
   async packReusableLlmContexts(input: { projectId: string; flowId: string; subflowId?: string | null; domainId: string; evidenceKind: string; evidenceSchemaVersion: string; sanitizerVersion: string; compatibilityTags?: AutomationStudioReusableLlmContextList["compatibilityTags"]; maxInputTokens: number; actorId?: string; now?: number }): Promise<AutomationStudioReusableLlmContextPackingResult> {
     return this.withReusableLlmContextStore(input.projectId, async (store) => {
-      const candidates = await store.list({ flowId: input.flowId, subflowId: input.subflowId ?? null, domainId: input.domainId, evidenceKind: input.evidenceKind, evidenceSchemaVersion: input.evidenceSchemaVersion, sanitizerVersion: input.sanitizerVersion, compatibilityTags: input.compatibilityTags ?? [], compatibilityMode: "exact", ...(input.now === undefined ? {} : { now: input.now }), limit: 100 });
+      const candidates = await store.listEvery({ flowId: input.flowId, subflowId: input.subflowId ?? null, domainId: input.domainId, evidenceKind: input.evidenceKind, evidenceSchemaVersion: input.evidenceSchemaVersion, sanitizerVersion: input.sanitizerVersion, compatibilityTags: input.compatibilityTags ?? [], compatibilityMode: "exact", ...(input.now === undefined ? {} : { now: input.now }) }); // Every page (2026-09-30): it was one page of 100.
       const packed = packAutomationStudioReusableLlmContext({ candidates, maxInputTokens: input.maxInputTokens });
       await store.appendAudit({ eventType: "packed", flowId: input.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), domainId: input.domainId, ...(input.actorId ? { actorId: input.actorId } : {}), detail: { consideredCount: packed.consideredCount, selectedCount: packed.selectedRecordIds.length, deduplicatedCount: packed.deduplicatedCount, excludedDispositionCount: packed.excludedDispositionCount, packedBytes: packed.packedBytes, estimatedTokens: packed.estimatedTokens, selectedRecordIds: packed.selectedRecordIds.join(","), sourceRunIds: packed.selectedSourceRunIds.join(","), sourceAdaptationIds: packed.selectedSourceAdaptationIds.join(",") }, ...(input.now === undefined ? {} : { createdAt: input.now }) });
       return packed;
@@ -1483,8 +1489,7 @@ export class AutomationStudioService {
         failureCode = "flow_bootstrap.instruction_resolution_failed";
         const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
         // A repair's brief rides beside the Flow's own instructions on every call the model sees, and nowhere else: not in the authority, the permission gate or the stored adaptation (`recovery/refuted-result/brief.ts`).
-        // Carried whole, with no instruction token budget (2026-09-30; `llm/harness/instruction.ts`).
-        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions };
+        const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions }; // Whole: no instruction token budget (2026-09-30).
         const resolvedInstructions = resolveAutomationStudioLlmInstructions({ instructions, projectId, flowId });
         if (!resolvedInstructions.instructions.length
           || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
@@ -1589,8 +1594,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               const decision = await runHarness({
                 taskKind: "evidence_tool_decision", projectId, flowId, ...promptInstructions,
                 evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
-                // The node catalog is every offered node, whole: no 16,000-token
-                // allocation of its own any more (2026-09-30).
+                // The node catalog is every offered node, whole: no 16,000-token allocation of its own (2026-09-30).
                 flowBootstrap: { registry, resolution, size, routing: routing.context(), ...(startLocation === undefined ? {} : { startLocation }) },
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
@@ -1616,8 +1620,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           });
           // Not doable, or a budget ran out first: said to the person as that, with the Flow so far kept.
           if (built.kind === "unfinished") throw flowBootstrapBuildEndingFailure(built.ending, built.progress, loopAccounting(built.accounting), built.kept, built.lastIssueCodes);
-          const loop = built.loop;
-          // A person who did not get past a check is why the loop stopped, whatever else it had raised.
+          const loop = built.kind === "ended" ? { ...built.loop, trace: built.trace, accounting: built.accounting } : built.loop; // Keep every round before publishing the person/permission ending.
           const personStopped = personNeeded.endedOnIntervention(loop, loopAccounting(loop.accounting));
           if (personStopped && !loop.ok) throw personStopped;
           // A request ends the build only when the build produced nothing. A
@@ -1627,7 +1630,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
           if (askedPermission && !accepted.verdict) throw askedPermission;
           if (!loop.ok) throw await keeper.exhausted(loop, (kept) => flowBootstrapEvidenceLoopFailure(loop, loopAccounting(built.accounting), kept));
-          evidenceTrace = built.kind === "finished" ? built.trace : loop.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
+          evidenceTrace = built.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
           failureStage = "provider_output_validation";
           accounting = loopAccounting(built.accounting); // Every round's spend, repairs included.
           failureAccounting = accounting;
@@ -2817,44 +2820,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   })); }
 
   async cancelRuntimeSession(projectId: string, runId: string, reason = "Cancelled by user."): Promise<AutomationStudioRuntimeSession | null> {
-    const session = await this.getRuntimeSession(projectId, runId);
-    if (!session) return null;
-    if (isTerminalRuntimeSessionStatus(session.status)) return session;
-    const controller = this.runtimeAbortControllers.get(`${projectId}:${runId}`);
-    controller?.abort(reason);
-    const now = Date.now();
-    const cancelled: AutomationStudioRuntimeSession = {
-      ...session,
-      status: "cancelled",
-      finishedAt: session.finishedAt ?? now,
-      metadata: {
-        ...(session.metadata ?? {}),
-        cancellation: { at: now, reason }
-      },
-      trace: session.trace ?? {
-        status: "cancelled",
-        startedAt: session.startedAt ?? session.queuedAt,
-        finishedAt: now,
-        attempts: [],
-        values: {},
-        effects: [],
-        message: reason
-      }
-    };
-    await this.writeRuntimeSession(projectId, cancelled);
-    settleAutomationStudioParkedRunWait(projectId, session, "cancelled");
-    return cancelled;
+    return await this.parkedRunExpiry.cancel(projectId, runId, reason, () => this.runtimeAbortControllers.get(`${projectId}:${runId}`)?.abort(reason));
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
-    return await this.summaries.getRuntimeSession(projectId, runId);
+    return await this.parkedRunExpiry.expire(projectId, runId);
   }
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
-    return await this.summaries.listRuntimeSessions(projectId);
+    const sessions = await this.summaries.listRuntimeSessions(projectId);
+    return (await Promise.all(sessions.map((session) => this.parkedRunExpiry.expire(projectId, session.runId)))).filter((session): session is AutomationStudioRuntimeSession => session !== null);
   }
 
   async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+    const page = await this.summaries.listRuntimeSessionSummaries(projectId, options);
+    await Promise.all(page.runs.filter((run) => run.status === "waiting").map((run) => this.parkedRunExpiry.expire(projectId, run.runId)));
     return await this.summaries.listRuntimeSessionSummaries(projectId, options);
   }
 
@@ -2992,8 +2972,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowInstructionSet(input: { projectId: string; flowId?: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]> {
-    const page = await this.listFlowInstructionSummaries({ ...input, limit: 100, offset: 0 });
-    const instructions = await Promise.all(page.instructions.map((item) => this.getFlowInstruction(input.projectId, item.instructionId)));
+    const ids: string[] = []; // Every instruction, page after page: the judgement and the repair read this set, and it was the first 100 (2026-09-30).
+    for (let offset = 0, total = 1; offset < total; offset += 100) { const page = await this.listFlowInstructionSummaries({ ...input, limit: 100, offset }); total = page.instructions.length ? page.total : 0; ids.push(...page.instructions.map((item) => item.instructionId)); }
+    const instructions = await Promise.all(ids.map((id) => this.getFlowInstruction(input.projectId, id)));
     return instructions.filter((item): item is AutomationStudioFlowInstruction => Boolean(item));
   }
 
@@ -3951,27 +3932,30 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
-    if (this.objectStore && this.projects.indexStore) {
-      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
-        if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
-        await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
-      });
+    await this.projects.requireProject(projectId);
+    return await this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
+      if (this.objectStore && this.projects.indexStore) {
+        await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+          const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+          if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+          await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
+          await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
+        });
+        await this.uiCache.purgeProject(projectId).catch(() => undefined);
+        return { deletedProjectId: projectId };
+      }
+      await this.projects.requireProject(projectId);
+      await this.projects.writeProjectIndex((state) => ({
+        ...state,
+        projects: state.projects.filter((project) => project.id !== projectId)
+      }));
+      if (this.projectPaths.root) {
+        if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
+        else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
+      }
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
-    }
-    await this.projects.requireProject(projectId);
-    await this.projects.writeProjectIndex((state) => ({
-      ...state,
-      projects: state.projects.filter((project) => project.id !== projectId)
-    }));
-    if (this.projectPaths.root) {
-      if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
-      else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
-    }
-    await this.uiCache.purgeProject(projectId).catch(() => undefined);
-    return { deletedProjectId: projectId };
+    });
   }
 
   async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {
@@ -4257,7 +4241,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return page.events[0] ?? null;
   }
 
-  private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+  private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession, serialized = false): Promise<void> {
+    if (!serialized) return await this.parkedRunExpiry.withRun(projectId, session.runId, async () => { await this.writeRuntimeSession(projectId, session, true); this.parkedRunExpiry.track(projectId, session); });
     await this.projects.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
     await new ProgramJsonStore<RuntimeIndex>(this.projectPaths.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({

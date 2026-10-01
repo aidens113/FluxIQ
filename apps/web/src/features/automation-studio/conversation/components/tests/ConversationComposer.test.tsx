@@ -49,6 +49,39 @@ describe("the composer", () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
+  for (const scenario of ["edited", "retyped", "failed"] as const) {
+    it(`keeps the appropriate draft after a pending send: ${scenario}`, async () => {
+      let finish!: (sent: boolean) => void;
+      const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+      const { renderer } = mount({ onSend });
+      act(() => box(renderer).props.onChange({ target: { value: "Submitted" } }));
+      act(() => { key(renderer, false); });
+      act(() => { renderer.update(<ConversationComposer busy onSend={onSend} />); });
+      expect(box(renderer).props.disabled).not.toBe(true);
+      if (scenario === "edited") act(() => box(renderer).props.onChange({ target: { value: "Newer words" } }));
+      if (scenario === "retyped") {
+        act(() => box(renderer).props.onChange({ target: { value: "Changed" } }));
+        act(() => box(renderer).props.onChange({ target: { value: "Submitted" } }));
+      }
+      await act(async () => { finish(scenario !== "failed"); });
+      expect(box(renderer).props.value).toBe(scenario === "edited" ? "Newer words" : "Submitted");
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(onSend).toHaveBeenCalledWith("Submitted");
+      act(() => renderer.unmount());
+    });
+  }
+
+  it("does not send when Enter confirms an input-method composition", () => {
+    const { renderer, onSend } = mount();
+    act(() => box(renderer).props.onChange({ target: { value: "Composed text" } }));
+    const event = { key: "Enter", shiftKey: false, nativeEvent: { isComposing: true }, preventDefault: vi.fn() };
+    act(() => box(renderer).props.onKeyDown(event));
+    expect(onSend).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(box(renderer).props.value).toBe("Composed text");
+    act(() => renderer.unmount());
+  });
+
   it("starts as one line and grows by measurement, not a row count", () => {
     const { renderer } = mount();
     expect(box(renderer).props.rows).toBe(1);

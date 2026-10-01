@@ -52,7 +52,6 @@ export {
   isAutomationStudioExploredEvidenceLabel
 } from "./explored-evidence-label.ts";
 export {
-  AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS,
   isAutomationStudioLlmRecentActionContext,
   packAutomationStudioLlmContext,
   type AutomationStudioLlmActionPermissions,
@@ -66,8 +65,6 @@ export {
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
 export {
-  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_BYTES,
-  AUTOMATION_STUDIO_LLM_CONVERSATION_MAX_TURNS,
   type AutomationStudioLlmConversationContext,
   type AutomationStudioLlmConversationTurn
 } from "./conversation.ts";

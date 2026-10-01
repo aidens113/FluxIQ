@@ -102,9 +102,3 @@ export function decideAutomationStudioRuntimeLlmInvocation(input: AutomationStud
   return { ...allowed, ...observed };
 }
 
-/**
- * How many recent adaptations are loaded in full for matching. Summaries carry
- * no failed action, so matching needs the records, and the bound keeps a run
- * from reading the whole adaptation history.
- */
-export const AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT = 25;

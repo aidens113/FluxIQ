@@ -179,3 +179,7 @@ The first integration target is the Chrome extension repository at
 action schemas, gateway mapping, side panel, background service worker, and
 content-script execution. FluxIQ core only sees the domain IO registration and
 the paired websocket client's advertised runtime capabilities.
+
+## Cleared target waits
+
+A gateway action result may include `clearedWait: { waitedMs }`, independently of its action status. The domain client lifts this generic fact from its own result; Core never reads domain payloads for it. `ClientGatewayRuntimeTransport` preserves only safe, nonnegative integer milliseconds, both in dispatch results and `command.result` events. Old clients that omit the field remain compatible. Automation Studio resolves that wait as `waited_out`, even when the action subsequently fails.

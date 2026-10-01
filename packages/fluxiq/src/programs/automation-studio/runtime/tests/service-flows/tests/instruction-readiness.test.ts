@@ -4,6 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAutomationStudioLargeProjectFixture } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../../../service/projects/index.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
 
 describe("AutomationStudioService instruction readiness summaries", () => {
   it("finds one active applicable instruction beyond an unfiltered 100-item page and reports none when all are inactive", async () => {
@@ -17,10 +19,16 @@ describe("AutomationStudioService instruction readiness summaries", () => {
         ...instruction,
         scope: { kind: "flow" as const, projectId: project.id, flowId: flow.flowId }
       }));
-      await service.saveFlow({ projectId: project.id, flow });
-      for (const [index, instruction] of instructions.entries()) {
-        await service.saveFlowInstruction(project.id, { ...instruction, status: index === 0 ? "active" : "disabled" });
-      }
+      // Every instruction is still saved through the service. The seeding holds
+      // the project database open across the 102 saves, as one operation
+      // would, so the database is not opened and closed once per save.
+      const storage = service as unknown as { runtimeProjectDatabasePool: AutomationStudioProjectDatabasePool; projects: AutomationStudioProjectStore };
+      await withAutomationStudioProjectDatabaseHeld({ pool: storage.runtimeProjectDatabasePool, projects: storage.projects }, project.id, async () => {
+        await service.saveFlow({ projectId: project.id, flow });
+        for (const [index, instruction] of instructions.entries()) {
+          await service.saveFlowInstruction(project.id, { ...instruction, status: index === 0 ? "active" : "disabled" });
+        }
+      });
 
       const oldUnfilteredPage = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, limit: 100, offset: 0 });
       expect(oldUnfilteredPage).toMatchObject({ total: 102, limit: 100, offset: 0 });

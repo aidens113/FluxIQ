@@ -35,13 +35,11 @@ export function parseAutomationStudioLlmProviderResult(
   diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
   if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
-  const boundedDiagnostics = diagnostics.length > 200
-    ? [...diagnostics.slice(0, 199), { severity: "error" as const, code: "llm_output.finding_limit", message: "Additional provider-output findings were suppressed." }]
-    : diagnostics;
+  // Every finding (2026-09-30): past 200 the rest were suppressed under `llm_output.finding_limit`.
   return {
     ...(response ? { response: stripAutomationStudioLlmResponseMetadata(response) } : {}),
     ...(usage ? { usage } : {}),
-    diagnostics: boundedDiagnostics
+    diagnostics
   };
 }
 

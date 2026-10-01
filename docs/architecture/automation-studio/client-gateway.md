@@ -270,12 +270,12 @@ A paired client's credential is also an HTTP bearer token, on two routes only.
 `GET /api/recordings` accepts it for the extension's recordings list. The
 program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
 these endpoints, which are what the extension's panel needs to talk to FluxIQ,
-stop a run, and work its Simple Mode:
+stop a run, and use its automation and recording controls:
 
 - Automation Studio: `list-conversations`, `open-conversation`,
   `get-conversation`, `append-turn`, `answer-ask`
 - Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`
-- Automation Studio, Simple Mode: `list-flow-summaries`, `list-flow-runs`,
+- Automation Studio, automation panel: `list-flow-summaries`, `list-flow-runs`,
   `get-flow-run-detail`, `list-flow-adaptations`, `export-run-dataset`,
   `run-runtime-session`, `generate-recording-proposal`,
   `review-recording-flow-proposal`, `remove-recording-entry`
@@ -393,6 +393,45 @@ same capabilities. The ids are:
   - This deliberately changes the rule above that a token never reaches the
     model. The product direction is that the extension's chat builds and runs
     automations (2026-09-30, t198).
+
+## Per-step activity and resolved asks
+
+Core emits each explained model decision as a `thought` with its human action
+and screened reason in `detail.text`; repairs and result checks have their own
+activity messages (`runtime/activity/observer.ts`, `wording/reason-text.ts`).
+The model's required one-sentence `summary` is held beside the decision, not
+inside its trace or the next model context. Activity can carry these screened
+words about the page; retained diagnostic traces remain content-free.
+
+Both chats render each explained decision as its own assistant message, with
+the resulting action cards under it. They share the browser-safe `fluxiq/ui`
+activity-action map: `ActivityActionKind`, `ACTIVITY_ACTION_ICONS`,
+`ACTIVITY_ACTION_NAMES`, `activityActionOf` and `activityActionKey`. Cards cover
+click, type, navigate, read, look, wait, person_check, permission, draft, test,
+repair and other; the extension draws shared lucide paths and the Core panel
+uses lucide-react with the same kind/icon mapping. Internal bookkeeping reads
+stay out of the chat. The extension has Chat and Automations tabs, Settings and
+Open FluxIQ; the old Simple/Advanced split is removed.
+
+A wait opens an ask activity row and settles through another ask row with the
+same `ref` and `detail.resolution`. The closed resolutions are:
+
+| Resolution | Meaning | Card outcome |
+| --- | --- | --- |
+| `waited_out` | A check cleared itself; `clearedWait` carries its elapsed time | done |
+| `answered` | The person continued after the check | done |
+| `allowed` | Permission was granted | done |
+| `declined` | The person declined or stopped | failed |
+| `timed_out` | The answer window expired | failed |
+| `cancelled` | Work ended before an answer | failed |
+
+`activityActionKey` keys a card by ask reference, so settlement updates the
+same card in place. A check's intervention-tool event and its ask share one
+card. Both surfaces wait for Core's explicit resolution: later work, a final
+message or a failed unit cannot imply that the ask succeeded. An unresolved
+card keeps its waiting state. A cancelled parked runtime session explicitly
+settles its ask; expiry/removal and cleared-wait propagation gaps are separate
+pending work outside this baseline.
 
 Start/stop recording and action execution are privileged operations and use
 shared PIN authorization. Client-initiated pairing requests can create pending

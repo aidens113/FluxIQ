@@ -59,19 +59,6 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back."
 };
 
-/**
- * The most refusals one entry lists.
- *
- * One decision may carry at most sixteen amendments
- * (`./evidence-loop-decision.ts`), so nothing is dropped in practice; the bound
- * is here so the entry's size is this module's property rather than the
- * caller's.
- */
-const MAX_REFUSALS_LISTED = 16;
-
-/** The most existing positions one entry lists, newest first when there are more. */
-const MAX_POSITIONS_LISTED = 32;
-
 const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, for the reason beside each one, and the draft is as it was for them. "
   + "The step numbers an amendment takes are the ones the draft entry shows, and they are renumbered whenever a step moves or is withdrawn. "
   + "Amend a step that exists, do something else, or complete. A decision whose amendments all change nothing counts toward stopping this exploration.";
@@ -90,8 +77,10 @@ const UNDONE_INSTRUCTION = " These amendments put the draft back exactly as it s
 /**
  * What the model reads after an amendment decision the draft refused, before it
  * is asked again: which amendments changed nothing and why, how far the draft
- * reaches, and how close the loop is to stopping. Bounded to well under two
- * kilobytes.
+ * reaches, and how close the loop is to stopping. Every refusal and every
+ * position is listed: until 2026-09-30 the entry listed at most 16 refusals and
+ * the newest 32 positions (user: "Remove ANY AND ALL LIMITS ON THE NUMBER OF
+ * ELEMENTS PASSED TO MODEL").
  *
  * `steps` is the draft as it now stands, read for the positions it has and
  * nothing else, so the positions reported are the ones an amendment would
@@ -108,7 +97,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   /** The iteration whose draft the applied amendments put back exactly, when they did. */
   sameDraftAsIteration?: number;
 }): JsonObject {
-  const refused = input.refusals.slice(0, MAX_REFUSALS_LISTED).map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}) }));
+  const refused = input.refusals.map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}) }));
   const undone = input.sameDraftAsIteration !== undefined;
   const met = [...new Set(refused.map((refusal) => refusal.reason))];
   const reasons: JsonObject = {};
@@ -131,12 +120,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   };
 }
 
-/**
- * The positions the draft has, ascending, and the highest of them when there
- * are more than fit: the newest steps are the ones an edit is usually about,
- * and `steps` beside them says how many there are in total.
- */
+/** Every position the draft has, ascending. */
 function existingPositions(steps: readonly { position: number }[]): number[] {
-  const positions = steps.map((step) => step.position).filter((position) => Number.isSafeInteger(position));
-  return positions.length <= MAX_POSITIONS_LISTED ? positions : positions.slice(-MAX_POSITIONS_LISTED);
+  return steps.map((step) => step.position).filter((position) => Number.isSafeInteger(position));
 }

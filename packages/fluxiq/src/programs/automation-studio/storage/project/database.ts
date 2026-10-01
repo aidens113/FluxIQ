@@ -1,7 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
-import { recordSqlPerformance, withSqlPerformanceContext } from "../../../_shared/performance-metrics.ts";
+import { withSqlPerformanceContext } from "../../../_shared/performance-metrics.ts";
+import { AutomationStudioStatementCache } from "./statement-cache.ts";
 
 export type AutomationStudioSqlRunResult = { changes: number; lastID: number };
 export type AutomationStudioWalCheckpointMode = "passive" | "full" | "restart" | "truncate";
@@ -124,10 +125,14 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
   private pendingOperations = 0;
   private closed = false;
   private closePromise: Promise<void> | null = null;
+  // Every statement this connection runs goes through here, in issue order,
+  // with `run` and `all` statements kept prepared; see statement-cache.ts.
+  private readonly statements: AutomationStudioStatementCache;
 
   private constructor(private readonly handle: sqlite3.Database, input: { projectId: string; filePath: string }) {
     this.projectId = input.projectId;
     this.filePath = input.filePath;
+    this.statements = new AutomationStudioStatementCache(handle);
   }
 
   static async open(input: { projectId: string; filePath: string; busyTimeoutMs: number }): Promise<AutomationStudioProjectDatabase> {
@@ -201,7 +206,10 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
   async close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
-    this.closePromise = this.operationTail.catch(() => undefined).then(() => closeDatabase(this.handle));
+    // SQLite refuses to close a connection that still has prepared statements.
+    this.closePromise = this.operationTail.catch(() => undefined)
+      .then(() => this.statements.finalizeAll())
+      .then(() => closeDatabase(this.handle));
     return this.closePromise;
   }
 
@@ -219,10 +227,10 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
 
   private directExecutor(): AutomationStudioSqlExecutor {
     return {
-      run: (sql, params = []) => run(this.handle, sql, params),
-      get: <T>(sql: string, params: readonly unknown[] = []) => get<T>(this.handle, sql, params),
-      all: <T>(sql: string, params: readonly unknown[] = []) => all<T>(this.handle, sql, params),
-      exec: (script: string) => exec(this.handle, script)
+      run: (sql, params = []) => this.statements.run(sql, params),
+      get: <T>(sql: string, params: readonly unknown[] = []) => this.statements.get<T>(sql, params),
+      all: <T>(sql: string, params: readonly unknown[] = []) => this.statements.all<T>(sql, params),
+      exec: (script: string) => this.statements.exec(script)
     };
   }
 }
@@ -245,50 +253,6 @@ function openDatabase(filePath: string, busyTimeoutMs: number): Promise<sqlite3.
       }
     });
     handle.configure("busyTimeout", busyTimeoutMs);
-  });
-}
-
-function run(handle: sqlite3.Database, sql: string, params: readonly unknown[]): Promise<AutomationStudioSqlRunResult> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    handle.run(sql, [...params], function onRun(error) {
-      recordSqlPerformance({ operation: "run", sql, elapsedMs: performance.now() - startedAt, rowsChanged: error ? 0 : this.changes, ok: !error });
-      if (error) reject(error);
-      else resolve({ changes: this.changes, lastID: this.lastID });
-    });
-  });
-}
-
-function get<T>(handle: sqlite3.Database, sql: string, params: readonly unknown[]): Promise<T | undefined> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    handle.get(sql, [...params], (error, row: T | undefined) => {
-      recordSqlPerformance({ operation: "get", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error || row === undefined ? 0 : 1, ok: !error });
-      if (error) reject(error);
-      else resolve(row);
-    });
-  });
-}
-
-function all<T>(handle: sqlite3.Database, sql: string, params: readonly unknown[]): Promise<T[]> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    handle.all(sql, [...params], (error, rows: T[]) => {
-      recordSqlPerformance({ operation: "all", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error ? 0 : rows.length, ok: !error });
-      if (error) reject(error);
-      else resolve(rows);
-    });
-  });
-}
-
-function exec(handle: sqlite3.Database, script: string): Promise<void> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    handle.exec(script, (error) => {
-      recordSqlPerformance({ operation: "run", sql: script, elapsedMs: performance.now() - startedAt, rowsChanged: 0, ok: !error });
-      if (error) reject(error);
-      else resolve();
-    });
   });
 }
 

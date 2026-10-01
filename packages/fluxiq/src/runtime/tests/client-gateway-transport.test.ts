@@ -122,6 +122,28 @@ describe("ClientGatewayRuntimeTransport", () => {
       { commandId: "command.malformed", status: "failed" }
     ]);
   });
+  it("screens generic cleared waits through failed dispatch and result events without reading domain payloads", async () => {
+    const gateway = new ClientGatewayService();
+    const paired = await pairGatewayClient(gateway, "extension.cleared", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const results: unknown[] = [];
+    transport.onEvent((event) => { if (event.type === "command.result") results.push(event.result); });
+    for (const clearedWait of [{ waitedMs: 12, extra: "discard" }, { waitedMs: -1 }, { waitedMs: 1.5 }, { waitedMs: "12" }, null]) {
+      const dispatched = transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" });
+      await gateway.receive(paired.sessionId, clientMessage("client.action_result", {
+        commandId: lastExecuteCommandId(gateway, paired.sessionId), status: "failed", clearedWait: clearedWait as unknown as { waitedMs: number }, payload: { checkWait: { waitedMs: 99 } }
+      }));
+      const result = await dispatched;
+      if (clearedWait && typeof clearedWait.waitedMs === "number" && clearedWait.waitedMs === 12) {
+        expect(result.clearedWait).toEqual({ waitedMs: 12 });
+        expect(results.at(-1)).toHaveProperty("clearedWait", { waitedMs: 12 });
+      } else {
+        expect(result).not.toHaveProperty("clearedWait");
+        expect(results.at(-1)).not.toHaveProperty("clearedWait");
+      }
+    }
+  });
+
 });
 
 function lastExecuteCommandId(gateway: ClientGatewayService, sessionId: string): string {

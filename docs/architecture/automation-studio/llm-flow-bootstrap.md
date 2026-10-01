@@ -528,12 +528,13 @@ for it, the columns they named, and the Flow's own steps, with an instruction to
 run the step that returns rows and finish again. A refusal under check 7 carries
 where the Flow starts and the Flow's own steps, with an instruction to run the
 node that goes there and keep it as the first step. The refusal counts as an
-unusable decision. So does a reply that failed Core's checks, and so does a
-provider failure that only spends the call. Each one spends one of the loop's
-decisions. After three in a row, or fewer when the loop allows fewer decisions,
-creation fails as `flow_bootstrap.evidence_unusable_decision`. A usable
-decision resets the count. A completion the check accepts is persisted as it
-was checked.
+unusable decision and spends one of the loop's decisions. Repeated unusable
+decisions stop that live round; on the build path the phases coordinator
+receives its progress instead of publishing the former bare
+`flow_bootstrap.evidence_unusable_decision`. A partial Flow is tested, judged
+and repaired; an empty Flow explores again while budget remains. Unreadable
+replies have their own counter, described below. A completion the check accepts
+is tested before its Flow can be persisted.
 
 **An unreadable reply is asked again, never a bare ending (t211).** A reply that
 arrived and could not be read (`llm.provider_malformed_response`, a truncated
@@ -583,6 +584,10 @@ and is shown even before any step has run. A step added with `act` is the
 model's claim for that act, so a completion need not name it again; a claim in
 the result names a step by the number the draft shows. The standing decision
 instruction says a Flow is ready only when every act on the checklist is done.
+Each act includes its requested choices (quantity, size, colour or version),
+with their own `done` step or `todo` reason. A claim such as `act: "a2.quantity"`
+adds the step toward that choice; completing the parent act alone does not
+complete its choices.
 
 **Progress means the Flow advanced** (audit A1, cause 2). A call that applied
 an effect is no longer progress by itself: one that leaves a state the build
@@ -591,7 +596,7 @@ tools) is a step without progress, and so is a completion refused for the same
 issues over the same proposed steps, even after calls between. What clears the
 guard, besides new evidence, is the authored draft advancing: a step entering
 the Flow for the first time, or fewer acts undone than ever before
-(`runtime/llm/evidence-loop/authored-progress.ts`); a step toggled out and back
+(`runtime/llm/evidence-progress/authored-progress.ts`); a step toggled out and back
 in is not new. A redirect names the acts still undone (`actsMissing`) and the
 step to take next.
 
@@ -599,6 +604,31 @@ step to take next.
 already reached the start in the build it continues, so Core does not tell the
 domain to hold it there: exploration carries on from the page as it stands
 (`runtime/service.ts`, the harness registry built for a continuation).
+
+**A round that stops short is not a silent build ending (t208).** The
+coordinator in `runtime/flow-bootstrap/unfinished-build/phases.ts` tests a
+partial non-empty Flow from its start with the same deterministic gate, judges
+it against the checklist, and seeds a live repair with that Flow and judgement.
+An empty Flow has nothing to test and explores again from the live page while
+budget remains. Repairs continue while the judgement advances (more acts or
+choices done, more steps in the Flow, or fewer failed steps), up to two repairs
+and six live rounds. Every round shares the build's $0.25 purse, time/token
+budget and declared call count; the per-round decision backstop starts afresh.
+A permission or person-needed question takes precedence over another round.
+
+The three explicit endings carry `diagnostic.ending.message`, the outstanding
+acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
+`runtime/activity/build.ts` and conversation progress use that message:
+
+| Code | Trigger | Message begins |
+| --- | --- | --- |
+| `flow_bootstrap.not_doable` | A repair of a tested, non-empty Flow got no further than the previous judgement | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
+| `flow_bootstrap.evidence_budget_exhausted` | Cost, time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
+| `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
+
+Budget exhaustion does not establish that the task is impossible, and an empty
+Flow never establishes `not_doable`. Budget and unreadable endings are
+retryable; a kept incomplete draft lets the next build continue.
 
 Once drafting has begun and at least one actionable step exists, a provider
 decision also receives the Flow-draft beside entry, always whole: every
@@ -634,6 +664,25 @@ entries follow every evidence entry: `[...evidence, history, draft, budget]`.
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
 trace holds tool IDs, byte counts, effect state, and categorical result codes.
+Every build ending retains the trace from every live round, including a
+cancelled build, a refused configuration, and cancellation during judgement.
+Decisions are numbered across the build; each round's opening observation
+keeps iteration zero. Diagnostics use whole-build accounting beside these
+rows, including permission and person-needed endings after earlier rounds.
+The final round's loop result remains local to that round; its caller uses
+the build's accumulated trace when publishing a failure or storing a Flow.
+
+A tool execution may carry an optional `diagnostic` object beside its evidence.
+Core copies that object through the execution parser, decision row, persisted
+trace and public evidence steps without interpreting the importing domain's
+vocabulary. Its transport accepts only a shallow object of code-shaped strings,
+booleans, nonnegative integer counts and scalar lists; malformed diagnostics are
+dropped while the actual tool outcome remains intact. Shape validation does not
+certify that a string is safe: the producer and consuming domain must enforce
+their own field and value allowlists before recording domain facts. Older
+callers and stored steps that omit the field remain valid. A producer must use
+the matching Core build that accepts this optional execution key.
+
 A trace row also carries bounded, content-free convergence facts: the measured
 draft shape shown to the decision; build-local draft revisions and stable step
 ids; applied/refused/kept amendment counts; page-state changed/unchanged/
@@ -794,8 +843,9 @@ superseded by a newer one of its kind; a tool's result never leaves. A request
 answered from memory names the entry that answers it, which stays where it
 happened.
 
-A build has a live phase and a judgement phase (user, 2026-09-30). In the live
-phase the model explores and writes its draft, and nothing replays the draft
+A build has three phases (user, 2026-09-30): live exploration and draft
+authoring, testing and judgement, then live repair. In exploration
+the model writes its draft, and nothing replays the draft
 from its first step: not a completion the check refuses, and not a continued
 build, which carries on from wherever the page stands
 (`runtime/llm/evidence-loop/completion-attempt.ts`,

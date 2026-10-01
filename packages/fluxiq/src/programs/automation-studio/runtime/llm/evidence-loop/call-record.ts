@@ -10,6 +10,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStepReplay } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
 
 /**
  * What a call said about its own outcome beyond the code it came to: why it
@@ -20,16 +21,18 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-exec
  * absent whenever the caller said nothing -- a call that simply worked usually
  * does.
  */
-export function automationStudioLlmEvidenceCallDiagnostic(execution: { resultReason?: string; nodeId?: string; draft?: { actionId?: string } | undefined }): { resultReason?: string; nodeId?: string } {
+export function automationStudioLlmEvidenceCallDiagnostic(execution: { resultReason?: string; nodeId?: string; diagnostic?: JsonObject; draft?: { actionId?: string } | undefined }): { resultReason?: string; nodeId?: string; diagnostic?: JsonObject } {
   // A call that worked usually names no node of its own, while the draft entry
   // it declared does: `run-mulx76vv-a882551e` published a node id only on its
   // refused rows, so which node any of its nine successful actions ran could
   // not be read. The declared action is the caller's resolution, never a name
   // the model wrote, so it answers the same question.
   const nodeId = execution.nodeId ?? execution.draft?.actionId;
+  const diagnostic = automationStudioLlmEvidenceDiagnostic(execution.diagnostic);
   return {
     ...(execution.resultReason ? { resultReason: execution.resultReason } : {}),
-    ...(nodeId ? { nodeId } : {})
+    ...(nodeId ? { nodeId } : {}),
+    ...(diagnostic ? { diagnostic } : {})
   };
 }
 

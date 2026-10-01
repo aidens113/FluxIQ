@@ -26,7 +26,7 @@ import {
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
-import type { AutomationStudioProjectStore } from "../projects/index.ts";
+import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../projects/index.ts";
 import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore } from "../flows/index.ts";
 import { AutomationStudioSqlSummaryPaging } from "./sql-paging.ts";
@@ -76,6 +76,10 @@ export class AutomationStudioSummaryStore {
 
   private readonly paging = new AutomationStudioSqlSummaryPaging();
   private readonly runDetails: AutomationStudioRunDetailWriter;
+
+  private async withProjectDatabaseHeld<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, projectId, operation);
+  }
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
     const index = await this.indexes.readRuntimeIndex(projectId);
@@ -375,7 +379,15 @@ export class AutomationStudioSummaryStore {
     }));
   }
 
+  // A listing reaches the project database through the typed projection, its
+  // inventory check and, on fallback, the summary index; held here, they share
+  // one open database instead of reopening it for each. See
+  // ../projects/database-hold.ts.
   async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
+    return await this.withProjectDatabaseHeld(input.projectId, () => this.listFlowSubflowSummariesUnheld(input));
+  }
+
+  private async listFlowSubflowSummariesUnheld(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
     const search = input.search?.trim().toLowerCase();
@@ -443,6 +455,10 @@ export class AutomationStudioSummaryStore {
   }
 
   async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
+    return await this.withProjectDatabaseHeld(input.projectId, () => this.listFlowInstructionSummariesUnheld(input));
+  }
+
+  private async listFlowInstructionSummariesUnheld(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
     const search = input.search?.trim().toLowerCase();

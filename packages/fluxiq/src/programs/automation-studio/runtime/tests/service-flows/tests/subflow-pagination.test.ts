@@ -1,4 +1,5 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cpSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -29,6 +30,11 @@ type SeededSubflowInventory = {
 // written once, snapshotted after each count a case needs, and each case runs
 // on its own copy: a private database per test, and a test body that only
 // spends time on the listing it asserts on.
+//
+// The copies are synchronous. The 64-subflow inventory is a few hundred files,
+// and the promise-based `cp` walks it with several sequential round trips to
+// the thread pool per entry, about 4,400 in all, which on a busy machine cost
+// more than the listing under test.
 const SEEDED_SUBFLOW_COUNTS = [2, 3, 32, 64] as const;
 const SEEDING_TIMEOUT_MS = 180_000;
 
@@ -69,7 +75,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
         await seeding.close();
         seedingOpen = false;
         const dir = path.join(seedRoot, `subflows-${count}`);
-        await cp(liveDir, dir, { recursive: true });
+        cpSync(liveDir, dir, { recursive: true });
         seeded.set(count, { dir, project, flow, subflows: [...subflows] });
         if (position < SEEDED_SUBFLOW_COUNTS.length - 1) {
           seeding = new AutomationStudioService({ dataDir: liveDir, seedFixture: false });
@@ -99,7 +105,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
   async function createSubflows(count: number) {
     const inventory = seeded.get(count);
     if (!inventory) throw new Error(`No seeded inventory holds ${count} subflows; add ${count} to SEEDED_SUBFLOW_COUNTS.`);
-    await cp(inventory.dir, dataDir, { recursive: true });
+    cpSync(inventory.dir, dataDir, { recursive: true });
     service = new AutomationStudioService({ dataDir, seedFixture: false });
     opened = service;
     return {

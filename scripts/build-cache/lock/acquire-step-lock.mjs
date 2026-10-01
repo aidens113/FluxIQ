@@ -76,8 +76,26 @@ async function tryCreate(lockPath, owner) {
   }
 }
 
+// Windows refuses to open a file another process is deleting (`rm` leaves it
+// delete-pending until the last handle closes) or renaming, with EPERM, EACCES
+// or EBUSY. That is a lock in transition, not an error: wait for it to settle.
+const TRANSIENT_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const TRANSIENT_RETRIES = 50;
+const TRANSIENT_DELAY_MS = 20;
+
 /** The lock's owner and age, or `null` when it vanished before it could be read (the caller retries). */
 async function readHolder(lockPath) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await readHolderOnce(lockPath);
+    } catch (error) {
+      if (!TRANSIENT_CODES.has(error?.code) || attempt >= TRANSIENT_RETRIES) throw error;
+      await delay(TRANSIENT_DELAY_MS);
+    }
+  }
+}
+
+async function readHolderOnce(lockPath) {
   try {
     const [text, stats] = await Promise.all([readFile(lockPath, "utf8"), stat(lockPath)]);
     const owner = JSON.parse(text);

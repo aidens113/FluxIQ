@@ -285,12 +285,12 @@ function recordOutputIssues(value: JsonValue | undefined, definition: Automation
 
 const CONTRACT_FAILED = "bootstrap.parameter_contract_failed";
 const CONTRACT_VIOLATION = "bootstrap.parameter_contract_violation";
-const MAX_CONTRACT_ISSUE_CODES = 8;
 const MAX_CONTRACT_ISSUE_CODE_LENGTH = 120;
 const CONTRACT_ISSUE_CODE = /^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$/;
 
-// The contract is domain code, so its answer is bounded, and a code is kept
-// only when it is a plain identifier that cannot pass for one of Core's own.
+// The contract is domain code, so a code is kept only when it is a plain
+// identifier that cannot pass for one of Core's own. Every such code is kept:
+// until 2026-09-30 the first eight were.
 function contractIssueCodes(contract: AutomationStudioNodeParameterContract, definitionId: string, parameterId: string, value: JsonValue): string[] {
   let reported: unknown;
   try {
@@ -305,7 +305,6 @@ function contractIssueCodes(contract: AutomationStudioNodeParameterContract, def
   const codes = new Set<string>();
   for (const code of reported) {
     codes.add(isContractIssueCode(code) ? code : CONTRACT_VIOLATION);
-    if (codes.size >= MAX_CONTRACT_ISSUE_CODES) break;
   }
   return [...codes];
 }

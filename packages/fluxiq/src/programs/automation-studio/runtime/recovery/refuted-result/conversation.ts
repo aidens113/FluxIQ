@@ -12,19 +12,18 @@
 // exactly the shape `annotation/ports.ts` already uses for everything else the
 // recovery reaches outside itself.
 
-import type {
-  AutomationStudioConversation,
-  AutomationStudioConversationSubject,
-  AutomationStudioConversationTurn
+import {
+  automationStudioConversationWholeThread,
+  type AutomationStudioConversation,
+  type AutomationStudioConversationSubject,
+  type AutomationStudioConversationThreadPage,
+  type AutomationStudioConversationTurn
 } from "../../conversations/index.ts";
-
-/** How many turns a recovery reads back. The request's own packer bounds what it then carries. */
-export const AUTOMATION_STUDIO_RECOVERY_CONVERSATION_TURN_LIMIT = 40;
 
 /** The narrow slice of the conversations collaborator this reads. */
 export type AutomationStudioRecoveryConversationReader = {
   listConversations(input: { projectId: string; subject?: AutomationStudioConversationSubject; limit?: number }): Promise<AutomationStudioConversation[]>;
-  getConversation(input: { projectId: string; conversationId: string; limit?: number }): Promise<{ turns: AutomationStudioConversationTurn[] } | null>;
+  getConversation(input: { projectId: string; conversationId: string; limit?: number; sinceTurnId?: string }): Promise<AutomationStudioConversationThreadPage>;
 };
 
 /**
@@ -43,12 +42,9 @@ export async function automationStudioRecoveryConversationTurns(
   for (const subject of [{ kind: "run", id: input.runId }, { kind: "flow", id: input.flowId }] as const) {
     const [conversation] = await reader.listConversations({ projectId: input.projectId, subject, limit: 1 });
     if (!conversation) continue;
-    const thread = await reader.getConversation({
-      projectId: input.projectId,
-      conversationId: conversation.conversationId,
-      limit: AUTOMATION_STUDIO_RECOVERY_CONVERSATION_TURN_LIMIT
-    });
-    if (thread?.turns.length) return thread.turns;
+    // Every turn, page after page (2026-09-30): it was the first 40.
+    const turns = await automationStudioConversationWholeThread((page) => reader.getConversation({ projectId: input.projectId, ...page }), conversation.conversationId);
+    if (turns.length) return turns;
   }
   return [];
 }
