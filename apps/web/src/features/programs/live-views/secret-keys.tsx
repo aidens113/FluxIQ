@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Eye, KeyRound, MoreHorizontal, Pencil, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { Eye, KeyRound, MoreHorizontal, Pencil, RefreshCcw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RevealSecretKeyResponse, SecretKeysSnapshotResponse, SecretKeySummary } from "fluxiq/secret-keys";
 import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
@@ -8,7 +8,8 @@ import { DataTable, EmptyState, Field, KeyValue, LoadingState, Menu, Modal, Pane
 import type { CurrentUser } from "../types";
 import { OperationBusyBoundary, useOperationLock } from "../use-operation-lock";
 import { reconcileVisibleSelection } from "../program-selection";
-import { copyText, digits, formatTime } from "./shared";
+import { digits, formatTime } from "./shared";
+import { ClipboardButton } from "../components";
 
 type SecretForm = {
   name: string;
@@ -54,7 +55,6 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "llm" | "custom">("all");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
-  const [copyStatus, setCopyStatus] = useState("");
   const [scopeCatalog, setScopeCatalog] = useState<{ domains: Array<{ id: string; label: string }>; projects: Array<{ id: string; label: string }>; flows: Array<{ id: string; label: string }>; projectId: string; loading: boolean; error: string }>({ domains: [], projects: [], flows: [], projectId: "", loading: false, error: "" });
   const [createForm, setCreateForm] = useState<SecretForm>(emptySecretForm);
   const [createAuthorization, setCreateAuthorization] = useState<AuthForm | null>(null);
@@ -103,16 +103,16 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
   ])];
   useEffect(() => {
     if (!reveal?.value) return;
-    const timer = window.setTimeout(() => { setReveal(null); setCopyStatus(""); setStatus("Revealed value hidden after 30 seconds"); }, 30_000);
+    const timer = window.setTimeout(() => { setReveal(null); setStatus("Revealed value hidden after 30 seconds"); }, 30_000);
     return () => window.clearTimeout(timer);
   }, [reveal?.value]);
   useEffect(() => {
-    if (reveal && selectedId && reveal.key.id !== selectedId) { setReveal(null); setCopyStatus(""); }
+    if (reveal && selectedId && reveal.key.id !== selectedId) setReveal(null);
   }, [reveal, selectedId]);
   useEffect(() => {
     if (!reveal) return;
     const current = keys.find((key) => key.id === reveal.key.id);
-    if (secretRevealIsStale(reveal.key, current)) { setReveal(null); setCopyStatus(""); setStatus("Reveal closed because the key changed"); }
+    if (secretRevealIsStale(reveal.key, current)) { setReveal(null); setStatus("Reveal closed because the key changed"); }
   }, [keys, reveal]);
 
   async function loadScopeProject(projectId: string) {
@@ -190,7 +190,7 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
             <Menu icon={<MoreHorizontal size={15} aria-hidden />} iconOnly label={"Actions for " + key.name} options={[
               { id: "edit", label: "Edit metadata", icon: <Pencil size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setEdit({ key, form: formFromKey(key), auth: emptyAuth }); } },
               { id: "rotate", label: "Rotate value", icon: <RefreshCcw size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setRotate({ key, value: "", auth: emptyAuth }); } },
-              { id: "reveal", label: "Reveal temporarily", icon: <Eye size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setReveal({ key, auth: emptyAuth }); setCopyStatus(""); } },
+              { id: "reveal", label: "Reveal temporarily", icon: <Eye size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setReveal({ key, auth: emptyAuth }); } },
               { id: "delete", label: "Delete key", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => { setSelectedId(key.id); setRemove({ key, auth: emptyAuth }); } }
             ]} />
           ])} empty={keys.length ? "No keys match these filters." : "No secret keys have been added."} />
@@ -202,7 +202,7 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
       {createAuthorization ? <Modal title="Authorize New Key" description="Confirm your current password and configured PIN. Adding a key does not require 2FA." onClose={() => setCreateAuthorization(null)}><AuthorizationFields auth={createAuthorization} currentUser={currentUser} requireTotp={false} onChange={setCreateAuthorization} /><div className="modal-actions"><button className="button" onClick={() => { setCreateAuthorization(null); setCreateOpen(true); }} type="button">Back</button><button className="button button-primary" disabled={!canSubmitAuth(createAuthorization, currentUser, false)} onClick={() => void createKey()} type="button">Save Key</button></div></Modal> : null}
       {edit ? <Modal title="Edit Key Metadata" description="Update how this key is identified and where runtime resolution may use it." onClose={() => setEdit(null)}><div className="secret-key-editor modal-secret-editor"><SecretFormFields form={edit.form} scopeOptions={scopeOptionsFor(edit.form.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onChange={(form) => setEdit({ ...edit, form })} /><AuthorizationFields auth={edit.auth} currentUser={currentUser} onChange={(auth) => setEdit({ ...edit, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(edit.auth, currentUser) || !edit.form.name.trim()} onClick={() => void saveEdit()} type="button">Save Changes</button></div></Modal> : null}
       {rotate ? <Modal title="Rotate Secret Value" description={"Replace the encrypted value for " + rotate.key.name + ". Existing metadata remains unchanged."} onClose={() => setRotate(null)}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Rotation impact" message="New runtime requests use the replacement immediately. Existing in-flight work may still hold the prior credential." /><Field label="New secret value" required><input autoComplete="new-password" data-autofocus type="password" value={rotate.value} onChange={(event) => setRotate({ ...rotate, value: event.target.value })} /></Field><AuthorizationFields auth={rotate.auth} currentUser={currentUser} onChange={(auth) => setRotate({ ...rotate, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setRotate(null)} type="button">Cancel</button><button className="button button-primary" disabled={!rotate.value || !canSubmitAuth(rotate.auth, currentUser)} onClick={() => void rotateKey()} type="button">Rotate Value</button></div></Modal> : null}
-      {reveal ? <Modal title="Reveal Secret" description={"Reveal " + reveal.key.name + " only long enough to inspect or copy it."} onClose={() => { setReveal(null); setCopyStatus(""); }}>{reveal.value ? <div className="secret-reveal-box"><code>{reveal.value}</code><button className="button" onClick={() => { void copyText(reveal.value ?? ""); setCopyStatus("Copied"); }} type="button"><Copy size={14} aria-hidden />{copyStatus || "Copy"}</button><small>Automatically hidden after 30 seconds.</small></div> : <AuthorizationFields auth={reveal.auth} currentUser={currentUser} onChange={(auth) => setReveal({ ...reveal, auth })} />}<div className="modal-actions"><button className="button" onClick={() => { setReveal(null); setCopyStatus(""); }} type="button">Close</button>{!reveal.value ? <button className="button button-primary" disabled={!canSubmitAuth(reveal.auth, currentUser)} onClick={() => void revealKey()} type="button">Reveal for 30 seconds</button> : null}</div></Modal> : null}
+      {reveal ? <Modal title="Reveal Secret" description={"Reveal " + reveal.key.name + " only long enough to inspect or copy it."} onClose={() => setReveal(null)}>{reveal.value ? <div className="secret-reveal-box"><code>{reveal.value}</code><ClipboardButton key={reveal.key.id} value={reveal.value} /><small>Automatically hidden after 30 seconds.</small></div> : <AuthorizationFields auth={reveal.auth} currentUser={currentUser} onChange={(auth) => setReveal({ ...reveal, auth })} />}<div className="modal-actions"><button className="button" onClick={() => setReveal(null)} type="button">Close</button>{!reveal.value ? <button className="button button-primary" disabled={!canSubmitAuth(reveal.auth, currentUser)} onClick={() => void revealKey()} type="button">Reveal for 30 seconds</button> : null}</div></Modal> : null}
       {remove ? <Modal title="Delete Secret Key" description={"Permanently remove " + remove.key.name + " and its encrypted payload."} onClose={() => setRemove(null)}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Runtime impact" message="Flows or integrations referencing this key will no longer be able to resolve it." /><AuthorizationFields auth={remove.auth} currentUser={currentUser} onChange={(auth) => setRemove({ ...remove, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setRemove(null)} type="button">Cancel</button><button className="button button-danger" disabled={!canSubmitAuth(remove.auth, currentUser)} onClick={() => void deleteKey()} type="button">Delete Key</button></div></Modal> : null}
     </section></OperationBusyBoundary>
   );

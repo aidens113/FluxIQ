@@ -17,10 +17,13 @@ source complete. Database checkpointd5c979a6; supervisor combined82 and full
 corrected audit84320 only inherited service4506/4505. Production build9733 passed
 17pages/101959ms. Onboarding1a5afc47, Runtime d011b0ae and databased5c979a6 are
 durable. Next auth-navigation and operational-refresh/Compute briefs are released;
-supervisor clipboard controls begin in disjoint files. Whole-tree gates wait
-for the next coordinated source freeze.
-Downstream extraction is verified/checkpointed, strip integration8fail under
-repair in that isolated tree. No runtime/backend/security contract changes.
+supervisor clipboard controls pass22 focused tests and corrected scoped types.
+Whole-tree gates wait for the next coordinated source freeze. Auth request
+scope-change recovery and refresh cancellation/layout review corrections are
+being checked in their exact worker-owned paths.
+Downstream strip is independently verified full1727/types/build/structure and
+checkpointed5e162c36; explicit user navigation focus follows. No runtime/backend
+or security contract changes.
 
 The downstream paired plan is authoritative for coordination, worker briefs and
 reports. This Core task is isolated in task/t224-codex-ui-ux-review. Claude owns

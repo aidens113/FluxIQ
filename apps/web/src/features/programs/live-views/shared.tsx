@@ -171,11 +171,6 @@ export function digits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
-export function copyText(value: string): void {
-  if (!value) return;
-  void navigator.clipboard?.writeText(value);
-}
-
 export function emptyCredentialEdit(kind: "password" | "pin") {
   return {
     kind,

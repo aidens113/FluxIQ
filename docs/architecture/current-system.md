@@ -122,6 +122,13 @@ changes clear local grants and record state, so authorization from the previous
 scope cannot unlock the new workspace. Dismissing a pending dialog discards its
 late receipt; it does not claim to revoke a grant already issued by the server.
 
+Revealed Secret Keys and manual TOTP keys use a shared clipboard control. It
+waits for the browser write acknowledgement before showing success, prevents
+duplicate pending writes and offers manual-copy guidance when access is missing
+or refused. Changed values, closed reveals and unmounted controls ignore late
+feedback. Reveal expiry remains unchanged; an issued clipboard write cannot be
+cancelled and closing the reveal does not clear the system clipboard.
+
 Compute Control resolves selected detail and activity from the visible filtered
 nodes. Search, health or capability changes choose a visible fallback or clear
 the selection when nothing matches; hidden nodes do not retain their detail.
