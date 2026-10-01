@@ -634,6 +634,17 @@ entries follow every evidence entry: `[...evidence, history, draft, budget]`.
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
 trace holds tool IDs, byte counts, effect state, and categorical result codes.
+A tool execution may carry an optional `diagnostic` object beside its evidence.
+Core copies that object through the execution parser, decision row, persisted
+trace and public evidence steps without interpreting the importing domain's
+vocabulary. Its transport accepts only a shallow object of code-shaped strings,
+booleans, nonnegative integer counts and scalar lists; malformed diagnostics are
+dropped while the actual tool outcome remains intact. Shape validation does not
+certify that a string is safe: the producer and consuming domain must enforce
+their own field and value allowlists before recording domain facts. Older
+callers and stored steps that omit the field remain valid. A producer must use
+the matching Core build that accepts this optional execution key.
+
 A trace row also carries bounded, content-free convergence facts: the measured
 draft shape shown to the decision; build-local draft revisions and stable step
 ids; applied/refused/kept amendment counts; page-state changed/unchanged/

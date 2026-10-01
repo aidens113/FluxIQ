@@ -10,6 +10,7 @@ import {
   type AutomationStudioFlowBootstrapEvidenceTraceRow
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
@@ -115,6 +116,8 @@ export function sanitizeEvidenceLoopTrace(
     // what `tests/evidence-trace.test.ts` now holds shut rather than leaving to
     // whoever edits the row next.
     if (item.resultReason !== undefined && typeof item.resultReason === "string" && EVIDENCE_RESULT_CODE.test(item.resultReason)) clean.resultReason = item.resultReason;
+    const diagnostic = automationStudioLlmEvidenceDiagnostic(item.diagnostic);
+    if (diagnostic) clean.diagnostic = diagnostic;
     if (item.nodeId !== undefined && typeof item.nodeId === "string" && EVIDENCE_RESULT_CODE.test(item.nodeId)) clean.nodeId = item.nodeId;
     // How many steps an amendment decision edited. The fourth rebuilder learns
     // a member as the others do; the test below holds every one of them.

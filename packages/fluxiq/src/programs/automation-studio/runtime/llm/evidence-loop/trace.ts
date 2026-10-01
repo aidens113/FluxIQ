@@ -13,6 +13,7 @@
 // it, and by the tests that hold both shut.
 
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
 import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
@@ -46,6 +47,8 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
    * no whitespace and so no sentence.
    */
   resultReason?: string;
+  /** Caller-screened structural facts; Core does not interpret this optional object. */
+  diagnostic?: JsonObject;
   /**
    * The node this call ran, where the caller resolved one against its own
    * catalog.
