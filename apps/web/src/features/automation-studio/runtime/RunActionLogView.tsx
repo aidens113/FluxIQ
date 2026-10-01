@@ -54,8 +54,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   const [eventError, setEventError] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [loadingEventDetail, setLoadingEventDetail] = useState(false);
+  const [eventDetailError, setEventDetailError] = useState("");
   const [selectedAttempt, setSelectedAttempt] = useState<any | null>(null);
   const [loadingActionDetail, setLoadingActionDetail] = useState(false);
+  const [actionDetailError, setActionDetailError] = useState("");
   const [eventScrollTop, setEventScrollTop] = useState(0);
   const detailRequestRef = useRef(0);
   const actionRequestRef = useRef(0);
@@ -76,6 +78,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   const actionTotal = actionPage.total;
   const loadActionPage = async (offset: number, cursor: string | null = null) => {
     if (!props.projectId || !props.runId) return;
+    actionDetailAbortRef.current?.abort();
+    ++actionDetailRequestRef.current;
+    setLoadingActionDetail(false);
+    setActionDetailError("");
     actionAbortRef.current?.abort();
     const controller = new AbortController();
     actionAbortRef.current = controller;
@@ -134,13 +140,21 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     const requestId = ++actionDetailRequestRef.current;
     setSelectedAttempt(attempt);
     setActionDetailView("summary");
+    setLoadingActionDetail(false);
+    setActionDetailError("");
     if (!props.projectId || !props.runId || !props.commands.loadActionDetail || attempt.metadata?.summaryOnly !== true) return;
     const attemptId = String(attempt.attemptId ?? "");
     setLoadingActionDetail(true);
-    const result = await props.commands.loadActionDetail({ projectId: props.projectId, runId: props.runId, attemptId }, controller.signal);
-    if (controller.signal.aborted || requestId !== actionDetailRequestRef.current) return;
-    setLoadingActionDetail(false);
-    if (result.ok && result.payload?.action && String(result.payload.action.attemptId) === attemptId) setSelectedAttempt(result.payload.action);
+    try {
+      const result = await props.commands.loadActionDetail({ projectId: props.projectId, runId: props.runId, attemptId }, controller.signal);
+      if (controller.signal.aborted || requestId !== actionDetailRequestRef.current) return;
+      if (result.ok && result.payload?.action && String(result.payload.action.attemptId) === attemptId) setSelectedAttempt(result.payload.action);
+      else setActionDetailError("Action details could not be loaded. The summary remains available.");
+    } catch {
+      if (!controller.signal.aborted && requestId === actionDetailRequestRef.current) setActionDetailError("Action details could not be loaded. The summary remains available.");
+    } finally {
+      if (!controller.signal.aborted && requestId === actionDetailRequestRef.current) setLoadingActionDetail(false);
+    }
   };
   const selectEvent = async (event: any) => {
     eventDetailAbortRef.current?.abort();
@@ -148,13 +162,21 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     eventDetailAbortRef.current = controller;
     const requestId = ++eventDetailRequestRef.current;
     setSelectedEvent(event);
+    setLoadingEventDetail(false);
+    setEventDetailError("");
     if (!props.projectId || !props.runId || !props.commands.loadEventDetail) return;
     const sequence = Number(event.sequence);
     setLoadingEventDetail(true);
-    const result = await props.commands.loadEventDetail({ projectId: props.projectId, runId: props.runId, sequence }, controller.signal);
-    if (controller.signal.aborted || requestId !== eventDetailRequestRef.current) return;
-    setLoadingEventDetail(false);
-    if (result.ok && result.payload?.event && Number(result.payload.event.sequence) === sequence) setSelectedEvent(result.payload.event);
+    try {
+      const result = await props.commands.loadEventDetail({ projectId: props.projectId, runId: props.runId, sequence }, controller.signal);
+      if (controller.signal.aborted || requestId !== eventDetailRequestRef.current) return;
+      if (result.ok && result.payload?.event && Number(result.payload.event.sequence) === sequence) setSelectedEvent(result.payload.event);
+      else setEventDetailError("Event details could not be loaded. The summary remains available.");
+    } catch {
+      if (!controller.signal.aborted && requestId === eventDetailRequestRef.current) setEventDetailError("Event details could not be loaded. The summary remains available.");
+    } finally {
+      if (!controller.signal.aborted && requestId === eventDetailRequestRef.current) setLoadingEventDetail(false);
+    }
   };
   const nextActionPage = () => {
     if (!actionPage.nextCursor) return;
@@ -186,6 +208,8 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     setLoadedRunDetail(props.runDetail ?? null);
     setDetailError("");
     setEventError("");
+    setActionDetailError("");
+    setEventDetailError("");
     setSelectedEvent(null);
     setSelectedAttempt(null);
     setLoadingActionDetail(false);
@@ -295,7 +319,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
           {visibleEvents.map((event) => <li key={event.eventId ?? event.sequence}><button aria-pressed={selectedEvent?.eventId === event.eventId} onClick={() => void selectEvent(event)} type="button"><span>{event.sequence}</span><strong>{event.title ?? event.eventKind ?? "Runtime event"}</strong><StatusBadge value={event.status ?? event.eventKind ?? "event"} /><code>{event.eventKind ?? "event"}</code></button></li>)}
           {eventEnd < eventPage.events.length ? <li aria-hidden style={{ height: (eventPage.events.length - eventEnd) * eventRowHeight }} /> : null}
         </ol>
-        {selectedEvent ? <aside className="automation-runtime-event-detail" aria-label="Selected event JSON"><header><strong>{loadingEventDetail ? "Loading event details" : "Event JSON"}</strong><button aria-label="Close event JSON" className="automation-icon-button" onClick={() => { eventDetailAbortRef.current?.abort(); eventDetailRequestRef.current += 1; setLoadingEventDetail(false); setSelectedEvent(null); }} title="Close event JSON" type="button"><X size={16} /></button></header><JsonPreview value={selectedEvent} /></aside> : null}
+        {selectedEvent ? <aside className="automation-runtime-event-detail" aria-busy={loadingEventDetail} aria-label="Selected event JSON"><header><strong>{loadingEventDetail ? "Loading event details" : "Event JSON"}</strong><button aria-label="Close event JSON" className="automation-icon-button" onClick={() => { eventDetailAbortRef.current?.abort(); eventDetailRequestRef.current += 1; setLoadingEventDetail(false); setEventDetailError(""); setSelectedEvent(null); }} title="Close event JSON" type="button"><X size={16} /></button></header>
+          {selectedEvent.metadata?.summaryOnly === true ? <p role="status">Summary only. {loadingEventDetail ? "Loading full event details." : "Full details are not loaded."}</p> : null}
+          {eventDetailError ? <div role="alert"><span>{eventDetailError}</span><button aria-label="Retry event details" disabled={loadingEventDetail} onClick={() => void selectEvent(selectedEvent)} type="button">Retry</button></div> : null}
+          <JsonPreview value={selectedEvent} /></aside> : null}
       </section>
       <div className="automation-runtime-log-toolbar">
         <span>{actionTotal ? `${actionPage.offset + 1}-${Math.min(actionTotal, nextAttemptOffset)} of ${actionTotal} actions` : "No actions"}</span>
@@ -321,7 +348,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
           </ol>
           {!actionTotal && !loadingActions ? <p className="automation-runtime-empty">No node attempts were recorded for this run.</p> : null}
         </div>
-        {selectedAttempt ? <div aria-busy={loadingActionDetail}><RuntimeActionDetailPanel attempt={selectedAttempt} index={Math.max(0, visibleAttempts.findIndex((attempt) => attempt.attemptId === selectedAttempt.attemptId)) + actionPage.offset} view={actionDetailView} onClose={() => { actionDetailAbortRef.current?.abort(); actionDetailRequestRef.current += 1; setLoadingActionDetail(false); setSelectedAttempt(null); }} onView={setActionDetailView} /></div> : null}
+        {selectedAttempt ? <div aria-busy={loadingActionDetail}>
+          {selectedAttempt.metadata?.summaryOnly === true ? <p role="status">Summary only. {loadingActionDetail ? "Loading action details." : "Full details are not loaded."}</p> : null}
+          {actionDetailError ? <div role="alert"><span>{actionDetailError}</span><button aria-label="Retry action details" disabled={loadingActionDetail} onClick={() => void selectAttempt(selectedAttempt)} type="button">Retry</button></div> : null}
+          <RuntimeActionDetailPanel attempt={selectedAttempt} index={Math.max(0, visibleAttempts.findIndex((attempt) => attempt.attemptId === selectedAttempt.attemptId)) + actionPage.offset} view={actionDetailView} onClose={() => { actionDetailAbortRef.current?.abort(); actionDetailRequestRef.current += 1; setLoadingActionDetail(false); setActionDetailError(""); setSelectedAttempt(null); }} onView={setActionDetailView} /></div> : null}
       </div>
       <RuntimeRecoveryRoutingPanel flowId={summary.flowId} recoveryAttempts={recoveryAttempts} routeDecisions={runDetail.routeDecisions ?? []} />
 
