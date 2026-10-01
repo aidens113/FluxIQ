@@ -2,7 +2,7 @@ import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vitest";
 import { useAutomationConnectorCommands, type AutomationConnectorCommandHandlers } from "../useAutomationConnectorCommands";
-import { automationStudioViewId } from "../../../views/view-registry";
+import { automationStudioViewId } from "../../../views";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 

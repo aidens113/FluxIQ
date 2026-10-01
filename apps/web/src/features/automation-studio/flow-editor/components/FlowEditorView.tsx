@@ -122,10 +122,10 @@ function FlowEditorStartPane(props: { projectId: string | null; flow: any; onCre
         ? <div className="automation-view-loading"><span aria-hidden className="automation-view-loading-indicator" /><span>Checking this automation...</span></div>
         : null}
       {canDescribeTheJob
-        ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} onOpenAdaptation={props.onOpenAdaptation} projectId={props.projectId} readiness={readiness} />
+        ? <BlankFlowAuthoringPanel commands={commands} flow={props.flow} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} projectId={props.projectId} readiness={readiness} />
         : null}
       {canImprove
-        ? <ImproveFlowPanel commands={improvementCommands} flow={props.flow} onOpenAdaptation={props.onOpenAdaptation} projectId={props.projectId} readiness={readiness} />
+        ? <ImproveFlowPanel commands={improvementCommands} flow={props.flow} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} projectId={props.projectId} readiness={readiness} />
         : null}
     </section>
   );

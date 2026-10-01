@@ -16,7 +16,7 @@ const conversations = (ids: string[]) => ids.map((id, index) => ({ conversationI
 const turn = (id: string, ask = true) => ({ turnId: "turn." + id, conversationId: id, author: "automation", createdAt: 1, text: "Question " + id, ...(ask ? { ask: { askId: "ask." + id, kind: "choice", status: "pending", parks: true, options: [{ id: "yes", label: "Continue" }] } } : {}) });
 const response = (payload: unknown, status = 200) => new Response(JSON.stringify({ ok: status === 200, payload }), { status });
 const detail = (id: string, ask = true, hasMore = false) => response({ conversation: { turns: [turn(id, ask)], hasMore } });
-const body = (call: any[]) => JSON.parse(call[1].body);
+const body = (call: any[] | undefined) => { expect(call).toBeDefined(); return JSON.parse(call![1].body); };
 const text = () => JSON.stringify(renderer!.toJSON());
 const click = async (label: string) => { await act(async () => renderer!.root.findAllByType("button").find((button) => button.children.includes(label))!.props.onClick()); };
 async function flush() { for (let index = 0; index < 30; index++) await Promise.resolve(); }

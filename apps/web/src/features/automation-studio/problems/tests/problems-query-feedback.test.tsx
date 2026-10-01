@@ -120,7 +120,9 @@ describe("Problems remote query feedback", () => {
   });
 
   it.each([undefined, () => Promise.resolve({ ok: true })])("shows failure rather than a clean project when the query provider/response is missing", async (onListProblems) => {
-    await mount({ ...base(), onListProblems }); await tick();
+    const props = base();
+    delete props.onListProblems;
+    await mount({ ...props, ...(onListProblems ? { onListProblems } : {}) }); await tick();
     expect(text()).toContain("Could not load problems");
     expect(text()).not.toContain("No problems found");
     expect(text()).not.toContain("pass available checks");
