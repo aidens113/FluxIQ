@@ -206,7 +206,11 @@ function waitReport(value: unknown): JsonObject | undefined {
  * condition held of, one rejection count per condition positionally, whether
  * the read answered with the rows its conditions rejected because keeping only
  * the survivors would have answered with none, and, from a producer that sends
- * it, one value per condition its own read found (`seen`, see the header).
+ * them, one value per condition its own read found (`seen`, see the header)
+ * and one count per condition of the items it rejected that every other
+ * condition held of (`alone`): the rows it removed by itself, which say whether
+ * it is right where its whole count cannot. `alone` is counts only, never above
+ * the condition's own `rejected`.
  */
 function conditionReport(value: unknown): JsonObject | undefined {
   if (!isJsonRecord(value)) return undefined;
@@ -220,7 +224,15 @@ function conditionReport(value: unknown): JsonObject | undefined {
   if (kept > applied) return undefined;
   const seen = value.seen === undefined ? undefined : seenValues(value.seen, rejected.length);
   if (value.seen !== undefined && seen === undefined) return undefined;
-  return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered, ...(seen ? { seen } : {}) };
+  const alone = value.alone === undefined ? undefined : aloneCounts(value.alone, rejected);
+  if (value.alone !== undefined && alone === undefined) return undefined;
+  return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered, ...(seen ? { seen } : {}), ...(alone ? { alone } : {}) };
+}
+
+/** One count per condition, each at most that condition's rejections, or `undefined` for anything else. */
+function aloneCounts(value: unknown, rejected: readonly number[]): number[] | undefined {
+  if (!Array.isArray(value) || value.length !== rejected.length) return undefined;
+  return value.every((entry, index) => count(entry) !== undefined && (entry as number) <= (rejected[index] ?? 0)) ? [...value as number[]] : undefined;
 }
 
 /** One string or `null` per condition, each string whole, or `undefined` for anything else. */

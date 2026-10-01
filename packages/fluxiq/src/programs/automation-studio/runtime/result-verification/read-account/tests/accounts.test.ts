@@ -119,6 +119,31 @@ describe("a read's account", () => {
     expect(full).toContain("It already follows pages");
     expect(full).toContain("It already keeps one row per url.");
     expect(full).toContain("name not contains [\"ear tips\", \"charging case\"] rejected 16 rows");
+    expect(full).not.toContain("by itself");
+  });
+
+  // `run-mup2u8o3-6697c4be`: the accessory rule rejected 20 rows, 5 by itself, 3 of them true earbuds named
+  // "... with Wireless Charging Case". The whole count cannot say the rule is wrong; the alone count points at it.
+  it("says how many rows each condition rejected by itself, and points the judge at them", () => {
+    const attempt = earbudsAttempt();
+    const extraction = attempt.metadata!.extraction as Record<string, unknown>;
+    const counted = earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), alone: [0, 1, 2, 5] } } } as never });
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [counted], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions?.map((condition) => condition.alone)).toEqual([0, 1, 2, 5]);
+    expect(reads[0]?.conditions?.[3]).toEqual({ condition: "name not contains [\"ear tips\", \"charging case\"]", rejected: 16, alone: 5 });
+    expect(automationStudioResultReadSentence(reads[0]!, "brief")).toContain("its 4 conditions rejected 13, 20, 27, 16 rows (by itself: 0, 1, 2, 5)");
+    const full = automationStudioResultReadSentence(reads[0]!, "full");
+    expect(full).toContain("name not contains [\"ear tips\", \"charging case\"] rejected 16 rows, 5 of them by itself");
+    expect(full).toContain("a condition with such rows is the first to check");
+  });
+
+  it("drops an alone count above the condition's own rejections rather than say it", () => {
+    const attempt = earbudsAttempt();
+    const extraction = attempt.metadata!.extraction as Record<string, unknown>;
+    const wrong = earbudsAttempt({ metadata: { extraction: { ...extraction, conditions: { ...(extraction.conditions as object), alone: [14, 0, 0, 0] } } } as never });
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [wrong], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions?.[0]).toEqual({ condition: "attribute data-sponsored is absent", rejected: 13 });
+    expect(reads[0]?.conditions?.[1]?.alone).toBe(0);
   });
 });
 

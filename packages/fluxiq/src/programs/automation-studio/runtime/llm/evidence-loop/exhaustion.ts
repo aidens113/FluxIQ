@@ -26,6 +26,8 @@
 // Counts and closed words only, like every other record this loop publishes.
 // Nothing the model wrote and nothing a page returned passes through here.
 
+import type { AutomationStudioLlmBuildPurseRefusal } from "../build-purse/index.ts";
+
 /** Which allowance ran out. Each is a number a retry can raise. */
 export type AutomationStudioLlmEvidenceLoopExhaustedBound =
   /** `maxIterations`: the loop reached the last turn it was configured for. */
@@ -108,6 +110,13 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    * that one empties the moment any usable decision follows the refusal.
    */
   outstandingIssueCodes: readonly string[];
+  /**
+   * The call the build's purse refused, when that is what ended the loop
+   * (`./cost-purse.ts`): what was spent, what the next decision would have
+   * cost at worst, and the ceiling it would have crossed. `budgetBound` is then
+   * `cost`. The decision was never sent, so `iterations` does not count it.
+   */
+  costRefusal?: AutomationStudioLlmBuildPurseRefusal;
 };
 
 /** A budget bound that can run out, as `../loop-budget.ts` counts them. */

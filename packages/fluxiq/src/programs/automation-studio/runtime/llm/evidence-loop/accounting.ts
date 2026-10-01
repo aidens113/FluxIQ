@@ -29,6 +29,14 @@ export type AutomationStudioLlmEvidenceLoopAccounting = {
   outputTokens: number;
   totalTokens: number;
   estimatedCostUsd: number;
+  /**
+   * Calls that reported costing more than the loop's purse held them at
+   * (`./cost-purse.ts`): the projection is the most a request can cost, so one
+   * that cost more is a breach of the build's ceiling, counted rather than
+   * absorbed. Absent means none, and is what a loop without a cost budget
+   * writes; optional for the same reason `cacheHitInputTokens` is.
+   */
+  budgetBreaches?: number;
 };
 
 /** A loop's accounting before it has spent anything. */

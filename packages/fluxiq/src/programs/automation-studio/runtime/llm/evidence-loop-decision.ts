@@ -31,6 +31,7 @@ import type {
   AutomationStudioLlmEvidenceTool,
   AutomationStudioLlmEvidenceToolExecutionResult
 } from "./evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolFailureCode, AutomationStudioLlmEvidenceToolResultCheck } from "./tool-failure.ts";
 
 /** Provider-neutral decision policy for bounded evidence loops. Provider adapters
  * should include this policy in their structured-decision instruction.
@@ -65,16 +66,64 @@ export function automationStudioLlmEvidenceCanonicalJson(value: JsonValue): stri
 /** The shape a closed code or a resolved identifier must have to travel: no whitespace, so no sentence. */
 const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
+/**
+ * Every member a caller's execution result may carry. Exact: a member not
+ * listed here refuses the whole call as
+ * `llm_evidence_loop.tool_result_invalid.unknown_key`, so **a key is learned
+ * here before any caller emits it**. Exported so a caller can hold its own
+ * list to this one rather than restate it by hand.
+ *
+ * `routeState` and `clearedWait` are listed and never read by this parser:
+ * the build's routing reads the first, and the activity observer the second
+ * (`../activity/ask/waited-out.ts`), each off the result the caller returned.
+ * `clearedWait` was missing until 2026-10-01 while the web domain's copy of
+ * this list already had it: every click whose page waited out a robot check
+ * that cleared by itself was recorded as a failed call although it worked
+ * (live run `run-mup2u8o3-6697c4be`, call `search2`).
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
+  "kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "draft"
+];
+
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+
+/** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): ParsedToolExecution | undefined {
+  const read = readToolExecution(value, effect);
+  return "result" in read ? read.result : undefined;
+}
+
+/**
+ * Why what a tool returned is not a result, as the code the loop records and
+ * the model is shown: `llm_evidence_loop.tool_result_invalid.<check>`, naming
+ * the check that refused it and nothing the caller said. Nothing for a value
+ * that reads. Answered by the same reader as the parse above, so the two can
+ * never disagree about a value.
+ */
+export function automationStudioLlmEvidenceToolResultInvalidCode(
+  value: unknown,
+  effect: AutomationStudioLlmEvidenceTool["effect"]
+): AutomationStudioLlmEvidenceToolFailureCode | undefined {
+  const read = readToolExecution(value, effect);
+  return "refused" in read ? `llm_evidence_loop.tool_result_invalid.${read.refused}` : undefined;
+}
+
+/** The one reader behind both: the result, or the first check the value failed. */
+function readToolExecution(
+  value: unknown,
+  effect: AutomationStudioLlmEvidenceTool["effect"]
+): { result: ParsedToolExecution } | { refused: AutomationStudioLlmEvidenceToolResultCheck } {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
-      || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
-      || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
+    if (!exactKeys(value, AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS)) return { refused: "unknown_key" };
+    if (!isJsonValue(value.evidence)) return { refused: "evidence_not_json" };
+    if (typeof value.effectApplied !== "boolean") return { refused: "effect_applied_not_boolean" };
+    if (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean") return { refused: "targets_unchanged_not_boolean" };
+    if (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode))) return { refused: "result_code_not_code" };
     const draft = readCallRecord(value.draft);
-    if (value.draft !== undefined && !draft) return undefined;
+    if (draft && "refused" in draft) return draft;
     // **The key list had to widen before the domain emitted either of these.**
     // It is exact, so a member a caller learns to report and this check has not
     // learned is not an execution result arriving with a field too many -- it
@@ -86,7 +135,7 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
     // itself succeeded or failed on its own, and losing the whole result over a
     // diagnostic that arrived malformed would throw away the very thing the
     // reader wanted to read.
-    return {
+    return { result: {
       evidence: value.evidence,
       effectApplied: value.effectApplied,
       ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
@@ -110,11 +159,11 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       // rather than fatal: a malformed digest leaves that side unobserved, and
       // the call it describes still happened.
       ...(stateDigestsOf(value.stateDigests) ? { stateDigests: stateDigestsOf(value.stateDigests)! } : {}),
-      ...(draft ? { draft } : {})
-    };
+      ...(draft ? { draft: draft.draft } : {})
+    } };
   }
-  if (!isJsonValue(value)) return undefined;
-  return { evidence: value, effectApplied: effect !== "mutate" };
+  if (!isJsonValue(value)) return { refused: "not_json" };
+  return { result: { evidence: value, effectApplied: effect !== "mutate" } };
 }
 
 /** The code-shaped digests a call reported, or nothing when it reported none that are. */
@@ -133,31 +182,32 @@ function closedCode(value: unknown): value is string {
 }
 
 /**
- * What one call said it did, or nothing when it is not a statement the loop can
- * read.
+ * What one call said it did, nothing when it said nothing, or the check its
+ * statement failed when it is not one the loop can read.
  *
  * Read strictly and then carried opaquely. The name is the caller's and Core
  * never interprets it; the argument is carried so the step can be written down
  * or run again; the two flags are the caller's statement about its own call.
  */
-function readCallRecord(value: unknown): AutomationStudioLlmEvidenceToolExecutionResult["draft"] | undefined {
+function readCallRecord(value: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value) || !exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay"])) return undefined;
-  if (value.actionId !== undefined && !validId(value.actionId)) return undefined;
-  if (value.input !== undefined && !isJsonObject(value.input)) return undefined;
-  if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return undefined;
-  if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") return undefined;
-  if (value.proposes !== undefined && typeof value.proposes !== "boolean") return undefined;
+  if (!isRecord(value)) return { refused: "draft.not_object" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay"])) return { refused: "draft.unknown_key" };
+  if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
+  if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
+  if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
+  if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") return { refused: "draft.effect" };
+  if (value.proposes !== undefined && typeof value.proposes !== "boolean") return { refused: "draft.proposes" };
   const replay = readReplayRecord(value.replay);
-  if (value.replay !== undefined && !replay) return undefined;
-  return {
+  if (value.replay !== undefined && !replay) return { refused: "draft.replay" };
+  return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
     ...(value.ranWith === undefined ? {} : { ranWith: value.ranWith }),
     ...(value.effect === undefined ? {} : { effect: value.effect }),
     ...(value.proposes === undefined ? {} : { proposes: value.proposes }),
     ...(replay ? { replay } : {})
-  };
+  } };
 }
 
 /**
@@ -418,7 +468,7 @@ function validUsage(value: unknown): boolean {
     && (value.estimatedCostUsd === undefined || (typeof value.estimatedCostUsd === "number" && Number.isFinite(value.estimatedCostUsd) && value.estimatedCostUsd >= 0));
 }
 
-function exactKeys(value: Record<string, unknown>, allowed: string[]): boolean {
+function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
   const set = new Set(allowed);
   return Object.keys(value).every((key) => set.has(key));
 }

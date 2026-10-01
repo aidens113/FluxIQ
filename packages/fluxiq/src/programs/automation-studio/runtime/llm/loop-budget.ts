@@ -23,6 +23,11 @@
 // decision's worth is held back for calls the loop cannot see that spend the
 // same run budget, such as the build's one reading of its instructions.
 //
+// What is counted here is what the model is told. What holds the ceiling is the
+// purse (`./evidence-loop/cost-purse.ts`): before each decision is sent, its
+// own worst case is priced from its request, and one the budget cannot pay for
+// is never sent.
+//
 // **The last decisions are for finishing, not only the very last one.** The
 // last decision used to be the only one offered completion alone, so a
 // completion refused on it had no turn left to be corrected:
@@ -65,6 +70,15 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
   totalTokens: number;
   estimatedCostUsd: number;
   elapsedMs: number;
+  /**
+   * The worst case of the last decision sent, priced from its request
+   * (`./build-purse/`): every input token uncached, its whole reply allowance.
+   * Each request carries everything before it, so the next costs at least this
+   * at worst. Decisions left are counted at this or the average, whichever is
+   * larger: the average of cache-discounted replies said three decisions were
+   * left on `run-mup2u8o3-6697c4be` when the next one alone could cost $0.15.
+   */
+  nextDecisionCostUsd?: number;
 };
 
 /** What is left, this decision included. Only the bounds the budget names appear. */
@@ -105,7 +119,8 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
   }
   if (budget.maxCostUsd !== undefined) {
     const costLeft = budget.maxCostUsd - spent.estimatedCostUsd - (unreported + 1) * averageCost;
-    counts.push(["cost", costLeft <= 0 ? 0 : averageCost > 0 ? Math.floor(costLeft / averageCost) : iterationsLeft]);
+    const perDecision = Math.max(averageCost, spent.nextDecisionCostUsd !== undefined && Number.isFinite(spent.nextDecisionCostUsd) ? spent.nextDecisionCostUsd : 0);
+    counts.push(["cost", costLeft <= 0 ? 0 : perDecision > 0 ? Math.floor(costLeft / perDecision) : iterationsLeft]);
     remaining.costLeftUsd = Math.max(0, Math.floor(costLeft * 10_000) / 10_000);
   }
   if (budget.maxDurationMs !== undefined) {
