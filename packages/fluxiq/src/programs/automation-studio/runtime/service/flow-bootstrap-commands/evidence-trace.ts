@@ -10,7 +10,7 @@ import {
   type AutomationStudioFlowBootstrapEvidenceTraceRow
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "../../llm/evidence-loop/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../../llm/evidence-diagnostic/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 

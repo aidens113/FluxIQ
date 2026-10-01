@@ -23,7 +23,7 @@ import {
   type AutomationStudioFlowDraftAmendmentChange
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "./evidence-loop/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "./evidence-diagnostic/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceCompletionCheck,

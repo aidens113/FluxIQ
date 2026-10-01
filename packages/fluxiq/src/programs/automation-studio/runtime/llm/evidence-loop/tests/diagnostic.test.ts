@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmEvidenceDiagnostic, automationStudioLlmEvidenceCallDiagnostic } from "../index.ts";
+import { automationStudioLlmEvidenceCallDiagnostic } from "../index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../../evidence-diagnostic/index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 
 const diagnostic = { schemaVersion: "demo-refusal.v1", reference: "item.4", blockingReferences: ["item.8"], count: 1, observed: true };

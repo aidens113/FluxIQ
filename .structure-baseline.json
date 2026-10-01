@@ -89,7 +89,6 @@
       "apps/web/src/features/automation-studio/workspace/cache/backends.ts": 4,
       "packages/fluxiq/src/framework/storage-migration.ts": 4,
       "packages/fluxiq/src/programs/_shared/docs-generators.ts": 4,
-      "apps/web/src/app/AuthShell.tsx": 3,
       "apps/web/src/app/GlobalClientGatewayPairing.tsx": 3,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/flows/store.ts": 3,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/recordings/deletion.ts": 3,
@@ -97,6 +96,7 @@
       "packages/fluxiq/src/programs/automation-studio/storage/object-store.ts": 3,
       "packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts": 3,
       "packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts": 3,
+      "apps/web/src/app/AuthShell.tsx": 2,
       "apps/web/src/features/automation-studio/live/commands/recording-domain-commands.ts": 2,
       "apps/web/src/features/automation-studio/live/hooks/useGatewayRecordingBridge.ts": 2,
       "packages/fluxiq/src/framework/storage-layout.ts": 2,
@@ -148,7 +148,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4493,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4491,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {

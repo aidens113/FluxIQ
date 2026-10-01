@@ -18,7 +18,6 @@ export * from "./completion-attempt.ts";
 export * from "./completion-check.ts";
 export * from "./decision.ts";
 export * from "./decision-refusal.ts";
-export * from "./diagnostic.ts";
 export * from "./draft-shown.ts";
 export * from "./draft-change.ts";
 export * from "./exhaustion.ts";

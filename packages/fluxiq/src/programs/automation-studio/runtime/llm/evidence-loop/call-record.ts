@@ -10,7 +10,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStepReplay } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "./diagnostic.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
 
 /**
  * What a call said about its own outcome beyond the code it came to: why it

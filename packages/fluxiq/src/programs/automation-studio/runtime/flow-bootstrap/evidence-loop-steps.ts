@@ -25,7 +25,7 @@
 // on an audit detail that no redaction rule covers.
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "../llm/evidence-loop/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../llm/evidence-diagnostic/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceLoopAnswerability,
