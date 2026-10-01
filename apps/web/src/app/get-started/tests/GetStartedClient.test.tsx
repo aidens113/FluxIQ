@@ -3,7 +3,8 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), useRouter: () => ({ push }) }));
+const query = vi.hoisted(() => ({ value: "" }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.value), useRouter: () => ({ push }) }));
 import { GetStartedClient } from "../GetStartedClient";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,7 +30,7 @@ const textOf = (node: ReactTestInstance): string => node.children.map((child) =>
 const step = (root: ReactTestInstance, id: string) => root.find((node) => node.type === "li" && node.props["data-step"] === id);
 
 let renderer: ReactTestRenderer | null = null;
-beforeEach(() => push.mockReset());
+beforeEach(() => { push.mockReset(); query.value = ""; });
 afterEach(async () => {
   if (renderer) await act(async () => { renderer!.unmount(); });
   renderer = null;
@@ -44,6 +45,22 @@ async function render() {
 }
 
 describe("/get-started", () => {
+  it.each([
+    ["describe", "Describe an automation"],
+    ["demonstrate", "Show FluxIQ how"],
+    ["extract", "Extract data from this page"]
+  ])("emits %s with only the current encoded domain scope", async (option, label) => {
+    query.value = "domainId=web%2Fteam&return=https%3A%2F%2Felsewhere.invalid&project=old";
+    stubFetch({ gateway: { ok: true, payload: { sessions: [], webRuntime: { clientGatewayListening: true } } }, keys: { ok: true, payload: { keys: [] } } });
+    const view = await render();
+    expect(push).not.toHaveBeenCalled();
+    const button = view.root.find((node) => node.type === "button" && textOf(node).startsWith(label!));
+    act(() => button.props.onClick());
+    const url = new URL(push.mock.calls[0]![0], "https://panel.invalid");
+    expect(url.pathname).toBe("/programs/automation-studio");
+    expect([...url.searchParams]).toEqual([["start", option], ["domainId", "web/team"]]);
+  });
+
   it("reads both live snapshots and shows the runtime done, pairing current, and the key step blocked", async () => {
     const requested = stubFetch({
       gateway: { ok: true, payload: { enabled: true, sessions: [], pairings: [], webRuntime: { clientGatewayListening: true } } },
