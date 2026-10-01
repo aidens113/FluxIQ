@@ -48,6 +48,11 @@ describe("a wait on the person, settled", () => {
     expect(seen[0]).toMatchObject({ phase: "repairing", detail: { kind: "ask", ref: "request.3", title: "Asked a question (permission)", status, resolution, text } });
   });
 
+  it("says how long a waited-out check stood, when that is known", async () => {
+    await inBuild(() => emitAutomationStudioActivityAskResolved(check, "waited_out", "building", 7_600));
+    expect(seen[0]).toMatchObject({ detail: { status: "succeeded", resolution: "waited_out", text: "The check cleared on its own after 8 s." }, label: "The check cleared on its own after 8 s." });
+  });
+
   it("says a robot check's Stop in its own words", async () => {
     await inBuild(() => emitAutomationStudioActivityAskResolved(check, "declined", "building"));
     expect(seen[0]).toMatchObject({ detail: { status: "failed", resolution: "declined", text: "You pressed Stop." } });

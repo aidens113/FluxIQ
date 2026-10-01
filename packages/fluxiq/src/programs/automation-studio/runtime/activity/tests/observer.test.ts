@@ -56,6 +56,26 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     expect(JSON.stringify(seen)).not.toContain("target content");
   });
 
+  it("says a check that cleared by itself as a waited-out wait, before the call's own end", async () => {
+    const cleared = { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "tool.ok", clearedWait: { waitedMs: 12_300 } };
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => cleared }));
+    const result = await inScope(() => observed.executeTool(call("domain.act")));
+    expect(result).toBe(cleared);
+    expect(seen.map((event) => [event.phase, event.detail?.kind, event.detail?.status, event.detail?.ref, event.detail?.resolution])).toEqual([
+      ["exploring", "tool", "started", "domain.act", undefined],
+      ["waiting_permission", "ask", "started", "waited-out.c1", undefined],
+      ["exploring", "ask", "succeeded", "waited-out.c1", "waited_out"],
+      ["exploring", "tool", "succeeded", "domain.act", undefined]
+    ]);
+    expect(seen[2]!.detail?.text).toBe("The check cleared on its own after 12 s.");
+  });
+
+  it("says no wait for a malformed cleared wait", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, clearedWait: { waitedMs: "12300" } }) }));
+    await inScope(() => observed.executeTool(call("domain.act")));
+    expect(seen.map((event) => event.detail?.kind)).toEqual(["tool", "tool"]);
+  });
+
   it("says building for the draft tool", async () => {
     const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => ({ ok: true }) }));
     await inScope(() => observed.executeTool(call(AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID)));
