@@ -17,6 +17,16 @@ Original source reproduced duplicate POST and HTTP-refusal navigation failures.
 Fixed local retry feedback and lifecycle fences are source-complete; database
 and runtime-log workers remain active, so full gates wait for their freeze.
 
+Latest sixth verification: logout layout-teardown refinement passes7+26=33
+and scoped types36689 native0. Runtime supervisor reviewed exact five paths,
+requested commit-time teardown/known-run selected-detail correction, then
+independently observed corrected4files75tests/native0/9.71s (68875) and strict
+scoped68773 native0 with zero owned/global or excluded dependency diagnostics.
+Database final worker metadata-pruning refinement is source-frozen pending
+strict types and supervisor checks. Extension sixth batch passes full1770,
+types/build/structure; settings checkpoint5c61a4ba. No Core full sixth result
+is claimed yet. Continue next authorized partitions; no merge/push/live work.
+
 Latest continuation: onboarding, read-only Runtime and database authorization
 source complete. Database checkpointd5c979a6; supervisor combined82 and full
 300files/1852tests passed. Corrected third web typecheck69624 passes14708ms;

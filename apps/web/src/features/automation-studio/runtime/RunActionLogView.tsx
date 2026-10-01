@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { StatusBadge } from "../../programs/shared-ui";
 import { X } from "lucide-react";
 import {
@@ -26,6 +26,8 @@ import {
 import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_EVENT_PAGE_SIZE } from "./run-queries";
 import { RunDatasetsPanel } from "../datasets";
 import { useRuntimeDetailCommands, type RuntimeDetailCommands } from "./runtime-host";
+import { runtimeAuditBlob } from "./audit-export";
+export { runtimeAuditBlob } from "./audit-export";
 export type RunActionLogViewProps = { projectId?: string | null; runId: string | null; runDetail: any | null; loading: boolean; error: string; onBack(): void };
 
 export function RunActionLogView(props: RunActionLogViewProps & { commands?: RuntimeDetailCommands }) {
@@ -34,13 +36,26 @@ export function RunActionLogView(props: RunActionLogViewProps & { commands?: Run
 }
 
 export function RunActionLogViewContent(props: RunActionLogViewProps & { commands: RuntimeDetailCommands }) {
+  // Change ownership during render, before passive cleanup or retained handlers.
+  const ownerRef = useRef({ projectId: props.projectId, runId: props.runId, commands: props.commands, generation: 0 });
+  if (ownerRef.current.projectId !== props.projectId || ownerRef.current.runId !== props.runId || ownerRef.current.commands !== props.commands) {
+    ownerRef.current = { projectId: props.projectId, runId: props.runId, commands: props.commands, generation: ownerRef.current.generation + 1 };
+  }
+  const owner = ownerRef.current;
+  return <RuntimeLogScope key={owner.generation} {...props} isOwnerCurrent={() => ownerRef.current === owner} />;
+}
+
+function RuntimeLogScope(props: RunActionLogViewProps & { commands: RuntimeDetailCommands; isOwnerCurrent(): boolean }) {
+  const mountedRef = useRef(true);
+  const isCurrent = () => mountedRef.current && props.isOwnerCurrent();
+  const providedRunDetail = matchingRun(props.runDetail, props.runId ?? "") && matchingRun(props.runDetail?.summary, props.runId ?? "") && matchingRun(props.runDetail?.trace, props.runId ?? "") ? props.runDetail : null;
   const [attemptOffset, setAttemptOffset] = useState(0);
   const [exportMessage, setExportMessage] = useState("");
   const [exportPreparing, setExportPreparing] = useState(false);
-  const [loadedRunDetail, setLoadedRunDetail] = useState<any | null>(props.runDetail ?? null);
+  const [loadedRunDetail, setLoadedRunDetail] = useState<any | null>(providedRunDetail ?? null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const runDetail = props.runDetail ?? loadedRunDetail;
+  const runDetail = providedRunDetail ?? loadedRunDetail;
   const summary = runDetail?.summary ?? {};
   const trace = runDetail?.trace;
   const embeddedAttempts = runtimeAttemptsForRunDetail(runDetail);
@@ -69,6 +84,8 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   const eventAbortRef = useRef<AbortController | null>(null);
   const actionDetailAbortRef = useRef<AbortController | null>(null);
   const eventDetailAbortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const actionQueryRef = useRef({ offset: 0, cursor: null as string | null, index: 0 });
   const [actionDetailView, setActionDetailView] = useState<"summary" | "data" | "effects" | "state" | "raw">("summary");
   const recoveryAttempts = runDetail?.recoveryAttempts ?? [];
   const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
@@ -76,8 +93,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   const nextAttemptOffset = actionPage.offset + actionPage.limit;
   const visibleAttempts = actionPage.actions;
   const actionTotal = actionPage.total;
-  const loadActionPage = async (offset: number, cursor: string | null = null) => {
-    if (!props.projectId || !props.runId) return;
+  const loadActionPage = async (offset: number, cursor: string | null = null, index = actionPageIndex) => {
+    if (!isCurrent() || !props.projectId || !props.runId) return;
+    const runId = props.runId;
+    actionQueryRef.current = { offset, cursor, index };
     actionDetailAbortRef.current?.abort();
     ++actionDetailRequestRef.current;
     setLoadingActionDetail(false);
@@ -86,54 +105,82 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     const controller = new AbortController();
     actionAbortRef.current = controller;
     const requestId = ++actionRequestRef.current;
+    const current = () => isCurrent() && !controller.signal.aborted && requestId === actionRequestRef.current;
     setLoadingActions(true);
     setActionError("");
-    const result = await props.commands.listActions({ projectId: props.projectId, runId: props.runId, limit: RUNTIME_ACTION_PAGE_SIZE, offset, ...(cursor ? { cursor } : {}) }, controller.signal);
-    if (controller.signal.aborted || requestId !== actionRequestRef.current) return;
-    setLoadingActions(false);
-    if (!result.ok) { setActionError(result.error ?? "Actions could not be loaded."); return; }
-    const page = result.payload?.page;
-    setAttemptOffset(page?.offset ?? offset);
-    setSelectedAttempt(null);
-    setActionDetailView("summary");
-    setActionPage({ actions: result.payload?.actions ?? page?.actions ?? [], total: page?.total ?? result.payload?.actions?.length ?? 0, limit: page?.limit ?? RUNTIME_ACTION_PAGE_SIZE, offset, nextCursor: page?.nextCursor ?? null, hasMore: page?.hasMore === true });
+    try {
+      const result = await props.commands.listActions({ projectId: props.projectId, runId: props.runId, limit: RUNTIME_ACTION_PAGE_SIZE, offset, ...(cursor ? { cursor } : {}) }, controller.signal);
+      if (!current()) return;
+      const payload = validPayload(result, props.runId);
+      const page = validPage(payload.page);
+      for (const rows of [payload.actions, page.actions]) if (rows !== undefined && !Array.isArray(rows)) throw new Error();
+      if (page.hasMore === true && !page.nextCursor) throw new Error();
+      const actions = payload.actions ?? page.actions ?? [];
+      if (!Array.isArray(actions) || !actions.every((row) => isRuntimeJsonRecord(row) && typeof row.attemptId === "string" && row.attemptId.length > 0 && matchingRun(row, runId))) throw new Error();
+      setAttemptOffset(page.offset ?? offset);
+      setSelectedAttempt(null);
+      setActionDetailView("summary");
+      setActionPage({ actions, total: page.total ?? actions.length, limit: page.limit ?? RUNTIME_ACTION_PAGE_SIZE, offset: page.offset ?? offset, nextCursor: page.nextCursor ?? null, hasMore: page.hasMore === true });
+      setActionPageIndex(index);
+      setActionCursors((prior) => [...prior.slice(0, index), cursor]);
+    } catch { if (current()) setActionError("Actions could not be loaded."); }
+    finally { if (current()) setLoadingActions(false); }
+  };
+  const retryActions = () => {
+    if (!isCurrent()) return;
+    const query = actionQueryRef.current;
+    void loadActionPage(query.offset, query.cursor, query.index);
   };
   const loadRunDetail = async () => {
-    if (!props.projectId || !props.runId || props.runDetail) return;
+    if (!isCurrent() || !props.projectId || !props.runId || providedRunDetail) return;
     detailAbortRef.current?.abort();
     const controller = new AbortController();
     detailAbortRef.current = controller;
     const requestId = ++detailRequestRef.current;
+    const current = () => isCurrent() && !controller.signal.aborted && requestId === detailRequestRef.current;
     setLoadingDetail(true);
     setDetailError("");
-    const result = await props.commands.loadDetail({ projectId: props.projectId, runId: props.runId, compact: true }, controller.signal);
-    if (controller.signal.aborted || requestId !== detailRequestRef.current) return;
-    setLoadingDetail(false);
-    if (!result.ok || !result.payload?.runDetail) { setDetailError(result.error ?? "Runtime log could not be loaded."); return; }
-    setLoadedRunDetail(result.payload.runDetail);
+    try {
+      const result = await props.commands.loadDetail({ projectId: props.projectId, runId: props.runId, compact: true }, controller.signal);
+      if (!current()) return;
+      const detail = validPayload(result, props.runId).runDetail;
+      if (!isRuntimeJsonRecord(detail) || (!isRuntimeJsonRecord(detail.summary) && !isRuntimeJsonRecord(detail.trace)) || !matchingRun(detail, props.runId) || !matchingRun(detail.summary, props.runId) || !matchingRun(detail.trace, props.runId)) throw new Error();
+      for (const record of [detail.summary, detail.trace, detail.metadata]) if (record != null && !isRuntimeJsonRecord(record)) throw new Error();
+      for (const value of [detail.summary?.status, detail.summary?.flowId, detail.trace?.status, detail.metadata?.message, detail.metadata?.terminalFailureReason]) if (value != null && typeof value !== "string") throw new Error();
+      for (const key of ["attempts", "recoveryAttempts", "interventions", "routeDecisions", "adaptationIds", "datasets"]) if (detail[key] !== undefined && !Array.isArray(detail[key])) throw new Error();
+      setLoadedRunDetail(detail);
+    } catch { if (current()) setDetailError("Runtime log could not be loaded."); }
+    finally { if (current()) setLoadingDetail(false); }
   };
   const loadEventPage = async (cursor: string | null = null, afterSequence = 0) => {
-    if (!props.projectId || !props.runId) return;
+    if (!isCurrent() || !props.projectId || !props.runId) return;
+    const runId = props.runId;
     eventAbortRef.current?.abort();
     const controller = new AbortController();
     eventAbortRef.current = controller;
     const requestId = ++eventRequestRef.current;
+    const current = () => isCurrent() && !controller.signal.aborted && requestId === eventRequestRef.current;
     setLoadingEvents(true);
     setEventError("");
-    const result = await props.commands.listEvents({ projectId: props.projectId, runId: props.runId, limit: RUNTIME_EVENT_PAGE_SIZE, ...(cursor ? { cursor } : { afterSequence }) }, controller.signal);
-    if (controller.signal.aborted || requestId !== eventRequestRef.current) return;
-    setLoadingEvents(false);
-    if (!result.ok) { setEventError(result.error ?? "Runtime events could not be loaded."); return; }
-    const page = result.payload?.page;
-    const incoming = result.payload?.events ?? page?.events ?? [];
-    setEventPage((current) => {
-      const byId = new Map<string, any>();
-      for (const event of [...current.events, ...incoming]) byId.set(String(event.eventId ?? event.sequence), event);
-      const events = [...byId.values()].sort((left, right) => Number(left.sequence) - Number(right.sequence));
-      return { events, nextCursor: page?.nextCursor ?? null, hasMore: page?.hasMore === true, lastSequence: page?.lastSequence ?? events.at(-1)?.sequence ?? afterSequence, loaded: true };
-    });
+    try {
+      const result = await props.commands.listEvents({ projectId: props.projectId, runId: props.runId, limit: RUNTIME_EVENT_PAGE_SIZE, ...(cursor ? { cursor } : { afterSequence }) }, controller.signal);
+      if (!current()) return;
+      const payload = validPayload(result, props.runId);
+      const page = validPage(payload.page);
+      for (const rows of [payload.events, page.events]) if (rows !== undefined && !Array.isArray(rows)) throw new Error();
+      const incoming = payload.events ?? page.events ?? [];
+      if (!Array.isArray(incoming) || !incoming.every((row) => isRuntimeJsonRecord(row) && nonnegativeInteger(row.sequence) && matchingRun(row, runId) && [row.eventId, row.title, row.eventKind, row.status].every((value) => value == null || typeof value === "string"))) throw new Error();
+      setEventPage((prior) => {
+        const byId = new Map<string, any>();
+        for (const event of [...prior.events, ...incoming]) byId.set(String(event.eventId ?? event.sequence), event);
+        const events = [...byId.values()].sort((left, right) => Number(left.sequence) - Number(right.sequence));
+        return { events, nextCursor: page.nextCursor ?? null, hasMore: page.hasMore === true, lastSequence: page.lastSequence ?? events.at(-1)?.sequence ?? afterSequence, loaded: true };
+      });
+    } catch { if (current()) setEventError("Runtime events could not be loaded."); }
+    finally { if (current()) setLoadingEvents(false); }
   };
   const selectAttempt = async (attempt: any) => {
+    if (!isCurrent()) return;
     actionDetailAbortRef.current?.abort();
     const controller = new AbortController();
     actionDetailAbortRef.current = controller;
@@ -147,16 +194,17 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     setLoadingActionDetail(true);
     try {
       const result = await props.commands.loadActionDetail({ projectId: props.projectId, runId: props.runId, attemptId }, controller.signal);
-      if (controller.signal.aborted || requestId !== actionDetailRequestRef.current) return;
-      if (result.ok && result.payload?.action && String(result.payload.action.attemptId) === attemptId) setSelectedAttempt(result.payload.action);
+      if (!isCurrent() || controller.signal.aborted || requestId !== actionDetailRequestRef.current) return;
+      if (result.ok && result.payload?.action && matchingRun(result.payload, props.runId) && matchingRun(result.payload.action, props.runId) && String(result.payload.action.attemptId) === attemptId) setSelectedAttempt(result.payload.action);
       else setActionDetailError("Action details could not be loaded. The summary remains available.");
     } catch {
-      if (!controller.signal.aborted && requestId === actionDetailRequestRef.current) setActionDetailError("Action details could not be loaded. The summary remains available.");
+      if (isCurrent() && !controller.signal.aborted && requestId === actionDetailRequestRef.current) setActionDetailError("Action details could not be loaded. The summary remains available.");
     } finally {
-      if (!controller.signal.aborted && requestId === actionDetailRequestRef.current) setLoadingActionDetail(false);
+      if (isCurrent() && !controller.signal.aborted && requestId === actionDetailRequestRef.current) setLoadingActionDetail(false);
     }
   };
   const selectEvent = async (event: any) => {
+    if (!isCurrent()) return;
     eventDetailAbortRef.current?.abort();
     const controller = new AbortController();
     eventDetailAbortRef.current = controller;
@@ -169,26 +217,24 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     setLoadingEventDetail(true);
     try {
       const result = await props.commands.loadEventDetail({ projectId: props.projectId, runId: props.runId, sequence }, controller.signal);
-      if (controller.signal.aborted || requestId !== eventDetailRequestRef.current) return;
-      if (result.ok && result.payload?.event && Number(result.payload.event.sequence) === sequence) setSelectedEvent(result.payload.event);
+      if (!isCurrent() || controller.signal.aborted || requestId !== eventDetailRequestRef.current) return;
+      if (result.ok && result.payload?.event && matchingRun(result.payload, props.runId) && matchingRun(result.payload.event, props.runId) && Number(result.payload.event.sequence) === sequence) setSelectedEvent(result.payload.event);
       else setEventDetailError("Event details could not be loaded. The summary remains available.");
     } catch {
-      if (!controller.signal.aborted && requestId === eventDetailRequestRef.current) setEventDetailError("Event details could not be loaded. The summary remains available.");
+      if (isCurrent() && !controller.signal.aborted && requestId === eventDetailRequestRef.current) setEventDetailError("Event details could not be loaded. The summary remains available.");
     } finally {
-      if (!controller.signal.aborted && requestId === eventDetailRequestRef.current) setLoadingEventDetail(false);
+      if (isCurrent() && !controller.signal.aborted && requestId === eventDetailRequestRef.current) setLoadingEventDetail(false);
     }
   };
   const nextActionPage = () => {
-    if (!actionPage.nextCursor) return;
+    if (!isCurrent() || !actionPage.nextCursor) return;
     const nextIndex = actionPageIndex + 1;
-    setActionCursors((current) => [...current.slice(0, nextIndex), actionPage.nextCursor]);
-    setActionPageIndex(nextIndex);
-    void loadActionPage(nextIndex * actionPage.limit, actionPage.nextCursor);
+    void loadActionPage(actionPage.offset + actionPage.limit, actionPage.nextCursor, nextIndex);
   };
   const previousActionPage = () => {
+    if (!isCurrent()) return;
     const nextIndex = Math.max(0, actionPageIndex - 1);
-    setActionPageIndex(nextIndex);
-    void loadActionPage(nextIndex * actionPage.limit, actionCursors[nextIndex] ?? null);
+    void loadActionPage(nextIndex * actionPage.limit, actionCursors[nextIndex] ?? null, nextIndex);
   };
   useEffect(() => {
     detailAbortRef.current?.abort();
@@ -205,7 +251,7 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     setActionPageIndex(0);
     setActionCursors([null]);
     setExportMessage("");
-    setLoadedRunDetail(props.runDetail ?? null);
+    setLoadedRunDetail(providedRunDetail ?? null);
     setDetailError("");
     setEventError("");
     setActionDetailError("");
@@ -224,7 +270,11 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     }
     else setActionPage({ actions: embeddedAttempts.slice(0, RUNTIME_ACTION_PAGE_SIZE), total: embeddedAttempts.length, limit: RUNTIME_ACTION_PAGE_SIZE, offset: 0, nextCursor: null, hasMore: embeddedAttempts.length > RUNTIME_ACTION_PAGE_SIZE });
   }, [props.projectId, props.runId]);
-  useEffect(() => () => {
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+    mountedRef.current = false;
+    exportAbortRef.current?.abort();
     detailAbortRef.current?.abort();
     actionAbortRef.current?.abort();
     eventAbortRef.current?.abort();
@@ -235,30 +285,40 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     eventRequestRef.current += 1;
     actionDetailRequestRef.current += 1;
     eventDetailRequestRef.current += 1;
+    };
   }, []);
   const exportAudit = async () => {
     const runId = props.runId;
-    if (!props.projectId || !runId) return;
+    if (!isCurrent() || !props.projectId || !runId || exportAbortRef.current) return;
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    const current = () => isCurrent() && !controller.signal.aborted && exportAbortRef.current === controller;
     setExportPreparing(true);
     setExportMessage("Preparing complete audit export...");
-    const result = await props.commands.exportAudit({ projectId: props.projectId, runId });
-    if (!result.ok || !result.payload?.audit) {
-      setExportPreparing(false);
-      setExportMessage(result.error ?? "Audit export could not be prepared.");
-      return;
+    try {
+      const result = await props.commands.exportAudit({ projectId: props.projectId, runId });
+      if (!current()) return;
+      const audit = validPayload(result, runId).audit;
+      if (!isRuntimeJsonRecord(audit) || !isRuntimeJsonRecord(audit.manifest) || !matchingRun(audit, runId) || !matchingRun(audit.manifest, runId) || (audit.manifest.actionCount !== undefined && !nonnegativeInteger(audit.manifest.actionCount))) throw new Error();
+      const blob = await runtimeAuditBlob(audit, controller.signal);
+      if (!current()) return;
+      if (typeof window !== "undefined" && typeof URL !== "undefined") {
+        const url = URL.createObjectURL(blob);
+        let scheduled = false;
+        try {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = `fluxiq-run-audit-${runId}.json`;
+          anchor.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 0);
+          scheduled = true;
+        } finally { if (!scheduled) URL.revokeObjectURL(url); }
+      }
+      if (current()) setExportMessage(`Audit export ready with ${audit.manifest.actionCount ?? 0} actions.`);
+    } catch { if (current()) setExportMessage("Audit export could not be prepared. Try Export Audit again."); }
+    finally {
+      if (current()) { exportAbortRef.current = null; setExportPreparing(false); }
     }
-    const auditBlob = await runtimeAuditBlob(result.payload.audit);
-    if (typeof window !== "undefined" && typeof URL !== "undefined") {
-      const url = URL.createObjectURL(auditBlob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `fluxiq-run-audit-${runId}.json`;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    }
-    setExportPreparing(false);
-    const actionCount = result.payload.audit?.manifest?.actionCount ?? 0;
-    setExportMessage(`Audit export ready with ${actionCount} actions.`);
   };
   const eventRowHeight = 38;
   const eventViewportHeight = 360;
@@ -268,9 +328,10 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   if (!runDetail) {
     return (
       <section className="automation-runtime-log-page">
-        <header><button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button><div><strong>Action Log</strong><span>{loadingDetail || props.loading ? `Loading ${props.runId ?? "run"}...` : detailError || props.error || (props.runId ? `Waiting for ${props.runId}...` : "Run not found.")}</span></div></header>
+        <header><button className="automation-runtime-back" onClick={() => { if (isCurrent()) props.onBack(); }} type="button">Back</button><div><strong>Action Log</strong><span>{loadingDetail || props.loading ? `Loading ${props.runId ?? "run"}...` : detailError || props.error || (props.runId ? `Waiting for ${props.runId}...` : "Run not found.")}</span></div></header>
+        {detailError ? <div role="alert"><span>{detailError}</span><button aria-label="Retry runtime log" disabled={loadingDetail} onClick={() => void loadRunDetail()} type="button">Retry</button></div> : null}
         <div className="automation-runtime-log-toolbar"><span>{actionTotal ? `${actionPage.offset + 1}-${Math.min(actionTotal, nextAttemptOffset)} of ${actionTotal} actions` : loadingActions ? "Loading actions..." : "No actions loaded yet"}</span><div><button disabled={loadingActions || actionPageIndex <= 0} onClick={previousActionPage} type="button">Previous</button><button disabled={loadingActions || !actionPage.hasMore} onClick={nextActionPage} type="button">Next</button></div></div>
-        {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" onClick={() => void loadActionPage(actionPage.offset, actionCursors[actionPageIndex] ?? null)} type="button">Retry</button></div> : null}
+        {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" aria-label="Retry actions" disabled={loadingActions} onClick={retryActions} type="button">Retry</button></div> : null}
         <ol aria-busy={loadingActions} className="automation-runtime-action-log">
           {visibleAttempts.map((attempt: any, index: number) => <li key={runtimeAttemptKey(attempt, actionPage.offset + index)}><RuntimeAttemptRow attempt={attempt} index={actionPage.offset + index} /></li>)}
         </ol>
@@ -281,7 +342,7 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
     <section className="automation-runtime-log-page">
       <header className="automation-runtime-log-hero">
         <div className="automation-runtime-log-title-row">
-          <button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button>
+          <button className="automation-runtime-back" onClick={() => { if (isCurrent()) props.onBack(); }} type="button">Back</button>
           <StatusBadge value={summary.status ?? trace?.status ?? "queued"} />
         </div>
         <div>
@@ -313,13 +374,13 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
           <div><strong>Ordered Event Stream</strong><span>{eventPage.events.length ? `Through sequence ${eventPage.lastSequence}` : loadingEvents ? "Loading events..." : eventPage.loaded ? "No stream events found" : "Events load only when opened"}</span></div>
           <button className="automation-runtime-row-action" disabled={loadingEvents || (eventPage.loaded && !eventPage.hasMore)} onClick={() => void loadEventPage(eventPage.loaded ? eventPage.nextCursor : null, eventPage.loaded ? eventPage.lastSequence : 0)} type="button">{eventPage.loaded ? "Next Events" : "Load Event Stream"}</button>
         </header>
-        {eventError ? <div className="automation-runtime-inline-error" role="alert"><span>{eventError}</span><button className="button" onClick={() => void loadEventPage(eventPage.nextCursor, eventPage.lastSequence)} type="button">Retry</button></div> : null}
-        <ol className="automation-runtime-event-list" onScroll={(event) => setEventScrollTop(event.currentTarget.scrollTop)} style={{ maxHeight: eventViewportHeight, overflowY: "auto" }}>
+        {eventError ? <div className="automation-runtime-inline-error" role="alert"><span>{eventError}</span><button className="button" aria-label="Retry events" disabled={loadingEvents} onClick={() => void loadEventPage(eventPage.nextCursor, eventPage.lastSequence)} type="button">Retry</button></div> : null}
+        <ol className="automation-runtime-event-list" onScroll={(event) => { if (isCurrent()) setEventScrollTop(event.currentTarget.scrollTop); }} style={{ maxHeight: eventViewportHeight, overflowY: "auto" }}>
           {eventStart ? <li aria-hidden style={{ height: eventStart * eventRowHeight }} /> : null}
           {visibleEvents.map((event) => <li key={event.eventId ?? event.sequence}><button aria-pressed={selectedEvent?.eventId === event.eventId} onClick={() => void selectEvent(event)} type="button"><span>{event.sequence}</span><strong>{event.title ?? event.eventKind ?? "Runtime event"}</strong><StatusBadge value={event.status ?? event.eventKind ?? "event"} /><code>{event.eventKind ?? "event"}</code></button></li>)}
           {eventEnd < eventPage.events.length ? <li aria-hidden style={{ height: (eventPage.events.length - eventEnd) * eventRowHeight }} /> : null}
         </ol>
-        {selectedEvent ? <aside className="automation-runtime-event-detail" aria-busy={loadingEventDetail} aria-label="Selected event JSON"><header><strong>{loadingEventDetail ? "Loading event details" : "Event JSON"}</strong><button aria-label="Close event JSON" className="automation-icon-button" onClick={() => { eventDetailAbortRef.current?.abort(); eventDetailRequestRef.current += 1; setLoadingEventDetail(false); setEventDetailError(""); setSelectedEvent(null); }} title="Close event JSON" type="button"><X size={16} /></button></header>
+        {selectedEvent ? <aside className="automation-runtime-event-detail" aria-busy={loadingEventDetail} aria-label="Selected event JSON"><header><strong>{loadingEventDetail ? "Loading event details" : "Event JSON"}</strong><button aria-label="Close event JSON" className="automation-icon-button" onClick={() => { if (!isCurrent()) return; eventDetailAbortRef.current?.abort(); eventDetailRequestRef.current += 1; setLoadingEventDetail(false); setEventDetailError(""); setSelectedEvent(null); }} title="Close event JSON" type="button"><X size={16} /></button></header>
           {selectedEvent.metadata?.summaryOnly === true ? <p role="status">Summary only. {loadingEventDetail ? "Loading full event details." : "Full details are not loaded."}</p> : null}
           {eventDetailError ? <div role="alert"><span>{eventDetailError}</span><button aria-label="Retry event details" disabled={loadingEventDetail} onClick={() => void selectEvent(selectedEvent)} type="button">Retry</button></div> : null}
           <JsonPreview value={selectedEvent} /></aside> : null}
@@ -331,7 +392,7 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
           <button disabled={loadingActions || !actionPage.hasMore} onClick={nextActionPage} type="button">Next</button>
         </div>
       </div>
-      {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" onClick={() => void loadActionPage(actionPage.offset, actionCursors[actionPageIndex] ?? null)} type="button">Retry</button></div> : null}
+      {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" aria-label="Retry actions" disabled={loadingActions} onClick={retryActions} type="button">Retry</button></div> : null}
       <div className={`automation-runtime-action-workspace ${selectedAttempt ? "has-detail" : ""}`}>
         <div className="automation-runtime-action-list-region">
           <ol aria-busy={loadingActions} className="automation-runtime-action-log">
@@ -351,7 +412,7 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
         {selectedAttempt ? <div aria-busy={loadingActionDetail}>
           {selectedAttempt.metadata?.summaryOnly === true ? <p role="status">Summary only. {loadingActionDetail ? "Loading action details." : "Full details are not loaded."}</p> : null}
           {actionDetailError ? <div role="alert"><span>{actionDetailError}</span><button aria-label="Retry action details" disabled={loadingActionDetail} onClick={() => void selectAttempt(selectedAttempt)} type="button">Retry</button></div> : null}
-          <RuntimeActionDetailPanel attempt={selectedAttempt} index={Math.max(0, visibleAttempts.findIndex((attempt) => attempt.attemptId === selectedAttempt.attemptId)) + actionPage.offset} view={actionDetailView} onClose={() => { actionDetailAbortRef.current?.abort(); actionDetailRequestRef.current += 1; setLoadingActionDetail(false); setActionDetailError(""); setSelectedAttempt(null); }} onView={setActionDetailView} /></div> : null}
+          <RuntimeActionDetailPanel attempt={selectedAttempt} index={Math.max(0, visibleAttempts.findIndex((attempt) => attempt.attemptId === selectedAttempt.attemptId)) + actionPage.offset} view={actionDetailView} onClose={() => { if (!isCurrent()) return; actionDetailAbortRef.current?.abort(); actionDetailRequestRef.current += 1; setLoadingActionDetail(false); setActionDetailError(""); setSelectedAttempt(null); }} onView={(view) => { if (isCurrent()) setActionDetailView(view); }} /></div> : null}
       </div>
       <RuntimeRecoveryRoutingPanel flowId={summary.flowId} recoveryAttempts={recoveryAttempts} routeDecisions={runDetail.routeDecisions ?? []} />
 
@@ -363,18 +424,22 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
   );
 }
 
-export async function runtimeAuditBlob(audit: unknown): Promise<Blob> {
-  if (typeof Worker === "undefined" || typeof URL === "undefined") return new Blob([JSON.stringify(audit, null, 2)], { type: "application/json" });
-  const workerSource = "self.onmessage=function(event){self.postMessage(new Blob([JSON.stringify(event.data,null,2)],{type:'application/json'}));};";
-  const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
-  try {
-    return await new Promise<Blob>((resolve, reject) => {
-      const worker = new Worker(workerUrl);
-      worker.onmessage = (event) => { worker.terminate(); resolve(event.data as Blob); };
-      worker.onerror = (event) => { worker.terminate(); reject(new Error(event.message || "Audit serialization failed.")); };
-      worker.postMessage(audit);
-    });
-  } finally {
-    URL.revokeObjectURL(workerUrl);
-  }
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function matchingRun(value: any, runId: string): boolean {
+  return value == null || value.runId === undefined || value.runId === runId;
+}
+function validPayload(result: any, runId: string): any {
+  if (!isRuntimeJsonRecord(result) || result.ok !== true || !isRuntimeJsonRecord(result.payload) || !matchingRun(result.payload, runId)) throw new Error();
+  return result.payload;
+}
+function validPage(value: any): any {
+  if (value === undefined) return {};
+  if (!isRuntimeJsonRecord(value)) throw new Error();
+  for (const key of ["total", "offset", "lastSequence"]) if (value[key] !== undefined && !nonnegativeInteger(value[key])) throw new Error();
+  if (value.limit !== undefined && (!nonnegativeInteger(value.limit) || value.limit === 0)) throw new Error();
+  if (value.nextCursor !== undefined && value.nextCursor !== null && (typeof value.nextCursor !== "string" || !value.nextCursor)) throw new Error();
+  if (value.hasMore !== undefined && typeof value.hasMore !== "boolean") throw new Error();
+  return value;
 }

@@ -2,7 +2,7 @@
 
 import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
 import { localAuthDestination } from "./auth-navigation";
@@ -13,7 +13,7 @@ export function AuthStatus(props: { displayName: string; roleId: string }) {
   const pending = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; generation.current += 1; pending.current = null; };
   }, []);

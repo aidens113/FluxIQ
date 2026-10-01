@@ -97,6 +97,15 @@ excessive database churn.
 
 ## Control Panel
 
+Runtime Action Log scopes reads, selected details and retained callbacks to the
+current project, run and command owner. Read failures have local retry controls;
+page labels advance only after a confirmed response. Known mismatched run data
+is rejected while existing summaries remain available. Audit export has a
+synchronous pending lock and fixed retry feedback. Its serializer terminates
+workers and revokes script URLs on success, error and abort; layout teardown
+invalidates local completions and aborts serialization. This does not claim to
+cancel an export request already issued to the server.
+
 The local web control panel lives in `apps/web`. It uses the shared FluxIQ
 runtime and exposes:
 

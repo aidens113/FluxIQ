@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Profiler } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStatus } from "../AuthShell";
@@ -59,5 +59,11 @@ describe("logout acknowledgement and recovery", () => {
   it("preserves account navigation and role display", async () => {
     await mount(vi.fn());
     expect(view.root.findByType("a").props.href).toBe("/programs/identity-access"); expect(text()).toContain("operator");
+  });
+  it("rejects retained activation during unmount commit before passive cleanup", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const location = await mount(fetcher), original = location.href, activate = logout().props.onClick;
+    await act(async () => { view.update(<Profiler id="after-removal" onRender={() => activate()}><span>Another workspace</span></Profiler>); });
+    expect(fetcher).not.toHaveBeenCalled(); expect(location.href).toBe(original);
   });
 });
