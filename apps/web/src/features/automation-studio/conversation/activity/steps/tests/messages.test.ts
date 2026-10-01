@@ -26,6 +26,15 @@ const thought = (sequence: number, title: string, text: string, phase: Conversat
 const tool = (sequence: number, title: string, status: "started" | "succeeded" | "failed", text?: string, ref = "core.run_node", phase: ConversationActivity["phase"] = "exploring") =>
   event(sequence, phase, { kind: "tool", title, status, ref, ...(text ? { text } : {}) }, { label: `${title}${status === "started" ? "" : status === "failed" ? " — didn't work" : " — done"}` });
 
+const CHECK = "Asked the person to complete a check";
+const PERMISSION = "Asked a question (permission)";
+/** The row that opens a wait on the person, as Core's `emitAutomationStudioActivityWaitingOnAsk` says it. */
+const waitingAsk = (sequence: number, title: string, askId: string) =>
+  event(sequence, "waiting_permission", { kind: "ask", title, status: "started", ref: askId }, { label: "Waiting for an answer before going on" });
+/** The row that settles it, as Core's `emitAutomationStudioActivityAskResolved` says it. */
+const settledAsk = (sequence: number, title: string, askId: string, resolution: NonNullable<ConversationActivityDetail["resolution"]>, text: string, status: "succeeded" | "failed" = "succeeded") =>
+  event(sequence, "building", { kind: "ask", title, status, ref: askId, resolution, text }, { label: text });
+
 /** A card's fields a person sees, without its key. */
 const seen = (message: { actions: readonly { kind: string; target: string | null; outcome: string; why: string | null; said?: string }[] }) =>
   message.actions.map(({ kind, target, outcome, why, said }) => ({ kind, target, outcome, why, ...(said === undefined ? {} : { said }) }));
@@ -110,27 +119,79 @@ describe("FluxIQ's step messages", () => {
     expect(seen(messages[0]!)).toEqual([{ kind: "click", target: "Next", outcome: "failed", why: null }]);
   });
 
-  it("shows a permission ask as a waiting card beside the decision, done once the work goes on", () => {
+  it("shows a permission ask as a waiting card beside the decision, and marks it only from the row that settles it", () => {
     const asked = [
       thought(1, "Placing the order", "Everything in the basket matches the request."),
-      event(2, "waiting_permission", { kind: "ask", title: "Asked to place the order" }, { label: "Waiting for your answer" })
+      waitingAsk(2, PERMISSION, "request.1")
     ];
     const waiting = conversationStepMessages(asked);
     expect(waiting).toHaveLength(1);
     expect(seen(waiting[0]!)).toEqual([{ kind: "permission", target: null, outcome: "waiting", why: null }]);
-    const answered = conversationStepMessages([...asked, event(3, "running", undefined, { label: "Working" })]);
-    expect(answered[0]!.actions.map((action) => [action.key, action.outcome])).toEqual([["action:build.1#2", "done"]]);
+    const allowed = conversationStepMessages([...asked, settledAsk(3, PERMISSION, "request.1", "allowed", "You allowed it.")]);
+    expect(allowed).toHaveLength(1);
+    expect(allowed[0]!.actions.map((action) => [action.key, action.outcome])).toEqual([["action:build.1#2", "done"]]);
+    expect(seen(allowed[0]!)).toEqual([{ kind: "permission", target: null, outcome: "done", why: null, said: "You allowed it." }]);
   });
 
-  it("shows a robot check as a waiting card of its own when no decision came before it", () => {
+  it("never marks a wait over from what the work does next", () => {
     const messages = conversationStepMessages([
-      event(1, "waiting_permission", { kind: "ask", title: "Asked the person to complete a check" }, { label: "Waiting for your answer" }),
-      tool(2, "Checking the page", "succeeded", "Result: web.page.intervention_required", "web.inspect", "waiting_permission")
+      waitingAsk(1, CHECK, "person-needed.1"),
+      event(2, "building", undefined, { label: "Building the Flow" }),
+      tool(3, "Clicking “Next”", "succeeded", "Result: web.click.succeeded"),
+      event(4, "failed", { kind: "step", title: "Build failed", status: "failed" }, { label: "Build failed", final: true })
     ]);
-    expect(messages.map((message) => [message.kind, seen(message)])).toEqual([
-      ["action", [{ kind: "person_check", target: null, outcome: "waiting", why: null }]],
-      ["action", [{ kind: "person_check", target: null, outcome: "waiting", why: null }]]
+    expect(messages[0]!.actions.map((action) => [action.key, action.kind, action.outcome])).toEqual([["action:build.1#1", "person_check", "waiting"]]);
+  });
+
+  it.each([
+    ["answered", "succeeded", "You pressed Continue.", { outcome: "done", why: null, said: "You pressed Continue." }],
+    ["waited_out", "succeeded", "The check cleared by itself.", { outcome: "done", why: null, said: "The check cleared by itself." }],
+    ["declined", "failed", "You pressed Stop.", { outcome: "failed", why: "you pressed Stop", said: "You pressed Stop." }],
+    ["timed_out", "failed", "Nobody answered in time.", { outcome: "failed", why: "nobody answered in time", said: "Nobody answered in time." }],
+    ["cancelled", "failed", "The work stopped before this was answered.", { outcome: "failed", why: "the work stopped first", said: "The work stopped before this was answered." }]
+  ] as const)("marks a robot check's one card %s in place, keeping its key and message", (resolution, status, text, card) => {
+    const waiting = [waitingAsk(1, CHECK, "person-needed.1")];
+    const before = conversationStepMessages(waiting);
+    const after = conversationStepMessages([...waiting, settledAsk(2, CHECK, "person-needed.1", resolution, text, status)]);
+    expect(after).toHaveLength(1);
+    expect(after[0]!.key).toBe(before[0]!.key);
+    expect(after[0]!.actions.map((action) => action.key)).toEqual(before[0]!.actions.map((action) => action.key));
+    expect(seen(after[0]!)).toEqual([{ kind: "person_check", target: null, ...card }]);
+  });
+
+  it("keeps each ask's card apart by its ask id", () => {
+    const messages = conversationStepMessages([
+      waitingAsk(1, CHECK, "person-needed.1"),
+      settledAsk(2, CHECK, "person-needed.1", "answered", "You pressed Continue."),
+      waitingAsk(3, CHECK, "person-needed.2"),
+      settledAsk(4, CHECK, "person-needed.2", "declined", "You pressed Stop.", "failed")
     ]);
+    expect(messages.map((message) => message.actions.map((action) => [action.key, action.outcome]))).toEqual([
+      [["action:build.1#1", "done"]],
+      [["action:build.1#3", "failed"]]
+    ]);
+  });
+
+  it("makes a robot check one card with the tool that met it, whichever comes first", () => {
+    const met = (sequence: number) => tool(sequence, "Checking the page", "succeeded", "Result: web.page.intervention_required", "web.inspect", "waiting_permission");
+    const askFirst = conversationStepMessages([waitingAsk(1, CHECK, "person-needed.1"), met(2), settledAsk(3, CHECK, "person-needed.1", "answered", "You pressed Continue.")]);
+    const toolFirst = conversationStepMessages([met(1), waitingAsk(2, CHECK, "person-needed.1"), settledAsk(3, CHECK, "person-needed.1", "answered", "You pressed Continue.")]);
+    for (const [messages, key] of [[askFirst, "action:build.1#1"], [toolFirst, "action:build.1#1"]] as const) {
+      expect(messages).toHaveLength(1);
+      expect(messages[0]!.actions.map((action) => [action.key, action.kind, action.outcome])).toEqual([[key, "person_check", "done"]]);
+    }
+    // While it waits, the one card waits.
+    const waiting = conversationStepMessages([waitingAsk(1, CHECK, "person-needed.1"), met(2)]);
+    expect(waiting.map((message) => seen(message))).toEqual([[{ kind: "person_check", target: null, outcome: "waiting", why: null }]]);
+  });
+
+  it("reads an ask row with no ask id, while another ask waits, as that same wait said again", () => {
+    const messages = conversationStepMessages([
+      waitingAsk(1, CHECK, "check.attempt.2"),
+      event(2, "waiting_permission", { kind: "ask", title: "Run is waiting for an answer", status: "started" }, { label: "Run is waiting for an answer" })
+    ]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.actions).toHaveLength(1);
   });
 
   it("tells a run's steps as cards without a count, and closes a step once the run moves on", () => {

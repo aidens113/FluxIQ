@@ -8,12 +8,14 @@
 // `generateFlowBootstrapAdaptation` against a real conversation store and read
 // the thread back.
 
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
+import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
@@ -43,6 +45,13 @@ async function seeded<T>(seed: DataDirSeed<T>): Promise<T> {
 }
 
 const services = new Set<AutomationStudioService>();
+let activity: ClientGatewayActivity[] = [];
+let unsubscribe: () => void = () => undefined;
+
+/** The build's ask rows, as [phase, ref, status, resolution]. */
+function askRows(): unknown[][] {
+  return activity.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.status, event.detail!.resolution]);
+}
 
 beforeAll(async () => {
   seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
@@ -55,9 +64,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-bootstrap-ask-"));
+  activity = [];
+  unsubscribe = automationStudioActivityHub.subscribe((event) => activity.push(event));
 });
 
 afterEach(async () => {
+  unsubscribe();
   await Promise.all([...services].map((instance) => instance.close()));
   services.clear();
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
@@ -94,6 +106,8 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
     // A refusal holds it just the same, and says so differently.
     await run.instance.conversations.answerAsk({ projectId: run.project.id, askId: requestId, kind: "deny" });
     await expect(run.instance.reviewFlowBootstrapAdaptation(approve)).rejects.toThrow(/was refused/);
+    // The build did not wait on the question, so it said no wait and no resolution.
+    expect(askRows()).toEqual([]);
   });
 
   it("goes ahead with the action when the person grants it while the build waits", async () => {
@@ -117,6 +131,12 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toBeUndefined();
     await expect(run.instance.reviewFlowBootstrapAdaptation({ projectId: run.project.id, flowId: run.flow.flowId, adaptationId: result.adaptationId, action: "approve" })).resolves.toMatchObject({ status: "validated" });
+    // The wait, keyed by the request, and its one resolution.
+    const requestId = (await answered).askId;
+    expect(askRows()).toEqual([
+      ["waiting_permission", requestId, "started", undefined],
+      ["building", requestId, "succeeded", "allowed"]
+    ]);
   }, 30_000);
 });
 

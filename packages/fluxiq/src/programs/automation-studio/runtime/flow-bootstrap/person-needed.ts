@@ -36,12 +36,13 @@
 // **Shared with recovery.** The question, the wait, the bound and the fresh
 // look are `../parking/person-needed-tool-calls.ts`, which a recovery's
 // exploration wraps its executor with too. What is the build's own is here:
-// the stage it asks from, what the person is shown while it waits, and the
+// the stage it asks from, what the person is shown while it waits and once
+// the wait is over (one ask row each, through the port), and the
 // `flow_bootstrap.user_intervention_required` ending.
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
-import { emitAutomationStudioActivity, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskPort } from "../activity/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../llm/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
@@ -97,13 +98,13 @@ export function automationStudioFlowBootstrapPersonNeeded(input: {
     tools: input.tools,
     stage: "authoring",
     subject: "build",
-    ask: input.ask,
+    // The wait and how it ended are said where the port settles it
+    // (`../activity/ask/port.ts`), in the phase the build returns to.
+    ask: input.ask ? { ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") } : undefined,
     signal: input.signal,
     clearedResultCode: input.clearedResultCode,
     maxAsks: input.maxAsks,
-    newAskId: input.newAskId ?? (() => `person-needed.${randomUUID()}`),
-    onAsk: (ask) => emitAutomationStudioActivityWaitingOnAsk(ask),
-    onCleared: (call) => emitAutomationStudioActivity({ phase: "building", label: "The person completed the check; building goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } })
+    newAskId: input.newAskId ?? (() => `person-needed.${randomUUID()}`)
   });
   return {
     executeTool: calls.executeTool,

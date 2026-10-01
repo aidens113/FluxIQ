@@ -78,6 +78,7 @@ import {
   type AutomationStudioActionPermissionRequest,
   type AutomationStudioInstructedConsequence
 } from "../action-permissions/index.ts";
+import { automationStudioActivityAskPort } from "../activity/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioAskedAndGranted, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
@@ -172,7 +173,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       const request = gate.request;
       if (decision.permitted || !input.ask || asked || !request || request.requestId !== decision.requestId) return decision;
       asked = true;
-      if (!(await automationStudioAskedAndGranted(input.ask, request))) {
+      // The wait and its answer are said where the port settles them (`../activity/ask/port.ts`).
+      if (!(await automationStudioAskedAndGranted({ ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") }, request))) {
         gate.settle("refused");
         return decision;
       }

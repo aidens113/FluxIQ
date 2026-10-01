@@ -8,6 +8,7 @@ export {
   type ConversationActivityDetailKind,
   type ConversationActivityDetailStatus,
   type ConversationActivityPhase,
+  type ConversationActivityResolution,
   type ConversationActivitySnapshot,
   type ConversationActivityStep
 } from "./contracts";

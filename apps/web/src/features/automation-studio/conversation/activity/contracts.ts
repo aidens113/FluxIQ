@@ -9,7 +9,8 @@
 // The rule is the thread's (`thread/contracts.ts`): nothing renders that Core
 // did not build. An unknown phase, a control character, or a string longer
 // than Core's own bound refuses that event rather than rendering a narrower
-// version of it. A field this reader does not know is ignored, not fatal.
+// version of it. A field this reader does not know is ignored, not fatal, and
+// so is a `resolution` it does not know.
 
 export type ConversationActivityPhase =
   | "thinking"
@@ -25,6 +26,8 @@ export type ConversationActivityPhase =
 
 export type ConversationActivityDetailKind = "thought" | "tool" | "step" | "check" | "ask" | "note";
 export type ConversationActivityDetailStatus = "started" | "succeeded" | "failed";
+/** How a wait on the person ended, on the ask row that settles it. */
+export type ConversationActivityResolution = "waited_out" | "answered" | "allowed" | "declined" | "timed_out" | "cancelled";
 
 export type ConversationActivityStep = { index: number; count: number; nodeId?: string; label?: string };
 
@@ -33,8 +36,10 @@ export type ConversationActivityDetail = {
   title: string;
   text?: string;
   status?: ConversationActivityDetailStatus;
-  /** Tool or node id the row describes. */
+  /** Tool or node id the row describes; an ask row's ask id. */
   ref?: string;
+  /** On the ask row that settles a wait: how it ended. The card is marked from this row alone. */
+  resolution?: ConversationActivityResolution;
 };
 
 export type ConversationActivity = {
@@ -60,6 +65,7 @@ export type ConversationActivitySnapshot = { current: ConversationActivity | nul
 const PHASES: readonly string[] = ["thinking", "exploring", "building", "running", "extracting", "verifying", "repairing", "waiting_permission", "done", "failed"];
 const DETAIL_KINDS: readonly string[] = ["thought", "tool", "step", "check", "ask", "note"];
 const DETAIL_STATUSES: readonly string[] = ["started", "succeeded", "failed"];
+const RESOLUTIONS: readonly string[] = ["waited_out", "answered", "allowed", "declined", "timed_out", "cancelled"];
 
 /** Core's bounds (`runtime/activity/limits.ts`); ids are not clipped there, so they get a generous ceiling here. */
 const LABEL_MAX = 160;
@@ -139,12 +145,19 @@ function parseDetail(value: unknown): ConversationActivityDetail | null {
   const ref = optional(record.ref, (entry) => text(entry, ID_MAX));
   const status = optional(record.status, (entry) => (typeof entry === "string" && DETAIL_STATUSES.includes(entry) ? entry as ConversationActivityDetailStatus : null));
   if (title === null || body === null || ref === null || status === null) return null;
+  // Read only on an ask, and only when it is one Core names. Anything else is
+  // left out rather than refusing the row: the card then stays waiting, which
+  // is what it was before a reader knew the field.
+  const resolution = record.kind === "ask" && typeof record.resolution === "string" && RESOLUTIONS.includes(record.resolution)
+    ? record.resolution as ConversationActivityResolution
+    : undefined;
   return {
     kind: record.kind as ConversationActivityDetailKind,
     title,
     ...(body === undefined ? {} : { text: body }),
     ...(status === undefined ? {} : { status }),
-    ...(ref === undefined ? {} : { ref })
+    ...(ref === undefined ? {} : { ref }),
+    ...(resolution === undefined ? {} : { resolution })
   };
 }
 

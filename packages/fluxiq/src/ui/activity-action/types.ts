@@ -46,6 +46,13 @@ export type ActivityActionEvent = {
     text?: string | undefined;
     status?: string | undefined;
     ref?: string | undefined;
+    /**
+     * On the ask row that settles a wait on the person: how it ended
+     * (`answered`, `allowed`, `waited_out`, `declined`, `timed_out`,
+     * `cancelled`). The card
+     * is marked from this row alone.
+     */
+    resolution?: string | undefined;
   } | undefined;
   step?: { nodeId?: string | undefined; label?: string | undefined } | undefined;
 };

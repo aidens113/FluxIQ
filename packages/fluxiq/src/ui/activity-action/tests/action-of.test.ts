@@ -117,6 +117,47 @@ describe("activityActionOf: outcome and why", () => {
   });
 });
 
+const CHECK_TITLE = "Asked the person to complete a check";
+const PERMISSION_TITLE = "Asked a question (permission)";
+
+function settled(title: string, phase: string, status: string | undefined, resolution?: string): ActivityActionEvent {
+  return { phase, detail: { kind: "ask", title, ref: "ask.1", ...(status === undefined ? {} : { status }), ...(resolution === undefined ? {} : { resolution }) } };
+}
+
+describe("activityActionOf: a wait on the person, settled", () => {
+  it.each<[string, ActivityActionEvent, ActivityActionKind, ActivityAction["outcome"], string | null]>([
+    ["a robot check answered", settled(CHECK_TITLE, "building", "succeeded", "answered"), "person_check", "done", null],
+    ["a robot check waited out", settled(CHECK_TITLE, "running", "succeeded", "waited_out"), "person_check", "done", null],
+    ["a robot check stopped", settled(CHECK_TITLE, "building", "failed", "declined"), "person_check", "failed", "you pressed Stop"],
+    ["a robot check nobody answered", settled(CHECK_TITLE, "repairing", "failed", "timed_out"), "person_check", "failed", "nobody answered in time"],
+    ["a permission allowed", settled(PERMISSION_TITLE, "building", "succeeded", "allowed"), "permission", "done", null],
+    ["a permission declined in a repair", settled(PERMISSION_TITLE, "repairing", "failed", "declined"), "permission", "failed", "you said no"],
+    ["a permission nobody answered", settled(PERMISSION_TITLE, "running", "failed", "timed_out"), "permission", "failed", "nobody answered in time"],
+    ["a robot check whose work stopped first", settled(CHECK_TITLE, "building", "failed", "cancelled"), "person_check", "failed", "the work stopped first"],
+    ["a permission whose work stopped first", settled(PERMISSION_TITLE, "repairing", "failed", "cancelled"), "permission", "failed", "the work stopped first"]
+  ])("%s", (_name, event, kind, outcome, why) => {
+    expect(activityActionOf(event)).toEqual({ kind, target: null, outcome, why });
+  });
+
+  it("goes by the resolution, not by the status beside it", () => {
+    expect(activityActionOf(settled(CHECK_TITLE, "building", "started", "answered"))?.outcome).toBe("done");
+    expect(activityActionOf(settled(CHECK_TITLE, "building", "succeeded", "timed_out"))?.outcome).toBe("failed");
+  });
+
+  it("never infers that a wait is over: an ask with no resolution is still waiting, whatever phase it is read in", () => {
+    for (const phase of ["waiting_permission", "building", "running", "repairing", "done"]) {
+      expect(activityActionOf(settled(CHECK_TITLE, phase, "started"))?.outcome).toBe("waiting");
+      expect(activityActionOf(settled(PERMISSION_TITLE, phase, undefined))?.outcome).toBe("waiting");
+      expect(activityActionOf(settled(CHECK_TITLE, phase, "succeeded"))?.outcome).toBe("waiting");
+      expect(activityActionOf(settled(CHECK_TITLE, phase, "succeeded", "guessed"))?.outcome).toBe("waiting");
+    }
+  });
+
+  it("reads an ask Core failed without a resolution as failed, with no reason it did not give", () => {
+    expect(activityActionOf(settled(PERMISSION_TITLE, "running", "failed"))).toEqual({ kind: "permission", target: null, outcome: "failed", why: null });
+  });
+});
+
 describe("activityActionOf: no output carries an id or a result code", () => {
   it("holds across every kind of row", () => {
     const events: ActivityActionEvent[] = [
