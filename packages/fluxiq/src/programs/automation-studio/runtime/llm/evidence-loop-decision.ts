@@ -70,7 +70,7 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
   effect: AutomationStudioLlmEvidenceTool["effect"]
 ): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);

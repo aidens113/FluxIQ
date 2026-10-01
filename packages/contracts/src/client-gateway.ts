@@ -105,6 +105,8 @@ export type ClientGatewayActionResult = {
   target?: JsonObject;
   payload?: JsonObject;
   error?: string;
+  /** A target wait that cleared without a person, in whole milliseconds; independent of action status. */
+  clearedWait?: { waitedMs: number };
   /** Structured failure the client reports; the runtime keeps it only when `parseAutomationStudioFailureRecord` accepts it. */
   failure?: AutomationStudioFailureRecord;
   metadata?: JsonObject;

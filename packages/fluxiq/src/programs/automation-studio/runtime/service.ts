@@ -215,7 +215,7 @@ import {
 import { AutomationStudioConversations } from "./conversations/index.ts";
 import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
-import { admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow, isTerminalRuntimeSessionStatus, settleAutomationStudioParkedRunWait } from "./service/runtime-session/index.ts";
+import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -383,6 +383,11 @@ export class AutomationStudioService {
   /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
   readonly runControl = new AutomationStudioRunControlRegistry();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
+  private readonly parkedRunExpiry = new AutomationStudioParkedRunExpiry({
+    read: (projectId, runId) => this.summaries.getRuntimeSession(projectId, runId),
+    list: (projectId) => this.summaries.listRuntimeSessions(projectId),
+    write: (projectId, session) => this.writeRuntimeSession(projectId, session, true)
+  });
   private reusableLlmContextEnabled: boolean;
   private reusableLlmContextContentProtection: AutomationStudioProjectContentProtection | undefined;
   private reusableLlmContextFreshEvidenceSelector: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"];
@@ -471,6 +476,7 @@ export class AutomationStudioService {
   }
 
   async close(): Promise<void> {
+    await this.parkedRunExpiry.close();
     await this.uiCache.close();
     await this.runtimeProjectDatabasePool?.closeAll();
   }
@@ -2817,44 +2823,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   })); }
 
   async cancelRuntimeSession(projectId: string, runId: string, reason = "Cancelled by user."): Promise<AutomationStudioRuntimeSession | null> {
-    const session = await this.getRuntimeSession(projectId, runId);
-    if (!session) return null;
-    if (isTerminalRuntimeSessionStatus(session.status)) return session;
-    const controller = this.runtimeAbortControllers.get(`${projectId}:${runId}`);
-    controller?.abort(reason);
-    const now = Date.now();
-    const cancelled: AutomationStudioRuntimeSession = {
-      ...session,
-      status: "cancelled",
-      finishedAt: session.finishedAt ?? now,
-      metadata: {
-        ...(session.metadata ?? {}),
-        cancellation: { at: now, reason }
-      },
-      trace: session.trace ?? {
-        status: "cancelled",
-        startedAt: session.startedAt ?? session.queuedAt,
-        finishedAt: now,
-        attempts: [],
-        values: {},
-        effects: [],
-        message: reason
-      }
-    };
-    await this.writeRuntimeSession(projectId, cancelled);
-    settleAutomationStudioParkedRunWait(projectId, session, "cancelled");
-    return cancelled;
+    return await this.parkedRunExpiry.cancel(projectId, runId, reason, () => this.runtimeAbortControllers.get(`${projectId}:${runId}`)?.abort(reason));
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
-    return await this.summaries.getRuntimeSession(projectId, runId);
+    return await this.parkedRunExpiry.expire(projectId, runId);
   }
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
-    return await this.summaries.listRuntimeSessions(projectId);
+    const sessions = await this.summaries.listRuntimeSessions(projectId);
+    return (await Promise.all(sessions.map((session) => this.parkedRunExpiry.expire(projectId, session.runId)))).filter((session): session is AutomationStudioRuntimeSession => session !== null);
   }
 
   async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+    const page = await this.summaries.listRuntimeSessionSummaries(projectId, options);
+    await Promise.all(page.runs.filter((run) => run.status === "waiting").map((run) => this.parkedRunExpiry.expire(projectId, run.runId)));
     return await this.summaries.listRuntimeSessionSummaries(projectId, options);
   }
 
@@ -3951,27 +3934,30 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
-    if (this.objectStore && this.projects.indexStore) {
-      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
-        if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
-        await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
-      });
+    await this.projects.requireProject(projectId);
+    return await this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
+      if (this.objectStore && this.projects.indexStore) {
+        await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+          const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+          if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+          await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
+          await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
+        });
+        await this.uiCache.purgeProject(projectId).catch(() => undefined);
+        return { deletedProjectId: projectId };
+      }
+      await this.projects.requireProject(projectId);
+      await this.projects.writeProjectIndex((state) => ({
+        ...state,
+        projects: state.projects.filter((project) => project.id !== projectId)
+      }));
+      if (this.projectPaths.root) {
+        if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
+        else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
+      }
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
-    }
-    await this.projects.requireProject(projectId);
-    await this.projects.writeProjectIndex((state) => ({
-      ...state,
-      projects: state.projects.filter((project) => project.id !== projectId)
-    }));
-    if (this.projectPaths.root) {
-      if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
-      else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
-    }
-    await this.uiCache.purgeProject(projectId).catch(() => undefined);
-    return { deletedProjectId: projectId };
+    });
   }
 
   async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {
@@ -4257,7 +4243,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return page.events[0] ?? null;
   }
 
-  private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+  private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession, serialized = false): Promise<void> {
+    if (!serialized) return await this.parkedRunExpiry.withRun(projectId, session.runId, async () => { await this.writeRuntimeSession(projectId, session, true); this.parkedRunExpiry.track(projectId, session); });
     await this.projects.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
     await new ProgramJsonStore<RuntimeIndex>(this.projectPaths.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({

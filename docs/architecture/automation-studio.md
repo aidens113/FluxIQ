@@ -1593,3 +1593,15 @@ order:
    relevance scoring, and learned requirements.
 6. Introduce the learned task model between mined evidence and generated policy
    graphs.
+
+## Parked run deadlines
+
+Durable runtime sessions parked with `expiresAtMs` arm a deadline when written or read; overdue records encountered after restart settle immediately. Expiry persists a failed session and an expired ask before emitting the original ask's `timed_out` row. It preserves the timeout route in the attempt without executing further actions. Indefinite waits remain open. Deadline writes, cancellation, and session persistence share a per-run lock; a failed deadline write reports failure and retries without resolving the card. Unconfirmed parked settlements retain their original and terminal snapshots while the service is alive, so a session-file write followed by an index/detail failure retries the complete persistence path before resolving the card. A retry proceeds only when the stored session still matches one of those snapshots; newer work is never overwritten. Closing the service removes its timers and waits for in-flight persistence.
+
+Project deletion blocks deadline writes, waits for in-flight session writes, and persists cancellation of parked sessions before settling their asks and removing project records. If removal fails, the original error is retained, and waits already cancelled remain cancelled. Waiting records whose cancellation failed retain their deadlines.
+
+## Parked run deadlines
+
+Durable runtime sessions parked with `expiresAtMs` arm a deadline when written or read; overdue records encountered after restart settle immediately. Expiry persists a failed session and an expired ask before emitting the original ask's `timed_out` row. It preserves the timeout route in the attempt without executing further actions. Indefinite waits remain open. Deadline writes, cancellation, and session persistence share a per-run lock; a failed deadline write reports failure and retries without resolving the card. Closing the service removes its timers.
+
+Project deletion blocks deadline writes, waits for in-flight session writes, and persists cancellation of parked sessions before settling their asks and removing project records. If removal fails, the original error is retained, and waits already cancelled remain cancelled. Waiting records whose cancellation failed retain their deadlines.

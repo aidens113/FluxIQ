@@ -53,9 +53,10 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     if (command.kind === "execute_action") {
       const response = this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command));
       // The client is untrusted: its failure record survives only when it parses.
-      const { failure: reported, ...result }: ClientGatewayActionResult = await response.result;
+      const { failure: reported, clearedWait: reportedWait, ...result }: ClientGatewayActionResult = await response.result;
+      const clearedWait = readableClearedWait(reportedWait);
       const failure = parseAutomationStudioFailureRecord(reported);
-      return failure ? { ...result, failure } : result;
+      return { ...result, ...(failure ? { failure } : {}), ...(clearedWait ? { clearedWait } : {}) };
     }
     if (command.kind === "capture_snapshot") {
       await this.gateway.captureSnapshot(session.sessionId, {
@@ -96,6 +97,7 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     else if (event.type === "client.recording_event") await this.emit({ type: "recording.event", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.action_result") {
       const failure = parseAutomationStudioFailureRecord(event.message.payload.failure);
+      const clearedWait = readableClearedWait(event.message.payload.clearedWait);
       await this.emit({
         type: "command.result",
         result: {
@@ -104,7 +106,8 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
           ...(event.message.payload.message ? { message: event.message.payload.message } : {}),
           ...(event.message.payload.payload ? { payload: event.message.payload.payload } : {}),
           ...(event.message.payload.error ? { error: event.message.payload.error } : {}),
-          ...(failure ? { failure } : {})
+          ...(failure ? { failure } : {}),
+          ...(clearedWait ? { clearedWait } : {})
         }
       });
     } else if (event.type === "client.error") {
@@ -196,4 +199,11 @@ function rejected(command: FluxIQRuntimeCommand, message: string): FluxIQRuntime
     message,
     error: message
   };
+}
+
+/** Client fields are untrusted; only whole, nonnegative elapsed milliseconds survive. */
+function readableClearedWait(value: unknown): { waitedMs: number } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const waitedMs = (value as { waitedMs?: unknown }).waitedMs;
+  return typeof waitedMs === "number" && Number.isSafeInteger(waitedMs) && waitedMs >= 0 ? { waitedMs } : undefined;
 }
