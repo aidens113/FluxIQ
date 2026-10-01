@@ -317,6 +317,15 @@ last; composition, handled events and modifier shortcuts retain native input
 behavior. Field labels, controls and help/error messages share the child's
 existing ID when present, preserving caller description and validation attributes.
 
+Detailed database JSON formats only while its native disclosure is open, reuses
+unchanged data during clock/presentation updates and is discarded when closed.
+It retains the full record rather than a bounded preview. A changed record,
+query, owner or viewing grant closes the disclosure and retires old toggles;
+expired grants cannot reopen it through a retained callback. Floating workspace
+overlays use their panel's owner document for entry focus, selecting eligible
+explicit autofocus before ordinary controls and the panel fallback. Hidden,
+unfocused or retired panels do not claim entry focus.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,

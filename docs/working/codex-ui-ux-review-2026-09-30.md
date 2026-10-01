@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Tenth Core gates observed; disjoint Combobox and Field workers active; extension full gates running.
+Status detail: Eleventh integrated gates complete; next disjoint floating-dismissal and Tooltip implementations active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -16,8 +16,14 @@ a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
 is preserved; corrected full61471 native0,340files2629tests/194.11s; types50626
 native0/95150ms; build45474 native0/202003ms. After source freeze root reconciled
 two cleanup-rationale comments; final structure only inherited protected4506/4505.
-Next Core Combobox and Field two-path workers active; downstream source frozen
-for tenth full gates, third worker prepares backend preview ownership read-only.
+Eleventh Complete: source10ce95a7/0e868679; root54/51/101 independently passed.
+Full80759 native0,344files2706tests/207.22s; types14622 native0/48883ms;
+production69790 native0/199764ms; structure37927 only protected4506/4505.
+Downstream source86913bca and integration92decca0; full2028/types/build/structure
+all native0. Every gate closed before new source release. Two Core workers now
+implement exact five-path floating close intent and three-path Tooltip behavior;
+third worker implements downstream real session binding. Root owns verification,
+authored docs and local checkpoints. Exact briefs/reports live downstream.
 No live/browser certification or Claude integration.
 
 Continuous UI/UX execution is active in paired isolated task t224 worktrees.
