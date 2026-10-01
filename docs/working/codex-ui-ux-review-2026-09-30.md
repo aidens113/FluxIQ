@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Initial recovery fix passes focused tests, types and build; broader web suite pending, UX roadmap remains active.
+Status detail: Source review and initial recovery/composer fixes verified; broader UX roadmap remains queued.
 Created: 2026-09-30
 Last updated: 2026-09-30
 Owner: Codex senior supervisor
@@ -36,12 +36,27 @@ pre-provider request budget. The fixture correction uses public token defaults
 and passes60/60; supervisor inspected the raw completion and exact diff.
 Core composer loss was reproduced (2fail/8pass), then corrected10/10 passed.
 Checkpoint95573296 preserves these follow-ups; initial recovery e6eb33f2.
-Final web suite98054/typecheck62339 are queued; source remains frozen.
+Final supervisor web suite98054 passed287files/1704tests, exit0,212.84s.
+Final typecheck62339 exit0,83544ms; production build71345 exit0,17pages,248727ms.
+Final full Core audit1037 has only inherited service4506/4505 failure; no new
+violation or baseline increase. Initial batch complete; source frozen.
 
 Browser, live provider and panel management are not exercised. Visual and
 accessibility certification remains a separate live validation requirement.
 
 ## Work Ledger
+
+### 2026-09-30 - Final initial-batch handoff
+- Agent: supervisor
+- Changed: final current state and integration/resume record.
+- Why: checkpoint verified behavior without claiming queued redesigns or live validation.
+- Validation: independently observed full web287files/1704tests0, web types0,
+  production build0. Core audit1 solely inherited unchanged service4506/4505.
+- Outcome: Complete for current-source audit and initial recovery/composer batch.
+- Follow-up: Claude owns integration; no merge/push. Preserve root-only recovery
+  host, owning tests, composer edit revisions and public-default contract fixture.
+  Code commits e6eb33f2/95573296; prior record07acd910. Paired extension
+  commits21e915ee/061e8a70. Remaining UX phases and live validation stay queued.
 
 ### 2026-09-30 — Paired UX review initiated
 - Agent: supervisor
@@ -66,3 +81,6 @@ accessibility certification remains a separate live validation requirement.
 - Validation: supervisor reproduced two composer failures (2fail/8pass), then observed corrected10/10 exit0. Inspected worker raw contract completion60/60 exit0 and exact fixture diff. git diff --check0.
 - Outcome: Partial
 - Follow-up: root full web tests session98054 and web typecheck62339; source frozen. Production build and final documentation checks follow. Initial checkpoints Coree6eb33f2/downstream21e915ee remain recoverable. Claude integration ownership unchanged.
+
+
+Final documentation verification: supervisor session48994 exit0, docs-links and working-docs passed (0warnings/16baselined). Final records/index checkpointed locally; no merge or push.
