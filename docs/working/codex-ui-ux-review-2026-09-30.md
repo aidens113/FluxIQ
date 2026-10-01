@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Continuous UX execution resumed; Production, Compute, authoring and Problems focused corrections verified, global question queue active.
+Status detail: Verified second UX batch; onboarding, Runtime workspace and sensitive-store authorization implementation active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -32,6 +32,19 @@ These focused results are independently observed; coordinated broad web checks
 wait for the global-question worker to freeze source. Other workers now audit
 onboarding and extraction read-only for the next implementation assignments.
 Extension final full1695pass and types/build pass in paired downstream tree.
+
+Second batch checkpoints:33864e3e global question queue, b0a4cdda selected run
+detail retry/race guards, f1b80c93 Compute fixture typing and445e12d9 exact
+optional-prop/test helper/import corrections. Supervisor full web suite63749
+passed293files/1775tests before the strict corrections. Worker corrected focused
+55 and66 passed; supervisor reviewed exact diffs and corrected web typecheck73179
+passed13487ms. Corrected production build36344 passed17pages,120426ms. Core audit
+28482 has only inherited unchanged service4506/4505; no new violation/baseline
+increase. These results authorize the next disjoint Core source assignments:
+guided onboarding entry (trace_endings), read-only Runtime workspace
+(lab_bookkeeping), and database authorization UI fencing (supervisor). Whole-tree
+gates wait for their next coordinated freeze. Runtime uses existing public read
+contracts only; no runtime/backend/security ownership changes.
 
 Confirmed: program API calls await reauthentication after HTTP 401, but generic
 program pages mount AuthStatus rather than GlobalTopbar, the only existing

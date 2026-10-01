@@ -127,6 +127,18 @@ existing-flow improvement. Successful generation retains a Review suggested
 change action; generated changes require review, and late responses after a
 project/flow change or teardown cannot navigate or publish into the new scope.
 
+Selected run actions and events identify retained summary data while full detail
+loads, show failure feedback and provide a separate retry. Changing action pages,
+selection or run scope, closing detail, and teardown invalidate obsolete detail
+requests; a late response cannot reopen the previous selection.
+
+Outside Studio, global questions scan bounded conversation candidates and forward
+turn pages, continuing long threads across polls. Idle or dismissed threads do
+not hide other waiting questions, and stale answer/dismiss handlers cannot affect
+a newer question. Read failures and the current summary-list limit are visible
+with a link to review conversations in Studio; no complete-discovery claim is
+made beyond the existing API's returned conversation window.
+
 Authenticated routes share one session-recovery host in the root layout. When a
 program API request receives HTTP 401, it can ask the person to sign in again
 without replacing the current workspace or its unsaved edits. Successful recovery
