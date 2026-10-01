@@ -1,8 +1,8 @@
 // Core's label for a packet a recovery's exploration returned, and the
 // qualified form a handle taken from that packet is written in.
 //
-// A domain numbers its handles per packet, so `target.3` in the failure packet
-// and `target.3` in a page the exploration revealed are different controls.
+// A domain numbers its handles per packet, so `t3` in the failure packet
+// and `t3` in a page the exploration revealed are different controls.
 // The label says which packet a handle came from. Four places depend on it:
 // the recovery's exploration writes it, the packet builder carries only
 // packets labelled with it, the provider shows the model the qualified form,

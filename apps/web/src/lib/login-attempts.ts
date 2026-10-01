@@ -115,21 +115,39 @@ export function loginClientAddress(request: Pick<Request, "headers">, trustProxy
 }
 
 async function acquireFileLock(lockPath: string): Promise<() => Promise<void>> {
+  let lastAccessError: unknown;
   for (let attempt = 0; attempt < 100; attempt += 1) {
+    let handle: Awaited<ReturnType<typeof open>>;
     try {
-      const handle = await open(lockPath, "wx");
-      await handle.writeFile(String(process.pid));
-      return async () => {
-        await handle.close();
-        await rm(lockPath, { force: true });
-      };
+      handle = await open(lockPath, "wx");
     } catch (error) {
-      if (!isErrorCode(error, "EEXIST")) throw error;
-      const lockStat = await stat(lockPath).catch(() => null);
-      if (lockStat && Date.now() - lockStat.mtimeMs > 10_000) await rm(lockPath, { force: true });
+      const exists = isErrorCode(error, "EEXIST");
+      const accessDenied = process.platform === "win32" && isErrorCode(error, "EPERM");
+      if (!exists && !accessDenied) throw error;
+      const lockStat = await stat(lockPath).catch((probeError: unknown) => {
+        if (isErrorCode(probeError, "ENOENT")) return null;
+        throw probeError;
+      });
+      if (accessDenied && lockStat && !lockStat.isFile()) throw error;
+      if (accessDenied) lastAccessError = error;
+      if (exists && lockStat?.isFile() && Date.now() - lockStat.mtimeMs > 10_000) await rm(lockPath, { force: true });
       await new Promise((resolve) => setTimeout(resolve, Math.min(100, 5 + attempt * 2)));
+      continue;
     }
+    try {
+      await handle.writeFile(String(process.pid));
+    } catch (error) {
+      // Initialization never enters contention recovery; preserve its failure even if cleanup fails.
+      await handle.close().catch(/* best-effort: preserve original PID initialization failure */ () => undefined);
+      await rm(lockPath, { force: true }).catch(/* best-effort: preserve original PID initialization failure */ () => undefined);
+      throw error;
+    }
+    return async () => {
+      await handle.close();
+      await rm(lockPath, { force: true });
+    };
   }
+  if (lastAccessError !== undefined) throw lastAccessError;
   throw new Error("Login attempt store is busy. Try again shortly.");
 }
 

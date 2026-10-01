@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -42,6 +43,10 @@ const detailCommands = {
     downloadHref: () => "/api/programs/automation-studio/run-datasets/p/r/d?format=csv"
   }
 } as any;
+
+// Request and panel ownership lives in the keyed RuntimeLogScope child.
+const runtimeLogSource = readFileSync(new URL("../RunActionLogView.tsx", import.meta.url), "utf8");
+const runtimeLogScopeSource = runtimeLogSource.slice(runtimeLogSource.indexOf("function RuntimeLogScope("));
 
 describe("Automation Runs workspace", () => {
   it("keeps runtime history and replay validation in the canonical view", () => {
@@ -247,7 +252,7 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("State and Effects");
     expect(html).toContain("automation-runtime-attempt-row");
     expect(html).not.toContain("until-expanded");
-    const source = RunActionLogViewContent.toString();
+    const source = runtimeLogScopeSource;
     expect(source).toContain("commands.listActions");
     expect(source).toContain("commands.loadDetail");
     expect(source).toContain("commands.listEvents");
@@ -275,7 +280,7 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain('aria-label="Run datasets"');
     expect(html).toContain("Orders");
     expect(html).toContain("3");
-    expect(RunActionLogViewContent.toString()).toContain("commands.datasets");
+    expect(runtimeLogScopeSource).toContain("commands.datasets");
   });
 
   it("opens the log shell before detail and keeps events opt in", () => {
@@ -293,7 +298,7 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("run.pending");
     expect(html).toContain("No actions loaded yet");
     expect(html).not.toContain("Ordered Event Stream");
-    expect(RunActionLogViewContent.toString()).toContain("eventPage.loaded ? eventPage.lastSequence : 0");
+    expect(runtimeLogScopeSource).toContain("eventPage.loaded ? eventPage.lastSequence : 0");
   });
 
   it("bounds action rows before detail panes are opened", () => {
@@ -330,8 +335,8 @@ describe("Automation Runtime workspace", () => {
     expect(querySource).toContain("get-flow-run-detail");
     expect(querySource).toContain("list-flow-run-actions");
     expect(querySource).toContain("list-flow-run-events");
-    expect(RunActionLogViewContent.toString()).toContain("setSelectedAttempt(null)");
-    expect(RunActionLogViewContent.toString()).toContain('setActionDetailView("summary")');
+    expect(runtimeLogScopeSource).toContain("setSelectedAttempt(null)");
+    expect(runtimeLogScopeSource).toContain('setActionDetailView("summary")');
   });
 
   it("builds typed inputs and reports incomplete Flow readiness", () => {

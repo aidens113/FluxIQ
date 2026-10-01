@@ -35,7 +35,9 @@ export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEv
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const document = panel.ownerDocument;
+    const active = document.activeElement as HTMLElement | null;
+    const returnFocus = active && typeof active.focus === "function" ? active : null;
     const root = panel.closest<HTMLElement>("[data-overlay-root]") ?? panel;
     const release = acquireOverlayEnvironment(document, {
       mode: props.overlayMode ?? "modal",
@@ -46,7 +48,22 @@ export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEv
       onEscape: () => behaviorRef.current.onClose(),
       trapFocus: true
     });
-    const initial = panel.querySelector<HTMLElement>("[data-autofocus], [autofocus], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)");
+    function eligible(element: HTMLElement) {
+      const visibility = element.ownerDocument.defaultView?.getComputedStyle(element).visibility;
+      const focusable = ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(element.tagName)
+        || element.hasAttribute("tabindex") || (element.tagName === "A" && element.hasAttribute("href")) || element.isContentEditable;
+      return focusable && element.isConnected && !element.matches(":disabled") && visibility !== "hidden" && visibility !== "collapse"
+        && !(element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden")
+        && !element.closest('[hidden], [inert], [aria-hidden="true"]') && element.getClientRects().length > 0;
+    }
+    function first(scope: ParentNode, selector: string) {
+      return Array.from(scope.querySelectorAll<HTMLElement>(selector)).find(eligible);
+    }
+    const content = panel.querySelector(".modal-operation-boundary") ?? panel;
+    // Selector lists use DOM order, so explicit autofocus needs separate tiers.
+    const initial = first(panel, "[data-autofocus]") ?? first(panel, "[autofocus]")
+      ?? first(content, "input, select, textarea") ?? first(content, 'button, a[href], [tabindex], [contenteditable="true"]')
+      ?? first(panel, "button");
     (initial ?? panel).focus({ preventScroll: true });
     return () => {
       release();

@@ -1,9 +1,10 @@
-import { createElement } from "react";
+import { createElement, useLayoutEffect } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), useRouter: () => ({ push }) }));
+const query = vi.hoisted(() => ({ value: "" }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.value), useRouter: () => ({ push }) }));
 import { GetStartedClient } from "../GetStartedClient";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,11 +30,29 @@ const textOf = (node: ReactTestInstance): string => node.children.map((child) =>
 const step = (root: ReactTestInstance, id: string) => root.find((node) => node.type === "li" && node.props["data-step"] === id);
 
 let renderer: ReactTestRenderer | null = null;
-beforeEach(() => push.mockReset());
+beforeEach(() => { push.mockReset(); query.value = ""; });
 afterEach(async () => {
   if (renderer) await act(async () => { renderer!.unmount(); });
   renderer = null;
   vi.unstubAllGlobals();
+});
+
+it.each(["domainId=web%2Fteam&return=https%3A%2F%2Felsewhere.invalid&project=old", "domainId=space+team", ""])("preserves only current domain in Secret Keys setup link for %s", async (scope) => {
+  query.value = scope; stubFetch({ gateway: { ok: true, payload: { sessions: [], webRuntime: { clientGatewayListening: true } } }, keys: { ok: true, payload: { keys: [] } } });
+  const view = await render(); const link = view.root.findByType("a"); const url = new URL(link.props.href, "https://panel.invalid");
+  expect(url.pathname).toBe("/programs/secret-keys"); const expectedDomain = new URLSearchParams(scope).get("domainId"); expect([...url.searchParams]).toEqual(expectedDomain ? [["domainId", expectedDomain]] : []); expect(push).not.toHaveBeenCalled();
+});
+it("rejects retained start after route replacement but permits current activation", async () => {
+  query.value = "domainId=first"; stubFetch({ gateway: { ok: true, payload: { sessions: [] } }, keys: { ok: true, payload: { keys: [] } } });
+  const view = await render(); const retained = view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick;
+  query.value = "domainId=second"; await act(async () => view.update(<GetStartedClient pollMs={0} />)); act(() => retained()); expect(push).not.toHaveBeenCalled();
+  act(() => view.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick()); expect(push).toHaveBeenCalledWith("/programs/automation-studio?start=describe&domainId=second");
+});
+it("rejects retained start during route unmount layout commit", async () => {
+  stubFetch({ gateway: { ok: true, payload: { sessions: [] } }, keys: { ok: true, payload: { keys: [] } } }); let retained = () => {};
+  function Parent({ show }: { show: boolean }) { useLayoutEffect(() => { if (!show) retained(); }, [show]); return show ? <GetStartedClient pollMs={0} /> : null; }
+  await act(async () => { renderer = create(<Parent show />); }); retained = renderer!.root.find((node) => node.type === "button" && textOf(node).startsWith("Describe an automation")).props.onClick;
+  await act(async () => renderer!.update(<Parent show={false} />)); expect(push).not.toHaveBeenCalled();
 });
 
 async function render() {
@@ -44,6 +63,22 @@ async function render() {
 }
 
 describe("/get-started", () => {
+  it.each([
+    ["describe", "Describe an automation"],
+    ["demonstrate", "Show FluxIQ how"],
+    ["extract", "Extract data from this page"]
+  ])("emits %s with only the current encoded domain scope", async (option, label) => {
+    query.value = "domainId=web%2Fteam&return=https%3A%2F%2Felsewhere.invalid&project=old";
+    stubFetch({ gateway: { ok: true, payload: { sessions: [], webRuntime: { clientGatewayListening: true } } }, keys: { ok: true, payload: { keys: [] } } });
+    const view = await render();
+    expect(push).not.toHaveBeenCalled();
+    const button = view.root.find((node) => node.type === "button" && textOf(node).startsWith(label!));
+    act(() => button.props.onClick());
+    const url = new URL(push.mock.calls[0]![0], "https://panel.invalid");
+    expect(url.pathname).toBe("/programs/automation-studio");
+    expect([...url.searchParams]).toEqual([["start", option], ["domainId", "web/team"]]);
+  });
+
   it("reads both live snapshots and shows the runtime done, pairing current, and the key step blocked", async () => {
     const requested = stubFetch({
       gateway: { ok: true, payload: { enabled: true, sessions: [], pairings: [], webRuntime: { clientGatewayListening: true } } },

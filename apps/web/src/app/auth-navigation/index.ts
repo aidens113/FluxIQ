@@ -1,0 +1,1 @@
+export { localAuthDestination } from "./localAuthDestination";

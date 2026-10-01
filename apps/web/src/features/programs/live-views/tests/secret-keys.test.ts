@@ -29,9 +29,10 @@ describe("SecretKeysLive view model", () => {
 
   it("loads real Domain and per-project Flow scope options lazily", () => {
     const source = readFileSync(new URL("../secret-keys.tsx", import.meta.url), "utf8");
-    expect(source).toContain('fetch("/api/programs"');
-    expect(source).toContain('automationApi.get<{ projects:');
-    expect(source).toContain('"list-flow-summaries", { projectId }');
+    const catalog = readFileSync(new URL("../../secret-scope-catalog/useSecretScopeCatalog.ts", import.meta.url), "utf8");
+    expect(catalog).toContain('fetch("/api/programs"');
+    expect(catalog).toContain('api.get<{ projects:');
+    expect(catalog).toContain('"list-flow-summaries", { projectId }');
     expect(source).toContain('label="Project"');
   });
 
@@ -44,8 +45,9 @@ describe("SecretKeysLive view model", () => {
 
   it("routes create, update, rotate, reveal, and delete through the operation gate", () => {
     const source = readFileSync(new URL("../secret-keys.tsx", import.meta.url), "utf8");
+    expect(source).toContain("operation.run(name");
     for (const operation of ["create-key", "update-key", "rotate-key", "reveal-key", "delete-key"]) {
-      expect(source).toContain(`operation.run("${operation}"`);
+      expect(source).toContain(`mutate("${operation}"`);
     }
   });
 });

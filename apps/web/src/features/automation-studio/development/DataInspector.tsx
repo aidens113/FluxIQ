@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { Button, DataTable, Modal, Segmented } from "../../programs/shared-ui";
 import type { AutomationStudioCacheStats } from "../cache/data-cache";
@@ -62,38 +62,75 @@ type InspectorApi = {
 
 const MAX_PRELOAD_METRICS = 120;
 
-export function AutomationStudioDataInspector(props: {
+type InspectorProps = {
   api: InspectorApi;
   activeProjectId?: string | null;
   cacheStats(): AutomationStudioCacheStats;
   onClose(): void;
-}) {
+};
+
+export function AutomationStudioDataInspector(props: InspectorProps) {
+  const projectId = props.activeProjectId ?? null;
+  const identity = useRef({ api: props.api, projectId, generation: 0 });
+  if (identity.current.api !== props.api || identity.current.projectId !== projectId) identity.current = { api: props.api, projectId, generation: identity.current.generation + 1 };
+  const generation = identity.current.generation;
+  const ownerCurrent = useCallback(() => identity.current.generation === generation, [generation]);
+  return <InspectorWorkspace key={generation} {...props} ownerCurrent={ownerCurrent} />;
+}
+
+function InspectorWorkspace(props: InspectorProps & { ownerCurrent(): boolean }) {
   const client = useAutomationStudioDevelopmentSnapshot();
   const preloadMetrics = useAutomationStudioPreloadMetrics();
   const [view, setView] = useState("Overview");
-  const [serverMetrics, setServerMetrics] = useState<ServerMetric[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [server, setServer] = useState({ metrics: [] as ServerMetric[], confirmed: false, pending: true, error: "" });
+  const serverRef = useRef(server); serverRef.current = server;
+  const [pendingOperation, setPendingOperation] = useState<"read" | "clear" | null>(null);
+  const [clearFeedback, setClearFeedback] = useState({ text: "", uncertain: false });
+  const operation = useRef({ epoch: 0, kind: null as "read" | "clear" | null });
+  const mounted = useRef(false);
+  const latest = useRef(props); latest.current = props;
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; ++operation.current.epoch; }; }, []);
+  const current = () => mounted.current && props.ownerCurrent();
+  function begin(kind: "read" | "clear") {
+    if (!current() || operation.current.kind) return null;
+    operation.current = { epoch: operation.current.epoch + 1, kind };
+    setPendingOperation(kind); return operation.current.epoch;
+  }
+  function finish(epoch: number) {
+    if (!current() || operation.current.epoch !== epoch) return false;
+    operation.current.kind = null; setPendingOperation(null); return true;
+  }
   const clearUiCache = useCallback(async () => {
-    if (!props.activeProjectId) return;
-    setLoading(true);
-    setError("");
-    const result = await props.api.post("delete-project-ui-cache", { projectId: props.activeProjectId });
-    setLoading(false);
-    if (!result.ok) setError(result.error ?? "UI cache could not be cleared.");
-  }, [props.api, props.activeProjectId]);
+    if (!props.activeProjectId || serverRef.current.pending) return;
+    const epoch = begin("clear"); if (epoch === null) return;
+    const valid = () => current() && operation.current.epoch === epoch;
+    setClearFeedback({ text: "UI cache clear request is pending.", uncertain: false });
+    try {
+      const result = await props.api.post("delete-project-ui-cache", { projectId: props.activeProjectId });
+      if (valid()) setClearFeedback(result?.ok === true ? { text: "UI cache clear was acknowledged.", uncertain: false } : { text: "UI cache clear was not confirmed. It may have completed.", uncertain: true });
+    } catch { if (valid()) setClearFeedback({ text: "UI cache clear was not confirmed. It may have completed.", uncertain: true }); }
+    finally { finish(epoch); }
+  }, [props.api, props.activeProjectId, props.ownerCurrent]);
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    const result = await props.api.get<{ metrics?: ServerMetric[] }>("get-performance-metrics");
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error ?? "Performance metrics could not be loaded.");
-      return;
-    }
-    setServerMetrics(result.payload?.metrics ?? []);
-  }, [props.api]);
+    const epoch = begin("read"); if (epoch === null) return;
+    const valid = () => current() && operation.current.epoch === epoch;
+    setServer((value) => ({ ...value, pending: true, error: "" }));
+    try {
+      const result = await props.api.get<{ metrics?: ServerMetric[] }>("get-performance-metrics");
+      if (!valid()) return;
+      const metrics = result?.ok === true ? readMetrics(result.payload) : null;
+      if (metrics === null) { setServer((value) => ({ ...value, error: "Server metrics could not be loaded. Refresh server to try again." })); return; }
+      setServer({ metrics, confirmed: true, pending: true, error: "" });
+    } catch { if (valid()) setServer((value) => ({ ...value, error: "Server metrics could not be loaded. Refresh server to try again." })); }
+    finally { if (finish(epoch)) setServer((value) => ({ ...value, pending: false })); }
+  }, [props.api, props.ownerCurrent]);
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const serverMetrics = server.metrics;
+  const loading = server.pending || pendingOperation !== null;
+  const lastConfirmed = server.confirmed && (server.pending || Boolean(server.error));
+  const endpointEmpty = !server.confirmed ? "Server metrics are not confirmed." : lastConfirmed ? "No endpoint samples in the last confirmed read." : "No endpoint samples.";
+  const sqlEmpty = !server.confirmed ? "Server metrics are not confirmed." : lastConfirmed ? "No SQL samples in the last confirmed read." : "No SQL samples.";
 
   const endpointMetrics = useMemo(() => serverMetrics.filter((metric) => metric.kind === "endpoint").slice(-100).reverse(), [serverMetrics]);
   const sqlMetrics = useMemo(() => serverMetrics.filter((metric) => metric.kind === "sql").slice(-100).reverse(), [serverMetrics]);
@@ -103,19 +140,22 @@ export function AutomationStudioDataInspector(props: {
   const latestRender = client.renderMetrics.at(-1);
   const recentLongTasks = client.longTasks.slice(-20).reverse();
 
-  return <Modal className="automation-data-inspector" description="Live development telemetry for bounded data loading and browser work." onClose={props.onClose} title="Data Flow Inspector">
+  return <Modal className="automation-data-inspector" description="Live development telemetry for bounded data loading and browser work." onClose={() => { if (current()) latest.current.onClose(); }} title="Data Flow Inspector">
     <div className="automation-data-inspector-toolbar">
       <Segmented label="Inspector view" onChange={setView} options={["Overview", "Requests", "SQL", "Browser", "Preload"]} value={view} />
       <Button busy={loading} onClick={() => void refresh()} size="compact"><RefreshCw size={14} aria-hidden />Refresh server</Button>
       {props.activeProjectId ? <Button busy={loading} onClick={() => void clearUiCache()} size="compact"><Trash2 size={14} aria-hidden />Clear UI cache</Button> : null}
     </div>
-    {error ? <div className="automation-data-inspector-error" role="alert">{error}</div> : null}
+    {server.pending ? <p role="status">Loading server metrics...</p> : null}
+    {server.error ? <div className="automation-data-inspector-error" role="alert">{server.error}</div> : null}
+    {lastConfirmed ? <p role="status">Showing the last confirmed server samples; they may be stale.</p> : null}
+    {clearFeedback.text ? <p className={clearFeedback.uncertain ? "automation-data-inspector-error" : undefined} role={clearFeedback.uncertain ? "alert" : "status"}>{clearFeedback.text}</p> : null}
     <div className="automation-data-inspector-body">
       {view === "Overview" ? <>
         <div className="automation-data-inspector-summary">
           <Metric label="Active requests" value={String(client.activeRequests.length)} />
           <Metric label="Client responses" value={String(client.apiMetrics.length)} />
-          <Metric label="SQL samples" value={String(sqlMetrics.length)} />
+          <Metric label="SQL samples" value={server.confirmed ? String(sqlMetrics.length) : server.pending ? "Loading" : "Unavailable"} />
           <Metric label="Cache" value={formatBytes(cache.estimatedBytes)} />
           <Metric label="Mounted graph" value={client.graph ? `${client.graph.nodesMounted} nodes / ${client.graph.edgesMounted} edges` : "None"} />
           <Metric label="Long tasks" value={String(client.longTasks.length)} />
@@ -132,7 +172,7 @@ export function AutomationStudioDataInspector(props: {
           ]} />
         </InspectorSection>
         <InspectorSection title="Latest server endpoints">
-          <EndpointTable metrics={endpointMetrics.slice(0, 8)} />
+          <EndpointTable metrics={endpointMetrics.slice(0, 8)} loading={server.pending} empty={endpointEmpty} />
         </InspectorSection>
       </> : null}
       {view === "Requests" ? <>
@@ -146,10 +186,10 @@ export function AutomationStudioDataInspector(props: {
             metric.endpoint, metric.classification, formatDuration(metric.elapsedMs), formatBytes(metric.responseBytes), metric.ok ? "OK" : "Failed"
           ])} />
         </InspectorSection>
-        <InspectorSection title="Recent server endpoints"><EndpointTable metrics={endpointMetrics} /></InspectorSection>
+        <InspectorSection title="Recent server endpoints"><EndpointTable metrics={endpointMetrics} loading={server.pending} empty={endpointEmpty} /></InspectorSection>
       </> : null}
       {view === "SQL" ? <InspectorSection title="Recent SQL operations">
-        <DataTable label="Recent Studio SQL operations" columns={["Repository", "Statement", "Time", "Rows", "Scan"]} compact empty={loading ? "Loading SQL metrics..." : "No SQL samples."} rows={sqlMetrics.map((metric) => [
+        <DataTable label="Recent Studio SQL operations" columns={["Repository", "Statement", "Time", "Rows", "Scan"]} compact loading={server.pending} empty={sqlEmpty} rows={sqlMetrics.map((metric) => [
           `${metric.repositoryKind ?? "unknown"} / ${metric.databaseName ?? "database"}`,
           `${metric.operation ?? "query"} ${metric.statementType ?? ""} [${metric.fingerprint ?? ""}]`,
           formatDuration(metric.elapsedMs),
@@ -208,6 +248,29 @@ export function AutomationStudioDataInspector(props: {
       </> : null}
     </div>
   </Modal>;
+}
+
+function readMetrics(payload: unknown): ServerMetric[] | null {
+  if (payload == null) return [];
+  if (typeof payload !== "object" || Array.isArray(payload)) return null;
+  const metrics = (payload as { metrics?: unknown }).metrics;
+  if (metrics == null) return [];
+  if (!Array.isArray(metrics)) return null;
+  const accepted: ServerMetric[] = [];
+  const textFields = ["repositoryKind", "databaseName", "operation", "statementType", "fingerprint", "programId", "endpoint"];
+  const numberFields = ["rowsReturned", "rowsChanged", "responseBytes", "sqlDurationMs", "sqlQueryCount", "sqlRowsReturned"];
+  for (const value of metrics) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const metric = value as Record<string, unknown>;
+    if (typeof metric.kind !== "string") return null;
+    if (metric.kind !== "sql" && metric.kind !== "endpoint") continue;
+    if (typeof metric.elapsedMs !== "number" || !Number.isFinite(metric.elapsedMs) || typeof metric.ok !== "boolean") return null;
+    if (textFields.some((field) => metric[field] != null && typeof metric[field] !== "string")) return null;
+    if (numberFields.some((field) => metric[field] != null && (typeof metric[field] !== "number" || !Number.isFinite(metric[field])))) return null;
+    if (metric.possibleFullScan != null && typeof metric.possibleFullScan !== "boolean") return null;
+    accepted.push(value as ServerMetric);
+  }
+  return accepted;
 }
 
 function useAutomationStudioPreloadMetrics(): RecordedPreloadMetric[] {
@@ -270,8 +333,8 @@ function isPreloadMetric(value: unknown): value is PreloadMetric {
     && (metric.phase === "queued" || metric.phase === "task-started" || metric.phase === "task-finished" || metric.phase === "cancelled" || metric.phase === "drained");
 }
 
-function EndpointTable(props: { metrics: ServerMetric[] }) {
-  return <DataTable label="Studio server endpoint metrics" columns={["Endpoint", "Time", "Bytes", "SQL", "Rows", "Result"]} compact empty="No endpoint samples." rows={props.metrics.map((metric) => [
+function EndpointTable(props: { metrics: ServerMetric[]; loading: boolean; empty: string }) {
+  return <DataTable label="Studio server endpoint metrics" columns={["Endpoint", "Time", "Bytes", "SQL", "Rows", "Result"]} compact loading={props.loading} empty={props.empty} rows={props.metrics.map((metric) => [
     `${metric.programId ?? "program"}/${metric.endpoint ?? "endpoint"}`,
     formatDuration(metric.elapsedMs),
     formatBytes(metric.responseBytes ?? 0),

@@ -1,12 +1,208 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DurableLoginAttemptTracker, type LoginAttemptState, LoginAttemptTracker, loginClientAddress } from "../login-attempts";
 
 const tempRoots: string[] = [];
-afterEach(() => {
+const testHandles: Array<fsPromises.FileHandle> = [];
+vi.mock("node:fs/promises", async (importOriginal) => ({ ...await importOriginal<typeof import("node:fs/promises")>() }));
+const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
+afterEach(async () => {
+  vi.restoreAllMocks();
+  Object.defineProperty(process, "platform", originalPlatform);
+  await Promise.all(testHandles.splice(0).map((handle) => handle.close().catch(() => undefined)));
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe("durable login lock failure recovery", () => {
+  const failure = (code: string) => Object.assign(new Error(`Synthetic ${code}`), { code });
+  const trackerFor = (filePath: string) => new DurableLoginAttemptTracker(filePath, { ...durableOptions, maxAttempts: 10 }, () => 1_000);
+  const windows = () => Object.defineProperty(process, "platform", { ...originalPlatform, value: "win32" });
+  const immediateWaits = () => vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void) => {
+    queueMicrotask(callback);
+    return 0;
+  }) as typeof setTimeout);
+
+  it("recovers a Windows exclusive-open EPERM without losing concurrent durable updates", async () => {
+    windows();
+    const filePath = storePath();
+    const realOpen = fsPromises.open;
+    const denied = failure("EPERM");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValueOnce(denied).mockImplementation(realOpen);
+    const first = trackerFor(filePath);
+    const second = trackerFor(filePath);
+    const settled = await Promise.allSettled([first.registerFailure("client:user"), second.registerFailure("client:user")]);
+    expect(settled.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(settled.map((result) => result.status === "fulfilled" ? result.value.count : null).sort()).toEqual([1, 2]);
+    expect(storedAttempts(filePath)["client:user"]?.count).toBe(2);
+    expect(open.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(existsSync(`${filePath}.lock`)).toBe(false);
+  });
+
+  it("does not reclaim a stale regular lock merely because exclusive open returned EPERM", async () => {
+    windows();
+    const filePath = storePath();
+    const lockPath = `${filePath}.lock`;
+    writeFileSync(lockPath, "synthetic-owner");
+    const stale = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, stale, stale);
+    const realOpen = fsPromises.open;
+    let calls = 0;
+    vi.spyOn(fsPromises, "open").mockImplementation(async (name, flags, mode) => {
+      calls += 1;
+      if (calls === 1) throw failure("EPERM");
+      expect(readFileSync(lockPath, "utf8")).toBe("synthetic-owner");
+      rmSync(lockPath);
+      return realOpen(name, flags, mode);
+    });
+    expect((await trackerFor(filePath).registerFailure("client:user")).count).toBe(1);
+    expect(calls).toBe(2);
+  });
+
+  it("preserves persistent Windows denied access after a bounded100 attempts", async () => {
+    windows();
+    immediateWaits();
+    const filePath = storePath();
+    const denied = failure("EPERM");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(denied);
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(100);
+    expect(existsSync(filePath)).toBe(false);
+    expect(existsSync(`${filePath}.lock`)).toBe(false);
+  });
+
+  it("retains the original denied error when later contention exhausts the same budget", async () => {
+    windows();
+    immediateWaits();
+    const filePath = storePath();
+    const denied = failure("EPERM");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValueOnce(denied).mockRejectedValue(failure("EEXIST"));
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(100);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it("leaves a stale regular lock intact throughout persistent denied acquisition", async () => {
+    windows();
+    immediateWaits();
+    const filePath = storePath();
+    const lockPath = `${filePath}.lock`;
+    writeFileSync(lockPath, "synthetic-owner");
+    const stale = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, stale, stale);
+    const denied = failure("EPERM");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(denied);
+    const remove = vi.spyOn(fsPromises, "rm");
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(100);
+    expect(remove).not.toHaveBeenCalled();
+    expect(readFileSync(lockPath, "utf8")).toBe("synthetic-owner");
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it.each(["EPERM", "EEXIST"])("propagates a denied lock probe after %s instead of assuming disappearance", async (code) => {
+    windows();
+    immediateWaits();
+    const filePath = storePath();
+    const denied = failure("EACCES");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(failure(code));
+    vi.spyOn(fsPromises, "stat").mockRejectedValue(denied);
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it("does not retry Windows EPERM when the lock path is a directory", async () => {
+    windows();
+    const filePath = storePath();
+    mkdirSync(`${filePath}.lock`);
+    const denied = failure("EPERM");
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(denied);
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(existsSync(`${filePath}.lock`)).toBe(true);
+  });
+
+  it.each([["win32", "EACCES"], ["win32", "EIO"], ["linux", "EPERM"]])("rejects %s %s immediately", async (platform, code) => {
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: platform });
+    const filePath = storePath();
+    const denied = failure(code);
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(denied);
+    const probe = vi.spyOn(fsPromises, "stat");
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("keeps existing bounded busy feedback for EEXIST after lock disappearance probes", async () => {
+    immediateWaits();
+    const filePath = storePath();
+    const open = vi.spyOn(fsPromises, "open").mockRejectedValue(failure("EEXIST"));
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toThrow("Login attempt store is busy. Try again shortly.");
+    expect(open).toHaveBeenCalledTimes(100);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it.each(["EPERM", "EEXIST"])("cleans up failed PID initialization %s without treating it as contention", async (code) => {
+    windows();
+    const filePath = storePath();
+    const denied = failure(code);
+    const realOpen = fsPromises.open;
+    let closed = false;
+    const open = vi.spyOn(fsPromises, "open").mockImplementation(async (name, flags, mode) => {
+      const handle = await realOpen(name, flags, mode);
+      testHandles.push(handle);
+      vi.spyOn(handle, "writeFile").mockRejectedValue(denied);
+      const realClose = handle.close.bind(handle);
+      vi.spyOn(handle, "close").mockImplementation(async () => { await realClose(); closed = true; });
+      return handle;
+    });
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(closed).toBe(true);
+    expect(existsSync(`${filePath}.lock`)).toBe(false);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it("preserves PID-write failure even when owned cleanup also fails", async () => {
+    const filePath = storePath();
+    const denied = failure("EPERM");
+    const realOpen = fsPromises.open;
+    let closed = false;
+    vi.spyOn(fsPromises, "open").mockImplementation(async (name, flags, mode) => {
+      const handle = await realOpen(name, flags, mode);
+      testHandles.push(handle);
+      vi.spyOn(handle, "writeFile").mockRejectedValue(denied);
+      const realClose = handle.close.bind(handle);
+      vi.spyOn(handle, "close").mockImplementation(async () => { await realClose(); closed = true; });
+      return handle;
+    });
+    vi.spyOn(fsPromises, "rm").mockRejectedValue(failure("EIO"));
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(closed).toBe(true);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it("attempts owned removal and preserves PID-write failure when close also rejects", async () => {
+    const filePath = storePath();
+    const denied = failure("EPERM");
+    const realOpen = fsPromises.open;
+    vi.spyOn(fsPromises, "open").mockImplementation(async (name, flags, mode) => {
+      const handle = await realOpen(name, flags, mode);
+      testHandles.push(handle);
+      vi.spyOn(handle, "writeFile").mockRejectedValue(denied);
+      const realClose = handle.close.bind(handle);
+      vi.spyOn(handle, "close").mockImplementation(async () => { await realClose(); throw failure("EIO"); });
+      return handle;
+    });
+    const remove = vi.spyOn(fsPromises, "rm");
+    await expect(trackerFor(filePath).registerFailure("client:user")).rejects.toBe(denied);
+    expect(remove).toHaveBeenCalledWith(`${filePath}.lock`, { force: true });
+    expect(existsSync(`${filePath}.lock`)).toBe(false);
+    expect(existsSync(filePath)).toBe(false);
+  });
 });
 
 describe("login attempt tracking", () => {
