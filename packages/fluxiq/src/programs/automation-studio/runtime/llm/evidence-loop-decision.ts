@@ -23,6 +23,7 @@ import {
   type AutomationStudioFlowDraftAmendmentChange
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "./evidence-loop/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceCompletionCheck,
@@ -68,12 +69,13 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 export function automationStudioLlmEvidenceParseToolExecutionResult(
   value: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
   effect: AutomationStudioLlmEvidenceTool["effect"]
-): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
+): { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] } | undefined {
   if (isRecord(value) && value.kind === "llm_evidence_tool_execution") {
-    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
+    if (!exactKeys(value, ["kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "draft"]) || !isJsonValue(value.evidence) || typeof value.effectApplied !== "boolean"
       || (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean")
       || (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode)))) return undefined;
     const draft = readCallRecord(value.draft);
+    const diagnostic = automationStudioLlmEvidenceDiagnostic(value.diagnostic);
     if (value.draft !== undefined && !draft) return undefined;
     // **The key list had to widen before the domain emitted either of these.**
     // It is exact, so a member a caller learns to report and this check has not
@@ -92,6 +94,7 @@ export function automationStudioLlmEvidenceParseToolExecutionResult(
       ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
       ...(value.resultCode ? { resultCode: value.resultCode } : {}),
       ...(closedCode(value.resultReason) ? { resultReason: value.resultReason as string } : {}),
+      ...(diagnostic ? { diagnostic } : {}),
       // A count, read as one and never as a code: the caller saying it has just
       // answered with what it already answered. Dropped rather than fatal for
       // the same reason the two beside it are, and held to two or more because

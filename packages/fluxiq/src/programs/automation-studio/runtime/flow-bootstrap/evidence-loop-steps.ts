@@ -24,6 +24,8 @@
 // nothing the model wrote passes through here, which is what lets a step ride
 // on an audit detail that no redaction rule covers.
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
+import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../llm/evidence-loop/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceLoopAnswerability,
@@ -102,6 +104,8 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
    * so it rides on this record under the same rule as everything else here.
    */
   resultReason?: string;
+  /** An optional domain-screened structural diagnostic, opaque to Core. */
+  diagnostic?: JsonObject;
   /**
    * The node the call ran, as the domain resolved it against its own catalog.
    *
@@ -216,6 +220,7 @@ export function automationStudioFlowBootstrapEvidenceSteps(
 
 function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBootstrapEvidenceTraceRow): AutomationStudioFlowBootstrapEvidenceStep[] {
   const usage = stepUsage(entry.usage);
+  const diagnostic = automationStudioLlmEvidenceDiagnostic(entry.diagnostic);
   const amendmentsRefused = stepAmendmentRefusals(entry.amendmentsRefused);
   const progress = evidenceStepProgress(entry.progress);
   const draftChange = evidenceStepDraftChange(entry.draftChange);
@@ -230,6 +235,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     // a tool returned and nothing the model wrote travels on it, and these two
     // arrive from a domain that could always put a sentence in one.
     ...(entry.resultReason && EVIDENCE_STEP_CODE.test(entry.resultReason) ? { resultReason: entry.resultReason } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
     ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
     ...(nonNegative(entry.amended) ? { amended: entry.amended as number } : {}),
@@ -305,7 +311,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "diagnostic", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -329,6 +335,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.amended !== undefined && !boundedInteger(step.amended, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations))
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
+    const diagnostic = automationStudioLlmEvidenceDiagnostic(step.diagnostic);
     if (step.usage !== undefined && !usage) return null;
     const amendmentsRefused = parseStepAmendmentRefusals(step.amendmentsRefused);
     if (step.amendmentsRefused !== undefined && !amendmentsRefused) return null;
@@ -351,6 +358,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
       ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {}),
       ...(step.resultReason !== undefined ? { resultReason: step.resultReason } : {}),
+      ...(diagnostic ? { diagnostic } : {}),
       ...(step.nodeId !== undefined ? { nodeId: step.nodeId } : {}),
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
       ...(step.amended !== undefined ? { amended: step.amended as number } : {}),

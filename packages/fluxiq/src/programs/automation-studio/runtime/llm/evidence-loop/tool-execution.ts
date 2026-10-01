@@ -26,6 +26,8 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    * diagnostic and the call it describes still happened.
    */
   resultReason?: string;
+  /** Optional caller-screened diagnostic; Core transports it without domain interpretation. */
+  diagnostic?: JsonObject;
   /**
    * How many times in a row this caller has now answered this call with what it
    * had already answered, counting from 2 -- the caller's own statement that
