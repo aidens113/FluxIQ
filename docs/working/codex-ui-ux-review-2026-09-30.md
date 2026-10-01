@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
-Status: Active
-Status detail: Eleventh gates complete; twelfth floating/Tooltip independently checked, DataInspector and settings navigation implementations active.
+Status: Paused
+Status detail: User-requested credit wind-down; coherent units checkpointed, commands closed, resume handoff saved.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -11,90 +11,75 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
-Latest root twelfth narrow checks: floating139/native0/22.78s; combined
-Tooltip23/JsonViewer7/download5/shared contracts20 =55/native0/4.58s.
-CodeViewer cleanup independently19/strict0 checkpoint1d4d2000. JsonViewer
-long-string guidance reproduced3fail/4pass before local flag fix. Nine-root
-strict83805 native0, nine roots and two declarations,0diagnostics; checkpoint
-91a29dd2. DataInspector/settings exact four paths frozen and source/tests read;
-root owning22293 native0 fivefiles79/21.19s and strict80956 fourroots plus two
-declarations0diagnostics. Core full31117/types65532/build34521 active, all
-source frozen; structure46579 solely inherited protected4506/4505.
-Root owns shared docs/review;
-exact reports and briefs are downstream, latest twelfth-supervisor-verification.
-Extension root208/strict17roots0; full58454 failed2062pass1lazy-tailfailure,
-unchanged narrow6pass leaves full unresolved. Public state alias restored after
-types/build failures; corrected types1691/build11533 native0, structure12361
-native0. New downstream AskControls two-path unit and test-only lazy-tail
-ordering probe released; third worker audits hierarchy dialog readiness.
-No browser certification or push.
+Paused at the user's request to wind down with6% credits remaining. All three
+workers are stopped; all supervisor/worker check commands are closed. No new
+assignment is active. Paired task t224 worktrees/branches are preserved for
+resume; Claude owns integration. Root made no merge/push and touched no main
+checkout, protected implementation, live browser/Lab/provider/panel or private
+data. The newly written caret brief was revoked before dispatch; no caret
+source/test edits occurred.
 
-Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
-a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
-is preserved; corrected full61471 native0,340files2629tests/194.11s; types50626
-native0/95150ms; build45474 native0/202003ms. After source freeze root reconciled
-two cleanup-rationale comments; final structure only inherited protected4506/4505.
-Eleventh Complete: source10ce95a7/0e868679; root54/51/101 independently passed.
-Full80759 native0,344files2706tests/207.22s; types14622 native0/48883ms;
-production69790 native0/199764ms; structure37927 only protected4506/4505.
-Downstream source86913bca and integration92decca0; full2028/types/build/structure
-all native0. Every gate closed before new source release. Two Core workers now
-implement exact five-path floating close intent and three-path Tooltip behavior;
-third worker implements downstream real session binding. Root owns verification,
-authored docs and local checkpoints. Exact briefs/reports live downstream.
-No live/browser certification or Claude integration.
+Latest Core coherent source checkpoint:c4683b61, hierarchy dialog recovery,
+hierarchy ProjectTree and generic Tree event ownership plus authored docs.
+Root independently reviewed all four source/three NEW test files. Combined
+owning84908 nativeChildExit0:eight files146tests/30.59s. Scoped44039 native0:
+seven roots,two declarations,ALL config/program/dependency diagnostics0.
+Structure89301 native1 ONLY inherited protected service4506 vsbaseline4505;
+no new violation or waiver. Fresh full Core tests/types/build AFTERc4683b61
+were deliberately not started during wind-down and are required on resume.
 
-Continuous UI/UX execution is active in paired isolated task t224 worktrees.
-Claude owns integration: no merge/push or protected runtime/storage/conversations/
-context-packet edits; no live/provider/browser/panel operation or private data.
-The downstream paired working document owns exact worker briefs and reports.
+Latest extension source checkpoints:3a55a8b1 AskControls,28ee7f6a lazy-list
+completion; selected-session binding1884e5e2 remains verified. Recursive
+test45050 native0:extension2088/124773.5574ms; recursive types63587 native0
+(extension107864ms); build93194 native0 (extension159203ms),22files each for
+Chrome/Firefox/e2e. Current structure49096 native0/137warnings119baseline.
+Root narrow Ask54/strict0 and lazy48/strict0 independently passed. Browser/
+assistive-technology behavior is unexercised; build success does not certify it.
 
-Seventh Complete: source checkpoint e75c6fcc. Root combined12files150tests/native0/
-9.43s; full68081 native0,325files2199tests/185.26s; types72364 native0/92993ms;
-production76550 native0,17pages/202949ms. Full structure65986 native1 only inherited
-protected service4506/4505. No config/baseline relaxation. Production parameter,
-Deployment and Docs recovery are independently reviewed and validated by these
-gates; root local Docs acknowledgement regression was reproduced and fixed.
+Original failures remain evidence:Core full31117 failed2807pass3fail/350files/
+358.11s (old login/flow.create), earlier types65532/build34521 native0. Narrow
+31353 passedlogin8 and flow.create but failed synthetic recording.delete bulk
+with EPERM (67pass1fail/152.34s). Root reviewed unique-world/awaited fixture
+lifecycle and one-ID bulk arguments; no fixture cause confirmed. Protected
+deletion/service-quiescence handoff remains open. Extension old full58454 failed
+2062pass1lazy-tailcase; subsequent2088 full passes, original trace unobserved.
 
-Eighth Complete: source checkpoint fe0165c7. Identity, Secret UI/reveal/catalog and
-Docs tree independently reviewed. Root45942 observed16files182pass/native0/
-12.31s, including unchanged clipboard/gate and current shared request contracts.
-Full36851 native0,333files2342tests/173.54s; types59270 native0/35422ms;
-production8087 native0/190162ms. Structure56016 native1 only inherited protected
-service4506/4505; no baseline/config relaxation. Root owns integration, authored
-docs and verification; current released work is recorded below.
+Claude's original t216/t217/t219/t220/t221 work is verified and handed off in
+t221 de2096b1. Read-only main history last showed round6 integrations
+downstream2d269cd7 through1884e5e2 and Corec9518f84 throughb1dfc40e. Root did
+not observe Claude's round6 gates. Main Core was clean; downstream task-tool
+edits were left untouched. Other lanes/processes/slots were preserved.
 
-Eighth supervisor review: Docs tree root96439 observed42pass/native0/10.79s;
-strict actual-config nine-root5272 native0 after hint removal. Identity root73193
-observed61pass/native0/8.91s after bound-subject caption refinement. Its provisional
-cross-lane Secret-copy4 was superseded by frozen integrated182 and full2342.
-Operational/onboarding source audit evidence stays preserved in own downstream
-reports; subsequent current validation is recorded below.
+Resume: inspect current ownership/status before touching work; verify fresh Core
+integrated gates atc4683b61; preserve protected failure boundaries. Then release
+the prepared two-path extraction caret fix, followed by serial preview table/
+feedback partitions, receiver/start currentness and source-confirmed state-row
+keyboard recovery. Flow editor readiness/actions and raw-state rendering need
+the exact held dependency/owner reads before implementation. No speculative
+backend authority, cancellation/idempotence or browser claims.
 
-Extension utility root41 tests pass; full1821/types/build/structure all native0.
-Previous sixth extension1791 and all
-seventh Core gates remain preserved. Browser/focus behavior is not certified.
-
-Original Claude t216/t217/t219/t220/t221 handoff and commits stay recorded in the
-downstream parent; completed work is not reimplemented or integrated here. All
-work stays locally checkpointed until Claude integration. Continue beyond batches
-with meaningful audits/plans/fixes; preserve progress as it happens.
-
-[Superseded Current State](./codex-ui-ux-review-2026-09-30/archive/2026-10-01-pre-eighth-current-state.md)
-retains prior detailed batch evidence; downstream ledgers/reports retain full
-cross-repository validation and ownership history.
-
-Ninth operational/onboarding source checkpoint9d2eb6fa independently reviewed:
-root105tests/native0/3.87s (including strengthened direct Retry assertions) and
-onboarding91/native0/12.33s. Dialog keyboard/entry four-path root88/native0/2.16s
-confirms Cancel/Close Enter and autofocus correction preserving authorization/
-OperationGate/Studio overlay contracts; dialog checkpoint e50a6882. Ninth full
-22516 native0,338files2506tests/182.57s; types74206 native0/103169ms; production
-84386 native0/201922ms. Structure55934 native1 only inherited protected
-service4506/4505. All ninth units Complete. Menu two-path worker now released;
-downstream mounted Chat/extraction source active after independent1878full gates.
+Detailed resume handoff/commands/held briefs are owned by the downstream paired
+document, reports/2026-10-01-credit-wind-down-handoff.md. Generic contracts are
+documented in current-system.md. Prior Current State is preserved verbatim in
+this effort's archives and committed history.
 
 ## Work Ledger
+
+### 2026-10-01 - Credit wind-down and verified checkpoint
+- Agent: supervisor
+- Changed: paused paired review; Corec4683b61 and downstream3a55a8b1/28ee7f6a preserved
+- Why: user requested wind-down at6% credits
+- Validation: root combined eight suites146/native0/30.59s; seven-root strict0; extension recursive tests2088/types/build native0
+- Outcome: Partial - bounded units verified, full current Core gates deferred and protected failures retained
+- Follow-up: resume handoff; no active commands or new caretaker dispatch
+
+### 2026-10-01 - Current State consolidated before Core tree units
+- Agent: supervisor
+- Changed: paired Current State and verbatim archive; full record owned downstream under same dated ledger title
+- Validation: exact archive comparison and Current State line budget
+- Outcome: Accepted
+- Follow-up: finish three Core units and observe downstream gates
+
 
 ### 2026-10-01 - Twelfth narrow verification and continued workers
 - Agent: supervisor and three workers

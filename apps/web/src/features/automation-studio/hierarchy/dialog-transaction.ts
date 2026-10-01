@@ -93,6 +93,7 @@ export function reduceAutomationHierarchyDialogTransaction(
   current: AutomationHierarchyDialogTransaction,
   event: AutomationHierarchyDialogEvent
 ): AutomationHierarchyDialogTransaction {
+  if (current.status === "submitting" && event.type !== "submit-failed") return current;
   if (event.type === "set-pin") {
     return { ...current, authorizationPin: digits(event.authorizationPin), error: "", status: "editing" };
   }

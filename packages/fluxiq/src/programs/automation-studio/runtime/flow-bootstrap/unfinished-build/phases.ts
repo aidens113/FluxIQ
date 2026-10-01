@@ -55,7 +55,7 @@
 // the caller's loop raises that is not a stall -- a permission ask, a person
 // needed, a provider failure -- passes through untouched.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
@@ -196,6 +196,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
     // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
     record.push(...numberedAcrossBuild(ending.kind === "finished" || ending.kind === "other" ? ending.loop.trace : ending.progress.trace, spent.iterations));
+    // What the rounds before this one spent: a repair's purse holds only what they left, so its refusal's spend is this round's alone.
+    const spentBefore = spent.estimatedCostUsd;
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
     if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
@@ -229,7 +231,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds } }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? purseSpending(ending.progress.exhaustion?.costRefusal, spentBefore) : undefined }),
         progress: { trace: [...record], accounting: { ...spent }, ...(ending.progress.exhaustion ? { exhaustion: ending.progress.exhaustion } : {}) },
         lastIssueCodes: ending.lastIssueCodes,
         kept,
@@ -268,6 +270,16 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       resume: resume()
     };
   }
+}
+
+/**
+ * The purse's refusal in the build's own figures: the round's purse was given
+ * what the rounds before left of the ceiling, so what the build had spent is
+ * theirs plus what this round's purse counted. Nothing where no purse refused.
+ */
+function purseSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRefusal"], spentBefore: number): { spentUsd: number; pendingUsd: number; projectedCostUsd?: number } | undefined {
+  if (!refusal) return undefined;
+  return { spentUsd: spentBefore + refusal.spentUsd, pendingUsd: refusal.pendingUsd, ...(refusal.projectedCostUsd !== undefined ? { projectedCostUsd: refusal.projectedCostUsd } : {}) };
 }
 
 /** What the rounds so far have left of the build's budget, for the next one. */
@@ -315,4 +327,6 @@ function addAccounting(into: AutomationStudioLlmEvidenceLoopAccounting, from: Re
   into.outputTokens += from.outputTokens;
   into.totalTokens += from.totalTokens;
   into.estimatedCostUsd += from.estimatedCostUsd;
+  // A call that cost more than the purse held it at is a breach of the build's ceiling, whichever round made it; absent means none.
+  if (from.budgetBreaches) into.budgetBreaches = (into.budgetBreaches ?? 0) + from.budgetBreaches;
 }

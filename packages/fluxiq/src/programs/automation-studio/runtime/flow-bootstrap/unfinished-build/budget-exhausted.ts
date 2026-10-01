@@ -42,6 +42,13 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   decisions: number;
   /** Whether the Flow so far was kept for the next build. */
   kept: boolean;
+  /**
+   * Where the build's purse refused its next call (`../../llm/build-purse/`):
+   * what the whole build had spent, what was held for calls still in flight,
+   * and that call's worst case -- absent where the provider does not price. Said
+   * only for a `cost` ending, so the person reads the figures that stopped it.
+   */
+  spending?: { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined } | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const asked = (input.checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
@@ -54,7 +61,8 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
   const tried = `I explored live ${input.rounds === 1 ? "once" : `${input.rounds} times`} over ${input.decisions} decisions${blocked ? `, and what held it up was that ${blocked}` : ""}.`;
-  const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried, kept.trim()]
+  const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending) : "";
+  const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried, kept.trim()]
     .filter(Boolean)
     .join(" ");
   return {
@@ -75,4 +83,17 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
     case "repair_rounds": return `its limit of ${sizes.maxRepairRounds} repairs, while each repair was still getting further`;
     case "rounds": return sizes.maxRounds !== undefined ? `its limit of ${sizes.maxRounds} live rounds` : "its limit on live rounds";
   }
+}
+
+/** What the build had spent and what its refused call could have cost, as the person is told it. */
+function spendingSaid(spending: { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined }): string {
+  const held = spending.pendingUsd > 0 ? `, with ${usd(spending.pendingUsd)} more held for calls still running` : "";
+  const spent = `: it had spent ${usd(spending.spentUsd)}${held}`;
+  return spending.projectedCostUsd !== undefined
+    ? `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`
+    : `${spent}, which left nothing for its next call`;
+}
+
+function usd(amount: number): string {
+  return `$${amount.toFixed(3)}`;
 }

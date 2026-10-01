@@ -54,6 +54,9 @@ export function Tree(props: {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLLIElement>, node: TreeNode) {
+    if (event.target !== event.currentTarget || event.defaultPrevented || event.nativeEvent.isComposing
+      || event.nativeEvent.keyCode === 229 || event.keyCode === 229
+      || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const index = visible.findIndex((item) => item.node.id === node.id);
     const current = visible[index];
     if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
@@ -94,7 +97,7 @@ export function Tree(props: {
             if (event.target instanceof Element && event.target.closest('[role="treeitem"]') !== event.currentTarget) return;
             if (!node.disabled) props.onSelect(node.id);
           }}
-          onFocus={() => setFocusedId(node.id)}
+          onFocus={(event) => { if (event.target === event.currentTarget) setFocusedId(node.id); }}
           onKeyDown={(event) => handleKeyDown(event, node)}
           ref={(element) => { if (element) itemRefMap.set(node.id, element); else itemRefMap.delete(node.id); }}
           role="treeitem"

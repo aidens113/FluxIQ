@@ -1,4 +1,5 @@
-// The one amendment that answers `act_needs_repeat`, worked out for the model.
+// The one amendment that answers `act_needs_repeat` or `span_stops_short`,
+// worked out for the model.
 //
 // **Why.** Lane t195's live run `run-muntu7in-e3dd1972` was told to confirm
 // every friend request with five or more mutual friends. Its draft held the
@@ -20,16 +21,27 @@
 // because whether the listing keeps only the items to act on is the model's to
 // say (a loop over an unfiltered list acts on every row), and the refusal says
 // so beside it. No listing before the claimed step, no suggestion.
+//
+// **A span that stops short (withdraw audit B2).** Run 3 (`run-munnyvbr-11c28a0f`)
+// repeated the row's Withdraw and left the confirmation it opens after the
+// loop; the check refuses that `span_stops_short` and names the step after the
+// span (`after`, `../../flow-bootstrap/instructed-acts/span.ts`). The answer is
+// the same repeat run one step further: `{ step: <the repeat's own step>,
+// change: "repeat", over: <its over>, through: <after> }`.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import { automationStudioInstructedActRepeatSpans } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 
 /** The sentence that goes with a suggestion, in the draft's numbers. */
 export type AutomationStudioRepeatSuggestion = { amendment: JsonObject; instruction: string };
 
-/** The repeat amendment for the first act refused `act_needs_repeat`, or nothing when the draft has no listing before the claimed step. */
+/**
+ * The repeat amendment for the first act refused `act_needs_repeat` or
+ * `span_stops_short`, or nothing when the draft gives no listing to repeat over.
+ */
 export function automationStudioRepeatSuggestion(input: {
   missingActs: JsonObject;
   draftSteps: readonly AutomationStudioFlowDraftStep[];
@@ -37,11 +49,13 @@ export function automationStudioRepeatSuggestion(input: {
   resolution: AutomationStudioNodeRegistryResolution;
 }): AutomationStudioRepeatSuggestion | undefined {
   const acts = Array.isArray(input.missingActs.acts) ? input.missingActs.acts : [];
-  const needing = acts.find((act): act is JsonObject => typeof act === "object" && act !== null && !Array.isArray(act) && act.reason === "act_needs_repeat" && typeof act.step === "string");
+  const needing = acts.find((act): act is JsonObject => typeof act === "object" && act !== null && !Array.isArray(act)
+    && (act.reason === "act_needs_repeat" || (act.reason === "span_stops_short" && typeof act.after === "number")) && typeof act.step === "string");
   if (!needing) return undefined;
   const proposed = input.draftSteps.filter(automationStudioFlowDraftStepIsProposed);
   const claimed = proposed.find((step) => step.id === needing.step || `${step.position}` === needing.step);
   if (!claimed) return undefined;
+  if (needing.reason === "span_stops_short") return throughTheStepAfter(claimed, needing.after as number, input.draftSteps);
   const listing = proposed
     .filter((step) => step.position < claimed.position)
     .reverse()
@@ -55,6 +69,20 @@ export function automationStudioRepeatSuggestion(input: {
     instruction: ` repeatWith is the amendment that makes ${span} run once for every row step ${listing.position} lists: send it as amend_draft, then complete again naming step ${claimed.position} for the act.`
       + (first === claimed ? "" : ` Every step of that span runs on each row; drop any of them that does not belong to doing the act to one row.`)
       + ` Every row the listing returns is acted on, so if it lists rows the act must not touch, first rerun step ${listing.position} with a where that keeps only the ones to act on.`
+  };
+}
+
+/** The repeat holding the claimed step, carried on through the step after it. */
+function throughTheStepAfter(claimed: AutomationStudioFlowDraftStep, after: number, steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioRepeatSuggestion | undefined {
+  const span = automationStudioInstructedActRepeatSpans(claimed, steps).find((each) => each.to < after);
+  if (span?.carrier.routing?.kind !== "repeat") return undefined;
+  const over = automationStudioFlowDraftStepById(steps, span.carrier.routing.over)?.position;
+  if (over === undefined) return undefined;
+  const from = span.carrier.position;
+  return {
+    amendment: { step: from, change: "repeat", over, through: after },
+    instruction: ` repeatWith is the amendment that makes steps ${from} through ${after} run once for every row step ${over} lists: step ${after} finishes the act on each row, so it repeats with the steps before it.`
+      + ` Send it as amend_draft, then complete again naming step ${claimed.position} for the act.`
   };
 }
 

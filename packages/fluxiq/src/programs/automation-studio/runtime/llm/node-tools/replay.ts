@@ -7,9 +7,14 @@
 //   { replay: "reset", from }        put the target back the way the draft's
 //                                    first step found it. `from` is the
 //                                    caller's own token, carried unread.
-//   { replay: "step", ...ranWith }   run this step again with exactly what the
-//                                    Flow will run it with, and say whether it
-//                                    reproduced `produced`.
+//   { replay: "step", ...ranWith,    run this step again with exactly what the
+//     from? }                        Flow will run it with, and say whether it
+//                                    reproduced `produced`. `from` is where the
+//                                    step found the target, so a host can tell
+//                                    a target the site's memory removed from
+//                                    the step's own page (`remembered`) from
+//                                    one on a page the draft no longer reaches
+//                                    (`../../flow-draft/site-memory.ts`).
 //   { replay: "verify", ...ranWith,  check this step could run now, or that
 //     from? }                        its effect is already in place, and run
 //                                    nothing: its effect lasts, and a dry run
@@ -41,6 +46,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
   type AutomationStudioFlowDraftReplayMode,
   type AutomationStudioFlowDraftReplayStatus,
@@ -63,11 +69,13 @@ export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   verified: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
   /** Asked to check, its effect is already in place on the page it acted on, and nothing was run. */
   present: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
+  /** Asked to run, its target is gone from the very page it acted on: the site remembers what it did. */
+  remembered: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE,
   /** It did not run. */
   failed: "core.replay.failed",
   /** It ran and produced nothing where it had produced something. */
   changed: "core.replay.changed",
-  /** Putting the target back could not undo this step's own effect. */
+  /** Its target was not there, on a page other than the one it acted on. */
   unreproducible: "core.replay.unreproducible",
   /** The target could not be put back at all, so nothing was replayed. */
   resetFailed: "core.replay.reset_failed"
@@ -92,7 +100,8 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * replay is the Flow's own step and not a second rendering of it. `produced` is
  * handed back so the caller can compare rather than Core: what "the same again"
  * means about a list of rows or a downloaded file is not something a framework
- * can judge.
+ * can judge. `from` is handed back for the same reason: only the caller can
+ * say whether the target it stands on now is where this step found it.
  */
 export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDraftStep): JsonObject | undefined {
   const ranWith = step.ranWith;
@@ -100,6 +109,7 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
   return {
     ...ranWith,
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
+    ...(step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
   };
 }
@@ -132,8 +142,9 @@ export function automationStudioNodeReplayToolId(step: AutomationStudioFlowDraft
  * The status a replay's result code names, or `failed` for a code Core does not
  * know.
  *
- * A check (`mode` `verify`) also passes on `verified` and `present`; the
- * outcome's own `mode` and code are what tell a reader it was only checked.
+ * A check (`mode` `verify`) also passes on `verified` and `present`, and a
+ * step run again on `remembered`; the outcome's own `mode` and code are what
+ * tell a reader it was only checked, or that the site remembered it.
  *
  * Unknown means failed, deliberately. A caller that answered something else
  * either does not implement the replay or answered an error of its own, and
@@ -146,5 +157,8 @@ export function automationStudioNodeReplayStatus(resultCode: string | undefined,
   if (resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.verified || resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.present) {
     return mode === "verify" ? "replayed" : "failed";
   }
+  // And the other way: a check is answered `present` for the same finding, so
+  // a check answered `remembered` is a host that did not check.
+  if (resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.remembered) return mode === "replay" ? "replayed" : "failed";
   return (resultCode !== undefined && STATUS_BY_CODE[resultCode]) || "failed";
 }
