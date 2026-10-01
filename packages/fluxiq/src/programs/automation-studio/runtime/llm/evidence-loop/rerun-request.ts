@@ -25,8 +25,9 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioLlmEvidenceRerunInput } from "./rerun-input.ts";
 
-/** A step to run again: which step it replaces, and the call that replaces it. */
+/** A step to run again: which step it replaces, and the call that replaces it, with the whole argument it runs with. */
 export type AutomationStudioLlmEvidenceRerunCall = { step: number; toolId: string; input: JsonObject; callId: string };
 
 /**
@@ -61,7 +62,8 @@ export function automationStudioLlmEvidenceRerunRequest(
       refused.push({ step: amendment.step, reason: "run_by_the_loop" });
       continue;
     }
-    request = { step: step.position, toolId, input: amendment.input, callId: `rerun.${step.position}` };
+    // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
+    request = { step: step.position, toolId, input: automationStudioLlmEvidenceRerunInput(step.input, amendment.input), callId: `rerun.${step.position}` };
   }
   return { request, refused };
 }

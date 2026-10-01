@@ -69,8 +69,8 @@ export type RecordedRunOptions = {
   detectBytes?: number;
   /**
    * Let the loop go on past the last logged decision instead of stopping it
-   * there. The next decision is answered with something the loop cannot read,
-   * which ends it `invalid_decision` -- if the loop gets as far as asking.
+   * there. The next decision is where the run is cancelled, which ends it
+   * `cancelled` -- if the loop gets as far as asking.
    */
   pastLog?: boolean;
 };
@@ -568,8 +568,11 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
   // Where the log stops. A run whose last logged decision ran a call is stopped
   // right after that call, by the loop's own signal, so it ends `cancelled`
   // at the top of the next iteration -- before that iteration builds anything
-  // for a decision the build never asked for. Any other run ends on the next
-  // decision, answered with something the loop cannot read.
+  // for a decision the build never asked for. Any other run is cancelled on the
+  // next decision, once that decision has been shown what it would have been
+  // shown. (It used to be answered with something the loop could not read,
+  // which ended the loop `invalid_decision`; such an answer is now asked again,
+  // t211.)
   const last = logged[logged.length - 1]!;
   const stopAfterCall = !options.pastLog && last.kind === "tool_call" && last.events.some((event) => event.kind === "call");
   const controller = new AbortController();
@@ -645,9 +648,11 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
   const decide = async ({ iteration, evidence }: { iteration: number; evidence: ReadonlyArray<RecordedEvidenceEntry> }): Promise<unknown> => {
     shown.push({ iteration, evidence: structuredClone([...evidence]) });
     const entry = byIteration.get(iteration);
-    // Past the last logged decision the run ends: an answer the loop cannot read
-    // ends it `invalid_decision`, and hands the trace back with it.
-    if (!entry || entry.kind === "initial") return { kind: "recorded_run_ended" };
+    // Past the last logged decision the run ends: cancelled, which hands the trace back with it.
+    if (!entry || entry.kind === "initial") {
+      controller.abort();
+      throw new Error(`recorded run ${name}: past the log at decision ${iteration}`);
+    }
     rebuilt.push({ iteration, kind: entry.kind, events: [] });
     // The completed result is not logged. Each one is worded differently, as a
     // model rewords its summary, so crossborder's 12 and 13 are caught as the

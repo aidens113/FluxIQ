@@ -31,9 +31,11 @@
 // a check in front of every step is not work a person should keep clearing,
 // and past the bound it ends the same way.
 //
-// **Kept free of activity.** The caller emits what the person sees happening,
-// through `onAsk` and `onCleared`: `../activity/` reads this directory's
-// constants, and a value import back from here would close a module cycle.
+// **Kept free of activity.** The caller says what the person sees happening:
+// the wait and how it ended, by wrapping the port it hands in
+// (`../activity/ask/port.ts`), and anything else through `onAsk` and
+// `onCleared`. `../activity/` reads this directory's constants, and a value
+// import back from here would close a module cycle.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";

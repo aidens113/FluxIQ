@@ -6,11 +6,13 @@ export * from "./types.ts";
 
 export {
   CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID,
+  CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS,
   CLIENT_GATEWAY_PROTOCOL_VERSION,
   type ClientGatewayActionCommand,
   type ClientGatewayActionResult,
   type ClientGatewayActivity,
   type ClientGatewayActivityPhase,
+  type ClientGatewayActivityResolution,
   type ClientGatewayAppendRecordingEntryRequest,
   type ClientGatewayCapability,
   type ClientGatewayClientHello,

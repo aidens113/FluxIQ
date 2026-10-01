@@ -34,6 +34,9 @@ const PERSON_TITLE = /\bcheck\b/iu;
 const QUOTED = /“([^”]+)”/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
+/** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
+const RESOLVED_DONE: ReadonlySet<string> = new Set(["answered", "allowed", "waited_out"]);
+const RESOLVED_FAILED: ReadonlySet<string> = new Set(["declined", "timed_out", "cancelled"]);
 
 function wordsOf(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
@@ -81,10 +84,12 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   const ref = detail.ref;
   const core = ref ? CORE_TOOL_KINDS.get(ref) : undefined;
   if (core === "draft") return "draft";
-  if (event.phase === "repairing") return "repair";
+  // A wait on the person before the repair phase: the row that settles one is
+  // said in the phase the work returns to, which may be `repairing`.
   if (event.phase === "waiting_permission" || detail.kind === "ask") {
     return PERSON_TITLE.test(detail.title) || (code !== undefined && PERSON_CODE.test(code)) ? "person_check" : "permission";
   }
+  if (event.phase === "repairing") return "repair";
   if (code !== undefined && PERSON_CODE.test(code)) return "person_check";
   if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
   if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
@@ -106,12 +111,26 @@ function failingCode(code: string): boolean {
 }
 
 function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined): ActivityActionOutcome {
+  if (detail.kind === "ask") {
+    // Only the row that settles the wait says it is over; nothing after it is read for that.
+    if (detail.resolution !== undefined && RESOLVED_DONE.has(detail.resolution)) return "done";
+    if (detail.resolution !== undefined && RESOLVED_FAILED.has(detail.resolution)) return "failed";
+    return detail.status === "failed" ? "failed" : "waiting";
+  }
   if (event.phase === "waiting_permission") return "waiting";
   if (detail.status === "failed") return "failed";
   if (code !== undefined && failingCode(code)) return "failed";
   if (code !== undefined && (PERSON_CODE.test(code) || PERMISSION_CODE.test(code))) return "waiting";
   if (detail.status === "succeeded") return "done";
   return "working";
+}
+
+/** Why a wait on the person ended without the work going on, in a few plain words. */
+function declinedWhy(kind: ActivityActionKind, resolution: string | undefined): string | null {
+  if (resolution === "timed_out") return "nobody answered in time";
+  if (resolution === "cancelled") return "the work stopped first";
+  if (resolution === "declined") return kind === "person_check" ? "you pressed Stop" : "you said no";
+  return null;
 }
 
 function targetOf(event: ActivityActionEvent, detail: Detail): string | null {
@@ -130,17 +149,24 @@ function targetOf(event: ActivityActionEvent, detail: Detail): string | null {
  * an action ("Run started", "Build finished").
  *
  * The kind is decided in this order: Core's own tool ids (`core.flow_draft`
- * is an edit to the Flow; a dry run or a completion check is a test run); the
- * `repairing` phase; a wait on a person (a check they have to complete, else a
- * permission); a result code that says the page needs a person, or a
+ * is an edit to the Flow; a dry run or a completion check is a test run); a
+ * wait on a person (a check they have to complete, else a permission); the
+ * `repairing` phase; a result code that says the page needs a person, or a
  * permission; a check row or a `verifying` row (a dry run's steps); and
  * otherwise the verb named by the node id's last segment, the tool id, the
  * step's label, the result code's action word, or the title Core already said
  * it in. Generic verbs only; see `./verb.ts`.
  *
+ * An ask is waiting until the row that settles it says how it ended
+ * (`detail.resolution`): done when it was answered, allowed or waited out,
+ * failed when it was declined, nobody answered, or the work stopped first. That row is the only one
+ * read for it; a later event of the same work never settles a wait.
+ *
  * `target` is the name Core quoted in the title, else the step's label, else
- * null; never an id. `why` is set only for a failure, from the result code's
- * last words (`./failure-reason.ts`), and never is the code.
+ * null; never an id. `why` is set only for a failure: a settled ask's
+ * resolution in words ("you pressed Stop", "nobody answered in time"), or
+ * else the result code's last words (`./failure-reason.ts`), and never is the
+ * code.
  */
 export function activityActionOf(event: ActivityActionEvent): ActivityAction | null {
   const detail = event.detail;
@@ -149,6 +175,8 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const kind = kindOf(event, detail, record.resultCode, record.node);
   if (!kind) return null;
   const outcome = outcomeOf(event, detail, record.resultCode);
-  const why = outcome === "failed" && record.resultCode ? activityActionFailureReason(record.resultCode) : null;
+  const why = outcome !== "failed" ? null
+    : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
+      : record.resultCode ? activityActionFailureReason(record.resultCode) : null;
   return { kind, target: targetOf(event, detail), outcome, why };
 }

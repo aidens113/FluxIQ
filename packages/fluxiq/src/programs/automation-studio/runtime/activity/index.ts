@@ -2,7 +2,7 @@
 // publishes to, the scope that says which unit of work an emission belongs to,
 // the emitters, the evidence-loop observer, and the model's stated reason kept
 // beside each decision.
-export { emitAutomationStudioActivityWaitingOnAsk } from "./ask.ts";
+export { automationStudioActivityAskPort, automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityWaitedOut, emitAutomationStudioActivityWaitingOnAsk } from "./ask/index.ts";
 export { bindAutomationStudioActivityRun } from "./bind.ts";
 export { boundedAutomationStudioActivity } from "./bounded.ts";
 export { withAutomationStudioBuildActivity } from "./build.ts";

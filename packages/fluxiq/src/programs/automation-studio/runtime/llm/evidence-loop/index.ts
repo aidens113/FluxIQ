@@ -17,12 +17,15 @@ export * from "./call-record.ts";
 export * from "./completion-attempt.ts";
 export * from "./completion-check.ts";
 export * from "./decision.ts";
+export * from "./decision-refusal.ts";
 export * from "./draft-shown.ts";
 export * from "./draft-change.ts";
 export * from "./exhaustion.ts";
+export * from "./final-decision-row.ts";
 // What counts as progress, and the build trace read off it, live beside this directory (`../evidence-progress/`), published here as before.
 export * from "../evidence-progress/index.ts";
 export * from "./rerun-replacement.ts";
+export * from "./rerun-input.ts";
 export * from "./rerun-request.ts";
 export * from "./resume.ts";
 export * from "./result.ts";

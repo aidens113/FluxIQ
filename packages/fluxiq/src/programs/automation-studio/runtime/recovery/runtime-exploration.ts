@@ -73,7 +73,7 @@ import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
-import { emitAutomationStudioActivity, emitAutomationStudioActivityWaitingOnAsk, observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
+import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
   automationStudioAskedAndGranted,
@@ -273,12 +273,15 @@ export async function runAutomationStudioRuntimeExploration(
   // through the same executor, under its own call id, and is Core's look rather
   // than the model's, so it is not charged to the ledger as an action.
   const cancelled = [input.ask?.signal, input.signal].filter((signal): signal is AbortSignal => signal !== undefined);
+  // Both questions go through a port that says the wait and how it ended, in
+  // the phase the repair returns to (`../activity/ask/port.ts`).
+  const ask = input.ask ? { ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "repairing") } : undefined;
   const personNeeded = automationStudioPersonNeededToolCalls({
     executeTool: (call) => input.loop.executeTool({
       ...call,
       permission: asking({
         gate,
-        ...(input.ask ? { ask: input.ask } : {}),
+        ...(ask ? { ask } : {}),
         action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
         markAsked: () => { asked = true; },
         alreadyAsked: () => asked,
@@ -291,10 +294,8 @@ export async function runAutomationStudioRuntimeExploration(
     newAskId: () => `person-needed.${randomUUID()}`,
     // The port a permission question goes through, and nothing else of that
     // ask: a person completing a check is given Core's own person-needed wait.
-    ...(input.ask ? { ask: { port: input.ask.port, now: input.ask.now ?? now } } : {}),
-    ...(cancelled.length ? { signal: cancelled.length === 1 ? cancelled[0] : AbortSignal.any(cancelled) } : {}),
-    onAsk: (ask) => emitAutomationStudioActivityWaitingOnAsk(ask),
-    onCleared: (call) => emitAutomationStudioActivity({ phase: "repairing", label: "The person completed the check; the repair goes on", detail: { kind: "step", title: "Check completed by the person", status: "succeeded", ref: call.callId } })
+    ...(ask ? { ask: { port: ask.port, now: ask.now ?? now } } : {}),
+    ...(cancelled.length ? { signal: cancelled.length === 1 ? cancelled[0] : AbortSignal.any(cancelled) } : {})
   });
   // The loop stops on whichever comes first: a limit the ledger refused, the
   // request the gate raised, or a check the person did not get past. With

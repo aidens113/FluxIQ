@@ -7,8 +7,10 @@
 // web domain does for a robot check, a scripted provider that records every
 // decision it was asked for, and a stand-in thread.
 
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, type AutomationStudioAsk, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../parking/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
@@ -181,5 +183,39 @@ describe("a recovery exploration that meets a check only a person can complete",
     expect(run.opened).toHaveLength(3);
     expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", endedBy: "person_needed.asks_exhausted", personNeeded: { asks: 3, ended: "asks_exhausted" } });
     expect(run.seenByModel.join("\n")).not.toContain(CHECK_MARKER);
+  });
+});
+
+describe("what a recovery says while it waits on the person", () => {
+  /** The exploration run as a run's repair, and the ask rows it said, as [phase, ref, status, resolution]. */
+  async function said(setup: Setup): Promise<{ rows: unknown[][]; askId: string | undefined }> {
+    const seen: ClientGatewayActivity[] = [];
+    const stop = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    try {
+      const run = await runWithAutomationStudioActivity({ kind: "run", id: "r1", projectId: "project.one" }, () => explore(setup));
+      return { rows: seen.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.status, event.detail!.resolution]), askId: run.opened[0]?.askId };
+    } finally {
+      stop();
+    }
+  }
+
+  it.each([
+    ["Continue", [choice("person_done")] as Answer[], "succeeded", "answered"],
+    ["Stop", [choice("person_stop")] as Answer[], "failed", "declined"],
+    ["nobody answering in time", [undefined] as Answer[], "failed", "timed_out"]
+  ])("says the wait on the ask and its end on %s, in the repair's phase", async (_name, answers, status, resolution) => {
+    const { rows, askId } = await said({ answers });
+    expect(rows).toEqual([
+      ["waiting_permission", askId, "started", undefined],
+      ["repairing", askId, status, resolution]
+    ]);
+  });
+
+  it("settles as cancelled when the thread could not be read", async () => {
+    const { rows, askId } = await said({ answers: ["throw"] });
+    expect(rows).toEqual([
+      ["waiting_permission", askId, "started", undefined],
+      ["repairing", askId, "failed", "cancelled"]
+    ]);
   });
 });

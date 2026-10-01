@@ -22,7 +22,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_
 import { registerAutomationStudioApi } from "../../../../api/handlers/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -130,8 +130,10 @@ async function createWorld(options: { unlocked: string | null }) {
             return { response: { kind: "evidence_tool_decision", summary: "Working it out.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
           }
         },
-        // Room for the whole node catalog every build request carries since 2026-09-30; it was 8,000 / 2,000 / 10,000.
-        tokenLimits: { maxInputTokens: 40_000, maxOutputTokens: 2_000, maxTotalTokens: 42_000 },
+        // The real provider's window. Since t200 a request is never trimmed to
+        // fit, so a smaller made-up window refuses the build's second decision
+        // (`flow_bootstrap.pre_provider_request_total_exceeded`).
+        tokenLimits: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits,
         maxCallsPerRun: 6,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 20_000

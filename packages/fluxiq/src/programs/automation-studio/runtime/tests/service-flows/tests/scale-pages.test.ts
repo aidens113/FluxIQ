@@ -14,6 +14,14 @@ import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLarge
 import { AutomationStudioService } from "../../../service.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { SQLiteRepository } from "../../../../../database-manager/storage/sqlite-repository.ts";
+import { withEndpointPerformanceScope } from "../../../../../_shared/performance-metrics.ts";
+
+// The rows a 50-row Subflow page may read back from SQLite, against the 10,000
+// it pages over. Measured at 106 and 57: the page and its count, plus the
+// schema bookkeeping each store open reads (one ledger row per migration),
+// which grows by a row with every migration. A tenth of the table leaves room
+// for that and still fails a read that loads the table to cut a page from it.
+const SUBFLOW_READ_ROW_BUDGET = 1_000;
 
 let tempRoot: string;
 
@@ -265,36 +273,44 @@ describe("AutomationStudioService recording persistence", () => {
       kind: "flow.subflows",
       layoutVersion: 1
     });
+    // The rows go in 1,000 to a statement. One insert per row was 20,000
+    // SQLite round trips (a prepare and a run each), 22-56 s of a test whose
+    // subject, the two reads below, takes well under a second.
+    const rows: unknown[][] = [];
+    for (let index = 0; index < 10_000; index += 1) {
+      const subflowId = `subflow.scale.${String(index).padStart(5, "0")}`;
+      const data = {
+        subflowId,
+        summaryVersion: 2,
+        graphFlowId: `${flow.flowId}.${subflowId}.graph`,
+        flowId: flow.flowId,
+        projectId: project.id,
+        name: index === 9_999 ? "Needle Recovery" : `Subflow ${String(index).padStart(5, "0")}`,
+        role: index === 9_999 ? "recovery" : "utility",
+        status: index % 7 === 0 ? "disabled" : "active",
+        updatedAt: 100_000 + index
+      };
+      rows.push([subflowId, "flow.subflows", JSON.stringify(data), data.updatedAt, data.updatedAt]);
+    }
     await repository.transaction({}, async (transaction) => {
-      for (let index = 0; index < 10_000; index += 1) {
-        const subflowId = `subflow.scale.${String(index).padStart(5, "0")}`;
-        const data = {
-          subflowId,
-          summaryVersion: 2,
-          graphFlowId: `${flow.flowId}.${subflowId}.graph`,
-          flowId: flow.flowId,
-          projectId: project.id,
-          name: index === 9_999 ? "Needle Recovery" : `Subflow ${String(index).padStart(5, "0")}`,
-          role: index === 9_999 ? "recovery" : "utility",
-          status: index % 7 === 0 ? "disabled" : "active",
-          updatedAt: 100_000 + index
-        };
-        await transaction.run(`insert into ${repository.tableName} (id, kind, data, created_at_ms, updated_at_ms) values (?, ?, ?, ?, ?)`, [subflowId, "flow.subflows", JSON.stringify(data), data.updatedAt, data.updatedAt]);
+      for (let start = 0; start < rows.length; start += 1_000) {
+        const batch = rows.slice(start, start + 1_000);
+        await transaction.run(`insert into ${repository.tableName} (id, kind, data, created_at_ms, updated_at_ms) values ${batch.map(() => "(?, ?, ?, ?, ?)").join(", ")}`, batch.flat());
       }
     });
 
-    const pageStartedAt = performance.now();
-    const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 50, offset: 9_950, sort: "updated", direction: "asc" });
-    const pageElapsedMs = performance.now() - pageStartedAt;
-    const searchStartedAt = performance.now();
-    const filtered = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, status: "active", role: "recovery", search: "needle", limit: 50, offset: 0 });
-    const searchElapsedMs = performance.now() - searchStartedAt;
+    // The budget is the work each read does, not how long it took: 500 ms of
+    // wall clock held only on an idle machine (853-888 ms measured beside other
+    // suites). A page that loaded the 10,000 rows to cut 50 from them would
+    // return them from SQLite, so the rows the reads return are bounded.
+    const { result: page, sql: pageSql } = await withEndpointPerformanceScope(() => service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 50, offset: 9_950, sort: "updated", direction: "asc" }));
+    const { result: filtered, sql: searchSql } = await withEndpointPerformanceScope(() => service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, status: "active", role: "recovery", search: "needle", limit: 50, offset: 0 }));
 
     expect(page).toMatchObject({ total: 10_000, limit: 50, offset: 9_950 });
     expect(page.subflows).toHaveLength(50);
     expect(page.subflows[0]).not.toHaveProperty("inputMapping");
     expect(filtered.subflows).toEqual([expect.objectContaining({ subflowId: "subflow.scale.09999", name: "Needle Recovery", role: "recovery", status: "active" })]);
-    expect(pageElapsedMs).toBeLessThan(500);
-    expect(searchElapsedMs).toBeLessThan(500);
+    expect(pageSql.sqlRowsReturned).toBeLessThanOrEqual(SUBFLOW_READ_ROW_BUDGET);
+    expect(searchSql.sqlRowsReturned).toBeLessThanOrEqual(SUBFLOW_READ_ROW_BUDGET);
   }, 60_000);
 });

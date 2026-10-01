@@ -26,9 +26,17 @@
 // not a message of its own. A decision carries one action; a second one is its
 // own `action` message. A check, a run step and a standalone action carry their
 // own card. A card that started is updated in place when it ends. A run step
-// Core never ends is over once anything later happens in its unit of work, and
-// a card waiting on the person (a permission ask, a robot check) is over once
-// the work leaves the wait.
+// Core never ends is over once anything later happens in its unit of work.
+//
+// A card waiting on the person (a permission ask, a robot check) is over only
+// when Core says so: the ask row that settles the wait carries the same ask id
+// (`activityActionKey`) and a `resolution`, and the card is marked from it in
+// place. Nothing later in the work settles it, so a wait Core never settles
+// stays waiting. One check is one card: a tool whose result says the page
+// needs a person (an intervention code) and the robot-check ask it raised are
+// joined, whichever came first, and the second updates the first card in
+// place. An ask row that names no ask id while another ask's card is waiting
+// only restates that wait (a parked run's "Run is waiting for an answer").
 //
 // Keys come from the event that opened a message or a card
 // (`activityId#sequence`), and that time never changes, so a message is placed
@@ -37,7 +45,7 @@
 // (`apps/extension/src/panel/chat/stream/step/messages.ts` in the
 // web-automation repository).
 
-import { activityActionOf, type ActivityAction } from "fluxiq/ui";
+import { activityActionKey, activityActionOf, type ActivityAction } from "fluxiq/ui";
 import type { ConversationActivity, ConversationActivityDetail } from "../contracts";
 import { conversationActivityHeadline, conversationActivityOutcome } from "../headline";
 import { conversationActivitySentence, conversationActivityTextIsHuman } from "../wording";
@@ -83,8 +91,10 @@ type Unit = {
   open: Map<string, Slot>;
   /** A run step Core started and will not end. */
   step: Slot | undefined;
-  /** Cards waiting on the person. */
-  waiting: Slot[];
+  /** Each ask's card, by its ask id, so the row that settles it finds it. */
+  asks: Map<string, Slot>;
+  /** A robot-check card still waiting for its other half: the ask, or the tool that met the check. */
+  check: { slot: Slot; from: "ask" | "tool" } | undefined;
   repairing: boolean;
 };
 
@@ -134,10 +144,18 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
     draft.sequence = Math.max(draft.sequence, sequence);
   };
 
+  const cardAt = (slot: Slot): ConversationStepAction => drafts[slot.message]!.actions[slot.action]!;
+
+  /** The unit's robot-check card waiting for the other half named by `from`, while it still waits. */
+  const joinable = (unit: Unit, from: "ask" | "tool"): Slot | undefined => {
+    const check = unit.check;
+    return check?.from === from && cardAt(check.slot).outcome === "waiting" ? check.slot : undefined;
+  };
+
   for (const event of events) {
     let unit = units.get(event.activityId);
     if (!unit) {
-      unit = { decision: undefined, open: new Map(), step: undefined, waiting: [], repairing: false };
+      unit = { decision: undefined, open: new Map(), step: undefined, asks: new Map(), check: undefined, repairing: false };
       units.set(event.activityId, unit);
     }
     if (event.phase === "repairing") unit.repairing = true;
@@ -145,15 +163,6 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
       const card = drafts[unit.step.message]!.actions[unit.step.action]!;
       if (card.outcome === "working") update(unit.step, { ...card, outcome: "done" }, event.sequence);
       unit.step = undefined;
-    }
-    // The person answered, or the work went on without them.
-    if (unit.waiting.length && event.phase !== "waiting_permission") {
-      const outcome = conversationActivityOutcome(event) === "failed" ? "failed" : "done";
-      for (const slot of unit.waiting) {
-        const card = drafts[slot.message]!.actions[slot.action]!;
-        if (card.outcome === "waiting") update(slot, { ...card, outcome, why: null }, event.sequence);
-      }
-      unit.waiting = [];
     }
     const before = drafts.length;
     const detail = event.detail && !conversationActivityIsInternal(event.detail) ? event.detail : undefined;
@@ -175,8 +184,19 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
     const action = cardOf(event, detail);
     let slot: Slot;
     if (detail.kind === "tool" || detail.kind === "check") {
-      const identity = `${detail.kind}|${detail.ref ?? detail.title}`;
+      const identity = activityActionKey(event) ?? `${detail.kind}:${detail.title}`;
       const owner = unit.open.get(identity);
+      const metCheck = detail.kind === "tool" && waitsOnPerson(action);
+      const asked = metCheck ? joinable(unit, "ask") : undefined;
+      if (asked !== undefined) {
+        // The check the ask is already waiting on: its card, not a second one.
+        // The ask says how it ends, so the card keeps waiting until it does.
+        update(asked, { ...action, outcome: cardAt(asked).outcome, why: null }, event.sequence);
+        unit.check = undefined;
+        unit.open.delete(identity);
+        unit.decision = undefined;
+        return;
+      }
       if (owner !== undefined) {
         update(owner, action, event.sequence);
         const draft = drafts[owner.message]!;
@@ -195,11 +215,30 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
       unit.decision = undefined;
       if (status === "started") unit.open.set(identity, slot);
       else unit.open.delete(identity);
+      if (metCheck) unit.check = { slot, from: "tool" };
     } else if (detail.kind === "ask") {
+      const key = activityActionKey(event);
+      const known = key === null ? undefined : unit.asks.get(key);
+      if (known !== undefined) {
+        // The row that settles the wait, or one that says it again: the same card.
+        update(known, action, event.sequence);
+        if (unit.check?.slot === known && !waitsOnPerson(cardAt(known))) unit.check = undefined;
+        return;
+      }
+      if (key === null && [...unit.asks.values()].some((held) => cardAt(held).outcome === "waiting")) return;
       // Its question is its turn; the card says the work is waiting on it.
-      slot = unit.decision !== undefined
-        ? attach(unit.decision, action, event.sequence)
-        : attach(add(event, "action", titleOf(event, detail), undefined), action, event.sequence);
+      const met = action.kind === "person_check" ? joinable(unit, "tool") : undefined;
+      if (met !== undefined) {
+        update(met, action, event.sequence);
+        slot = met;
+        unit.check = undefined;
+      } else {
+        slot = unit.decision !== undefined
+          ? attach(unit.decision, action, event.sequence)
+          : attach(add(event, "action", titleOf(event, detail), undefined), action, event.sequence);
+        if (waitsOnPerson(action)) unit.check = { slot, from: "ask" };
+      }
+      if (key !== null) unit.asks.set(key, slot);
       unit.decision = undefined;
     } else {
       unit.decision = undefined;
@@ -211,9 +250,6 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
       slot = attach(add(event, "step", title, undefined), action, event.sequence);
       if (status === "started") unit.step = slot;
     }
-    const placed = drafts[slot.message]!.actions[slot.action]!;
-    const held = unit.waiting.some((entry) => entry.message === slot.message && entry.action === slot.action);
-    if (placed.outcome === "waiting" && !held) unit.waiting.push(slot);
   }
 
   const kept = limit >= 1 ? drafts.slice(-Math.floor(limit)) : [];
@@ -225,24 +261,30 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
 /**
  * The card for the action `detail` stands for, read by Core's shared
  * classifier. An action Core gave no status is taken as done, as the rest of
- * the chat reads it; an ask waits on the person until the work leaves the
- * wait. A name that is not in words is left out, and the card says "the page".
+ * the chat reads it; an ask waits on the person until the row that settles it
+ * says how it ended, and that row's sentence ("You pressed Continue.") is what
+ * the card says about it. A name that is not in words is left out, and the
+ * card says "the page".
  */
 function cardOf(event: ConversationActivity, detail: ConversationActivityDetail): ConversationStepAction {
   const status = detail.status ?? (detail.kind === "ask" ? undefined : "succeeded");
   const read = activityActionOf({ ...event, detail: { ...detail, ...(status === undefined ? {} : { status }) } });
   const fallback = status === "failed" ? "failed" : status === "started" ? "working" : "done";
   const action: ActivityAction = read ?? { kind: "other", target: null, outcome: fallback, why: null };
-  const outcome = detail.kind === "ask" && action.outcome !== "failed" ? "waiting" : action.outcome;
-  const said = detail.kind === "tool" ? humanText(detail.text) : undefined;
+  const said = detail.kind === "tool" || (detail.kind === "ask" && detail.resolution !== undefined) ? humanText(detail.text) : undefined;
   return {
     key: `action:${event.activityId}#${event.sequence}`,
     kind: action.kind,
     target: humanText(action.target ?? undefined) ?? null,
-    outcome,
+    outcome: action.outcome,
     why: action.why,
     ...(said === undefined ? {} : { said })
   };
+}
+
+/** A robot check still waiting on the person: the only card the other half of a check joins. */
+function waitsOnPerson(action: Pick<ActivityAction, "kind" | "outcome">): boolean {
+  return action.kind === "person_check" && action.outcome === "waiting";
 }
 
 /** A decision's or an action's title: Core's title when it is in words, else its sentence. */

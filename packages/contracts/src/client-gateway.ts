@@ -130,6 +130,20 @@ export type ClientGatewayActivityPhase =
   | "failed";
 
 /**
+ * How a wait on the person ended, on the `ask` row that says so:
+ *
+ * - `answered`: the person answered (a robot check's Continue, a choice, words);
+ * - `allowed`: the person granted a permission ask;
+ * - `waited_out`: a check that clears by itself cleared while Core waited;
+ * - `declined`: the person refused, or pressed Stop at a robot check;
+ * - `timed_out`: nobody answered in time;
+ * - `cancelled`: the work stopped before anyone answered -- it was cancelled
+ *   or failed while it waited, or the question could no longer be read.
+ */
+export const CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS = Object.freeze(["waited_out", "answered", "allowed", "declined", "timed_out", "cancelled"] as const);
+export type ClientGatewayActivityResolution = (typeof CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS)[number];
+
+/**
  * One activity event: the current status of one unit of work (a build or a
  * run) plus an optional detail row for the chat stream. Bounded, and
  * content-free beyond what the person's own panel already shows: labels and
@@ -140,6 +154,18 @@ export type ClientGatewayActivityPhase =
  * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
  * (240 characters for a decision's reason). Core truncates `label` to 160
  * characters, `detail.title` to 160 and `detail.text` to 1,000.
+ *
+ * A wait on the person is one `ask` row pair for one card. The wait opens as
+ * `phase: "waiting_permission"`, `detail: { kind: "ask", ref: <askId>,
+ * status: "started" }`. When it is settled, Core sends one more `ask` row for
+ * the same unit of work with the same `ref` and `title`, the phase the work
+ * returns to, `status` `succeeded` (answered, allowed, waited out) or `failed`
+ * (declined, timed out, cancelled), `resolution`, and `text`, a sentence such
+ * as "You pressed Continue.". A client marks the card from that row alone and
+ * never infers the answer from later events. Every wait Core announced gets
+ * that row, including one whose work stopped first (`cancelled`); a wait Core
+ * never announced is never resolved. A run parked durably is still waiting
+ * until it is resumed.
  */
 export type ClientGatewayActivity = {
   /** Stable id of the unit of work this event belongs to. */
@@ -157,8 +183,13 @@ export type ClientGatewayActivity = {
     title: string;
     text?: string;
     status?: "started" | "succeeded" | "failed";
-    /** Tool or node id the row describes, when there is one. */
+    /** Tool or node id the row describes, when there is one; an `ask` row's ask id. */
     ref?: string;
+    /**
+     * On the `ask` row that settles a wait: how it ended. Optional, so a client
+     * that does not know it reads the row by `status` alone.
+     */
+    resolution?: ClientGatewayActivityResolution;
   };
   /** The conversation this work speaks through, when it has one. */
   conversationId?: string;

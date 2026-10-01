@@ -90,6 +90,14 @@ export type FluxIQRuntimeCommandResult = {
   error?: string;
   /** Structured failure from the adapter or client. Values from a client are validated by the transport. */
   failure?: AutomationStudioFailureRecord;
+  /**
+   * A wait on the target that cleared by itself while the command ran -- a check
+   * the page stood up and then took down, with nobody asked -- and how long it
+   * stood, in whole milliseconds. Absent when there was no such wait. The
+   * adapter lifts it here from its own result shape; Automation Studio tells a
+   * Flow run's person about it and reads nothing else off the payload for it.
+   */
+  clearedWait?: { waitedMs: number };
   metadata?: JsonObject;
 };
 

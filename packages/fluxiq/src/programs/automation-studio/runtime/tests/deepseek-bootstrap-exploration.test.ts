@@ -499,46 +499,63 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // run anybody makes, because the guard is held to the iterations and a build
   // is given 12, 26 or 48 calls. So this run of eleven identical malformed
   // replies was ended by the *run's call count*, published as "the loop ran
-  // out of turns", and no stall could ever be reported as a stall. Eight is read
-  // off two live traces (`runtime/loop-limits/evidence-loop.ts`), and the
-  // difference is visible here: the same script now stops at eight of twelve,
-  // four calls unspent, and says what actually happened.
-  it("stops on the no-progress guard while the run still has calls, with a named outcome", async () => {
+  // out of turns", and no stall could ever be reported as a stall.
+  //
+  // **What ends it now (t211, with t208's lifecycle and t214's record).** A
+  // reply that cannot be read is never a bare ending: each is asked again with
+  // a note of what could not be read, and only an unbroken run of six
+  // (`AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW`,
+  // `runtime/llm/unreadable-reply.ts`) ends the build -- before the eight of the
+  // no-progress guard, with six of the twelve calls unspent. It ends as exactly
+  // that, `flow_bootstrap.model_replies_unreadable`, with a message the person
+  // reads saying what happened and how many tries it took: not "not doable",
+  // since nothing says the task cannot be done, and not a budget, since the
+  // budget had room left. Retryable: the replies were the provider's fault, not
+  // the task's.
+  it("ends six unreadable replies in a row as exactly that while the run still has calls, with a named outcome", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
-    expect(run.sentIterations).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
-    expect(run.revealed).toHaveLength(8);
+    expect(run.sentIterations).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(run.revealed).toHaveLength(6);
     expect(run.failure).toMatchObject({
-      // The stall's own ending, not the budget's. `retryable: false` is right
-      // here and wrong for an exhaustion, which is the distinction
-      // `runtime/llm/evidence-loop/exhaustion.ts` exists to keep: a build whose
-      // replies keep coming back unusable is not one a bigger budget fixes.
-      code: "flow_bootstrap.evidence_unusable_decision",
+      code: "flow_bootstrap.model_replies_unreadable",
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // Every malformed reply was paid for, and the record says what it cost.
-      // It used to say nothing -- zero tokens after eight paid calls -- and
-      // `run-munw7ffn-fe1cecd2`'s re-author left 14 such calls out of its
-      // accounting that way (`runtime/llm/reply-account.ts`).
-      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 9_600, outputTokens: 1_200, totalTokens: 10_800 }),
+      // Every malformed reply was paid for, and the record says what it cost:
+      // six calls at 1,200 in and 150 out. It used to say nothing -- zero
+      // tokens after eight paid calls -- and `run-munw7ffn-fe1cecd2`'s
+      // re-author left 14 such calls out of its accounting that way
+      // (`runtime/llm/reply-account.ts`).
+      accounting: expect.objectContaining({ provider: "deepseek", model: "deepseek-flash", inputTokens: 7_200, outputTokens: 900, totalTokens: 8_100 }),
       // One step per decision, each naming the iteration that paid for it --
-      // which is the whole point: eight refusals reading the same code are
-      // told apart by nothing else.
+      // which is the whole point: six refusals reading the same code are told
+      // apart by nothing else. The record is every round's, numbered across the
+      // build (t214); this build had one. An unreadable round's rows were left
+      // out of it when t211 and t214 first met, which published six paid calls
+      // with no steps and a decision count of 0.
       // `at` rides on every step now, a clock reading rather than a value, so
       // the steps are matched on what they say and their moment is asserted
       // as being present at all.
       evidenceLoop: {
-        iterationCount: 8, decisionCount: 8, toolCallCount: 0, evidenceBytes: expect.any(Number),
+        iterationCount: 6, decisionCount: 6, toolCallCount: 0, evidenceBytes: expect.any(Number),
         // Each says which malformed case it was: this script's reply stops
         // inside its object.
-        steps: Array.from({ length: 8 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage: expect.objectContaining({ outputTokens: 150 }), at: expect.any(Number) }))
+        steps: Array.from({ length: 6 }, (_, index) => ({ toolId: "core.decision_unusable", iteration: index + 1, resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage: expect.objectContaining({ inputTokens: 1_200, outputTokens: 150 }), at: expect.any(Number) }))
       },
-      issueCodes: ["llm.provider_malformed_response"]
+      issueCodes: ["llm.provider_malformed_response"],
+      ending: {
+        kind: "replies_unreadable",
+        notDone: [],
+        tried: { rounds: 1, decisions: 6, stepsInFlow: 0, tested: "not_tested" }
+      }
     });
-    // A stall is not an exhaustion, and the record must not carry the other
-    // one's facts: nothing ran out here.
+    expect(run.failure?.evidenceLoop?.steps).toHaveLength(6);
+    expect(run.failure?.ending).not.toHaveProperty("bound");
+    expect(run.failure?.ending?.message).toBe("The build stopped because the model's replies could not be read: 6 in a row came back unreadable -- because the JSON object never closed: it stopped part-way through -- and each was asked again with a note of what was wrong. In all, 6 of 6 replies could not be read, over one live round; each was paid for and counted in the build's budget. No step I found belonged in the Flow. Nothing was kept to carry on from.");
+    // Nothing ran out: the round was ended by its unreadable replies, with
+    // calls left, so the record carries no exhaustion.
     expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");
     expect(run.adaptationCount).toBe(0);
   }, 60_000);
@@ -598,13 +615,26 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
   it("names the ending of an exploration that ran out after more than sixteen decisions", async () => {
     const run = await create({ maxCalls: 20, reply: (_call, iteration) => look(iteration) });
-    console.log("T210DEBUG", JSON.stringify({ sent: run.sentIterations, f: { ...run.failure, evidenceLoop: { ...run.failure?.evidenceLoop, steps: undefined } } }).slice(0, 2500));
 
     expect(run.sentIterations).toHaveLength(20);
     // Twenty decisions, seventeen tool calls: the eighteenth and nineteenth are
     // the wrap-up and the twentieth the last, none of which offers a tool, so a
     // look asked for on them anyway is not run (t057, `llm/loop-budget.ts`).
-    expect(run.failure).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", evidenceLoop: { iterationCount: 20, toolCallCount: 17 } });
+    // Since t208 a round out of decisions is not the build's ending: with
+    // nothing in its Flow and no call left, the build ends as the call budget
+    // it spent, saying so.
+    expect(run.failure).toMatchObject({
+      code: "flow_bootstrap.evidence_budget_exhausted",
+      retryable: true,
+      // Twenty decisions paid for, twenty in the record: the last, a look on a
+      // decision offered only completion, leaves its row like the rest. It
+      // used to leave none, publishing 19 decisions beside 20 paid (t214).
+      evidenceLoop: { iterationCount: 20, decisionCount: 20, toolCallCount: 17 },
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 20, stepsInFlow: 0 } }
+    });
+    expect(run.failure?.ending?.message).toMatch(/^The build stopped at its limit of 20 model calls before the Flow was finished\./u);
+    expect(run.failure?.evidenceLoop?.steps?.filter((step) => step.resultCode === "llm_evidence_loop.not_offered").map((step) => step.iteration)).toEqual([18, 19, 20]);
+    expect(run.failure?.evidenceLoop?.steps?.at(-1)).toMatchObject({ toolId: LOOK_TOOL_ID, iteration: 20, resultCode: "llm_evidence_loop.not_offered", usage: expect.objectContaining({ outputTokens: 150 }) });
   }, 120_000);
 
   it("reproduces the measured 26-decision creation exhaustion with exact feedback, trace, and accounting", async () => {
@@ -660,9 +690,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // model's answers blamed for a build that had simply used its twenty-sixth
     // of twenty-six calls. The refusal is still reported, as the issue code it
     // is; the ending is reported as the allowance that ran out, and marked as
-    // something a larger budget can retry.
+    // something a larger budget can retry. Since t208 that allowance is the
+    // build's call budget, published as `evidence_budget_exhausted` with the
+    // message the person reads; what it carries is otherwise unchanged.
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.evidence_iteration_limit",
+      code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
       retryable: true,
       providerInvocation: "attempted",
@@ -677,8 +709,10 @@ describe("creating a Flow through an exploration, with no grant", () => {
         // decision was made and acted on, so the loop reached the end of its
         // `for` rather than refusing a twenty-seventh it could not pay for.
         exhausted: { bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: expect.any(Number), proposableSteps: expect.any(Number), completionAttempts: expect.any(Number) }
-      }
+      },
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 26 } }
     });
+    expect(run.failure?.ending?.message).toMatch(/^The build stopped at its limit of 26 model calls before the Flow was finished\..*what held it up was that the Flow could not give the answer you asked for\./u);
     expect(run.failure?.evidenceLoop?.exhausted?.completionAttempts).toBeGreaterThan(0);
     expect(run.failure?.evidenceLoop?.exhausted?.draftSteps).toBeGreaterThan(0);
     expect(run.failure?.evidenceLoop?.evidenceBytes).toBeGreaterThan(0);

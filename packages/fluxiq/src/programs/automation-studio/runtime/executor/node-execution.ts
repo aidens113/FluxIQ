@@ -13,7 +13,7 @@ import { collectNodeInputs, collectWiredNodeInputs } from "./node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
 import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
-import { emitAutomationStudioActivity } from "../activity/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait } from "../activity/index.ts";
 import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
 /**
@@ -255,6 +255,10 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     } else {
       if (!options.effectDispatcher) continue;
       const answer = await options.effectDispatcher(effect, effectDispatchContext(options, withholding)); if (!answer) continue;
+      // A check on the page that cleared by itself while this output waited is
+      // told as the pair a tool call's would be; an absent or unreadable figure
+      // says nothing.
+      emitAutomationStudioActivityClearedWait(clearedWaitRef(options, target, index), answer.clearedWait, "running");
       dispatched = await withCapturedRecords(effect, answer, options, target);
     }
     const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
@@ -276,6 +280,14 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     result = { ...result, outputs, ...targetResolution };
   }
   return result;
+}
+
+// One card per node attempt, keyed under the Call Flow attempts it runs inside
+// so a child's node never shares a ref with the parent's. A second dispatch in
+// the same attempt is numbered.
+function clearedWaitRef(options: AutomationStudioGraphExecutionOptions, target: RecordCaptureTarget, effectIndex: number): string {
+  const attempt = [...(options.callFlowAttemptPath ?? []), target.attemptId].join("/");
+  return `waited-out.${attempt}${effectIndex > 0 ? `.${effectIndex}` : ""}`;
 }
 
 const PERSIST_FAILED_MESSAGE = "The output ran, but the records it returned could not be saved.";

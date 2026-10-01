@@ -27,7 +27,7 @@ import { automationStudioRunState, type AutomationStudioRunState } from "./run-s
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -528,14 +528,24 @@ async function executeAutomationStudioGraph(
           return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
         }
         if (ask.parks) {
-          emitAutomationStudioActivity({ phase: "waiting_permission", label: personNeeded ? ask.text : "Waiting for an answer before going on", detail: { kind: "ask", title: personNeeded ? "Waiting for a person" : `Asked a question (${ask.kind})`, status: "started", ref: currentNode.id } });
-          const settlement = await settleAskInPlace(options, parked);
+          emitAutomationStudioActivityWaitingOnAsk(ask);
+          let settlement: Awaited<ReturnType<typeof settleAskInPlace>>;
+          try {
+            settlement = await settleAskInPlace(options, parked);
+          } catch (error) {
+            // The thread could not be read: the wait is over, and nobody answered.
+            emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
+            throw error;
+          }
           if (!settlement) {
             return { status: "waiting", startedAt, currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, parked, ...(attempt.message ? { message: attempt.message } : {}) };
           }
           if (settlement.outcome === "refused") {
+            emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
             return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: settlement.message };
           }
+          // Said where the wait settles; a run cancelled while it waited was answered by nobody and timed out on nothing.
+          emitAutomationStudioActivityAskResolved(ask, settlement.outcome === "answered" ? automationStudioActivityAskResolution(ask, settlement.answer) : options.signal?.aborted ? "cancelled" : "timed_out", "running");
           attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: settledAskRecord(ask, settlement) };
           // What the person said is data the rest of the Flow can read, put
           // where every other node output goes so a binding reaches it the
