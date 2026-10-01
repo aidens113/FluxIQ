@@ -1,7 +1,7 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { automationWindowDescription, viewTitle } from "../components/view-metadata";
 import { automationViewGroupLabel } from "../view-adder";
 import { useAtomicOverlayCommand, type OverlayCommandDispatcher } from "./atomic-command";
@@ -32,6 +32,13 @@ export function ViewAdderOverlaySurface(props: {
 }) {
   const [query, setQuery] = useState("");
   const { execute, status } = useAtomicOverlayCommand(props.dispatch);
+  const mounted = useRef(false);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const ownership = useRef({ request: props.request, pending: false, intent: "none" as "none" | "cancel" | "action" });
+  if (ownership.current.request !== props.request) ownership.current = { request: props.request, pending: false, intent: "none" };
+  const owner = ownership.current;
+  const current = () => mounted.current && ownership.current === owner;
+  const closeRef = useRef(props.onClose); closeRef.current = props.onClose;
   const normalized = query.trim().toLocaleLowerCase();
   const options = props.request.options.filter((option) => !normalized || [
     viewTitle(option.view),
@@ -42,6 +49,8 @@ export function ViewAdderOverlaySurface(props: {
   ].join(" ").toLocaleLowerCase().includes(normalized));
 
   async function add(viewId: string) {
+    if (!current() || owner.pending || status.pending || !props.request.options.some((option) => option.view.id === viewId && !option.disabledReason)) return;
+    owner.pending = true;
     const command: ViewAdderOverlayCommand = {
       type: "workspace.view.add",
       requestId: props.request.id,
@@ -49,7 +58,14 @@ export function ViewAdderOverlaySurface(props: {
       area: props.request.area,
       ...(props.request.targetWindowId ? { targetWindowId: props.request.targetWindowId } : {})
     };
-    if (await execute(command)) props.onClose();
+    try {
+      if (await execute(command) && current()) { owner.intent = "action"; closeRef.current(); }
+    } finally { owner.pending = false; }
+  }
+
+  function cancel() {
+    if (!current() || owner.pending || status.pending) return;
+    owner.intent = "cancel"; closeRef.current();
   }
 
   return (
@@ -58,16 +74,17 @@ export function ViewAdderOverlaySurface(props: {
       ariaLabel="Open a panel"
       busy={status.pending}
       className="automation-window-adder-panel"
-      onClose={props.onClose}
+      onClose={cancel}
+      shouldReturnFocus={() => ownership.current === owner && owner.intent === "cancel"}
       preferredWidth={420}
     >
       <header>
         <div><strong>Open a panel</strong><span>{props.request.area === "right" ? "Details panel" : "Main area"}</span></div>
-        <button aria-label="Close the panel picker" className="icon-button" disabled={status.pending} onClick={props.onClose} type="button"><X aria-hidden size={14} /></button>
+        <button aria-label="Close the panel picker" className="icon-button" disabled={status.pending} onClick={cancel} type="button"><X aria-hidden size={14} /></button>
       </header>
       <label className="automation-window-adder-search">
         <Search aria-hidden size={14} />
-        <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Find a panel" type="search" value={query} />
+        <input autoFocus onChange={(event) => { if (current()) setQuery(event.target.value); }} placeholder="Find a panel" type="search" value={query} />
       </label>
       {(["Flow", "Evidence", "Workspace"] as const).map((group) => {
         const grouped = options.filter((option) => option.group === group);

@@ -29,15 +29,18 @@ export function AccessibleFloatingOverlay(props: {
   children: ReactNode;
   className: string;
   onClose(): void;
+  shouldReturnFocus?(): boolean;
   preferredWidth: number;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const behaviorRef = useRef({ busy: Boolean(props.busy), onClose: props.onClose });
+  const behaviorRef = useRef({ busy: Boolean(props.busy), onClose: props.onClose, shouldReturnFocus: props.shouldReturnFocus });
+  const dismissal = useRef<"unknown" | "escape" | "outside">("unknown");
   const updatePositionRef = useRef<() => void>(() => undefined);
   const titleId = useId();
   const [position, setPosition] = useState<FloatingPosition | null>(null);
-  behaviorRef.current = { busy: Boolean(props.busy), onClose: props.onClose };
+  behaviorRef.current = { busy: Boolean(props.busy), onClose: props.onClose, shouldReturnFocus: props.shouldReturnFocus };
+  dismissal.current = "unknown";
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -45,35 +48,44 @@ export function AccessibleFloatingOverlay(props: {
     if (!panel || !root) return;
     const documentRef = panel.ownerDocument;
     const active = documentRef.activeElement as HTMLElement | null;
-    const returnFocus = active && typeof active.focus === "function" ? active : null;
+    let live = true;
+    const interactive = () => documentRef.visibilityState !== "hidden" && (typeof documentRef.hasFocus !== "function" || documentRef.hasFocus());
+    const returnFocus = active && typeof active.focus === "function" ? {
+      get isConnected() { return active.isConnected; },
+      focus(options?: FocusOptions) {
+        const allowed = dismissal.current !== "outside" && (behaviorRef.current.shouldReturnFocus
+          ? behaviorRef.current.shouldReturnFocus() : dismissal.current === "escape");
+        if (allowed && interactive() && eligible(active, false)) active.focus(options);
+      }
+    } : null;
     const releaseEnvironment = acquireOverlayEnvironment(documentRef, {
       mode: "nonmodal",
       panel,
       root,
       returnFocus,
-      canDismiss: () => !behaviorRef.current.busy,
-      onEscape: () => behaviorRef.current.onClose(),
-      onPointerDownOutside: () => behaviorRef.current.onClose(),
+      canDismiss: () => live && !behaviorRef.current.busy,
+      onEscape: () => { if (live && !behaviorRef.current.busy) { dismissal.current = "escape"; behaviorRef.current.onClose(); } },
+      onPointerDownOutside: () => { if (live && !behaviorRef.current.busy) { dismissal.current = "outside"; behaviorRef.current.onClose(); } },
       onViewportChange: () => updatePositionRef.current()
     });
-    function eligible(element: HTMLElement) {
+    function eligible(element: HTMLElement, requireFocusable = true) {
       const focusable = ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(element.tagName)
         || element.hasAttribute("tabindex") || (element.tagName === "A" && element.hasAttribute("href")) || element.isContentEditable;
-      if (!focusable || !element.isConnected || element.ownerDocument !== documentRef || element.hidden || element.matches(":disabled")
+      if ((requireFocusable && !focusable) || !element.isConnected || element.ownerDocument !== documentRef || element.hidden || element.matches(":disabled")
         || (element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden")
         || element.closest('[hidden], [inert], [aria-hidden="true"]') || !element.getClientRects().length) return false;
       const visibility = documentRef.defaultView?.getComputedStyle(element).visibility;
       return visibility !== "hidden" && visibility !== "collapse";
     }
     function first(selector: string) {
-      return Array.from(panel!.querySelectorAll<HTMLElement>(selector)).find(eligible);
+      return Array.from(panel!.querySelectorAll<HTMLElement>(selector)).find((element) => eligible(element));
     }
-    if (documentRef.visibilityState !== "hidden" && (typeof documentRef.hasFocus !== "function" || documentRef.hasFocus()) && root.isConnected && eligible(panel)) {
+    if (interactive() && root.isConnected && eligible(panel)) {
       // Selector lists follow DOM order, so explicit autofocus needs its own tiers.
       const initial = first("[data-autofocus]") ?? first("[autofocus]") ?? first(focusableSelector());
       (initial ?? panel).focus({ preventScroll: true });
     }
-    return releaseEnvironment;
+    return () => { live = false; releaseEnvironment(); };
   }, []);
 
   useLayoutEffect(() => {

@@ -326,6 +326,22 @@ overlays use their panel's owner document for entry focus, selecting eligible
 explicit autofocus before ordinary controls and the panel fallback. Hidden,
 unfocused or retired panels do not claim entry focus.
 
+Floating workspace cancellation returns focus only to an eligible original
+trigger. Outside dismissal, accepted actions and retired requests suppress that
+return; synchronous pending guards prevent duplicate actions before busy renders.
+Current failures remain retryable and issued actions retain their original
+completion semantics. Tooltip hover and focus have independent lifetimes;
+eligible Escape dismisses supplemental text until both leave, preserves native
+child handlers and does not consume the event. A parent overlay may also handle
+that Escape. Visible text supports pointer travel through its local gap bridge;
+physical browser geometry remains unverified.
+
+Bounded JSON previews disclose truncation for long strings as well as collection,
+depth and item limits, retaining lazy disclosure. Database full-record JSON is a
+separate capability. Code downloads release allocated object URLs even when
+anchor creation, configuration or activation fails; existing failure feedback
+remains available. A started download acknowledgement does not prove completion.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,

@@ -2,16 +2,16 @@ import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AccessibleFloatingOverlay } from "../accessible-floating-overlay";
+import type { OverlayEnvironmentOptions } from "../../../../programs/overlay-environment";
 
 const fixture = vi.hoisted(() => ({ acquire: vi.fn(), release: vi.fn() }));
 vi.mock("react-dom", () => ({ createPortal: (children: React.ReactNode) => children }));
 vi.mock("../../../../programs/overlay-environment", () => ({ acquireOverlayEnvironment: fixture.acquire }));
 let renderer: ReactTestRenderer | undefined;
 function setup(invalid = "", state: "visible" | "hidden" | "unfocused" = "visible") {
-  const trigger = { focus: vi.fn() };
   const foreignTrigger = { focus: vi.fn() };
   const doc = {
-    activeElement: trigger, visibilityState: state === "hidden" ? "hidden" : "visible", hasFocus: () => state !== "unfocused",
+    activeElement: null as unknown, visibilityState: state === "hidden" ? "hidden" : "visible", hasFocus: () => state !== "unfocused",
     defaultView: { getComputedStyle: (element: { invalid: string }) => ({ visibility: element.invalid === "css-hidden" ? "hidden" : element.invalid === "css-collapse" ? "collapse" : "visible" }) },
   };
   function candidate(tagName: string, attributes: string[] = [], reason = "") {
@@ -22,6 +22,7 @@ function setup(invalid = "", state: "visible" | "hidden" | "unfocused" = "visibl
       closest: () => ["hidden", "inert", "aria-hidden"].includes(reason) ? {} : null,
       getClientRects: () => reason === "zero-size" ? [] : [{}], focus: vi.fn() };
   }
+  const trigger = candidate("BUTTON"); doc.activeElement = trigger;
   const close = candidate("BUTTON", [], invalid === "all-invalid" ? "disabled" : "");
   const explicit = candidate(invalid === "nonfocusable" ? "DIV" : "INPUT", ["autofocus"], invalid === "all-invalid" ? "disabled" : invalid);
   const ordinary = candidate("INPUT", [], invalid === "all-invalid" ? "disabled" : "");
@@ -68,9 +69,26 @@ it.each(["disabled", "fieldset", "hidden", "hidden-self", "inert", "aria-hidden"
   expect(state.ordinary.focus).toHaveBeenCalledWith({ preventScroll: true });
 });
 it("uses the panel owner document and its active element for environment registration", async () => {
-  const state = setup(); await mount(state);
-  expect(fixture.acquire).toHaveBeenCalledWith(state.doc, expect.objectContaining({ panel: state.panel, root: state.root, returnFocus: state.trigger, mode: "nonmodal" }));
+  const state = setup();
+  fixture.acquire.mockImplementation((_document: Document, options: OverlayEnvironmentOptions) => () => options.returnFocus?.focus({ preventScroll: true }));
+  await mount(state);
+  expect(fixture.acquire).toHaveBeenCalledWith(state.doc, expect.objectContaining({ panel: state.panel, root: state.root, mode: "nonmodal" }));
+  const options = fixture.acquire.mock.calls[0]![1] as OverlayEnvironmentOptions;
+  expect(options.returnFocus?.isConnected).toBe(true);
+  await act(async () => options.onEscape?.());
+  await act(async () => renderer!.unmount()); renderer = undefined;
+  expect(state.trigger.focus).toHaveBeenCalledOnce(); expect(state.trigger.focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(state.foreignTrigger.focus).not.toHaveBeenCalled();
+});
+it("rechecks original owner-document trigger eligibility at cancellation release", async () => {
+  const state = setup();
+  fixture.acquire.mockImplementation((_document: Document, options: OverlayEnvironmentOptions) => () => options.returnFocus?.focus({ preventScroll: true }));
+  await mount(state);
+  const options = fixture.acquire.mock.calls[0]![1] as OverlayEnvironmentOptions;
+  await act(async () => options.onEscape?.());
+  state.trigger.hidden = true;
+  await act(async () => renderer!.unmount()); renderer = undefined;
+  expect(state.trigger.focus).not.toHaveBeenCalled(); expect(state.foreignTrigger.focus).not.toHaveBeenCalled();
 });
 it("prefers data-autofocus over native autofocus regardless of DOM order", async () => {
   const state = setup(); state.ordinary.attributes.push("data-autofocus"); await mount(state);

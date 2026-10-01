@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Eleventh integrated gates complete; next disjoint floating-dismissal and Tooltip implementations active.
+Status detail: Eleventh gates complete; twelfth floating/Tooltip independently checked, DataInspector and settings navigation implementations active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -10,6 +10,18 @@ Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repo
 Related: [current system](../architecture/current-system.md), [working document index](./README.md)
 
 ## Current State
+
+Latest root twelfth narrow checks: floating139/native0/22.78s; combined
+Tooltip23/JsonViewer7/download5/shared contracts20 =55/native0/4.58s.
+CodeViewer cleanup independently19/strict0 checkpoint1d4d2000. JsonViewer
+long-string guidance reproduced3fail/4pass before local flag fix. Nine-root
+strict session83805 active. Tooltip/floating/JsonViewer source frozen; two
+workers own disjoint DataInspector source+NEW test and SettingsSectionLayout
+source+NEW test. No Core broad checks while those paths change. Third worker
+audits downstream receiver lifecycle read-only. Root owns shared docs/review;
+exact reports and briefs are downstream, latest twelfth-supervisor-verification.
+Extension root208/strict17roots0; full58454 active, one test barrel import
+structure failure corrected/recheck pending. No browser certification or push.
 
 Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
 a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
@@ -77,6 +89,14 @@ service4506/4505. All ninth units Complete. Menu two-path worker now released;
 downstream mounted Chat/extraction source active after independent1878full gates.
 
 ## Work Ledger
+
+### 2026-10-01 - Twelfth narrow verification and continued workers
+- Agent: supervisor and three workers
+- Changed: Tooltip interaction, floating close intent, CodeViewer cleanup, JsonViewer guidance and authored architecture; two disjoint recovery briefs released downstream.
+- Why: keep cancellation/focus and read feedback consistent while preventing stale callbacks from affecting replacement UI.
+- Validation: independent floating139/native0/22.78s; combined Tooltip/JsonViewer/download/shared55/native0/4.58s; CodeViewer19/scoped0 previously checkpointed1d4d2000. Nine-root strict83805 pending. JsonViewer tests-first3fail/4pass retained downstream.
+- Outcome: Focused source reviewed; DataInspector and settings workers continue. No Core broad gates while workers write, no browser certification or integration push.
+- Follow-up: observe strict result, checkpoint frozen units and review recovery implementations before full Core gates.
 
 ### 2026-10-01 - Tenth Core corrected full gates complete
 - Agent: supervisor
