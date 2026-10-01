@@ -150,7 +150,7 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
    * round that stopped short, which is always explored again, repaired or
    * ended with a stated reason.
    */
-  | { kind: "ended"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
+  | { kind: "ended"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number; trace: AutomationStudioLlmEvidenceLoopTrace[] }
   /** Not doable, a budget ran out first, or the replies could not be read: the ending the person is told. */
   | {
     kind: "unfinished";
@@ -194,14 +194,13 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     }
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
     // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
-    if (ending.kind === "finished") record.push(...numberedAcrossBuild(ending.loop.trace, spent.iterations));
-    else if (ending.kind !== "other") record.push(...numberedAcrossBuild(ending.progress.trace, spent.iterations));
+    record.push(...numberedAcrossBuild(ending.kind === "finished" || ending.kind === "other" ? ending.loop.trace : ending.progress.trace, spent.iterations));
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
     if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
-    if (ending.kind === "other") return { kind: "ended", loop: ending.loop, accounting: spent, rounds };
+    if (ending.kind === "other") return { kind: "ended", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
     const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
-    const asked = input.callerEnding?.(ending.progress);
+    const asked = input.callerEnding?.({ ...ending.progress, trace: [...record], accounting: { ...spent } });
     if (asked !== undefined) throw asked;
     // Only a Flow with steps in it is tested: an empty one has nothing to run.
     if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
@@ -214,7 +213,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       replayable: input.replayable, checklist: input.checklist
     });
     if (judged.kind === "cancelled") {
-      return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds };
+      return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] };
     }
     const { judgement, seed } = judged;
     const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable }): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {

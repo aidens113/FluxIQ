@@ -282,6 +282,56 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I explored live once over 40 decisions, and what held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
   });
 
+  it.each(["llm_evidence_loop.cancelled", "llm_evidence_loop.invalid_configuration", "llm_evidence_loop.evidence_limit"] as const)("retains every round when a later round ends %s", async (code) => {
+    const first = { ...outOfDecisions([], spent(2, 0.01)), trace: [{ iteration: 0, decision: "tool_call" as const, toolId: "demo.look" }, { iteration: 1, decision: "complete" as const }, { iteration: 2, decision: "complete" as const }] };
+    const refusedBeforeStarting = code === "llm_evidence_loop.invalid_configuration";
+    const last: AutomationStudioLlmEvidenceLoopResult = { ok: false, code, trace: refusedBeforeStarting ? [] : [{ iteration: 0, decision: "tool_call", toolId: "demo.look" }, { iteration: 1, decision: "unusable" }], steps: [], accounting: spent(refusedBeforeStarting ? 0 : 1, 0.01) };
+    const { input, requests } = harness([() => first, () => last]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("ended");
+    if (outcome.kind !== "ended") return;
+    expect(outcome.loop).toBe(last);
+    expect(outcome.trace.map((row) => row.iteration)).toEqual(refusedBeforeStarting ? [0, 1, 2] : [0, 1, 2, 0, 3]);
+    expect(last.trace.map((row) => row.iteration)).toEqual(refusedBeforeStarting ? [] : [0, 1]);
+    expect(outcome.accounting).toMatchObject({ iterations: refusedBeforeStarting ? 2 : 3, totalTokens: refusedBeforeStarting ? 2_200 : 3_300 });
+    expect(outcome.rounds).toBe(2);
+    expect(requests).toHaveLength(2);
+  });
+
+  it("retains earlier rounds when judgement is cancelled without duplicating the current round", async () => {
+    let tests = 0;
+    const partial = [step(1, { acts: ["a1"] })];
+    const round = () => ({ ...outOfDecisions(partial, spent(1, 0.01)), trace: [{ iteration: 1, decision: "complete" as const }] });
+    const { input } = harness([round, round], { test: async () => ++tests === 2 ? "cancelled" : undefined });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("ended");
+    if (outcome.kind !== "ended") return;
+    expect(outcome.loop.code).toBe("llm_evidence_loop.cancelled");
+    expect(outcome.trace.map((row) => row.iteration)).toEqual([1, 2]);
+    expect(outcome.accounting).toMatchObject({ iterations: 2, totalTokens: 2_200 });
+  });
+
+  it("gives a caller-owned ending the whole build's progress before it publishes the failure", async () => {
+    const asked = new Error("permission asked");
+    let calls = 0;
+    const round = () => ({ ...outOfDecisions([], spent(1, 0.01)), trace: [{ iteration: 1, decision: "complete" as const }] });
+    const { input } = harness([round, round], {
+      callerEnding: (progress) => {
+        if (++calls < 2) return undefined;
+        expect(progress.trace.map((row) => row.iteration)).toEqual([1, 2]);
+        expect(progress.accounting).toMatchObject({ iterations: 2, totalTokens: 2_200 });
+        return asked;
+      }
+    });
+
+    await expect(runAutomationStudioFlowBootstrapBuildPhases(input)).rejects.toBe(asked);
+    expect(calls).toBe(2);
+  });
+
   it("passes every ending it does not reach past through untouched", async () => {
     const asked = new Error("permission asked");
     const { input } = harness([() => { throw asked; }]);
