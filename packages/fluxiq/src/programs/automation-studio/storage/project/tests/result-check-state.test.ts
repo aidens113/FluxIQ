@@ -1,4 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,14 +7,15 @@ import { AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectRuntimeStreamStore } from "../runtime-stream-store.ts";
 
-const rootDir = path.join(os.tmpdir(), "fluxiq-automation-studio-result-check-state-test");
+// Its own directory per case: a fixed one was shared by every run of this
+// file, so two runs at once deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.checks";
 const FLOW = "flow.catalogue";
 
 describe("runtime_runs result check state", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-result-check-state-test-"));
   });
 
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));

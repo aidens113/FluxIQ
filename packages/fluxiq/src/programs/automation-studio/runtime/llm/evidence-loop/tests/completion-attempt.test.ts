@@ -92,11 +92,9 @@ describe("one attempt to finish", () => {
     expect(dryRun).not.toHaveBeenCalled();
   });
 
-  it("ends as the dry run ends, when it was cancelled or ran out of evidence room", async () => {
+  it("ends as the dry run ends, when it was cancelled", async () => {
     await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: () => ({ ok: true }), dryRun: async () => "cancelled" }))
       .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.cancelled" });
-    await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, dryRun: async () => "evidence_limit" }))
-      .resolves.toEqual({ kind: "ended", code: "llm_evidence_loop.evidence_limit" });
   });
 
   // Flow Bootstrap puts back the step that reached the start location when the

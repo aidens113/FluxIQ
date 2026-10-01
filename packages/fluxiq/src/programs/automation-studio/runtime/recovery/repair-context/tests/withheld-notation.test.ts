@@ -53,7 +53,7 @@ describe("the notation a withheld parameter is named in", () => {
   it("mints no path the locator screen would touch, at every level it reaches", () => {
     // The claim is about the notation rather than about one fixture, so this
     // walks a parameter tree with lists at three levels and a refusal of each
-    // kind -- credential, locator, over-length, denied key, payload, depth -- and
+    // kind -- credential, locator, secret-named key, denied key -- and
     // asserts the property over whatever set of paths comes back.
     const screened = screen({
       extractList: {
@@ -66,9 +66,11 @@ describe("the notation a withheld parameter is named in", () => {
       },
       conditions: [{ signalPath: "page.url", operator: "contains", expected: "/plus" }],
       value: ["4111 1111 1111 1111"],
+      password: "hunter2",
+      "pin-code": ["1234"],
       selector: "#pay-now"
     });
-    expect(screened.withheld.length).toBeGreaterThan(5);
+    expect(screened.withheld.length).toBeGreaterThanOrEqual(5);
     for (const path of screened.withheld) {
       expect(automationStudioLocatorShapedText(path), path).toBe(false);
       expect(automationStudioWithoutLocators(path)).toBe(path);

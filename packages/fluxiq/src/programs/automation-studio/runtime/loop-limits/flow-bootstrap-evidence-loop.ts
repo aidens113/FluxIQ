@@ -27,29 +27,12 @@
 // This module does arithmetic only. From `runtime/llm/` it reads the harness's
 // token constants and the run cost ceiling.
 //
-// `maxEvidenceContextBytes` was 8,000, and the loop sizes each observation at
-// that figure less 512, so one observation could fill the window and leave 512
-// bytes for everything that came after it. It did: a live build's page
-// observation was 7,120 bytes of an 8,000-byte window, and the second small
-// tool result after it pushed the page out. The decision that writes the Flow
-// is never the first one, so the evidence the Flow has to be written from was
-// gone by the time it was written, every run. `AUTOMATION_STUDIO_EVIDENCE_
-// CONTEXT_BYTES` is sized instead for what a window has to hold at once: two
-// observations at a domain's largest packet, and the smaller results beside
-// them. It is far below a request's token ceiling -- the live builds spent
-// about 7,000 input tokens of the 48,000 a call allows -- so what bounds a
-// build stays its cost, tokens and calls rather than this.
-//
-// `maxEvidenceBytes`, the total a build may gather, was 64,000. A realistic
-// page costs 5 to 20 KB, so builds on the realistic sites ended
-// `evidence_limit` after ten to fifteen calls, before any Flow was written,
-// with money and tokens left (`run-mubpn1ga-8ae8fdc5`: 63,982 bytes, fourteen
-// calls), and the tool offered what was left of the total was handed a few
-// dozen bytes and threw, which the build reported as a tool failure. The window
-// each decision is shown is what bounds a request, and the loop now keeps it
-// whole whatever the total (`runtime/llm/context-window.ts`), so the
-// total is the loop's own ceiling: a backstop no build reaches before its
-// calls, cost or tokens do.
+// There is no byte limit on evidence here any more. `maxEvidenceContextBytes`
+// (24,000, `AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES`) held what one decision
+// was shown, and `maxEvidenceBytes` (1 MiB) what a build gathered; both are
+// gone (2026-09-30). The model is shown every evidence entry in full, and the
+// only bound on a request is the model's context window, enforced loudly
+// before a request is sent (`runtime/llm/context-window.ts`).
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
 import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
@@ -72,17 +55,6 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS = 64 * AUTOMA
  */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS = 540_000;
 
-/**
- * How much evidence one decision may carry.
- *
- * Room for two observations at the largest packet a domain may return, and the
- * smaller tool results and feedback entries beside them, so an observation is
- * never squeezed out by what followed it. The loop offers each tool this
- * figure less 512 bytes; a domain that caps its own packets lower keeps its own
- * cap, which is what the web domain does.
- */
-export const AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES = 24_000;
-
 export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
   loop: {
@@ -90,8 +62,6 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
     /** The backstop: the resolver's declared call count, or the loop's ceiling. */
     maxIterations: number;
     maxToolCalls: number;
-    maxEvidenceBytes: number;
-    maxEvidenceContextBytes: number;
     /** The bounds that decide: the run's token budget and cost ceiling, and the deadline. */
     budget: AutomationStudioLlmEvidenceLoopBudget;
   };
@@ -101,6 +71,13 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
    * underneath; this is the guard that stops a loop whose replies stay bad.
    */
   maxConsecutiveUnusableDecisions: number;
+  /**
+   * The call count the resolver or the Flow's settings declared, when one was:
+   * a budget the whole build is held to, repairs included
+   * (`runtime/flow-bootstrap/unfinished-build/`). Absent, the count is only the
+   * loop's backstop, which each phase of a build meets on its own.
+   */
+  declaredCalls?: number;
 };
 
 /**
@@ -133,7 +110,7 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
     maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS
   };
   return {
-    loop: { minToolCalls: 1, maxIterations, maxToolCalls, maxEvidenceBytes: ceiling.maxEvidenceBytes, maxEvidenceContextBytes: AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES, budget },
+    loop: { minToolCalls: 1, maxIterations, maxToolCalls, budget },
     // Three was this number until 2026-09-22, and three ended builds that were
     // working: it is the loop's no-progress guard as well as its unusable-reply
     // guard, and a build that meets a setback, looks again and tries another way
@@ -142,7 +119,8 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
     // the run's deadline, all of which this function hands the loop as
     // its budget. This is only the stop for a build that has started repeating
     // itself and will not stop on its own.
-    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations)
+    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations),
+    ...(declared === undefined ? {} : { declaredCalls: declared })
   };
 }
 

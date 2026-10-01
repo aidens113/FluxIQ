@@ -18,7 +18,7 @@ import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerabili
 import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
-import type { AutomationStudioLlmEvidenceLoopProgress } from "./progress.ts";
+import type { AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
   iteration: number;

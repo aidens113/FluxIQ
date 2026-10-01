@@ -91,6 +91,22 @@ export type AutomationStudioLlmProviderFailureProvenance = {
   providerResponse: AutomationStudioLlmProviderResponseState;
 };
 
+/**
+ * The size of a request a provider refused as too large
+ * (`llm.provider_input_budget_exceeded`), in numbers only. A size is safe to
+ * record where the check's own sentence is not, so this is the one pre-flight
+ * refusal whose recorded message says more than that it happened: a request
+ * over the model's window fails loudly, with its size, wherever it is caught.
+ */
+export type AutomationStudioLlmProviderInputSize = {
+  estimatedInputTokens: number;
+  estimatedInputBytes: number;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  maxTotalTokens: number;
+  contextWindowTokens: number;
+};
+
 export const AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS = 20_000;
 export const AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS = 45_000;
 
@@ -145,7 +161,9 @@ export class AutomationStudioLlmProviderError extends Error {
      * reason, the content's length, what it cost -- and never what it said
      * (`./reply-account.ts`). Only on a reply that arrived.
      */
-    readonly reply?: AutomationStudioLlmProviderReplyAccount
+    readonly reply?: AutomationStudioLlmProviderReplyAccount,
+    /** The refused request's size, on `llm.provider_input_budget_exceeded` only. */
+    readonly inputSize?: AutomationStudioLlmProviderInputSize
   ) {
     super(message);
   }
@@ -171,6 +189,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   refusal?: AutomationStudioLlmProviderRefusal;
   /** A reply that arrived and could not be read, described without its content. Bounded again here. */
   reply?: AutomationStudioLlmProviderReplyAccount;
+  /** The refused request's size, when the adapter refused it as too large. */
+  inputSize?: AutomationStudioLlmProviderInputSize;
   /**
    * What an untyped throw was, as read (`throw-account/`). Only on
    * `llm.provider_request_failed`: a typed failure already names its fault with
@@ -187,9 +207,11 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
     const refusal = refusalFromProviderError(error);
     // From a real instance only, like the refusal: a clone's claim is not read.
     const reply = error instanceof AutomationStudioLlmProviderError ? automationStudioLlmProviderReplyAccount(error.reply) : undefined;
+    const inputSize = typed.code === "llm.provider_input_budget_exceeded" ? inputSizeFromProviderError(error) : undefined;
     return {
       code: typed.code,
-      message: safeProviderFailureMessage(typed.code),
+      message: inputSize ? sizedInputBudgetMessage(inputSize) : safeProviderFailureMessage(typed.code),
+      ...(inputSize ? { inputSize } : {}),
       retryable: typed.retryable,
       ...(typed.status !== undefined ? { status: typed.status } : {}),
       provenance: error instanceof AutomationStudioLlmProviderError ? error.provenance : defaultProviderFailureProvenance(typed.code),
@@ -227,6 +249,30 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
 function refusalFromProviderError(error: unknown): AutomationStudioLlmProviderRefusal | undefined {
   if (!(error instanceof AutomationStudioLlmProviderError)) return undefined;
   return error.refusal ?? parseAutomationStudioLlmProviderRefusal(error.responseBody);
+}
+
+/**
+ * The size an adapter in this process attached to its refusal, read from a real
+ * error only (as `refusalFromProviderError` is) and only when every figure is a
+ * non-negative safe integer, so nothing but numbers can reach the message.
+ */
+function inputSizeFromProviderError(error: unknown): AutomationStudioLlmProviderInputSize | undefined {
+  if (!(error instanceof AutomationStudioLlmProviderError) || !error.inputSize) return undefined;
+  const size = error.inputSize;
+  const fields = [size.estimatedInputTokens, size.estimatedInputBytes, size.maxInputTokens, size.maxOutputTokens, size.maxTotalTokens, size.contextWindowTokens];
+  if (!fields.every((value) => Number.isSafeInteger(value) && value >= 0)) return undefined;
+  return {
+    estimatedInputTokens: size.estimatedInputTokens,
+    estimatedInputBytes: size.estimatedInputBytes,
+    maxInputTokens: size.maxInputTokens,
+    maxOutputTokens: size.maxOutputTokens,
+    maxTotalTokens: size.maxTotalTokens,
+    contextWindowTokens: size.contextWindowTokens
+  };
+}
+
+function sizedInputBudgetMessage(size: AutomationStudioLlmProviderInputSize): string {
+  return `The LLM provider refused the request before sending it: an estimated ${size.estimatedInputTokens} input tokens (${size.estimatedInputBytes} bytes) plus ${size.maxOutputTokens} reserved for the reply, over its ${size.maxInputTokens}-token input or ${size.maxTotalTokens}-token total limit; the model's context window is ${size.contextWindowTokens} tokens. Nothing was trimmed to fit.`;
 }
 
 function structurallyTypedProviderError(error: unknown): {

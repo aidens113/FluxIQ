@@ -8,8 +8,10 @@
 // of scope, because scope is a thing only a domain understands.
 //
 // So this **composes** those bounds rather than restating them. The loop keeps
-// its own ceiling on evidence bytes and its own duplicate and no-progress
-// checks; the ledger adds the five things it cannot see.
+// its own duplicate and no-progress checks; the ledger adds the five things it
+// cannot see. There is no evidence-bytes stop here: what an exploration looks at
+// is shown to the model whole (2026-09-30), and the run's cost is what bounds
+// how much looking it can afford.
 //
 // **A wall clock.** One `AbortController`, armed at the smaller of this
 // exploration's own limit and whatever is left of the whole recovery, and the
@@ -85,12 +87,6 @@ export type AutomationStudioExplorationBudget = {
   maxActions: number;
   /** Provider decisions. The loop's iteration ceiling is the backstop above it. */
   maxProviderCalls: number;
-  /**
-   * The far backstop on everything the exploration gathers, handed to the
-   * loop, which owns enforcing it. What each decision is shown is the loop's
-   * per-request window, whatever this total is.
-   */
-  maxEvidenceBytes: number;
   /** How many refusals before the exploration is treated as blocked rather than adjusting. */
   maxRefusedActions: number;
   /** How many times one identical action may be attempted, mutations notwithstanding. */
@@ -113,10 +109,6 @@ export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS: AutomationStudioExpl
   maxDurationMs: AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
   maxActions: 24,
   maxProviderCalls: 24,
-  // The ceiling, not 262,144: 24 calls at the web domain's 12,000-byte packet
-  // passed that, ending `budget_exhausted` with time and tokens left. Each
-  // request is bounded by the loop's window (`llm/context-window.ts`).
-  maxEvidenceBytes: 1_048_576,
   maxRefusedActions: 2,
   maxRepeatsPerAction: 2,
   maxStepsWithoutProgress: AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
@@ -138,13 +130,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS = Object.freeze({
   maxDurationMs: 600_000,
   maxActions: 64,
   maxProviderCalls: 64,
-  maxEvidenceBytes: 1_048_576,
   maxRefusedActions: 8,
   maxRepeatsPerAction: 4,
   maxStepsWithoutProgress: 8
 });
-
-const MIN_EVIDENCE_BYTES = 4_096;
 
 /**
  * A budget from whatever a caller asked for, clamped into range.
@@ -162,7 +151,6 @@ export function resolveAutomationStudioExplorationBudget(input?: Partial<Omit<Au
     maxDurationMs: clamp(input?.maxDurationMs, defaults.maxDurationMs, 1, ceilings.maxDurationMs),
     maxActions: clamp(input?.maxActions, defaults.maxActions, 1, ceilings.maxActions),
     maxProviderCalls: clamp(input?.maxProviderCalls, defaults.maxProviderCalls, 1, ceilings.maxProviderCalls),
-    maxEvidenceBytes: clamp(input?.maxEvidenceBytes, defaults.maxEvidenceBytes, MIN_EVIDENCE_BYTES, ceilings.maxEvidenceBytes),
     maxRefusedActions: clamp(input?.maxRefusedActions, defaults.maxRefusedActions, 1, ceilings.maxRefusedActions),
     maxRepeatsPerAction: clamp(input?.maxRepeatsPerAction, defaults.maxRepeatsPerAction, 1, ceilings.maxRepeatsPerAction),
     maxStepsWithoutProgress: clamp(input?.maxStepsWithoutProgress, defaults.maxStepsWithoutProgress, 1, ceilings.maxStepsWithoutProgress),

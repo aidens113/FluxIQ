@@ -281,7 +281,7 @@ describe("Automation Studio harness option registry", () => {
     registry.register(ledgerBundle());
     const call = {
       projectId: "project.one", flowId: "flow.one", callId: "call.1",
-      optionId: "erp.open_period", value: {}, maxEvidenceBytes: 1_000
+      optionId: "erp.open_period", value: {}
     };
     await expect(registry.execute(call, LEDGER_SCOPE)).rejects.toThrow(/not offered in this scope/);
     await expect(registry.execute(call, { ...LEDGER_SCOPE, policy: permissivePolicy() }))

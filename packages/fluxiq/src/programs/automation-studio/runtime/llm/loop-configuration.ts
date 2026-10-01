@@ -19,8 +19,6 @@ import {
 import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "./harness/index.ts";
-import { automationStudioLlmTokenBudgetBytes } from "./token-estimation.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import {
@@ -42,24 +40,14 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     canComplete: boolean;
     signal?: AbortSignal;
   }): Promise<unknown>;
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * Runs one tool call. The loop hands no byte allowance: a tool returns its
+   * whole result, and every result is shown to the model in full
+   * (`context-window.ts`).
+   */
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   maxIterations?: number;
   maxToolCalls?: number;
-  /**
-   * The far backstop on everything the loop gathers, counted in `accounting`.
-   * Reaching it ends the loop `llm_evidence_loop.evidence_limit`. What a
-   * decision is shown is bounded by `maxEvidenceContextBytes` instead, so this
-   * is set where cost, tokens, the deadline and the no-progress guard end a
-   * loop first. Absent, the ceiling.
-   */
-  maxEvidenceBytes?: number;
-  /**
-   * What one decision is shown of the evidence, in bytes, and within what the
-   * one per-request token ceiling carries. Each tool is offered this less 512
-   * bytes, whatever has been gathered before, so a call is never handed the
-   * scraps of a total and refused for want of room.
-   */
-  maxEvidenceContextBytes?: number;
   /**
    * The run's own bounds -- tokens, cost, time -- from which the loop works out
    * before each decision how many it has left, the iteration count being only
@@ -137,6 +125,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
       accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
+      /**
+       * The draft as it stood when the loop stopped, a copy: what a stalled
+       * build tests, judges and repairs rather than dropping
+       * (`../flow-bootstrap/unfinished-build/`).
+       */
+      steps: readonly AutomationStudioFlowDraftStep[];
     }): unknown;
   };
   /**
@@ -202,12 +196,11 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   /**
    * The draft the loop accrues and shows the model beside its evidence
    * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.
-   * `false` turns both off; `steps` is returned either way. `maxBytes` is what
-   * the entry may cost, absent a quarter of the evidence context up to 4,000;
-   * `maxAmendments` is how many edits the run may spend, absent four.
+   * `false` turns both off; `steps` is returned either way. The draft is always
+   * shown whole: every step with its argument. `maxAmendments` is how many
+   * edits the run may spend, absent sixteen.
    */
   draft?: false | {
-    maxBytes?: number;
     maxAmendments?: number;
     /**
      * Steps the draft already holds before the loop takes its first one.
@@ -287,10 +280,6 @@ export function automationStudioLlmEvidenceLoopSeedSteps(
 export type EvidenceLoopLimits = {
   maxIterations: number;
   maxToolCalls: number;
-  maxEvidenceBytes: number;
-  maxEvidenceContextBytes: number;
-  /** What each tool call is offered: the context window less room for what sits beside it. */
-  toolEvidenceBytes: number;
   minToolCalls: number;
   maxStepsWithoutProgress: number;
   /**
@@ -303,45 +292,11 @@ export type EvidenceLoopLimits = {
    */
   redirectAtStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
-  /** What the draft entry beside the window may cost. */
-  draftBytes: number;
   /** Amendment decisions the run may spend before the kind is withdrawn. */
   maxDraftAmendments: number;
 };
 
-/**
- * The fewest bytes in which the draft entry can do its least useful job: list
- * one step with the argument it ran with, and say in full how to correct it
- * (`../flow-draft/entry.ts`).
- *
- * Measured rather than chosen. One step told in full costs 1,221 bytes and one
- * carrying a realistic argument 1,256, so a budget under this cannot hold the
- * guidance and the record at once; this is the round number just above it.
- *
- * Below it the entry still comes back -- a shrinking draft is still a draft --
- * but it comes back with the 154-character telling in place of the
- * 1,047-character one, and until 2026-09-26 that trade was made in silence.
- * `maxEvidenceContextBytes` is admitted from 1,024 up and the draft's share is a
- * quarter of it, so any context under 5,120 derives a budget beneath this floor
- * and nothing said a word about it; before t157 the same arithmetic returned no
- * draft at all, which the caller reads as "this build has taken no action yet".
- *
- * The two ways of arriving under the floor are answered differently, and
- * deliberately. A caller that *names* `draft.maxBytes` under it is refused
- * (`llm_evidence_loop.invalid_configuration`): it wrote a number for the draft
- * itself, so there is nothing to derive and nothing to trade off, and a build
- * whose amendments are guesses is worse than a build that does not start. A
- * budget *derived* from a small context is admitted, because refusing a run
- * outright over a tunable is its own harm -- and every row the run records says
- * what the draft cost and that its budget was under the floor
- * (`./evidence-loop/draft-shown.ts`), so the degradation is named where a reader
- * of the run looks rather than guessed at afterwards.
- */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES = 1_280;
-
 export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | undefined {
-  const maxEvidenceBytes = input.maxEvidenceBytes ?? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes;
-  const maxEvidenceContextBytes = input.maxEvidenceContextBytes ?? Math.min(64_000, maxEvidenceBytes);
   const maxIterations = input.maxIterations ?? 8;
   const unusable = input.unusableDecisions;
   const draft = input.draft === false ? undefined : input.draft;
@@ -352,9 +307,6 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
   const limits: EvidenceLoopLimits = {
     maxIterations,
     maxToolCalls: input.maxToolCalls ?? 8,
-    maxEvidenceBytes,
-    maxEvidenceContextBytes,
-    toolEvidenceBytes: Math.max(1, maxEvidenceContextBytes - 512),
     minToolCalls: input.minToolCalls ?? 0,
     maxStepsWithoutProgress,
     // One below the guard at the tightest, so a loop configured to stop at two
@@ -363,9 +315,6 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     redirectAtStepsWithoutProgress: Math.max(1, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS, maxStepsWithoutProgress - 1)),
     maxUnusableDecisionsInARow: unusable?.maxInARow
       ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
-    // A quarter of what a decision carries, capped: enough for a few dozen
-    // steps without their arguments, and never enough to displace a result.
-    draftBytes: draft?.maxBytes ?? Math.min(4_000, Math.floor(maxEvidenceContextBytes / 4)),
     // Editing the draft *is* the authoring, now that the draft is what the
     // result is built from, so an allowance of four was an allowance of four
     // corrections for a whole Flow. The run's own budget is what bounds it.
@@ -377,17 +326,8 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     || limits.maxUnusableDecisionsInARow > maxIterations)) return undefined;
   if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
-  if (!Number.isInteger(limits.maxEvidenceBytes) || limits.maxEvidenceBytes <= 0 || limits.maxEvidenceBytes > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes) return undefined;
-  if (!Number.isInteger(limits.maxEvidenceContextBytes) || limits.maxEvidenceContextBytes < 1_024 || limits.maxEvidenceContextBytes > limits.maxEvidenceBytes
-    || limits.maxEvidenceContextBytes > automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST)) return undefined;
   if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;
   if (!Number.isInteger(limits.minToolCalls) || limits.minToolCalls < 0 || limits.minToolCalls > limits.maxToolCalls || limits.minToolCalls >= limits.maxIterations) return undefined;
-  if (!Number.isInteger(limits.draftBytes) || limits.draftBytes < 0 || limits.draftBytes >= limits.maxEvidenceContextBytes) return undefined;
-  // A named draft budget too small to show a draft properly is a mistake only a
-  // person can have written, so it is caught at the door rather than paid for a
-  // provider call at a time. The derived budget is left alone; see the floor's
-  // own note above for why the two are answered differently.
-  if (draft?.maxBytes !== undefined && draft.maxBytes < AUTOMATION_STUDIO_LLM_EVIDENCE_MIN_DRAFT_BYTES) return undefined;
   if (!Number.isInteger(limits.maxDraftAmendments) || limits.maxDraftAmendments < 0 || limits.maxDraftAmendments > limits.maxIterations) return undefined;
   return limits;
 }

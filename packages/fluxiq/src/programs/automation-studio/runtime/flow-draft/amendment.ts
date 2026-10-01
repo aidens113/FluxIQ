@@ -100,8 +100,12 @@ export type AutomationStudioFlowDraftAmendment = {
   act?: string;
 };
 
-/** The shape of an act id the checklist gives: `a` and its number. */
-export const AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID = /^a[1-9][0-9]{0,2}$/u;
+/**
+ * The shape of an id the checklist gives: an act, `a` and its number, or a
+ * choice the person made for that act's item, the act's id and what it fixes
+ * (`a2.quantity`, `a2.size`; `../flow-bootstrap/instructed-acts/instruction-choices.ts`).
+ */
+export const AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u;
 
 /** Why one amendment changed nothing. */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
@@ -126,7 +130,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     check: { type: "integer", minimum: 1, description: "only_if only: the step whose success this one runs on. Leave it out for the step before it, which is usually the check you just ran." },
     through: { type: "integer", minimum: 1, description: "repeat only: the last step of the span that repeats. Leave it out to repeat this step alone." },
     over: { type: "integer", minimum: 1, description: "repeat only: the step whose rows the span repeats for, or whose success it repeats while. Leave it out for the step before it." },
-    act: { type: "string", pattern: "^a[1-9][0-9]{0,2}$", description: "add or keep: the act from the acts checklist this step does, such as a2." }
+    act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "add or keep: the act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity." }
   }
 };
 

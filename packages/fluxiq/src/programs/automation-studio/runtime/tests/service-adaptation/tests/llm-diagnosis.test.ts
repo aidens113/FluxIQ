@@ -144,11 +144,10 @@ describe("AutomationStudioService recording persistence", () => {
       projectId: project.id,
       flowId: flow.flowId,
       runId: run.runId,
-      failedAction: { nodeId: "divide", definitionId: "builtin.math.divide", status: "failed" },
-      // A quarter of what the call may carry, not a fifth: a repair reads the
-      // page it failed on as closely as authoring reads the page it builds from.
-      maxEvidenceBytes: 3_000
+      failedAction: { nodeId: "divide", definitionId: "builtin.math.divide", status: "failed" }
     });
+    // No byte allowance is handed to the capture: the model sees the whole page.
+    expect(captures[0]).not.toHaveProperty("maxEvidenceBytes");
     expect(Object.keys(captures[0].failedAction).sort()).toEqual(["attemptId", "definitionId", "nodeId", "route", "status"]);
     expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]); expect(requests.map((request) => request.context.subflowId)).toEqual([runtimeSubflowId, runtimeSubflowId]);
     expect(requests[0].context.failureEvidence).toEqual(evidence);
@@ -165,7 +164,7 @@ describe("AutomationStudioService recording persistence", () => {
       expect.objectContaining({ contextSummary: expect.objectContaining({ failureEvidence: expect.objectContaining({ schemaVersion: "web-llm-evidence.v1", byteCount: expect.any(Number), truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }) }) })
     ]));
     expect(detail?.metadata).toMatchObject({ llmGate: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }, reusableContext: { status: "hit", freshContributionCount: 1, reusedContributionCount: 1, sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } } });
-    expect(JSON.stringify(detail)).not.toContain("SAFE_EVIDENCE_LABEL"); const recoveryContext = (detail?.metadata?.llmGate as any).recoveryContext; expect(recoveryContext).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: "automation-studio.recovery-context.v1", byteBudget: 8_000, budgetTruncated: false });
+    expect(JSON.stringify(detail)).not.toContain("SAFE_EVIDENCE_LABEL"); const recoveryContext = (detail?.metadata?.llmGate as any).recoveryContext; expect(recoveryContext).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: "automation-studio.recovery-context.v1" });
     expect(JSON.stringify(detail)).not.toContain("#replacement"); expect(recoveryContext.included.map((entry: any) => entry.section)).toContain("failure"); expect(recoveryContext.omitted).toEqual(expect.arrayContaining([{ section: "state_diff", reason: "absent", byteCount: 0 }]));
     expect(detail?.adaptationIds).toHaveLength(1);
     expect(detail?.changeProposalIds).toHaveLength(1);
@@ -202,19 +201,22 @@ describe("AutomationStudioService recording persistence", () => {
     expect(JSON.stringify(detail)).not.toContain("PRIVATE_RAW_HTML");
   });
 
-  it("stops before provider invocation when sanitized failure evidence exceeds the dynamic allowance", async () => {
+  it("does not refuse failure evidence for its size: a large capture reaches the provider whole", async () => {
     let providerCalls = 0;
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
-        provider: { metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } },
-        tokenLimits: { maxInputTokens: 1_000, maxOutputTokens: 500, maxTotalTokens: 1_500 }
+        provider: { metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } }
       }),
       llmEvidenceRuntime: {
         domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
         executeTool: async () => ({}),
-        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(700) })
+        // 15,000 bytes: two and a half times the 6,000-byte limit that was
+        // removed, and inside this resolver's 8,000-token default and the
+        // fixture Flow's 12,000-token run budget as Core now measures a request
+        // (UTF-8 bytes / 3). A capture past those is refused loudly, with its size.
+        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(15_000) })
       }
     });
     const project = await service.createProject({ name: "Oversized failure evidence" });
@@ -223,9 +225,8 @@ describe("AutomationStudioService recording persistence", () => {
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
-    expect(providerCalls).toBe(0);
-    expect(detail?.metadata).toMatchObject({ llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" } });
-    expect(JSON.stringify(detail)).not.toContain("xxx");
+    expect(providerCalls).toBeGreaterThan(0);
+    expect((detail?.metadata?.llmGate as { code?: string } | undefined)?.code).not.toBe("llm.failure_evidence_invalid");
   });
 
   it("creates no proposal when a target override is absent from captured sanitized evidence", async () => {

@@ -17,8 +17,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID = "core.reques
 
 /** What a request the loop answered itself, rather than running, is recorded as. */
 const ANSWERED_REQUEST = {
-  "llm_evidence_loop.already_answered": "This exact request was already answered, so it was not run again. Its result is the entry named by answeredByCallId, just before this one: use it, choose a different tool or input, or complete.",
-  "llm_evidence_loop.already_observed": "This observation was already made, so it was not run again. Its latest result is the entry named by answeredByCallId, just before this one: use it, change something first, or complete.",
+  "llm_evidence_loop.already_answered": "This exact request was already answered, so it was not run again. Its result is the evidence entry named by answeredByCallId: use it, choose a different tool or input, or complete.",
+  "llm_evidence_loop.already_observed": "This observation was already made, so it was not run again. Its latest result is the evidence entry named by answeredByCallId: use it, change something first, or complete.",
   // The wrap-up (`../loop-budget.ts`) offers no tools, and a call it was not
   // offered used to run anyway: the check was against the tools the loop could
   // run, not the ones it had offered. answeredByCallId is the tool's latest

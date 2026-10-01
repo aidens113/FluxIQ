@@ -3,9 +3,6 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 
-/** An observation larger than this is not a summary, and is not used. */
-const MAX_ROUTE_STATE_BYTES = 32_768;
-
 export type AutomationStudioRouteStateObservation =
   | { ok: true; state: JsonObject }
   | { ok: false; reason: string };
@@ -33,19 +30,17 @@ export async function observeAutomationStudioRouteState(input: {
 }
 
 /**
- * A route state as a route may read it: a JSON object within the bound. The
+ * A route state as a route may read it: a JSON object, of any size. The
  * one test for a state wherever it came from -- the host observing it now, or
  * a call reporting the page it left -- so neither is trusted further than the
  * other.
  */
 export function readAutomationStudioRouteState(state: unknown): AutomationStudioRouteStateObservation {
   if (!state || typeof state !== "object" || Array.isArray(state)) return { ok: false, reason: "The host returned no state." };
-  let bytes: number;
   try {
-    bytes = Buffer.byteLength(JSON.stringify(state), "utf8");
+    JSON.stringify(state);
   } catch {
     return { ok: false, reason: "The host returned a state that is not JSON." };
   }
-  if (bytes > MAX_ROUTE_STATE_BYTES) return { ok: false, reason: "The host returned more state than a route may read." };
   return { ok: true, state: state as JsonObject };
 }

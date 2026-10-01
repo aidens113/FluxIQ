@@ -89,29 +89,25 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     expect(JSON.stringify(context)).not.toContain("#pay-now");
   });
 
-  it("records a section the byte budget forced out as byte_budget, with what it cost", () => {
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), byteBudget: 1_500 });
-    const dropped = context.omitted.filter((entry) => entry.reason === "byte_budget");
-    expect(dropped.length).toBeGreaterThan(0);
-    expect(dropped.every((entry) => entry.byteCount > 0)).toBe(true);
-    // The three readings must stay distinguishable in the same context.
-    expect(new Set(context.omitted.map((entry) => entry.reason)).size).toBeGreaterThan(1);
+  it("carries a large state diff whole, with no string, entry or byte bound", () => {
+    const detail = runDetail();
+    const stateDiff: JsonObject = {
+      schemaVersion: "web-state-diff.v2",
+      text: "t".repeat(3_000),
+      entries: Array.from({ length: 200 }, (_, index) => ({ index, label: `Entry ${index}` })),
+      wide: Object.fromEntries(Array.from({ length: 100 }, (_, index) => [`field${index}`, index]))
+    };
+    (detail.actionAttempts![1]!.metadata as JsonObject).stateRefs = { stateDiff };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt() });
+    expect(context.sections.state_diff).toEqual({ stateDiff });
+    expect(context.omitted.every((entry) => entry.reason === "absent" || entry.reason === "withheld")).toBe(true);
   });
 
-  it("drops lowest priority first and stays inside the budget it was given", () => {
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), byteBudget: 1_800 });
-    expect(context.byteCount).toBeLessThanOrEqual(context.byteBudget);
-    const droppedPositions = context.omitted
-      .filter((entry) => entry.reason === "byte_budget")
-      .map((entry) => AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(entry.section));
-    const keptPositions = context.included.map((entry) => AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.indexOf(entry.section));
-    expect(Math.min(...droppedPositions)).toBeGreaterThan(Math.max(...keptPositions));
-  });
-
-  it("clamps a budget no context could hold up to the floor rather than discarding the record of what was withheld", () => {
-    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), byteBudget: 1 });
-    expect(context.byteBudget).toBe(1_500);
-    expect(context.omitted.length + context.included.length).toBe(AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS.length);
+  it("still withholds a section carrying a secret-shaped value", () => {
+    const detail = runDetail();
+    (detail.actionAttempts![1]!.metadata as JsonObject).stateRefs = { stateDiff: { schemaVersion: "web-state-diff.v2", note: "Bearer abcdefghijklmnopqrstuvwxyz0123456789" } };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt() });
+    expect(context.omitted).toContainEqual({ section: "state_diff", reason: "withheld", byteCount: 0 });
   });
 
   it("summarizes the failed target without the candidate id the domain minted", () => {
@@ -174,37 +170,28 @@ describe("summarizeAutomationStudioRuntimeRecoveryContext", () => {
   it("reports names, counts and reasons and carries no section content", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), adaptations: [adaptation()] });
     const summary = summarizeAutomationStudioRuntimeRecoveryContext(context);
-    expect(summary).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: context.schemaVersion, byteBudget: 8_000 });
+    expect(summary).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: context.schemaVersion });
     expect(summary.includedCount).toBe(context.included.length);
     const serialized = JSON.stringify(summary);
     for (const fragment of ["node.checkout", "web.target.selector_miss", "web-state-diff.v2", "router.1", "adaptation.1", "orderId", "a Pay button"]) {
       expect(serialized).not.toContain(fragment);
     }
     // Only section names, the two schema versions, the reasons and numbers.
-    const allowed = new Set<string>([...AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS, "absent", "byte_budget", "withheld", summary.schemaVersion, summary.contextSchemaVersion]);
+    const allowed = new Set<string>([...AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS, "absent", "withheld", summary.schemaVersion, summary.contextSchemaVersion]);
     for (const value of JSON.parse(serialized).included.map((entry: { section: string }) => entry.section)) expect(allowed.has(value)).toBe(true);
   });
 
-  it("says the budget truncated the context only when a section was actually dropped for size", () => {
-    const whole = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() }));
-    const trimmed = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), byteBudget: 1_500 }));
-    expect(whole.budgetTruncated).toBe(false);
-    expect(trimmed.budgetTruncated).toBe(true);
-    expect(whole.omitted.every((entry) => entry.reason !== "byte_budget")).toBe(true);
-  });
-
-  it("distinguishes a context that lost a section from one that never had it", () => {
+  it("distinguishes a context that withheld a section from one that never had it", () => {
     const withoutDiff = runDetail();
     delete (withoutDiff.actionAttempts![1]!.metadata as JsonObject).stateRefs;
-    const absent = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: withoutDiff, failedAttempt: traceAttempt(), adaptations: [adaptation()], byteBudget: 16_000 }));
-    const dropped = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt(), adaptations: [adaptation()], byteBudget: 1_500 }));
+    const refused = runDetail();
+    (refused.actionAttempts![1]!.metadata as JsonObject).stateRefs = { stateDiff: { schemaVersion: "web-state-diff.v2", selector: "#pay-now" } };
+    const absent = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: withoutDiff, failedAttempt: traceAttempt(), adaptations: [adaptation()] }));
+    const withheld = summarizeAutomationStudioRuntimeRecoveryContext(buildAutomationStudioRuntimeRecoveryContext({ detail: refused, failedAttempt: traceAttempt(), adaptations: [adaptation()] }));
     const reason = (summary: typeof absent, section: AutomationStudioRecoveryContextSection): string | undefined =>
       summary.omitted.find((entry) => entry.section === section)?.reason;
-    // The same section name, two different readings: the run captured none,
-    // against the budget having taken one the run did capture.
     expect(reason(absent, "state_diff")).toBe("absent");
-    expect(reason(dropped, "state_diff")).toBe("byte_budget");
-    expect(reason(absent, "recording_context")).toBe(undefined);
+    expect(reason(withheld, "state_diff")).toBe("withheld");
   });
 });
 
@@ -227,7 +214,7 @@ describe("the failures a run survived", () => {
   });
 
   // The failure under repair is the `failure` section. Repeating it here would
-  // spend the byte budget saying the same thing twice, and would make a run that
+  // say the same thing twice, and would make a run that
   // survived nothing look like one that survived its own terminal failure.
   it("leaves out the attempt being repaired, and is absent when the run survived nothing", () => {
     const clean = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });

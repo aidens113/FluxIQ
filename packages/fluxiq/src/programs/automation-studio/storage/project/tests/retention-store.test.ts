@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
@@ -8,12 +9,14 @@ import { AutomationStudioProjectEventChunkStore } from "../event-chunk-store.ts"
 import { AutomationStudioProjectObjectRepository } from "../object-repository.ts";
 import { AutomationStudioProjectRetentionStore } from "../retention-store.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-retention-store-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 
 describe("AutomationStudioProjectRetentionStore", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-retention-store-test-"));
   });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
 

@@ -1,39 +1,19 @@
 import { AutomationStudioLlmRequestRefusedError } from "./request-refusal.ts";
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
+import { isJsonValue } from "./json-bounds.ts";
 import type { AutomationStudioLlmRecentActionContext } from "./context-packet.ts";
 import type { AutomationStudioLlmTaskKind } from "./task-kind.ts";
-
-/**
- * The most a captured failure may carry, in bytes.
- *
- * It was 3,000, half of what a Flow being authored is allowed to see of the
- * same page, and the difference showed. Measured against the web domain's own
- * captures: a product catalogue arrived with its eight rows and none of their
- * prices or ratings, a feed with its posts and no author or timestamp, and a
- * 240-row member directory as four buttons and some navigation. A repair was
- * being asked which record to act on while being shown nothing that tells one
- * record from another -- and the same page, captured for creation, carried
- * every value.
- *
- * There is no reason for the two halves of one loop to see different amounts
- * of the same page, so this is now the exploration allowance: 6,000 bytes, or
- * roughly 2,000 tokens by Core's own estimate. It is a ceiling, not a spend.
- * What a given call actually asks for is the caller's share of that call's
- * input allowance, which is smaller and is where the real bound lives.
- *
- * The cost is paid on the patch request, where a bigger failure packet sits
- * beside the pages an exploration returned: the explored packets' share of the
- * input allowance drops so that the request as a whole costs what it did.
- */
-export const AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES = 6_000;
 
 export type AutomationStudioLlmFailureEvidenceCaptureInput = {
   projectId: string;
   flowId: string;
   runId: string;
   failedAction: Pick<AutomationStudioLlmRecentActionContext, "attemptId" | "nodeId" | "definitionId" | "status" | "route">;
-  maxEvidenceBytes: number;
+  /** No longer passed by Core: a failure capture is not bounded by size, and
+   * the model is shown the whole page. Kept optional so a domain that still
+   * declares it compiles; a domain must not trim a capture to it. */
+  maxEvidenceBytes?: number;
   signal?: AbortSignal;
 };
 
@@ -48,17 +28,16 @@ export function automationStudioEvidenceKey(key: string): string {
 }
 
 /**
- * Bounds the failure evidence a domain submits before any of it reaches a
+ * Screens the failure evidence a domain submits before any of it reaches a
  * provider.
  *
- * Core checks only what it can justify without knowing what medium the evidence
- * came from: it must be JSON, bounded in depth, entry count, key length, string
- * length and total bytes. It denies no key by name. It used to deny seven --
- * `html`, `innerhtml`, `outerhtml`, `pagesource`, `snapshot`, `cookies`,
- * `headers` -- which is a browser's and an HTTP client's vocabulary written
- * into a framework that is supposed to have neither, enforced nothing for a
- * domain whose raw payload is called something else, and denied `snapshot`,
- * a Core noun that Core's own state-snapshot harness option produces.
+ * The model is shown the whole capture: there is no bound on its bytes, its
+ * string lengths, its depth short of a recursion guard, or how many entries it
+ * holds (2026-09-30, "the model sees the whole page"). What Core still refuses
+ * is what it can justify without knowing what medium the evidence came from:
+ * it must be acyclic JSON, and it must carry none of the keys the domain
+ * declared as raw payload. Secret-shaped values are screened again by the
+ * provider's own request check before anything is sent.
  *
  * `deniedKeys` is how that protection is kept without the nouns: the domain
  * that knows what raw payload looks like for its medium declares the keys, and
@@ -72,27 +51,27 @@ export function sanitizeAutomationStudioLlmFailureEvidence(
 ): JsonObject {
   if (taskKind !== "runtime_diagnosis" && taskKind !== "runtime_patch") throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence is available only to runtime diagnosis and patch tasks.");
   if (typeof evidence.schemaVersion !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(evidence.schemaVersion)) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence requires a bounded schema version.");
-  if (!boundedFailureEvidenceValue(evidence, new Set(deniedKeys.map(automationStudioEvidenceKey)))) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence contains an unsafe or unbounded value.");
+  if (!screenedFailureEvidenceValue(evidence, new Set(deniedKeys.map(automationStudioEvidenceKey)))) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence contains a denied key or a value that is not JSON.");
   let serialized: string;
   try { serialized = JSON.stringify(evidence); } catch { throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence must be serializable JSON."); }
-  if (Buffer.byteLength(serialized, "utf8") > AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES) throw new AutomationStudioLlmRequestRefusedError("llm.request.failure_evidence_invalid", "Failure evidence exceeds the byte limit.");
   return JSON.parse(serialized) as JsonObject;
 }
 
-function boundedFailureEvidenceValue(root: unknown, deniedKeys: ReadonlySet<string>): boolean {
-  const stack: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
-  let entries = 0;
+/**
+ * Whether a value is acyclic JSON free of the domain's denied keys at every
+ * depth. The only structural bound is the recursion guard every JSON walk in
+ * the harness shares, which no real capture reaches.
+ */
+function screenedFailureEvidenceValue(root: unknown, deniedKeys: ReadonlySet<string>): boolean {
+  if (!isJsonValue(root)) return false;
+  const stack: unknown[] = [root];
   while (stack.length) {
-    const { value, depth } = stack.pop()!;
-    if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) continue;
-    if (typeof value === "string") { if (value.length > 2_000) return false; continue; }
-    if (!value || typeof value !== "object" || depth > 12) return false;
+    const value = stack.pop();
+    if (!value || typeof value !== "object") continue;
     const children = Array.isArray(value) ? value.map((item) => ["", item] as const) : Object.entries(value);
-    entries += children.length;
-    if (children.length > 128 || entries > 512) return false;
     for (const [key, child] of children) {
-      if (key.length > 100 || deniedKeys.has(automationStudioEvidenceKey(key))) return false;
-      stack.push({ value: child, depth: depth + 1 });
+      if (deniedKeys.has(automationStudioEvidenceKey(key))) return false;
+      stack.push(child);
     }
   }
   return true;

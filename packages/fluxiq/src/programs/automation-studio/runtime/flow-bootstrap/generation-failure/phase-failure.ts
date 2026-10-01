@@ -63,7 +63,7 @@ function phaseFailureCode(
   const allowedCodes = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES[stage] as readonly string[];
   if (!requestedCode || !allowedCodes.includes(requestedCode)) return FLOW_BOOTSTRAP_DEFAULT_PHASE_FAILURE_CODE[stage];
   const state = automationStudioFlowBootstrapFailureState(requestedCode, stage, undefined);
-  const unsupplied = (state.accounting === "required" && accounting === undefined) || state.permissionRequest === "required";
+  const unsupplied = (state.accounting === "required" && accounting === undefined) || state.permissionRequest === "required" || state.ending === "required";
   return unsupplied ? FLOW_BOOTSTRAP_DEFAULT_PHASE_FAILURE_CODE[stage] : requestedCode;
 }
 

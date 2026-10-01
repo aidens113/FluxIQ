@@ -69,6 +69,17 @@ describe("withAutomationStudioBuildActivity", () => {
     expect(seen.map((event) => [event.phase, event.final])).toEqual([["building", undefined], ["failed", true]]);
   });
 
+  it("says why a build that could not finish ended, in the message written for the person", async () => {
+    const message = "I could not build this Flow, and I found no way to: 1 of the 2 things you asked could not be done.";
+    const notDoable = Object.assign(new Error("x"), { diagnostic: { code: "flow_bootstrap.not_doable", ending: { kind: "not_doable", message } } });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw notDoable; })).rejects.toBe(notDoable);
+    expect(seen[1]).toMatchObject({ phase: "failed", final: true, label: "Not doable: this Flow could not be built", detail: { title: "Not doable: this Flow could not be built", text: message, status: "failed" } });
+
+    const budget = Object.assign(new Error("y"), { diagnostic: { code: "flow_bootstrap.evidence_budget_exhausted", ending: { kind: "budget_exhausted", message: "The build stopped at its spending limit of $0.25." } } });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw budget; })).rejects.toBe(budget);
+    expect(seen[3]).toMatchObject({ label: "Build stopped: a budget ran out", detail: { text: "The build stopped at its spending limit of $0.25." } });
+  });
+
   it("runs unobserved without a usable project", async () => {
     expect(await withAutomationStudioBuildActivity({ projectId: 42 }, async () => 1)).toBe(1);
     expect(seen).toEqual([]);

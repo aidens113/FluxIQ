@@ -59,6 +59,9 @@ describe("a build's cost ceiling", () => {
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true }));
 
+    // Reported as the budget hit it is (t208): its own code, and a message the person reads, never "not doable".
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", message: expect.stringContaining("spending limit of $0.25") });
     expect(diagnostic.evidenceLoop?.exhausted).toMatchObject({ bound: "budget", budgetBound: "cost" });
     // What the provider was actually paid for, every call of the build counted.
     const spent = requests.length * costPerCall;

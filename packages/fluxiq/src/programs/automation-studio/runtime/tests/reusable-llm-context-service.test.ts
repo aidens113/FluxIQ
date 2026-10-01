@@ -1,4 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
@@ -7,14 +8,21 @@ import { registerAutomationStudioApi } from "../../api/handlers.ts";
 import { AutomationStudioAesGcmProjectContentProtection, AutomationStudioProjectDatabasePool, AutomationStudioProjectReusableLlmContextStore } from "../../storage/index.ts";
 import { AutomationStudioService } from "../service.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-reusable-llm-context-service-test");
-const dataDir = path.join(rootDir, ".fluxiq", "data");
-const automationRoot = path.join(dataDir, "programs", "automation-studio");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
+let dataDir = "";
+let automationRoot = "";
 const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["programs.read", "flows.write"] };
 const contentProtection = new AutomationStudioAesGcmProjectContentProtection(({ projectId }) => ({ keyId: "test.key", key: Buffer.from(projectId.padEnd(32, ".").slice(0, 32)) }));
 
 describe("AutomationStudioService reusable LLM context", () => {
-  beforeEach(async () => { await rm(rootDir, { recursive: true, force: true }); await mkdir(rootDir, { recursive: true }); });
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-reusable-llm-context-service-test-"));
+    dataDir = path.join(rootDir, ".fluxiq", "data");
+    automationRoot = path.join(dataDir, "programs", "automation-studio");
+  });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
 
   it("is disabled by default and keeps public writes blocked without project content protection", async () => {
@@ -54,7 +62,8 @@ describe("AutomationStudioService reusable LLM context", () => {
     expect(summaries[0]).not.toHaveProperty("promptProjection");
     await expect(service.getReusableLlmContext({ projectId: project.id, recordId: "context.success", now: 2_000 })).resolves.toMatchObject({ promptProjection: { facts: ["success"] } });
     const packed = await service.packReusableLlmContexts({ projectId: project.id, flowId: "flow.one", domainId: "domain.one", evidenceKind: "exploration", evidenceSchemaVersion: "evidence.v1", sanitizerVersion: "sanitizer.v1", compatibilityTags: [{ name: "environment", value: "same" }], maxInputTokens: 8_000, actorId: "user.one", now: 2_000 });
-    expect(packed.selectedRecordIds).toEqual(["context.success", "context.failed"]);
+    // Made at the same moment, so the record id breaks the tie: no outcome ranks first.
+    expect(packed.selectedRecordIds).toEqual(["context.failed", "context.success"]);
     const pool = new AutomationStudioProjectDatabasePool({ rootDir: automationRoot });
     const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool, projectId: project.id, enabled: true, contentProtection });
     await expect(store.listAudit({ flowId: "flow.one" })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ eventType: "packed", actorId: "user.one", detail: expect.objectContaining({ selectedCount: 2 }) })]));

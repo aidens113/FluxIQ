@@ -403,8 +403,18 @@ decryption buffers for that session and retains them only in memory, bounded
 by the session expiry. One-use reveal authorizations copy only the selected
 derived buffer; logout, session expiry, key mutation, and runtime close revoke
 and zero the applicable buffers. Neither the login password nor the unlock state
-is persisted. The per-request ceiling is 50,000 tokens, and the build's spend is
-bounded by its loop budget.
+is persisted. The per-request ceiling is the model's context window --
+1,000,000 tokens for both configured models, derived from
+`AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` as
+`AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST` -- and the session-key
+profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply,
+1,000,000 total. A request whose estimated input plus reserved output exceeds the
+window is refused before it is sent, never trimmed:
+`llm_budget.input_limit_exceeded` or `llm_budget.request_total_exceeded` from
+the harness, and `llm.provider_input_budget_exceeded` from the DeepSeek adapter,
+each stating the estimated input tokens, the bytes and the window. The build's
+spend is bounded by its loop budget: the $0.25 run cost ceiling and the per-call
+cost check derived from it are unchanged.
 
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
@@ -578,20 +588,14 @@ domain to hold it there: exploration carries on from the page as it stands
 (`runtime/service.ts`, the harness registry built for a continuation).
 
 Once drafting has begun and at least one actionable step exists, a provider
-decision also receives a bounded Flow-draft beside entry. Its
-live reservation remains 4,000 UTF-8 bytes: one quarter of the configured
-evidence-context window, capped at 4,000. A complete draft that fits keeps the
-existing object-per-step representation byte-for-byte. When that representation
-would otherwise omit an eligible bounded input, Core may encode the same values
-as the self-describing `step_rows_v1` projection. Its exact columns are `step`,
-`actionId`, `input`, `resultCode`, `changed`, `disposition`, `inResult`,
-`replayed`, `runs`, and `settings`; each row has the seven required cells and
-only the trailing optional cells it needs. The candidate order preserves all
-listed steps and all eligible inputs before trading instruction detail for
-content, then withholds oldest inputs and finally unlists oldest steps only when
-no lossless candidate fits. An input rejected by the existing 512-byte input
-bound remains in object form as `inputTooLarge: true`, distinct from budget
-withholding.
+decision also receives the Flow-draft beside entry, always whole: every
+actionable step in object form, each with the full argument it ran with, and the
+full guidance. There is no draft byte budget, no packed row form, no shortened
+guidance, no argument withheld or replaced by an `inputTooLarge` marker and no
+oldest step counted instead of listed (removed 2026-09-30, with the 4,000-byte
+draft cap, the 1,280-byte draft floor and the 512-byte step-input bound). The
+trace row's `draft` measurement records its bytes, steps and guidance bytes, and
+`budget` equals `bytes`.
 
 From the model's first decision, every provider decision also receives the
 decision history beside entry, `core.evidence_history`
@@ -609,13 +613,10 @@ reply; and,
 beside the rows, each no-progress redirect. Rows hold only closed codes, ids
 and integers, never page content or model prose. Identical decisions are
 grouped with their iterations and carry `sameAs`, the first iteration the same
-decision was made. The entry is capped at `min(4,000, floor(context / 6))`
-UTF-8 bytes and compresses by a fixed ladder: detail trimmed to codes, plain
-successful calls folded oldest first, identical refusals joined, and last a
-least form that lists only refusals, answers, failures and unusable decisions
-and counts the rest. The least form is sent even when it exceeds the cap. The
-beside entries are ordered `[...window, history, draft, budget]`, and each one's
-serialized bytes come off the window's allowance before the window is chosen.
+decision was made. The entry is always told in full, every row with its full
+closed detail; the compression ladder (codes only, folded calls, joined
+refusals, least form) and its byte cap were removed on 2026-09-30. The beside
+entries follow every evidence entry: `[...evidence, history, draft, budget]`.
 
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
@@ -763,22 +764,22 @@ navigating to a required page or exposing hidden content; filling, selecting,
 submitting, or otherwise performing eventual workflow steps is not evidence
 collection merely because an action tool is available.
 
-The coordinator distinguishes cumulative audit evidence from model-visible
-context. It preserves cumulative byte/call totals while selecting only the
-newest complete evidence records that fit a configured context-byte window.
-Each tool invocation receives the maximum serialized evidence bytes it may
-return. The production Bootstrap lane uses a 24,000-byte context window and a
-1,048,576-byte cumulative evidence ceiling; domain adapters may impose a
-smaller result cap. The draft is a beside entry inside that context, so its
-serialized bytes reduce the room available to ordinary evidence records for
-that decision; packing changes neither that allocation rule nor the 4,000-byte
-draft cap. The packing correction does not change provider-call, token, cost,
-timeout, decision, or retry ceilings. Provider-free deterministic fixtures
-establish exact measurement and input retention under those limits; they do not
-establish provider convergence or a live product outcome. Evidence is never
-split into malformed partial JSON to fit the window. The window carries whole
-entries only and no longer lists the calls it leaves out: the decision history
-beside it records every decision.
+The coordinator shows the model every evidence entry it holds, whole and in
+call order, on every decision; it ranks nothing and chooses nothing. It still
+accounts cumulative byte and call totals, but no byte total ends a loop: the
+24,000-byte evidence-context window (`maxEvidenceContextBytes`,
+`AUTOMATION_STUDIO_EVIDENCE_CONTEXT_BYTES`), the 1,048,576-byte cumulative
+evidence backstop (`maxEvidenceBytes`, which ended a loop
+`llm_evidence_loop.evidence_limit`), the per-call evidence allowance handed to a
+tool (`maxEvidenceBytes` on `executeTool`) and the evidence-entry count in the
+DeepSeek pre-flight were all removed on 2026-09-30. Neither the loop's check of
+a tool result nor the adapter's pre-flight holds evidence to an array, entry,
+string or key length; both keep cycle detection and a recursion guard of depth
+64. The only size bound on a request is the model's context window, enforced
+loudly before sending with the request's measured size. A Core note is still
+superseded by a newer one of its kind; a tool's result never leaves. A request
+answered from memory names the entry that answers it, which stays where it
+happened.
 
 A build has a live phase and a judgement phase (user, 2026-09-30). In the live
 phase the model explores and writes its draft, and nothing replays the draft

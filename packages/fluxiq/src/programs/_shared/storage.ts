@@ -148,6 +148,11 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     return data;
   }
 
+  /** Whether this document is the file at `filePath`, rather than a record in the storage layout's SQLite state. */
+  isFileBacked(): boolean {
+    return this.sqliteState() === null;
+  }
+
   private sqliteState(): { repository: SQLiteRepository<T>; id: string } | null {
     const state = sqliteStateForPath(this.filePath);
     return state ? { repository: state.repository as SQLiteRepository<T>, id: state.id } : null;

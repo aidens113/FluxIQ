@@ -39,7 +39,7 @@ const edges = [
 
 function draftEntry() {
   const seed = automationStudioFlowDraftSeedFromFlow({ nodes, edges });
-  const entry = automationStudioFlowDraftEntry({ steps: seed.steps, maxBytes: 16_000 });
+  const entry = automationStudioFlowDraftEntry({ steps: seed.steps });
   if (!entry) throw new Error("the seeded Flow produced no draft entry");
   return entry;
 }

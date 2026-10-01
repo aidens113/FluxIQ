@@ -59,7 +59,6 @@ export {
 } from "./context-packet.ts";
 export type { AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 export {
-  AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   automationStudioEvidenceKey,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput

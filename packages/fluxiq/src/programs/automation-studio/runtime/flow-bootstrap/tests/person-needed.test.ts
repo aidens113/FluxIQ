@@ -58,7 +58,7 @@ function executor(options: { checks?: number; lookChecks?: number } = {}) {
   let lookChecks = options.lookChecks ?? 0;
   return {
     calls,
-    executeTool: async (call: { callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> => {
+    executeTool: async (call: { callId: string; toolId: string; value: JsonObject }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> => {
       calls.push({ callId: call.callId, toolId: call.toolId, value: call.value });
       if (call.toolId === LOOK.toolId) {
         if (lookChecks > 0) { lookChecks -= 1; return checkResult(); }
@@ -70,7 +70,7 @@ function executor(options: { checks?: number; lookChecks?: number } = {}) {
   };
 }
 
-const call = (value: JsonObject = { to: "the list" }) => ({ callId: "call.1", toolId: ACT.toolId, value, maxEvidenceBytes: 10_000 });
+const call = (value: JsonObject = { to: "the list" }) => ({ callId: "call.1", toolId: ACT.toolId, value });
 
 describe("a build tool result that needs a person", () => {
   it("passes every other result through untouched", async () => {

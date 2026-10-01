@@ -79,7 +79,10 @@ describe("a Flow build that runs out, and the build after it", () => {
 
     // The first build never finishes.
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
-    expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+    // Its four calls are the Flow's declared count, a budget the whole build is held to, so no repair can start (t208):
+    // reported as that budget, with the Flow so far kept.
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", message: expect.stringContaining("limit of 4 model calls") });
     const kept = diagnostic.evidenceLoop?.incompleteDraft;
     expect(kept?.revision).toBe(1);
     expect(kept?.steps).toBeGreaterThan(0);

@@ -117,7 +117,6 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     callId: string;
     toolId: string;
     value: JsonObject;
-    maxEvidenceBytes: number;
     signal?: AbortSignal;
     /**
      * Where the Flow being built starts, when the build was told
@@ -403,7 +402,6 @@ function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId
     callId: input.callId,
     toolId,
     value: input.value,
-    maxEvidenceBytes: input.maxEvidenceBytes,
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     // Every call of this build, including the free first look the loop takes
     // before the first paid decision: that look is where a domain says "you are

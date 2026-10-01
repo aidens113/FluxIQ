@@ -47,9 +47,14 @@ export function flowBootstrapHarnessFailure(input: {
   const projected = input.provider
     ? resolvedProviderHarnessFailure(error?.code)
     : { ...preProviderHarnessFailure(error?.code), stage: "pre_provider_validation" as const };
+  // The size the adapter measured when it refused the request as too large, so
+  // the stored failure states the size that was refused. The harness already
+  // measures with the adapter's own measure, so this differs only for a
+  // provider that did not say how it measures.
+  const refusedSize = refusedInputTokens(error?.metadata?.inputSize);
   const request = {
     requestId: input.request.requestId,
-    estimatedInputTokens: input.request.estimatedInputTokens
+    estimatedInputTokens: Math.max(input.request.estimatedInputTokens, refusedSize ?? 0)
   };
   // A refusal made before the call keeps the request's accounting and nothing
   // else -- no provider, no model, no status, no usage -- whichever branch it
@@ -151,6 +156,13 @@ function preProviderHarnessFailureCode(code: unknown): AutomationStudioFlowBoots
     case "bootstrap.catalog_essentials_missing": return "flow_bootstrap.pre_provider_context_invalid";
     default: return runBudgetFailureCode(code) ?? "flow_bootstrap.harness_preflight_failed";
   }
+}
+
+/** The refused size's input tokens, read as a non-negative safe integer or not at all. */
+function refusedInputTokens(value: unknown): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const tokens = (value as { estimatedInputTokens?: unknown }).estimatedInputTokens;
+  return typeof tokens === "number" && Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : undefined;
 }
 
 function findLastError(diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmDiagnostic | undefined {

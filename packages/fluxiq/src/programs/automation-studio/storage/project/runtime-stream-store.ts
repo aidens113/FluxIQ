@@ -210,13 +210,20 @@ export class AutomationStudioProjectRuntimeStreamStore {
     });
   }
 
-  async putRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
+  /**
+   * Writes a run's detail as the events it does not yet hold. `existingEvents`
+   * is the run's stream as the caller just read it with `readRunForUpdate`,
+   * under the same run lock: a save used to read the whole stream twice, once
+   * for the stored detail and once here, and a run's stream grows by a chunk
+   * with each save, so that second read was most of a save's cost.
+   */
+  async putRunDetail(detail: AutomationStudioFlowRunDetail, options: { existingEvents?: readonly AutomationStudioRuntimeStreamEvent[] } = {}): Promise<AutomationStudioFlowRunDetail> {
     const desired = runtimeEventsFromDetail(detail);
     // A detail the store cannot hold is refused before its summary row or any
     // event is written, so a refusal never leaves the run half-updated.
     runtimeActionSummaryRows(detail.summary.runId, desired);
     await this.upsertRunSummary(detail.summary);
-    const existing = await this.readAllRuntimeEvents(detail.summary.runId, 5_000);
+    const existing = options.existingEvents ?? await this.readAllRuntimeEvents(detail.summary.runId, 5_000);
     const existingIds = new Set(existing.filter((event) => event.eventKind !== "run_summary").map((event) => event.eventId));
     const latestEnvelope = [...existing].reverse().find((event) => event.eventKind === "run_summary")?.payload;
     const nextEnvelope = desired.find((event) => event.eventKind === "run_summary")?.payload;
@@ -287,9 +294,22 @@ export class AutomationStudioProjectRuntimeStreamStore {
   }
 
   async getRunDetail(runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
+    return (await this.readRunForUpdate(runId, options)).detail;
+  }
+
+  /**
+   * The stored detail, as `getRunDetail` reads it, and the event stream it was
+   * read from, which `putRunDetail` takes as `existingEvents`. `events` is
+   * null when the run has no summary row, and so no stream to reuse.
+   */
+  async readRunForUpdate(runId: string, options: { includeCollections?: boolean } = {}): Promise<{ detail: AutomationStudioFlowRunDetail | null; events: AutomationStudioRuntimeStreamEvent[] | null }> {
     const summary = await this.getRunSummary(runId);
-    if (!summary) return null;
+    if (!summary) return { detail: null, events: null };
     const events = await this.readAllRuntimeEvents(runId, 5_000);
+    return { detail: await this.runDetailFromStream(summary, events, options), events };
+  }
+
+  private async runDetailFromStream(summary: AutomationStudioFlowRunSummary, events: AutomationStudioRuntimeStreamEvent[], options: { includeCollections?: boolean }): Promise<AutomationStudioFlowRunDetail | null> {
     if (!events.some((event) => event.eventKind === "run_summary")) return null;
     // Datasets live in the run dataset tables, never in the event stream, so both
     // the compact detail the web reads and the full detail join them from there.

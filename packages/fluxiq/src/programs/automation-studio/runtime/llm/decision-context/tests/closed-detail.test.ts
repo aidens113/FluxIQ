@@ -26,12 +26,12 @@ describe("closed detail of a refusal's feedback", () => {
     expect(JSON.stringify(detail)).not.toMatch(/ /);
   });
 
-  it("bounds the accounts to eight objects in all and four fields each", () => {
+  // No count limit: every account object and every closed field of each.
+  it("keeps every account object and every closed field of each", () => {
     const acts = Array.from({ length: 12 }, (_, index) => ({ a: `a${index}`, b: 1, c: 2, d: 3, e: 4, f: 5 }));
     const detail = automationStudioLlmDecisionContextClosedDetail({ code: "x", missingActs: acts.slice(0, 6), limitsExceeded: acts.slice(6) });
     const objects = [...(detail!.missingActs as object[]), ...(detail!.limitsExceeded as object[])];
-    expect(objects).toHaveLength(8);
-    for (const object of objects) expect(Object.keys(object)).toHaveLength(4);
+    expect(objects).toEqual(acts);
   });
 
   it("gives nothing for feedback with no closed code, and for no feedback", () => {

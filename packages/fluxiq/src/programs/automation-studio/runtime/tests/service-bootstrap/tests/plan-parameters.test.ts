@@ -250,8 +250,11 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(run.requests.length).toBeGreaterThan(3);
+    // Nothing in the Flow never ends a build while budget remains (t208): it ends at the run's declared call count,
+    // said as that budget, and still names the check that refused the last plan.
     expect(diagnostic).toMatchObject({
-      code: "flow_bootstrap.evidence_unusable_decision",
+      code: "flow_bootstrap.evidence_budget_exhausted",
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { stepsInFlow: 0 } },
       stage: "provider_output_validation",
       providerInvocation: "attempted",
       issueCodes: ["bootstrap.invalid_parameter_value"]
@@ -264,7 +267,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan({ handle: "target.99" })]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", issueCodes: ["example.handle_unknown"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["example.handle_unknown"] });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
   });
 
@@ -272,7 +275,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle })], { binding: typingBinding(false) });
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", issueCodes: ["bootstrap.handle_resolution_unavailable"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["bootstrap.handle_resolution_unavailable"] });
   });
 
   // The streak is never longer than the calls the run allows, so a build
@@ -282,7 +285,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(run.requests).toHaveLength(2);
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", issueCodes: ["bootstrap.invalid_parameter_value"], evidenceLoop: { iterationCount: 2 } });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["bootstrap.invalid_parameter_value"], evidenceLoop: { iterationCount: 2 } });
   });
 
   it("refuses to persist a plan that still names a handle, however it arrives", async () => {

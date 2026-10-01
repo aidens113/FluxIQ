@@ -21,9 +21,9 @@
 // exactly as before.
 //
 // What comes back is one of four things, and the loop decides what each costs
-// it: accepted, refused with every issue together, an ending (cancelled, the
-// evidence backstop, a check that answered nothing readable), or a check that
-// threw, which the loop treats as the decision error it always was.
+// it: accepted, refused with every issue together, an ending (cancelled, or a
+// check that answered nothing readable), or a check that threw, which the loop
+// treats as the decision error it always was.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceParseCompletionCheck } from "../evidence-loop-decision.ts";
@@ -41,7 +41,7 @@ export type AutomationStudioLlmEvidenceCompletionAttempt =
     answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
     restoredStep?: AutomationStudioLlmEvidenceRestoredStep;
   }
-  | { kind: "ended"; code: "llm_evidence_loop.cancelled" | "llm_evidence_loop.evidence_limit" | "llm_evidence_loop.invalid_decision" }
+  | { kind: "ended"; code: "llm_evidence_loop.cancelled" | "llm_evidence_loop.invalid_decision" }
   | { kind: "threw"; error: unknown };
 
 /** Asks the check and the dry run about one completed result. */
@@ -50,7 +50,7 @@ export async function automationStudioLlmEvidenceCompletionAttempt(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   checkCompletion?: ((result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }) => AutomationStudioLlmEvidenceCompletionCheck | Promise<AutomationStudioLlmEvidenceCompletionCheck>) | undefined;
   /** The loop's dry-run gate: nothing when the draft replayed clean or is not gated. */
-  dryRun(): Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
+  dryRun(): Promise<"cancelled" | { issueCodes: readonly string[] } | undefined>;
   signal?: AbortSignal | undefined;
 }): Promise<AutomationStudioLlmEvidenceCompletionAttempt> {
   let check: AutomationStudioLlmEvidenceCompletionCheck | undefined = { ok: true };
@@ -73,7 +73,6 @@ export async function automationStudioLlmEvidenceCompletionAttempt(input: {
   if (!check.ok) return { kind: "refused", issueCodes: [...new Set(check.issueCodes)], feedback: check.feedback, ...answerability };
   const replay = await input.dryRun();
   if (replay === "cancelled") return { kind: "ended", code: "llm_evidence_loop.cancelled" };
-  if (replay === "evidence_limit") return { kind: "ended", code: "llm_evidence_loop.evidence_limit" };
   if (!replay) return { kind: "accepted", ...answerability };
   return { kind: "refused", issueCodes: [...new Set(replay.issueCodes)], ...answerability };
 }

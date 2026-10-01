@@ -3,7 +3,8 @@
 // can fail, every message gets an answer in the thread, a delete waits on a
 // confirmation carrying exactly what it would run, and ordinary work does not.
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
@@ -11,7 +12,10 @@ import { parseAutomationStudioPanelCapabilities } from "../../../panel-capabilit
 import { AutomationStudioConversations } from "../../conversations.ts";
 import { AUTOMATION_STUDIO_PANEL_CAPABILITY_ATTACHMENT, type AutomationStudioConversationModel } from "../index.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-conversation-instructions-test");
+// Its own directory per case: a fixed path under the working directory was
+// shared by every run of this file in the checkout, so two runs at once
+// deleted and overwrote each other's data.
+let rootDir = "";
 const PROJECT = "project.home";
 const FLOWS = [{ flowId: "flow.kettle-1", name: "Kettle price checker" }, { flowId: "flow.toaster-2", name: "Toaster stock watch" }];
 const CAPABILITIES = parseAutomationStudioPanelCapabilities([
@@ -68,8 +72,7 @@ async function thread(model: AutomationStudioConversationModel | null) {
 
 describe("a person's turn, answered in the thread", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversation-instructions-test-"));
   });
 
   afterEach(async () => {

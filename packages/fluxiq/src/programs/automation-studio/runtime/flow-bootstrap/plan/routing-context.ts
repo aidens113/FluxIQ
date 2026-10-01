@@ -9,12 +9,13 @@
 //
 // Every value here is either Core's own (the Flow's structure, its declared
 // inputs, a route decision's reasons) or a state the host observed and
-// returned through `observeRouteState`, which the host bounds and sanitizes
-// the way it bounds any evidence. This module bounds it again: a fixed number
-// of paths and situations, each value cut to a printable length, and the
-// whole within a byte budget. It adds nothing of its own to what the host
-// returned, so it cannot widen what leaves the evidence boundary.
+// returned through `observeRouteState`, which the host sanitizes the way it
+// sanitizes any evidence. This module carries all of it (2026-09-30, "the
+// model sees the whole page"): every declared path, every distinct situation,
+// every observed value at its full length and depth. The packet builder
+// withholds a secret-shaped value and refuses a denied key; nothing here cuts.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_ROUTE_SIGNAL_PATH } from "./route-condition.ts";
 
 /** How the router decides, in the words the model reads. */
 export const AUTOMATION_STUDIO_ROUTER_DECISION_TEXT = "The router picks one block before any step runs, with no model: it tests each block's `when:` condition, in the order the blocks are written, against the run's inputs and the state observed where the run starts. The first block whose condition holds runs; when none holds, the steps written outside every block run.";
@@ -32,7 +33,7 @@ export type AutomationStudioFlowBootstrapRoutePath = {
 export type AutomationStudioFlowBootstrapRouteSituation = {
   /** Where it was seen: where the run starts, or after which exploration step. */
   seen: string;
-  /** Each observed path and its value, bounded. A path not listed was absent. */
+  /** Each observed path and its value, whole. A path not listed was absent. */
   state: Record<string, JsonValue>;
 };
 
@@ -72,21 +73,13 @@ export type AutomationStudioFlowBootstrapRoutingContext = {
   lastRoute?: AutomationStudioFlowBootstrapLastRoute;
 };
 
-export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_ROUTING_LIMITS = {
-  maxPaths: 24,
-  maxSituations: 6,
-  maxStateEntries: 24,
-  maxValueLength: 300,
-  maxDescriptionLength: 240,
-  maxBytes: 6_000
-} as const;
-
-const PRINTABLE_PATH = /^(?:inputs|state)(?:\.[A-Za-z0-9_-]{1,64}){1,6}$/u;
+/** A recursion guard for walking an observed state, not a size bound. */
+const MAX_STATE_DEPTH = 64;
 
 /**
- * The routing context for one build. Every list is bounded and every value
- * cut; situations past the budget are dropped newest first, because the first
- * one -- where a run starts -- is the one the router will actually see.
+ * The routing context for one build: every declared path a condition can test
+ * (the route grammar's own paths, `route-condition.ts`), every distinct
+ * observed situation oldest first, and every observed value whole.
  */
 export function buildAutomationStudioFlowBootstrapRoutingContext(input: {
   current: string | AutomationStudioFlowBootstrapCurrentStructure;
@@ -96,21 +89,20 @@ export function buildAutomationStudioFlowBootstrapRoutingContext(input: {
   stateUnavailable?: string;
   lastRoute?: AutomationStudioFlowBootstrapLastRoute;
 }): AutomationStudioFlowBootstrapRoutingContext {
-  const limits = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_ROUTING_LIMITS;
   const paths: AutomationStudioFlowBootstrapRoutePath[] = [];
   for (const declared of input.flowInputs) {
     const path = `inputs.${declared.id}`;
-    if (!PRINTABLE_PATH.test(path) || paths.some((entry) => entry.path === path)) continue;
+    if (!AUTOMATION_STUDIO_ROUTE_SIGNAL_PATH.test(path) || paths.some((entry) => entry.path === path)) continue;
     paths.push({
       path,
-      ...(declared.description ? { description: bounded(declared.description, limits.maxDescriptionLength) } : {}),
+      ...(declared.description ? { description: flat(declared.description) } : {}),
       ...(declared.valueType ? { type: declared.valueType } : {}),
       ...(declared.required ? { required: true as const } : {})
     });
   }
   for (const declared of input.statePaths) {
-    if (!PRINTABLE_PATH.test(declared.path) || !declared.path.startsWith("state.") || paths.some((entry) => entry.path === declared.path)) continue;
-    paths.push({ path: declared.path, ...(declared.description ? { description: bounded(declared.description, limits.maxDescriptionLength) } : {}) });
+    if (!AUTOMATION_STUDIO_ROUTE_SIGNAL_PATH.test(declared.path) || !declared.path.startsWith("state.") || paths.some((entry) => entry.path === declared.path)) continue;
+    paths.push({ path: declared.path, ...(declared.description ? { description: flat(declared.description) } : {}) });
   }
   const situations: AutomationStudioFlowBootstrapRouteSituation[] = [];
   const seenStates = new Set<string>();
@@ -119,55 +111,52 @@ export function buildAutomationStudioFlowBootstrapRoutingContext(input: {
     const key = JSON.stringify(state);
     if (seenStates.has(key)) continue;
     seenStates.add(key);
-    situations.push({ seen: bounded(observation.seen, limits.maxDescriptionLength), state });
-    if (situations.length >= limits.maxSituations) break;
+    situations.push({ seen: flat(observation.seen), state });
   }
-  const context: AutomationStudioFlowBootstrapRoutingContext = {
+  return {
     decides: AUTOMATION_STUDIO_ROUTER_DECISION_TEXT,
     current: input.current,
-    paths: paths.slice(0, limits.maxPaths),
+    paths,
     situations,
-    ...(input.stateUnavailable ? { stateUnavailable: bounded(input.stateUnavailable, limits.maxDescriptionLength) } : {}),
+    ...(input.stateUnavailable ? { stateUnavailable: flat(input.stateUnavailable) } : {}),
     ...(input.lastRoute ? { lastRoute: input.lastRoute } : {})
   };
-  while (context.situations.length > 1 && Buffer.byteLength(JSON.stringify(context), "utf8") > limits.maxBytes) context.situations.pop();
-  return context;
 }
 
 /**
- * An observed state as `state.<path>` entries. Nested objects are walked,
- * a list becomes its items joined, and each value is cut to a printable
- * length; anything deeper than the path pattern allows is left out.
+ * An observed state as `state.<path>` entries, every one of them. Nested
+ * objects are walked, and so are objects inside a list; a list's scalar items
+ * are joined, the form a condition compares against. No value is cut, and no
+ * key is left out for its spelling or its depth.
  */
 function flattenedState(state: JsonObject): Record<string, JsonValue> {
-  const limits = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_ROUTING_LIMITS;
   const entries: Array<[string, JsonValue]> = [];
   const visit = (value: JsonValue, path: string, depth: number): void => {
-    if (entries.length >= limits.maxStateEntries || value === null) return;
+    if (value === null) return;
     if (typeof value === "string") {
-      entries.push([path, bounded(value, limits.maxValueLength)]);
+      entries.push([path, flat(value)]);
       return;
     }
     if (typeof value === "number" || typeof value === "boolean") {
       entries.push([path, value]);
       return;
     }
+    if (depth >= MAX_STATE_DEPTH) return;
     if (Array.isArray(value)) {
       const items = value.filter((item): item is string | number | boolean => typeof item === "string" || typeof item === "number" || typeof item === "boolean");
-      if (items.length) entries.push([path, bounded(items.join(" | "), limits.maxValueLength)]);
+      if (items.length) entries.push([path, flat(items.join(" | "))]);
+      value.forEach((item, index) => {
+        if (item !== null && typeof item === "object") visit(item, `${path}.${index}`, depth + 1);
+      });
       return;
     }
-    if (depth >= 6) return;
-    for (const [key, child] of Object.entries(value)) {
-      const next = `${path}.${key}`;
-      if (PRINTABLE_PATH.test(next)) visit(child, next, depth + 1);
-    }
+    for (const [key, child] of Object.entries(value)) visit(child, `${path}.${key}`, depth + 1);
   };
   visit(state, "state", 0);
   return Object.fromEntries(entries);
 }
 
-function bounded(text: string, limit: number): string {
-  const flat = text.replace(/\s+/gu, " ").trim();
-  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+/** Whitespace collapsed, nothing cut. */
+function flat(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
 }

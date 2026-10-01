@@ -8,14 +8,12 @@ import { AutomationStudioProjectObjectRepository } from "./object-repository.ts"
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION = "automation-studio.reusable-llm-context.v1" as const;
-export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_PROMPT_BYTES = 12_288;
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_TAGS = 32;
 const MAX_SOURCE_IDS = 25;
-const MAX_JSON_DEPTH = 8;
-const MAX_JSON_ITEMS = 256;
-const MAX_STRING_BYTES = 2_048;
+/** A recursion guard, not a size bound: a prompt projection is stored whole. */
+const MAX_JSON_DEPTH = 64;
 const FORBIDDEN_KEY = /^(?:authorization|cookie|cookies|credential|credentials|fragment|header|headers|password|query|secret|selectedtext|token|tokens)$/u;
 const FORBIDDEN_COMPOUND_KEY = /(?:accesstoken|authtoken|bearertoken|refreshtoken|sessiontoken|cookiejar|credential|password|passwd|requestheaders?|responseheaders?|rawhtml|rawpage|rawdata|pagesnapshot|rawsnapshot|querystring|urlquery|urlfragment|selectedtext|enteredvalue|inputvalue|formvalue|selectedvalue)/u;
 
@@ -127,7 +125,6 @@ export class AutomationStudioProjectReusableLlmContextStore {
     if (await this.row(recordId)) throw new Error(`Reusable LLM context ${recordId} already exists.`);
     const promptProjection = canonicalJson(input.promptProjection);
     const encoded = Buffer.from(JSON.stringify(promptProjection), "utf8");
-    if (encoded.byteLength > AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_PROMPT_BYTES) throw new Error("Reusable LLM context prompt projection exceeds its byte limit.");
     const contentDigest = createHash("sha256").update(encoded).digest("hex");
     const compatibilityTags = tags(input.compatibilityTags ?? []);
     const sourceRunIds = ids(input.sourceRunIds ?? [], "source run");
@@ -300,16 +297,10 @@ function parseTags(value: string): AutomationStudioReusableLlmContextTag[] { con
 function tagText(value: string, maxBytes: number, label: string): string { const result = value.trim(); if (!result || Buffer.byteLength(result, "utf8") > maxBytes || /[\u0000-\u001f\u007f]/u.test(result)) throw new Error(`Invalid ${label}.`); return result; }
 
 function canonicalJson(value: JsonValue): JsonValue {
-  let items = 0;
   const visit = (candidate: JsonValue, depth: number, keyName?: string): JsonValue => {
     if (depth > MAX_JSON_DEPTH) throw new Error("Reusable LLM context prompt projection exceeds its depth limit.");
     if (keyName && forbiddenProjectionKey(keyName)) throw new Error(`Reusable LLM context prompt projection contains forbidden field ${keyName}.`);
-    items += 1;
-    if (items > MAX_JSON_ITEMS) throw new Error("Reusable LLM context prompt projection exceeds its item limit.");
-    if (typeof candidate === "string") {
-      if (Buffer.byteLength(candidate, "utf8") > MAX_STRING_BYTES) throw new Error("Reusable LLM context prompt projection contains an oversized string.");
-      return candidate;
-    }
+    if (typeof candidate === "string") return candidate;
     if (typeof candidate === "number" && !Number.isFinite(candidate)) throw new Error("Reusable LLM context prompt projection contains a non-finite number.");
     if (candidate === null || typeof candidate === "boolean" || typeof candidate === "number") return candidate;
     if (Array.isArray(candidate)) return candidate.map((item) => visit(item, depth + 1));

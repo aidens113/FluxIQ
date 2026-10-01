@@ -29,8 +29,6 @@ import { describe, expect, it } from "vitest";
 import { replayRecordedRun, type RecordedEvidenceEntry, type RecordedRunName, type RecordedRunReplay } from "./recorded-runs.ts";
 
 const HISTORY = "core.evidence_history";
-const WINDOW_BYTES = 24_000;
-const HISTORY_CAP = 4_000;
 
 /**
  * The decisions each replay is expected to trace differently from its log:
@@ -95,6 +93,10 @@ const OLD: Readonly<Record<RecordedRunName, Readonly<Record<number, Old>>>> = {
 
 const CORE_NOTE = /^core\.(completion_check|dry_run|request_check|no_progress|amendment_check)$/;
 const isNote = (entry: { toolId: string }): boolean => CORE_NOTE.test(entry.toolId);
+/** The call ids of every page shown before `iteration`, in the order the calls were made. */
+function pagesCalledBefore(replay: RecordedRunReplay, iteration: number): string[] {
+  return replay.trace.filter((row) => row.iteration < iteration && row.decision === "tool_call" && row.callId !== undefined).map((row) => row.callId!);
+}
 /** A page: what a tool call or a dry-run step answered, not a Core note or a beside entry. */
 const isPage = (entry: { toolId: string }): boolean => entry.toolId === "core.run_node" || entry.toolId === "core.dry_run.page" || !entry.toolId.startsWith("core.");
 const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8");
@@ -240,13 +242,16 @@ describe("every chosen decision, before and after", () => {
   for (const [name, decisions] of Object.entries(OLD) as [RecordedRunName, Readonly<Record<number, Old>>][]) {
     for (const at of Object.keys(decisions)) {
       const iteration = Number(at);
-      it(`${name} decision ${iteration}: inside the window, the history inside its cap, every refusal so far on a row`, async () => {
+      it(`${name} decision ${iteration}: every page so far shown whole in call order, the history in full, every refusal so far on a row`, async () => {
         const run = await replay(name);
         const shown = shownAt(run, iteration);
-        expect(shown.reduce((sum, entry) => sum + bytes(entry), 0)).toBeLessThanOrEqual(WINDOW_BYTES + shown.length);
+        // Nothing is chosen any more: every page the build was answered with is
+        // in front of the decision, in the order the calls were made.
+        const pages = shown.filter((entry) => entry.toolId !== "core.dry_run.page" && isPage(entry)).map((entry) => entry.callId);
+        expect(pages).toEqual(pagesCalledBefore(run, iteration));
         const history = historyAt(run, iteration);
-        if (history.format !== "decision_rows_least_v1") expect(bytes(history)).toBeLessThanOrEqual(HISTORY_CAP);
-        // A folded range does not count: a refusal keeps a row of its own on every rung.
+        expect(history.format).toBe("decision_rows_v1");
+        expect(history).not.toHaveProperty("folded");
         const onRows = new Set(rowsOf(history).flatMap((row) => row.at));
         const lost = refusedBefore(run, iteration).filter((refused) => !onRows.has(refused));
         expect(lost, `refusals with no row at decision ${iteration}`).toEqual([]);
@@ -307,15 +312,15 @@ describe("bigbox-run6: the answered repeats are caught and shown", () => {
   });
 });
 
-describe("bigbox-run6 decision 22: the superseded notes leave, and pages take their room", () => {
+describe("bigbox-run6 decision 22: the superseded notes leave, and every page stays", () => {
   it("one request check and one no-progress note, where there were seven and six", async () => {
     const run = await replay("bigbox-run6");
     const window = shownAt(run, 22).filter((entry) => entry.toolId !== HISTORY);
     expect(window.filter((entry) => entry.toolId === "core.request_check").map((entry) => entry.callId)).toEqual(["core.request_check.20"]);
     expect(window.filter((entry) => entry.toolId === "core.no_progress").map((entry) => entry.callId)).toEqual(["core.no_progress.20"]);
     expect(window.filter(isNote).reduce((total, entry) => total + bytes(entry), 0)).toBeLessThan(OLD["bigbox-run6"][22]!.noteBytes);
-    // Old: `pick-millbrook` and `snap-store-list`. Now `open-store-picker-2` is back beside them.
-    expect(window.filter(isPage).map((entry) => entry.callId)).toEqual(["open-store-picker-2", "pick-millbrook", "snap-store-list"]);
+    // Old: `pick-millbrook` and `snap-store-list`. Now every page of the build is shown.
+    expect(window.filter((entry) => entry.toolId !== "core.dry_run.page" && isPage(entry)).map((entry) => entry.callId)).toEqual(pagesCalledBefore(run, 22));
     expect(window.filter(isPage).length).toBeGreaterThan(OLD["bigbox-run6"][22]!.pages);
   });
 });

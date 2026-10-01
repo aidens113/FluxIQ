@@ -43,6 +43,11 @@ export class AutomationStudioProjectDatabasePool {
     this.busyTimeoutMs = Math.max(100, Math.trunc(options.busyTimeoutMs ?? 10_000));
   }
 
+  /** Whether `closeAll` has been called: every later `acquire` is refused. */
+  get isClosing(): boolean {
+    return this.closing;
+  }
+
   async acquire(projectId: string): Promise<AutomationStudioProjectDatabaseLease> {
     if (this.closing) throw new Error("Automation Studio project database pool is closing.");
     const normalizedProjectId = normalizeProjectId(projectId);

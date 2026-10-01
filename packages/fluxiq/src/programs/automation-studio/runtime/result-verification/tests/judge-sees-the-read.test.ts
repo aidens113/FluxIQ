@@ -1,4 +1,4 @@
-// The judge is shown how each read went, and that survives the byte budget.
+// The judge is shown how each read went, beside the step's own parameters.
 //
 // `run-munq5s8x-6d620cdf`: the Flow's extraction followed five pages, filtered on
 // four conditions and kept one row per link. The check refuted its 8 rows,
@@ -6,13 +6,14 @@
 // click and a filter/dedup step" -- all of which s6 already had -- because what
 // it was told was "8 records stored, across 1 record set; the Flow's steps were
 // ...; part of the summary was withheld to fit the call". The step's parameters
-// were the part withheld.
+// were the part withheld. Since 2026-09-30 nothing is withheld to fit: the
+// summary carries every step whole, and the read's account beside it.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
-import { AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS, summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "../read-account/tests/earbuds-read.ts";
 import { ANSWER, datasetSummary, flow, harness, runDetail, session, verify } from "./run-outcome-harness.ts";
 
@@ -21,7 +22,7 @@ const schema: AutomationStudioRecordSchema = {
   fields: ["name", "price", "rating", "url"].map((id) => ({ id, label: id, valueType: "string" as const }))
 };
 
-/** Rows long enough that the sample spends most of the budget, as a real product listing's does. */
+/** Rows as long as a real product listing's. */
 const rows: JsonObject[] = Array.from({ length: 8 }, (_, index) => ({
   name: `Brightaisle wireless earbuds model ${index} with active noise cancelling and a long product title `.repeat(2),
   price: `$${40 + index}.99`,
@@ -48,16 +49,13 @@ function readSummary(nodes: AutomationStudioFlowNode[]): AutomationStudioRunResu
   });
 }
 
-const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
-
 describe("the judge sees how the read went", () => {
-  it("carries the read's pages, stop and each condition's rejections when the step's parameters do not fit", () => {
+  it("carries the read's pages, stop and each condition's rejections beside the step's parameters", () => {
     const summary = readSummary(steps());
-    expect(bytes(summary)).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes);
-    // The parameters the judge used to be left without are still cut for room...
-    expect(summary.flowShape.find((step) => step.nodeId === EARBUDS_NODE_ID)?.parameters).toBeUndefined();
-    expect(summary.flowParametersWithheld).toBe(true);
-    // ...and the read's own account is there instead.
+    // The parameters the judge used to be left without are there, whole...
+    expect(summary.flowShape.find((step) => step.nodeId === EARBUDS_NODE_ID)?.parameters).toBeDefined();
+    expect(summary.flowParametersWithheld).toBeUndefined();
+    // ...and so is the read's own account.
     expect(summary.reads).toEqual([expect.objectContaining({
       nodeId: EARBUDS_NODE_ID, pagesRead: 5, pageLimit: 5, stop: "page_limit", itemsSeen: 56, kept: 8, paginates: true, dedupes: true, dedupeBy: ["url"],
       conditions: [
@@ -69,14 +67,13 @@ describe("the judge sees how the read went", () => {
     })]);
   });
 
-  it("trims the step list before the read, and keeps the step the read speaks for", () => {
+  it("keeps every step and the whole read however long the Flow is", () => {
     const padding: AutomationStudioFlowNode[] = Array.from({ length: 30 }, (_, index) => ({
       id: `pad.${index}.${"x".repeat(40)}`, definitionId: "builtin.control.merge", label: `A step with a long authored name, number ${index}, ${"y".repeat(30)}`
     }));
     const summary = readSummary([...padding, ...steps()]);
-    expect(bytes(summary)).toBeLessThanOrEqual(AUTOMATION_STUDIO_RESULT_SUMMARY_LIMITS.maxBytes);
-    expect(summary.withheld).toBe(true);
-    expect(summary.flowShape.length).toBeLessThan(36);
+    expect(summary.withheld).toBe(false);
+    expect(summary.flowShape).toHaveLength(36);
     expect(summary.flowShape.map((step) => step.nodeId)).toContain(EARBUDS_NODE_ID);
     expect(summary.reads?.[0]?.conditions?.map((condition) => condition.rejected)).toEqual([13, 20, 27, 16]);
     expect(summary.reads?.[0]?.conditions?.[3]?.condition).toBe("name not contains [\"ear tips\", \"charging case\"]");
@@ -102,8 +99,12 @@ describe("the judge sees how the read went", () => {
     expect(sent?.reads?.[0]?.conditions?.map((condition) => condition.rejected)).toEqual([13, 20, 27, 16]);
     expect(actual[0]).toContain(`step ${EARBUDS_NODE_ID} read 5 pages of at most 5, paging stopped on page_limit and kept 8 of 56 items seen`);
     expect(actual[0]).toContain("its 4 conditions rejected 13, 20, 27, 16 rows");
-    const everything = JSON.stringify(context.requests) + String(actual[0]);
-    for (const locator of EARBUDS_LOCATORS) expect(everything).not.toContain(locator);
+    // The read's account and the refutation's actual name no locator. The
+    // step's own parameters travel whole since 2026-09-30, through the repair
+    // context's parameter screen, and whether that screen catches every
+    // locator form is the screen's question, not this read's.
+    const read = JSON.stringify(sent?.reads) + String(actual[0]);
+    for (const locator of EARBUDS_LOCATORS) expect(read).not.toContain(locator);
   });
 
   it("takes no read from an attempt this session did not make", async () => {

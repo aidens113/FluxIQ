@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import {
   AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES,
@@ -65,10 +66,10 @@ describe("the DeepSeek adapter's pre-send check of explored evidence", () => {
       ["a field the slot does not have", patchRequest({ ...clean, note: "extra" })],
       ["a field an entry does not have", patchRequest({ ...clean, packets: [{ ...clean.packets[0]!, handles: ["target.2"] }] })],
       ["another schema version", patchRequest({ ...clean, schemaVersion: "automation-studio.exploration-evidence.v0" })],
-      ["a negative withheld count", patchRequest({ ...clean, withheldPackets: -1 })],
-      ["a packet that names no schema", patchRequest(slot({ controls: ["target.2"] }))],
-      ["a string longer than a packet may hold", patchRequest(slot(page({ note: "x".repeat(2_001) })))],
-      ["more packets than one exploration can gather", patchRequest({ ...clean, packets: Array.from({ length: 65 }, (_, index) => ({ evidenceId: `explored.${index + 1}`, toolId: "web.recovery.inspect", packet: { schemaVersion: "web-llm-evidence.v2" } })) })]
+      // The slot no longer counts what it withheld: a withheld packet stands in
+      // the list as a marker, so a count beside it is a field it does not have.
+      ["a withheld count", patchRequest({ ...clean, withheldPackets: 0 })],
+      ["a packet that is not an object", patchRequest({ ...clean, packets: [{ ...clean.packets[0]!, packet: ["target.2"] }] })]
     ];
     for (const [label, request] of cases) {
       const recorded = recordingProvider(patchReply());
@@ -77,7 +78,21 @@ describe("the DeepSeek adapter's pre-send check of explored evidence", () => {
     }
   });
 
-  it("returns the refusal through the harness by code, with nothing of the refused value in the result it records", async () => {
+  it("sends every explored packet whole: no string length, packet count or schema requirement", async () => {
+    const packets = Array.from({ length: 65 }, (_, index) => ({ evidenceId: `explored.${index + 1}`, toolId: "web.recovery.inspect", packet: { controls: [`target.${index}`] } as JsonObject }));
+    const cases: Array<[string, unknown]> = [
+      ["a string of 2,001 characters", slot(page({ note: "x".repeat(2_001) }))],
+      ["a packet that names no schema", slot({ controls: ["target.2"] })],
+      ["65 packets from one exploration", { schemaVersion: "automation-studio.exploration-evidence.v1", packets }]
+    ];
+    for (const [label, explored] of cases) {
+      const recorded = recordingProvider(patchReply());
+      await expect(recorded.provider.runTask(patchRequest(explored)), label).resolves.toMatchObject({ response: { kind: "runtime_patch" } });
+      expect(recorded.calls, label).toEqual({ secrets: 1, transport: 1 });
+    }
+  });
+
+  it("withholds a credential-shaped packet in the harness, so neither the provider nor the recorded result ever holds the value", async () => {
     const recorded = recordingProvider(patchReply());
     const result = await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch",
@@ -86,14 +101,23 @@ describe("the DeepSeek adapter's pre-send check of explored evidence", () => {
       runId: "run.one",
       instructions: [],
       deniedEvidenceKeys: WEB_DENIED_EVIDENCE_KEYS,
-      explorationEvidence: { maxBytes: 8_000, packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet: page({ note: `Bearer ${BEARER}` }) }] },
+      explorationEvidence: { packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet: page({ note: `Bearer ${BEARER}` }) }] },
       provider: recorded.provider
     });
-    expect(result.ok).toBe(false);
-    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm.provider_exploration_evidence_invalid");
+    // Withheld rather than refused: the look stands in the slot as a marker, so
+    // the repair is told a look happened and the call still goes out.
+    expect(recorded.calls).toEqual({ secrets: 1, transport: 1 });
+    expect(recorded.outbound()).not.toContain(BEARER);
+    expect(recorded.outbound()).toContain("automation-studio.explored-packet-withheld.v1");
+    expect(recorded.outbound()).toContain("secret_shaped");
+    expect(JSON.stringify(result)).not.toContain(BEARER);
+  });
+
+  it("refuses at the adapter, by code and before the credential is resolved, a slot that still carries a credential", async () => {
+    const recorded = recordingProvider(patchReply());
+    const failure = await refusal(recorded.provider.runTask(patchRequest(slot(page({ note: `Bearer ${BEARER}` })))), "llm.provider_exploration_evidence_invalid");
     expect(recorded.calls).toEqual({ secrets: 0, transport: 0 });
-    expect(JSON.stringify(result.diagnostics)).not.toContain(BEARER);
-    expect(JSON.stringify(result.intervention)).not.toContain(BEARER);
+    expect(JSON.stringify(normalizedAutomationStudioLlmProviderFailure(failure)) + failure.message).not.toContain(BEARER);
   });
 
   it("is a pre-flight refusal of its own", () => {
@@ -129,8 +153,7 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
       // produced, and while this check named only the verification, the packet
       // builder put the summary on the patch request and this refused the call
       // outright (t099).
-      ["a task that has no finished result to judge", { ...verificationRequest(resultSummary([{ name: "Hollis" }])), taskKind: "flow_bootstrap" as const, promptVersion: "automation-studio.flow-bootstrap.v1", expectedOutput: "flow_bootstrap" as const }, undefined],
-      ["a summary past its byte ceiling", verificationRequest(resultSummary([{ name: "y".repeat(5_000) }])), undefined]
+      ["a task that has no finished result to judge", { ...verificationRequest(resultSummary([{ name: "Hollis" }])), taskKind: "flow_bootstrap" as const, promptVersion: "automation-studio.flow-bootstrap.v1", expectedOutput: "flow_bootstrap" as const }, undefined]
     ];
     for (const [label, request, value] of cases) {
       const recorded = recordingProvider({ kind: "diagnosis", summary: "Judged." });
@@ -140,6 +163,10 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
     }
     const sent = recordingProvider({ kind: "diagnosis", summary: "Judged." });
     await expect(sent.provider.runTask(verificationRequest(resultSummary([{ name: "Hollis Abbott", role: "member" }])))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
+    // No byte ceiling: a summary once refused past its ceiling is sent whole.
+    const large = recordingProvider({ kind: "diagnosis", summary: "Judged." });
+    await expect(large.provider.runTask(verificationRequest(resultSummary([{ name: "y".repeat(5_000) }])))).resolves.toMatchObject({ response: { kind: "diagnosis" } });
+    expect(large.outbound()).toContain("y".repeat(5_000));
     // And the repair that is shown what the run produced is sent, not refused.
     const repairing = recordingProvider({ kind: "diagnosis", summary: "Diagnosed." });
     const diagnosing = verificationRequest(resultSummary([{ name: "Hollis Abbott" }]));
@@ -176,12 +203,47 @@ describe("the DeepSeek adapter's pre-send check of every other evidence slot", (
   });
 });
 
+// 2026-09-30: the model is shown the whole page. Neither the loop's check of a
+// tool result nor the adapter's pre-send check holds evidence to a count, an
+// entry total or a string length; the only bound is the model's window.
+describe("a whole page of evidence", () => {
+  const WINDOW_LIMITS = { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 };
+  const wholePage = (): JsonObject => ({
+    schemaVersion: "web-llm-evidence.v2",
+    location: "https://example.test/catalogue",
+    text: "word ".repeat(10_000),
+    elements: Array.from({ length: 5_000 }, (_, index) => ({ target: `target.${index}`, tag: "a", name: `Item ${index}`, attributes: [["class", "row"]] }))
+  });
+
+  it("is taken whole by the loop's result check: 5,000 elements and a 50,000-character string", () => {
+    const evidence = wholePage();
+    expect((evidence.text as string).length).toBe(50_000);
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false }, "observe")).toMatchObject({ evidence });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(evidence, "observe")).toMatchObject({ evidence });
+    // A recursion guard stays: past 64 levels a value is refused.
+    let deep: JsonObject = { leaf: true };
+    for (let depth = 0; depth < 70; depth += 1) deep = { deep };
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(deep, "observe")).toBeUndefined();
+  });
+
+  it("is sent by the adapter, with more evidence entries than the loop has tool calls", async () => {
+    const evidence = [
+      { callId: "call.1", toolId: "web.recovery.inspect", value: wholePage() },
+      ...Array.from({ length: 80 }, (_, index) => ({ callId: `call.${index + 2}`, toolId: "web.recovery.inspect", value: { observed: index } }))
+    ];
+    const recorded = recordingProvider(decisionReply());
+    await expect(recorded.provider.runTask(decisionRequest(evidence, { tokenLimits: WINDOW_LIMITS }))).resolves.toMatchObject({ response: { kind: "evidence_tool_decision" } });
+    expect(recorded.calls).toEqual({ secrets: 1, transport: 1 });
+    expect(recorded.outbound()).toContain("target.4999");
+  });
+});
+
 function page(extra: JsonObject = {}): JsonObject {
   return { schemaVersion: "web-llm-evidence.v2", location: "https://example.test/page.revealed", elements: [{ target: "target.2", tag: "button", name: "Place order" }], ...extra };
 }
 
-function slot(packet: JsonObject): { schemaVersion: string; packets: Array<Record<string, unknown>>; withheldPackets: number } & Record<string, unknown> {
-  return { schemaVersion: "automation-studio.exploration-evidence.v1", packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet }], withheldPackets: 0 };
+function slot(packet: JsonObject): { schemaVersion: string; packets: Array<Record<string, unknown>> } & Record<string, unknown> {
+  return { schemaVersion: "automation-studio.exploration-evidence.v1", packets: [{ evidenceId: "explored.1", toolId: "web.recovery.reveal", packet }] };
 }
 
 function baseRequest(): AutomationStudioLlmTaskRequest {

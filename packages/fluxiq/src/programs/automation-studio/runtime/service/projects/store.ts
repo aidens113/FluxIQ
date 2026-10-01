@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../../../api/index.ts";
 import { ProgramJsonStore, programDataFile } from "../../../../_shared/storage.ts";
@@ -16,6 +17,13 @@ export class AutomationStudioProjectStore {
   // own lifetime. Without it every write was answered and then forgotten, so a
   // project created on the default service could not be found the next moment.
   private memoryIndex: AutomationStudioProjectIndex = { categories: [], projects: [] };
+  // The index as last read, keyed by the file's identity (its id, size and
+  // modification time, to the nanosecond). Nearly every service operation
+  // reads the index to check its project, 170-220 times in one repaired run,
+  // measured; a file whose identity has not changed is not read again. A write
+  // replaces the file, which changes its id, and this store's own writes
+  // forget the copy outright. An index kept in SQLite is always read.
+  private indexCache: { identity: string; state: AutomationStudioProjectIndex } | undefined;
 
   constructor(private readonly paths: AutomationStudioProjectPaths, legacyDataDir?: string) {
     if (this.paths.root) this.indexStore = new ProgramJsonStore(path.join(this.paths.root, "index.json"), () => ({ categories: [], projects: [] }));
@@ -24,12 +32,26 @@ export class AutomationStudioProjectStore {
 
   async readProjectIndex(): Promise<AutomationStudioProjectIndex> {
     await this.ensureStorageReady();
-    const state = this.indexStore ? await this.indexStore.read() : structuredClone(this.memoryIndex);
+    const state = this.indexStore ? await this.readIndexFile(this.indexStore) : structuredClone(this.memoryIndex);
     return { categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] };
+  }
+
+  private async readIndexFile(store: ProgramJsonStore<AutomationStudioProjectIndex>): Promise<AutomationStudioProjectIndex> {
+    // The identity is taken before the read. A write landing between the two
+    // leaves newer content under the older identity, which the next stat no
+    // longer matches, so it is read again rather than served stale.
+    // A document kept in SQLite may leave a stale file behind, whose identity
+    // would never change, so only a file-backed index is cached.
+    const identity = store.isFileBacked() ? await fileIdentity(store.filePath) : null;
+    if (identity && this.indexCache?.identity === identity) return structuredClone(this.indexCache.state);
+    const state = await store.read();
+    this.indexCache = identity ? { identity, state: structuredClone(state) } : undefined;
+    return state;
   }
 
   async writeProjectIndex(mutator: (state: AutomationStudioProjectIndex) => AutomationStudioProjectIndex): Promise<AutomationStudioProjectIndex> {
     await this.ensureStorageReady();
+    this.indexCache = undefined;
     if (!this.indexStore) {
       const next = mutator({ categories: normalizeProjectCategories(this.memoryIndex.categories ?? []), projects: structuredClone(this.memoryIndex.projects ?? []) });
       this.memoryIndex = structuredClone(next);
@@ -126,4 +148,15 @@ export function normalizeProjectCategories(categories: AutomationStudioProjectCa
     ...category,
     order: typeof category.order === "number" && Number.isFinite(category.order) ? category.order : index
   }));
+}
+
+/** The file's id, size and modification time, or null when there is no file. */
+async function fileIdentity(filePath: string): Promise<string | null> {
+  try {
+    const info = await stat(filePath, { bigint: true });
+    return `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}`;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }

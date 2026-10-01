@@ -14,9 +14,22 @@ export function estimateAutomationStudioDeepSeekInputTokens(
   request: AutomationStudioLlmTaskRequest,
   _model: AutomationStudioDeepSeekModel = AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL
 ): number {
+  return measureAutomationStudioDeepSeekInput(request).estimatedInputTokens;
+}
+
+/**
+ * The messages a request will send, measured: their UTF-8 bytes and the input
+ * tokens Core's one estimator puts them at. The harness reads this through the
+ * provider's `measureInput` so its own size-carrying refusal and the adapter's
+ * check can never disagree (`../harness/run.ts`).
+ */
+export function measureAutomationStudioDeepSeekInput(request: AutomationStudioLlmTaskRequest): { estimatedInputTokens: number; estimatedInputBytes: number } {
   const messages = automationStudioDeepSeekMessages(request);
-  const contentBytes = messages.reduce((total, message) => total + Buffer.byteLength(message.content, "utf8"), 0);
-  return estimateAutomationStudioLlmTokensFromUtf8Bytes(contentBytes) + AUTOMATION_STUDIO_DEEPSEEK_CHAT_FRAMING_TOKEN_RESERVE;
+  const estimatedInputBytes = messages.reduce((total, message) => total + Buffer.byteLength(message.content, "utf8"), 0);
+  return {
+    estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + AUTOMATION_STUDIO_DEEPSEEK_CHAT_FRAMING_TOKEN_RESERVE,
+    estimatedInputBytes
+  };
 }
 
 /** The whole outbound request, as the bytes that go on the wire. */

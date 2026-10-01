@@ -202,15 +202,15 @@ configured. Otherwise status reports
 does not automatically re-encrypt old objects or provide host key custody.
 
 Reusable-context selection exact-filters scope, evidence/sanitizer versions,
-and opaque compatibility tags in storage before pagination. Ranking is stable:
-applied successes precede validated successes, reviewed successes, unreviewed
-successes, other reviewed records, unknown outcomes, and failures; rejected or
-reverted outcomes/reviews are not packed as positive context. Equal ranks use
-creation time then record ID.
-Duplicate content digests contribute zero additional prompt bytes. The packet
-contains no more than five records and its complete serialized size is capped
-at the smaller of 8,192 bytes or the conservative byte equivalent of ten
-percent of `maxInputTokens`.
+and opaque compatibility tags in storage before pagination. There is no
+ranking: records are packed newest first by creation time, then by record ID,
+and each item carries its outcome, review and validation state for the model to
+weigh. Rejected or reverted outcomes/reviews are not packed as positive
+context. Of two records with the same content digest the newer is kept, so a
+duplicate contributes zero additional prompt bytes. Every other eligible record
+the store returns is packed whole: the five-record cap and the byte cap (the
+smaller of 8,192 bytes or ten percent of `maxInputTokens`) were removed on
+2026-09-30. The store's own page of candidates is still at most 100 records.
 
 Creation and runtime-adaptation entrypoints can request this packet explicitly,
 but retrieval remains a service responsibility: the provider-neutral harness

@@ -16,6 +16,7 @@
 // parse on both sides -- the producer's and the reader's -- so a refusal Core
 // stores is a refusal Core reads back. Before it arrived, a build refused with a
 // 400 could publish the status and nothing about why.
+export * from "./build-ending.ts";
 export * from "./codes.ts";
 export * from "./diagnostic.ts";
 export * from "./diagnostic-parse.ts";

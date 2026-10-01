@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmRunBudgetLedger } from "../../../llm/index.ts";
+import { AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS, AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS } from "../../exploration-budget.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "../patch-reserve.ts";
 
@@ -47,13 +47,38 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
 
     // 26 declared, 1 spent on the diagnosis, 2 held for the re-plan and the patch.
     expect(reserve.explorationBudget).toMatchObject({ maxProviderCalls: 23 });
-    // Two calls' worth of tokens is held, not one: a ledger with room for
-    // 100,000 and 1,400 spent refuses an exploration decision that would leave
-    // less than the two held calls need.
-    const squeezed = runBudget.reserve({ runId: "run.one", requestId: "request.explore", estimatedInputTokens: 78_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 });
+    // Two calls' worth of tokens is held, not one, each sized on the diagnosis
+    // this run already made (1,200 input tokens) plus the reply's allowance:
+    // 6,400 in all. A ledger with room for 100,000 and 1,400 spent refuses an
+    // exploration decision of 93,000 that one held call (3,200) would admit.
+    const squeezed = runBudget.reserve({ runId: "run.one", requestId: "request.explore", estimatedInputTokens: 91_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 });
     expect(squeezed.ok).toBe(false);
     reserve.release();
-    expect(runBudget.reserve({ runId: "run.one", requestId: "request.explore.again", estimatedInputTokens: 78_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 }).ok).toBe(true);
+    expect(runBudget.reserve({ runId: "run.one", requestId: "request.explore.again", estimatedInputTokens: 91_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 }).ok).toBe(true);
+  });
+
+  // 2026-09-30: at the window profile (992,000 / 8,000 / 1,000,000) one call's
+  // worst case is the whole $0.25 purse, so a hold sized on the token limit was
+  // never affordable and the patch lost its share. Sized on the diagnosis and
+  // priced by the provider, it is held and the exploration still spends.
+  it("holds a diagnosis-sized, provider-priced share at the window profile, and the exploration still runs", () => {
+    const WINDOW = { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 };
+    const price = ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, "deepseek-flash");
+    const runBudget = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 24_000_000, maxOutputTokensPerRun: 24_000_000, maxEstimatedCostUsdPerRun: 0.25 });
+    const diagnosis = runBudget.reserve({ runId: "run.one", requestId: "request.diagnosis", estimatedInputTokens: 40_000, maxOutputTokens: 8_000, maxEstimatedCostUsd: price({ inputTokens: 40_000, outputTokens: 8_000 }) });
+    if (!diagnosis.ok) throw new Error(diagnosis.diagnostic.code);
+    diagnosis.lease.complete({ inputTokens: 30_000, outputTokens: 900, totalTokens: 30_900, estimatedCostUsd: price({ inputTokens: 30_000, outputTokens: 900 }) });
+
+    const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", tokenLimits: WINDOW, maxEstimatedCostUsd: 0.25, reservedCalls: 2, estimateCostUsd: price });
+    expect(runBudget.snapshot("run.one").pendingCalls).toBe(1);
+    const decision = runBudget.reserve({ runId: "run.one", requestId: "request.explore", estimatedInputTokens: 30_000, maxOutputTokens: 8_000, maxEstimatedCostUsd: price({ inputTokens: 30_000, outputTokens: 8_000 }) });
+    expect(decision.ok).toBe(true);
+    reserve.release();
+    // Unpriced and sized on the window, as before, the hold is the whole purse and is not taken.
+    const fresh = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 24_000_000, maxOutputTokensPerRun: 24_000_000, maxEstimatedCostUsdPerRun: 0.25 });
+    const unpriced = holdAutomationStudioRecoveryPatchReserve({ runBudget: fresh, runId: "run.two", tokenLimits: WINDOW, maxEstimatedCostUsd: 0.25, reservedCalls: 2 });
+    expect(fresh.snapshot("run.two").pendingCalls).toBe(0);
+    unpriced.release();
   });
 
   it("leaves the exploration's defaults alone when no call count was declared", () => {

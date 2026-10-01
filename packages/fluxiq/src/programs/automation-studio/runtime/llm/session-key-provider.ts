@@ -13,20 +13,45 @@
 // (`flow-execution-limits/run-cost-ceiling.ts`), which the Flow's configured
 // `maxEstimatedCostUsdPerRun` may lower and never raise.
 
-import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
+import {
+  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  isAutomationStudioDeepSeekModel,
+  releaseAutomationStudioSessionDeepSeekKey,
+  type AutomationStudioSessionKeyPorts
+} from "./deepseek/index.ts";
+// Read at module evaluation, so from the leaf that imports no value rather than
+// through the barrel, where an import cycle could leave them undefined.
+import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./model-limits/index.ts";
+import type { AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
 
+/** What one call reserves for the model's reply. */
+const AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS = 8_000;
+
 /**
- * One call's defaults. Sized to Core's own per-request ceiling less room for
- * the reply: describing a real page -- an infinite feed, an admin console with
- * a virtualised list -- needs the room, and a run is bounded by its cost, its
- * token budget and its deadline rather than by a per-request ceiling.
+ * One call's token limits in a context window of `window` tokens. The reply is
+ * reserved out of it, and everything else is the input's: a whole page is
+ * sent as it is, and a request over the window is refused with its measured
+ * size rather than trimmed (`./context-window.ts`). A run is bounded by its
+ * cost, its token budget and its deadline, not by a per-request ceiling.
+ */
+function automationStudioSessionKeyProviderTokenLimits(window: number): AutomationStudioLlmTokenLimits {
+  return Object.freeze({
+    maxInputTokens: window - AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS,
+    maxOutputTokens: AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS,
+    maxTotalTokens: window
+  });
+}
+
+/**
+ * One call's defaults. The token limits are the largest window of any model;
+ * a resolved call gets its own model's window (below).
  */
 export const AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS = Object.freeze({
-  tokenLimits: Object.freeze({ maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }),
+  tokenLimits: automationStudioSessionKeyProviderTokenLimits(AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS),
   timeoutMs: AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
   /** One call's worst case: never more than the whole run may spend. */
   maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
@@ -62,7 +87,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     return {
       provider,
-      tokenLimits: { ...defaults.tokenLimits },
+      tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits(AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model].contextTokens) },
       timeoutMs: defaults.timeoutMs,
       maxEstimatedCostUsd: defaults.maxEstimatedCostUsd,
       maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd

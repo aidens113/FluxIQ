@@ -100,7 +100,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
     // Where the model authors its draft, an edit that put a step in the Flow
     // for the first time, or left fewer acts undone than ever, is the draft
     // advancing, which is what progress means there
-    // (`../evidence-loop/authored-progress.ts`). A toggle is not.
+    // (`../evidence-progress/authored-progress.ts`). A toggle is not.
     noProgress.cleared();
   }
   // The model is told which of its amendments changed nothing and why, as
@@ -113,7 +113,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
       refusals, applied: amended.applied, steps: draftSteps, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
       ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs })
     });
-    if (context.reserveEvidence(amendmentFeedback) === undefined) return end("llm_evidence_loop.evidence_limit");
+    context.accountEvidence(amendmentFeedback);
     automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID);
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });
   }

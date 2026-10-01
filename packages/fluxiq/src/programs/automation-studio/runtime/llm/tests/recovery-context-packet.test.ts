@@ -25,11 +25,10 @@ const recoveryContext: AutomationStudioRuntimeRecoveryContext = {
   included: [{ section: "failure", byteCount: 92 }, { section: "state_diff", byteCount: 44 }],
   omitted: [
     { section: "failed_target", reason: "withheld", byteCount: 0 },
-    { section: "recent_nodes", reason: "byte_budget", byteCount: 310 },
+    { section: "recent_nodes", reason: "absent", byteCount: 0 },
     { section: "subflow", reason: "absent", byteCount: 0 }
   ],
-  byteCount: 1_204,
-  byteBudget: 4_000
+  byteCount: 1_204
 };
 
 function diagnosisProvider() {

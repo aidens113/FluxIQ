@@ -26,7 +26,7 @@ function fullHost(): AutomationStudioHarnessOptionHost {
 }
 
 function call(optionId: string, value: Record<string, unknown>) {
-  return { projectId: "project.one", flowId: "flow.one", callId: "call.1", optionId, value: value as never, maxEvidenceBytes: 1_000, permission: automationStudioActionPermissionDenied };
+  return { projectId: "project.one", flowId: "flow.one", callId: "call.1", optionId, value: value as never, permission: automationStudioActionPermissionDenied };
 }
 
 /** Source with comments removed, so a sentence explaining that Core carries no

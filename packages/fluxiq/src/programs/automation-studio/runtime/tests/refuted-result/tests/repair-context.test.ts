@@ -157,27 +157,22 @@ describe("the request a wrong answer is repaired from", () => {
   it("carries each step's screened parameters and its own result", () => {
     const steps = (packet.recoveryContext?.sections.step_parameters as { steps: JsonObject[] } | undefined)?.steps ?? [];
     expect(steps.map((step) => step.nodeId)).toEqual(["node.s1", "node.s2", "node.s4", "node.s5", "node.s5"]);
-    // A navigation says where it went, as an origin: the path and the query are
-    // where a search term and a session token live.
-    expect(steps[0]).toMatchObject({ definitionId: "web.browser.navigate", parameters: { url: "https://shop.example.com" } });
-    // And it says that the origin is all it says. The authored URL carried a
-    // path and a query, so the path is named: an empty omission list beside a
-    // reduced URL told every reader of every run bundle that the step had
-    // navigated to the site's root.
+    // A navigation's URL is carried whole, path and query, unless it carries a
+    // credential. This one's query holds `session=`, so it is withheld and named.
+    expect(steps[0]).toMatchObject({ definitionId: "web.browser.navigate", parameters: { url: null } });
     expect(steps[0]?.parametersWithheld).toEqual(expect.arrayContaining(["url"]));
     // A click says which control, by the name a person would recognise, and
     // never by the selector beside it -- which is a key this domain denies.
     expect(steps[1]).toMatchObject({ parameters: { element: { accessibleName: "Sort by: Featured", role: "button" } } });
     expect(steps[1]?.parametersWithheld).toEqual(expect.arrayContaining(["selector", "target"]));
-    // An extraction says which columns it asked the page for, and how many rows
-    // it got. That is the pair the wrong-answer repair turns on. The column ids
-    // are the field map's keys; their values are the page's own field names and
-    // are not carried, so each key stands with a `null`.
+    // An extraction says which columns it asked the page for, what each reads,
+    // and how many rows it got. That is the pair the wrong-answer repair turns
+    // on, and since 2026-09-30 the page's own field names travel with it.
     expect(steps[3]).toMatchObject({
       definitionId: "web.dom.extract_list",
       recordCount: 24,
       status: "succeeded",
-      parameters: { extractList: { fields: { name: null, price: null, rating: null }, minItems: 0, paginate: false } },
+      parameters: { extractList: { handle: "listings-abc123", fields: { name: "productTitle", price: "priceText", rating: "ratingText" }, minItems: 0, paginate: false } },
       outputShape: { records: 24 }
     });
     // The refutation's own attempt sits last, naming the step whose output was
@@ -185,11 +180,11 @@ describe("the request a wrong answer is repaired from", () => {
     expect(steps[4]).toMatchObject({
       status: "failed",
       failureCode: "core.result.does_not_answer_request",
-      parameters: { extractList: { fields: { name: null } } }
+      parameters: { extractList: { fields: { name: "productTitle" } } }
     });
     // What was screened out is named, never silently dropped: a parameter that
     // was withheld and a parameter the step never had must not read alike.
-    expect(steps[3]?.parametersWithheld).toEqual(expect.arrayContaining(["extractList.handle", "apiKey"]));
+    expect(steps[3]?.parametersWithheld).toEqual(expect.arrayContaining(["apiKey"]));
   });
 
   // 1c. And a name only counts as a name if it arrives as one.
@@ -319,9 +314,9 @@ describe("the request a wrong answer is repaired from", () => {
   // What the screen leaves behind, asserted by its absence in the whole request
   // rather than in the field it was put in: the next leak arrives somewhere
   // else. These are the four things the fixture's Flow authored.
-  it("carries none of the page, the person's text, the selector or the handle anywhere in the request", () => {
+  it("carries none of the selector, the API key or the session-bearing URL anywhere in the request", () => {
     const serialized = JSON.stringify(packet);
-    for (const secret of ["#plus-filter", "Aiden Stapler", "listings-abc123", "productTitle", "sk-live-9f2c7a1b3d5e8f0a4c6b", "/search?q=plus+items&session=9f2c"]) {
+    for (const secret of ["#plus-filter", "sk-live-9f2c7a1b3d5e8f0a4c6b", "/search?q=plus+items&session=9f2c"]) {
       expect(serialized, secret).not.toContain(secret);
     }
   });

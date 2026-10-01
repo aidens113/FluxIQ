@@ -1,6 +1,7 @@
-// A request the loop answers itself: the tool is not run, the result that
-// already answers it is moved to the end of the evidence, where the model's
-// window always reaches, and a note naming it follows.
+// A request the loop answers itself: the tool is not run, and a note naming
+// the result that already answers it follows. That result stays where it is:
+// every evidence entry is shown to the model, in call order
+// (`../context-window.ts`).
 //
 // The note says what the request repeats (`../evidence-loop/answered-request.ts`):
 // how often it has been asked, when it was answered, the newest action before
@@ -56,13 +57,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   });
   const answeredTool = context.toolsById.get(decision.toolId);
   const draftChanged = context.draftRecord({ iteration, actionId: decision.toolId, input: decision.input, effect: answeredTool?.effect ?? "observe", effectApplied: false, proposes: false, resultCode: code });
-  const noteBytes = context.reserveEvidence(note);
-  if (noteBytes === undefined) {
-    context.recordRow(step, { draftChanged });
-    return end("llm_evidence_loop.evidence_limit");
-  }
-  const earlier = evidence.findIndex((entry) => entry.callId === answeredByCallId);
-  if (earlier >= 0) evidence.push(...evidence.splice(earlier, 1));
+  const noteBytes = context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, value: note });
   context.recordRow({ ...step, evidenceBytes: noteBytes }, { draftChanged });
