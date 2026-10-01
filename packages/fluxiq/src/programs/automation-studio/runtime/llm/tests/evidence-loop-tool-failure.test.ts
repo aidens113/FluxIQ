@@ -50,9 +50,10 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     } });
     expect(shown.at(-1)).toMatchObject({ callId: "core.flow_draft", toolId: "core.flow_draft", value: {
       code: "llm_evidence_loop.draft",
-      // Position 2: the initial observation is step 1 of the draft, and a
-      // position never shifts, so an amendment always names the same step.
-      steps: [{ step: 2, actionId: "press", input: { target: "target.2" }, resultCode: "llm_evidence_loop.tool_failed", changed: "no", disposition: "did_not_work", inResult: false }]
+      // Position 2: the initial observation is step 1 of the draft and is
+      // listed as a look, and a position never shifts, so an amendment always
+      // names the same step.
+      steps: [{ step: 1, actionId: "inspect", input: {}, changed: "no", disposition: "look", inResult: false }, { step: 2, actionId: "press", input: { target: "target.2" }, resultCode: "llm_evidence_loop.tool_failed", changed: "no", disposition: "did_not_work", inResult: false }]
     } });
     expect(JSON.stringify({ result, shown })).not.toContain("ember789");
   });

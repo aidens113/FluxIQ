@@ -58,34 +58,46 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
   ];
 }
 /**
- * The user message, with everything that does not change between one decision
- * and the next placed before everything that does.
+ * The user message. For an evidence decision, everything that does not change
+ * between one decision and the next sits before the evidence window, and
+ * everything that does sits after it.
  *
  * **The order is the point, and it is load-bearing.** Every call of an evidence
  * loop is a fresh stateless request, so a provider's context cache is the only
  * thing that stops the same bytes being read and charged again on each one --
  * and a cache matches a *prefix*, so one varying value strands everything
- * behind it however constant that material is. The key order here used to put
- * `evidenceLoop.iteration`, a counter that changes on every single call, at
- * byte 6,499 of a 50,840-byte message, which left the tool descriptions and the
- * whole node catalog -- 20,341 identical bytes -- behind it. About 17% of a
- * request could be a stable prefix; ordered this way it is about 55%
- * (`docs/working/flow-authoring-and-defensive-runtime-plan/reports/fa-build-cost.md`
- * in the web-extension repository has the measurement).
+ * behind it however constant that material is. The window is built in the
+ * order things happened and a tool's result never leaves it
+ * (`../context-window.ts`); only Core's own notes -- the history, the draft,
+ * the budget -- are replaced, and they ride at its end
+ * (`../decision-context/shown.ts`). So with nothing varying in front of it,
+ * call N is a byte prefix of call N+1 up to the end of the last tool result
+ * the two share, which for a build is nearly all of either.
  *
- * So: the task envelope, the decision grammar, the instruction, the tool
- * descriptions, the node catalog and the policy gates first, and only then the
- * iteration counter and the evidence window. Nothing was removed and nothing
- * was moved between messages; a later edit that adds a key must put it on the
- * correct side of that line, and a key that varies per call belongs last.
+ * Measured on `run-mup2i28c-6c7fc209` (2026-10-01), where this did not hold:
+ * five decisions read 15,722 / 59,061 / 173,545 / 174,103 / 214,853 input
+ * tokens and DeepSeek reported 0 / 1,024 / 14,976 / 15,360 / 1,792 of them
+ * cached. Three values sat in front of the evidence and moved: `outputSchema`,
+ * rebuilt whenever the offer changes (completion first offered, amending
+ * offered, the wrap-up withdrawing the tools, the last decision withdrawing
+ * amending), which cut the prefix inside the head; `flowBootstrap.routing`,
+ * which gains a situation each time a call reaches a new page state and so cut
+ * it straight after the node catalog; and the offered `tools`, withdrawn in the
+ * wrap-up. The scripted build in `../evidence-loop/tests/request-prefix.test.ts`
+ * holds the property.
  *
- * `outputSchema` sits inside the constant block although it is not perfectly
- * constant -- it is rebuilt when the draft first becomes amendable and when the
- * budget withdraws the tools -- because it is identical across the long runs of
- * calls in between, and it is 5,726 bytes that would otherwise sit outside the
- * prefix on every call rather than on the two where it changes.
+ * So, for an evidence decision: the task envelope, the instruction, the policy
+ * gates and the node catalog first; then the evidence window; then everything
+ * that varies -- the offered tools, the counter, the routing context, any
+ * reusable context, and last the output schema. Nothing is removed or cut:
+ * `context.routing` is the object `flowBootstrap.routing` was, moved because it
+ * cannot sit inside `flowBootstrap` without sitting in front of the window. A
+ * later edit that adds a key must put it on the correct side of the window,
+ * and a key that varies per call belongs after it. Other task kinds are one
+ * call each and keep their order.
  */
 function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
+  if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop);
   const context = request.taskKind === "flow_bootstrap" && request.context.flowBootstrap
     ? {
       schemaVersion: request.context.schemaVersion,
@@ -96,41 +108,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<st
       flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap),
       ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
     }
-    : request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop
-      ? {
-        schemaVersion: request.context.schemaVersion,
-        ...(request.context.stage ? { stage: request.context.stage } : {}),
-        projectId: request.context.projectId,
-        flowId: request.context.flowId,
-        instructions: request.context.instructions,
-        // What the run may lastingly do, and what becomes of anything else: the
-        // explorer decides whether to press with this, not only the diagnosis.
-        ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
-        ...(request.context.flowBootstrap ? { flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap) } : {}),
-        ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {}),
-        evidenceLoop: {
-          tools: request.context.evidenceLoop.tools.map((tool) => ({
-            toolId: tool.toolId,
-            description: tool.description,
-            ...(tool.effect ? { effect: tool.effect } : {}),
-            ...(tool.repeatPolicy ? { repeatPolicy: tool.repeatPolicy } : {})
-          })),
-          // Everything from here changes between one call and the next, and
-          // nothing constant may follow it.
-          //
-          // The evidence comes before the counter because it is *mostly*
-          // constant while the counter is never constant at all. The window is
-          // built in the order things happened and usually only gains an entry
-          // (`context-window.ts`), so on a call that evicted nothing every
-          // earlier entry is byte-for-byte what the last call carried and
-          // extends the reusable prefix with it -- which, for the first half of
-          // a build, is most of the window. Put the counter first and all of
-          // that is thrown away for the sake of one integer.
-          evidence: request.context.evidenceLoop.evidence,
-          iteration: request.context.evidenceLoop.iteration
-        }
-      }
-      : request.context;
+    : request.context;
   return {
     taskKind: request.taskKind,
     promptVersion: request.promptVersion,
@@ -140,23 +118,70 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<st
   };
 }
 
+/** One evidence decision's user message: the constant head, the window, then everything that varies (see above). */
+function providerEvidenceDecisionPayload(
+  request: AutomationStudioLlmTaskRequest,
+  loop: NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>
+): Record<string, unknown> {
+  const routing = request.context.flowBootstrap?.routing;
+  const outputSchema = automationStudioDeepSeekOutputSchema(request);
+  return {
+    taskKind: request.taskKind,
+    promptVersion: request.promptVersion,
+    expectedOutput: request.expectedOutput,
+    context: {
+      schemaVersion: request.context.schemaVersion,
+      ...(request.context.stage ? { stage: request.context.stage } : {}),
+      projectId: request.context.projectId,
+      flowId: request.context.flowId,
+      instructions: request.context.instructions,
+      // What the run may lastingly do, and what becomes of anything else: the
+      // explorer decides whether to press with this, not only the diagnosis.
+      // Fixed for the length of a loop, so it stays in the constant head.
+      ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
+      ...(request.context.flowBootstrap ? { flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap, false) } : {}),
+      evidenceLoop: {
+        // The window. Everything after it varies between one call and the
+        // next, and nothing constant may follow it.
+        evidence: loop.evidence,
+        // Withdrawn in the wrap-up and after an ignored redirect.
+        tools: loop.tools.map((tool) => ({
+          toolId: tool.toolId,
+          description: tool.description,
+          ...(tool.effect ? { effect: tool.effect } : {}),
+          ...(tool.repeatPolicy ? { repeatPolicy: tool.repeatPolicy } : {})
+        })),
+        iteration: loop.iteration
+      },
+      // Gains a situation whenever a call reaches a new page state.
+      ...(routing ? { routing } : {}),
+      // Looked up again against each decision's fresh evidence.
+      ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
+    },
+    // Rebuilt whenever what is offered changes: completion, amending, tools.
+    ...(outputSchema ? { outputSchema } : {})
+  };
+}
+
 /**
  * What a build is shown of its catalog context: where its Flow starts, the
- * catalog, and the routing context when the build has one.
+ * catalog, and the routing context when the build has one -- unless
+ * `withRouting` is false, for an evidence decision, which carries it after its
+ * window instead.
  *
  * `startLocation` comes first because it is the first thing the build has to
  * act on: it is not there, and nothing else it calls will work until it is.
  * The note beside it says so in words, because a bare address in a context
  * object is a fact and this is an instruction.
  */
-function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): Record<string, unknown> {
+function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>, withRouting = true): Record<string, unknown> {
   const { nodeCatalog, catalogTruncated, catalogSelection, routing, startLocation } = context;
   return {
     ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
     nodeCatalog,
     catalogTruncated,
     catalogSelection,
-    ...(routing ? { routing } : {})
+    ...(withRouting && routing ? { routing } : {})
   };
 }
 

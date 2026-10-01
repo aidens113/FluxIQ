@@ -6,12 +6,13 @@
 // next thing every handler needs is one more member here and one more line
 // where the loop builds it.
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type {
   AutomationStudioLlmEvidenceAmendmentMemory,
   AutomationStudioLlmEvidenceAuthoredProgress,
+  AutomationStudioLlmEvidenceHeldAmendments,
   AutomationStudioLlmEvidenceLoopAccounting,
   AutomationStudioLlmEvidenceLoopAnswerability,
   AutomationStudioLlmEvidenceLoopDecision,
@@ -118,6 +119,21 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   authored: AutomationStudioLlmEvidenceAuthoredProgress | undefined;
 };
 
+/**
+ * The amendments a decision made about the step it reruns, waiting for the
+ * rerun (`../evidence-loop/held-amendments.ts`), and what the rest of the
+ * decision already came to, so the model is told the whole decision at once.
+ */
+export type AutomationStudioLlmEvidenceRerunHeld = {
+  amendments: AutomationStudioLlmEvidenceHeldAmendments;
+  /** The node the rerun's step ran: what a held refusal is recorded against. */
+  nodeId: string;
+  /** How many of the decision's other amendments landed. */
+  applied: number;
+  /** Their refusals, as already given (`../evidence-loop/amendment-memory.ts`). */
+  refusals: ReadonlyArray<AutomationStudioFlowDraftAmendmentRefusal & { nodeId?: string; repeated?: true }>;
+};
+
 /** What the loop does once a handler has answered: ask again, end, or run a rerun as this iteration's call. */
 export type AutomationStudioLlmEvidenceDecisionNext =
   | { kind: "continue" }
@@ -127,4 +143,6 @@ export type AutomationStudioLlmEvidenceDecisionNext =
     decision: Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_call" }>;
     /** The step the call replaces, withdrawn only once the call has worked. */
     replaces: AutomationStudioFlowDraftStep | undefined;
+    /** The decision's amendments naming that step, settled once the call has run (`./amendment.ts`). */
+    held?: AutomationStudioLlmEvidenceRerunHeld;
   };

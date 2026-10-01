@@ -61,5 +61,11 @@ export function automationStudioDeepSeekSystemPrompt(request: AutomationStudioLl
   // of opening the channel: the schema permits the object, and this is what
   // makes a model fill it rather than putting everything into the summary.
   const withDiagnosisFields = automationStudioLlmTaskExpectsDiagnosis(request.taskKind) ? `${systemPromptBase} ${automationStudioDiagnosisPromptInstruction(request.taskKind)}` : systemPromptBase;
-  return request.context.reusableContext ? `${withDiagnosisFields} ${AUTOMATION_STUDIO_REUSABLE_CONTEXT_INSTRUCTION}` : withDiagnosisFields;
+  // An evidence decision is told it whether or not this call carries reusable
+  // context: the context is looked up again for each decision's fresh evidence,
+  // so it can appear between one call and the next, and a system message that
+  // changed with it would strand the whole of the next request's cached prefix
+  // (`./request-body.ts`). Said where there is none, it is a rule about nothing.
+  const reusableRuleStated = request.context.reusableContext !== undefined || request.taskKind === "evidence_tool_decision";
+  return reusableRuleStated ? `${withDiagnosisFields} ${AUTOMATION_STUDIO_REUSABLE_CONTEXT_INSTRUCTION}` : withDiagnosisFields;
 }
