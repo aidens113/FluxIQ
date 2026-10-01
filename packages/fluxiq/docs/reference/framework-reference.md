@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 2851
+- Public declarations: 2854
 - Class: 92
 - Interface: 2
 - Object: 356
-- Type: 1633
+- Type: 1634
 - Type Alias: 1
-- Value: 767
+- Value: 769
 
 ## Public Declarations
 
@@ -160,7 +160,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_EXPLORATION_DROP_SENTENCE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/reduction.ts:44` | Core's own sentence for each reason. Never a model's. |
 | `AUTOMATION_STUDIO_EXPLORATION_NO_PROGRESS_REASONS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/progress-guard.ts:41` | Why a step did not advance the exploration. Four reasons rather than one boolean: they are four different things for an operator to do about it. |
 | `AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:117` | Each evidence-loop failure code's outcome. The split that matters is three ways now, not two: the loop's own size limits are `budget_exhausted`, its repeat detection is `no_progress` -- a loop that asked twice for one thing did not run out of anything -- and everything meaning the loop could not be driven correctly is `failed`. `cancelled` is here for completeness only -- the runner aborts the loop itself whenever a limit fires, so it knows the real reason and never falls through to this row. |
-| `AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:131` | Each run-budget diagnostic's outcome, for an exploration refused before it starts. |
+| `AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:132` | Each run-budget diagnostic's outcome, for an exploration refused before it starts. |
 | `AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:89` | Each stop reason's outcome. Exhaustive, so a new reason must be classified here. |
 | `AUTOMATION_STUDIO_EXPLORATION_OUTCOMES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:43` | The only endings there are. An exploration that ended for a reason outside this list is not possible: the runner has one exit and it classifies through these tables. |
 | `AUTOMATION_STUDIO_EXPLORATION_STEP_OUTCOMES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/step.ts:50` | Whether the step happened, and if not, why not. `succeeded` is the only one the reduction can keep. The other three are kept apart because they are three different things to do about a step that contributed nothing: a `failed` step is a defect, a `refused` one is a policy boundary, and a `not_run` one is the loop declining to repeat itself. |
@@ -169,14 +169,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts:25` | The largest ordinal a label can carry. |
 | `AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS` | Object | `packages/contracts/src/failure/record.ts:28` | Bounds `parseAutomationStudioFailureRecord` enforces; a record that exceeds them is dropped, not truncated. |
 | `AUTOMATION_STUDIO_FAILURE_STAGES` | Object | `packages/contracts/src/failure/record.ts:4` | Where in an action's life a failure happened. |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:55` | The code each ending is published under. |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:61` | The most a message may hold: what the chat shows of one row (`ClientGatewayActivity`, `detail.text`). |
+| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:57` | The code each ending is published under. |
+| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:64` | The most a message may hold: what the chat shows of one row (`ClientGatewayActivity`, `detail.text`). |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/decision-step-ids.ts:11` | The step names of decisions that called no tool. Core's own `core.` namespace, which no domain tool may take, so a reader tells them from tool steps by name. They ride in `steps` rather than in a field of their own so a reader that predates them still parses the record. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS` | Object | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts:28` | - |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/limits.ts:14` | - |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:72` | Repairs one build may make after its exploration, while each gets further. |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:79` | Live rounds one build may run in all, the exploration included: the far backstop under the budgets, which bind first in any build that pays for its decisions. Reaching it is reported as the budget it is. |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:82` | The least time worth starting a repair with: a look, a few decisions and the test. |
+| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:80` | Repairs one build may make after its exploration, while each gets further. |
+| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:83` | The least time worth starting a repair with: a look, a few decisions and the test. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/output-schema.ts:120` | The output schema at the setting's default. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/action-permissions.ts:93` | How long a build waits for an answer, for a caller that waits at all. The one Core bound, under the name this path has always exported it by. The mechanism and the reasoning moved to `parking/permission-ask.ts` on 2026-09-22, when the repair path had to ask the same question the same way. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERSON_NEEDED_MAX_ASKS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/person-needed.ts:56` | How many times one build may put the question to a person. |
@@ -221,11 +220,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/draft-amendment-feedback.ts:35` | The evidence entry a refused amendment's feedback arrives under. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/loop-budget.ts:86` | The evidence entry the remaining budget is shown under. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/completion-check.ts:34` | The evidence entry a refused completion's feedback arrives under. |
-| `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:46` | The evidence entry an unusable decision's feedback arrives under. |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:47` | The evidence entry an unusable decision's feedback arrives under. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop-decision.ts:52` | Provider-neutral decision policy for bounded evidence loops. Provider adapters should include this policy in their structured-decision instruction. The last two sentences were added after a live creation campaign in which every built Flow only read and none acted. The policy already said, rightly, never to mutate merely to perform a step that belongs in the generated result; nothing said the converse, that a refusal here is not a refusal there. Offered only tools that decline to act, and refused when it asked one to, the model read the whole exercise as "acting is unavailable" and wrote the only shape it had seen accepted. The "unless the result is a Flow built from the steps you run" clause was added 2026-09-30 (lane t195). A draft is the steps the build ran, so "never mutate to perform a workflow step" told a drafting model not to build its Flow, and "never repeat a successful mutation" read as "act on one row only": live run `run-munnop9n-5475d593` pressed one Confirm of four and never said repeat. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/decision-context/history-tool-id.ts:7` | The entry a decision's history is shown under. It replaces the call list the context window used to publish under the same id, which listed only tool calls and none of Core's answers to a decision, and is re-exported from `../evidence-loop.ts` under the name it always had. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/loop-limits/evidence-loop.ts:92` | The far backstop on steps in a row that give the loop nothing new, held in `runtime/loop-limits/` with the other numbers two directories read, and re-exported here so the loop's public surface names it. |
-| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:132` | Unusable decisions in a row, however much their issues differ, after which a loop that asks again stops: the far backstop under the no-progress guard. A model fixing one mistake at a time is progress, so this is set well past the handful of refusals a real correction takes; the cost, token and deadline guards still bind underneath it. Held to the loop's own iterations. |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unreadable-reply.ts:31` | Unreadable replies in a row after which a loop that asks again stops. The live record has runs of up to four followed by a good reply, so this leaves room past that; the budget binds underneath it either way. |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:135` | Unusable decisions in a row, however much their issues differ, after which a loop that asks again stops: the far backstop under the no-progress guard. A model fixing one mistake at a time is progress, so this is set well past the handful of refusals a real correction takes; the cost, token and deadline guards still bind underneath it. Held to the loop's own iterations. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/loop-limits/evidence-loop.ts:34` | - |
 | `AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/context-packet.ts:119` | - |
 | `AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts:111` | - |
@@ -735,7 +735,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioExpectedTransition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts:34` | - |
 | `AutomationStudioExplorationBudget` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-budget.ts:82` | - |
 | `AutomationStudioExplorationBudgetLedger` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-budget.ts:189` | One exploration's spending, and the signal that ends it. The ledger is the only thing that knows *why* the loop was stopped. The loop reports `cancelled` for every abort there is, so if the reason were not recorded here at the moment of the refusal, a wall clock, an action cap and a refused action would all arrive downstream as the same word -- which is precisely the collapse this phase exists to prevent. |
-| `automationStudioExplorationCompletionOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:158` | - |
+| `automationStudioExplorationCompletionOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:159` | - |
 | `AutomationStudioExplorationDroppedStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/reduction.ts:52` | - |
 | `AutomationStudioExplorationDropReason` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/reduction.ts:41` | - |
 | `automationStudioExplorationEvidenceDigest` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/progress-guard.ts:172` | - |
@@ -804,8 +804,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapBudgetExhausted` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/budget-exhausted.ts:36` | - |
 | `AutomationStudioFlowBootstrapBudgetSizes` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/budget-exhausted.ts:26` | The size of each budget, as the person is told it. |
 | `AutomationStudioFlowBootstrapBuildEnding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:38` | What a build that could not finish says about itself. |
-| `AutomationStudioFlowBootstrapBuildPhasesInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:102` | - |
-| `AutomationStudioFlowBootstrapBuildPhasesOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:131` | - |
+| `AutomationStudioFlowBootstrapBuildPhasesInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:103` | - |
+| `AutomationStudioFlowBootstrapBuildPhasesOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:132` | - |
 | `automationStudioFlowBootstrapCatalogByteBudget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan.ts:22` | - |
 | `AutomationStudioFlowBootstrapCatalogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:68` | - |
 | `AutomationStudioFlowBootstrapCompletionFailureCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/bootstrap-completion.ts:94` | - |
@@ -829,7 +829,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapFailureDiagnostic` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:19` | - |
 | `automationStudioFlowBootstrapFailureDiagnosticOf` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/phase-failure.ts:118` | - |
 | `AutomationStudioFlowBootstrapFailureStage` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:9` | - |
-| `automationStudioFlowBootstrapFailureState` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:149` | - |
+| `automationStudioFlowBootstrapFailureState` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:151` | - |
 | `AutomationStudioFlowBootstrapFailureState` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:41` | The state a diagnostic with a given code and stage carries. `accounting` is what the record may hold rather than what it does: `required` for the harness refusals whose only trace of the call is its accounting, `absent` where naming a cost would claim a call that was not costed, and `optional` everywhere the harness may attach it and a phase failure may not. |
 | `AutomationStudioFlowBootstrapGenerationError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/error.ts:10` | - |
 | `AutomationStudioFlowBootstrapGenerationReadiness` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts:4` | - |
@@ -843,7 +843,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapInstructionAsk` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/answerability/contracts.ts:25` | What the instruction plainly asks to be given back, read from its own words. |
 | `AutomationStudioFlowBootstrapIssue` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:134` | - |
 | `automationStudioFlowBootstrapIssueFeedback` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/issue-feedback.ts:123` | - |
-| `AutomationStudioFlowBootstrapJudgement` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:64` | The judgement of a Flow a round left unfinished (phase 2): what the test did, and how much of what was asked the Flow does. Codes, counts and ids: what the repair is told, and what an ending is written from. |
+| `AutomationStudioFlowBootstrapJudgement` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:80` | The judgement of a Flow a round left unfinished (phase 2): what the test did, and how much of what was asked the Flow does. Codes, counts and ids: what the repair is told, and what an ending is written from. |
 | `automationStudioFlowBootstrapJudgementAdvanced` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:113` | - |
 | `automationStudioFlowBootstrapJudgementValue` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:95` | - |
 | `automationStudioFlowBootstrapJudgeUnfinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:51` | - |
@@ -859,23 +859,24 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapPermissionAsk` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/action-permissions.ts:96` | Where a build's permission question goes, and where its answer comes back from. |
 | `automationStudioFlowBootstrapPersonNeeded` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/person-needed.ts:76` | - |
 | `AutomationStudioFlowBootstrapPersonNeeded` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/person-needed.ts:60` | - |
-| `AutomationStudioFlowBootstrapPhaseFailureCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:192` | - |
+| `AutomationStudioFlowBootstrapPhaseFailureCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:196` | - |
 | `AutomationStudioFlowBootstrapPlan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:62` | - |
 | `AutomationStudioFlowBootstrapPlanLocations` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/reachability/contracts.ts:27` | What the Flow a build wrote does about where it starts, read off the plan. |
 | `AutomationStudioFlowBootstrapPlanParameterResolution` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-parameter-resolution.ts:60` | - |
 | `AutomationStudioFlowBootstrapPlanRecordSets` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/answerability/contracts.ts:35` | What the Flow a build wrote can do with a set of records, read off the plan. |
 | `AutomationStudioFlowBootstrapPlanSource` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/profile-limits.ts:49` | Where the plan came from. `reply`: the model wrote it, and the one-reply limits apply. `draft`: Core assembled it from the steps the build ran, and the Flow's own limits apply. |
-| `automationStudioFlowBootstrapProviderStatus` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:215` | - |
+| `automationStudioFlowBootstrapProviderStatus` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:218` | - |
 | `AutomationStudioFlowBootstrapReachability` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/reachability/contracts.ts:43` | Whether the plan may be proposed, or what the model is told instead. A refusal is not the end of a build. It is fed back exactly as a refused parameter is, and the exploration asks again on the same budget, cost and no-progress guards -- so nothing here can spin. |
 | `automationStudioFlowBootstrapRecordOutputContract` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:99` | - |
 | `AutomationStudioFlowBootstrapRecordOutputContract` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:43` | - |
 | `automationStudioFlowBootstrapRecordOutputIssues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:91` | - |
 | `automationStudioFlowBootstrapRepairSeed` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:35` | - |
+| `automationStudioFlowBootstrapRepliesUnreadable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/replies-unreadable.ts:23` | - |
 | `AutomationStudioFlowBootstrapRisk` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:9` | - |
 | `automationStudioFlowBootstrapRoundEnding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/round-ending.ts:24` | - |
-| `AutomationStudioFlowBootstrapRoundEnding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:32` | How one live round ended, read for what the build does next. |
-| `AutomationStudioFlowBootstrapRoundProgress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:24` | What a stopped round had recorded: its rows and what it spent. |
-| `AutomationStudioFlowBootstrapRoundRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:85` | What one live round is given. |
+| `AutomationStudioFlowBootstrapRoundEnding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:33` | How one live round ended, read for what the build does next. |
+| `AutomationStudioFlowBootstrapRoundProgress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:25` | What a stopped round had recorded: its rows and what it spent. |
+| `AutomationStudioFlowBootstrapRoundRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:86` | What one live round is given. |
 | `AutomationStudioFlowBootstrapRouteCondition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/route-condition.ts:52` | A route's condition: Core's `AutomationConditionExpression`, narrowed to the operators the router evaluates, JSON values, and the three plain groups. Every value of it is an `AutomationConditionExpression`. |
 | `automationStudioFlowBootstrapRouteIssues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/route-validation.ts:20` | - |
 | `AutomationStudioFlowBootstrapRoutePath` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/routing-context.ts:23` | - |
@@ -893,10 +894,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapStopSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:83` | - |
 | `AutomationStudioFlowBootstrapSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:36` | - |
 | `automationStudioFlowBootstrapSuppliedRecordsPath` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:67` | - |
-| `AutomationStudioFlowBootstrapTested` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:57` | What the test of the Flow so far found. |
+| `AutomationStudioFlowBootstrapTested` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:73` | What the test of the Flow so far found. |
 | `automationStudioFlowBootstrapTestSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:74` | - |
 | `AutomationStudioFlowBootstrapUnfinishedStall` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/unfinished-stall.ts:14` | - |
-| `AutomationStudioFlowBootstrapUnfinishedStop` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:14` | Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. |
+| `AutomationStudioFlowBootstrapUnfinishedStop` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:15` | Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. |
 | `AutomationStudioFlowBootstrapUnfinishedTest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:28` | What the caller's test answers: the loop's dry-run gate, over the steps it is given. |
 | `AutomationStudioFlowBuildPlan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:149` | Registry-validated, Core-risked and deterministically laid-out plan accepted by Bootstrap Adaptations. |
 | `AutomationStudioFlowCatalogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts:9` | - |
@@ -1191,11 +1192,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmEvidenceLoopDraftShown` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/draft-shown.ts:19` | What one decision was shown of the draft. |
 | `AutomationStudioLlmEvidenceLoopExhaustedBound` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/exhaustion.ts:30` | Which allowance ran out. Each is a number a retry can raise. |
 | `AutomationStudioLlmEvidenceLoopExhaustion` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/exhaustion.ts:50` | What an exhausted loop has to say for itself. The first two answer "was this budget the problem?"; the rest answer "how close was it?" -- a build that stopped one proposable step short of a plan reads very differently from one that never appended an action, and before this record the two were the same sentence. |
-| `AutomationStudioLlmEvidenceLoopFailureCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/result.ts:14` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
-| `AutomationStudioLlmEvidenceLoopInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/loop-configuration.ts:33` | What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. |
+| `AutomationStudioLlmEvidenceLoopFailureCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/result.ts:15` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
+| `AutomationStudioLlmEvidenceLoopInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/loop-configuration.ts:34` | What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. |
 | `AutomationStudioLlmEvidenceLoopProgress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-progress/progress.ts:2` | Content-free state transition measured for one evidence-loop trace row. |
-| `AutomationStudioLlmEvidenceLoopResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/result.ts:44` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
+| `AutomationStudioLlmEvidenceLoopResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/result.ts:52` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
 | `AutomationStudioLlmEvidenceLoopTrace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/trace.ts:23` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
+| `AutomationStudioLlmEvidenceLoopUnreadable` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unreadable-reply.ts:84` | How many unreadable replies a loop met, and which kinds. |
 | `AutomationStudioLlmEvidenceRestoredStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/completion-check.ts:31` | A withdrawn draft step the check put back before checking: which one, by the draft position it had, and how the model had withdrawn it. Content-free -- a position and a closed word -- so it may travel on every published record. Flow Bootstrap restores the step that reached the start location when the draft's amendments had withdrawn it (`../../flow-bootstrap/reachability/start-step.ts`), and that silently changed the Flow a completion was judged on: nothing in a run's record said the Flow had a step the model had taken out. |
 | `AutomationStudioLlmEvidenceRuntimeBinding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/binding.ts:33` | What a host binds to give the loop its domain's actions. `domainId` is the field the slot never had, and everything the registry does about scoping follows from it. |
 | `AutomationStudioLlmEvidenceScreenResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/evidence-screen.ts:42` | What a screen found. Both are refusals; which one is for the caller's own record, never the value. |
@@ -1265,10 +1267,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmTaskKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/task-kind.ts:4` | - |
 | `AutomationStudioLlmTaskRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/task-request.ts:27` | - |
 | `AutomationStudioLlmTaskResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/task-request.ts:49` | - |
-| `automationStudioLlmTaskResultSpentWithoutDecision` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:119` | - |
+| `automationStudioLlmTaskResultSpentWithoutDecision` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:128` | - |
 | `AutomationStudioLlmTokenLimits` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/token-limits.ts:32` | - |
-| `automationStudioLlmUnusableDecisionError` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:133` | - |
-| `AutomationStudioLlmUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:101` | Thrown by a decision callback to say "the provider was asked and its answer cannot be acted on, for a reason another attempt could fix". It carries issue codes only, never a model's words. Where the provider's reply arrived and could not be read, it also carries the reply's account: which malformed case it was, its finish reason, its length and what it cost (`./reply-account.ts`). One code for seven cases is what left 14 refused decisions of `run-munw7ffn-fe1cecd2` unexplained; the loop writes this onto the decision's row. |
+| `automationStudioLlmUnreadableReplySaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unreadable-reply.ts:78` | - |
+| `automationStudioLlmUnusableDecisionError` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:142` | - |
+| `AutomationStudioLlmUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts:110` | Thrown by a decision callback to say "the provider was asked and its answer cannot be acted on, for a reason another attempt could fix". It carries issue codes only, never a model's words. Where the provider's reply arrived and could not be read, it also carries the reply's account: which malformed case it was, its finish reason, its length and what it cost (`./reply-account.ts`). One code for seven cases is what left 14 refused decisions of `run-munw7ffn-fe1cecd2` unexplained; the loop writes this onto the decision's row. |
 | `AutomationStudioLlmUsageSummary` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/provider.ts:12` | - |
 | `AutomationStudioLoadedCompiledPlan` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/compiled-plan-store.ts:29` | - |
 | `automationStudioLocatorShapedText` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts:108` | - |
@@ -1290,7 +1293,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioMemoryRepositoryOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/memory-repository.ts:15` | - |
 | `AutomationStudioMemoryUiCacheStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts:125` | - |
 | `automationStudioMetadataWithFlowVersions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/flow-versions-metadata.ts:13` | - |
-| `automationStudioMigrationChecksum` | Value | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:202` | - |
+| `automationStudioMigrationChecksum` | Value | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:256` | - |
 | `AutomationStudioMigrationJob` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/administration.ts:49` | - |
 | `AutomationStudioMigrationJobRepository` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/administration.ts:286` | - |
 | `AutomationStudioMigrationJobStatus` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/administration.ts:48` | - |
@@ -1763,7 +1766,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioSchemaBackupContext` | Type | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:9` | - |
 | `AutomationStudioSchemaMigration` | Type | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:4` | - |
 | `AutomationStudioSchemaMigrationResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:24` | - |
-| `AutomationStudioSchemaMigrationRunner` | Class | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:59` | - |
+| `AutomationStudioSchemaMigrationRunner` | Class | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:72` | - |
 | `AutomationStudioSchemaMigrationRunnerOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:15` | - |
 | `AutomationStudioSchemaState` | Type | `packages/fluxiq/src/programs/automation-studio/storage/schema-migrations.ts:31` | - |
 | `AutomationStudioSchemaVersion` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:4` | - |
@@ -2121,7 +2124,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DeploymentSyncViewState` | Type | `packages/fluxiq/src/programs/deployment-sync/ui/contracts.ts:3` | - |
 | `DeploymentTarget` | Type | `packages/fluxiq/src/programs/deployment-sync/types.ts:6` | - |
 | `DeprecateFlowPublicationRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/flow.ts:38` | - |
-| `DIAGNOSTIC_ISSUE_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:162` | The shape an issue code must have to travel: no whitespace, so no sentence. |
+| `DIAGNOSTIC_ISSUE_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:163` | The shape an issue code must have to travel: no whitespace, so no sentence. |
 | `diffStateSnapshots` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-diff.ts:7` | - |
 | `discoverSignalDefinitions` | Value | `packages/fluxiq/src/programs/automation-studio/model/signal-registry.ts:18` | - |
 | `dispatchPolicyOutput` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts:21` | - |
@@ -2200,11 +2203,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `EvidenceObservation` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:45` | - |
 | `EvidenceObservationKind` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:36` | - |
 | `EvidenceReference` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:18` | - |
-| `evidenceStepAnswerability` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:469` | - |
-| `evidenceStepDraft` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:444` | - |
-| `evidenceStepDraftChange` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:426` | - |
-| `evidenceStepProgress` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:410` | - |
-| `evidenceStepRestoredStep` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:399` | - |
+| `evidenceStepAnswerability` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:470` | - |
+| `evidenceStepDraft` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:445` | - |
+| `evidenceStepDraftChange` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:427` | - |
+| `evidenceStepProgress` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:411` | - |
+| `evidenceStepRestoredStep` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:400` | - |
 | `executeAutomationStudioConversationCommand` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/commands/execute.ts:30` | - |
 | `executeAutomationStudioRuntimePatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/live-patch.ts:237` | - |
 | `ExecuteClientActionRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/client.ts:27` | - |
@@ -2218,26 +2221,26 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FingerprintCandidateScore` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/contracts.ts:12` | - |
 | `FingerprintScorer` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/contracts.ts:30` | - |
 | `FingerprintScoringContext` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/contracts.ts:24` | - |
-| `FLOW_BOOTSTRAP_DEFAULT_PHASE_FAILURE_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:228` | The code a stage falls back to when nothing more specific is established. |
-| `FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:225` | - |
-| `FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:196` | The stage a code belongs to. A code appears under exactly one stage, so this is total. |
+| `FLOW_BOOTSTRAP_DEFAULT_PHASE_FAILURE_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:232` | The code a stage falls back to when nothing more specific is established. |
+| `FLOW_BOOTSTRAP_HARNESS_PREFLIGHT_CODE_SET` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:229` | - |
+| `FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/codes.ts:200` | The stage a code belongs to. A code appears under exactly one stage, so this is total. |
 | `FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_LIST` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-vocabulary.ts:49` | - |
 | `FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODE_SET` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-vocabulary.ts:50` | - |
 | `FLOW_BOOTSTRAP_PROVIDER_PREFLIGHT_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-vocabulary.ts:24` | Each provider refusal made before a request is sent, under its Flow-bootstrap name. They all used to arrive as one `llm.provider_configuration_invalid` and leave as one `flow_bootstrap.provider_configuration_invalid`, so a refusal could not say which check made it. |
 | `FLOW_BOOTSTRAP_RUN_BUDGET_CODE_LIST` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-vocabulary.ts:103` | - |
 | `FLOW_BOOTSTRAP_RUN_BUDGET_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-vocabulary.ts:94` | Each refusal of the run's spending authority, under its Flow-bootstrap name. **These had no name here at all, and that is how a run that never reached the provider could be recorded as a provider fault.** The harness used to refuse a reservation before sending anything and return the provider's metadata anyway, so `flowBootstrapHarnessFailure` took its provider branch, no arm matched, and the `default` arm named it `flow_bootstrap.provider_transport_unknown` at stage `provider_request` with `providerInvocation: "attempted"` -- a request attempted whose answer is unknown, true of nothing that happened. They are pre-provider refusals, so their diagnostics say plainly that no request was made -- and they keep the request's accounting, which is the only record of the call that did not happen. Nothing else: no provider, no model, no status, no usage, whichever branch the refusal arrives on. **Both halves of that fix are in, and the harness's half came second.** A refused reservation no longer returns provider metadata (`runtime/llm/harness/run.ts`), so these codes are reached through the pre-provider branch and the provider branch's arm for them is unreachable from the harness -- kept as a guard, for the reason given at that arm. **What the two runs that started this were not.** `run-muhs8hx3-6fd929e6` and `run-muhtuizo-c458e49c` recorded `provider_transport_unknown` with no provider status, no usage and no evidence loop, and t145 narrowed the cause to these six refusals. That cannot be right: `runBudget` is passed to the harness by exactly three production callers -- `recovery/annotation/exploration.ts`, `recovery/annotation/patch-reserve.ts` and `result-verification/verify.ts` -- and a Flow Bootstrap build is none of them, so `reservation` is `null` for a build and this branch cannot fire on one. Both runs were builds. The shape that does fit every field they recorded is `llm.provider_request_failed`, which `normalizedAutomationStudioLlmProviderFailure` answers when a throw cannot be structurally typed, projected by its own arm to `provider_transport_unknown`. Their 167 s and 194 s are the calls that succeeded before it: a harness-projected build failure carries no evidence-loop counts and no per-call usage however many calls preceded it, so those nulls were read as evidence of no call and are evidence of nothing. Established by elimination, not observed -- which is why the `default` arm now publishes the harness code it could not name, so the next such run answers the question from its own record instead of from an argument about the other fields. |
 | `FlowAdaptationRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts:185` | - |
-| `flowBootstrapBuildEndingFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:187` | - |
-| `flowBootstrapDiagnosticIssueCodes` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:165` | - |
-| `flowBootstrapEvidenceCompletionFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:97` | - |
-| `flowBootstrapEvidenceLoopFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:51` | - |
-| `flowBootstrapEvidenceUnusableDecisionFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:80` | - |
+| `flowBootstrapBuildEndingFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:190` | - |
+| `flowBootstrapDiagnosticIssueCodes` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:166` | - |
+| `flowBootstrapEvidenceCompletionFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:100` | - |
+| `flowBootstrapEvidenceLoopFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:54` | - |
+| `flowBootstrapEvidenceUnusableDecisionFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:83` | - |
 | `flowBootstrapHarnessFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/harness-failure.ts:28` | - |
-| `flowBootstrapPermissionRequiredFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:133` | - |
+| `flowBootstrapPermissionRequiredFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:136` | - |
 | `flowBootstrapPhaseFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/phase-failure.ts:25` | - |
 | `flowBootstrapThrownIssueCodes` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/thrown-issue-codes.ts:18` | - |
 | `flowBootstrapUnclassifiedThrowCode` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/phase-failure.ts:91` | - |
-| `flowBootstrapUserInterventionRequiredFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:160` | - |
+| `flowBootstrapUserInterventionRequiredFailure` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/evidence-failure.ts:163` | - |
 | `FlowChangeProposalRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/instruction.ts:26` | - |
 | `FlowDocument` | Type | `packages/fluxiq/src/flows/index.ts:31` | - |
 | `flowDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:36` | - |
@@ -2376,7 +2379,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `isAutomationStudioDestructiveActionConsequence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/destructive.ts:63` | - |
 | `isAutomationStudioElementTarget` | Value | `packages/fluxiq/src/programs/automation-studio/model/action-element-target.ts:64` | - |
 | `isAutomationStudioEvidenceFlowBootstrapResultWithinLimits` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/evidence-schema.ts:147` | - |
-| `isAutomationStudioExplorationOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:140` | - |
+| `isAutomationStudioExplorationOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts:141` | - |
 | `isAutomationStudioExplorationStepReplayable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/step.ts:77` | - |
 | `isAutomationStudioExploredEvidenceLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts:36` | - |
 | `isAutomationStudioLlmRecentActionContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/context-packet.ts:203` | - |
@@ -2386,7 +2389,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `isAutomationStudioObjectReference` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:329` | - |
 | `isAutomationStudioRuntimeTargetOverrideTarget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts:204` | - |
 | `isAutomationStudioSubflowGraphMetadata` | Value | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:35` | - |
-| `isRecord` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic-parse.ts:302` | - |
+| `isRecord` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic-parse.ts:324` | - |
 | `isRecordingIndex` | Value | `packages/fluxiq/src/programs/automation-studio/storage/state-index.ts:170` | - |
 | `JsonObject` | Type | `packages/contracts/src/core.ts:3` | - |
 | `JsonPrimitive` | Type | `packages/contracts/src/core.ts:1` | - |
@@ -2406,7 +2409,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `loadFluxIQEnv` | Value | `packages/fluxiq/src/framework/index.ts:418` | - |
 | `LoadFluxIQEnvOptions` | Type | `packages/fluxiq/src/framework/index.ts:412` | - |
 | `MarkerEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:62` | - |
-| `MAX_DIAGNOSTIC_ISSUE_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:160` | - |
+| `MAX_DIAGNOSTIC_ISSUE_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic.ts:161` | - |
 | `measureAutomationStudioGraphStoreBenchmark` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-graph-store.ts:14` | - |
 | `measureAutomationStudioLegacyBaseline` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-baseline.ts:37` | - |
 | `migrateAutomationStudioLegacyObjectIndex` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/object-index-migration.ts:14` | - |
@@ -2458,7 +2461,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `parseAutomationStudioConversationDecision` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/parse.ts:32` | - |
 | `parseAutomationStudioDeterministicPath` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation/adaptation.ts:194` | - |
 | `parseAutomationStudioFailureRecord` | Value | `packages/contracts/src/failure/parse-record.ts:48` | - |
-| `parseAutomationStudioFlowBootstrapBuildEnding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:76` | - |
+| `parseAutomationStudioFlowBootstrapBuildEnding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:79` | - |
 | `parseAutomationStudioFlowBootstrapEvidenceSteps` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/evidence-loop-steps.ts:316` | - |
 | `parseAutomationStudioFlowBootstrapFailureDiagnostic` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/diagnostic-parse.ts:23` | - |
 | `parseAutomationStudioFlowBootstrapGenerationError` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/error.ts:25` | - |
@@ -2657,11 +2660,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `rollbackFluxIQStorageMigration` | Value | `packages/fluxiq/src/framework/storage-migration.ts:27` | - |
 | `RotateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts:44` | - |
 | `runAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts:155` | - |
-| `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:154` | - |
+| `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:175` | - |
 | `runAutomationStudioGraph` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/graph-run.ts:68` | - |
 | `runAutomationStudioLegacyImporterBatch` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:375` | - |
 | `runAutomationStudioLegacyMigrationOrchestration` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:407` | - |
-| `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:169` | - |
+| `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:172` | - |
 | `runAutomationStudioLlmHarness` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/run.ts:27` | - |
 | `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:194` | - |
 | `runAutomationStudioRecoveryLadder` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/ladder-run.ts:61` | - |
