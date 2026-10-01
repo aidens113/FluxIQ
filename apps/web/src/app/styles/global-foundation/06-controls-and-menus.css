@@ -259,11 +259,20 @@
   visibility: hidden;
 }
 
-.tooltip-anchor:hover > .tooltip-content,
-.tooltip-anchor:focus-within > .tooltip-content {
+.tooltip-anchor[data-open="true"] > .tooltip-content {
   opacity: 1;
+  pointer-events: auto;
   transform: translate(-50%, 0);
   visibility: visible;
+}
+
+.tooltip-anchor[data-open="true"] > .tooltip-content::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--space-sm);
+  content: "";
 }
 .spin {
   animation: fluxiq-spin var(--motion-activity) linear infinite;

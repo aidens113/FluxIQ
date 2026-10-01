@@ -59,6 +59,44 @@ async function ask(renderer: ReactTestRenderer, text = CHANGE) {
 }
 
 describe("improving a Flow that already has steps", () => {
+  for (const transition of ["project", "flow", "unmount"] as const) for (const outcome of ["success", "failure", "reject"] as const) {
+    it(`ignores late improvement ${outcome} after ${transition}`, async () => {
+      let resolve!: (value: any) => void;
+      let reject!: (error: Error) => void;
+      const pending = new Promise((done, fail) => { resolve = done; reject = fail; });
+      const improvementCommands = commands({ improveFromWebsite: vi.fn(() => pending) });
+      const { renderer, onOpenAdaptation } = await mount(improvementCommands);
+      await ask(renderer);
+      await act(async () => {
+        if (transition === "unmount") renderer.unmount();
+        else renderer.update(<ImproveFlowPanel commands={improvementCommands} flow={transition === "flow" ? { ...builtFlow, flowId: "flow.next" } : builtFlow} onOpenAdaptation={onOpenAdaptation} projectId={transition === "project" ? "project.next" : "project.one"} readiness={built} />);
+      });
+      await act(async () => {
+        if (outcome === "reject") reject(new Error("Old request failed"));
+        else resolve(outcome === "success" ? { ok: true, payload: { adaptation: { flowId: builtFlow.flowId, adaptationId: "proposal.old", status: "proposed" } } } : { ok: false });
+        await pending.catch(() => undefined);
+      });
+      expect(onOpenAdaptation).not.toHaveBeenCalled();
+      if (transition !== "unmount") {
+        expect(button(renderer, "Review suggested change")).toBeUndefined();
+        expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+        expect(renderer.root.findAllByType("progress")).toHaveLength(0);
+        await act(async () => renderer.unmount());
+      }
+    });
+  }
+  it("keeps the returned proposal reviewable after wording changes", async () => {
+    const improvementCommands = commands();
+    const { renderer, onOpenAdaptation } = await mount(improvementCommands);
+    await ask(renderer);
+    await act(async () => renderer.root.findByProps({ "aria-label": "What should change" }).props.onChange({ target: { value: "A later request" } }));
+    expect(button(renderer, "Review suggested change")).toBeDefined();
+    await act(async () => button(renderer, "Review suggested change")!.props.onClick());
+    expect(onOpenAdaptation).toHaveBeenLastCalledWith(builtFlow.flowId, "adaptation.extend.one");
+    expect(improvementCommands.improveFromWebsite).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findByProps({ "aria-label": "What should change" }).props.value).toBe("A later request");
+    await act(async () => renderer.unmount());
+  });
   it("accepts exactly the Flows Core's extend accepts, which are the ones creation refuses", () => {
     expect(existingFlowImprovementRequest("project.one", builtFlow, built)).toEqual({ ok: true, payload: improvementPayload });
     expect(blankFlowExplorationRequest("project.one", builtFlow, built).ok).toBe(false);

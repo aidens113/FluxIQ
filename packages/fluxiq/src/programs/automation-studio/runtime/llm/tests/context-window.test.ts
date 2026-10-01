@@ -41,6 +41,70 @@ describe("the evidence one decision is shown", () => {
   });
 });
 
+// B1 (2026-10-01): the current view of the target whole, and every view it has
+// left replaced by a reference to the result that replaced it. Run
+// `run-mup2i28c-6c7fc209` sent three whole pages of one store in its fifth
+// decision, 214,853 input tokens.
+describe("a view of the target that a newer view replaced", () => {
+  const KEYS = ["elements", "dialogs"];
+  const act = (callId: string, extra: JsonObject = {}): AutomationStudioLlmEvidenceEntry =>
+    ({ callId, toolId: "core.run_node", value: { ok: true, status: "succeeded", control: `pressed in ${callId}`, elements: [{ target: "t1", name: "x".repeat(2_000) }], dialogs: [{ target: "t2" }], ...extra } });
+  const refusal = (callId: string): AutomationStudioLlmEvidenceEntry =>
+    ({ callId, toolId: "core.run_node", value: { ok: false, code: "target_unobserved", detail: { reason: "handle_not_in_packet", target: "t9" } } });
+
+  it("shows the newest view whole and replaces each earlier one by the call that replaced it, keeping the rest in its order", () => {
+    const records = [act("call.1", { read: { rows: [1, 2] } }), refusal("call.2"), act("call.3"), act("call.4", { pageChanged: true })];
+    const window = automationStudioLlmEvidenceContextWindow(records, KEYS);
+    expect(window.map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3", "call.4"]);
+    // Named by the result that replaced it directly, never by the newest.
+    expect(window[0]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.1", read: { rows: [1, 2] }, supersededBy: "call.3" });
+    expect(Object.keys(window[0]!.value as JsonObject)).toEqual(["ok", "status", "control", "read", "supersededBy"]);
+    // A result that carried no view is neither replaced nor replaces one.
+    expect(window[1]!.value).toEqual(records[1]!.value);
+    expect(window[2]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.3", supersededBy: "call.4" });
+    expect(window[3]!.value).toEqual(records[3]!.value);
+    // What the loop holds is untouched: only what is shown changes.
+    expect((records[0]!.value as JsonObject).elements).toBeDefined();
+  });
+
+  it("writes each reference once: a later decision shows every earlier one byte for byte", () => {
+    const records = [act("call.1"), refusal("call.2"), act("call.3"), act("call.4"), act("call.5")];
+    for (let count = 1; count < records.length; count += 1) {
+      const now = automationStudioLlmEvidenceContextWindow(records.slice(0, count), KEYS);
+      const next = automationStudioLlmEvidenceContextWindow(records.slice(0, count + 1), KEYS);
+      // Everything before the view this decision shows whole is shown the same next time.
+      const view = now.map((entry) => "elements" in (entry.value as JsonObject)).lastIndexOf(true);
+      expect(JSON.stringify(next.slice(0, view)), `decision ${count} -> ${count + 1}`).toBe(JSON.stringify(now.slice(0, view)));
+    }
+  });
+
+  it("counts a view in a Core entry, as a dry run's page, and touches keys only at the top level", () => {
+    const records: AutomationStudioLlmEvidenceEntry[] = [
+      act("call.1"),
+      { callId: "core.dry_run.page.1", toolId: "core.dry_run.page", value: { elements: [{ target: "t1" }] } },
+      { callId: "call.3", toolId: "core.run_node", value: { ok: false, code: "blocked", detail: { elements: ["nested"] } } }
+    ];
+    const window = automationStudioLlmEvidenceContextWindow(records, KEYS);
+    expect(window[0]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.1", supersededBy: "core.dry_run.page.1" });
+    expect(window[1]!.value).toEqual(records[1]!.value);
+    expect(window[2]!.value).toEqual(records[2]!.value);
+  });
+
+  it("shows every entry whole when the domain declared no view", () => {
+    const records = [act("call.1"), act("call.2")];
+    expect(automationStudioLlmEvidenceContextWindow(records)).toEqual(records);
+    expect(automationStudioLlmEvidenceContextWindow(records, [])).toEqual(records);
+  });
+
+  it("cuts a long build's window to one page and a reference per step", () => {
+    const records = Array.from({ length: 30 }, (_, index) => act(`call.${index + 1}`));
+    const whole = bytes(automationStudioLlmEvidenceContextWindow(records));
+    const shown = bytes(automationStudioLlmEvidenceContextWindow(records, KEYS));
+    expect(whole).toBeGreaterThan(30 * 2_000);
+    expect(shown).toBeLessThan(bytes(records[0]) + 30 * 150);
+  });
+});
+
 describe("what one decision is shown beside the evidence", () => {
   const press = (position: number): AutomationStudioFlowDraftStep => ({
     position, iteration: position, callId: `call.${position}`, actionId: "press", input: { target: `target.${position}`, note: "n".repeat(5_000) }, effect: "mutate", effectApplied: true, disposition: "kept"

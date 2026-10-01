@@ -296,15 +296,24 @@ describe("how a person's answer settles a request", () => {
   });
 
   it("keeps a request nobody answered in force, so nothing after it is asked", async () => {
-    for (const answer of ["unanswered", "refused"] as const) {
-      const run = asking();
-      await run.checkFor(STEP)(CHECKOUT);
-      run.settle(answer);
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("unanswered");
 
-      const later = await run.checkFor({ kind: "flow_step", id: "demo.press", ref: "main.s2" })(PLACE);
-      expect(later, answer).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1" });
-      expect(run.request?.requestId, answer).toBe("permission-request:1");
-    }
+    const later = await run.checkFor({ kind: "flow_step", id: "demo.press", ref: "main.s2" })(PLACE);
+    expect(later).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1" });
+    expect(run.request?.requestId).toBe("permission-request:1");
+  });
+
+  // An answer the gate does not know is never a grant. Until 2026-10-01 any
+  // word but `unanswered`, `refused` and `declined` fell through to the grant.
+  it("grants nothing on an answer it does not know", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("refused" as unknown as "unanswered");
+
+    expect(await run.checkFor(STEP)(CHECKOUT)).toEqual({ permitted: false, missing: ["move_money"], requestId: "permission-request:1" });
+    expect(run.request?.requestId).toBe("permission-request:1");
   });
 });
 

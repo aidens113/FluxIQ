@@ -1,0 +1,7 @@
+import { expect, it } from "vitest";
+import { localAuthDestination } from "../localAuthDestination";
+const origin = "https://panel.invalid";
+it.each(["/domains/team%25one", "/domains/team%25one%20x", "/domains/team%25one%252Fpart"])("preserves a valid encoded literal percent in %s", (path) => { expect(localAuthDestination(path, origin)).toBe(path); });
+it.each(["/", "/domains/web?team=one#programs", "/get-started?domainId=web%2Fteam", "/programs/docs?doc=a%2Fb&doc=next#chapter", "/programs/automation-studio?project=p&flow=f&subflow=s&view=runtime-debug&detail=run%3Ar&start=describe", "/domains/%E6%B5%8B%E8%AF%95?label=%E9%A1%B9%E7%9B%AE#section", "/?returnTo=https%3A%2F%2Foutside.invalid"])("preserves safe local destination %s exactly", (path) => { expect(localAuthDestination(path, origin)).toBe(path); });
+it.each([undefined, null, 7, "", "relative", "https://outside.invalid", "https://panel.invalid/path", "javascript:alert(1)", "//outside.invalid", "/\\outside.invalid", "/%2foutside.invalid", "/%252foutside.invalid", "/%25252foutside.invalid", "/%5coutside.invalid", "/path%5cnext", "/path\nnext", "/path?x=%0aevil", "/%00path", "/broken%", "/..//outside.invalid"])("falls back for unsafe or ambiguous destination %s", (path) => { expect(localAuthDestination(path, origin)).toBe("/"); });
+it.each(["not-an-origin", "javascript:alert(1)", "file:///tmp"])("rejects invalid trusted origin %s", (base) => { expect(localAuthDestination("/programs/docs", base)).toBe("/"); });

@@ -67,4 +67,32 @@ describe("a completion's test in the decision history", () => {
     expect(JSON.stringify(rows[0])).not.toContain("dryRun");
     expect(JSON.stringify(rows[1])).toContain("\"dryRun\":[[1,\"failed\"]]");
   });
+
+  // A refused test is about the draft as it stood; once the model finishes
+  // again, its verdict and page leave the window. Recorded run 4 covered this
+  // until its completion 29 stopped being tested (`../../decision-context/tests/recorded-runs.ts`).
+  it("takes a refused test's verdict and page out of the window when the model finishes again", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "node.click", parameters: {}, consequences: [] }, add: true })
+      .mockResolvedValueOnce({ kind: "complete", result: { attempt: 2 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { attempt: 3 } })
+      .mockResolvedValueOnce({ kind: "complete", result: { attempt: 4 } });
+    const refusal = (code: string) => ({ ok: false as const, issueCodes: [code], feedback: { ok: false, code: "completion_refused", issues: [{ code }] } });
+    const checkCompletion = vi.fn(async (result: JsonObject) => result.attempt === 3 ? refusal("recorded.second") : { ok: true as const });
+    executeTool.mockClear();
+
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
+      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+    });
+
+    expect(result.ok).toBe(true);
+    const dryRunEntries = (evidence: Shown) => evidence.filter((entry) => entry.toolId.startsWith("core.dry_run")).map((entry) => entry.toolId);
+    // Decision 3 is shown test 1's refusal and the page it broke on.
+    expect(dryRunEntries(shownAt(decide, 2))).toEqual(["core.dry_run.page", "core.dry_run"]);
+    // Completion 3 was refused by the check and not tested; decision 4 is shown
+    // that refusal, and nothing of the test before it.
+    expect(dryRunEntries(shownAt(decide, 3))).toEqual([]);
+    expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.completion_check")).toBe(true);
+  });
 });

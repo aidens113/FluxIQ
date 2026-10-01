@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, CircleCheck, CircleDot, Lock, RefreshCcw } from "lucide-react";
+import { useLayoutEffect, useRef, type MouseEvent } from "react";
 import { ONBOARDING_COPY } from "./onboarding-copy";
 import { onboardingSteps } from "./onboarding-steps";
 import { useOnboardingReadings } from "./useOnboardingReadings";
@@ -11,6 +12,8 @@ export type OnboardingViewProps = {
   onStart(option: OnboardingStartOptionId): void;
   /** Opens the Connected browsers view, when the host can navigate to it. */
   onOpenConnectedBrowsers?: () => void;
+  /** A fixed internal setup destination supplied by a domain-aware host. */
+  secretKeysHref?: string;
   /** Re-check interval while unfinished; 0 checks once. Default 5 seconds. */
   pollMs?: number;
   now?: () => number;
@@ -27,10 +30,16 @@ export function OnboardingView(props: OnboardingViewProps) {
   const probe = useOnboardingReadings(props.sources, { pollMs, isComplete: (readings) => onboardingSteps(readings, now()).every((step) => step.state === "done") });
   const steps = onboardingSteps(probe.readings, now());
   const complete = steps.every((step) => step.state === "done");
-  return <OnboardingLayout complete={complete} onRefresh={probe.refresh} steps={steps} {...props} />;
+  const current = useRef<object | null>(null);
+  const token = {}; current.current = token;
+  const mounted = useRef(false);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const eligible = () => mounted.current && current.current === token;
+  return <OnboardingLayout {...props} complete={complete} onRefresh={() => { if (eligible()) probe.refresh(); }} onStart={(option) => { if (eligible()) props.onStart(option); }}
+    {...(props.onOpenConnectedBrowsers ? { onOpenConnectedBrowsers: () => { if (eligible()) props.onOpenConnectedBrowsers?.(); } } : {})} eligible={eligible} steps={steps} />;
 }
 
-function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]; complete: boolean; onRefresh(): void }) {
+function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]; complete: boolean; onRefresh(): void; eligible(): boolean }) {
   return (
     <section aria-label="Get started with FluxIQ" className="automation-runs-workspace automation-onboarding">
       <header>
@@ -46,7 +55,7 @@ function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]
               <span className="automation-onboarding-state">{step.state === "done" ? "Done" : step.state === "current" ? "Next" : `Blocked: finish step ${props.steps.findIndex((candidate) => candidate.id === step.blockedBy) + 1} first`}</span>
               <span>{step.detail}</span>
               {step.problem ? <span className="automation-runtime-message" role="alert"><AlertCircle aria-hidden size={14} />{step.problem}</span> : null}
-              {step.state === "done" ? null : <StepAction onOpenConnectedBrowsers={props.onOpenConnectedBrowsers} step={step} />}
+              {step.state === "done" ? null : <StepAction onOpenConnectedBrowsers={props.onOpenConnectedBrowsers} step={step} secretKeysHref={props.secretKeysHref} eligible={props.eligible} />}
             </div>
           </li>
         ))}
@@ -61,13 +70,13 @@ function OnboardingLayout(props: OnboardingViewProps & { steps: OnboardingStep[]
   );
 }
 
-function StepAction(props: { step: OnboardingStep; onOpenConnectedBrowsers: (() => void) | undefined }) {
+function StepAction(props: { step: OnboardingStep; onOpenConnectedBrowsers: (() => void) | undefined; secretKeysHref: string | undefined; eligible(): boolean }) {
   const action = props.step.action;
   return (
     <div className="automation-onboarding-action" data-action-for={props.step.id}>
       <span>{action.label}: {action.location}</span>
       {action.command ? <code>{action.command}</code> : null}
-      {action.href ? <a className="button" href={action.href}>Open Secret Keys</a> : null}
+      {action.href ? <a className="button" href={props.secretKeysHref ?? action.href} onClick={(event: MouseEvent<HTMLAnchorElement>) => { if (!props.eligible()) event.preventDefault(); }}>Open Secret Keys</a> : null}
       {props.step.id === "pairing" && props.onOpenConnectedBrowsers ? <button className="button" onClick={props.onOpenConnectedBrowsers} type="button">Open Connected browsers</button> : null}
     </div>
   );

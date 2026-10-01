@@ -7,6 +7,7 @@ import { automationWorkspaceViewStateForBase } from "../../workspace/view-state"
 import { automationStudioViewBaseId, automationStudioViewDefinition, automationStudioViewId, automationStudioViewObjectId } from "../../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
 import { ConversationDock } from "../../conversation/components";
+import { StudioStartJourney } from "../../onboarding/entry";
 import { automationEntityCollectionSelector, useAutomationStoreSelector, type AutomationProjectEntityKind } from "../../stores";
 import { useAutomationProjectCatalogLoader } from "../../project";
 import type { AutomationSelection } from "../../shared/selection-contracts";
@@ -34,7 +35,7 @@ export function AutomationStudioSession(props: {
 }) {
   const { currentUser, runtime } = props; const foundation = useAutomationStudioFoundation(runtime);
   const { api, hierarchyPaging, liveCommands, liveCommandScope, projectDataPlatform, uiCache } = foundation;
-  const { deepLink, pathname, searchSignature } = useAutomationBrowserEntry();
+  const { deepLink, pathname, searchSignature, startIntent, consumeStartIntent, domainId } = useAutomationBrowserEntry();
   const { studioStores, studioUiStore, workspaceRenderStore } = foundation.owners;
   const activeProjectId = foundation.activeProjectId;
   const catalogState = useAutomationStoreSelector(
@@ -638,7 +639,7 @@ export function AutomationStudioSession(props: {
   const cacheStats = useCallback(() => projectDataPlatform.stats(), [projectDataPlatform]);
   const inspectorBinding = useMemo(() => ({ api, cacheStats }), [api, cacheStats]);
   if (restoringUrlProject || !activeProject) {
-    return <>
+    return <StudioStartJourney intent={startIntent} entryKey={`${pathname}?${searchSignature}`} domainId={domainId} state={restoringUrlProject ? "restoring" : "catalog"} projectId={null} consumeIntent={consumeStartIntent} createAutomation={hierarchyBridge.createFlow} openConnectedBrowsers={() => openView(automationStudioViewId.clients, "preview")}>
       <AutomationStudioProjectGate
         api={api}
         catalog={studioStores.catalog}
@@ -655,10 +656,10 @@ export function AutomationStudioSession(props: {
           list then spans every project the person can see, which is also how a
           question raised by a run they started earlier reaches them here. */}
       <ConversationDock projectId={null} />
-    </>;
+    </StudioStartJourney>;
   }
 
-  return <>
+  return <StudioStartJourney intent={startIntent} entryKey={`${pathname}?${searchSignature}`} domainId={domainId} state={loadedProjectHierarchyId === activeProject.id ? "project" : "restoring"} projectId={activeProject.id} consumeIntent={consumeStartIntent} createAutomation={hierarchyBridge.createFlow} openConnectedBrowsers={() => openView(automationStudioViewId.clients, "preview")}>
     <AutomationStudioWorkspaceComposition
       currentUser={currentUser}
       project={projectBinding}
@@ -687,5 +688,5 @@ export function AutomationStudioSession(props: {
       }}
       onOpenAttachment={conversationNavigation.openConversationAttachment}
     />
-  </>;
+  </StudioStartJourney>;
 }

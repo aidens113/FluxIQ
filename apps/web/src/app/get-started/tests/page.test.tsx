@@ -1,0 +1,11 @@
+import { Suspense } from "react";
+import { expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ authenticated: false }));
+vi.mock("../../../lib/auth", () => ({ currentFluxIQUser: async () => state.authenticated ? { user: {} } : null }));
+vi.mock("next/navigation", () => ({ redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }) }));
+vi.mock("../GetStartedClient", () => ({ GetStartedClient: () => null }));
+import GetStartedPage from "../page";
+import { LoginPanel } from "../../AuthShell";
+import { GetStartedClient } from "../GetStartedClient";
+it("keeps an unauthenticated setup request on its own inline sign-in route", async () => { state.authenticated = false; expect((await GetStartedPage()).type).toBe(LoginPanel); });
+it("preserves the authenticated setup Suspense/client composition", async () => { state.authenticated = true; const result = await GetStartedPage(); expect(result.type).toBe(Suspense); expect(result.props.children.type).toBe(GetStartedClient); });

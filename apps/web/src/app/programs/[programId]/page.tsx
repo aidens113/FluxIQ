@@ -11,8 +11,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
-import { redirect } from "next/navigation";
-import { AuthStatus } from "../../AuthShell";
+import { AuthStatus, LoginPanel } from "../../AuthShell";
 import { currentFluxIQUser } from "../../../lib/auth";
 import { getFluxIQ } from "../../../lib/fluxiq";
 import { ProgramWorkspace } from "./ProgramWorkspace";
@@ -85,7 +84,7 @@ type ProgramPageParams = {
 
 export default async function ProgramPage(context: ProgramPageParams) {
   const auth = await currentFluxIQUser();
-  if (!auth) redirect("/");
+  if (!auth) return <LoginPanel />;
 
   const [{ programId }, query] = await Promise.all([context.params, context.searchParams]);
   const fluxiq = getFluxIQ();

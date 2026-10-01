@@ -34,12 +34,22 @@
 //
 // What happens next depends on whether there is anywhere to put it. With an
 // `ask` bound, the request goes to the run's own thread and the exploration
-// waits: an answer that allows it widens what the run holds, the same check is asked again --
-// so nothing decides permission twice -- and the action goes ahead. Without
-// one, or when nobody allowed it, the exploration stops there with
-// `operator_approval_required`, carrying the request. Nothing else raises that
-// reason: a domain's own refusal code cannot, because a stop with no request in
-// hand would ask a person a question nobody can answer.
+// waits, and the same check is asked again on the answer -- so nothing decides
+// permission twice. An answer that allows it widens what the run holds and the
+// action goes ahead. A person who says no has answered: the gate remembers the
+// no for that one question, the action is refused as `declined`, the model is
+// told so and the exploration goes on, and a different control is a new
+// question that is asked. Without an `ask`, or when nobody answered, the
+// exploration stops there with `operator_approval_required`, carrying the
+// request. Nothing else raises that reason: a domain's own refusal code cannot,
+// because a stop with no request in hand would ask a person a question nobody
+// can answer.
+//
+// Until 2026-10-01 a no was settled exactly as silence: the exploration ended
+// on the first decline, carrying a request the person had already refused, and
+// no later question in that repair could be asked. The build path stopped doing
+// that in t195-w18 (`../flow-bootstrap/action-permissions.ts`); this is the
+// same rule on the repair path.
 //
 // Until 2026-09-22 there was no `ask` here at all, and this threw the terminal
 // refusal on the first request -- the exact ending the authoring path had just
@@ -76,7 +86,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
-  automationStudioAskedAndGranted,
+  automationStudioPermissionAskOutcome,
   automationStudioPersonNeededToolCalls,
   type AutomationStudioPermissionAsk,
   type AutomationStudioPersonNeededEnding
@@ -255,13 +265,15 @@ export async function runAutomationStudioRuntimeExploration(
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
   let unusableDecisions = 0;
-  // One wait per exploration. Set the moment a request is put to a person,
-  // whatever they answer, so a refusal nobody granted is never re-asked.
-  let asked = false;
-  // A gate that may be answered does not abort its own signal, so the ending a
-  // refusal makes has to be fired from here. Without an ask the gate fires its
-  // own and this stays unused; with one, it fires only after a person -- or
-  // nobody -- has declined to grant.
+  // Each request is put to a person once. A request nobody answered stays in
+  // force at the gate, so the exploration waits once and then ends on it; a
+  // person's no is remembered at the gate for that question alone, and a
+  // different question raises a request with a new id, which is asked.
+  const asked = new Set<string>();
+  // A gate that may be answered does not abort its own signal, so the ending an
+  // unanswered request makes has to be fired from here. Without an ask the gate
+  // fires its own and this stays unused; with one, it fires only when nobody
+  // answered. A no does not fire it: the model is told and the exploration goes on.
   const permissionRefused = new AbortController();
   // The exploration's own step record, taken where the action is called because
   // that is the only place that holds both the argument the loop discards and
@@ -283,9 +295,8 @@ export async function runAutomationStudioRuntimeExploration(
         gate,
         ...(ask ? { ask } : {}),
         action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
-        markAsked: () => { asked = true; },
-        alreadyAsked: () => asked,
-        refused: permissionRefused
+        asked,
+        unanswered: permissionRefused
       })
     }),
     tools: input.loop.tools,
@@ -308,7 +319,7 @@ export async function runAutomationStudioRuntimeExploration(
       // starting and aborting keeps the receipt honest: no call was billed.
       ? undefined
       : await runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
-        tools: input.loop.tools,
+        tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys,
         // An answer that could not be used is asked for again, each attempt
         // admitted and charged like any other call. It is a step that did not
         // advance, so the progress guard -- not the call backstop -- is what
@@ -385,17 +396,20 @@ export async function runAutomationStudioRuntimeExploration(
 /**
  * The gate's check, with the refusal it would return put to a person first.
  *
- * An allowed request is not answered from here: the same check is asked again, and the
- * gate recomputes what is missing against what it now holds. Without an ask,
- * or once one question has been asked, this is the gate's own check unchanged.
+ * No answer is acted on from here: the same check is asked again, and the gate
+ * recomputes what is missing against what it now holds -- permitted after a
+ * grant, refused as `declined` after a no. A question already asked, or a
+ * refusal the gate itself answered as declined, is not asked again. Without an
+ * ask this is the gate's own check unchanged.
  */
 function asking(input: {
   gate: AutomationStudioActionPermissionGate;
   ask?: AutomationStudioPermissionAsk;
   action: { kind: "exploration_step"; id: string; ref: string };
-  markAsked: () => void;
-  alreadyAsked: () => boolean;
-  refused: AbortController;
+  /** The ids of the requests this exploration has put to a person. */
+  asked: Set<string>;
+  /** Fired when a request was put to a person and nobody answered it. */
+  unanswered: AbortController;
 }): AutomationStudioActionPermissionCheck {
   const check = input.gate.checkFor(input.action);
   const ask = input.ask;
@@ -403,18 +417,20 @@ function asking(input: {
   return async (declaration) => {
     const decision = await check(declaration);
     const request = input.gate.request;
-    if (decision.permitted || !request || request.requestId !== decision.requestId) return decision;
-    if (input.alreadyAsked()) {
-      input.refused.abort();
+    if (decision.permitted || decision.declined || !request || request.requestId !== decision.requestId) return decision;
+    // Only a request nobody answered is still outstanding, and the exploration
+    // ended on it the first time: one wait, never a second.
+    if (input.asked.has(request.requestId)) {
+      input.unanswered.abort();
       return decision;
     }
-    input.markAsked();
-    if (!(await automationStudioAskedAndGranted(ask, request))) {
-      input.gate.settle("refused");
-      input.refused.abort();
+    input.asked.add(request.requestId);
+    const outcome = await automationStudioPermissionAskOutcome(ask, request);
+    input.gate.settle(outcome);
+    if (outcome === "unanswered") {
+      input.unanswered.abort();
       return decision;
     }
-    input.gate.settle("granted");
     return await check(declaration);
   };
 }

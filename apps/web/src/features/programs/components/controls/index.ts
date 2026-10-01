@@ -2,6 +2,7 @@
 
 export * from "./ActionLink";
 export * from "./Button";
+export * from "./ClipboardButton";
 export * from "./Combobox";
 export * from "./Field";
 export * from "./IconButton";

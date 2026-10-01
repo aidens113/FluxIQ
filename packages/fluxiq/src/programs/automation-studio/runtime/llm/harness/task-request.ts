@@ -109,8 +109,8 @@ export type AutomationStudioLlmTaskResult = {
 /**
  * One packet a recovery's exploration returned, as a runtime patch is shown it.
  *
- * A domain numbers its handles per packet, so `target.3` in the failure packet
- * and `target.3` in a page the exploration revealed are different controls.
+ * A domain numbers its handles per packet, so `t3` in the failure packet
+ * and `t3` in a page the exploration revealed are different controls.
  * `evidenceId` is Core's label for the packet within one request, and a handle
  * taken from it is written `<evidenceId>:<handle>`, which is how the target
  * check knows which packet to ask the domain about. The label's one definition
