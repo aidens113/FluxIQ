@@ -40,6 +40,29 @@ describe("what an evidence loop has left", () => {
     expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.001 }, 56).decisionsLeft).toBe(3);
   });
 
+  // `run-muq3uozx-3153564b` withdrew its tools with $0.09 left: every decision
+  // was counted at the worst case (~$0.025) when calls really cost ~$0.0023.
+  // Only the next decision is reserved at its worst case; the rest go at the average.
+  it("reserves the worst case once and counts the decisions after it at the average", () => {
+    // One decision reported at $0.0023, one held back at that average: $0.05 left.
+    const spent = { decisions: 1, reportedDecisions: 1, totalTokens: 20_000, estimatedCostUsd: 0.0023, elapsedMs: 0, nextDecisionCostUsd: 0.025 };
+    const remaining = automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.0546 }, spent, 64);
+    expect(remaining.costLeftUsd).toBeCloseTo(0.05, 4);
+    expect(remaining.limitedBy).toBe("cost");
+    expect(remaining.decisionsLeft).toBeGreaterThanOrEqual(10);
+  });
+
+  it("leaves one decision for money enough for exactly one worst case, and none for less", () => {
+    // $0.25 spent in one decision, $0.25 held back: $0.5 left.
+    const spent = { decisions: 1, reportedDecisions: 1, totalTokens: 20_000, estimatedCostUsd: 0.25, elapsedMs: 0 };
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 1 }, { ...spent, nextDecisionCostUsd: 0.5 }, 64)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 1 }, { ...spent, nextDecisionCostUsd: 0.5000001 }, 64)).toMatchObject({ decisionsLeft: 0, limitedBy: "cost" });
+    // Before anything is reported, the worst case is the only price known.
+    const fresh = { decisions: 0, reportedDecisions: 0, totalTokens: 0, estimatedCostUsd: 0, elapsedMs: 0 };
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.125 }, 64).decisionsLeft).toBe(4);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.75 }, 64).decisionsLeft).toBe(0);
+  });
+
   it("is nothing once a bound is spent, and never more than the iteration backstop", () => {
     const spent = { decisions: 4, reportedDecisions: 4, totalTokens: 40_000, estimatedCostUsd: 0.4, elapsedMs: 40_000 };
     expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent, 60)).toMatchObject({ decisionsLeft: 0, limitedBy: "cost" });

@@ -127,7 +127,9 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     // A message the person reads, in their own words, with no code in it.
     expect(outcome.ending.message).toMatch(/^I could not build this Flow, and I found no way to: 2 of the 3 things you asked could not be done/u);
     expect(outcome.ending.message).toContain("\"save the Brightline kettle to my saved items\": nothing I tried did it");
-    expect(outcome.ending.message).toContain("ran from its start without failing");
+    // Two of three things asked are not done, so the clean run is not said to be without failing.
+    expect(outcome.ending.message).toContain("ran from its start, but it does not yet do all you asked");
+    expect(outcome.ending.message).not.toContain("without failing");
     expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions");
     expect(outcome.ending.message).not.toMatch(/[a-z]+_[a-z]+|bootstrap\./u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);

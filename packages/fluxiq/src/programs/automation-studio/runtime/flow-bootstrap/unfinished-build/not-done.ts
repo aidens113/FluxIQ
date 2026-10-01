@@ -17,6 +17,7 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo, string>> = 
   no_step_added: "nothing I tried did it",
   step_not_kept: "the step I tried for it is not in the Flow",
   step_changed_nothing: "the step I tried for it changed nothing",
+  step_only_reads: "the step I named for it only read the page, and did not do it",
   step_only_arrives: "the step I tried for it only opened the starting page",
   step_is_optional: "the step for it may be skipped, so it might never happen",
   act_needs_repeat: "it has to be done for every item, and I found no way to repeat it over them",
@@ -72,11 +73,21 @@ export function automationStudioFlowBootstrapBlockedSaid(issueCodes: readonly st
   return said.join(", and ");
 }
 
-/** What the last test found, as a sentence. */
+/**
+ * What the last test found, as a sentence. A Flow that ran clean but does
+ * not do all that was asked is not said to have run "without failing": live run
+ * 36 (`run-muq3uozx-3153564b`) told the person so while its acts were refused
+ * and two wrong requests had been confirmed while it explored.
+ */
 export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudioFlowBootstrapJudgement | undefined): string {
   if (!judgement || judgement.tested === "not_tested") return judgement && judgement.stepsInFlow === 0 ? "No step I found belonged in the Flow." : "";
   const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
-  if (judgement.tested === "replayed_clean") return `The Flow as far as it got (${steps}) ran from its start without failing.`;
+  if (judgement.tested === "replayed_clean") {
+    if (!judgement.todo.length) return `The Flow as far as it got (${steps}) ran from its start without failing.`;
+    return judgement.done === 0
+      ? `The Flow as far as it got (${steps}) ran from its start, but it does none of what you asked.`
+      : `The Flow as far as it got (${steps}) ran from its start, but it does not yet do all you asked.`;
+  }
   const failed = judgement.failedSteps.length ? ` step ${judgement.failedSteps.slice(0, 3).join(", ")}` : " a step";
   return `When the Flow as far as it got (${steps}) was run from its start,${failed} did not work.`;
 }

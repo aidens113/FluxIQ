@@ -9,7 +9,7 @@ function step(position: number, actionId: string, input: Record<string, string>,
 type Entry = {
   code: string;
   format?: string;
-  steps: { step: number; actionId: string; input?: unknown; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; replayed?: string; runs?: string; settings?: unknown }[];
+  steps: { step: number; actionId: string; input?: unknown; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
   unlisted?: number;
   omitted?: string[];
   instruction: string;
@@ -106,6 +106,22 @@ describe("the draft entry a decision is shown", () => {
       // worked, a refused press read as one still to drop or confirm.
       ["did_not_work", false, "no"]
     ]);
+  });
+
+  // Live run 36: step 11, a listing, named a1, and the model could not see it.
+  it("shows the act each step names, and nothing on a step that names none", () => {
+    const shown = value([
+      step(1, "list", {}, { effect: "observe", proposes: true, acts: ["a1"] }),
+      step(2, "press", { target: "confirm" }, { acts: ["a2", "a2.quantity"] }),
+      step(3, "press", { target: "next" })
+    ]);
+    expect(shown.steps.map((listed) => listed.act)).toEqual(["a1", "a2, a2.quantity", undefined]);
+    expect(shown.steps[2]).not.toHaveProperty("act");
+  });
+
+  it("tells an authoring model never to act itself on the items its listing left out", () => {
+    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
+    expect(instruction).toMatch(/every item of a list[^.]*repeat[^.]*never act yourself on the items your listing left out/u);
   });
 
   it("is nothing at all when the loop only looked", () => {

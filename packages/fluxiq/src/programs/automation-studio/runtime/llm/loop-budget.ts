@@ -74,9 +74,11 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
    * The worst case of the last decision sent, priced from its request
    * (`./build-purse/`): every input token uncached, its whole reply allowance.
    * Each request carries everything before it, so the next costs at least this
-   * at worst. Decisions left are counted at this or the average, whichever is
-   * larger: the average of cache-discounted replies said three decisions were
-   * left on `run-mup2u8o3-6697c4be` when the next one alone could cost $0.15.
+   * at worst. The next decision is reserved at this or the average, whichever
+   * is larger, and the rest are counted at the average: the average alone said
+   * three decisions were left on `run-mup2u8o3-6697c4be` when the next one
+   * alone could cost $0.15, and this alone for every decision withdrew tools
+   * with $0.09 left on `run-muq3uozx-3153564b` when calls cost $0.003.
    */
   nextDecisionCostUsd?: number;
 };
@@ -119,8 +121,15 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
   }
   if (budget.maxCostUsd !== undefined) {
     const costLeft = budget.maxCostUsd - spent.estimatedCostUsd - (unreported + 1) * averageCost;
-    const perDecision = Math.max(averageCost, spent.nextDecisionCostUsd !== undefined && Number.isFinite(spent.nextDecisionCostUsd) ? spent.nextDecisionCostUsd : 0);
-    counts.push(["cost", costLeft <= 0 ? 0 : perDecision > 0 ? Math.floor(costLeft / perDecision) : iterationsLeft]);
+    // As the token bound counts: the next decision is reserved at its worst
+    // case, once, so it can never overrun the ceiling, and those after it at
+    // what decisions have actually cost. Counting every one at the worst case
+    // withdrew tools with $0.09 left when calls cost a tenth of it
+    // (`run-muq3uozx-3153564b`). Before anything is reported, the worst case
+    // is the only price known.
+    const worstCase = Math.max(averageCost, spent.nextDecisionCostUsd !== undefined && Number.isFinite(spent.nextDecisionCostUsd) ? spent.nextDecisionCostUsd : 0);
+    const perDecision = spent.reportedDecisions ? averageCost : worstCase;
+    counts.push(["cost", costLeft <= 0 || costLeft < worstCase ? 0 : perDecision > 0 ? 1 + Math.floor((costLeft - worstCase) / perDecision) : iterationsLeft]);
     remaining.costLeftUsd = Math.max(0, Math.floor(costLeft * 10_000) / 10_000);
   }
   if (budget.maxDurationMs !== undefined) {

@@ -12,7 +12,7 @@
 // **Where the model authors its draft, the rerun takes the replaced step's
 // place** (audit A1, cause 5a). A rerun is the same step corrected, so it goes
 // where that step stood, is in the Flow exactly when that step was, does the
-// acts that step did, runs the way that step ran, and every statement that
+// acts that step did when it changes something, runs the way that step ran, and every statement that
 // named that step names it instead. Appended at the end with the old step
 // merely dropped, a rerun under an authored draft would fall out of the Flow
 // (it was never added), land after the steps that need it, and orphan any
@@ -44,8 +44,12 @@ export function automationStudioLlmEvidenceRerunReplaced(
   applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
   if (!options.takesItsPlace) return;
   if (wasInFlow) rerun.disposition = "kept";
+  // Only a step that changes something does an act (`../../flow-draft/amendment.ts`,
+  // `act_on_a_read`). An act a read carried -- live run 36 named a1 on a rerun
+  // listing -- is not passed on to the next rerun of that listing, where it
+  // made the completion check judge the listing as the act 24 times running.
   if (replaced.acts) {
-    rerun.acts = [...replaced.acts];
+    if (rerun.effect === "mutate") rerun.acts = [...replaced.acts];
     delete replaced.acts;
   }
   if (replaced.routing) {
