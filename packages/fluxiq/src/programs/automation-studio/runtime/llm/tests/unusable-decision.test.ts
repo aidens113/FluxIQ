@@ -77,7 +77,9 @@ describe("which failed decision calls are unusable rather than final", () => {
 });
 
 describe("the evidence loop after an unusable decision", () => {
-  const unusable = () => new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]);
+  // A reply that arrived, was read and did not pass Core's checks. An unreadable
+  // one has a count of its own (`./unreadable-reply.test.ts`).
+  const unusable = () => new AutomationStudioLlmUnusableDecisionError(["llm_output.kind_mismatch"]);
 
   it("spends the iteration, records it, and asks again", async () => {
     const decide = vi.fn()
@@ -97,7 +99,7 @@ describe("the evidence loop after an unusable decision", () => {
     expect(result).toMatchObject({ ok: true, result: { done: true }, accounting: { iterations: 5, toolCalls: 1 } });
     expect(result.trace.map((step) => step.decision)).toEqual(["unusable", "tool_call", "unusable", "unusable", "complete"]);
     expect(result.trace[0]).toEqual({
-      iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response",
+      iteration: 1, decision: "unusable", resultCode: "llm_output.kind_mismatch",
       progress: { draftRevisionBefore: 0, draftRevisionAfter: 0, pageState: "unobserved", draftState: "unchanged", answerabilityState: "unobserved" },
       at: expect.any(Number)
     });
@@ -120,7 +122,7 @@ describe("the evidence loop after an unusable decision", () => {
     expect(decide).toHaveBeenCalledTimes(4);
     expect(stalled).toHaveBeenCalledTimes(1);
     const progress = stalled.mock.calls[0]![0] as { issueCodes: string[]; trace: Array<{ decision: string }>; accounting: { iterations: number; toolCalls: number } };
-    expect(progress.issueCodes).toEqual(["llm.provider_malformed_response"]);
+    expect(progress.issueCodes).toEqual(["llm_output.kind_mismatch"]);
     expect(progress.trace.map((step) => step.decision)).toEqual(["tool_call", "unusable", "unusable", "unusable"]);
     expect(progress.accounting).toMatchObject({ iterations: 4, toolCalls: 1 });
   });
@@ -155,7 +157,7 @@ describe("the evidence loop after an unusable decision", () => {
       accounting: { iterations: 3 },
       // The refusal is not lost. It travels as context for the ending, with the
       // numbers that say the ending was an allowance running out.
-      exhaustion: { bound: "iterations", maxIterations: 3, iterations: 3, completionAttempts: 0, lastIssueCodes: ["llm.provider_malformed_response"] }
+      exhaustion: { bound: "iterations", maxIterations: 3, iterations: 3, completionAttempts: 0, lastIssueCodes: ["llm_output.kind_mismatch"] }
     });
     expect(decide).toHaveBeenCalledTimes(3);
     // Neither guard fired, so the stall callback must not have been reached.
@@ -172,7 +174,7 @@ describe("the evidence loop after an unusable decision", () => {
       tools, decide: async () => { throw unusable(); }, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 6,
       unusableDecisions: { maxConsecutive: 2, stalled }
     })).rejects.toBe(stopped);
-    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["llm.provider_malformed_response"], accounting: expect.objectContaining({ iterations: 2 }) }));
+    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["llm_output.kind_mismatch"], accounting: expect.objectContaining({ iterations: 2 }) }));
   });
 
   it("treats every other decision error as before, and the unusable error too when not configured", async () => {

@@ -21,6 +21,7 @@ import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
   type AutomationStudioLlmEvidenceCompletionCheck,
@@ -121,6 +122,14 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * held to those two.
      */
     maxInARow?: number;
+    /**
+     * Replies in a row that arrived and could not be read after which the loop
+     * ends `llm_evidence_loop.unreadable_replies` (`./unreadable-reply.ts`).
+     * They are asked again with a note of what could not be read and never
+     * move the no-progress guard or the far backstop. At most `maxIterations`;
+     * absent, `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW`.
+     */
+    maxUnreadableInARow?: number;
     stalled(input: {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
@@ -292,6 +301,8 @@ export type EvidenceLoopLimits = {
    */
   redirectAtStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
+  /** Unreadable replies in a row that end the loop (`./unreadable-reply.ts`). */
+  maxUnreadableRepliesInARow: number;
   /** Amendment decisions the run may spend before the kind is withdrawn. */
   maxDraftAmendments: number;
 };
@@ -315,6 +326,7 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     redirectAtStepsWithoutProgress: Math.max(1, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS, maxStepsWithoutProgress - 1)),
     maxUnusableDecisionsInARow: unusable?.maxInARow
       ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
+    maxUnreadableRepliesInARow: unusable?.maxUnreadableInARow ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW, maxIterations),
     // Editing the draft *is* the authoring, now that the draft is what the
     // result is built from, so an allowance of four was an allowance of four
     // corrections for a whole Flow. The run's own budget is what bounds it.
@@ -323,7 +335,8 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
   if (!Number.isInteger(limits.maxStepsWithoutProgress) || limits.maxStepsWithoutProgress < 1 || limits.maxStepsWithoutProgress > maxIterations) return undefined;
   if (unusable && (typeof unusable.stalled !== "function"
     || !Number.isInteger(limits.maxUnusableDecisionsInARow) || limits.maxUnusableDecisionsInARow < limits.maxStepsWithoutProgress
-    || limits.maxUnusableDecisionsInARow > maxIterations)) return undefined;
+    || limits.maxUnusableDecisionsInARow > maxIterations
+    || !Number.isInteger(limits.maxUnreadableRepliesInARow) || limits.maxUnreadableRepliesInARow < 1 || limits.maxUnreadableRepliesInARow > maxIterations)) return undefined;
   if (!Number.isInteger(limits.maxIterations) || limits.maxIterations <= 0 || limits.maxIterations > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations) return undefined;
   if (!Number.isInteger(limits.maxToolCalls) || limits.maxToolCalls <= 0 || limits.maxToolCalls > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls) return undefined;
   if (input.budget && !automationStudioLlmEvidenceLoopBudgetValid(input.budget)) return undefined;

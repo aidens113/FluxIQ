@@ -82,7 +82,9 @@ const PERMISSION_REQUIRED_CODE = "flow_bootstrap.permission_required";
 const FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES: ReadonlySet<string> = new Set([
   "flow_bootstrap.evidence_iteration_limit",
   // A budget ran out before the repair finished: a retry, which continues the kept draft, is the answer.
-  "flow_bootstrap.evidence_budget_exhausted"
+  "flow_bootstrap.evidence_budget_exhausted",
+  // Unreadable replies are the provider's, not the task's: a retry continues the kept draft.
+  "flow_bootstrap.model_replies_unreadable"
 ] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 type ProviderRequestCode = typeof AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES["provider_request"][number];
@@ -160,7 +162,8 @@ export function automationStudioFlowBootstrapFailureState(
 
 const ENDING_CODES: ReadonlySet<string> = new Set([
   "flow_bootstrap.not_doable",
-  "flow_bootstrap.evidence_budget_exhausted"
+  "flow_bootstrap.evidence_budget_exhausted",
+  "flow_bootstrap.model_replies_unreadable"
 ] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 function providerState(

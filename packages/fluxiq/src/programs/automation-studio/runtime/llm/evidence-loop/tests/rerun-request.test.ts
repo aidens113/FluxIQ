@@ -32,7 +32,8 @@ describe("the rerun a decision asked for", () => {
   it("is the first one the loop can run, through the tool the step went through, and refuses nothing", () => {
     const resolved = automationStudioLlmEvidenceRerunRequest([rerun(2, { rows: 40 })], steps, offered);
 
-    expect(resolved.request).toEqual({ step: 2, toolId: "core.run_node", input: { rows: 40 }, callId: "rerun.2" });
+    // The keys it changed, over the argument the step ran with (`../rerun-input.ts`).
+    expect(resolved.request).toEqual({ step: 2, toolId: "core.run_node", input: { url: "https://example.test", rows: 40 }, callId: "rerun.2" });
     expect(resolved.refused).toEqual([]);
   });
 

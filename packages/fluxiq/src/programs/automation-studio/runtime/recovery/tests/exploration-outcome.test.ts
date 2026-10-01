@@ -48,7 +48,8 @@ describe("exploration outcomes", () => {
       "llm_evidence_loop.tool_failed",
       "llm_evidence_loop.evidence_limit",
       "llm_evidence_loop.iteration_limit",
-      "llm_evidence_loop.cancelled"
+      "llm_evidence_loop.cancelled",
+      "llm_evidence_loop.unreadable_replies"
     ]],
     ["run-budget diagnostics", AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET, [
       "llm_budget.run_call_limit",
@@ -78,7 +79,8 @@ describe("exploration outcomes", () => {
     ["llm_evidence_loop.unknown_tool", "failed"],
     ["llm_evidence_loop.duplicate_call", "failed"],
     ["llm_evidence_loop.tool_failed", "failed"],
-    ["llm_evidence_loop.cancelled", "cancelled"]
+    ["llm_evidence_loop.cancelled", "cancelled"],
+    ["llm_evidence_loop.unreadable_replies", "failed"]
   ] as const)("reads %s as %s", (code, outcome) => {
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE[code]).toBe(outcome);
   });

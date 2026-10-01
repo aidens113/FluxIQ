@@ -183,7 +183,11 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // carrying `ending`, a message the person reads: no route to the task is
     // left, or a budget ran out first -- never the one dressed as the other.
     "flow_bootstrap.not_doable",
-    "flow_bootstrap.evidence_budget_exhausted"
+    "flow_bootstrap.evidence_budget_exhausted",
+    // The model's replies kept arriving unreadable: each was asked again with
+    // a note of what could not be read, until an unbroken run of them stopped
+    // the build. Carries `ending`, saying so and how many tries it took (t211).
+    "flow_bootstrap.model_replies_unreadable"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]

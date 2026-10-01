@@ -47,7 +47,7 @@ const DIVERGES: Readonly<Record<RecordedRunName, readonly number[]>> = {
 const ENDING: Readonly<Record<RecordedRunName, string>> = {
   "bigbox-run6": "llm_evidence_loop.cancelled",
   crossborder: "llm_evidence_loop.cancelled",
-  "everything-store-run4": "llm_evidence_loop.invalid_decision"
+  "everything-store-run4": "llm_evidence_loop.cancelled"
 };
 
 type Old = { entries: number; bytes: number; pages: number; notes: number; noteBytes: number; missing: number };
@@ -197,11 +197,11 @@ describe("the replay is the recorded run", () => {
     // On the old code this threw `Cannot measure malformed or unknown packed
     // draft shape` building decision 38's draft: a refused press is packed as
     // `did_not_work`, which `../../evidence-loop/draft-shown.ts` did not accept.
-    // With that fixed the loop asks decision 38 and ends on its unreadable answer.
+    // With that fixed the loop asks decision 38, where the replay is cancelled.
     const run = await replayRecordedRun("bigbox-run6", { pastLog: true });
     expect(Object.keys(run.diverges).map(Number)).toEqual(DIVERGES["bigbox-run6"]);
     expect(run.rebuilt).toEqual(run.expected);
-    expect(run.result.ok ? undefined : run.result.code).toBe("llm_evidence_loop.invalid_decision");
+    expect(run.result.ok ? undefined : run.result.code).toBe("llm_evidence_loop.cancelled");
     expect(run.shown.at(-1)?.iteration).toBe(38);
   });
 
