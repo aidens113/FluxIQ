@@ -223,6 +223,30 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("its limit of 3 live rounds");
   });
 
+  // The ending's record is the whole build's, not the last round's: a build
+  // that explored again after a stall published the second round's decisions
+  // beside the whole build's tokens, and the first round's were gone (t214).
+  it("ends with every round's record, its decisions numbered across the build", async () => {
+    const empty = (request: AutomationStudioFlowBootstrapRoundRequest) => {
+      throw request.stalled({
+        issueCodes: ["llm.provider_malformed_response"],
+        trace: [{ iteration: 0, decision: "tool_call", toolId: "demo.look" }, { iteration: 1, decision: "unusable" }, { iteration: 2, decision: "unusable" }],
+        accounting: spent(2, 0.01),
+        steps: []
+      });
+    };
+    const { input } = harness([empty, empty, empty], { maxRounds: 3 });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("unfinished");
+    if (outcome.kind !== "unfinished") return;
+    expect(outcome.progress.trace.map((row) => row.iteration)).toEqual([0, 1, 2, 0, 3, 4, 0, 5, 6]);
+    expect(outcome.progress.accounting).toEqual(outcome.accounting);
+    expect(outcome.progress.accounting).toMatchObject({ iterations: 6, totalTokens: 6_600 });
+    expect(outcome.ending.tried).toMatchObject({ rounds: 3, decisions: 6 });
+  });
+
   it("ends an empty draft at the budget as a budget hit, with what was tried, how far it got and what blocked it", async () => {
     const { input, requests, kept } = harness([
       (request) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(40, 0.25), steps: [] }); }

@@ -33,7 +33,7 @@ import type {
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmUsageSummary
 } from "../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "./plan/index.ts";
 
@@ -318,7 +318,8 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
   for (const step of value) {
     if (!isStepRecord(step) || !hasExactFields(step, EVIDENCE_STEP_FIELDS)
       || typeof step.toolId !== "string" || !EVIDENCE_STEP_ID.test(step.toolId)
-      || (step.iteration !== undefined && !boundedInteger(step.iteration, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations))
+      // A build that could not finish numbers its decisions across every live round it ran (`./unfinished-build/phases.ts`).
+      || (step.iteration !== undefined && !boundedInteger(step.iteration, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS))
       || (step.callId !== undefined && (typeof step.callId !== "string" || !EVIDENCE_STEP_ID.test(step.callId)))
       || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
       || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !EVIDENCE_STEP_CODE.test(step.resultCode)))

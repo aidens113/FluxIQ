@@ -62,6 +62,10 @@ describe("a build whose model replies kept arriving unreadable", () => {
     expect(message).toContain("1 of the 3 things you asked are done; still to do:");
     expect(message).toContain("The Flow so far was kept, and building again carries on from it.");
     expect(message).not.toMatch(/llm\.|_/u);
+    // The round's rows are published with the ending, and its spend with them:
+    // they were left out when this ending and the whole-build record first met (t214).
+    expect(outcome.progress.trace).toEqual([{ iteration: 14, decision: "unusable", resultCode: "llm.provider_malformed_response", resultReason: "content_mismatched" }]);
+    expect(outcome.progress.accounting).toMatchObject({ iterations: 14, totalTokens: 19_000 });
   });
 
   it("is published under its own code, and reads back", async () => {

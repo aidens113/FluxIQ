@@ -55,11 +55,12 @@
 // the caller's loop raises that is not a stall -- a permission ask, a person
 // needed, a provider failure -- passes through untouched.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted } from "./budget-exhausted.ts";
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapRoundProgress, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 import {
@@ -77,13 +78,6 @@ import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall
 
 /** Repairs one build may make after its exploration, while each gets further. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS = 2;
-
-/**
- * Live rounds one build may run in all, the exploration included: the far
- * backstop under the budgets, which bind first in any build that pays for its
- * decisions. Reaching it is reported as the budget it is.
- */
-export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS = 6;
 
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS = 30_000;
@@ -130,7 +124,7 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
   /** Tell the person the build moved to a phase: the chat's row for it. */
   announce?(event: { phase: "exploring" | "verifying" | "repairing"; label: string; text: string }): void;
   maxRepairRounds?: number;
-  /** Live rounds in all, the exploration included (`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS`). */
+  /** Live rounds in all, the exploration included: at most `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS` (`../../loop-limits/`), which the published record's reader is bounded by. */
   maxRounds?: number;
   now?: () => number;
 };
@@ -149,7 +143,15 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
   | {
     kind: "unfinished";
     ending: AutomationStudioFlowBootstrapBuildEnding;
-    /** The last round's own record, which the failure's counts are read from. */
+    /**
+     * Every round's record, which the failure's counts and steps are read
+     * from: each round's trace in order, its decisions numbered across the
+     * build, and what every round spent. The last round's exhaustion, where
+     * it ran out of one. It used to be the last round's alone, so a build that
+     * explored again after a stalled round published the second round's four
+     * decisions beside the whole build's tokens, and the first round's eight
+     * were gone (t214).
+     */
     progress: AutomationStudioFlowBootstrapRoundProgress;
     lastIssueCodes: readonly string[];
     kept: AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined;
@@ -162,8 +164,10 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   const clock = input.now ?? Date.now;
   const startedAt = clock();
   const maxRepairRounds = input.maxRepairRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS;
-  const maxRounds = Math.max(1, input.maxRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS);
+  const maxRounds = Math.min(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, Math.max(1, input.maxRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS));
   const spent = emptyAccounting();
+  /** Every round's trace rows, numbered across the build. */
+  const record: AutomationStudioLlmEvidenceLoopTrace[] = [];
   let repairs = 0;
   let repair: AutomationStudioFlowBootstrapRoundRequest["repair"];
   let previous: AutomationStudioFlowBootstrapJudgement | undefined;
@@ -177,6 +181,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       outcome = error;
     }
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
+    // Every round that stopped short publishes its rows: unfinished, out of budget, or out of readable replies.
+    if (ending.kind !== "finished" && ending.kind !== "other") record.push(...numberedAcrossBuild(ending.progress.trace, spent.iterations));
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
     if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds };
@@ -209,7 +215,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
             : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds } }),
-        progress: ending.progress,
+        progress: { trace: [...record], accounting: { ...spent }, ...(ending.progress.exhaustion ? { exhaustion: ending.progress.exhaustion } : {}) },
         lastIssueCodes: ending.lastIssueCodes,
         kept,
         accounting: spent,
@@ -267,6 +273,16 @@ function exhaustedBound(input: AutomationStudioFlowBootstrapBuildPhasesInput, sp
   if (budget.maxDurationMs !== undefined && budget.maxDurationMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS) return "duration";
   if (maxIterations < 1) return "calls";
   return undefined;
+}
+
+/**
+ * A round's trace rows with each decision numbered across the build: a
+ * round's own numbering starts at 1 again, so a repair's first decision would
+ * otherwise read as the exploration's first. The rounds before had made
+ * `before` decisions. `0`, the observation no decision paid for, stays `0`.
+ */
+function numberedAcrossBuild(trace: readonly AutomationStudioLlmEvidenceLoopTrace[], before: number): AutomationStudioLlmEvidenceLoopTrace[] {
+  return trace.map((row) => (row.iteration > 0 && before > 0 ? { ...row, iteration: row.iteration + before } : row));
 }
 
 function emptyAccounting(): AutomationStudioLlmEvidenceLoopAccounting {
