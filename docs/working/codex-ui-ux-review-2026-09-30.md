@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Sixth Core behavioral fixes verified narrowly; full source-contract reconciliation and final gates active.
+Status detail: Sixth Core web tests, typing and production build passed; seventh disjoint implementation lanes released.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -10,6 +10,16 @@ Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repo
 Related: [current system](../architecture/current-system.md), [working document index](./README.md)
 
 ## Current State
+
+Latest: sixth Core Complete. Root resumed full53911 native0,319files/2078tests,
+187.86s; types93193 native0; production89166 native0,17pages/203827ms.
+Full structure59396 has only inherited protected service4506/4505 (native1),
+no baseline/config relaxation. Runtime source reconciliation root104pass and
+successful full rerun preserve all bounded/request/detail/dataset requirements.
+Database e2f9f9dd and runtime/layout5c28bdb3 checkpointed; exact three Runtime
+test reconciliation checkpoint follows. Extension full1791/types/build/structure
+passes. Next Core workers released in disjoint Production parameter, Deployment
+and Docs UI ownership; no broad checks until coordinated source freeze.
 
 Resumed gate evidence: original sixth full log reports319files/2078tests,
 2072pass/6fail,178.24s,status1, all six Runtime source/function-string ownership
