@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, type ReactNode, type UIEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type UIEvent } from "react";
 
 export type SettingsSectionDefinition = {
   id: string;
@@ -21,35 +21,55 @@ export function SettingsSectionLayout(props: {
   const navigationRef = useRef<HTMLElement>(null);
   const frameRef = useRef<number | null>(null);
   const initializedRef = useRef(false);
+  const mountedRef = useRef(false);
+  const latestRef = useRef(props);
+  latestRef.current = props;
 
-  useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-    const frame = window.requestAnimationFrame(() => scrollToSection(contentRef.current, props.activeSection));
-    return () => window.cancelAnimationFrame(frame);
-  }, [props.activeSection]);
-
-  useEffect(() => () => {
-    if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => keepSelectedSectionVisible(navigationRef.current, props.activeSection));
-    return () => window.cancelAnimationFrame(frame);
+    if (initializedRef.current) return;
+    let live = true;
+    const frame = window.requestAnimationFrame(() => {
+      if (!live || !mountedRef.current || !contentRef.current) return;
+      scrollToSection(contentRef.current, latestRef.current.activeSection);
+      initializedRef.current = true;
+    });
+    return () => { live = false; window.cancelAnimationFrame(frame); };
+  }, [props.activeSection]);
+
+  useEffect(() => {
+    let live = true;
+    const frame = window.requestAnimationFrame(() => {
+      if (live && mountedRef.current) keepSelectedSectionVisible(navigationRef.current, latestRef.current.activeSection);
+    });
+    return () => { live = false; window.cancelAnimationFrame(frame); };
   }, [props.activeSection]);
 
   const selectSection = (sectionId: string) => {
-    props.onActiveSectionChange(sectionId);
+    if (!mountedRef.current || !latestRef.current.sections.some(section => section.id === sectionId)) return;
+    latestRef.current.onActiveSectionChange(sectionId);
     scrollToSection(contentRef.current, sectionId);
   };
   const trackSection = (event: UIEvent<HTMLDivElement>) => {
+    if (!mountedRef.current || event.currentTarget !== contentRef.current) return;
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     const container = event.currentTarget;
-    frameRef.current = window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (!mountedRef.current || frameRef.current !== frame || container !== contentRef.current) return;
       frameRef.current = null;
-      const sectionId = visibleSettingsSection(container, props.sections);
-      if (sectionId && sectionId !== props.activeSection) props.onActiveSectionChange(sectionId);
+      const current = latestRef.current;
+      const sectionId = visibleSettingsSection(container, current.sections);
+      if (sectionId && sectionId !== current.activeSection) current.onActiveSectionChange(sectionId);
     });
+    frameRef.current = frame;
   };
 
   return (

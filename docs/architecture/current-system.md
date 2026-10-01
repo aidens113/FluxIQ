@@ -342,6 +342,16 @@ separate capability. Code downloads release allocated object URLs even when
 anchor creation, configuration or activation fails; existing failure feedback
 remains available. A started download acknowledgement does not prove completion.
 
+Data Flow Inspector distinguishes an unconfirmed read, loading, confirmed empty
+and last-confirmed samples after failure. Read recovery and cache-clear feedback
+remain separate; a clear acknowledgement reports only acknowledgement, while an
+unconfirmed request may have completed. Explicit refresh never replays a clear.
+API/project UI ownership and synchronous operation locks retire stale callbacks
+without cancelling issued mutations or claiming backend project isolation.
+Settings section scroll frames use current navigation props and reject retired
+work. Cancelled initial scrolling reschedules the current selection; completed
+initialization remains once per mounted layout.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,

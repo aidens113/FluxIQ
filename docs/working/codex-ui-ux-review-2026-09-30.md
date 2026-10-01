@@ -15,13 +15,19 @@ Latest root twelfth narrow checks: floating139/native0/22.78s; combined
 Tooltip23/JsonViewer7/download5/shared contracts20 =55/native0/4.58s.
 CodeViewer cleanup independently19/strict0 checkpoint1d4d2000. JsonViewer
 long-string guidance reproduced3fail/4pass before local flag fix. Nine-root
-strict session83805 active. Tooltip/floating/JsonViewer source frozen; two
-workers own disjoint DataInspector source+NEW test and SettingsSectionLayout
-source+NEW test. No Core broad checks while those paths change. Third worker
-audits downstream receiver lifecycle read-only. Root owns shared docs/review;
+strict83805 native0, nine roots and two declarations,0diagnostics; checkpoint
+91a29dd2. DataInspector/settings exact four paths frozen and source/tests read;
+root owning22293 native0 fivefiles79/21.19s and strict80956 fourroots plus two
+declarations0diagnostics. Core full31117/types65532/build34521 active, all
+source frozen; structure46579 solely inherited protected4506/4505.
+Root owns shared docs/review;
 exact reports and briefs are downstream, latest twelfth-supervisor-verification.
-Extension root208/strict17roots0; full58454 active, one test barrel import
-structure failure corrected/recheck pending. No browser certification or push.
+Extension root208/strict17roots0; full58454 failed2062pass1lazy-tailfailure,
+unchanged narrow6pass leaves full unresolved. Public state alias restored after
+types/build failures; corrected types1691/build11533 native0, structure12361
+native0. New downstream AskControls two-path unit and test-only lazy-tail
+ordering probe released; third worker audits hierarchy dialog readiness.
+No browser certification or push.
 
 Tenth Core Complete: Menu/database687ddc58, environment2d9306b6 and login
 a466c972 checkpoints; independent130/25/195/50 pass. Original full46495 failure
