@@ -177,6 +177,12 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await pool.closeAll();
   });
 
+  // The stream at a million events, for what this case is about: tailing and
+  // reconnecting by sequence. Its events are Subflow entries, which project
+  // nothing: as action attempts, each append also upserted 10,000 action
+  // summary rows, and that projection was three quarters of the case's time
+  // (983 of 1,299 ms per append, measured) without being what it proves. The
+  // projection is proved below, at a size that shows it is right.
   it("tails and reconnects runtime streams by sequence at a million events", { timeout: 60_000 }, async () => {
     const pool = openPool();
     await seedFlow(pool, "project.million", "flow.checkout");
@@ -185,14 +191,44 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
 
     for (let batch = 0; batch < 100; batch += 1) {
       const base = batch * 10_000;
-      await store.appendRuntimeEvents({ runId: "run.million", maxEvents: 10_000, events: Array.from({ length: 10_000 }, (_, index) => event(base + index + 1)) });
+      await store.appendRuntimeEvents({ runId: "run.million", maxEvents: 10_000, events: Array.from({ length: 10_000 }, (_, index) => subflowEvent(base + index + 1)) });
     }
 
     const tail = await store.listRuntimeEvents({ runId: "run.million", afterSequence: 999_990, limit: 5 });
     expect(tail.events.map((item) => item.sequence)).toEqual([999_991, 999_992, 999_993, 999_994, 999_995]);
     const reconnect = await store.listRuntimeEvents({ runId: "run.million", afterSequence: tail.lastSequence, limit: 5 });
     expect(reconnect.events.map((item) => item.sequence)).toEqual([999_996, 999_997, 999_998, 999_999, 1_000_000]);
-    await expect(store.listRunSummaries({ search: "million", limit: 1, offset: 0 })).resolves.toMatchObject({ runs: [{ runId: "run.million", actionAttemptCount: 1_000_000 }] });
+    await expect(store.listRunSummaries({ search: "million", limit: 1, offset: 0 })).resolves.toMatchObject({ runs: [{ runId: "run.million", actionAttemptCount: 0 }] });
+    await store.close();
+    await pool.closeAll();
+  });
+
+  // The action-summary projection, at a size that crosses everything it
+  // batches by: several appended chunks, the 200-row upsert, and the 500-event
+  // pages its rebuild reads the stream in.
+  it("projects every appended action attempt into the run's count and action pages, and rebuilds a lost projection from the stream", async () => {
+    const pool = openPool();
+    await seedFlow(pool, "project.actions", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.actions" });
+    await store.upsertRunSummary(runSummary({ runId: "run.actions", actionAttemptCount: 0, updatedAt: 1 }));
+    const total = 2_500;
+    for (let base = 0; base < total; base += 1_000) {
+      await store.appendRuntimeEvents({ runId: "run.actions", events: Array.from({ length: Math.min(1_000, total - base) }, (_, index) => event(base + index + 1)) });
+    }
+    const lastPage = async () => await store.listRunActions({ runId: "run.actions", limit: 3, offset: total - 3 });
+    const lastThree = { total, actions: [{ attemptId: "attempt.2498" }, { attemptId: "attempt.2499" }, { attemptId: "attempt.2500" }] };
+
+    await expect(store.listRunSummaries({ flowId: "flow.checkout", limit: 10, offset: 0 })).resolves.toMatchObject({ runs: [{ runId: "run.actions", actionAttemptCount: total }] });
+    await expect(lastPage()).resolves.toMatchObject(lastThree);
+
+    // A projection that lost rows, and rows that lost their definition, are
+    // rebuilt from the stream the next time the run's actions are read.
+    const lease = await pool.acquire("project.actions");
+    await lease.database.run("delete from runtime_action_summaries where run_id = ? and sequence > ?", ["run.actions", 1_200]);
+    await lease.database.run("update runtime_action_summaries set definition_id = 'unknown' where run_id = ? and sequence <= ?", ["run.actions", 10]);
+    await expect(lastPage()).resolves.toMatchObject(lastThree);
+    await expect(lease.database.get("select count(*) as rows, sum(case when definition_id = 'unknown' then 1 else 0 end) as unknown from runtime_action_summaries where run_id = ?", ["run.actions"])).resolves.toEqual({ rows: total, unknown: 0 });
+    await lease.release();
     await store.close();
     await pool.closeAll();
   });
@@ -352,6 +388,10 @@ function datasetBatch(input: { datasetId: string; nodeId: string; label?: string
   // `batchKey` is being added to the store's batch type in a concurrent amendment;
   // the assertion keeps this literal valid on either side of that change.
   return { runId: "run.checkout", datasetId: input.datasetId, ...(input.label ? { label: input.label } : {}), nodeId: input.nodeId, attemptId, batchKey: attemptId, schema: LISTING_SCHEMA, schemaDigest: "sha256:listing-schema", writeMode: "append", rows: input.rows, invalidCount: input.invalidCount, truncated: false, now: input.now } as AutomationStudioRunDatasetBatch;
+}
+
+function subflowEvent(index: number): Omit<AutomationStudioRuntimeStreamEvent, "sequence"> {
+  return { eventId: `event.${index}`, eventKind: "subflow_execution", timestampMs: index, title: `Subflow ${index}`, status: "succeeded", entityId: `entry.${index}`, payload: { entryId: `entry.${index}`, subflowId: "subflow.checkout", enteredAt: index, status: "succeeded" } };
 }
 
 function event(index: number): Omit<AutomationStudioRuntimeStreamEvent, "sequence"> {
