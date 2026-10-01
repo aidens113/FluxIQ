@@ -239,7 +239,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const drafting = input.draft !== false;
   // Who decides which steps are in the Flow: the model, unless a recorded build is replayed under the old rule (`./loop-configuration.ts`).
   const authoring = input.draftAuthoring !== "transcript";
-  // Whether the authored draft has advanced toward the acts: progress, where the model authors it (`./evidence-loop/authored-progress.ts`).
+  // Whether the authored draft has advanced toward the acts: progress, where the model authors it (`./evidence-progress/authored-progress.ts`).
   const authored = authoring && drafting ? automationStudioLlmEvidenceAuthoredProgress({ steps: draftSteps, actsMissing: input.draft ? input.draft.actsMissing : undefined }) : undefined;
   // The numbers the loop and its handlers both move (`decision-handlers/types.ts` says what each counts).
   const counters: AutomationStudioLlmEvidenceLoopCounters = { draftAmendments: 0, unusableInARow: 0, completionAttempts: 0, failedToolCalls: 0, mutationEpoch: 0, attemptEpoch: 0 };
@@ -321,7 +321,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // to finish when finishing is not on offer is what that entry must never do.
   let offeredCompletion = false;
   // Everything the loop remembers in order to tell working from repeating, and
-  // what it says when the answer is repeating (`./evidence-loop/no-progress.ts`
+  // what it says when the answer is repeating (`./evidence-progress/no-progress.ts`
   // states the whole rule and the run it was measured on). The stop is the last
   // resort: several steps earlier this starts telling the model plainly that it
   // already holds what it keeps asking for, at no cost in calls or iterations.
@@ -359,7 +359,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     lastIssueCodes = issueCodes;
     if (transition) noProgress.completionRefused(issueCodes);
     const issueSet = automationStudioLlmUnusableDecisionIssueSet(issueCodes);
-    // A refused completion also counts when the same draft was refused the same way before, whatever ran between (`./evidence-loop/no-progress.ts`).
+    // A refused completion also counts when the same draft was refused the same way before, whatever ran between (`./evidence-progress/no-progress.ts`).
     const sameDraftRefusedAgain = transition !== undefined && noProgress.refusedAgain(automationStudioFlowDraftReplaySignature(draftSteps), issueSet);
     if (noProgress.sameIssuesAgain(issueSet) || sameDraftRefusedAgain) noProgress.stepped();
     else noProgress.restarted();
@@ -371,7 +371,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       noProgress.redirect(step.iteration);
       return undefined;
     }
-    return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting } }) };
+    return { error: input.unusableDecisions!.stalled({ issueCodes, trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((draftStep) => structuredClone(draftStep)) }) };
   };
   // An unusable decision, answered: recorded, then either told to the model as
   // evidence before it is asked again, or the error that ends the loop.
@@ -719,7 +719,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // **What the loop learned, not what it ran.** The whole rule -- the four
     // ways of learning nothing, why a refused look counts, why a repeat that
     // announces itself needs the caller to say so, and the live runs each was
-    // measured on -- is in `./evidence-loop/no-progress.ts`. A call that
+    // measured on -- is in `./evidence-progress/no-progress.ts`. A call that
     // changed something is always progress; anything else whose answer is the
     // one its own tool already gave is not, whatever its code says.
     const repeated = noProgress.answerRepeats({

@@ -79,7 +79,9 @@ describe("a Flow build under the Flow's configured call count", () => {
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
 
-    expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+    // The Flow's own call count is a budget the whole build is held to: the build ends at it, said as that (t208).
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls" });
     expect(requests).toHaveLength(configuredCalls);
     // The Flow's timeout sizes a request, not spending, so the resolver's default stays on every call.
     for (const request of requests) expect(request.timeoutMs).toBe(defaults.timeoutMs);

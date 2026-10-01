@@ -18,7 +18,7 @@ import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 const MAX_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
   + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
   + 1;
-const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions"];
+const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions", "repeat_without_progress"];
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const OPTIONAL_OBJECTS = ["ranWith", "settings", "replay", "routing"] as const;
 const OPTIONAL_STRINGS = ["id", "toolId", "resultCode", "stateBefore", "stateAfter"] as const;
@@ -74,7 +74,7 @@ function keptStep(value: unknown, position: number): value is AutomationStudioFl
   if (value.effectApplied !== undefined && typeof value.effectApplied !== "boolean") return false;
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return false;
   // The acts the model said the step does (`../../flow-draft/step.ts`): Core's own ids, nothing else.
-  if (value.acts !== undefined && (!Array.isArray(value.acts) || !value.acts.every((act) => typeof act === "string" && /^a[1-9][0-9]{0,2}$/u.test(act)))) return false;
+  if (value.acts !== undefined && (!Array.isArray(value.acts) || !value.acts.every((act) => typeof act === "string" && /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u.test(act)))) return false;
   return OPTIONAL_OBJECTS.every((key) => value[key] === undefined || isRecord(value[key]))
     && OPTIONAL_STRINGS.every((key) => value[key] === undefined || typeof value[key] === "string");
 }

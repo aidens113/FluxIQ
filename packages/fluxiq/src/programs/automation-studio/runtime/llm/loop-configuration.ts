@@ -125,6 +125,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
       accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
+      /**
+       * The draft as it stood when the loop stopped, a copy: what a stalled
+       * build tests, judges and repairs rather than dropping
+       * (`../flow-bootstrap/unfinished-build/`).
+       */
+      steps: readonly AutomationStudioFlowDraftStep[];
     }): unknown;
   };
   /**

@@ -20,16 +20,12 @@ export * from "./decision.ts";
 export * from "./draft-shown.ts";
 export * from "./draft-change.ts";
 export * from "./exhaustion.ts";
-export * from "./no-progress.ts";
-export * from "./progress.ts";
-export * from "./decision-dump.ts";
-export * from "./progress-trace.ts";
+// What counts as progress, and the build trace read off it, live beside this directory (`../evidence-progress/`), published here as before.
+export * from "../evidence-progress/index.ts";
 export * from "./rerun-replacement.ts";
-export * from "./authored-progress.ts";
 export * from "./rerun-request.ts";
 export * from "./resume.ts";
 export * from "./result.ts";
-export * from "./stall-redirect.ts";
 export * from "./tool.ts";
 export * from "./tool-execution.ts";
 export * from "./trace.ts";

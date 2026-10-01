@@ -50,6 +50,16 @@ describe("the lasting acts an instruction asks for", () => {
     expect(automationStudioInstructedActs(instruction)).toEqual([]);
   });
 
+  it("reads no act in an instruction that asks for the automation itself", () => {
+    // The service fixtures' instruction, which t196 found read as a `create` act.
+    expect(automationStudioInstructedActs("Create a deterministic Start to End Flow.")).toEqual([]);
+    expect(automationStudioInstructedActs("Flow\nCreate an automation that lists the new jobs.")).toEqual([]);
+    // Creating something on the target still is one.
+    expect(automationStudioInstructedActs("Create a collection in my saved posts called Glaze ideas.").map((act) => [act.kind, act.verb])).toEqual([["submit", "create"]]);
+    // And a later act in the same sentence is still read past it.
+    expect(automationStudioInstructedActs("Create a Flow, then save the Brightline kettle to my saved items.").map((act) => [act.kind, act.verb])).toEqual([["save", "save"]]);
+  });
+
   it("drops an act the instruction forbids", () => {
     expect(automationStudioInstructedActs("Add the kettle to my cart. Do not buy anything, and do not check out.").map((act) => act.kind)).toEqual(["add_to"]);
   });

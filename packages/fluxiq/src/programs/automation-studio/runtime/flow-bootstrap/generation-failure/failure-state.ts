@@ -54,6 +54,12 @@ export type AutomationStudioFlowBootstrapFailureState = {
    * reason.
    */
   permissionRequest: "required" | "absent";
+  /**
+   * Whether the diagnostic carries the ending a build that could not finish
+   * tells the person (`./build-ending.ts`): exactly beside its two codes, for
+   * the reason `permissionRequest` travels only with its own.
+   */
+  ending: "required" | "absent";
 };
 
 const PERMISSION_REQUIRED_CODE = "flow_bootstrap.permission_required";
@@ -74,7 +80,9 @@ const PERMISSION_REQUIRED_CODE = "flow_bootstrap.permission_required";
  * producers write from.
  */
 const FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES: ReadonlySet<string> = new Set([
-  "flow_bootstrap.evidence_iteration_limit"
+  "flow_bootstrap.evidence_iteration_limit",
+  // A budget ran out before the repair finished: a retry, which continues the kept draft, is the answer.
+  "flow_bootstrap.evidence_budget_exhausted"
 ] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 type ProviderRequestCode = typeof AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES["provider_request"][number];
@@ -145,15 +153,21 @@ export function automationStudioFlowBootstrapFailureState(
 ): AutomationStudioFlowBootstrapFailureState {
   return {
     ...providerState(code, stage, providerStatus),
-    permissionRequest: code === PERMISSION_REQUIRED_CODE ? "required" : "absent"
+    permissionRequest: code === PERMISSION_REQUIRED_CODE ? "required" : "absent",
+    ending: ENDING_CODES.has(code) ? "required" : "absent"
   };
 }
+
+const ENDING_CODES: ReadonlySet<string> = new Set([
+  "flow_bootstrap.not_doable",
+  "flow_bootstrap.evidence_budget_exhausted"
+] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 function providerState(
   code: string,
   stage: AutomationStudioFlowBootstrapFailureStage,
   providerStatus: number | undefined
-): Omit<AutomationStudioFlowBootstrapFailureState, "permissionRequest"> {
+): Omit<AutomationStudioFlowBootstrapFailureState, "permissionRequest" | "ending"> {
   if (stage === "pre_provider_validation" || stage === "provider_resolution") {
     return {
       retryable: false,

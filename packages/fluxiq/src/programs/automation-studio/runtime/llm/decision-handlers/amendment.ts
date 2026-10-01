@@ -100,7 +100,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
     // Where the model authors its draft, an edit that put a step in the Flow
     // for the first time, or left fewer acts undone than ever, is the draft
     // advancing, which is what progress means there
-    // (`../evidence-loop/authored-progress.ts`). A toggle is not.
+    // (`../evidence-progress/authored-progress.ts`). A toggle is not.
     noProgress.cleared();
   }
   // The model is told which of its amendments changed nothing and why, as

@@ -39,6 +39,13 @@ export type AutomationStudioFlowBootstrapIncompleteDraftKeeper = {
    * never points at a record that does not exist.
    */
   exhausted<E>(result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, failure: (kept: AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined) => E): Promise<E>;
+  /**
+   * A build that ended after its Flow was tested, judged and repaired
+   * (`../unfinished-build/`): keep the draft its last round left, and return
+   * the pointer to it, or nothing when nothing was worth keeping or the write
+   * did not happen.
+   */
+  unfinished(stopped: AutomationStudioFlowBootstrapIncompleteDraft["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number): Promise<AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined>;
   /** The loop's stall failure, with the pointer to the draft it is about to keep. */
   stalled(error: AutomationStudioFlowBootstrapGenerationError): AutomationStudioFlowBootstrapGenerationError;
   /** Awaits the loop, writing a stalled build's draft before its failure travels on. */
@@ -95,6 +102,12 @@ export function automationStudioFlowBootstrapIncompleteDraftKeeper(input: {
         return failure(undefined);
       }
       return failure({ revision: record.revision, steps: record.steps.length });
+    },
+    async unfinished(stopped, outstanding, steps, completionAttempts) {
+      const record = kept(stopped, outstanding, steps, completionAttempts);
+      // Best-effort, as `exhausted` is: a write that failed leaves the ending as it is, only without a pointer to a record that does not exist.
+      const written = record ? await input.save(record).then(() => true, () => false) : false;
+      return record && written ? { revision: record.revision, steps: record.steps.length } : undefined;
     },
     stalled(error) {
       const record = lastAttempt ? kept("unusable_decisions", error.diagnostic.issueCodes ?? [], lastAttempt, attempts) : undefined;

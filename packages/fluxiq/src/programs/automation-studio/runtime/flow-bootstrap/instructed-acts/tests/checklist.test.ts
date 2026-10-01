@@ -45,6 +45,33 @@ describe("the acts checklist", () => {
     expect(automationStudioInstructedActDraftClaims([step(1, { acts: ["a1"], disposition: "taken" })])).toEqual([]);
   });
 
+  it("lists each act's choices beside it, done or todo, by the check's own rule", () => {
+    const TOWELS = "Add two packs of the Softly Paper Towels in the 12 Double Rolls size to my cart.";
+    const empty = automationStudioInstructedActsChecklist({ instructionText: TOWELS, draftSteps: [] })!;
+    expect(empty.map((item) => [item.id, item.todo, item.choices?.map((choice) => [choice.id, choice.choice, choice.value, choice.todo])])).toEqual([
+      ["a1", "no_step_added", [["a1.quantity", "quantity", "two", "no_step_added"], ["a1.size", "variant", "12 Double Rolls", "no_step_added"]]]
+    ]);
+    expect(automationStudioInstructedActsNotDone(empty)).toEqual(["a1", "a1.quantity", "a1.size"]);
+
+    // The size chosen by its own step, the quantity claimed by the add itself, which was given no number.
+    const draft = [step(1, { acts: ["a1.size"] }), step(2, { acts: ["a1", "a1.quantity"] })];
+    const items = automationStudioInstructedActsChecklist({ instructionText: TOWELS, draftSteps: draft })!;
+    expect(items[0]!.done).toBe(2);
+    expect(items[0]!.choices!.map((choice) => [choice.id, choice.done, choice.todo, choice.step])).toEqual([
+      ["a1.quantity", undefined, "choice_is_the_act_step", 2],
+      ["a1.size", 1, undefined, undefined]
+    ]);
+    // The check refuses exactly what the checklist shows as todo.
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: { summary: "x" }, draftSteps: draft });
+    expect(verdict.ok ? [] : verdict.missing.map((missing) => [missing.id, missing.reason])).toEqual([["a1.quantity", "choice_is_the_act_step"]]);
+
+    // An add given the number makes the quantity too, and then the check accepts the Flow.
+    const given = [step(1, { acts: ["a1.size"] }), step(2, { acts: ["a1", "a1.quantity"], input: { quantity: "2" } })];
+    const done = automationStudioInstructedActsChecklist({ instructionText: TOWELS, draftSteps: given })!;
+    expect(automationStudioInstructedActsNotDone(done)).toEqual([]);
+    expect(checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: { summary: "x" }, draftSteps: given }).ok).toBe(true);
+  });
+
   it("is nothing for an instruction that asks only for something to be read", () => {
     expect(automationStudioInstructedActsChecklist({ instructionText: "List the dining tables for sale in Kelford.", draftSteps: [] })).toBeUndefined();
   });

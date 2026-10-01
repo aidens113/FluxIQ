@@ -13,6 +13,7 @@ import type {
 } from "../../llm/index.ts";
 import type { AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import { automationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES, type AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "./error.ts";
@@ -171,6 +172,37 @@ export function flowBootstrapUserInterventionRequiredFailure(
     ...(accounting ? { accounting } : {}),
     evidenceLoop: evidenceLoopDiagnostic(progress),
     ...(issueCodes.length ? { issueCodes } : {})
+  });
+}
+
+/**
+ * A build that could not finish, after its Flow was tested, judged and
+ * repaired (`../unfinished-build/`): not doable, or a budget ran out first.
+ *
+ * Built from the last live round's loop, which is the one that stopped, with
+ * the ending that says to the person why and what was tried. `issueCodes` are
+ * the last refusals the model was shown, for a reader that counts; the message
+ * never names one.
+ */
+export function flowBootstrapBuildEndingFailure(
+  ending: AutomationStudioFlowBootstrapBuildEnding,
+  progress: EvidenceLoopProgress & { exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion | undefined },
+  accounting?: EvidenceAccounting,
+  incompleteDraft?: IncompleteDraftPointer,
+  lastIssueCodes: readonly string[] = []
+): AutomationStudioFlowBootstrapGenerationError {
+  const code = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES[ending.kind];
+  const issueCodes = flowBootstrapDiagnosticIssueCodes(lastIssueCodes);
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code,
+    stage: "provider_output_validation",
+    retryable: automationStudioFlowBootstrapFailureState(code, "provider_output_validation", undefined).retryable,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    ...(accounting ? { accounting } : {}),
+    evidenceLoop: { ...evidenceLoopDiagnostic(progress, progress.exhaustion), ...(incompleteDraft ? { incompleteDraft } : {}) },
+    ...(issueCodes.length ? { issueCodes } : {}),
+    ending
   });
 }
 

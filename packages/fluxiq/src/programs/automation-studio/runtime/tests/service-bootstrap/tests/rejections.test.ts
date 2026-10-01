@@ -153,10 +153,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(requests).toHaveLength(3);
     const feedback = requests[1]?.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.completion_check")?.value;
     expect(feedback).toMatchObject({ ok: false, refusal: expectedRefusal, issues: expect.arrayContaining([expect.objectContaining({ code: expectedIssue })]) });
+    // The three calls the run declares are spent with nothing in the Flow: a budget hit, said with its message (t208).
     expect(diagnostic).toMatchObject({
-      code: "flow_bootstrap.evidence_unusable_decision",
+      code: "flow_bootstrap.evidence_budget_exhausted",
+      ending: { kind: "budget_exhausted", bound: "calls", message: expect.stringContaining("its limit of 3 model calls") },
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       accounting: {

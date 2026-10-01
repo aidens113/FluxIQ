@@ -221,7 +221,7 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
 /** What a call may say about the draft, where the model authors it. */
 const AUTHORING_CALL_PROPERTIES: JsonObject = {
   add: { type: "boolean", description: "true: if this call works, put its step into the Flow now. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
-  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}$", description: "The act from the acts checklist this step does, such as a2. Implies add." }
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." }
 };
 
 /** The three shapes a decision may take, which is also what a reply may arrive as instead of the wrapper. */

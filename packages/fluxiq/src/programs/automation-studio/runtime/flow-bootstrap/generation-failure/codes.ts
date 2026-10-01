@@ -177,7 +177,13 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // presses, types into or solves a check, so there is nothing to retry as it
     // stands; the issue codes say which of those it was
     // (`../person-needed.ts`).
-    "flow_bootstrap.user_intervention_required"
+    "flow_bootstrap.user_intervention_required",
+    // The two endings of a build that could not finish, reached only after its
+    // Flow was tested, judged and repaired (`../unfinished-build/`), each
+    // carrying `ending`, a message the person reads: no route to the task is
+    // left, or a budget ran out first -- never the one dressed as the other.
+    "flow_bootstrap.not_doable",
+    "flow_bootstrap.evidence_budget_exhausted"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]
