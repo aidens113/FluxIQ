@@ -7,8 +7,18 @@ const operationalViews = new Set(["background-tasks", "compute-control", "produc
 describe("global program request ownership", () => {
   it("cancels each initial snapshot request on unmount", () => {
     const operational = readFileSync(new URL("../operational-refresh/useOperationalSnapshot.ts", import.meta.url), "utf8");
+    const databaseReads = readFileSync(new URL("../database-records/useDatabaseRecords.ts", import.meta.url), "utf8");
     for (const view of views) {
       const source = readFileSync(new URL(`../live-views/${view}.tsx`, import.meta.url), "utf8");
+      if (view === "database-manager") {
+        expect(source, view).toContain("useDatabaseRecords({ api, owner: api");
+        expect(databaseReads, view).toContain("new AbortController()");
+        expect(databaseReads, view).toContain('"snapshot", { signal: controller.signal }');
+        expect(databaseReads, view).toContain("job.controller?.abort()");
+        expect(databaseReads, view).toContain('mounted.current = false; cancel("metadata")');
+        expect(databaseReads, view).toContain("if (!current()) return;");
+        continue;
+      }
       if (operationalViews.has(view)) {
         expect(source, view).toContain("useOperationalSnapshot({ owner: api, read");
         expect(source, view).toContain('"snapshot", { signal }');

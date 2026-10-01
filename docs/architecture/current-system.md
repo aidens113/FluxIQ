@@ -143,6 +143,13 @@ completions. Accepted grants require a nonempty id and a future expiry. API doma
 changes clear local grants and record state, so authorization from the previous
 scope cannot unlock the new workspace. Dismissing a pending dialog discards its
 late receipt; it does not claim to revoke a grant already issued by the server.
+Read-only database browsing has separate metadata, row and detail recovery,
+with confirmed paging retained during failed navigation. API/user/query changes
+and grant expiry mask obsolete data immediately; expired or revoked authority
+invalidates outstanding reads. Removed metadata targets also hide their recheck
+dialog and fence retained authorization callbacks before passive reconciliation.
+An explicit metadata Refresh rereads the existing snapshot endpoint. These are
+frontend presentation guards; backend authorization remains authoritative.
 
 Initial password/TOTP sign-in and temporary-credential replacement return to
 the actual requested local path, query and fragment. A local destination

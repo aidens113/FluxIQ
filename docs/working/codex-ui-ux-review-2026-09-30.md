@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Third Core UX batch verified; sign-in navigation, operational freshness and clipboard feedback implementation active.
+Status detail: Sixth Core behavioral fixes verified narrowly; full source-contract reconciliation and final gates active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -10,6 +10,15 @@ Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repo
 Related: [current system](../architecture/current-system.md), [working document index](./README.md)
 
 ## Current State
+
+Resumed gate evidence: original sixth full log reports319files/2078tests,
+2072pass/6fail,178.24s,status1, all six Runtime source/function-string ownership
+inspections. Exact three-test worker reconciliation is active; product stays
+frozen. Web types19698 previously observed native0; structure only inherited
+protected service4506/4505. Build log reached17pages/trace collection without
+retained final completion; rerun after worker source freeze. Database root
+owning34/globalcontract2 pass36/native0/7.79s and strict97474 native0; narrow
+review complete, local checkpoint follows. No full sixth success claimed.
 
 Sixth supervisor logout acknowledgement fix passes 6 new plus 26 unchanged
 AuthShell tests (native0, 2.41s) and scoped actual-config types (native0).
