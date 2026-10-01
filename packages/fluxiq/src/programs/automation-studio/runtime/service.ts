@@ -90,7 +90,7 @@ import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStu
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmResolutionWithinFlowSettings, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
-import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
+import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, emitAutomationStudioBuildRequest, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { automationStudioFlowDraftReplayable } from "./flow-draft/index.ts";
@@ -1501,7 +1501,7 @@ export class AutomationStudioService {
         const size = automationStudioFlowBootstrapSizeLimitsOf(parent); // The Flow's own size setting bounds what this build may write (`flow-bootstrap/plan/size-limits.ts`).
 const bootstrapInstructionText = resolvedInstructions.instructions
           .map((instruction) => `${instruction.title}\n${instruction.body}`)
-          .join("\n");
+          .join("\n"); emitAutomationStudioBuildRequest(resolvedInstructions.instructions); // What was asked, in the person's words, for the chat (`activity/build.ts`).
         const bootstrapContext = buildAutomationStudioFlowBootstrapContext({
           registry,
           resolution, size,

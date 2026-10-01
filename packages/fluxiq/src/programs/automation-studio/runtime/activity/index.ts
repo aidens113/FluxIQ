@@ -5,7 +5,7 @@
 export { automationStudioActivityAskPort, automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityWaitedOut, emitAutomationStudioActivityWaitingOnAsk } from "./ask/index.ts";
 export { bindAutomationStudioActivityRun } from "./bind.ts";
 export { boundedAutomationStudioActivity } from "./bounded.ts";
-export { withAutomationStudioBuildActivity } from "./build.ts";
+export { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest, withAutomationStudioBuildActivity } from "./build.ts";
 export { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 export type { AutomationStudioActivityEmission, AutomationStudioActivityFrame, AutomationStudioActivityInput, AutomationStudioActivityListener, AutomationStudioActivityScope, AutomationStudioActivitySnapshot } from "./contracts.ts";
 export { automationStudioActivityHub } from "./default-hub.ts";
