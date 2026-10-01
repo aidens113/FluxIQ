@@ -11,9 +11,17 @@
 // `../../flow-bootstrap/evidence-loop-steps.ts` and
 // `../../service/flow-bootstrap-commands/evidence-trace.ts` agreeing to carry
 // it, and by the tests that hold both shut.
+//
+// The recorder every row enters the record through is declared here too
+// (`automationStudioLlmEvidenceLoopTraceRecorder`), beside the row it writes:
+// it stamps each row with the draft its decision was shown, its progress and
+// its moment, which is what the row's last members are. It was the opening
+// sixty lines of the coordinator's loop body until that file passed Core's
+// 800-line limit (t226).
 
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceRowTransition } from "../decision-handlers/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
 import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
@@ -139,3 +147,87 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
   at?: number;
   usage?: AutomationStudioLlmUsageSummary;
 };
+
+/** The loop's record as it is written: the one door every row goes through, and what that door remembers between rows. */
+export type AutomationStudioLlmEvidenceLoopTraceRecorder = {
+  /**
+   * What this iteration's decision was shown of the draft, stamped onto every
+   * row the iteration records (`./draft-shown.ts`).
+   *
+   * Here for the same reason the moment below is: a row that says what the model
+   * was looking at is a property of the loop rather than a rule someone has to
+   * remember at each of the five push sites. It is cleared at the top of every
+   * iteration, so a row carries the draft of the decision it belongs to or
+   * nothing at all -- and nothing is the honest answer for the rows recorded
+   * before the first decision, which were shown no draft.
+   */
+  draftShown: AutomationStudioLlmEvidenceLoopDraftShown | undefined;
+  /** The draft's revision: one more for every recorded row whose transition changed the draft. */
+  readonly draftRevision: number;
+  /** The capability facts the latest row that observed any carried, which the next such row is compared against. */
+  readonly answerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  /**
+   * One row of the record, stamped with the moment it was recorded.
+   *
+   * **Every row goes through here, which is the point of it existing.** The
+   * stamp was declared downstream and emitted nowhere, so a build's rows
+   * carried no moment at all and a reader could only see one undivided gap:
+   * `run-mug776kx-0214b287` spent 695 seconds over 41 rows and not one of them
+   * said when it happened, so a step that took ten minutes could not be told
+   * from forty that took seventeen seconds each. Stamping at the push rather
+   * than at each row's construction is what makes "every row has one" a
+   * property of the loop instead of a rule someone has to remember at the next
+   * push site.
+   *
+   * `Date.now()` and not the budget's clock: this is a wall-clock moment for a
+   * person reading the record afterwards, while `input.budget.now` is an
+   * elapsed-time source a caller may drive itself.
+   */
+  record(row: AutomationStudioLlmEvidenceLoopTrace, transition?: AutomationStudioLlmEvidenceRowTransition): void;
+};
+
+/** The recorder that writes a loop's rows into `trace`, which the loop hands on as its record. */
+export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTraceRecorder {
+  let draftRevision = 0;
+  let previousAnswerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  const recorder: AutomationStudioLlmEvidenceLoopTraceRecorder = {
+    draftShown: undefined,
+    get draftRevision() { return draftRevision; },
+    get answerability() { return previousAnswerability; },
+    // A closure over `recorder` rather than `this`, so the loop may hand it on detached.
+    record: (row, transition = {}) => {
+      const draftRevisionBefore = draftRevision;
+      if (transition.draftChanged) draftRevision += 1;
+      const answerabilityState: AutomationStudioLlmEvidenceLoopProgress["answerabilityState"] = !transition.answerability
+        ? "unobserved"
+        : !previousAnswerability
+          ? "first_observed"
+          : sameAnswerability(previousAnswerability, transition.answerability) ? "unchanged" : "changed";
+      if (transition.answerability) previousAnswerability = transition.answerability;
+      const progress: AutomationStudioLlmEvidenceLoopProgress = {
+        draftRevisionBefore,
+        draftRevisionAfter: draftRevision,
+        pageState: transition.pageState ?? "unobserved",
+        draftState: transition.draftChanged ? "changed" : "unchanged",
+        answerabilityState
+      };
+      const draftShown = recorder.draftShown;
+      trace.push({
+        ...row,
+        ...(draftShown ? { draft: draftShown } : {}),
+        progress,
+        ...(transition.draftChange ? { draftChange: transition.draftChange } : {}),
+        ...(transition.answerability ? { answerability: transition.answerability } : {}),
+        at: Date.now()
+      });
+    }
+  };
+  return recorder;
+}
+
+function sameAnswerability(left: AutomationStudioLlmEvidenceLoopAnswerability, right: AutomationStudioLlmEvidenceLoopAnswerability): boolean {
+  return left.recordsRequested === right.recordsRequested
+    && left.recordProducerPresent === right.recordProducerPresent
+    && left.recordStorePresent === right.recordStorePresent
+    && left.issueCode === right.issueCode;
+}
