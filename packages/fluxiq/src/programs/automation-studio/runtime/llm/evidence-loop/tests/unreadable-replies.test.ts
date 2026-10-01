@@ -129,13 +129,16 @@ describe("unreadable replies that keep coming", () => {
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
   });
 
-  it("are not counted as unreadable when nothing arrived: a timeout keeps its old path", async () => {
+  it("are not counted as unreadable when nothing arrived: a timeout is the provider not answering", async () => {
+    // Its own path since live run `run-muq05kas-058193f0` (`./provider-unavailable.test.ts`).
     const decide = vi.fn().mockRejectedValue(new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]));
+    const stalled = vi.fn(() => stalledError);
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 20,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => stalledError }
-    })).rejects.toBe(stalledError);
+      unusableDecisions: { maxConsecutive: 8, stalled }
+    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.provider_unavailable" });
     expect(decide).toHaveBeenCalledTimes(3);
+    expect(stalled).not.toHaveBeenCalled();
   });
 });
 

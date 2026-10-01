@@ -195,6 +195,14 @@ export type ClientGatewayActivity = {
   };
   /** The conversation this work speaks through, when it has one. */
   conversationId?: string;
+  /**
+   * The person's own words for what this work was asked to do: a build's
+   * instruction, on the event that says the build has it. A chat shows it as
+   * the person's message where its thread does not already hold it, so what
+   * was asked is on screen however the build was started. Absent on every
+   * other event.
+   */
+  request?: string;
   /** True on the last event of the unit of work (`done` or `failed`). */
   final?: boolean;
   /** ISO timestamp. */

@@ -84,7 +84,9 @@ const FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES: ReadonlySet<string> = new Se
   // A budget ran out before the repair finished: a retry, which continues the kept draft, is the answer.
   "flow_bootstrap.evidence_budget_exhausted",
   // Unreadable replies are the provider's, not the task's: a retry continues the kept draft.
-  "flow_bootstrap.model_replies_unreadable"
+  "flow_bootstrap.model_replies_unreadable",
+  // So is a provider that stopped answering: a retry once it answers continues the kept draft.
+  "flow_bootstrap.provider_unavailable"
 ] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 type ProviderRequestCode = typeof AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES["provider_request"][number];
@@ -163,7 +165,8 @@ export function automationStudioFlowBootstrapFailureState(
 const ENDING_CODES: ReadonlySet<string> = new Set([
   "flow_bootstrap.not_doable",
   "flow_bootstrap.evidence_budget_exhausted",
-  "flow_bootstrap.model_replies_unreadable"
+  "flow_bootstrap.model_replies_unreadable",
+  "flow_bootstrap.provider_unavailable"
 ] satisfies readonly AutomationStudioFlowBootstrapPhaseFailureCode[]);
 
 function providerState(

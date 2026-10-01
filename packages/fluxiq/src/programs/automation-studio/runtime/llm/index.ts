@@ -63,6 +63,13 @@ export {
   automationStudioLlmUnreadableReplySaid,
   type AutomationStudioLlmEvidenceLoopUnreadable
 } from "./unreadable-reply.ts";
+// A provider that stopped answering: what ends a loop on it, and what the
+// build's ending is told (`unanswered-calls.ts`).
+export {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_PROVIDER_UNANSWERED_IN_A_ROW,
+  automationStudioLlmProviderUnanswered,
+  type AutomationStudioLlmEvidenceLoopProviderUnavailable
+} from "./unanswered-calls.ts";
 // The decision history: every decision a loop made and what it answered, the
 // entry that shows it beside the window, and what one decision is shown
 // (`decision-context/`). Public because a caller reading a run's evidence has

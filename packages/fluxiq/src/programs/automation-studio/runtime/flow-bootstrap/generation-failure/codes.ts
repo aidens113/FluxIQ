@@ -187,7 +187,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // The model's replies kept arriving unreadable: each was asked again with
     // a note of what could not be read, until an unbroken run of them stopped
     // the build. Carries `ending`, saying so and how many tries it took (t211).
-    "flow_bootstrap.model_replies_unreadable"
+    "flow_bootstrap.model_replies_unreadable",
+    // The model provider stopped answering: an unbroken run of requests got no
+    // answer, and the build ended at once. Carries `ending`, saying so plainly.
+    "flow_bootstrap.provider_unavailable"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]

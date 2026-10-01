@@ -89,6 +89,7 @@ import {
   type AutomationStudioLlmUnusableDecisionOffers
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
+import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "./unanswered-calls.ts";
 
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
 // bounded by the same three numbers, and a constant both directories read is
@@ -344,6 +345,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // again with the same context and a note of what could not be read, until an
   // unbroken run of them ends the loop as exactly that.
   const unreadable = automationStudioLlmUnreadableReplies(limits.maxUnreadableRepliesInARow);
+  // A call that got no answer at all (`./unanswered-calls.ts`): nothing is
+  // said to the model, which did nothing, and an unbroken run of them ends the
+  // loop as an outage rather than as the model's stall.
+  const unanswered = automationStudioLlmProviderUnansweredCount();
   const unreadableReply = (iteration: number, thrown: AutomationStudioLlmUnusableDecisionError, offers: AutomationStudioLlmUnusableDecisionOffers): "ask_again" | AutomationStudioLlmEvidenceLoopResult => {
     const { issueCodes, reply } = thrown;
     const ended = unreadable.unread(reply?.case ?? issueCodes[0]!);
@@ -511,12 +516,19 @@ export async function runAutomationStudioLlmEvidenceLoop(
       noProgress.shown(shown.map((entry) => entry.callId));
       const raw = await purse.run(() => input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
       unreadable.readable();
+      unanswered.answered();
       decision = automationStudioLlmEvidenceParseDecision(raw);
       refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
     } catch (thrown) { if (purse.refused(thrown)) { accounting.iterations = iteration - 1; return exhausted("budget"); } // Not sent: the cost budget could not pay for it at worst.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
+      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmProviderUnanswered(thrown.issueCodes)) {
+        recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]! });
+        if (!unanswered.unanswered(thrown.issueCodes[0]!)) continue;
+        return failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary());
+      }
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
+        unanswered.answered(); // A reply arrived, unusable or not.
         // A reply that arrived unreadable was still paid for: its cost counts,
         // and its row says which malformed case it was (`./unusable-decision.ts`).
         automationStudioLlmEvidenceLoopAddUsage(accounting, thrown.reply?.usage);

@@ -396,3 +396,45 @@ describe("a repeat that stops one step short, and an act declared as a class nob
     expect(checkAutomationStudioInstructedActs({ instructionText: pickupOrder, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a1.size", step: "d2" }] }, draftSteps: draft }).ok).toBe(true);
   });
 });
+
+// crossborder-marketplace-hub-to-cart (lane A, `t174-w32` D5): the hub's page
+// opens on Space Grey, and pressing a chosen option clears it, after which Add
+// to cart refuses ("Please select a Color."). The honest Flow therefore has no
+// step of its own for the colour. The refusal must not tell the model to press
+// it; naming the step after which the page showed it chosen (the card press
+// that opened the item) answers it.
+describe("a choice the item's page already opens chosen", () => {
+  const HUB = "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.";
+  const START = "http://127.0.0.1:1/scenarios/crossborder-marketplace/";
+  type JsonInput = AutomationStudioFlowDraftStep["input"];
+  const at = (position: number, actionId: string, input: JsonInput, extra: Partial<AutomationStudioFlowDraftStep> = {}) => step(position, { actionId, input, ...extra });
+  // The honest path as the draft holds it: d4 opens the item, d6 the version, d8 the quantity, d10 the coupon, d11 the add.
+  const HONEST: AutomationStudioFlowDraftStep[] = [
+    at(1, "web.output.browser-navigate", { url: START }),
+    at(2, "web.output.dom-type", { target: "search box", text: "usb c hub" }),
+    at(3, "web.output.dom-keypress", { key: "Enter" }),
+    at(4, "web.output.dom-click", { target: "Voltbay Official Store card" }),
+    at(5, "web.output.dom-click", { target: "Minimize chat" }),
+    at(6, "web.output.dom-click", { target: "7-in-1" }),
+    at(7, "web.output.dom-click", { target: "Spain" }),
+    at(8, "web.output.dom-type", { target: "quantity", text: "3" }),
+    at(9, "web.output.dom-click", { target: "Get coupons" }, { effectApplied: false }),
+    at(10, "web.output.dom-click", { target: "Get coupons" }),
+    at(11, "web.output.dom-click", { target: "Add to cart" })
+  ];
+  const CLAIMS = [{ action: "a1", step: "d11" }, { action: "a2", step: "d10" }, { action: "a1.quantity", step: "d8" }, { action: "a1.version", step: "d6" }];
+
+  it("refuses the colour left unnamed, and tells the model not to press an option already chosen but to name the step after which it showed", () => {
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUB, result: { summary: "x", acts: CLAIMS }, draftSteps: HONEST, startLocation: START });
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing.map((act) => `${act.id}:${act.reason}`)).toEqual(["a1.colour:no_step_named"]);
+    expect(verdict.instruction).toContain("If the item's page already shows that option chosen, do not press it");
+    expect(verdict.instruction).toContain("the step after which the page showed it chosen, such as the one that opened the item's page");
+  });
+
+  it("accepts the colour named by the step that opened the item's page", () => {
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUB, result: { summary: "x", acts: [...CLAIMS, { action: "a1.colour", step: "d4" }] }, draftSteps: HONEST, startLocation: START });
+    expect(verdict.ok).toBe(true);
+  });
+});
