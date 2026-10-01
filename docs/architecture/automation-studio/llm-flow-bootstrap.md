@@ -664,12 +664,13 @@ entries follow every evidence entry: `[...evidence, history, draft, budget]`.
 These diagnostics retain only bounded provider accounting, the content-free
 evidence trace, and, where a plan was refused, at most 16 `issueCodes`. The
 trace holds tool IDs, byte counts, effect state, and categorical result codes.
-Successful repaired builds and the three explicit unfinished endings retain
-every round's trace, with paid decisions numbered across the build and each
-round's opening observation left at iteration zero (t214). Their accounting is
-the whole build's. The current `ended` pass-through (cancellation or a refused
-configuration) still exposes its final loop's trace; extending that outcome is
-a separate pending fix, not a property of this baseline.
+Every build ending retains the trace from every live round, including a
+cancelled build, a refused configuration, and cancellation during judgement.
+Decisions are numbered across the build; each round's opening observation
+keeps iteration zero. Diagnostics use whole-build accounting beside these
+rows, including permission and person-needed endings after earlier rounds.
+The final round's loop result remains local to that round; its caller uses
+the build's accumulated trace when publishing a failure or storing a Flow.
 A trace row also carries bounded, content-free convergence facts: the measured
 draft shape shown to the decision; build-local draft revisions and stable step
 ids; applied/refused/kept amendment counts; page-state changed/unchanged/

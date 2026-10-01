@@ -1620,8 +1620,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           });
           // Not doable, or a budget ran out first: said to the person as that, with the Flow so far kept.
           if (built.kind === "unfinished") throw flowBootstrapBuildEndingFailure(built.ending, built.progress, loopAccounting(built.accounting), built.kept, built.lastIssueCodes);
-          const loop = built.loop;
-          // A person who did not get past a check is why the loop stopped, whatever else it had raised.
+          const loop = built.kind === "ended" ? { ...built.loop, trace: built.trace, accounting: built.accounting } : built.loop; // Keep every round before publishing the person/permission ending.
           const personStopped = personNeeded.endedOnIntervention(loop, loopAccounting(loop.accounting));
           if (personStopped && !loop.ok) throw personStopped;
           // A request ends the build only when the build produced nothing. A
@@ -1631,7 +1630,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           const askedPermission = permissions.endedOnRequest(loop, loopAccounting(loop.accounting));
           if (askedPermission && !accepted.verdict) throw askedPermission;
           if (!loop.ok) throw await keeper.exhausted(loop, (kept) => flowBootstrapEvidenceLoopFailure(loop, loopAccounting(built.accounting), kept));
-          evidenceTrace = built.kind === "finished" ? built.trace : loop.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
+          evidenceTrace = built.trace; permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);
           failureStage = "provider_output_validation";
           accounting = loopAccounting(built.accounting); // Every round's spend, repairs included.
           failureAccounting = accounting;
