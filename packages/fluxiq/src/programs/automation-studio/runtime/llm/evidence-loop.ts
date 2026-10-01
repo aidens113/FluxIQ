@@ -25,6 +25,7 @@ import {
   automationStudioLlmEvidenceAskedAgain,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
+  automationStudioLlmEvidenceHandleRefusedRepeat,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
   automationStudioLlmEvidenceLookWithdrawal,
@@ -90,6 +91,7 @@ import {
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "./unanswered-calls.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceRepeatGuard } from "./repeat-guard/index.ts";
 
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
 // bounded by the same three numbers, and a constant both directories read is
@@ -385,14 +387,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accountEvidence,
     // What the gate did is also what the history records of a completion attempt.
     showEvidence: (entry) => { evidence.push(entry); if (entry.toolId === AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID) handling.dryRunSeen.verdict = entry.value; },
-    targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; },
+    targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); },
     reusedClean: () => { handling.dryRunSeen.reused = true; },
     ...(input.signal ? { signal: input.signal } : {})
   });
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), looks,
+    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard(), looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored
   };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
@@ -432,7 +434,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         answeredRequests.set(automationStudioLlmEvidenceCanonicalJson([counters.mutationEpoch, initialTool.toolId, initialInput]), callId);
         observationEpochs.set(initialTool.toolId, counters.attemptEpoch);
         latestObservations.set(initialTool.toolId, callId);
-        if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
+        if (stateAfter !== undefined) { handling.callStates.set(callId, stateAfter); handling.repeats.seen(stateAfter); }
       }
       const initialRecord = callRecord(initialTool, initialInput, execution);
       if (initialRecord.effect === "observe" && initialRecord.proposes === false) looks.sawLook(initialTool.toolId, initialRecord.actionId);
@@ -604,6 +606,17 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // spent on something else. The budget is still what ran out, and the paid decision leaves its row (`./evidence-loop/final-decision-row.ts`).
     if (finalDecision) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
+    // The same call that already failed or changed nothing on this same page is
+    // refused unrun, before the repeat policy, so every action repeat is
+    // refused in one place and stalls the round at the third in a row; a look
+    // is never in that record and is still answered below (`repeat-guard/outcomes.ts`).
+    const triedHere = wrappingUp ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
+    if (triedHere) {
+      const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
+      if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
+      if (next.kind === "end") return next.result;
+      continue;
+    }
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
     const tool = toolsById.get(decision.toolId)!;
@@ -677,13 +690,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // An action this build saw only look and propose nothing: what withdrawal withholds.
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
+    // What this call did on the page it found: a call that failed or changed nothing is not made again there (`repeat-guard/outcomes.ts`).
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason });
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
       latestObservations.set(tool.toolId, callId);
     }
     // A call ran, so a note about an earlier answer from memory or an unusable reply
     // is about a moment the build has left; its trace is the history row.
-    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
+    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
     evidence.push({ callId, toolId: decision.toolId, value });
     const refusedCall = typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false;
     history.record(iteration, {
