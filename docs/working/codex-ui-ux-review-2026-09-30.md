@@ -11,10 +11,15 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
+Push update (2026-10-01): on explicit user request, both repositories' existing
+checkpoints were pushed to origin/task/t224-codex-ui-ux-review (extension
+da6477b5, Core e05597bb). No dev/main update, merge, force push or PR occurred.
+Full current Core gates remain pending; Claude retains integration ownership.
+
 Paused at the user's request to wind down with6% credits remaining. All three
 workers are stopped; all supervisor/worker check commands are closed. No new
 assignment is active. Paired task t224 worktrees/branches are preserved for
-resume; Claude owns integration. Root made no merge/push and touched no main
+resume; Claude owns integration. At wind-down, root made no merge/push and touched no main
 checkout, protected implementation, live browser/Lab/provider/panel or private
 data. The newly written caret brief was revoked before dispatch; no caret
 source/test edits occurred.
