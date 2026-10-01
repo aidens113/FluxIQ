@@ -47,7 +47,9 @@
 // an internal id, text the model never saw -- is withheld, and the request says
 // "a control it cannot name here" instead. Withheld, not refused: the person is
 // still asked, with the action, the consequence and the reason intact, and
-// nothing new leaves the domain to ask them.
+// nothing new leaves the domain to ask them. The gate keeps a bounded amount of
+// what was shown, forgetting the oldest first, so a name shown only long ago
+// may be withheld and a name on the page in front of the model never is.
 
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
@@ -70,7 +72,13 @@ import {
 /** No class instructed: the answer when there is no instruction to read, or reading it failed. */
 const NOTHING_INSTRUCTED: readonly AutomationStudioInstructedConsequence[] = Object.freeze([]);
 
-/** How much shown text a gate keeps to find names in. Past it, names are withheld rather than the memory grown. */
+/**
+ * How much shown text a gate keeps to find names in. Past it, the text shown
+ * longest ago is forgotten first, so what the model saw most recently -- the
+ * page it is acting on -- can always be named. Until t195-w20g the gate stopped
+ * recording at the budget instead, so on a long build the last control shown,
+ * "Place order", was asked about unnamed and a person was right to refuse it.
+ */
 const MAX_SHOWN_CHARACTERS = 4_000_000;
 
 export type AutomationStudioActionPermissionGateInput = {
@@ -104,7 +112,12 @@ export type AutomationStudioActionPermissionGateInput = {
 
 export class AutomationStudioActionPermissionGate {
   private readonly permitted: Set<AutomationStudioActionConsequence>;
-  private readonly shown: string[] = [];
+  /**
+   * Every distinct string shown, normalised, oldest first. A string shown again
+   * moves to the newest end rather than counting twice, so a header and footer
+   * on every page cost the budget once and are never the first forgotten.
+   */
+  private readonly shown = new Set<string>();
   private shownCharacters = 0;
   private readonly records: AutomationStudioActionDeclarationRecord[] = [];
   /** Raised and not declined: still waiting, or nobody answered. While it stands, no new request is raised. */
@@ -230,19 +243,26 @@ export class AutomationStudioActionPermissionGate {
   observe(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult | undefined): void {
     const pending: unknown[] = [shownValue(execution)];
     const seen = new Set<object>();
-    while (pending.length && this.shownCharacters < MAX_SHOWN_CHARACTERS) {
+    while (pending.length) {
       const item = pending.pop();
       if (typeof item === "string") {
         const text = normalised(item);
-        if (text) {
-          this.shown.push(text);
-          this.shownCharacters += text.length;
-        }
+        if (!text) continue;
+        if (this.shown.delete(text)) this.shownCharacters -= text.length;
+        this.shown.add(text);
+        this.shownCharacters += text.length;
         continue;
       }
       if (!item || typeof item !== "object" || seen.has(item)) continue;
       seen.add(item);
       for (const child of Array.isArray(item) ? item : Object.values(item)) pending.push(child);
+    }
+    // Forget the oldest first. The newest string is always kept, even alone
+    // over the budget: it is what the model is looking at now.
+    for (const oldest of this.shown) {
+      if (this.shownCharacters <= MAX_SHOWN_CHARACTERS || this.shown.size <= 1) break;
+      this.shown.delete(oldest);
+      this.shownCharacters -= oldest.length;
     }
   }
 
@@ -363,9 +383,16 @@ export class AutomationStudioActionPermissionGate {
     return outcome.entries;
   }
 
+  /** Whether the name appears in anything the model was shown and the gate still keeps. */
+  private wasShown(name: string): boolean {
+    if (this.shown.has(name)) return true;
+    for (const text of this.shown) if (text.includes(name)) return true;
+    return false;
+  }
+
   /** The name as a request may carry it, or `null` when it was never shown. */
   private carriedName(name: string): string | null {
-    if (!this.shown.some((text) => text.includes(name))) return null;
+    if (!this.wasShown(name)) return null;
     const bounded = name.length > AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX
       ? `${name.slice(0, AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX - 3).trimEnd()}...`
       : name;

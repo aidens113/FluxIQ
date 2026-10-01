@@ -171,6 +171,22 @@ describe("an unreproducible step keeps blocking completion until it replays or l
   });
 });
 
+// Run 33 (`run-munwwkwq-064c4203`, t195-w19a B1): the kept consent press `d3`
+// came back unreproducible in both dry runs because the site remembered the
+// decline. Its host now answers `remembered` for a target gone from the very
+// page the step acted on (t195-w20b).
+describe("a step the site remembers", () => {
+  it("passes the gate on the first completion, stays in the draft as it is, and is recorded as remembered", async () => {
+    const steps = [step(2), step(3), step(4)];
+    const run = harness(steps, { 3: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.remembered });
+    const first = await run.complete();
+    expect(first.answer).toBeUndefined();
+    expect(first.ran).toEqual(["dryrun.1.reset", "dryrun.1.2", "dryrun.1.3", "dryrun.1.4"]);
+    expect(steps.map((each) => [each.disposition, each.routing?.kind ?? null])).toEqual([["kept", null], ["kept", null], ["kept", null]]);
+    expect(steps[1]?.replayed).toMatchObject({ status: "replayed", resultCode: "core.replay.remembered" });
+  });
+});
+
 // The cap on replaying one unchanged draft, over presses that name only a target.
 function pressOn(position: number, target: string): AutomationStudioFlowDraftStep {
   return {

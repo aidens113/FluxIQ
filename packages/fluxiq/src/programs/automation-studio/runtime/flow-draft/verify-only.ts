@@ -51,24 +51,41 @@
 // **What a withheld effect excuses, and what it does not.** The dry run starts
 // from the build's own state, in which every lasting effect already happened
 // while exploring, so a later step normally finds what it needs whether or not
-// the check withheld the effect again. The exception is a step whose own run
-// moved the target: a submit that led to a confirmation page, a save that
-// opened the saved list. Withheld, it leaves the steps after it on the page
-// before the move, and their failure is the dry run's, not the Flow's. So a
-// step that does not replay after a verified step is excused only when that
-// verified step moved the target -- when the next proposed step found the
-// target somewhere other than where this one did (the two `replay.from`
-// values differ; Core compares them whole and reads neither). An excused step
+// the check withheld the effect again. There are two exceptions, and a
+// verified step that is either one excuses every step after it that does not
+// replay:
+//
+//   - it moved the target: a submit that led to a confirmation page, a save
+//     that opened the saved list. Withheld, it leaves the steps after it on the
+//     page before the move. Core sees a move when the next proposed step found
+//     the target somewhere other than where this one did (the two
+//     `replay.from` values differ; Core compares them whole and reads
+//     neither). Only the next step: nearly every later step of a Flow stands
+//     on some other page, and comparing against any of them would let every
+//     verified step excuse everything after it.
+//   - it declared a class a person is asked about -- moving money, deleting,
+//     sending or publishing (`../action-permissions/destructive.ts`). Such an
+//     act is never performed in a dry run, and what comes after it is what the
+//     act made: the shield after a submitted application and the confirmation
+//     behind it, both on the form's own page (t195-w19d, C4), the receipt
+//     after an order. Exploring did the act once, but whether the site still
+//     shows its aftermath is not something a dry run can arrange without
+//     doing it again.
+//
+// Either way their failure is the dry run's, not the Flow's. An excused step
 // is marked `withheldBy`, so a reader sees exactly which verdicts rest on the
-// withheld effect. A verified step that did not move the target excuses
-// nothing: a failure after it is a failure.
+// withheld effect. A verified step that is neither excuses nothing: a failure
+// after it is a failure.
 //
 // Core knows no domain's targets. It asks; the host answers in the replay's
 // closed vocabulary, with two codes for a step that was checked and not run
-// (`../llm/node-tools/replay.ts`).
+// (`../llm/node-tools/replay.ts`), and one for a replayed step whose target
+// the site's memory removed (`./site-memory.ts`).
 
 import type { JsonValue } from "../../../../core/index.ts";
+import { isAutomationStudioDestructiveActionConsequence } from "../action-permissions/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome } from "./dry-run.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE } from "./site-memory.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 
 /** The code a host answers a check with when the step could run now and was not run. */
@@ -124,13 +141,16 @@ export function automationStudioFlowDraftReplayOutcomeVerified(outcome: Automati
 
 /**
  * The word an outcome is shown under: `verified` or `present` for a step that
- * was checked and not run, its status otherwise. A host that answered a check
- * by running the step says `replayed`, which is what happened.
+ * was checked and not run, `remembered` for a replayed step whose target the
+ * site's memory removed from its own page (`./site-memory.ts`), its status
+ * otherwise. A host that answered a check by running the step says
+ * `replayed`, which is what happened.
  */
 export function automationStudioFlowDraftReplayOutcomeWord(outcome: AutomationStudioFlowDraftReplayOutcome): string {
   if (automationStudioFlowDraftReplayOutcomeVerified(outcome)) return "verified";
-  if (outcome.mode === "verify" && outcome.status === "replayed" && outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE) return "present";
-  return outcome.status;
+  if (outcome.status !== "replayed") return outcome.status;
+  if (outcome.mode === "verify") return outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE ? "present" : outcome.status;
+  return outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE ? "remembered" : outcome.status;
 }
 
 /**
@@ -152,4 +172,19 @@ export function automationStudioFlowDraftStepMovedTarget(step: AutomationStudioF
   const there = next?.replay?.from;
   if (here === undefined || there === undefined) return false;
   return JSON.stringify(here) !== JSON.stringify(there);
+}
+
+/**
+ * Whether a verified step's withheld effect excuses the steps after it that do
+ * not replay: it moved the target (`automationStudioFlowDraftStepMovedTarget`),
+ * or it declared a class a person is asked about, which a dry run never
+ * performs (see the header). Read from the declaration the Flow keeps
+ * (`ranWith`) before what the model wrote, as the replay mode is; a shape that
+ * is neither a list nor a comma string names no class and excuses nothing.
+ */
+export function automationStudioFlowDraftStepWithholdsLater(step: AutomationStudioFlowDraftStep, next: AutomationStudioFlowDraftStep | undefined): boolean {
+  if (automationStudioFlowDraftStepMovedTarget(step, next)) return true;
+  const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
+  const words = Array.isArray(declared) ? declared : typeof declared === "string" ? declared.split(",") : [];
+  return words.some((word) => typeof word === "string" && isAutomationStudioDestructiveActionConsequence(word.trim().toLowerCase()));
 }

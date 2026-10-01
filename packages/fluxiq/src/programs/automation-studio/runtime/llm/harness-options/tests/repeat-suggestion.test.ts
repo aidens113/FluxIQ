@@ -37,6 +37,18 @@ describe("the amendment an act that needs a repeat is told", () => {
     expect(suggestion?.instruction).toContain("steps 3 through 4 run once for every row step 1 lists");
   });
 
+  // Withdraw run 3 (`run-munnyvbr-11c28a0f`): the repeat ended at the row's
+  // press and the confirmation it opens ran once after the loop. The answer is
+  // the same repeat, carried through the step after it.
+  it("carries a span that stops short through the step after it, from the repeat's own step and over its own listing", () => {
+    const draftSteps = [step(1, "web.output.dom-extract_list"), { ...step(2, "web.output.dom-click"), routing: { kind: "repeat" as const, over: "d1", through: "d2" } }, step(3, "web.output.dom-click")];
+    const stopsShort = { acts: [{ id: "a1", kind: "submit", verb: "withdraw", quote: "withdraw every request", plural: true, reason: "span_stops_short", step: "d2", after: 3 }] };
+    const suggestion = automationStudioRepeatSuggestion({ missingActs: stopsShort, draftSteps, registry, resolution });
+
+    expect(suggestion?.amendment).toEqual({ step: 2, change: "repeat", over: 1, through: 3 });
+    expect(suggestion?.instruction).toContain("steps 2 through 3 run once for every row step 1 lists");
+  });
+
   it("suggests nothing without a listing before the claimed step, or for any other reason", () => {
     expect(automationStudioRepeatSuggestion({ missingActs: needsRepeat("d2"), draftSteps: [step(1, "web.output.browser-navigate"), step(2, "web.output.dom-click")], registry, resolution })).toBeUndefined();
     expect(automationStudioRepeatSuggestion({ missingActs: { acts: [{ id: "a1", reason: "step_not_kept", step: "d3" }] }, draftSteps: [step(2, "web.output.dom-extract_list"), step(3, "web.output.dom-click")], registry, resolution })).toBeUndefined();

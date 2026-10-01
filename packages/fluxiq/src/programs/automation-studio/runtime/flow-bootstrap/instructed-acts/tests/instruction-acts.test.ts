@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { automationStudioInstructedActs } from "../instruction-acts.ts";
 
 // The ten realistic sites' instructions, copied word for word from the web
-// repository's `apps/scenario-lab/src/scenarios/*/live-tasks.ts` on 2026-09-28.
+// repository's `apps/scenario-lab/src/scenarios/*/live-tasks.ts` on 2026-09-28;
+// the bigbox order and the everything-store purchase were added on 2026-10-01,
+// when every task there was swept again (t195-w20d).
 // They are the corpus the vocabulary was written against, so they pin it in
 // both directions: every consequential task yields its acts, and no extraction
 // task yields any.
@@ -23,6 +25,8 @@ const CONSEQUENTIAL: ReadonlyArray<[string, string, Array<[string, string]>]> = 
   ["professional withdraw", "On Guildline, withdraw every connection request I sent a month or more ago that is still waiting for an answer. Leave the newer requests alone, and don't touch invitations to follow a page or subscribe to a newsletter, or anything people have sent me.", [["submit", "withdraw"]]],
   ["crossborder buy hub", "On Farbazaar, buy two of the Voltbay USB-C hub sold by Voltbay Official Store: Space Grey, the 7-in-1 version, shipped from Spain, with standard shipping. Collect and use that store's coupon, and pay with my saved Visa card. Then give me the order confirmation with columns order, item, options, quantity and total.", [["submit", "buy"], ["claim", "collect"]]],
   ["everything store narrow", "Search the store for wireless earbuds, narrow the results to Brightaisle Plus items, and collect every product on the first page of results, leaving out sponsored placements, into a table with columns name, price, rating and url.", [["set", "narrow"]]],
+  ["bigbox pickup order", "Order one pack of ValueRidge Essentials Select-A-Size Paper Towels in the 6 Double Rolls size for pickup at my current store, and nothing else: whatever is already in my cart should be saved for later, not bought and not deleted. Check out as a guest as Dana Whitfield, email dana.whitfield@example.com, phone 555-014-2290, take the earliest pickup time on offer, and pay at pickup. Once the order is placed, give me a one-row table with columns order, item, quantity, total and pickup: the order number, the item as the confirmation names it, how many, the order total written like $12.97, and the pickup window exactly as the confirmation writes it.", [["submit", "order"]]],
+  ["everything store buy kettle", "Buy one new Tidewell electric kettle, 1.7 litre, in matte black, sold by Brightaisle itself, delivered free with standard delivery to my home address and paid with my Visa. I want only the kettle: nothing else ordered, nothing signed up for, and the other things in my cart left where they are.", [["submit", "buy"]]],
   ["job board apply", "Apply for the Senior Rust Engineer job at Quillmark that is fully remote in the UK, on Quillmark's own careers site. Once the application has been sent, give me its confirmation as a table with columns role, company and reference.", [["submit", "apply"]]]
 ];
 
@@ -132,6 +136,49 @@ describe("an act asked for every member of a set", () => {
     const acts = automationStudioInstructedActs(instruction);
     expect(acts.length).toBeGreaterThan(0);
     expect(acts.some((act) => act.plural)).toBe(false);
+  });
+});
+
+// Withdraw audit R2 (`run-munnyvbr-11c28a0f`): a withdrawal declared
+// `modify_existing` was never asked about. An act carries the class its verb
+// names, from a closed list, so the check can hold its steps to declaring it.
+describe("the class of consequence an act's verb names", () => {
+  const CLASSES: Record<string, Array<string | undefined>> = {
+    "crossborder buy hub": ["move_money", undefined],
+    "bigbox pickup order": ["move_money"],
+    "everything store buy kettle": ["move_money"],
+    "local-classifieds offer": ["send_or_publish"],
+    "social group post": ["send_or_publish"],
+    "professional withdraw": ["delete"],
+    "job board apply": ["send_or_publish"]
+  };
+
+  it.each(CONSEQUENTIAL)("gives exactly the intended classes in %s", (label, instruction) => {
+    const acts = automationStudioInstructedActs(instruction);
+    expect(acts.map((act) => act.consequence)).toEqual(CLASSES[label] ?? acts.map(() => undefined));
+    for (const act of acts) if (!act.consequence) expect(act).not.toHaveProperty("consequence");
+  });
+
+  it("reads the withdrawal as delete", () => {
+    const [withdraw] = automationStudioInstructedActs("Withdraw every connection request I sent a month or more ago.");
+    expect([withdraw?.verb, withdraw?.consequence, withdraw?.plural]).toEqual(["withdraw", "delete", true]);
+  });
+});
+
+// Pickup audit #5 (`run-muny5y17-a927214b`): "Order one pack ... Check out as
+// a guest ..." was read as an order and a check-out, two acts wanting two
+// steps, when Place order is the one press that does both.
+describe("a check-out after an order", () => {
+  it("is the same transaction as the order, which keeps its size", () => {
+    const acts = automationStudioInstructedActs("Order one pack of ValueRidge Essentials Select-A-Size Paper Towels in the 6 Double Rolls size for pickup at my current store, and nothing else: whatever is already in my cart should be saved for later, not bought and not deleted. Check out as a guest as Dana Whitfield, email dana.whitfield@example.com, phone 555-014-2290, take the earliest pickup time on offer, and pay at pickup. Once the order is placed, give me a one-row table with columns order, item, quantity, total and pickup: the order number, the item as the confirmation names it, how many, the order total written like $12.97, and the pickup window exactly as the confirmation writes it.");
+    expect(acts.map((act) => [act.id, act.kind, act.verb])).toEqual([["a1", "submit", "order"]]);
+    expect(acts[0]?.requires?.map((choice) => [choice.id, choice.value])).toEqual([["a1.size", "6 Double Rolls"]]);
+    expect(automationStudioInstructedActs("Buy the kettle, then checkout as a guest.").map((act) => act.verb)).toEqual(["buy"]);
+  });
+
+  it("is still an act asked alone, or before the order", () => {
+    expect(automationStudioInstructedActs("Check out the cart as a guest.").map((act) => act.verb)).toEqual(["check out"]);
+    expect(automationStudioInstructedActs("Check out as a guest. Then order a second one.").map((act) => act.verb)).toEqual(["check out", "order"]);
   });
 });
 

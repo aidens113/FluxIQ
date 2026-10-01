@@ -196,23 +196,41 @@ function repeat(input: {
   if (!over) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats over a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with over naming the kept step just before it whose rows it walks.` };
   if (!through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with through naming the last kept step of the span.` };
   if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through step ${through.step.position}, which comes before it. through names the last step of the span, at or after step ${entry.step.position}; put steps in order with an amend_draft reorder first.` };
-  if (overAt !== input.index - 1) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which has to be the step immediately before the span. Move it there with an amend_draft reorder, or say repeat with no over to mean the step before this one.` };
+  // `over` has to come before the span, and nothing more. Steps between the
+  // list and the span -- a "Not now" that appeared while the list was being
+  // tuned, a rerun put back at its old place, an optional step's join -- run
+  // once, before the loop. Demanding adjacency refused that shape at
+  // completion, and the advice it gave ("say repeat with no over") made the
+  // dismissal the loop's source: a while-loop on a press that passed every gate.
+  if (overAt >= input.index) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which does not come before it. The list step a span walks runs before the span: move step ${over.step.position} ahead of step ${entry.step.position} with an amend_draft reorder.` };
   const body = [...input.byId.values()].slice(input.index, throughAt + 1);
   if (body.some((candidate, offset) => offset > 0 && candidate.step.routing !== undefined)) {
     return { code: "flow_draft.repeat_body_is_routed", message: `Step ${entry.step.position} repeats a span in which another step also says when it runs. Say it once, on the first step of the span.` };
   }
+  // The list step's own place in the Flow, and the last thing the Flow runs
+  // before the span, which is where the loop is entered from. They are one
+  // entry when nothing stands between them.
+  const sourceLabel = input.label(routing.over);
+  const source = input.consumed.has(routing.over) ? undefined : emitted.find((candidate) => candidate.label === sourceLabel);
   const head = emitted[emitted.length - 1];
-  if (!head || head.label !== input.label(routing.over)) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over a step that is not the one before it in the Flow.` };
+  if (!source || !head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which another step already runs inside its own branch or loop, so the Flow does not reach it on its own line. Name a list step the Flow runs on its own line before step ${entry.step.position}.` };
   const loop = input.nextDerived("loop");
   const exit = input.nextDerived("exit");
   const rows = listPort(over, input.registry, input.resolution);
   const first = input.label(automationStudioFlowDraftStepId(body[0]!.step));
+  // A check is asked again on every pass, so it is lifted into the loop
+  // (below); lifting it over steps written after it would run them before it.
+  if (!rows && source !== head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats while step ${over.step.position} succeeds, and that check is asked again on every pass, so it has to be the step immediately before the span. Move step ${over.step.position} there with an amend_draft reorder.` };
   if (rows) {
     // A list is read once and walked. The rows go into For Each's own list
     // port by name: taking whichever way in was free would wire the rows as
     // the path and the Flow would walk nothing.
     const each = input.nextDerived("each");
-    head.branches = [...head.branches, branch("success", loop, "branches"), branch(rows, each, "items")];
+    // The rows leave the list step itself, which keeps its fall-through into
+    // whatever runs after it; the loop is entered from the last step before
+    // the span, so the steps between run once, before it.
+    if (source !== head) source.branches = [...source.branches, branch(rows, each, "items")];
+    head.branches = [...head.branches, branch("success", loop, "branches"), ...(source === head ? [branch(rows, each, "items")] : [])];
     head.routed = true;
     // Each pass's row goes to every step of the span that can act on it --
     // one whose node declares an `item` input -- so a pass clicks the row it

@@ -45,6 +45,8 @@ export type AutomationStudioInstructedActTodo =
   | "step_only_arrives"
   | "step_is_optional"
   | "act_needs_repeat"
+  | "span_stops_short"
+  | "act_consequence_undeclared"
   /** A choice: the step said to make it is the act's own press, and nothing it was given sets the choice. */
   | "choice_is_the_act_step"
   /** A choice: the step said to make it already does another act, and nothing it was given sets the choice. */
@@ -91,6 +93,8 @@ export function automationStudioInstructedActsChecklist(input: {
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
     startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
+  // A kept step that says it does an act or makes a choice is that act's step, as the check reads the draft's claims.
+  const claimed = (step: AutomationStudioFlowDraftStep): boolean => step.disposition === "kept" && (step.acts?.length ?? 0) > 0;
   const used = new Set<AutomationStudioFlowDraftStep>();
   // The step each act is done by, so a choice given the same one is told it is its act's press.
   const actSteps = new Map<string, AutomationStudioFlowDraftStep>();
@@ -99,7 +103,7 @@ export function automationStudioInstructedActsChecklist(input: {
     const item: AutomationStudioInstructedActChecklistItem = { id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}) };
     const saying = sayingSteps(input.draftSteps, act.id);
     for (const step of saying) {
-      const fault = automationStudioInstructedActStepFault(act, step, input.draftSteps, onlyArrives);
+      const fault = automationStudioInstructedActStepFault(act, step, input.draftSteps, onlyArrives, claimed);
       if (!fault && !used.has(step)) {
         used.add(step);
         actSteps.set(act.id, step);
@@ -107,13 +111,13 @@ export function automationStudioInstructedActsChecklist(input: {
       }
     }
     const first = saying[0];
-    const fault = first ? automationStudioInstructedActStepFault(act, first, input.draftSteps, onlyArrives) : undefined;
+    const fault = first ? automationStudioInstructedActStepFault(act, first, input.draftSteps, onlyArrives, claimed) : undefined;
     return fault && first ? { ...item, todo: fault, step: first.position } : { ...item, todo: "no_step_added" };
   });
   return items.map((item, index) => {
     const requires = acts[index]!.requires;
     if (!requires?.length) return item;
-    return { ...item, choices: requires.map((choice) => choiceItem(choice, input.draftSteps, { used, actStep: actSteps.get(choice.of), onlyArrives })) };
+    return { ...item, choices: requires.map((choice) => choiceItem(choice, input.draftSteps, { used, actStep: actSteps.get(choice.of), onlyArrives, claimed })) };
   });
 }
 
@@ -132,14 +136,19 @@ function sayingSteps(steps: readonly AutomationStudioFlowDraftStep[], id: string
 function choiceItem(
   choice: AutomationStudioInstructedChoice,
   steps: readonly AutomationStudioFlowDraftStep[],
-  held: { used: Set<AutomationStudioFlowDraftStep>; actStep: AutomationStudioFlowDraftStep | undefined; onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean }
+  held: {
+    used: Set<AutomationStudioFlowDraftStep>;
+    actStep: AutomationStudioFlowDraftStep | undefined;
+    onlyArrives: (step: AutomationStudioFlowDraftStep) => boolean;
+    claimed: (step: AutomationStudioFlowDraftStep) => boolean;
+  }
 ): AutomationStudioInstructedChoiceChecklistItem {
   const item: AutomationStudioInstructedChoiceChecklistItem = { id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote };
   // A choice is a setting, held to what any act of setting is and never repeated.
   const asAct: AutomationStudioInstructedAct = { id: choice.id, kind: "set", verb: choice.choice, quote: choice.quote };
   let named: { step: AutomationStudioFlowDraftStep; todo: AutomationStudioInstructedActTodo } | undefined;
   for (const step of sayingSteps(steps, choice.id)) {
-    const fault = automationStudioInstructedActStepFault(asAct, step, steps, held.onlyArrives);
+    const fault = automationStudioInstructedActStepFault(asAct, step, steps, held.onlyArrives, held.claimed);
     const shared = !fault && held.used.has(step) && !automationStudioInstructedChoiceSetBy(step, choice);
     if (!fault && !shared) {
       held.used.add(step);
