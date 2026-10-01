@@ -676,9 +676,12 @@ describe("creating a Flow through an exploration, with no grant", () => {
       // under, and every step listed with its argument.
       expect(observation.draft).toMatchObject({
         present: true,
-        // Decision 24's look falls in the wrap-up and is not run, so it adds no
-        // step; decision 25's rerun amendment is offered there, and does.
-        steps: observation.iteration - 4 - (observation.iteration > 24 ? 1 : 0),
+        // Decision 24's look falls in the wrap-up and is not run, but it holds
+        // a step number, so it is listed as `disposition: look` like every
+        // step that is not of a Flow's kind (t193 C7, `flow-draft/entry.ts`:
+        // every number an amendment can name is one the model was shown);
+        // decision 25's rerun amendment is offered there, and adds a step too.
+        steps: observation.iteration - 4,
         unlisted: 0,
         withoutInput: 0,
         inputTooLarge: 0

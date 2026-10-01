@@ -113,6 +113,17 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out";
 };
 
+/**
+ * The reason an `add`, a `keep` or an act on a look is refused under.
+ *
+ * Borrowed from the routing refusals -- "it named a step the Flow does not
+ * contain" -- because a reason of its own has to be explained in
+ * `../llm/draft-amendment-feedback.ts` and allowed in
+ * `../flow-bootstrap/evidence-loop-steps.ts`, which other work held when this
+ * landed. A dedicated reason replaces it here, in this one place.
+ */
+const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "not_a_kept_step";
+
 /** What the model is shown of the amendment shape, as a decision variant's schema. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
   type: "object",
@@ -169,8 +180,19 @@ export function applyAutomationStudioFlowDraftAmendments(
     // refused presses; a drop "applied" and looked like progress, and a keep
     // was refused as "already so" -- false in the model's reading, since the
     // draft showed the step out -- and was sent again.
-    if (automationStudioFlowDraftStepIsAction(step) && step.effectApplied === false) {
+    // A failed press the caller marked as no step of a Flow is the same failed
+    // press, and the draft entry shows it the same way (`./entry.ts`).
+    if ((automationStudioFlowDraftStepIsAction(step) || step.effect === "mutate") && step.effectApplied === false) {
       refused.push({ step: amendment.step, reason: "did_not_work" });
+      continue;
+    }
+    // A step that is not of the kind a Flow is made of -- a look -- can never
+    // be in it, so putting it in or saying it does an act changes nothing true.
+    // Live run `run-mup2i28c-6c7fc209` sent `5 add a2` about the `snap.store`
+    // look and had it applied: the look was recorded as adding two packs of
+    // towels. The draft entry lists it as `disposition: look` (`./entry.ts`).
+    if (!automationStudioFlowDraftStepIsAction(step) && (amendment.change === "add" || amendment.change === "keep" || amendment.act !== undefined)) {
+      refused.push({ step: amendment.step, reason: NOT_A_FLOW_STEP });
       continue;
     }
     if (amendment.change === "reorder") {

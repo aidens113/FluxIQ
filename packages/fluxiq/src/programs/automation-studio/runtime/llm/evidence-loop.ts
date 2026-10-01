@@ -23,7 +23,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
   automationStudioLlmEvidenceAskedAgain,
-  automationStudioLlmEvidenceHandleAmendment,
+  automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
@@ -32,7 +32,7 @@ import {
   automationStudioLlmEvidenceShowVerifiedRepeat,
   type AutomationStudioLlmEvidenceAnswerCheckOutcome,
   type AutomationStudioLlmEvidenceDecisionHandlerContext,
-  type AutomationStudioLlmEvidenceLoopCounters,
+  type AutomationStudioLlmEvidenceLoopCounters, type AutomationStudioLlmEvidenceRerunHeld,
   type AutomationStudioLlmEvidenceRowTransition as RowTransition
 } from "./decision-handlers/index.ts";
 // What the loop's contract is made of, and the pieces of the loop that have a
@@ -533,6 +533,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // is never a repeat however identical it looks, and the step it replaces.
     let rerunning = false;
     let rerunReplaces: AutomationStudioFlowDraftStep | undefined;
+    let rerunHeld: AutomationStudioLlmEvidenceRerunHeld | undefined;
     // A look asked again for the first time, run to see whether the page is as its answer left it (`decision-handlers/answer-check.ts`).
     let verifying: Extract<AutomationStudioLlmEvidenceAnswerCheckOutcome, { kind: "verify" }> | undefined;
     // What may be offered, with looks withdrawn after an ignored redirect.
@@ -628,7 +629,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // asking for the same rerun and getting `already_answered` each time
       // (`run-mud9rpmz-16de647b`).
       rerunning = true;
-      rerunReplaces = next.replaces;
+      rerunReplaces = next.replaces; rerunHeld = next.held;
       decision = next.decision;
     }
     // A look withdrawn after an ignored redirect, asked for anyway: refused as
@@ -707,6 +708,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (execution === "threw" || !execution) {
       // Nothing answered the request, so asking it again is not a repeat.
       answeredRequests.delete(toolRequestSignature);
+      if (rerunHeld) automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, undefined);
       const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
       if (next.kind === "end") return next.result;
       continue;
@@ -748,13 +750,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
     const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
       ? "unobserved"
       : stateBefore === stateAfter ? "unchanged" : "changed";
     recordRow(
-      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
+      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
       { draftChanged, pageState }
     );
     // **What the loop learned, not what it ran.** The whole rule -- the four

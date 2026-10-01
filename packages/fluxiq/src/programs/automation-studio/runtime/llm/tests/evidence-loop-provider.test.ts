@@ -66,7 +66,7 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(systemPrompt).toContain("recoverable tool result shaped like {ok:false,code:string}");
     expect(payload.outputSchema).toMatchObject({ properties: { kind: { const: "evidence_tool_decision" }, decision: evidenceLoop.decisionSchema } });
     expect(payload.outputSchema.properties.decision.oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete", "tool_call"]);
-    expect(userPayload.indexOf('\"kind\":{\"const\":\"complete\"}')).toBeLessThan(userPayload.indexOf('\"tools\"'));
+    expect(userPayload.indexOf('\"outputSchema\"')).toBeGreaterThan(userPayload.indexOf('\"evidence\"'));
     expect(payload.context.evidenceLoop.tools).toEqual([{ toolId: "inspect", description: "Collect bounded evidence." }]);
     expect(response.response).toEqual({ kind: "evidence_tool_decision", summary: "Enough evidence.", decision: { kind: "complete", result: { candidateId: "candidate.1" } } });
   });

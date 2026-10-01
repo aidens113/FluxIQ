@@ -49,9 +49,10 @@ describe("the routing context a Flow build sends", () => {
     });
     expect(result.ok).toBe(true);
     const payload = JSON.parse((JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> }).messages.find((message) => message.role === "user")!.content) as {
-      context: { flowBootstrap: { routing: typeof routing } };
+      context: { routing: typeof routing; flowBootstrap: { routing?: unknown } };
     };
-    const sent = payload.context.flowBootstrap.routing;
+    expect(payload.context.flowBootstrap.routing).toBeUndefined();
+    const sent = payload.context.routing;
     expect(sent.decides).toContain("before any step runs");
     expect(sent.current).toBe("The Flow is blank: it has no routes and no subflows yet.");
     expect(sent.paths.map((path) => path.path)).toEqual(["inputs.account", "state.page.dialog", "state.page.path"]);
