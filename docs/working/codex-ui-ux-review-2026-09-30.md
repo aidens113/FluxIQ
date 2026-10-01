@@ -28,11 +28,13 @@ passed21tests/8.44s including actual cancellation. Production29706 passed17pages
 auth9d5e2533/refresh e109b226/clipboard0738bc58 and contract47748f82 saved.
 Fifth clipboard95004f19 and launcher62a8532f are checkpointed. Supervisor
 combined27199 passed17files/103tests/9.89s including adapters42 and the updated
-three-view cancellation contract. Source frozen; full77112 active, web types
-53622 passed65366ms. Structure79891 has inherited service baseline, optional
-launcher catch policy-marker violation and stale index; index regenerated,
-precise comment fix held until full suite completes. No config/baseline changes.
-Runtime log and logout next briefs remain held; database worker audits read-only.
+three-view cancellation contract. Adapter checkpoint1cd44425. Fifth Complete:
+corrected full66758 native0,314files/1987tests/155.23s; final types35028 native0,
+20432ms; production69313 native0,17pages/131107ms. Structure79891's optional
+write/comment and stale index defects are corrected; targeted rules pass and
+only inherited protected service4506/4505 remains. No config/baseline changes.
+Sixth Database request recovery, runtime log and logout briefs now released in
+disjoint frontend files; whole-tree gates wait for their next coordinated freeze.
 Corrected documentation audit passes; full structure has
 only protected inherited service4506/4505 after index regeneration.
 Downstream strip is independently verified full1727/types/build/structure and
