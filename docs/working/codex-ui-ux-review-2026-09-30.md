@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Seventh2199 tests, typing and production build passed; eighth Identity/Secret/Docs tree implementations released.
+Status detail: Eighth source frozen after root182 integrated tests; full gates running, next Core plans held.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -23,10 +23,20 @@ protected service4506/4505. No config/baseline relaxation. Production parameter,
 Deployment and Docs recovery are independently reviewed and validated by these
 gates; root local Docs acknowledgement regression was reproduced and fixed.
 
-Eighth three workers released in exact disjoint paths: Identity recovery,
-Secret UI/reveal/catalog recovery and Docs tree extraction/navigation. Source
-may change only within those briefs. Root owns global contracts/authored docs,
-review/integration/verification; broad Core gates wait for coordinated freeze.
+Eighth source frozen: Identity, Secret UI/reveal/catalog and Docs tree reviewed.
+Root combined45942 observed16files182pass/native0/12.31s, including unchanged
+clipboard/gate and current shared request contracts. Root owns global contracts,
+authored docs and full gates next. All Core worker product remains held during
+gates; next operational/onboarding plans are read-only. Separate extension owner
+worker implementation is released against independently verified extension1833.
+
+Eighth supervisor review: Docs tree root96439 observed42pass/native0/10.79s;
+strict actual-config nine-root5272 native0 after hint removal. Identity root73193
+observed61pass/native0/8.91s after bound-subject caption refinement. Its original
+cross-lane Secret-copy4 remains provisional until Secret source freezes and full
+gates run; owning Identity paths are frozen. Secret worker expands boundary
+coverage. Operational payload recovery is design-only/held; Studio and extension
+automation ownership audits use separate own reports and no product changes.
 
 Extension utility root41 tests pass; full1821/types/build/structure all native0.
 Previous sixth extension1791 and all

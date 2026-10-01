@@ -118,6 +118,34 @@ when its ID is unchanged, and removed selection reconciles to current metadata.
 Page Retry reads directly; missing indexed pages also offer explicit Rebuild.
 Local rebuild acknowledgement stays visible alongside later page-read errors.
 
+Docs tree selection and keyboard focus are independent. Explicit folder choices
+survive equivalent metadata and filtering; a new selected page reveals its
+ancestors once. Navigation mounts the current viewport/overscan window plus at
+most one retained keyboard entry, and clamps the range when a tree shrinks.
+Deferred focus requires the latest intent, current tree/lifetime and an active
+visible document whose source control still owns focus. Passive updates do not
+claim focus. Sibling positions are derived once for the complete flattened tree;
+virtualization retains all indexed pages and existing history/sandbox behavior.
+
+Identity Access scopes dialogs and proof fields to the current API and acting
+user. Credential and authenticator steps retain their captured subject instead
+of following a changed list selection; obsolete dialog callbacks cannot issue
+or publish into a replacement workspace. Factor-policy changes clear prior
+proof fields. Explicit read failures retain confirmed same-owner metadata and
+offer Retry, while acknowledged writes have persistent local feedback separate
+from snapshot confirmation. Existing authorization and final-admin rules remain
+server-owned; the UI retains its operation lock and busy-dialog behavior.
+
+Secret Keys isolates API, automation catalog and actor workspaces. Dialog proof
+and revealed values are tied to current factor policy, exact dialog instance,
+selected key and confirmed key version; replacement or rotation masks stale
+values during render. Reveal clears its proof fields and expires after 30 seconds
+without letting an earlier equal-valued instance close a newer dialog. Lazy scope
+choices validate used metadata, provide explicit read Retry and order repeated
+project selections by request generation. Writes retain local acknowledgement
+when metadata confirmation fails. Existing authorization, busy-dialog and
+clipboard contracts remain intact; already issued server writes are not cancelled.
+
 Runtime Action Log scopes reads, selected details and retained callbacks to the
 current project, run and command owner. Read failures have local retry controls;
 page labels advance only after a confirmed response. Known mismatched run data

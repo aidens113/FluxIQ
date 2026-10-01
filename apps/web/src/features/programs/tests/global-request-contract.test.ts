@@ -11,6 +11,21 @@ describe("global program request ownership", () => {
     const documentationReads = readFileSync(new URL("../documentation-workspace/useDocumentationWorkspace.ts", import.meta.url), "utf8");
     for (const view of views) {
       const source = readFileSync(new URL(`../live-views/${view}.tsx`, import.meta.url), "utf8");
+      if (view === "identity-access") {
+        expect(source, view).toContain("new AbortController()");
+        expect(source, view).toContain('"snapshot", { signal: controller.signal }');
+        expect(source, view).toContain("mounted.current = false; ++readJob.current.id; readJob.current.controller?.abort()");
+        expect(source, view).toContain("readJob.current.id === id");
+        expect(source, view).toContain("if (!readCurrent()) return;");
+        continue;
+      }
+      if (view === "secret-keys") {
+        expect(source, view).toContain("new AbortController()");
+        expect(source, view).toContain('"snapshot", { signal: controller.signal }');
+        expect(source, view).toContain("mounted.current = false; read.current?.abort()");
+        expect(source, view).toContain("if (!current() || controller.signal.aborted || read.current !== controller) return;");
+        continue;
+      }
       if (view === "docs") {
         expect(source, view).toContain("useDocumentationWorkspace({ api, isOwner, requestedPage })");
         expect(documentationReads, view).toContain("new AbortController()");
