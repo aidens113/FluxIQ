@@ -5,6 +5,7 @@ import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { automationStudioActivityDecisionReason } from "../decision-reason.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "../../llm/index.ts";
 import { runWithAutomationStudioActivity } from "../scope.ts";
 
 let seen: ClientGatewayActivity[] = [];
@@ -145,5 +146,24 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     await observed.decide(decideRequest);
     await observed.executeTool(call("domain.inspect"));
     expect(seen).toEqual([]);
+  });
+
+  // Live run `run-muq05kas-058193f0`: a provider outage left "Deciding the next
+  // step" open for six minutes. A decision that never came now closes its row,
+  // and a provider that gave no answer is said in words.
+  it("closes the decision row when no decision came, and says a provider that did not answer in words", async () => {
+    for (const [thrown, said] of [
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]), true],
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]), false],
+      [new Error("anything else"), false]
+    ] as const) {
+      seen = [];
+      const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => { throw thrown; } }));
+      await expect(inScope(() => observed.decide(decideRequest))).rejects.toBe(thrown);
+      const rows = seen.filter((event) => event.detail?.title === "Deciding the next step");
+      expect(rows.map((event) => event.detail?.status)).toEqual(["started", "failed"]);
+      expect(rows[1]!.label).toBe(said ? "The AI model provider did not answer" : "Deciding the next step — didn't work");
+      expect(rows[1]!.detail?.text !== undefined).toBe(said);
+    }
   });
 });

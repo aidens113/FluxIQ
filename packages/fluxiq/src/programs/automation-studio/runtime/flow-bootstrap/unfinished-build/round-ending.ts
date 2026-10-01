@@ -33,6 +33,10 @@ export function automationStudioFlowBootstrapRoundEnding(
   if (outcome.code === "llm_evidence_loop.repeat_without_progress") {
     return { kind: "unfinished", stopped: "repeat_without_progress", steps: outcome.steps, lastIssueCodes: [], completionAttempts: 0, progress };
   }
+  if (outcome.code === "llm_evidence_loop.provider_unavailable" && outcome.providerUnavailable) {
+    const lastCode = outcome.trace.at(-1)?.resultCode;
+    return { kind: "provider_unavailable", stopped: "unusable_decisions", providerUnavailable: outcome.providerUnavailable, steps: outcome.steps, lastIssueCodes: lastCode ? [lastCode] : [], completionAttempts: 0, progress };
+  }
   if (outcome.code === "llm_evidence_loop.unreadable_replies" && outcome.unreadable) {
     const lastCode = outcome.trace.at(-1)?.resultCode;
     return { kind: "unreadable", stopped: "unusable_decisions", unreadable: outcome.unreadable, steps: outcome.steps, lastIssueCodes: lastCode ? [lastCode] : [], completionAttempts: 0, progress };

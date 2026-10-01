@@ -39,6 +39,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
 import type { AutomationStudioLlmTaskResult } from "./harness.ts";
 import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
+import { automationStudioLlmProviderUnanswered } from "./unanswered-calls.ts";
 import { automationStudioLlmUnreadableReplySaid } from "./unreadable-reply.ts";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
@@ -108,11 +109,19 @@ export class AutomationStudioLlmUnusableDecisionError extends Error {
   readonly name = "AutomationStudioLlmUnusableDecisionError";
   readonly issueCodes: readonly string[];
   readonly reply?: AutomationStudioLlmProviderReplyAccount;
+  /**
+   * Whether the provider gave no answer at all -- timed out, unreachable, a
+   * server error, rate limited (`./unanswered-calls.ts`). Said on the error so
+   * a reader outside this directory, the activity observer, can tell an outage
+   * from a bad reply by shape, without importing the codes.
+   */
+  readonly providerUnanswered: boolean;
 
   constructor(issueCodes: readonly string[], reply?: AutomationStudioLlmProviderReplyAccount) {
     const codes = issueCodes.filter((code) => ISSUE_CODE.test(code));
     super(`The decision call returned nothing usable${codes.length ? `: ${codes.join(", ")}` : "."}`);
     this.issueCodes = Object.freeze([...codes]);
+    this.providerUnanswered = automationStudioLlmProviderUnanswered(codes);
     const account = automationStudioLlmProviderReplyAccount(reply);
     if (account) this.reply = account;
   }

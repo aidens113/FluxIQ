@@ -150,8 +150,9 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
   providerThrow?: AutomationStudioLlmProviderThrow;
   /**
    * Present exactly beside `flow_bootstrap.not_doable`,
-   * `flow_bootstrap.evidence_budget_exhausted` and
-   * `flow_bootstrap.model_replies_unreadable`: what a build that could not
+   * `flow_bootstrap.evidence_budget_exhausted`,
+   * `flow_bootstrap.model_replies_unreadable` and
+   * `flow_bootstrap.provider_unavailable`: what a build that could not
    * finish tells the person, as a message they read in the chat, and the same
    * facts as ids and counts (`./build-ending.ts`).
    */
