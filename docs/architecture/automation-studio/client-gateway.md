@@ -357,6 +357,25 @@ same capabilities. The ids are:
 
 - **Descriptors.** For these ids, Core's descriptor replaces whatever the client
   sent, so a client may send ids only. The extension does.
+- **A described job is a build** (2026-10-01, downstream t227). A person on a
+  site who types what they want done -- "Find every pair of wireless earbuds
+  under $50 ..." -- has asked for an automation without saying "automate".
+  Three rules make that message start `flow.createHere`:
+  - The model is told so, when a page is open and the capability is offered
+    (`instructions/prompt.ts`).
+  - A required `instruction` that nothing supplied is the message itself
+    (`instructions/invocation.ts`), unless the message is only the
+    capability's own name or phrases ("automate this page"), which is still
+    asked about.
+  - Read without the model -- none is connected, or it did not answer within
+    the 24 s reading deadline -- a message that matches no capability, with a
+    page open, and that is a job (at least 6 words, filler left out, not a
+    question) is built from that page (`instructions/fallback.ts`). The thread
+    still says it was read without the model.
+
+  The first chat-driven live Lab run (`run-muq2dlhq-96bffb09`) showed the gap:
+  its typed task was answered "I could not tell what you wanted done" while
+  the model was slow, and nothing was built.
 - **Calls are made in process.** The command calls the registry with the
   request's own actor and scope, so each endpoint's permission and handler
   checks apply as they would to the same call from a control. It reaches only

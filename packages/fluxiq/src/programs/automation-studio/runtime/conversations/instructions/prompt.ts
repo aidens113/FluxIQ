@@ -8,7 +8,7 @@
 // are left out, and the id need not be spelt perfectly.
 
 import { automationStudioPanelCapabilityVocabulary } from "../../panel-capabilities/index.ts";
-import { automationStudioConversationPageShown } from "../commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, automationStudioConversationPageShown } from "../commands/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 
 const ANSWER_SHAPE = [
@@ -51,8 +51,24 @@ function onScreenSection(context: AutomationStudioConversationDecisionContext): 
   // Origin and path only: a query or fragment is where a page keeps a search,
   // a session or a token, and none of that says which page this is.
   const page = automationStudioConversationPageShown(open.pageUrl);
-  const pageLine = page ? `\nIn their browser they are on the page ${page}. Something they ask to be made "here" or "for this page" starts there.` : "";
+  const pageLine = page ? `\nIn their browser they are on the page ${page}. Something they ask to be made "here" or "for this page" starts there.${describedJobLine(context)}` : "";
   return (parts.length
     ? `The person has ${parts.join(", ")} open, so "it" or "this" most likely means that.`
     : "The person has nothing in particular open, so if they say \"it\" or \"this\" without naming a Flow, and the conversation has not named one, ask which Flow they mean rather than choosing one.") + pageLine;
+}
+
+/**
+ * What a job described for the open site is: a request to build one from the
+ * page. A person on a shopping site who types "Find every pair of wireless
+ * earbuds under $50 ..." has asked for an automation and said what it should
+ * do, in one message, without saying "automate" -- and the model, told only
+ * that something asked to be made "here" starts here, was left to guess
+ * between building it, replying, and exploring a Flow the project does not
+ * have. Said only when the capability is offered, so the model is never told
+ * to choose one it cannot.
+ */
+function describedJobLine(context: AutomationStudioConversationDecisionContext): string {
+  const createHere = AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability.id;
+  if (!context.capabilities.some((capability) => capability.id === createHere)) return "";
+  return ` A job they describe for this site -- something to find, list, collect, fill in or buy on it -- that no Flow above already does is a request to make a new automation from this page: choose ${createHere} and pass their whole message, in their own words, as its instruction.`;
 }
