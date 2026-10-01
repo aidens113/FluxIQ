@@ -33,7 +33,8 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
 const ENDING_TITLES = Object.freeze({
   not_doable: "Not doable: this Flow could not be built",
   budget_exhausted: "Build stopped: a budget ran out",
-  replies_unreadable: "Build stopped: the model's replies could not be read"
+  replies_unreadable: "Build stopped: the model's replies could not be read",
+  provider_unavailable: "Build stopped: the AI model provider is not responding"
 });
 
 /**

@@ -125,7 +125,8 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE: Readonly<Re
   "llm_evidence_loop.evidence_limit": "budget_exhausted",
   "llm_evidence_loop.iteration_limit": "budget_exhausted",
   "llm_evidence_loop.cancelled": "cancelled",
-  "llm_evidence_loop.unreadable_replies": "failed"
+  "llm_evidence_loop.unreadable_replies": "failed",
+  "llm_evidence_loop.provider_unavailable": "failed"
 });
 
 /** Each run-budget diagnostic's outcome, for an exploration refused before it starts. */

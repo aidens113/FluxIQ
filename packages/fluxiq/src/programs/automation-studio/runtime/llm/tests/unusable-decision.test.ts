@@ -267,11 +267,14 @@ describe("the evidence loop after a completed result its caller refuses", () => 
   });
 
   it("shares the no-progress count with bad replies, each set of issues counting once as new", async () => {
-    const timeout = () => new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]);
+    // A reply that arrived and is no decision. A timeout was the example until
+    // 2026-10-01; nothing arrives with one, and it is counted on its own
+    // (`../evidence-loop/tests/provider-unavailable.test.ts`).
+    const badReply = () => new AutomationStudioLlmUnusableDecisionError(["llm_output.decision_invalid"]);
     const decide = vi.fn()
-      .mockRejectedValueOnce(timeout())
+      .mockRejectedValueOnce(badReply())
       .mockResolvedValueOnce({ kind: "complete", result: {} })
-      .mockRejectedValueOnce(timeout())
+      .mockRejectedValueOnce(badReply())
       .mockResolvedValueOnce({ kind: "complete", result: {} });
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 10,

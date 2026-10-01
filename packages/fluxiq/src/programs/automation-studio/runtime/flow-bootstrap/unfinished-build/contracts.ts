@@ -5,6 +5,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type {
   AutomationStudioLlmEvidenceLoopAccounting,
   AutomationStudioLlmEvidenceLoopExhaustion,
+  AutomationStudioLlmEvidenceLoopProviderUnavailable,
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmEvidenceLoopUnreadable
@@ -54,6 +55,21 @@ export type AutomationStudioFlowBootstrapRoundEnding =
     kind: "unreadable";
     stopped: "unusable_decisions";
     unreadable: AutomationStudioLlmEvidenceLoopUnreadable;
+    steps: AutomationStudioFlowDraftStep[];
+    lastIssueCodes: readonly string[];
+    completionAttempts: number;
+    progress: AutomationStudioFlowBootstrapRoundProgress;
+  }
+  /**
+   * The model provider stopped answering: an unbroken run of decision calls got
+   * no answer (`../../llm/unanswered-calls.ts`). Ended at once, untested,
+   * as exactly that. `stopped` is the stop a later build is told: no usable
+   * decision came back.
+   */
+  | {
+    kind: "provider_unavailable";
+    stopped: "unusable_decisions";
+    providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable;
     steps: AutomationStudioFlowDraftStep[];
     lastIssueCodes: readonly string[];
     completionAttempts: number;
