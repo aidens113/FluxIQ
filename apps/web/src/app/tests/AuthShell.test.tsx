@@ -6,9 +6,10 @@ import { GlobalTopbar, LoginPanel, setupPasswordError } from "../AuthShell";
 describe("FluxIQ login and first setup", () => {
   it("restores expired sessions without replacing the current workspace", () => {
     const source = readFileSync(new URL("../AuthShell.tsx", import.meta.url), "utf8");
-    expect(source).toContain("SessionReauthentication");
-    expect(source).toContain("resolveProgramAuthentication(true)");
-    expect(source).toContain("Keep work open");
+    const host = readFileSync(new URL("../session-reauthentication/SessionReauthentication.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("<SessionReauthentication");
+    expect(host).toContain("resolveProgramAuthentication(true)");
+    expect(host).toContain("Keep work open");
   });
 
   it("renders a password-manager-friendly login without publishing bootstrap credentials", () => {

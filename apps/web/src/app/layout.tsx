@@ -4,6 +4,7 @@ import { GlobalClientGatewayPairing } from "./GlobalClientGatewayPairing";
 import { GlobalConversationPrompt } from "./GlobalConversationPrompt";
 import { GlobalAlertViewport } from "../features/programs/shared-ui";
 import { currentFluxIQUser } from "../lib/auth";
+import { SessionReauthentication } from "./session-reauthentication";
 
 export const metadata: Metadata = {
   title: "FluxIQ",
@@ -18,6 +19,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <body>
         {children}
         <GlobalAlertViewport />
+        {auth ? <SessionReauthentication /> : null}
         {pairingEligible ? <GlobalClientGatewayPairing /> : null}
         {auth ? <GlobalConversationPrompt /> : null}
       </body>

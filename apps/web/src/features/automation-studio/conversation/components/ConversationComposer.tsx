@@ -33,6 +33,7 @@ export function ConversationComposer(props: {
 }) {
   const [text, setText] = useState("");
   const boxRef = useRef<HTMLTextAreaElement | null>(null);
+  const editRevision = useRef(0);
 
   // Measured rather than counted: a long line wraps without a newline in it.
   // `auto` first, so the box also shrinks when text is deleted; the CSS
@@ -47,8 +48,9 @@ export function ConversationComposer(props: {
   async function send() {
     const value = text.trim();
     if (!value || props.busy || props.disabled) return;
+    const submittedRevision = editRevision.current;
     const sent = await props.onSend(value);
-    if (sent) setText("");
+    if (sent && submittedRevision === editRevision.current) setText("");
   }
 
   const remaining = CONVERSATION_TEXT_MAX - text.length;
@@ -73,7 +75,10 @@ export function ConversationComposer(props: {
           ref={boxRef}
           rows={1}
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            editRevision.current += 1;
+            setText(event.target.value);
+          }}
           onKeyDown={(event) => {
             // An IME confirming a character uses Enter too; that is not a send.
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) return;
