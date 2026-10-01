@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Ninth operational, onboarding and dialog sources independently reviewed and frozen for full gates.
+Status detail: Ninth full gates complete; Menu keyboard worker released, extension Chat and extraction workers active.
 Created: 2026-09-30
 Last updated: 2026-10-01
 Owner: Codex senior supervisor
@@ -28,16 +28,15 @@ Docs tree independently reviewed. Root45942 observed16files182pass/native0/
 12.31s, including unchanged clipboard/gate and current shared request contracts.
 Full36851 native0,333files2342tests/173.54s; types59270 native0/35422ms;
 production8087 native0/190162ms. Structure56016 native1 only inherited protected
-service4506/4505; no baseline/config relaxation. Next operational/onboarding
-worker implementation is now released. Separate extension owner worker also
-active; root owns integration, authored docs and verification.
+service4506/4505; no baseline/config relaxation. Root owns integration, authored
+docs and verification; current released work is recorded below.
 
 Eighth supervisor review: Docs tree root96439 observed42pass/native0/10.79s;
 strict actual-config nine-root5272 native0 after hint removal. Identity root73193
 observed61pass/native0/8.91s after bound-subject caption refinement. Its provisional
 cross-lane Secret-copy4 was superseded by frozen integrated182 and full2342.
-Operational payload and onboarding recovery now implement separate released
-partitions with own downstream reports; source audits stay preserved.
+Operational/onboarding source audit evidence stays preserved in own downstream
+reports; subsequent current validation is recorded below.
 
 Extension utility root41 tests pass; full1821/types/build/structure all native0.
 Previous sixth extension1791 and all
@@ -55,10 +54,12 @@ cross-repository validation and ownership history.
 Ninth operational/onboarding source checkpoint9d2eb6fa independently reviewed:
 root105tests/native0/3.87s (including strengthened direct Retry assertions) and
 onboarding91/native0/12.33s. Dialog keyboard/entry four-path root88/native0/2.16s
-confirms Cancel/Close Enter and explicit autofocus correction while preserving
-original authorization/OperationGate/Studio overlay contracts. All Core source
-now frozen for full gates. Workers prepare held Menu, mounted Chat and extraction
-plans; no product source changes during respective repository gates.
+confirms Cancel/Close Enter and autofocus correction preserving authorization/
+OperationGate/Studio overlay contracts; dialog checkpoint e50a6882. Ninth full
+22516 native0,338files2506tests/182.57s; types74206 native0/103169ms; production
+84386 native0/201922ms. Structure55934 native1 only inherited protected
+service4506/4505. All ninth units Complete. Menu two-path worker now released;
+downstream mounted Chat/extraction source active after independent1878full gates.
 
 ## Work Ledger
 
