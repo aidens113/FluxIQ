@@ -12,7 +12,8 @@ const text = () => JSON.stringify(renderer.toJSON());
 const nodeButton = (name: string) => renderer.root.findAllByType("button").find((button) => button.findAllByType("strong").some((strong) => strong.children.includes(name)))!;
 const named = (type: "input" | "select" | "button", name: string) => renderer.root.findAllByType(type).find((node) => node.props["aria-label"] === name)!;
 beforeEach(() => {
-  vi.stubGlobal("window", { setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
+  vi.useFakeTimers();
+  vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
   payload = {
     nodes: [
       { id: "a", label: "Alpha", status: "online", lastHeartbeatMs: Date.now(), capabilities: ["one"], domainIds: [] },
@@ -23,7 +24,7 @@ beforeEach(() => {
   };
   api.get.mockReset().mockImplementation(async () => ({ ok: true, payload }));
 });
-afterEach(() => { if (renderer) act(() => renderer.unmount()); vi.unstubAllGlobals(); });
+afterEach(() => { if (renderer) act(() => renderer.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("Compute visible selection", () => {
   for (const filter of ["search", "health", "capability"] as const) {
