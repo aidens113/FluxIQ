@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../../../../storage/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createRunnableCanonicalFlow } from "../../service-fixtures.ts";
 
@@ -71,6 +72,24 @@ describe("a run whose start throws", () => {
       metadata: expect.objectContaining({ runFailure: expect.objectContaining({ sessionStatus: "running" }) })
     })]);
     await expect(service.runRuntimeSession({ projectId, flowId })).resolves.toMatchObject({ status: "succeeded" });
+  });
+
+  // The run holds its project database for its own duration (one lease
+  // across the operation). A start that throws, before or after the session
+  // is marked running, must hand that lease back like any other exit.
+  it.each([
+    ["before it is marked running", "listFlowRunSummaries", "database is locked"],
+    ["after it was marked running", "getFlowRouter", "router index unreadable"]
+  ] as const)("releases every project database lease it took when it throws %s", async (_when, method, message) => {
+    const service = createService();
+    const { projectId, flowId } = await adaptiveFlow(service);
+    const outstanding = leasesOutstanding();
+    vi.spyOn(service, method).mockRejectedValueOnce(new Error(message));
+
+    await expect(service.runRuntimeSession({ projectId, flowId })).rejects.toThrow(message);
+
+    expect(outstanding.taken).toBeGreaterThan(0);
+    expect(outstanding.count()).toBe(0);
   });
 
   it("keeps a cancellation that was recorded before it threw", async () => {
@@ -149,3 +168,17 @@ describe("the reads a run's start makes", () => {
     })]);
   });
 });
+
+/** Counts the project database leases taken from now on that have not been released. */
+function leasesOutstanding(): { taken: number; count(): number } {
+  const open = new Set<AutomationStudioProjectDatabaseLease>();
+  const state = { taken: 0, count: () => open.size };
+  const acquire = AutomationStudioProjectDatabasePool.prototype.acquire;
+  vi.spyOn(AutomationStudioProjectDatabasePool.prototype, "acquire").mockImplementation(async function (this: AutomationStudioProjectDatabasePool, projectId: string) {
+    const lease = await acquire.call(this, projectId);
+    state.taken += 1;
+    open.add(lease);
+    return { ...lease, release: async () => { open.delete(lease); await lease.release(); } };
+  });
+  return state;
+}
