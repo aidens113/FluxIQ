@@ -100,8 +100,11 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // a row, all `draft_unchanged` with the same two step ids refused each
   // time, is the first half of `run-mulum3x7-18ceeb75`, so the redirection
   // is what the sixth gets rather than nothing at all.
-  if (rerun.refused.some((refusal) => refusal.reason === "changes_nothing")) {
-    // A rerun refused as a repeat counts against the round like a refused call (`./refused-repeat.ts`).
+  // A repeat counts against the round like a refused call (`./refused-repeat.ts`): a
+  // rerun refused as one, or a decision whose every amendment was refused the
+  // same way before -- run 36 sent `25 keep act a1` seven times, refused each time.
+  const repeatedOnly = !rerun.request && !amended.applied && refusals.length > 0 && refusals.every((refusal) => refusal.repeated === true);
+  if (rerun.refused.some((refusal) => refusal.reason === "changes_nothing") || repeatedOnly) {
     const stop = automationStudioLlmEvidenceRepeatStop(context, context.repeats.refusedAgain(iteration));
     if (stop?.kind === "stalled") {
       if (context.input.propagateDecisionErrors) throw stop.error;

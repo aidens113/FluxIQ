@@ -4,6 +4,7 @@
 // is shown to the model under, the replay it must survive before it may be
 // proposed, which of its steps that replay only checks, what it says about a
 // step the site remembers, and which it found are only sometimes there.
+export * from "./act-claim.ts";
 export * from "./amendment.ts";
 export * from "./dry-run.ts";
 export * from "./draft.ts";

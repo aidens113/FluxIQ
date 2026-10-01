@@ -54,6 +54,7 @@
 // the step -- what it did, what it was given, what state it produced -- Core
 // already holds and never asks for again.
 
+import { automationStudioFlowDraftClaimAct } from "./act-claim.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -226,7 +227,8 @@ export function applyAutomationStudioFlowDraftAmendments(
     }
     step.disposition = disposition;
     if (clearsRouting) delete step.routing;
-    if (act !== undefined) step.acts = [...(step.acts ?? []), act];
+    // One act, one step: the claim moves here from any step that held it (`./act-claim.ts`).
+    if (act !== undefined) automationStudioFlowDraftClaimAct(steps, step, act);
     if (moves) moveStep(steps, step, amendment.to, undefined);
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;

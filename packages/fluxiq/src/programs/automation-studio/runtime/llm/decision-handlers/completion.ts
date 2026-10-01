@@ -7,6 +7,9 @@
 // on the page -- but its feedback now says it is the same result sent again
 // (`sameAsIteration`, `timesSent`): crossborder decision 13 was shown refusal
 // 12 in full and sent the identical completion, and nothing told it so.
+// Numbers alone were not read: run 37's repair (t193, bigbox) completed six
+// times over one draft, rewording only its summary, so the feedback also says
+// in words that the draft, not the result, is what has to change (`sentAgain`).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID } from "../../flow-draft/index.ts";
 import {
@@ -81,9 +84,16 @@ function sentAgain(feedback: JsonObject, sameAsIteration: number, timesSent: num
   return {
     ...feedback,
     ...("sameAsIteration" in feedback ? {} : { sameAsIteration }),
-    ...("timesSent" in feedback ? {} : { timesSent })
+    ...("timesSent" in feedback ? {} : { timesSent }),
+    ...("sentAgain" in feedback ? {} : { sentAgain: SENT_AGAIN(sameAsIteration, timesSent) })
   };
 }
+
+/** Says why a result over an unchanged draft is refused again, and what would change the answer. */
+const SENT_AGAIN = (sameAsIteration: number, timesSent: number): string =>
+  `This draft was refused for these same reasons at decision ${sameAsIteration}, and this is attempt ${timesSent} over it unchanged. `
+  + "The check reads the draft's steps, not the result's words, so completing again gives the same answer until the draft changes: "
+  + "first do what the reasons ask -- run the step that is missing, or amend the steps they name -- then complete.";
 
 /**
  * The words a shown step passed the dry run under: run again, or checked and

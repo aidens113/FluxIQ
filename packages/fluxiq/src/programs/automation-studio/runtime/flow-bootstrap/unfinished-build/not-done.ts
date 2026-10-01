@@ -17,7 +17,7 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo, string>> = 
   no_step_added: "nothing I tried did it",
   step_not_kept: "the step I tried for it is not in the Flow",
   step_changed_nothing: "the step I tried for it changed nothing",
-  step_only_arrives: "the step I tried for it only opened the starting page",
+  step_only_arrives: "the step I tried for it only opened a page",
   step_is_optional: "the step for it may be skipped, so it might never happen",
   act_needs_repeat: "it has to be done for every item, and I found no way to repeat it over them",
   span_stops_short: "part of it ran once after the loop instead of on every item",

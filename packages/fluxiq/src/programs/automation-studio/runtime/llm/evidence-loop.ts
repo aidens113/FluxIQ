@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  automationStudioFlowDraftClaimAct,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable,
@@ -209,7 +210,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
     if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) {
       appended.disposition = "kept";
-      if (authored.act !== undefined) appended.acts = [authored.act];
+      if (authored.act !== undefined) automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act);
     }
     draftSteps.push(appended);
     return drafting && automationStudioFlowDraftStepIsAction(appended);

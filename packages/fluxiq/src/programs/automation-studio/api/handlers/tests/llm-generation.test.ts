@@ -428,6 +428,35 @@ describe("Automation Studio LLM execution API", () => {
     });
     expect(JSON.stringify(response)).not.toMatch(/secret|prompt|provider padding|raw upstream|sensitive|session\.one/i);
   });
+  // A build the chat started answers the person in words; its diagnostic, and
+  // what it spent, used to be lost (live run `run-muq3ubys-4b4dbf5b`: $0.227
+  // spent, $0 on the spend ledger).
+  it("keeps a Flow's latest failed build for a reader that started it another way, until a build of it succeeds", async () => {
+    const accounting = { requestId: "llm-request:one", estimatedInputTokens: 1996, provider: "deepseek", model: "deepseek-flash", inputTokens: 1996, outputTokens: 512, totalTokens: 2508 };
+    const generateFlowBootstrapAdaptation = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("Flow Bootstrap generation failed (flow_bootstrap.provider_output_padding_truncated)."), {
+        name: "AutomationStudioFlowBootstrapGenerationError",
+        diagnostic: { code: "flow_bootstrap.provider_output_padding_truncated", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received", accounting }
+      }))
+      .mockResolvedValueOnce({ adaptationId: "adaptation.one" });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
+    const writer: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+    const reader: ProgramApiActor = { sessionId: "session.two", userId: "user.two", roleId: "viewer", permissions: ["programs.read"] };
+    const build = () => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor: writer, payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one" } });
+    const read = (flowId: string) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapFailure, scope: {}, actor: reader, payload: { projectId: "project.one", flowId } });
+
+    expect(await read("flow.blank")).toEqual({ ok: true, payload: { failure: null } });
+    const failed = await build();
+    expect(failed.ok).toBe(false);
+    const kept = await read("flow.blank");
+    expect(kept).toEqual({ ok: true, payload: { failure: (failed as { payload: { diagnostic: unknown } }).payload.diagnostic } });
+    expect(kept).toMatchObject({ payload: { failure: { code: "flow_bootstrap.provider_output_padding_truncated", accounting } } });
+    expect(await read("flow.other")).toEqual({ ok: true, payload: { failure: null } });
+    // A build of the Flow that succeeds is its latest build, and nothing failed.
+    await build();
+    expect(await read("flow.blank")).toEqual({ ok: true, payload: { failure: null } });
+  });
   it("fails closed without raw text when a structural Flow Bootstrap diagnostic is extra, raw, or malformed", async () => {
     const valid = {
       code: "llm.provider_http_error",

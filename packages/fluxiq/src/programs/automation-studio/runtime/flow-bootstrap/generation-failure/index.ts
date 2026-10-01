@@ -22,6 +22,7 @@ export * from "./diagnostic.ts";
 export * from "./diagnostic-parse.ts";
 export * from "./error.ts";
 export * from "./evidence-failure.ts";
+export * from "./failed-builds.ts";
 export * from "./failure-state.ts";
 export * from "./harness-failure.ts";
 export * from "./harness-vocabulary.ts";
