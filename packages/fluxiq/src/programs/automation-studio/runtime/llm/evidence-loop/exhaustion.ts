@@ -25,7 +25,13 @@
 //
 // Counts and closed words only, like every other record this loop publishes.
 // Nothing the model wrote and nothing a page returned passes through here.
+//
+// The record is built here as well as declared
+// (`automationStudioLlmEvidenceLoopExhaustion`), so the arithmetic behind each
+// count sits beside the field it fills. It was built inline in the
+// coordinator's loop body until that file passed Core's 800-line limit (t226).
 
+import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "../build-purse/index.ts";
 
 /** Which allowance ran out. Each is a number a retry can raise. */
@@ -121,3 +127,46 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
 
 /** A budget bound that can run out, as `../loop-budget.ts` counts them. */
 export type AutomationStudioLlmEvidenceLoopBudgetBound = "iterations" | "tokens" | "cost" | "duration";
+
+/**
+ * What an exhausted loop has to say for itself, read off the loop's state at
+ * the moment its allowance ran out. Shared by every allowance that can run
+ * out: the budget's at the top of an iteration, the tool-call ceiling, and the
+ * literal max-iteration exit.
+ */
+export function automationStudioLlmEvidenceLoopExhaustion(state: {
+  bound: AutomationStudioLlmEvidenceLoopExhaustedBound;
+  maxIterations: number;
+  iterations: number;
+  draftSteps: readonly AutomationStudioFlowDraftStep[];
+  completionAttempts: number;
+  /** Unusable decisions in the current unbroken run of them; zero when the last decision was usable. */
+  unusableInARow: number;
+  /** The issues of the latest unusable decision, whether or not the run of them is still unbroken. */
+  lastIssueCodes: readonly string[];
+  /** Which budget bound had the fewest decisions left when the budget was last read, where it was. */
+  lastRemaining: { limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound } | undefined;
+  /** The call the build's purse refused, once it has refused one (`./cost-purse.ts`). */
+  purseRefusal: AutomationStudioLlmBuildPurseRefusal | undefined;
+  outstandingIssueCodes: readonly string[];
+}): AutomationStudioLlmEvidenceLoopExhaustion {
+  const { bound, lastRemaining, purseRefusal } = state;
+  return {
+    bound,
+    maxIterations: state.maxIterations,
+    iterations: state.iterations,
+    draftSteps: state.draftSteps.length,
+    // Counted exactly as an amendment's `keptStepCount` is, so the last row
+    // of the trace and the ending cannot disagree about how much plan there
+    // was: kept, and proposable.
+    proposableSteps: state.draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
+    completionAttempts: state.completionAttempts,
+    // Only while the run of refusals is unbroken. A loop that ran out after a
+    // decision it could use has no last refusal, and reporting the one before
+    // it would be the same conflation in a smaller field.
+    lastIssueCodes: state.unusableInARow ? [...state.lastIssueCodes] : [],
+    ...(bound === "budget" && lastRemaining ? { budgetBound: purseRefusal ? "cost" as const : lastRemaining.limitedBy, ...(purseRefusal ? { costRefusal: { ...purseRefusal } } : {}) } : {}),
+    // What a continuation of this build is told it still owes.
+    outstandingIssueCodes: state.outstandingIssueCodes
+  };
+}

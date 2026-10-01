@@ -59,11 +59,9 @@ import {
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
-  type AutomationStudioLlmEvidenceLoopAnswerability,
-  type AutomationStudioLlmEvidenceLoopDraftShown,
   type AutomationStudioLlmEvidenceLoopResult,
   automationStudioLlmEvidenceRerunReplaced,
-  automationStudioLlmEvidenceAuthoredProgress,
+  automationStudioLlmEvidenceAuthoredProgress, automationStudioLlmEvidenceLoopTraceRecorder, automationStudioLlmEvidenceLoopExhaustion,
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
@@ -175,67 +173,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
 ): Promise<AutomationStudioLlmEvidenceLoopResult> {
   const input = automationStudioLlmEvidenceLoopProgressTrace(untraced); const limits = resolveLimits(input);
   const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
-  /**
-   * One row of the record, stamped with the moment it was recorded.
-   *
-   * **Every row goes through here, which is the point of it existing.** The
-   * stamp was declared downstream and emitted nowhere, so a build's rows
-   * carried no moment at all and a reader could only see one undivided gap:
-   * `run-mug776kx-0214b287` spent 695 seconds over 41 rows and not one of them
-   * said when it happened, so a step that took ten minutes could not be told
-   * from forty that took seventeen seconds each. Stamping at the push rather
-   * than at each row's construction is what makes "every row has one" a
-   * property of the loop instead of a rule someone has to remember at the next
-   * push site.
-   *
-   * `Date.now()` and not the budget's clock: this is a wall-clock moment for a
-   * person reading the record afterwards, while `input.budget.now` is an
-   * elapsed-time source a caller may drive itself.
-   */
-  /**
-   * What this iteration's decision was shown of the draft, stamped onto every
-   * row the iteration records (`./evidence-loop/draft-shown.ts`).
-   *
-   * Here for the same reason the moment below is: a row that says what the model
-   * was looking at is a property of the loop rather than a rule someone has to
-   * remember at each of the five push sites. It is cleared at the top of every
-   * iteration, so a row carries the draft of the decision it belongs to or
-   * nothing at all -- and nothing is the honest answer for the rows recorded
-   * before the first decision, which were shown no draft.
-   */
-  let draftShown: AutomationStudioLlmEvidenceLoopDraftShown | undefined;
-  let draftRevision = 0;
-  let previousAnswerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
-  const sameAnswerability = (left: AutomationStudioLlmEvidenceLoopAnswerability, right: AutomationStudioLlmEvidenceLoopAnswerability): boolean =>
-    left.recordsRequested === right.recordsRequested
-    && left.recordProducerPresent === right.recordProducerPresent
-    && left.recordStorePresent === right.recordStorePresent
-    && left.issueCode === right.issueCode;
-  const recordRow = (row: AutomationStudioLlmEvidenceLoopTrace, transition: RowTransition = {}): void => {
-    const draftRevisionBefore = draftRevision;
-    if (transition.draftChanged) draftRevision += 1;
-    const answerabilityState: AutomationStudioLlmEvidenceLoopProgress["answerabilityState"] = !transition.answerability
-      ? "unobserved"
-      : !previousAnswerability
-        ? "first_observed"
-        : sameAnswerability(previousAnswerability, transition.answerability) ? "unchanged" : "changed";
-    if (transition.answerability) previousAnswerability = transition.answerability;
-    const progress: AutomationStudioLlmEvidenceLoopProgress = {
-      draftRevisionBefore,
-      draftRevisionAfter: draftRevision,
-      pageState: transition.pageState ?? "unobserved",
-      draftState: transition.draftChanged ? "changed" : "unchanged",
-      answerabilityState
-    };
-    trace.push({
-      ...row,
-      ...(draftShown ? { draft: draftShown } : {}),
-      progress,
-      ...(transition.draftChange ? { draftChange: transition.draftChange } : {}),
-      ...(transition.answerability ? { answerability: transition.answerability } : {}),
-      at: Date.now()
-    });
-  };
+  // The one door every row enters the record through: it stamps each with the
+  // draft its decision was shown, its progress and its moment, and remembers the
+  // draft's revision and the last answerability between rows (`./evidence-loop/trace.ts`).
+  const rows = automationStudioLlmEvidenceLoopTraceRecorder(trace);
+  const recordRow = rows.record;
   // The draft (`runtime/flow-draft/`): every action appended as it happens, so
   // a result is written from what the loop did rather than from what is still
   // in front of the model. Kept whether or not it is shown.
@@ -336,7 +278,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
       completionAttempts: counters.completionAttempts,
       canComplete: offeredCompletion,
-      answerability: previousAnswerability,
+      answerability: rows.answerability,
       looksWithdrawn: looks.active(counters.attemptEpoch),
       actsMissing: input.draft ? input.draft.actsMissing?.(draftSteps) : undefined
     }),
@@ -419,25 +361,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // which live run it was). Shared by every allowance that can run out: the
   // budget's at the top of an iteration, the tool-call ceiling, and the literal
   // max-iteration exit.
+  // What the record says is built in `./evidence-loop/exhaustion.ts`, beside the fields it fills.
   const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound): AutomationStudioLlmEvidenceLoopResult =>
-    failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, {
-      bound,
-      maxIterations: limits.maxIterations,
-      iterations: accounting.iterations,
-      draftSteps: draftSteps.length,
-      // Counted exactly as an amendment's `keptStepCount` is, so the last row
-      // of the trace and the ending cannot disagree about how much plan there
-      // was: kept, and proposable.
-      proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
-      completionAttempts: counters.completionAttempts,
-      // Only while the run of refusals is unbroken. A loop that ran out after a
-      // decision it could use has no last refusal, and reporting the one before
-      // it would be the same conflation in a smaller field.
-      lastIssueCodes: counters.unusableInARow ? [...lastIssueCodes] : [],
-      ...(bound === "budget" && lastRemaining ? { budgetBound: purse.refusal ? "cost" as const : lastRemaining.limitedBy, ...(purse.refusal ? { costRefusal: { ...purse.refusal } } : {}) } : {}),
-      // What a continuation of this build is told it still owes.
-      outstandingIssueCodes: noProgress.outstanding
-    });
+    failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, automationStudioLlmEvidenceLoopExhaustion({
+      bound, maxIterations: limits.maxIterations, iterations: accounting.iterations, draftSteps, completionAttempts: counters.completionAttempts,
+      unusableInARow: counters.unusableInARow, lastIssueCodes, lastRemaining, purseRefusal: purse.refusal, outstandingIssueCodes: noProgress.outstanding
+    }));
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
   // accepted, the draft is run again from where its first step started, with no
   // model attached, and a result whose draft did not replay clean is refused
@@ -458,7 +387,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), looks,
+    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored
   };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
@@ -529,7 +458,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
-    draftShown = undefined;
+    rows.draftShown = undefined;
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
     let canAmend = false;
     // Whether this iteration's call is a step the model asked to run again, which
@@ -577,7 +506,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
         evidence, records: history.records(), budgetEntry,
         draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined } : undefined
       });
-      draftShown = decisionContext.draftShown;
+      rows.draftShown = decisionContext.draftShown;
       const shown = decisionContext.shown;
       noProgress.shown(shown.map((entry) => entry.callId));
       const raw = await purse.run(() => input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
