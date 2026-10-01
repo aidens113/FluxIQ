@@ -30,9 +30,13 @@ not changes to framework runtime contracts in this task.
 Initial recovery fix is source-complete: focused3files/17tests and web typecheck
 pass; supervisor web production build passes17pages,165872ms. Full Core audit
 has exactly one inherited unchanged service4506/4505 size failure; no baseline
-increase or unrelated service edit. Supervisor broader web suite88597 is queued
-through shared heavy slots. Local checkpoint commits preserve the verified
-focused implementation without claiming that broader suite has passed.
+increase or unrelated service edit. Supervisor broader web suite88597 completed
+exit1:1699pass/1fail, with the sole flow.build contract fixture rejected by a
+pre-provider request budget. The fixture correction uses public token defaults
+and passes60/60; supervisor inspected the raw completion and exact diff.
+Core composer loss was reproduced (2fail/8pass), then corrected10/10 passed.
+Checkpoint95573296 preserves these follow-ups; initial recovery e6eb33f2.
+Final web suite98054/typecheck62339 are queued; source remains frozen.
 
 Browser, live provider and panel management are not exercised. Visual and
 accessibility certification remains a separate live validation requirement.
@@ -54,3 +58,11 @@ accessibility certification remains a separate live validation requirement.
 - Validation: focused17/17, web tsc0, supervisor productionbuild0; full audit only inherited service4506/4505. Broader web suite88597 pending.
 - Outcome: Partial
 - Follow-up: checkpoint locally, observe broad suite, preserve Claude integration ownership.
+
+### 2026-09-30 - Scoped follow-ups verified; final checks running
+- Agent: supervisor and fixture worker
+- Changed: Core composer edit-revision guard and four owning regressions; contract fixture uses published provider token defaults. Runtime code, scripted responses, assertions and other budgets unchanged.
+- Why: preserve newer Core chat drafts and align the test fixture with the current public context window.
+- Validation: supervisor reproduced two composer failures (2fail/8pass), then observed corrected10/10 exit0. Inspected worker raw contract completion60/60 exit0 and exact fixture diff. git diff --check0.
+- Outcome: Partial
+- Follow-up: root full web tests session98054 and web typecheck62339; source frozen. Production build and final documentation checks follow. Initial checkpoints Coree6eb33f2/downstream21e915ee remain recoverable. Claude integration ownership unchanged.
