@@ -310,6 +310,13 @@ scroll locking and listener restoration remain unchanged.
 Database record tables identify their selected database/kind and column headers
 semantically, preserving all record requests and authorization behavior.
 
+Combobox options become unavailable immediately when disabled. Retired option
+and input callbacks cannot change a replacement control; current selection
+closes once. First ArrowDown enters the first filtered option and ArrowUp the
+last; composition, handled events and modifier shortcuts retain native input
+behavior. Field labels, controls and help/error messages share the child's
+existing ID when present, preserving caller description and validation attributes.
+
 Runtime has a read-only workspace over the existing global snapshot and get-run
 endpoints. It displays clients, capability entries, runs, observed dispatch paths
 and transports/adapters with client-side pages and explicit snapshot time,
