@@ -141,6 +141,11 @@ validator rejects external authorities and ambiguous encoded separators;
 arbitrary query return paths are data. Protected setup and program routes show
 the inline login gate before loading program state. Old request responses are
 ignored after route changes, while explicit retry uses the current destination.
+Sign-out prevents duplicate submission and keeps the workspace open on HTTP
+refusal or transport failure, with local retry feedback. Navigation follows only
+an acknowledged successful response; obsolete responses after the status control
+unmounts cannot navigate. An issued server sign-out is not cancellable by that
+local response fence.
 Legacy domain-program aliases preserve available scalar and repeated query
 values while using the path-owned domain id exactly once. Server redirects
 cannot preserve a fragment they never receive. Launcher recent-history writes

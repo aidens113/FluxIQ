@@ -11,6 +11,12 @@ Related: [current system](../architecture/current-system.md), [working document 
 
 ## Current State
 
+Sixth supervisor logout acknowledgement fix passes 6 new plus 26 unchanged
+AuthShell tests (native0, 2.41s) and scoped actual-config types (native0).
+Original source reproduced duplicate POST and HTTP-refusal navigation failures.
+Fixed local retry feedback and lifecycle fences are source-complete; database
+and runtime-log workers remain active, so full gates wait for their freeze.
+
 Latest continuation: onboarding, read-only Runtime and database authorization
 source complete. Database checkpointd5c979a6; supervisor combined82 and full
 300files/1852tests passed. Corrected third web typecheck69624 passes14708ms;

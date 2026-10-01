@@ -8,15 +8,42 @@ import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
 import { localAuthDestination } from "./auth-navigation";
 
 export function AuthStatus(props: { displayName: string; roleId: string }) {
+  const mounted = useRef(false);
+  const generation = useRef(0);
+  const pending = useRef<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; pending.current = null; };
+  }, []);
+
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/";
+    if (!mounted.current || pending.current !== null) return;
+    const request = ++generation.current;
+    pending.current = request;
+    setBusy(true);
+    setFailed(false);
+    const isCurrent = () => mounted.current && generation.current === request;
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!isCurrent()) return;
+      if (response.ok) window.location.href = "/";
+      else setFailed(true);
+    } catch {
+      if (isCurrent()) setFailed(true);
+    } finally {
+      if (isCurrent()) { pending.current = null; setBusy(false); }
+    }
   }
 
   return <div className="auth-status"><Menu icon={<UserRound aria-hidden size={15} />} label={props.displayName} options={[
     { id: "account", label: "Account and access", href: "/programs/identity-access", icon: <Settings aria-hidden size={14} /> },
-    { id: "logout", label: "Log out", onSelect: () => void logout(), icon: <LogOut aria-hidden size={14} /> }
-  ]} /><span className="auth-role">{props.roleId}</span></div>;
+    { id: "logout", label: busy ? "Signing out..." : "Log out", disabled: busy, onSelect: () => void logout(), icon: <LogOut aria-hidden size={14} /> }
+  ]} /><span className="auth-role">{props.roleId}</span>
+    {busy ? <span role="status">Signing out...</span> : null}
+    {failed ? <span role="alert">Sign-out failed. <button className="link-button" onClick={() => void logout()} type="button">Retry sign out</button></span> : null}
+  </div>;
 }
 
 export function GlobalTopbar(props: {
