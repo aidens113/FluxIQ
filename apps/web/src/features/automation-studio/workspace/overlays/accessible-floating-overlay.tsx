@@ -42,9 +42,11 @@ export function AccessibleFloatingOverlay(props: {
   useEffect(() => {
     const panel = panelRef.current;
     const root = rootRef.current;
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!panel || !root) return;
-    const releaseEnvironment = acquireOverlayEnvironment(document, {
+    const documentRef = panel.ownerDocument;
+    const active = documentRef.activeElement as HTMLElement | null;
+    const returnFocus = active && typeof active.focus === "function" ? active : null;
+    const releaseEnvironment = acquireOverlayEnvironment(documentRef, {
       mode: "nonmodal",
       panel,
       root,
@@ -54,8 +56,23 @@ export function AccessibleFloatingOverlay(props: {
       onPointerDownOutside: () => behaviorRef.current.onClose(),
       onViewportChange: () => updatePositionRef.current()
     });
-    const initial = panel?.querySelector<HTMLElement>(focusableSelector());
-    (initial ?? panel)?.focus({ preventScroll: true });
+    function eligible(element: HTMLElement) {
+      const focusable = ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(element.tagName)
+        || element.hasAttribute("tabindex") || (element.tagName === "A" && element.hasAttribute("href")) || element.isContentEditable;
+      if (!focusable || !element.isConnected || element.ownerDocument !== documentRef || element.hidden || element.matches(":disabled")
+        || (element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden")
+        || element.closest('[hidden], [inert], [aria-hidden="true"]') || !element.getClientRects().length) return false;
+      const visibility = documentRef.defaultView?.getComputedStyle(element).visibility;
+      return visibility !== "hidden" && visibility !== "collapse";
+    }
+    function first(selector: string) {
+      return Array.from(panel!.querySelectorAll<HTMLElement>(selector)).find(eligible);
+    }
+    if (documentRef.visibilityState !== "hidden" && (typeof documentRef.hasFocus !== "function" || documentRef.hasFocus()) && root.isConnected && eligible(panel)) {
+      // Selector lists follow DOM order, so explicit autofocus needs its own tiers.
+      const initial = first("[data-autofocus]") ?? first("[autofocus]") ?? first(focusableSelector());
+      (initial ?? panel).focus({ preventScroll: true });
+    }
     return releaseEnvironment;
   }, []);
 
@@ -154,12 +171,12 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function focusableSelector(): string {
   return [
-    "[autofocus]",
     "a[href]",
     "button:not(:disabled)",
     "input:not(:disabled)",
     "select:not(:disabled)",
     "textarea:not(:disabled)",
-    "[tabindex]:not([tabindex='-1'])"
+    "[tabindex]:not([tabindex='-1'])",
+    '[contenteditable="true"]'
   ].join(",");
 }
