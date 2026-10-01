@@ -190,7 +190,12 @@ function repeat(input: {
   const through = input.byId.get(routing.through);
   const overAt = input.positionOf.get(routing.over) ?? -1;
   const throughAt = input.positionOf.get(routing.through) ?? -1;
-  if (!over || !through || throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through a step that is not in the Flow after it.` };
+  // Three different mistakes, each said as itself. One sentence blaming
+  // `through` for all three sent a live build (`run-muog33va-96469cb2`) round
+  // nine refusals when it was `over` that named a step no longer in the Flow.
+  if (!over) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats over a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with over naming the kept step just before it whose rows it walks.` };
+  if (!through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with through naming the last kept step of the span.` };
+  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through step ${through.step.position}, which comes before it. through names the last step of the span, at or after step ${entry.step.position}; put steps in order with an amend_draft reorder first.` };
   if (overAt !== input.index - 1) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which has to be the step immediately before the span. Move it there with an amend_draft reorder, or say repeat with no over to mean the step before this one.` };
   const body = [...input.byId.values()].slice(input.index, throughAt + 1);
   if (body.some((candidate, offset) => offset > 0 && candidate.step.routing !== undefined)) {

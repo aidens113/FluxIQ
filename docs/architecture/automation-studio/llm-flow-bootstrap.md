@@ -89,8 +89,34 @@ verbatim. Answering `grant` adds exactly the classes the request listed as
 `missing` and the build carries straight on -- the same check is asked again
 rather than answered a second time. A refusal, or nobody answering, leaves the
 domain's own recoverable `permission_required` for the model to route around.
-One question is asked per build: a refusal nobody granted is remembered, so a
-build nobody is watching costs one question rather than one per action.
+
+**Nobody answering and a person saying no are different answers (t195-w18).**
+`automationStudioPermissionAskOutcome` (`runtime/parking/permission-ask.ts`)
+reads the ask back as `granted`, `declined` (a `deny` in the thread) or
+`unanswered` (the wait ran out, the caller did not wait, the wait was
+cancelled, or the thread could not be reached), and the gate settles each
+differently. An unanswered request stays in force: every later gated action
+is refused with that request's id and no new request is raised, so a build
+nobody is watching still costs one wait rather than one per action. A decline
+is remembered for that question alone -- the same control name, the same
+control kind, and the same classes it was asked about. That question is refused
+from then on without asking, carrying the declined request's id and
+`declined: true` on the verdict, and a later grant of the same classes on
+another control does not lift it. A different question raises a new request,
+which is put to the person in the same way. The request the build ends on, or
+is proposed with, is the one the latest refusal carried, with one exception: a
+declined request is carried only while a step of the Flow needs it. An
+exploration press of a declined control is refused without the build standing
+on it, so a later stalled round is not ended as that question and a finished
+Flow that never presses the control stays approvable; a plan step refused by a
+declined question ends the build on the declined request, and one refused by a
+new question ends it on that. Until this, one declined press on "Continue
+to checkout" refused "Place order" -- the press the task needed -- unasked for
+the rest of the build. The domain tells its model `consequences_declined` for a
+declined press rather than `consequences_not_granted`, which says the request
+is still in front of the person. The repair path
+(`recovery/runtime-exploration.ts`) still reads only granted or not, and settles
+everything else as unanswered.
 
 **Whether the build waits is the caller's decision.**
 `permissionAskTimeoutMs` on the generation input is how long it holds open for

@@ -73,10 +73,12 @@ const DESCRIPTION = [
   // reads the list, and stopped to ask permission to read
   // (`run-mueozmp8-348a2057`). The gate now disregards that answer; this is so
   // it is not reached for. There was no room for a sentence: the description is
-  // 1,996 of the 2,000 characters a provider accepts, and a build whose first
+  // 1,990 of the 2,000 characters a provider accepts, and a build whose first
   // request is refused runs nothing at all (`tests/run-node.test.ts`).
+  // "or opens checkout" below is the one example a live build needed (t195-w18):
+  // models declared `move_money` on the press that only opens a checkout page.
   `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] when it only reads or leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
-  `Judge this node, not the Flow: in one Flow the press that applies a filter is [] and the press that submits the post is ${PUBLISHING}.`,
+  `Judge this node, not the Flow: in one Flow the press that applies a filter or opens checkout is [] and the press that submits the post is ${PUBLISHING}.`,
   "A step joins the Flow only when added (add on the call or amend_draft add); correct one with amend_draft: rerun, drop, reorder."
 ].join(" ");
 

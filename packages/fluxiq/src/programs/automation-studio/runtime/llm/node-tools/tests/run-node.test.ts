@@ -41,7 +41,9 @@ describe("the run-node tool's declaration", () => {
     // four live builds that declared `[]` for every press including one that
     // publishes. A model shown only the empty answer learns its shape.
     const description = tool()!.description;
-    expect(description).toContain("the press that applies a filter is []");
+    // Opening checkout is named beside the filter (t195-w18): live builds
+    // declared `move_money` on the press that only opens the checkout page.
+    expect(description).toContain("the press that applies a filter or opens checkout is []");
     expect(description).toContain("the press that submits the post is send_or_publish");
   });
 

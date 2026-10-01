@@ -200,6 +200,21 @@ describe("a span that repeats", () => {
     expect(wired).toContain("web.output.dom-click:success -> builtin.control.merge:branches");
   });
 
+  // One sentence blamed `through` for all three of these, and a live build
+  // whose `over` named a step no longer in the Flow resent the same completion
+  // nine times (`run-muog33va-96469cb2`). Each now says which reference is wrong.
+  it("says which end of an unknown span is wrong, and how to put it right", () => {
+    const span = (routing: AutomationStudioFlowDraftStepRouting) => assemble([
+      step(1, "read", { target: ".row" }),
+      step(2, "press", { target: ".row-open" }),
+      step(3, "press", { target: ".row-confirm" }, routing)
+    ]).issues.find((issue) => issue.code === "flow_draft.repeat_span_unknown")?.message;
+
+    expect(span({ kind: "repeat", through: "d3", over: "d9" })).toBe("Step 3 repeats over a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step 3 again with over naming the kept step just before it whose rows it walks.");
+    expect(span({ kind: "repeat", through: "d9", over: "d2" })).toBe("Step 3 repeats through a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step 3 again with through naming the last kept step of the span.");
+    expect(span({ kind: "repeat", through: "d1", over: "d2" })).toBe("Step 3 repeats through step 1, which comes before it. through names the last step of the span, at or after step 3; put steps in order with an amend_draft reorder first.");
+  });
+
   it("produces a plan the validator accepts, cycle and all", () => {
     const assembled = assemble([
       step(1, "read", { target: ".row" }),

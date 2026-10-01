@@ -10,9 +10,10 @@
 //
 // The whole mechanism is the gate's, and nothing here decides anything. The
 // gate raises the request; this opens it as the ask the conversation already
-// has, keyed by the request's own `requestId`, and answers whether it came back
-// granted. What the caller does with a permission is the caller's: it settles its
-// own gate and asks the same check again, so nothing decides permission twice.
+// has, keyed by the request's own `requestId`, and answers how it came back:
+// granted, declined by the person, or never answered. What the caller does with
+// that is the caller's: it settles its own gate and asks the same check again,
+// so nothing decides permission twice.
 //
 // **A thread that cannot be written to is not a run that dies.** An unreachable
 // thread, a port that cannot wait, a store that threw -- each leaves the caller
@@ -61,11 +62,32 @@ export function automationStudioPermissionAskWaitMs(timeoutMs: number | undefine
   return Math.min(Math.round(timeoutMs), AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS);
 }
 
+/**
+ * How one permission question came back.
+ *
+ * `granted` and `declined` are a person's own answer, `grant` and `deny` in the
+ * thread. `unanswered` is everything else: nobody answered before the wait
+ * ran out, the caller did not wait, the wait was cancelled, or the thread could
+ * not be written to or read. The difference matters to a caller that keeps
+ * going after a refusal. A person who said no to one control is still there to
+ * be asked about another; a person who never answered is not, and asking them
+ * again only costs another wait (t195-w18).
+ */
+export type AutomationStudioPermissionAskOutcome = "granted" | "declined" | "unanswered";
+
 /** Puts one request to a person and waits, or carries on without an answer. */
 export async function automationStudioAskedAndGranted(
   ask: AutomationStudioPermissionAsk,
   request: AutomationStudioActionPermissionRequest
 ): Promise<boolean> {
+  return (await automationStudioPermissionAskOutcome(ask, request)) === "granted";
+}
+
+/** Puts one request to a person and waits, and says whether they granted it, declined it, or never answered. */
+export async function automationStudioPermissionAskOutcome(
+  ask: AutomationStudioPermissionAsk,
+  request: AutomationStudioActionPermissionRequest
+): Promise<AutomationStudioPermissionAskOutcome> {
   const now = ask.now ?? Date.now;
   const waitMs = automationStudioPermissionAskWaitMs(ask.timeoutMs);
   // The ask always says what it would wait for, whether or not this caller
@@ -98,13 +120,17 @@ export async function automationStudioAskedAndGranted(
   };
   try {
     await ask.port.open(raised);
-    if (waitMs === undefined) return false;
+    if (waitMs === undefined) return "unanswered";
     const answer = await ask.port.awaitAnswer?.(raised, {
       expiresAtMs: now() + waitMs,
       ...(ask.signal ? { signal: ask.signal } : {})
     });
-    return answer?.kind === "grant";
+    // An expired ask comes back as nothing, never as a `deny`: the store
+    // settles a timeout as `expired`, not as an answer (`conversation-port.ts`).
+    if (answer?.kind === "grant") return "granted";
+    if (answer?.kind === "deny") return "declined";
+    return "unanswered";
   } catch {
-    return false;
+    return "unanswered";
   }
 }
