@@ -52,6 +52,19 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * declaration at all, so the compile-time rule and the run-time rule agree.
    */
   deniedEvidenceKeys: readonly string[];
+  /**
+   * The top-level keys of a tool result's value that are this domain's view of
+   * its target as the call saw or left it -- for the web domain, the page.
+   *
+   * Core shows each decision the newest such view whole, and in every earlier
+   * result replaces exactly these keys with a reference to the result that
+   * replaced them, keeping the rest of it -- what the step did and what
+   * changed (`../context-window.ts`). Only the domain knows which keys those
+   * are, so the domain declares them, as it declares `deniedEvidenceKeys`.
+   * Absent, every result is shown whole in every later decision, which is
+   * what overflowed live builds (B1, `run-mup2i28c-6c7fc209`).
+   */
+  observedStateKeys?: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
   /**
    * Whether this domain can run a node of the library against its live target,
@@ -355,7 +368,7 @@ export function automationStudioHarnessOptionBundleFromBinding(
       implementations[option.toolId] = implementation;
     }
   }
-  return { schemaVersion: "0.1", domainId: binding.domainId, options, implementations };
+  return { schemaVersion: "0.1", domainId: binding.domainId, options, implementations, ...(binding.observedStateKeys?.length ? { observedStateKeys: [...binding.observedStateKeys] } : {}) };
 }
 
 /**

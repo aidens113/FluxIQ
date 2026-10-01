@@ -1563,7 +1563,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           // One live round: the exploration, then any repair after its Flow was tested and judged (`flow-bootstrap/unfinished-build/`; user, 2026-09-30).
           const signal = AbortSignal.any([permissions.signal, personNeeded.signal]); const executeTool = routing.recording(personNeeded.executeTool);
           const round = ({ budget, maxIterations, repair, stalled }: AutomationStudioFlowBootstrapRoundRequest) => runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
-            tools: harnessOptions.tools,
+            tools: harnessOptions.tools, observedStateKeys: harnessOptions.observedStateKeys,
             propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: Math.min(bootstrapLoopLimits.maxConsecutiveUnusableDecisions, maxIterations), stalled: (progress) => permissions.endedOnRequest(progress, loopAccounting(progress.accounting)) ?? personNeeded.endedOnIntervention(progress, loopAccounting(progress.accounting)) ?? stalled(progress) },
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
             checkCompletion: async (result, context) => {

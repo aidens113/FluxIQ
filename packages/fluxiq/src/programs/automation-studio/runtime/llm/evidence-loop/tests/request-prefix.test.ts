@@ -12,6 +12,12 @@
 // through the real service and the real DeepSeek adapter, with only the network
 // and the credential store stood in, and holds every consecutive pair of
 // requests to the property (`../../deepseek/request-body.ts`).
+//
+// A domain that declares which keys of a result are its view of the target
+// has every view but the newest replaced by a reference (B1,
+// `../../context-window.ts`). The view a request shows whole becomes a
+// reference in the next, so the prefix then holds through every entry before
+// the current view -- each written once and never changed -- and no further.
 
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -58,6 +64,8 @@ describe("the cached prefix of a build's decisions", () => {
     for (let index = 1; index < sent.length; index += 1) {
       const earlier = sent[index - 1]!;
       const later = sent[index]!;
+      // Nothing is declared a view here, so every result stays whole.
+      expect(later.payload.context.evidenceLoop.evidence.some((entry) => JSON.stringify(entry.value).includes("supersededBy"))).toBe(false);
       const shared = sharedToolResults(earlier.payload.context.evidenceLoop.evidence, later.payload.context.evidenceLoop.evidence);
       // A tool's result never leaves the window, so everything the earlier
       // call was shown of them the later one is shown too, in the same place.
@@ -69,7 +77,43 @@ describe("the cached prefix of a build's decisions", () => {
       expect(prompt(earlier).indexOf('"nodeCatalog"'), `call ${index} -> ${index + 1}: catalog in the prefix`).toBeLessThan(matched);
     }
   }, 60_000);
+
+  it("with views declared, shows only the newest whole, and every request is a prefix of the next through the entry before its view", async () => {
+    const sent = await build((call) => call <= 5
+      ? { kind: "tool_call", callId: `call.${call}`, toolId: TOOL_ID, input: { area: `area.${call}` }, add: true }
+      : { kind: "complete", result: {} }, ["elements"]);
+
+    expect(sent.length).toBeGreaterThanOrEqual(6);
+    for (const [index, request] of sent.entries()) {
+      const evidence = request.payload.context.evidenceLoop.evidence;
+      const views = evidence.filter((entry) => isObject(entry.value) && "elements" in entry.value);
+      const results = evidence.filter((entry) => entry.toolId === TOOL_ID);
+      // One whole view at most -- the newest result -- and every earlier result
+      // a reference to the one after it, keeping what the step said.
+      expect(views.map((entry) => entry.callId), `request ${index + 1}`).toEqual(results.slice(-1).map((entry) => entry.callId));
+      for (const [at, entry] of results.slice(0, -1).entries()) {
+        expect(entry.value, `request ${index + 1}, ${entry.callId}`).toEqual({ area: `area.${at + 1}`, status: "changed", supersededBy: results[at + 1]!.callId });
+      }
+    }
+    for (let index = 1; index < sent.length; index += 1) {
+      const earlier = sent[index - 1]!;
+      const later = sent[index]!;
+      const evidence = earlier.payload.context.evidenceLoop.evidence;
+      const view = evidence.findIndex((entry) => isObject(entry.value) && "elements" in entry.value);
+      const settled = view < 0 ? evidence.filter(isToolResult).length : view;
+      expect(JSON.stringify(later.payload.context.evidenceLoop.evidence.slice(0, settled)), `call ${index} -> ${index + 1}: entries before the view unchanged`).toBe(JSON.stringify(evidence.slice(0, settled)));
+      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, settled);
+      const matched = commonPrefixLength(prompt(earlier), prompt(later));
+      expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
+    }
+    // The window grows by a reference per step, not by a page: the last request
+    // carries one page of 60 elements, where it used to carry five.
+    const last = sent.at(-1)!.payload.context.evidenceLoop.evidence;
+    expect(last.filter((entry) => isObject(entry.value) && "elements" in entry.value)).toHaveLength(1);
+  }, 60_000);
 });
+
+function isObject(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
 function isToolResult(entry: SentEntry): boolean { return !entry.toolId.startsWith("core."); }
 
@@ -122,7 +166,7 @@ function pathAt(request: Sent, offset: number): string {
 }
 
 /** One evidence-guided build, answering the n-th decision call with `reply(n)`; every request it sent. */
-async function build(reply: (call: number) => JsonObject): Promise<Sent[]> {
+async function build(reply: (call: number) => JsonObject, observedStateKeys?: readonly string[]): Promise<Sent[]> {
   const sent: Sent[] = [];
   const service = new AutomationStudioService({ dataDir: tempRoot });
   service.bindNativeNodeRuntime(webRuntime());
@@ -146,7 +190,7 @@ async function build(reply: (call: number) => JsonObject): Promise<Sent[]> {
     if (!resolution) return undefined;
     return { ...resolution, maxCallsPerRun: 8, tokenLimits, maxTotalTokensPerRun: tokenLimits.maxTotalTokens * 8, timeoutMs: 25_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 };
   });
-  service.bindLlmEvidenceRuntime(binding());
+  service.bindLlmEvidenceRuntime(binding(observedStateKeys));
   try {
     const project = await service.createProject({ name: "Prefix", domainId: "web-automation" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });
@@ -164,10 +208,11 @@ async function build(reply: (call: number) => JsonObject): Promise<Sent[]> {
 }
 
 /** One mutating tool whose every call reaches a new page state, returns a page-sized result and records a proposable step. */
-function binding(): AutomationStudioLlmEvidenceRuntimeBinding {
+function binding(observedStateKeys?: readonly string[]): AutomationStudioLlmEvidenceRuntimeBinding {
   return {
     domainId: "web-automation",
     deniedEvidenceKeys: [],
+    ...(observedStateKeys ? { observedStateKeys } : {}),
     tools: [{
       toolId: TOOL_ID,
       description: "Act on one area of the demo site and report what it shows.",

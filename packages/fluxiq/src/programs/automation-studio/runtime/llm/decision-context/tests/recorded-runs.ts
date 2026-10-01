@@ -437,9 +437,15 @@ D47 complete
     42: [{ step: 26, change: "rerun", input: readInput("rerun.26") }]
   },
   checks: {
-    // The debug reads completion 1 as refused by the dry run; that the check
-    // itself passed is a choice.
-    29: "ok",
+    // The debug reads completion 1 as refused by the dry run, and this script
+    // used to let the check pass so that dry run would happen. It no longer can:
+    // the dry run now makes steps 3 and 6 optional itself -- the prompt and the
+    // soft check the store remembered, absent on the reset with every later step
+    // replayed (`../../../flow-draft/sometimes-present.ts`) -- so a passing check
+    // ends the build here, accepted. Today's check refuses it instead, as it
+    // refuses 40-47: the kettle was added at 34 and saved for later at 41, so
+    // at 29 the person's acts were not done.
+    29: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
     40: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
     44: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
     46: refusal([planInvalid(UNLOGGED_CHECK_CODE, "plan")]),
@@ -451,10 +457,12 @@ D47 complete
     // here), and each of the first three ran a dry run; 47 reused dry run 4's
     // "clean" verdict, because the gate had waved steps 3 and 6 through from dry
     // run 2 on. Two changes since: an unreproducible step refuses every
-    // completion (`../../../flow-draft/dry-run.ts`), and a completion the check
-    // refuses is not tested at all (`../../evidence-loop/completion-attempt.ts`).
-    // The second decides it: none of the four runs a dry run, and dry run 1 at
-    // 29, whose check passed, is the only one. 47 traces as logged again.
+    // completion unless the replay proves the Flow did not need it
+    // (`../../../flow-draft/dry-run.ts`), and a completion the check refuses is
+    // not tested at all (`../../evidence-loop/completion-attempt.ts`).
+    // The second decides it: none of the five runs a dry run. 47 traces as
+    // logged again.
+    29: { line: "D29 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
     40: { line: "D40 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
     44: { line: "D44 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
     46: { line: "D46 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }

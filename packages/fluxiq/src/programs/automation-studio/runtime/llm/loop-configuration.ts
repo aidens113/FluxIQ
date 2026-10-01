@@ -43,10 +43,19 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   }): Promise<unknown>;
   /**
    * Runs one tool call. The loop hands no byte allowance: a tool returns its
-   * whole result, and every result is shown to the model in full
-   * (`context-window.ts`).
+   * whole result, and every result is shown to the model in full, save a view
+   * of the target a newer one replaced (`context-window.ts`).
    */
   executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * The top-level keys of a tool result that are a view of the target -- a
+   * page, for the web domain -- as the bound domain declared them
+   * (`AutomationStudioLlmEvidenceRuntimeBinding.observedStateKeys`). Each
+   * decision is shown the newest view whole and every earlier one as a
+   * reference to the result that replaced it (`context-window.ts`). Absent or
+   * empty, every result is shown whole.
+   */
+  observedStateKeys?: readonly string[] | undefined;
   maxIterations?: number;
   maxToolCalls?: number;
   /**
