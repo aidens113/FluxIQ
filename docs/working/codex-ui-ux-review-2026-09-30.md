@@ -1,9 +1,9 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Source review and initial recovery/composer fixes verified; broader UX roadmap remains queued.
+Status detail: Continuous UX execution resumed; Production, Compute, authoring and Problems focused corrections verified, global question queue active.
 Created: 2026-09-30
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 Owner: Codex senior supervisor
 Scope: Core web shell, operational panels and Automation Studio user journeys; paired extension review and draft-preservation fixes.
 Paired document: codex-ui-ux-review-2026-09-30.md in the sibling downstream repository.
@@ -15,6 +15,23 @@ The downstream paired plan is authoritative for coordination, worker briefs and
 reports. This Core task is isolated in task/t224-codex-ui-ux-review. Claude owns
 integration; no dev/main merge or push. No private runtime state, storage,
 conversation implementation or other agents' worktrees are edited.
+
+Execution resumed 2026-10-01 at the user's explicit request: keep working through
+the remaining UX phases with subagents, then find other useful nonconflicting
+work. Downstream paired Current State and written continuation briefs own exact
+file assignments: authoring navigation, Problems query feedback, extension keyed
+rows. Supervisor owns production-runner.tsx and its new owning behavior tests.
+No whole-tree validation during active edits; focused runs use shared heavy slots.
+No batch-boundary stop, merge/push, panel startup, live/browser/provider calls.
+Keep durable reports and checkpoint commits as steps are independently verified.
+
+2026-10-01 checkpoints: c71aa0fd Production Runner (11focusedpass),3d90046b
+Compute visible selection (6focusedpass),b2eb277f Problems query states
+(supervisor30pass),2594f6c9 authoring review/scope guards (supervisor55pass).
+These focused results are independently observed; coordinated broad web checks
+wait for the global-question worker to freeze source. Other workers now audit
+onboarding and extraction read-only for the next implementation assignments.
+Extension final full1695pass and types/build pass in paired downstream tree.
 
 Confirmed: program API calls await reauthentication after HTTP 401, but generic
 program pages mount AuthStatus rather than GlobalTopbar, the only existing

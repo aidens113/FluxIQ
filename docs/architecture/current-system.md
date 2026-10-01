@@ -114,6 +114,19 @@ beside the affected controls for retry. Parameter drafts belong to the effective
 target type and id; changing or removing a target restores the new target's
 defaults. Snapshot requests ignore older responses and completions after teardown.
 
+Compute Control resolves selected detail and activity from the visible filtered
+nodes. Search, health or capability changes choose a visible fallback or clear
+the selection when nothing matches; hidden nodes do not retain their detail.
+
+Automation Studio's Problems view distinguishes remote loading, access denial,
+failed queries and successful empty results. Previous-query rows are labelled
+stale while replacement results are pending or failed, and retry retains the
+requested page. Project/filter changes and teardown invalidate old responses.
+The Steps start pane passes proposal navigation to blank-flow authoring and
+existing-flow improvement. Successful generation retains a Review suggested
+change action; generated changes require review, and late responses after a
+project/flow change or teardown cannot navigate or publish into the new scope.
+
 Authenticated routes share one session-recovery host in the root layout. When a
 program API request receives HTTP 401, it can ask the person to sign in again
 without replacing the current workspace or its unsaved edits. Successful recovery
