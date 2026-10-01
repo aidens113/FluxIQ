@@ -128,7 +128,11 @@ validator rejects external authorities and ambiguous encoded separators;
 arbitrary query return paths are data. Protected setup and program routes show
 the inline login gate before loading program state. Old request responses are
 ignored after route changes, while explicit retry uses the current destination.
-This does not restore query data already discarded by a legacy redirect.
+Legacy domain-program aliases preserve available scalar and repeated query
+values while using the path-owned domain id exactly once. Server redirects
+cannot preserve a fragment they never receive. Launcher recent-history writes
+are optional: storage denial does not throw through the Link click callback,
+and the in-memory recent list retains its existing six-entry bound.
 
 Revealed Secret Keys, manual TOTP keys, source viewers, selected Inspector IDs
 and expanded raw state JSON use a shared clipboard control. It
