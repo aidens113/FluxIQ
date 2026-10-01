@@ -20,7 +20,7 @@ const BUDGET_BOUNDS: Readonly<Record<Exclude<AutomationStudioLlmEvidenceLoopBudg
   duration: "duration"
 });
 
-/** The round's ending: finished, stopped short, stopped by a budget, or one this lifecycle does not reach past. */
+/** The round's ending: finished, stopped short, stopped by a budget or by unreadable replies, or one this lifecycle does not reach past. */
 export function automationStudioFlowBootstrapRoundEnding(
   outcome: AutomationStudioLlmEvidenceLoopResult | AutomationStudioFlowBootstrapUnfinishedStall
 ): AutomationStudioFlowBootstrapRoundEnding {
@@ -32,6 +32,10 @@ export function automationStudioFlowBootstrapRoundEnding(
   const progress = { trace: outcome.trace, accounting: outcome.accounting };
   if (outcome.code === "llm_evidence_loop.repeat_without_progress") {
     return { kind: "unfinished", stopped: "repeat_without_progress", steps: outcome.steps, lastIssueCodes: [], completionAttempts: 0, progress };
+  }
+  if (outcome.code === "llm_evidence_loop.unreadable_replies" && outcome.unreadable) {
+    const lastCode = outcome.trace.at(-1)?.resultCode;
+    return { kind: "unreadable", stopped: "unusable_decisions", unreadable: outcome.unreadable, steps: outcome.steps, lastIssueCodes: lastCode ? [lastCode] : [], completionAttempts: 0, progress };
   }
   const exhaustion = outcome.code === "llm_evidence_loop.iteration_limit" ? outcome.exhaustion : undefined;
   if (!exhaustion) return { kind: "other", loop: outcome };

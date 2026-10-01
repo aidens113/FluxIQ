@@ -36,6 +36,12 @@
 // reached from an empty Flow: it needs the evidence of a repair that got no
 // further than a judged Flow.
 //
+// **Unreadable replies end the build only as that (t211).** Each reply the
+// loop could not read is asked again; an unbroken run of them ends the round
+// as `unreadable`, and the build with a message saying so and how many tries
+// it took (`./replies-unreadable.ts`) -- never "not doable", and never a bare
+// code.
+//
 // **A budget is never "not doable".** A round stopped by the spend ceiling,
 // the token budget or the deadline -- or a repair that has none of them left to
 // start with -- ends the build as exactly that (`./budget-exhausted.ts`). The
@@ -49,7 +55,7 @@
 // the caller's loop raises that is not a stall -- a permission ask, a person
 // needed, a provider failure -- passes through untouched.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
@@ -64,6 +70,7 @@ import {
   type AutomationStudioFlowBootstrapUnfinishedTest
 } from "./judgement.ts";
 import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
+import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
@@ -138,7 +145,7 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
    * ended with a stated reason.
    */
   | { kind: "ended"; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>; accounting: AutomationStudioLlmEvidenceLoopAccounting; rounds: number }
-  /** Not doable, or a budget ran out first: the ending the person is told. */
+  /** Not doable, a budget ran out first, or the replies could not be read: the ending the person is told. */
   | {
     kind: "unfinished";
     ending: AutomationStudioFlowBootstrapBuildEnding;
@@ -191,15 +198,17 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds };
     }
     const { judgement, seed } = judged;
-    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
-      const kept = await input.keep(kind === "not_doable" ? (stopped === "budget" ? "budget" : stopped) : "budget", ending.lastIssueCodes, seed, ending.completionAttempts);
+    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable }): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
+      const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", ending.lastIssueCodes, seed, ending.completionAttempts);
       const checklist = input.checklist(seed);
       const told = { judgement, checklist, rounds, decisions: spent.iterations };
       return {
         kind: "unfinished",
         ending: kind === "not_doable"
           ? automationStudioFlowBootstrapNotDoable(told)
-          : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds } }),
+          : typeof kind === "object"
+            ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds } }),
         progress: ending.progress,
         lastIssueCodes: ending.lastIssueCodes,
         kept,
@@ -208,6 +217,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       };
     };
     if (ending.kind === "budget") return await end(ending.bound);
+    // Replies that kept arriving unreadable, each asked again: said as exactly that, with how many tries.
+    if (ending.kind === "unreadable") return await end({ unreadable: ending.unreadable });
     const todo = judgement.todo.length;
     const resume = (): AutomationStudioLlmEvidenceLoopResume => ({ revision: round + 1, stopped, outstandingIssueCodes: [...judgement.lastIssueCodes, ...judgement.testIssueCodes], judgement: automationStudioFlowBootstrapJudgementValue(judgement) });
     // Nothing in the Flow: never an ending while budget remains. The model is told so, with the checklist all to do, and explores on live.

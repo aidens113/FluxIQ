@@ -56,6 +56,13 @@ export {
 export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
+// How a loop that asks again counts the replies it could not read, and what the
+// build's ending is told of them (`unreadable-reply.ts`).
+export {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
+  automationStudioLlmUnreadableReplySaid,
+  type AutomationStudioLlmEvidenceLoopUnreadable
+} from "./unreadable-reply.ts";
 // The decision history: every decision a loop made and what it answered, the
 // entry that shows it beside the window, and what one decision is shown
 // (`decision-context/`). Public because a caller reading a run's evidence has

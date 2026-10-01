@@ -32,7 +32,10 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
   "llm_evidence_loop.tool_failed": "flow_bootstrap.evidence_tool_failed",
   "llm_evidence_loop.evidence_limit": "flow_bootstrap.evidence_limit",
   "llm_evidence_loop.iteration_limit": "flow_bootstrap.evidence_iteration_limit",
-  "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled"
+  "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled",
+  // A build ends this way through its phases, with a message (`../unfinished-build/replies-unreadable.ts`);
+  // a caller that publishes the loop's ending itself has only the code, and it names what happened.
+  "llm_evidence_loop.unreadable_replies": "flow_bootstrap.provider_response_malformed"
 };
 
 /**

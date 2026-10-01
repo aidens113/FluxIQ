@@ -39,6 +39,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
 import type { AutomationStudioLlmTaskResult } from "./harness.ts";
 import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
+import { automationStudioLlmUnreadableReplySaid } from "./unreadable-reply.ts";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
@@ -76,6 +77,9 @@ export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; comple
 const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
   + "Answer again with exactly one decision of the accepted shape. The same issues again count toward stopping this exploration.";
 
+const UNREADABLE_INSTRUCTION = "Nothing ran and nothing changed. Answer the same question again, with exactly one complete JSON object of the accepted shape and nothing before or after it. "
+  + "Keep it short: a rerun's input carries only the keys that change.";
+
 /**
  * What an issue the loop itself refuses a decision for means, where the code
  * alone does not say what to do instead. Added only when that code is listed,
@@ -84,7 +88,12 @@ const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used,
 const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   // `./decision-handlers/look-withdrawal.ts`: a look asked for after an ignored redirect.
   "llm_evidence_loop.look_withdrawn": "Looking is withdrawn: you asked again for what you already hold right after being told you hold it, so no look runs and none is answered from memory. "
-    + "Looks return once an action runs: run an action the instruction needs, amend the draft, or complete."
+    + "Looks return once an action runs: run an action the instruction needs, amend the draft, or complete.",
+  // `./evidence-loop/decision-refusal.ts`: a decision of a kind this decision was not offered.
+  "llm_evidence_loop.complete_not_offered": "Finishing was not offered for this decision: the decision schema has no complete variant yet. Run a tool call the instruction needs first.",
+  "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant. Choose one of the variants it does offer.",
+  // `./evidence-loop/decision-refusal.ts`: a reply that was JSON, but not a decision of any accepted shape.
+  "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list."
 };
 
 /**
@@ -149,11 +158,32 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   maxStepsWithoutProgress: number;
   /** What the unusable decision was offered, so the accepted shapes are the ones it could have given. */
   offers?: AutomationStudioLlmUnusableDecisionOffers;
+  /**
+   * Present when the reply arrived and could not be read (`./unreadable-reply.ts`):
+   * the note says what could not be read and how many in a row stop the loop,
+   * in place of the no-progress count, which such a reply does not move.
+   */
+  unreadable?: { reply?: AutomationStudioLlmProviderReplyAccount | undefined; inARow: number; maxInARow: number };
 }): JsonObject {
+  const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_FEEDBACK_ISSUE_CODES);
+  if (input.unreadable) {
+    const { reply, inARow, maxInARow } = input.unreadable;
+    const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
+    return {
+      ok: false,
+      code: "llm_evidence_loop.reply_unreadable",
+      issueCodes,
+      unreadable: { ...(reply ? { case: reply.case } : {}), said },
+      unreadableInARow: inARow,
+      maxUnreadableInARow: maxInARow,
+      accepted: acceptedDecision(input.offers),
+      instruction: `Your previous reply could not be read: ${said}. ${UNREADABLE_INSTRUCTION} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
+    };
+  }
   return {
     ok: false,
     code: "llm_evidence_loop.decision_unusable",
-    issueCodes: [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))].slice(0, MAX_FEEDBACK_ISSUE_CODES),
+    issueCodes,
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
     accepted: acceptedDecision(input.offers),

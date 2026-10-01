@@ -39,8 +39,10 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
   /**
    * `not_doable`: no route to what was asked is left -- the repair after the
    * test got no further. `budget_exhausted`: a budget ran out first.
+   * `replies_unreadable`: the model's replies kept arriving unreadable, each
+   * asked again, until an unbroken run of them stopped the build (t211).
    */
-  kind: "not_doable" | "budget_exhausted";
+  kind: "not_doable" | "budget_exhausted" | "replies_unreadable";
   /** What the person reads in the chat: Core's sentences and their own words for what they asked. */
   message: string;
   /** `budget_exhausted` only: which budget. */
@@ -54,7 +56,8 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
 /** The code each ending is published under. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES: Readonly<Record<AutomationStudioFlowBootstrapBuildEnding["kind"], AutomationStudioFlowBootstrapFailureDiagnostic["code"]>> = Object.freeze({
   not_doable: "flow_bootstrap.not_doable",
-  budget_exhausted: "flow_bootstrap.evidence_budget_exhausted"
+  budget_exhausted: "flow_bootstrap.evidence_budget_exhausted",
+  replies_unreadable: "flow_bootstrap.model_replies_unreadable"
 });
 
 /** The most a message may hold: what the chat shows of one row (`ClientGatewayActivity`, `detail.text`). */

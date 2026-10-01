@@ -545,12 +545,35 @@ creation fails as `flow_bootstrap.evidence_unusable_decision`. A usable
 decision resets the count. A completion the check accepts is persisted as it
 was checked.
 
+**An unreadable reply is asked again, never a bare ending (t211).** A reply that
+arrived and could not be read (`llm.provider_malformed_response`, a truncated
+or oversized reply, output that is not the decision object) has a count of its
+own and never moves the no-progress guard. It is asked again with the same
+context and a `core.decision_check` note saying what could not be read (the
+reply's case from `runtime/llm/reply-account.ts`, in words) and how many in a
+row stop the build; it is paid for and counted in the budget. Six in a row end
+the round `llm_evidence_loop.unreadable_replies`, and the build ends
+`flow_bootstrap.model_replies_unreadable` with an `ending` message saying so,
+how many tries it took, what of the request the Flow already does and whether
+the Flow so far was kept (`runtime/llm/unreadable-reply.ts`,
+`runtime/flow-bootstrap/unfinished-build/replies-unreadable.ts`). A reply that
+was read but is no decision the iteration offered -- a shape the grammar does
+not read, finishing before finishing was offered, editing the draft when that
+was not offered -- is refused as `llm_evidence_loop.decision_shape_invalid`,
+`complete_not_offered` or `amend_not_offered` and asked again like any unusable
+decision, rather than ending the loop `invalid_decision`
+(`runtime/llm/evidence-loop/decision-refusal.ts`).
+
 **The model authors the draft (user, 2026-09-30).** A step the loop runs is
 appended as `taken`: evidence, not a step of the Flow. It enters the Flow only
 when the model adds it, either with `add: true` on the tool call that runs it
 (no extra decision) or with an `add` amendment naming its step (`to` places it,
 `act` names the act it does). Drop, exploratory, reorder, rerun, repeat,
-only_if, on_failed and optional edit the authored Flow as before. A rerun that
+only_if, on_failed and optional edit the authored Flow as before. A rerun's
+`input` is a JSON merge patch over the argument the step ran with -- only the
+keys that change; a list replaces whole and `null` removes a key -- because the
+long free-form whole arguments it used to carry were the replies that came back
+unreadable (`runtime/llm/evidence-loop/rerun-input.ts`). A rerun that
 worked takes the replaced step's place: its position, its membership, its acts
 and its routing, and every routing statement naming the old step is rewritten
 to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). The draft entry's

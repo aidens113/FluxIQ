@@ -32,7 +32,8 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
 
 const ENDING_TITLES = Object.freeze({
   not_doable: "Not doable: this Flow could not be built",
-  budget_exhausted: "Build stopped: a budget ran out"
+  budget_exhausted: "Build stopped: a budget ran out",
+  replies_unreadable: "Build stopped: the model's replies could not be read"
 });
 
 /**
@@ -41,6 +42,6 @@ const ENDING_TITLES = Object.freeze({
  */
 function buildEndingOf(error: unknown): { kind: keyof typeof ENDING_TITLES; message: string } | undefined {
   const ending = (error as { diagnostic?: { ending?: { kind?: unknown; message?: unknown } } } | null)?.diagnostic?.ending;
-  if (!ending || (ending.kind !== "not_doable" && ending.kind !== "budget_exhausted") || typeof ending.message !== "string" || !ending.message) return undefined;
-  return { kind: ending.kind, message: ending.message };
+  if (!ending || typeof ending.kind !== "string" || !Object.prototype.hasOwnProperty.call(ENDING_TITLES, ending.kind) || typeof ending.message !== "string" || !ending.message) return undefined;
+  return { kind: ending.kind as keyof typeof ENDING_TITLES, message: ending.message };
 }

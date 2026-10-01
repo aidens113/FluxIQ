@@ -48,6 +48,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   automationStudioLlmEvidenceAmendmentMemory,
+  automationStudioLlmEvidenceDecisionRefusal,
   automationStudioLlmEvidenceCallDiagnostic as callDiagnostic,
   automationStudioLlmEvidenceCallRecord as callRecord,
   automationStudioLlmEvidenceResumeEntry,
@@ -85,8 +86,10 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
   AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmUnusableDecisionFeedback,
-  automationStudioLlmUnusableDecisionIssueSet
+  automationStudioLlmUnusableDecisionIssueSet,
+  type AutomationStudioLlmUnusableDecisionOffers
 } from "./unusable-decision.ts";
+import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
 
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
 // bounded by the same three numbers, and a constant both directories read is
@@ -393,6 +396,23 @@ export async function runAutomationStudioLlmEvidenceLoop(
     evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
     return "ask_again";
   };
+  // A reply that arrived and could not be read (`./unreadable-reply.ts`): its own
+  // count, never the no-progress guard's -- the model repeated nothing -- asked
+  // again with the same context and a note of what could not be read, until an
+  // unbroken run of them ends the loop as exactly that.
+  const unreadable = automationStudioLlmUnreadableReplies(limits.maxUnreadableRepliesInARow);
+  const unreadableReply = (iteration: number, thrown: AutomationStudioLlmUnusableDecisionError, offers: AutomationStudioLlmUnusableDecisionOffers): "ask_again" | AutomationStudioLlmEvidenceLoopResult => {
+    const { issueCodes, reply } = thrown;
+    const ended = unreadable.unread(reply?.case ?? issueCodes[0]!);
+    history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
+    recordRow({ iteration, decision: "unusable", resultCode: issueCodes[0]!, ...(reply ? { resultReason: reply.case } : {}), ...(reply?.usage ? { usage: reply.usage } : {}) });
+    if (ended) return failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, unreadable.summary());
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, unreadable: { reply, inARow: unreadable.inARow, maxInARow: limits.maxUnreadableRepliesInARow } });
+    accountEvidence(feedback);
+    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
+    evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
+    return "ask_again";
+  };
   // **A loop that ran out of turns ends as that, whatever its last decision
   // was** (`./evidence-loop/exhaustion.ts` says what the other reading cost and
   // which live run it was). Shared by every allowance that can run out: the
@@ -538,6 +558,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // and amending, so a refused completion still has turns to be answered in.
     const wrappingUp = remaining !== undefined && remaining.decisionsLeft <= AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS && canComplete;
     const offered = wrappingUp ? [] : eligibleTools;
+    const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0, complete: canComplete, amend: canAmend });
+    // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
+    let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
     try {
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend, drafting && authoring);
@@ -553,7 +576,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       draftShown = decisionContext.draftShown;
       const shown = decisionContext.shown;
       noProgress.shown(shown.map((entry) => entry.callId));
-      decision = automationStudioLlmEvidenceParseDecision(await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
+      const raw = await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) });
+      unreadable.readable();
+      decision = automationStudioLlmEvidenceParseDecision(raw);
+      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
     } catch (thrown) {
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
@@ -562,11 +588,26 @@ export async function runAutomationStudioLlmEvidenceLoop(
         // and its row says which malformed case it was (`./unusable-decision.ts`).
         automationStudioLlmEvidenceLoopAddUsage(accounting, thrown.reply?.usage);
         if (thrown.reply?.usage) reportedDecisions += 1;
-        const refused = refuseDecision(iteration, thrown.issueCodes, { tools: offered.length > 0, complete: canComplete, amend: canAmend }, thrown.reply?.usage, thrown.reply?.case);
+        if (automationStudioLlmReplyUnreadable(thrown.issueCodes)) {
+          const asked = unreadableReply(iteration, thrown, offers());
+          if (asked === "ask_again") continue;
+          return asked;
+        }
+        unreadable.readable();
+        const refused = refuseDecision(iteration, thrown.issueCodes, offers(), thrown.reply?.usage, thrown.reply?.case);
         if (refused === "ask_again") continue;
         error = refused.error;
       }
       if (input.propagateDecisionErrors) throw error;
+    }
+    if (refusal) { // Read and paid for, and not a decision this iteration can act on: asked again, never an ending of its own.
+      const usage = refusal.usage ?? decision?.usage;
+      automationStudioLlmEvidenceLoopAddUsage(accounting, usage);
+      if (usage) reportedDecisions += 1;
+      const refused = refuseDecision(iteration, refusal.issueCodes, offers(), usage);
+      if (refused === "ask_again") continue;
+      if (input.propagateDecisionErrors) throw refused.error;
+      return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
     }
     if (!decision) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
     automationStudioLlmEvidenceLoopAddUsage(accounting, decision.usage);

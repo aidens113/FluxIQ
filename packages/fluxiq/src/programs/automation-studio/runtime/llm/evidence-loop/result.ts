@@ -10,6 +10,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting } from "./accounting.ts";
 import type { AutomationStudioLlmEvidenceLoopExhaustion } from "./exhaustion.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "./trace.ts";
+import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../unreadable-reply.ts";
 
 export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.invalid_configuration"
@@ -39,7 +40,14 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
    * allowance ran out and how far the draft had got (`./exhaustion.ts`).
    */
   | "llm_evidence_loop.iteration_limit"
-  | "llm_evidence_loop.cancelled";
+  | "llm_evidence_loop.cancelled"
+  /**
+   * The provider's replies kept arriving unreadable: an unbroken run of them,
+   * each asked again with a note of what could not be read, reached its limit
+   * (`../unreadable-reply.ts`). A result carrying this code always carries
+   * `unreadable`, saying how many there were and of which kinds.
+   */
+  | "llm_evidence_loop.unreadable_replies";
 
 export type AutomationStudioLlmEvidenceLoopResult =
   | {
@@ -66,6 +74,8 @@ export type AutomationStudioLlmEvidenceLoopResult =
      * express at all (`./exhaustion.ts`).
      */
     exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
+    /** Present exactly when the code is `llm_evidence_loop.unreadable_replies`. */
+    unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
   };
 
 /** A loop that ended without a result, with everything it did up to then. */
@@ -75,7 +85,9 @@ export function automationStudioLlmEvidenceLoopFailure(
   trace: AutomationStudioLlmEvidenceLoopTrace[],
   accounting: AutomationStudioLlmEvidenceLoopAccounting,
   /** What ran out, for the one code that says something ran out. */
-  exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion
+  exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion,
+  /** How many unreadable replies, for the one code that says they ended it. */
+  unreadable?: AutomationStudioLlmEvidenceLoopUnreadable
 ): AutomationStudioLlmEvidenceLoopResult {
-  return { ok: false, code, trace, steps, accounting, ...(exhaustion ? { exhaustion } : {}) };
+  return { ok: false, code, trace, steps, accounting, ...(exhaustion ? { exhaustion } : {}), ...(unreadable ? { unreadable } : {}) };
 }
