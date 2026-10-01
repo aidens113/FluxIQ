@@ -10,7 +10,7 @@ let renderer: ReactTestRenderer;
 let payload: any;
 const text = () => JSON.stringify(renderer.toJSON());
 const nodeButton = (name: string) => renderer.root.findAllByType("button").find((button) => button.findAllByType("strong").some((strong) => strong.children.includes(name)))!;
-const named = (type: string, name: string) => renderer.root.findAllByType(type).find((node) => node.props["aria-label"] === name)!;
+const named = (type: "input" | "select" | "button", name: string) => renderer.root.findAllByType(type).find((node) => node.props["aria-label"] === name)!;
 beforeEach(() => {
   vi.stubGlobal("window", { setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
   payload = {
