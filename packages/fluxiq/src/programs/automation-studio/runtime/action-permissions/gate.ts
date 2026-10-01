@@ -186,16 +186,17 @@ export class AutomationStudioActionPermissionGate {
    * `unanswered` -- a timeout, a thread that could not be reached, a wait that
    * was cancelled -- keeps the request in force. It is then what every later
    * refusal reports and no new request is raised, so a run nobody is watching
-   * waits once, not once per action. `refused` is the same answer under the
-   * name a caller that cannot tell a person's no from silence has always used
-   * (`recovery/runtime-exploration.ts`).
+   * waits once, not once per action.
    *
    * Only for a caller that set `endsOnRequest: false`; a caller that ended on
    * the request has nothing to settle.
    */
-  settle(answer: "granted" | "declined" | "unanswered" | "refused"): void {
+  settle(answer: "granted" | "declined" | "unanswered"): void {
     const settled = this.outstanding;
-    if (!settled || answer === "unanswered" || answer === "refused") return;
+    // Only the two answers a person gives settle anything. Anything else -- an
+    // unanswered request, or a word this gate does not know -- keeps the
+    // request in force: a permission gate never grants by default.
+    if (!settled || (answer !== "granted" && answer !== "declined")) return;
     this.outstanding = undefined;
     const control = this.askedAbout.get(settled.requestId);
     if (answer === "declined") {

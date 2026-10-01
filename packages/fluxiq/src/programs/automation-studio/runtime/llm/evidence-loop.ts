@@ -503,7 +503,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // budget, each whole; the draft measured as it goes out
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
-        evidence, records: history.records(), budgetEntry,
+        evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys,
         draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined } : undefined
       });
       rows.draftShown = decisionContext.draftShown;

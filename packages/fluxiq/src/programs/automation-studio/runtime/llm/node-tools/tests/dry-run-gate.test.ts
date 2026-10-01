@@ -35,6 +35,7 @@ import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES } from "../replay.ts";
 
 const UNREPRODUCIBLE = "core.replay.unreproducible";
 const REPLAYED = "core.replay.replayed";
+const FAILED = "core.replay.failed";
 
 const step = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
   position,
@@ -109,7 +110,9 @@ describe("an unreproducible step keeps blocking completion until it replays or l
   });
 
   it("run 21: step 38 refuses the completion at 62 and again at 64, with the draft amended between", async () => {
-    const steps = [step(2), step(38)];
+    // Step 38 does the person's act, as a step a build cannot do without does:
+    // a missing act step is never made optional (`../../../flow-draft/sometimes-present.ts`).
+    const steps = [step(2), step(38, { acts: ["a1"] })];
     const run = harness(steps, { 38: UNREPRODUCIBLE });
     expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
     // An amendment that leaves step 38 as it was: a new step after it.
@@ -168,6 +171,48 @@ describe("an unreproducible step keeps blocking completion until it replays or l
     const dropped = await run.complete();
     expect(dropped.ran).toEqual(["dryrun.2.reset", "dryrun.2.2"]);
     expect(dropped.answer).toBeUndefined();
+  });
+});
+
+// t194's run `run-mup2u8o3-6697c4be`: the test from the start kept the build's
+// cookie consent, so the authored Accept was unreproducible while every step
+// after it replayed, and the build had no money left to mark it optional.
+describe("a step the test proves is only sometimes there", () => {
+  it("run 9: the missing cookie Accept is made optional and the draft passes", async () => {
+    const steps = [step(2), step(3), step(4), step(8, { acts: ["a1"] })];
+    const run = harness(steps, { 3: UNREPRODUCIBLE });
+
+    const first = await run.complete();
+    expect(first.answer).toBeUndefined();
+    expect(first.ran).toEqual(["dryrun.1.reset", "dryrun.1.2", "dryrun.1.3", "dryrun.1.4", "dryrun.1.8"]);
+    expect(steps[1]!.routing).toEqual({ kind: "optional" });
+    expect(steps[1]!.replayed).toMatchObject({ status: "unreproducible", madeOptional: true });
+    expect(steps.filter((_, index) => index !== 1).map((draftStep) => draftStep.routing)).toEqual([undefined, undefined, undefined]);
+    // It passed, so it is a clean verdict: completed again unchanged, nothing is replayed.
+    expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
+  });
+
+  it("refuses, and marks nothing, when the missing step does one of the person's acts", async () => {
+    const steps = [step(2), step(3, { acts: ["a1"] }), step(4)];
+    const run = harness(steps, { 3: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(steps[1]!.routing).toBeUndefined();
+  });
+
+  it("refuses, and marks nothing, when a later step did not replay", async () => {
+    const steps = [step(2), step(3), step(4)];
+    const run = harness(steps, { 3: UNREPRODUCIBLE, 4: FAILED });
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE, FAILED));
+    expect(steps[1]!.routing).toBeUndefined();
+  });
+
+  it("refuses, and marks nothing, when another step still stands in the way", async () => {
+    // Step 3 alone would be made optional; step 2 failing refuses the draft, so
+    // the refusal the model answers is left whole rather than half-answered.
+    const steps = [step(2), step(3), step(4)];
+    const run = harness(steps, { 2: FAILED, 3: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toEqual(refusedFor(FAILED, UNREPRODUCIBLE));
+    expect(steps[1]!.routing).toBeUndefined();
   });
 });
 
