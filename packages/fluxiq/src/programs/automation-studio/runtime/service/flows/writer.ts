@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
-import type { AutomationStudioProjectStore } from "../projects/index.ts";
+import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../projects/index.ts";
 import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import type { AutomationStudioLegacyRetirementStore } from "../legacy/index.ts";
 import type { AutomationStudioObjectDocuments } from "../object-documents.ts";
@@ -79,6 +79,17 @@ export class AutomationStudioFlowWriter {
   }
 
   async saveFlowInternal(
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
+    allowPublicationMutation: boolean,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<AutomationStudioFlowArtifact> {
+    // The graph reconciliation, SQL projection and change feed each take a lease;
+    // held here, they share one open database (../projects/database-hold.ts).
+    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId,
+      () => this.saveFlowUnheld(input, allowPublicationMutation, representationCreationKind));
+  }
+
+  private async saveFlowUnheld(
     input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind

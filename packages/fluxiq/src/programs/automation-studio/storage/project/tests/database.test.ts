@@ -74,3 +74,95 @@ describe("AutomationStudioProjectDatabasePool", () => {
     await pool.closeAll();
   });
 });
+
+// The project connection keeps `run` and `all` statements prepared. These cases
+// hold that reuse to exactly what a statement prepared afresh would do.
+
+describe("AutomationStudioStatementCache through a project connection", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-statement-cache-test-"));
+  });
+
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("reuses run and all statements with fresh bindings and still closes the connection", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.cache");
+    const database = lease.database;
+    await database.run("create table items (id integer primary key, label text)");
+    for (const label of ["a", "b", "c"]) {
+      await expect(database.run("insert into items (label) values (?)", [label])).resolves.toMatchObject({ changes: 1 });
+    }
+    await expect(database.run("update items set label = ? where id = ?", ["B", 2])).resolves.toMatchObject({ changes: 1 });
+    await expect(database.run("update items set label = ? where id = ?", ["Z", 99])).resolves.toMatchObject({ changes: 0 });
+    await expect(database.all("select label from items where id >= ? order by id", [2])).resolves.toEqual([{ label: "B" }, { label: "c" }]);
+    await expect(database.all("select label from items where id >= ? order by id", [3])).resolves.toEqual([{ label: "c" }]);
+    // A cached all without values sees writes made since it last ran.
+    await expect(database.all("select count(*) as count from items")).resolves.toEqual([{ count: 3 }]);
+    await database.run("insert into items (label) values (?)", ["d"]);
+    await expect(database.all("select count(*) as count from items")).resolves.toEqual([{ count: 4 }]);
+    // Closing finalizes every cached statement; SQLite refuses otherwise.
+    await expect(lease.release()).resolves.toBeUndefined();
+    await pool.closeAll();
+  });
+
+  it("binds NULL for a placeholder called without values, as a fresh statement does", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.unbound");
+    const database = lease.database;
+    await database.run("create table items (id integer primary key, label text)");
+    await database.run("insert into items (label) values (?)", ["bound"]);
+    await database.run("insert into items (label) values (?)");
+    await expect(database.all("select label from items order by id")).resolves.toEqual([{ label: "bound" }, { label: null }]);
+    await lease.release();
+    await pool.closeAll();
+  });
+
+  it("drops a statement that failed and runs it again cleanly", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.failure");
+    const database = lease.database;
+    await database.run("create table items (id integer primary key, label text not null)");
+    await database.run("insert into items (id, label) values (?, ?)", [1, "one"]);
+    await expect(database.run("insert into items (id, label) values (?, ?)", [1, "duplicate"])).rejects.toThrow(/SQLITE_CONSTRAINT/);
+    await expect(database.run("insert into items (id, label) values (?, ?)", [2, "two"])).resolves.toMatchObject({ changes: 1, lastID: 2 });
+    await expect(database.all("select nope from items", [1])).rejects.toThrow(/no such column/);
+    await expect(database.all("select label from items order by id")).resolves.toEqual([{ label: "one" }, { label: "two" }]);
+    await lease.release();
+    await pool.closeAll();
+  });
+
+  it("commits and rolls back transactions through cached transaction control", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.transactions");
+    const database = lease.database;
+    await database.run("create table items (id integer primary key, label text not null)");
+    await database.transaction(async (sql) => { await sql.run("insert into items (label) values (?)", ["kept"]); });
+    await expect(database.transaction(async (sql) => {
+      await sql.run("insert into items (label) values (?)", ["discarded"]);
+      throw new Error("abort");
+    })).rejects.toThrow("abort");
+    await database.transaction(async (sql) => { await sql.run("insert into items (label) values (?)", ["also kept"]); });
+    await expect(database.all("select label from items order by id")).resolves.toEqual([{ label: "kept" }, { label: "also kept" }]);
+    await lease.release();
+    await pool.closeAll();
+  });
+
+  it("keeps issue order between cached and uncached statements issued together", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.order");
+    const database = lease.database;
+    await database.run("create table items (id integer primary key, label text not null)");
+    await database.all("select count(*) as count from items");
+    const [, counted, , recounted] = await database.execute((sql) => Promise.all([
+      sql.run("insert into items (label) values (?)", ["first"]),
+      sql.all<{ count: number }>("select count(*) as count from items"),
+      sql.run("insert into items (label) values (?)", ["second"]),
+      sql.get<{ count: number }>("select count(*) as count from items")
+    ]));
+    expect(counted).toEqual([{ count: 1 }]);
+    expect(recounted).toEqual({ count: 2 });
+    await lease.release();
+    await pool.closeAll();
+  });
+});
