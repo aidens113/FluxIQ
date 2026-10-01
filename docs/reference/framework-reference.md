@@ -1415,10 +1415,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioProjectContentWrite` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts:8` | - |
 | `AutomationStudioProjectConversationStore` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/store.ts:59` | - |
 | `automationStudioProjectCustomNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:11` | - |
-| `AutomationStudioProjectDatabase` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:120` | - |
-| `AutomationStudioProjectDatabaseLease` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:22` | - |
-| `AutomationStudioProjectDatabasePool` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:35` | - |
-| `AutomationStudioProjectDatabasePoolOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:28` | - |
+| `AutomationStudioProjectDatabase` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:121` | - |
+| `AutomationStudioProjectDatabaseLease` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:23` | - |
+| `AutomationStudioProjectDatabasePool` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:36` | - |
+| `AutomationStudioProjectDatabasePoolOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:29` | - |
 | `AutomationStudioProjectEventChunkStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/event-chunk-store.ts:32` | - |
 | `AutomationStudioProjectEventStreamStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/event-stream-writer.ts:13` | - |
 | `AutomationStudioProjectFlowGraphJudgementStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/graph-judgement-store.ts:36` | - |
@@ -1780,7 +1780,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioSoakEvidence` | Type | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts:31` | - |
 | `automationStudioSourceNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:3` | - |
 | `AutomationStudioSqlAdaptationPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:37` | - |
-| `AutomationStudioSqlExecutor` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:10` | - |
+| `AutomationStudioSqlExecutor` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:11` | - |
 | `AutomationStudioSqlFlowDetail` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:24` | - |
 | `AutomationStudioSqlFlowError` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:27` | - |
 | `AutomationStudioSqlFlowPort` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:25` | - |
@@ -1799,7 +1799,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioSqlRouterSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:13` | - |
 | `AutomationStudioSqlRouterTargetReference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:14` | - |
 | `AutomationStudioSqlRouterTargetReferenceBatch` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:15` | - |
-| `AutomationStudioSqlRunResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:6` | - |
+| `AutomationStudioSqlRunResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:7` | - |
 | `AutomationStudioSqlSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:29` | - |
 | `AutomationStudioSqlSubflowCategory` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:28` | - |
 | `AutomationStudioSqlSubflowTargetPage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:10` | - |
@@ -1863,8 +1863,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioValidationSeverity` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation/issue.ts:1` | - |
 | `AutomationStudioVersionedFlowDocument` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/contracts.ts:68` | The shape this module reads a version off: any Flow document or artifact. |
 | `AutomationStudioViewState` | Type | `packages/fluxiq/src/programs/automation-studio/ui/contracts.ts:8` | - |
-| `AutomationStudioWalCheckpointMode` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:7` | - |
-| `AutomationStudioWalCheckpointResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:8` | - |
+| `AutomationStudioWalCheckpointMode` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:8` | - |
+| `AutomationStudioWalCheckpointResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:9` | - |
 | `automationStudioWithoutLocators` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts:120` | - |
 | `AutomationStudioWorkspacePreference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts:23` | - |
 | `AutomationStudioWorkspaceSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts:156` | - |
@@ -2041,7 +2041,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `createIoPolicyEffectDispatcher` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts:59` | - |
 | `createPassingAutomationStudioScaleCertificationFixture` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts:360` | - |
 | `createPublishedFlowSnapshot` | Value | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:50` | - |
-| `createRecord` | Value | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:207` | - |
+| `createRecord` | Value | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:215` | - |
 | `CreateRecordingFlowProposalsResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/proposals/types.ts:44` | - |
 | `CreateRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts:11` | - |
 | `createRecordingSession` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:25` | - |

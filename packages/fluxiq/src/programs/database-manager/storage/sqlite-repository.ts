@@ -123,18 +123,26 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const filePath = this.databasePath(scope);
     mkdirSync(path.dirname(filePath), { recursive: true });
     const db = await openDatabase(filePath);
-    await run(db, "pragma foreign_keys = ON");
-    await run(db, "pragma journal_mode = WAL");
-    await run(db, `
-      create table if not exists ${this.tableName} (
-        id text primary key,
-        kind text not null,
-        data text not null,
-        created_at_ms integer not null,
-        updated_at_ms integer not null
-      )
-    `);
-    await run(db, `create index if not exists ${quoteIdentifier(`${this.kind}_updated_idx`)} on ${this.tableName} (updated_at_ms)`);
+    // Every call opens its own connection, so this setup runs on every call.
+    // One script, in the same order and stopping at the first error as the
+    // separate statements did: one round trip per open instead of four.
+    try {
+      await exec(db, [
+        "pragma foreign_keys = ON",
+        "pragma journal_mode = WAL",
+        `create table if not exists ${this.tableName} (
+          id text primary key,
+          kind text not null,
+          data text not null,
+          created_at_ms integer not null,
+          updated_at_ms integer not null
+        )`,
+        `create index if not exists ${quoteIdentifier(`${this.kind}_updated_idx`)} on ${this.tableName} (updated_at_ms)`
+      ].join(";\n"));
+    } catch (error) {
+      await close(db).catch(/* best-effort: the setup error is the one reported */ () => undefined);
+      throw error;
+    }
     return db;
   }
 
@@ -279,6 +287,17 @@ function get<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Prom
       recordSqlPerformance({ operation: "get", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error || row === undefined ? 0 : 1, ok: !error });
       if (error) reject(error);
       else resolve(row);
+    });
+  });
+}
+
+function exec(db: sqlite3.Database, script: string): Promise<void> {
+  const startedAt = performance.now();
+  return new Promise((resolve, reject) => {
+    db.exec(script, (error) => {
+      recordSqlPerformance({ operation: "run", sql: script, elapsedMs: performance.now() - startedAt, rowsChanged: 0, ok: !error });
+      if (error) reject(error);
+      else resolve();
     });
   });
 }
