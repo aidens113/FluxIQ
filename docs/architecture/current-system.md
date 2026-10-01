@@ -107,6 +107,13 @@ runtime and exposes:
 - global alerts;
 - AWS-inspired operational styling.
 
+Authenticated routes share one session-recovery host in the root layout. When a
+program API request receives HTTP 401, it can ask the person to sign in again
+without replacing the current workspace or its unsaved edits. Successful recovery
+retries the interrupted request once; cancellation or host teardown settles the
+pending recovery instead of leaving requests waiting indefinitely. The host owns
+its login form and ignores responses arriving after it unmounts.
+
 The panel must be run manually by the user:
 
 ```bash

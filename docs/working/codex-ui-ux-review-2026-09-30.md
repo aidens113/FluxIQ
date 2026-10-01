@@ -1,7 +1,7 @@
 # Core UI/UX review and initial fixes
 
 Status: Active
-Status detail: Current-source review and bounded session-recovery fix in progress.
+Status detail: Initial recovery fix passes focused tests, types and build; broader web suite pending, UX roadmap remains active.
 Created: 2026-09-30
 Last updated: 2026-09-30
 Owner: Codex senior supervisor
@@ -27,9 +27,15 @@ authoring proposals without review navigation, and global question selection
 that examines only the first conversation. Those require scoped follow-up work,
 not changes to framework runtime contracts in this task.
 
-Browser, live provider and panel management are not exercised. Unit/component
-tests and type checks will establish the bounded fixes; visual/accessibility
-certification remains a separate live validation requirement.
+Initial recovery fix is source-complete: focused3files/17tests and web typecheck
+pass; supervisor web production build passes17pages,165872ms. Full Core audit
+has exactly one inherited unchanged service4506/4505 size failure; no baseline
+increase or unrelated service edit. Supervisor broader web suite88597 is queued
+through shared heavy slots. Local checkpoint commits preserve the verified
+focused implementation without claiming that broader suite has passed.
+
+Browser, live provider and panel management are not exercised. Visual and
+accessibility certification remains a separate live validation requirement.
 
 ## Work Ledger
 
@@ -40,3 +46,11 @@ certification remains a separate live validation requirement.
 - Validation: source review only; tests pending.
 - Outcome: Partial
 - Follow-up: inspect worker results and run independent checks.
+
+### 2026-09-30 — Initial recovery verification
+- Agent: supervisor and worker
+- Changed: app/session-reauthentication host, root composition, owning tests and current-system documentation.
+- Why: make every authenticated panel recover expired API requests while preserving work.
+- Validation: focused17/17, web tsc0, supervisor productionbuild0; full audit only inherited service4506/4505. Broader web suite88597 pending.
+- Outcome: Partial
+- Follow-up: checkpoint locally, observe broad suite, preserve Claude integration ownership.
