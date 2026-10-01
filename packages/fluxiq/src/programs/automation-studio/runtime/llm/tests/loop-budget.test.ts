@@ -30,6 +30,16 @@ describe("what an evidence loop has left", () => {
     expect(reported.tokensLeft! - oneUnreported.tokensLeft!).toBe(10_000);
   });
 
+  it("counts decisions left at the last request's worst case when that is more than the average", () => {
+    // `run-mup2u8o3-6697c4be` after its eighth decision: $0.1539 spent at an
+    // average of $0.0192, the last request (479,196 tokens) $0.1534 at worst.
+    const spent = { decisions: 8, reportedDecisions: 8, totalTokens: 1_600_000, estimatedCostUsd: 0.1539, elapsedMs: 0 };
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, spent, 56)).toMatchObject({ decisionsLeft: 3, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.1534 }, 56)).toMatchObject({ decisionsLeft: 0, limitedBy: "cost" });
+    // Cheaper than the average, it changes nothing.
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.001 }, 56).decisionsLeft).toBe(3);
+  });
+
   it("is nothing once a bound is spent, and never more than the iteration backstop", () => {
     const spent = { decisions: 4, reportedDecisions: 4, totalTokens: 40_000, estimatedCostUsd: 0.4, elapsedMs: 40_000 };
     expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent, 60)).toMatchObject({ decisionsLeft: 0, limitedBy: "cost" });

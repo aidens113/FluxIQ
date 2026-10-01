@@ -110,6 +110,8 @@ function conditionAccounts(
   const rejected = Array.isArray(filter?.rejected) ? filter.rejected : [];
   // What each condition's own read found, positionally like the counts; `condition.ts` decides whether it may be said.
   const seen = Array.isArray(filter?.seen) ? filter.seen : [];
+  // How many rows each condition removed by itself, positionally like the counts; absent from a read that did not count it.
+  const alone = Array.isArray(filter?.alone) ? filter.alone : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
   const total = Math.max(rejected.length, written.length);
@@ -117,7 +119,12 @@ function conditionAccounts(
   for (let index = 0; index < total; index += 1) {
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
     const rows = count(rejected[index]);
-    accounts.push({ ...(condition ? { condition } : {}), ...(rows !== undefined ? { rejected: rows } : {}) });
+    const byItself = count(alone[index]);
+    accounts.push({
+      ...(condition ? { condition } : {}),
+      ...(rows !== undefined ? { rejected: rows } : {}),
+      ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {})
+    });
   }
   return accounts;
 }

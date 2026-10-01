@@ -16,6 +16,7 @@ export * from "./call-id.ts";
 export * from "./call-record.ts";
 export * from "./completion-attempt.ts";
 export * from "./completion-check.ts";
+export * from "./cost-purse.ts";
 export * from "./decision.ts";
 export * from "./decision-refusal.ts";
 export * from "./draft-shown.ts";

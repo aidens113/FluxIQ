@@ -56,7 +56,7 @@ import {
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress,
-  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow,
+  automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopAnswerability,
@@ -73,6 +73,7 @@ import {
   automationStudioLlmEvidenceCanonicalJson,
   automationStudioLlmEvidenceParseDecision,
   automationStudioLlmEvidenceParseToolExecutionResult,
+  automationStudioLlmEvidenceToolResultInvalidCode,
   automationStudioLlmEvidenceValidTools,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
@@ -284,7 +285,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
   // only where a decision can be refused without ending the loop.
   const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined });
-  const accounting = automationStudioLlmEvidenceLoopEmptyAccounting();
+  const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting); // Each decision's worst case held against the cost budget before it is sent (`./evidence-loop/cost-purse.ts`).
   if (!limits || !automationStudioLlmEvidenceValidTools(input.tools)) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
   const toolsById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const));
@@ -433,7 +434,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // decision it could use has no last refusal, and reporting the one before
       // it would be the same conflation in a smaller field.
       lastIssueCodes: counters.unusableInARow ? [...lastIssueCodes] : [],
-      ...(bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
+      ...(bound === "budget" && lastRemaining ? { budgetBound: purse.refusal ? "cost" as const : lastRemaining.limitedBy, ...(purse.refusal ? { costRefusal: { ...purse.refusal } } : {}) } : {}),
       // What a continuation of this build is told it still owes.
       outstandingIssueCodes: noProgress.outstanding
     });
@@ -467,11 +468,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const callId = `initial.${initialTool.toolId}`;
     callIds.add(callId);
     let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
+    // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
+    let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
     try {
       stateBefore = await digest(callId, initialTool.toolId);
-      execution = automationStudioLlmEvidenceParseToolExecutionResult(await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
+      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran = await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
       stateAfter = await digest(callId, initialTool.toolId);
       if (execution) ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
     } catch {
@@ -479,7 +482,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     }
     if (execution === "threw" || !execution) {
       // Recorded like any failed call; the observation, never made, stays offered.
-      const next = automationStudioLlmEvidenceHandleFailedCall(handling, 0, callId, initialTool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", initialInput, undefined, stateBefore);
+      const next = automationStudioLlmEvidenceHandleFailedCall(handling, 0, callId, initialTool, execution ? "llm_evidence_loop.tool_failed" : automationStudioLlmEvidenceToolResultInvalidCode(ran, initialTool.effect) ?? "llm_evidence_loop.tool_result_invalid", initialInput, undefined, stateBefore);
       if (next.kind === "end") return next.result;
     } else {
       const evidenceBytes = Buffer.byteLength(JSON.stringify(execution.evidence), "utf8");
@@ -546,13 +549,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // What the budget leaves (`loop-budget.ts`): told to the model as
     // the newest entry, and a last decision that is offered only completion.
     const remaining = input.budget && automationStudioLlmEvidenceLoopRemaining(input.budget, {
-      decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs
+      decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs, ...(purse.lastProjectedCostUsd !== undefined ? { nextDecisionCostUsd: purse.lastProjectedCostUsd } : {})
     }, limits.maxIterations - iteration + 1);
     // Nothing left to pay for a decision with. The run's budget is what ran
     // out, which a retry raises; what the last decision happened to be is
     // recorded beside it and is not the ending.
     lastRemaining = remaining || undefined;
-    if (remaining && remaining.decisionsLeft === 0) return exhausted("budget");
+    if (remaining && remaining.decisionsLeft === 0) { accounting.iterations = iteration - 1; return exhausted("budget"); } // This decision was never asked for, so it is not counted.
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     // The wrap-up (`./loop-budget.ts`): the last few decisions offer finishing
     // and amending, so a refused completion still has turns to be answered in.
@@ -576,11 +579,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
       draftShown = decisionContext.draftShown;
       const shown = decisionContext.shown;
       noProgress.shown(shown.map((entry) => entry.callId));
-      const raw = await input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) });
+      const raw = await purse.run(() => input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
       unreadable.readable();
       decision = automationStudioLlmEvidenceParseDecision(raw);
       refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
-    } catch (thrown) {
+    } catch (thrown) { if (purse.refused(thrown)) { accounting.iterations = iteration - 1; return exhausted("budget"); } // Not sent: the cost budget could not pay for it at worst.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
@@ -694,11 +697,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     callIds.add(callId);
     answeredRequests.set(toolRequestSignature, callId);
     let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
+    // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
+    let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
     try {
       stateBefore = await digest(callId, decision.toolId);
-      const ran = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
+      ran = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -707,7 +712,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (execution === "threw" || !execution) {
       // Nothing answered the request, so asking it again is not a repeat.
       answeredRequests.delete(toolRequestSignature);
-      const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
+      const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : automationStudioLlmEvidenceToolResultInvalidCode(ran, tool.effect) ?? "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
       if (next.kind === "end") return next.result;
       continue;
     }

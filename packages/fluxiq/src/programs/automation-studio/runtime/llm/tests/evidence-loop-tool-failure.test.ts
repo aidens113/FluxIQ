@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
-import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS,
+  automationStudioLlmEvidenceParseToolExecutionResult,
+  automationStudioLlmEvidenceToolResultInvalidCode
+} from "../evidence-loop-decision.ts";
 
 // A tool call that fails is an observation, not the end: Flow creation on the
 // realistic professional-network site died on the first press a promotion covered, because
@@ -53,7 +57,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     expect(JSON.stringify({ result, shown })).not.toContain("ember789");
   });
 
-  it("names a result that is not one as tool_result_invalid", async () => {
+  it("names a result that is not one as tool_result_invalid, with the check it failed", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.press.1", toolId: "press", input: {} })
       .mockResolvedValueOnce({ kind: "complete", result: {} });
@@ -64,7 +68,44 @@ describe("a tool call that fails, in a loop that observes failures", () => {
         : { page: "home" }
     });
     expect(result).toMatchObject({ ok: true });
-    expect(result.trace[1]).toMatchObject({ callId: "call.press.1", resultCode: "llm_evidence_loop.tool_result_invalid" });
+    expect(result.trace[1]).toMatchObject({ callId: "call.press.1", resultCode: "llm_evidence_loop.tool_result_invalid.result_code_not_code" });
+  });
+
+  // Live run `run-mup2u8o3-6697c4be`: a member the reader had not learned
+  // refused a click that had worked, and nothing the model or the record saw
+  // said which check. Now both carry it, and never the member itself.
+  it("shows the model and the record which check refused the result, and nothing the caller said", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.press.1", toolId: "press", input: {} })
+      .mockResolvedValueOnce({ kind: "complete", result: {} });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, unusableDecisions: { stalled },
+      executeTool: async ({ toolId }) => toolId === "press"
+        ? { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, [PRIVATE]: { waitedMs: 1 } } as never
+        : { page: "home" }
+    });
+    const code = "llm_evidence_loop.tool_result_invalid.unknown_key";
+    expect(result.trace[1]).toMatchObject({ callId: "call.press.1", resultCode: code });
+    const shown = decide.mock.calls[1]?.[0].evidence;
+    expect(shown.find((entry: { callId: string }) => entry.callId === "call.press.1")?.value).toMatchObject({ ok: false, code });
+    expect(shown.find((entry: { callId: string }) => entry.callId === "core.evidence_history")?.value.rows.at(-1)).toEqual([1, "call_failed", "press", null, "call.press.1", code]);
+    expect(JSON.stringify({ result, shown })).not.toContain("ember789");
+  });
+
+  it("runs a click whose page waited out a check that cleared by itself as the success it was", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "search2", toolId: "press", input: { target: "target.5" } })
+      .mockResolvedValueOnce({ kind: "complete", result: {} });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, unusableDecisions: { stalled },
+      executeTool: async ({ toolId }) => toolId === "press"
+        ? { kind: "llm_evidence_tool_execution", evidence: { ok: true, navigation: { url: "http://shop.test/s?k=earbuds", type: "reload" } }, effectApplied: true, resultCode: "web.action.succeeded", clearedWait: { waitedMs: 9208 } } as never
+        : { page: "home" }
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(result.trace[1]).toMatchObject({ callId: "search2", resultCode: "web.action.succeeded" });
+    const shown = decide.mock.calls[1]?.[0].evidence;
+    expect(shown.find((entry: { callId: string }) => entry.callId === "search2")?.value).toMatchObject({ ok: true, navigation: { type: "reload" } });
   });
 
   it("counts a failed action as a change, so the page may be looked at again", async () => {
@@ -213,5 +254,126 @@ describe("a cleared wait on a tool execution result", () => {
   });
   it("still rejects unknown fields", () => {
     expect(automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, unexpected: true }, "mutate")).toBeUndefined();
+  });
+});
+
+// Reading a caller's tool execution result: which members it may carry, and
+// which check a result that is not one failed.
+//
+// The key list is exact, so a member a caller learns to report before this
+// reader learns it refuses the whole call as `tool_result_invalid`, and the
+// call is recorded as a failure that never happened. Live run
+// `run-mup2u8o3-6697c4be` (call `search2`): a click on a store's "Go" landed on
+// a robot check that cleared by itself after 9 s, the web domain reported that
+// as `clearedWait: { waitedMs }` beside its result code, and a click that had
+// worked was shown to the model as "This call failed and returned no evidence".
+// The identical next click met no check, carried no `clearedWait`, and was read.
+
+const RESULTS = "http://127.0.0.1:58717/scenarios/everything-store/s?i=all&field-keywords=&k=wireless+earbuds";
+
+/** `search2` as the web domain returned it, every member kept and the page cut to two elements. */
+function reloadClickThatWaitedOutACheck(): Record<string, unknown> {
+  return {
+    kind: "llm_evidence_tool_execution",
+    evidence: {
+      schemaVersion: "web-llm-evidence.v2",
+      trust: "untrusted-page-evidence",
+      location: RESULTS,
+      title: "Store : wireless earbuds",
+      frame: { isTop: true },
+      navigation: { url: RESULTS, type: "reload" },
+      blockedBy: [{ name: "Minimum price", blocks: 2, target: "target.209" }],
+      elements: [
+        { target: "target.141", tag: "div", role: "region", name: "Store app", box: { x: 0, y: 0, width: 10, height: 10 }, onViewport: true, landmark: "region" },
+        { target: "target.142", tag: "strong", text: "Shop faster", box: { x: 0, y: 0, width: 10, height: 10 }, onViewport: true, landmark: "region" }
+      ],
+      truncated: false,
+      ok: true,
+      node: "web.output.dom-click",
+      status: "succeeded",
+      pageChanged: true,
+      control: "Go",
+      read: {
+        commandId: "1cb125cc-2f91-43ea-aa1f-07c53ef5e195",
+        actionType: "web.dom.click",
+        status: "succeeded",
+        validation: { status: "passed", expected: "the page the click leads to loads", actual: "the page it landed on loaded" },
+        message: "The click navigated its page before it could answer.",
+        checkWait: { waitedMs: 9208 },
+        startedAt: 1790831851893,
+        finishedAt: 1790831861183
+      },
+      inFlow: true
+    },
+    effectApplied: true,
+    resultCode: "web.action.succeeded",
+    draft: {
+      actionId: "web.output.dom-click",
+      effect: "mutate",
+      input: { node: "web.output.dom-click", parameters: { target: { handle: "target.5" } }, consequences: [] },
+      ranWith: { node: "web.output.dom-click", parameters: { selector: "[data-testid=\"nav-search-submit\"]", element: { tag: "input", type: "submit", value: "Go" } }, consequences: [] },
+      proposes: true,
+      replay: { from: { location: "http://127.0.0.1:58717/scenarios/everything-store/" } }
+    },
+    stateDigests: { before: "web-state.v2:53833:fa6bc323", after: "web-state.v2:418908:15ce82dd" },
+    routeState: { page: { location: RESULTS, path: "/scenarios/everything-store/s", title: "Store : wireless earbuds" } },
+    clearedWait: { waitedMs: 9208 }
+  };
+}
+
+describe("a click whose page waited out a check that cleared by itself", () => {
+  it("is read, with its evidence and its draft step", () => {
+    const ran = reloadClickThatWaitedOutACheck();
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(ran as never, "mutate");
+    expect(parsed).toMatchObject({ evidence: ran.evidence, effectApplied: true, resultCode: "web.action.succeeded", draft: { actionId: "web.output.dom-click", effect: "mutate", proposes: true } });
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(ran, "mutate")).toBeUndefined();
+  });
+
+  it("is read without clearedWait too, as the identical click after it was", () => {
+    const { clearedWait: _clearedWait, ...ran } = reloadClickThatWaitedOutACheck();
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(ran as never, "mutate")).toMatchObject({ effectApplied: true, resultCode: "web.action.succeeded" });
+  });
+
+  it("lists clearedWait among the members a result may carry", () => {
+    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS).toContain("clearedWait");
+    for (const key of Object.keys(reloadClickThatWaitedOutACheck())) expect(AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS).toContain(key);
+  });
+});
+
+// A refused result names the check it failed, in a closed code: never the
+// member's name or value, which are the caller's and may carry the page.
+describe("a result that is not one names the check it failed", () => {
+  const base = { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true } as const;
+  const refusal = (value: unknown, effect: "observe" | "mutate" = "mutate") => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(value as never, effect)).toBeUndefined();
+    return automationStudioLlmEvidenceToolResultInvalidCode(value, effect);
+  };
+  const invalid = (check: string) => `llm_evidence_loop.tool_result_invalid.${check}`;
+
+  it.each<[string, unknown, string]>([
+    ["a member the reader has not learned", { ...base, pageText: "Your order for Dana Smith" }, "unknown_key"],
+    ["evidence that is not JSON", { ...base, evidence: { at: Number.NaN } }, "evidence_not_json"],
+    ["an effectApplied that is not a boolean", { ...base, effectApplied: "yes" }, "effect_applied_not_boolean"],
+    ["a targetsUnchanged that is not a boolean", { ...base, targetsUnchanged: 1 }, "targets_unchanged_not_boolean"],
+    ["a resultCode that is not a code", { ...base, resultCode: "private result text!" }, "result_code_not_code"],
+    ["a draft that is not an object", { ...base, draft: "press" }, "draft.not_object"],
+    ["a draft member the reader has not learned", { ...base, draft: { actionId: "press", note: "x" } }, "draft.unknown_key"],
+    ["a draft actionId that is not an id", { ...base, draft: { actionId: "press the button" } }, "draft.action_id"],
+    ["a draft input that is not a JSON object", { ...base, draft: { input: [1] } }, "draft.input"],
+    ["a draft ranWith that is not a JSON object", { ...base, draft: { ranWith: { at: Number.POSITIVE_INFINITY } } }, "draft.ran_with"],
+    ["a draft effect outside observe and mutate", { ...base, draft: { effect: "delete" } }, "draft.effect"],
+    ["a draft proposes that is not a boolean", { ...base, draft: { proposes: "yes" } }, "draft.proposes"],
+    ["a draft replay it cannot read", { ...base, draft: { replay: { from: "home", produced: {} } } }, "draft.replay"],
+    ["a bare value that is not JSON", { at: () => 1 }, "not_json"]
+  ])("%s", (_name, value, check) => {
+    const code = refusal(value);
+    expect(code).toBe(invalid(check));
+    expect(code).toMatch(/^[a-z0-9_.:-]{1,100}$/i);
+    expect(JSON.stringify(code)).not.toMatch(/Dana|press the button|private/);
+  });
+
+  it("answers nothing for a result it reads", () => {
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(base, "mutate")).toBeUndefined();
+    expect(automationStudioLlmEvidenceToolResultInvalidCode({ page: "home" }, "observe")).toBeUndefined();
   });
 });
