@@ -8,11 +8,14 @@ import { Toolbar, Tooltip } from "../layout";
 
 function downloadText(filename: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function CodeViewer(props: { label: string; code: string; language?: string; filename?: string }) {
