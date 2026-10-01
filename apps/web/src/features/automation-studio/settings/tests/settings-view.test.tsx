@@ -307,7 +307,8 @@ describe("Automation Settings workspace", () => {
     expect(settingsHtml).toContain("LLM Budget");
     expect(settingsHtml).toContain("value=\"deepseek\"");
     expect(settingsHtml).toContain("value=\"policy.default\"");
-    expect(settingsHtml).toContain("value=\"12000\"");
+    // No token cap by default since 2026-09-30: the box is blank, not 12000.
+    expect(settingsHtml).not.toContain("value=\"12000\"");
     expect(settingsHtml).not.toContain("summary-strip");
     expect(settingsHtml).toContain("Effective Values");
     expect(settingsHtml).not.toContain("Show Flow Settings JSON");

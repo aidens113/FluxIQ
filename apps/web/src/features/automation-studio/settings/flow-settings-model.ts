@@ -101,7 +101,10 @@ export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInt
   // interventions at all" -- a Flow turned off by a field nobody typed in.
   for (const [label, value, maximum] of wholeNumberFields) if (!value.trim() || !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > maximum) errors.push(`${label} must be a whole number from 0 to ${maximum}.`);
   if (!flowSizeSettingValid(Number(draft.maxNodesPerSubflow)) || !draft.maxNodesPerSubflow.trim()) errors.push(`${FLOW_SIZE_SETTING.label} must be a whole number from ${FLOW_SIZE_SETTING.minimum} to ${FLOW_SIZE_SETTING.maximum.toLocaleString("en-US")}.`);
-  if (!draft.maxTokensPerRun.trim() || !Number.isInteger(Number(draft.maxTokensPerRun)) || Number(draft.maxTokensPerRun) < 128 || Number(draft.maxTokensPerRun) > 1_000_000) errors.push("LLM tokens per run must be a whole number from 128 to 1,000,000.");
+  // Blank is no token cap, which is the default since 2026-09-30: a run's
+  // tokens are bounded by its cost ceiling, and one request by the model's
+  // context window. A number a person types still has to be a usable one.
+  if (draft.maxTokensPerRun.trim() && (!Number.isInteger(Number(draft.maxTokensPerRun)) || Number(draft.maxTokensPerRun) < 128 || Number(draft.maxTokensPerRun) > 1_000_000)) errors.push("LLM tokens per run must be blank (no limit) or a whole number from 128 to 1,000,000.");
   for (const [label, value] of [["Training-window cost", draft.maxCostUsdPerTrainingWindow], ["Adaptation cost per run", draft.maxAdaptationCostUsdPerRun]] as const) if (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100_000) errors.push(`${label} must be from 0 to 100,000 USD.`);
   for (const [kind, ports] of [["Input", draft.interfaceInputs], ["Output", draft.interfaceOutputs]] as const) {
     const names = ports.map((port) => port.name.trim().toLowerCase()).filter(Boolean);
@@ -119,7 +122,7 @@ type FlowEffectiveSetting = { key: keyof FlowSettingsDraft; group: string; label
 
 export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
   timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
-  adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
+  adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "",
   llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2",
   maxNodesPerSubflow: String(FLOW_SIZE_SETTING.defaultValue),
@@ -143,7 +146,7 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     { key: "adaptationPreset", group: "Adaptation", label: "Behavior", value: draft.adaptationPreset === "adaptive" ? "Fully adaptive" : draft.adaptationPreset === "observe" ? "Observe only" : draft.adaptationPreset === "locked" ? "Locked" : "Broad autonomy", overridden: draft.adaptationPreset !== "adaptive" },
     { key: "adaptationProposalMode", group: "Adaptation", label: "Approval", value: describeApproval(draft.adaptationProposalMode), overridden: draft.adaptationProposalMode !== "auto" },
     { key: "maxInterventionsPerRun", group: "Limits", label: "LLM interventions per run", value: draft.maxInterventionsPerRun, overridden: Number(draft.maxInterventionsPerRun) !== 2 },
-    { key: "maxTokensPerRun", group: "Limits", label: "LLM tokens per run", value: draft.maxTokensPerRun, overridden: Number(draft.maxTokensPerRun) !== 12000 },
+    { key: "maxTokensPerRun", group: "Limits", label: "LLM tokens per run", value: draft.maxTokensPerRun.trim() || "No limit", overridden: draft.maxTokensPerRun.trim() !== "" },
     { key: "maxRetriesPerAction", group: "Limits", label: "Retries per action", value: draft.maxRetriesPerAction, overridden: Number(draft.maxRetriesPerAction) !== 1 },
     { key: "maxRecoveryAttemptsPerSubflow", group: "Limits", label: "Recovery attempts per subflow", value: draft.maxRecoveryAttemptsPerSubflow, overridden: Number(draft.maxRecoveryAttemptsPerSubflow) !== 2 },
     { key: "maxReroutesPerRun", group: "Limits", label: "Reroutes per run", value: draft.maxReroutesPerRun, overridden: Number(draft.maxReroutesPerRun) !== 2 },
@@ -400,7 +403,8 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
   };
   const budgets = {
     ...(Number(draft.maxInterventionsPerRun) !== 2 ? { maxInterventionsPerRun: Number(draft.maxInterventionsPerRun) } : {}),
-    ...(Number(draft.maxTokensPerRun) !== 12000 ? { maxTokensPerRun: Number(draft.maxTokensPerRun) } : {}),
+    // Only a number a person typed: blank is no token cap (2026-09-30).
+    ...(draft.maxTokensPerRun.trim() ? { maxTokensPerRun: Number(draft.maxTokensPerRun) } : {}),
     ...(Number(draft.maxCostUsdPerTrainingWindow) !== 5 ? { maxCostUsdPerTrainingWindow: Number(draft.maxCostUsdPerTrainingWindow) } : {}),
     ...(draft.budgetExhaustedBehavior !== "ask" ? { exhaustedBehavior: draft.budgetExhaustedBehavior } : {})
   };
@@ -468,6 +472,10 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     metadata: {
       ...retainedMetadata,
       adaptationModeVersion: 1,
+      // Core's `AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY`: the token
+      // limit this form saves is the person's own, so a 12,000 typed here is
+      // never mistaken for the cap Core wrote into Flows before 2026-09-30.
+      tokensPerRunDefaultCleared: true,
       adaptationMode: draft.adaptationMode,
       // None of these keys may be left out on the strength of its value looking
       // like a default. Core merges this patch over the stored metadata, so an
@@ -503,9 +511,9 @@ export function flowSettingsMetadata(flow: any) {
     proposalApprovalMode: "auto",
     allowPromotion: true,
     requireFirstManualReviewBeforeAutoPromotion: false,
+    // No `maxTokensPerRun`: Core writes no token cap since 2026-09-30.
     budgets: {
       maxInterventionsPerRun: 2,
-      maxTokensPerRun: 12000,
       maxCostUsdPerTrainingWindow: 5,
       exhaustedBehavior: "ask"
     }

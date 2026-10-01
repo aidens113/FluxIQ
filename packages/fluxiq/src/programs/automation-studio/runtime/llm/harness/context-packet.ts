@@ -12,8 +12,6 @@ import type {
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import {
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
-  automationStudioFlowBootstrapCatalogByteBudget,
   buildAutomationStudioFlowBootstrapContext,
   type AutomationStudioFlowBootstrapRoutingContext
 } from "../../flow-bootstrap/index.ts";
@@ -246,12 +244,9 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
       // instruction a person writes names it: they say what they want done, and
       // only the caller knows where the Flow is meant to do it.
       ...(input.flowBootstrap.startLocation === undefined ? {} : { startLocation: input.flowBootstrap.startLocation }),
-      instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
-      maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
-        maxInputTokens: input.flowBootstrap.maxInputTokens ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
-        instructionBytes: Buffer.byteLength(JSON.stringify(instructions), "utf8"),
-        ...(input.flowBootstrap.size ? { size: input.flowBootstrap.size } : {})
-      })
+      // Every offered node, whole: the catalog is not fitted to any budget
+      // (`../../flow-bootstrap/plan/catalog.ts`).
+      instructionText: instructions.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n")
     })
     : undefined;
   const routing = catalogContext && input.flowBootstrap?.routing ? packRoutingContext(input.flowBootstrap.routing, deniedEvidenceKeys) : undefined;

@@ -9,16 +9,19 @@ proposal, or mutate a Flow by itself.
 ## Context boundary
 
 A bootstrap request carries the existing effective active instruction
-resolution plus a compact node catalog. The canonical node registry filters the
+resolution plus the node catalog. The canonical node registry filters the
 catalog before it reaches the model:
 
 - the Flow's global or domain scope must allow the definition;
 - every required runtime capability must be present;
 - every required permission must be present;
-- entries are sorted by definition ID and capped by both entry and UTF-8 byte
-  limits;
-- only definition/version, compact labels, capabilities, ports, parameter
-  contracts, and output-action contracts are exposed.
+- entries are sorted by definition ID, and every one that passes is sent,
+  whole: its label and description uncut, and every parameter's authoring
+  text and example (user, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER
+  OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION OR USE ANY RANKING
+  ALGORITHM");
+- definition/version, labels, descriptions, capabilities, ports, parameter
+  contracts with their authoring text, and output-action contracts are exposed.
 
 The service derives this registry resolution from a defensive snapshot of the
 bound native runtime's configured scope, runtime capabilities, and permissions.
@@ -28,28 +31,17 @@ node whose permission is not granted is excluded rather than made available by
 a bootstrap-specific exception. When no native runtime is bound, Core retains
 the fail-closed empty capability and permission fallback.
 
-For the first live authoring lane, Core fixes the input ceiling at 4,000 estimated
-tokens and the resolved instruction allowance at 384 tokens. Core budgets the
-exact schema, instruction packet, and provider-envelope reserve before selecting
-catalog entries. Catalog allocation and provider enforcement share the same
-conservative three UTF-8 bytes per estimated token, so increasing the numeric
-ceiling does not silently expand the selected catalog. It ranks only definitions that already passed scope,
-capability, and permission resolution, recognizes small domain-neutral intent
-groups such as fill/type, select, click, assert/verify/wait, and includes stable
-start/end foundations when available. The nodes an instruction requires are
-reserved first, each in a condensed form, before anything else can use the
-budget (`runtime/flow-bootstrap/plan/catalog.ts`). Each reserved entry then
-grows to its whole form wherever the budget allows. Preferred and ranked
-definitions are added whole after that, and only while they fit. A whole entry
-carries a node description of up to 240 characters. For object, json, and
-array parameters it also carries the parameter description, up to 600
-characters, and an example whose JSON is at most 600 bytes. A condensed entry
-cuts the node description to 80 characters and carries no parameter
-description or example. Its ports, parameter IDs, types, defaults, options,
-constraints, and output action are unchanged, so a plan built from it validates
-the same way. If a required node is unavailable or cannot fit even condensed,
-the context records it as missing, and generation fails before provider or
-secret resolution.
+Nothing ranks, budgets or condenses the catalog. Until 2026-09-30 a first live
+bootstrap was held to 4,000 input tokens and 384 instruction tokens, the
+catalog was ranked against the instruction and filled to a byte budget (64
+entries for an evidence-guided build), and an entry's text was cut or
+condensed. The only bound on the request is now the model's context window: a
+request over it is refused before it is sent, with its size, and is never
+trimmed (`runtime/llm/harness/run.ts`). The instruction is still read for one
+thing: a capability it asks for (to enter, choose, press, verify and so on) that
+no offered node provides is recorded in `catalogSelection.missingRequiredTerms`
+(`runtime/flow-bootstrap/plan/required-terms.ts`), and generation fails before
+provider or secret resolution.
 The provider independently estimates model-visible system and user message
 content as `ceil(UTF-8 bytes / 3)` plus a fixed chat-framing reserve, and rejects
 a request above either the configured input ceiling or combined input/output
@@ -454,10 +446,8 @@ per node; how many nodes and edges it may carry, and its UTF-8 byte budget, come
 from the Flow's size setting (see "Flow Size" below). Its
 instruction asks for one primary Subflow with Router fallback by default and
 permits extra topology only when the active instruction requires it. Core
-rechecks these bounds after parsing and before registry validation. The ranked
-evidence path also sends at most twelve catalog entries, selecting required
-instruction capabilities first; ordinary one-call Bootstrap retains the
-existing catalog ceiling. A representative routed three-action web plan is
+rechecks these bounds after parsing and before registry validation. Every
+path sends the whole catalog. A representative routed three-action web plan is
 1,110 bytes (370 tokens under Core's conservative estimator), so the 4,000
 output-token limit remains unchanged.
 
@@ -950,9 +940,8 @@ evidence is retained even when an action is recoverably rejected, but the
 mutation epoch advances only when `effectApplied` is explicitly true. Legacy
 raw results remain valid for observations and unmarked tools; raw marked
 mutation results fail closed as no applied effect.
-Evidence-decision context sizes its node catalog against 5,000 rather than the
-full 8,000 input tokens, reserving 3,000 tokens for the five bounded tool
-schemas, decision schema, and collected evidence. DeepSeek still estimates the final provider projection and rejects it
+Evidence-decision context carries the whole node catalog beside the tool
+schemas, decision schema and collected evidence. DeepSeek still estimates the final provider projection and rejects it
 if the authoritative per-call input or total-token limits would be exceeded.
 
 The persisted adaptation records only bounded iteration, decision, call/tool ID,

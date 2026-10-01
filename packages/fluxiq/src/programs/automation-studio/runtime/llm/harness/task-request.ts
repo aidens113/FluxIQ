@@ -195,7 +195,6 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   flowBootstrap?: {
     registry?: AutomationStudioNodeRegistry;
     resolution: AutomationStudioNodeRegistryResolution;
-    maxInputTokens?: number;
     /** What the model routes with; built by `buildAutomationStudioFlowBootstrapRoutingContext`. */
     routing?: AutomationStudioFlowBootstrapRoutingContext;
     /** Where the Flow this build writes starts, when the build was told (`../../flow-bootstrap/start-location.ts`). */

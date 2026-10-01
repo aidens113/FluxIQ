@@ -44,7 +44,7 @@ describe("the routing context a Flow build sends", () => {
       instructions: [],
       deniedEvidenceKeys: ["html", "selector"],
       evidenceLoop: { iteration: 1, tools, evidence: [], decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema), completionSchema, canComplete: true },
-      flowBootstrap: { registry, resolution, maxInputTokens: 5_000, routing },
+      flowBootstrap: { registry, resolution, routing },
       provider
     });
     expect(result.ok).toBe(true);
@@ -72,7 +72,7 @@ describe("the routing context a Flow build sends", () => {
       instructions: [],
       deniedEvidenceKeys: ["html"],
       evidenceLoop: { iteration: 1, tools, evidence: [], decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema), completionSchema, canComplete: true },
-      flowBootstrap: { registry, resolution, maxInputTokens: 5_000, routing: tainted },
+      flowBootstrap: { registry, resolution, routing: tainted },
       provider: { metadata: { provider: "mock", model: "m" }, runTask: async () => { called = true; return { response: {} }; } }
     })).rejects.toThrow(/denies/u);
     expect(called).toBe(false);

@@ -26,7 +26,7 @@
 // the Flow already had. So the one value the read reports that condition's read
 // found on an item it held of (the summary's `conditions.seen`) is said beside
 // the subject -- `attribute aria-label (read "Brightaisle Plus" on a row it kept)
-// is present` -- bounded, and withheld entirely when it would trip either screen
+// is present` -- whole, and withheld entirely when it would trip either screen
 // or is a key the domain denies. A condition over a column says no value: the
 // column's own values are the rows.
 //
@@ -34,9 +34,14 @@
 // model wrote, spelled as it wrote it (the domain's reader accepts several
 // spellings, and translating them here would be Core learning a grammar it does
 // not own), with the value it wrote. Numbers are carried whole. A string is
-// carried bounded, and refused -- replaced by a marker -- when it is shaped like
-// a credential or like a way to address an element, the same two screens every
-// other authored string in a request passes. `not: true` is said as `not`.
+// carried whole, as is every value of a list, and refused -- replaced by a
+// marker -- when it is shaped like a credential or like a way to address an
+// element, the same two screens every other authored string in a request
+// passes. `not: true` is said as `not`.
+//
+// **Nothing is cut** (user, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER
+// OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION"): no wording, value or
+// list length bound, and no length bound on a relation word or a name.
 //
 // Without the bound domain's declared keys nothing authored is carried at all:
 // an absent declaration means nobody said, never "deny nothing".
@@ -46,18 +51,12 @@ import { automationStudioEvidenceKey, automationStudioLocatorShapedText, screenA
 
 /** Keys that name the value a condition tests, rather than saying something about it. */
 const NAMING_KEYS = new Set(["field", "read"]);
-/** The longest condition wording carried. */
-const MAX_CONDITION_LENGTH = 200;
-/** The longest single compared string carried, and the longest value a condition's read found. */
-const MAX_OPERAND_LENGTH = 60;
-/** The most compared values of one relation carried. */
-const MAX_OPERANDS = 6;
 /** What a compared value that could not be carried reads as. */
 const WITHHELD_OPERAND = "(withheld)";
 /** A relation key or a kind word: plain letters, as a grammar spells them. */
-const WORD = /^[A-Za-z][A-Za-z_]{0,31}$/u;
+const WORD = /^[A-Za-z][A-Za-z_]*$/u;
 /** A column key or an item attribute's name. */
-const NAME = /^[A-Za-z_][\w-]{0,63}$/u;
+const NAME = /^[A-Za-z_][\w-]*$/u;
 
 /**
  * The condition as the model wrote it, or `undefined` when nothing of it can be
@@ -81,8 +80,7 @@ export function automationStudioResultReadConditionText(
   if (!relations.length) return undefined;
   const negated = condition.not === true ? "not " : "";
   const text = `${subject} ${negated}${relations.join(" and ")}`;
-  const bounded = text.length <= MAX_CONDITION_LENGTH ? text : `${text.slice(0, MAX_CONDITION_LENGTH - 1)}…`;
-  return sayable(bounded) ? bounded : undefined;
+  return sayable(text) ? text : undefined;
 }
 
 /**
@@ -103,13 +101,12 @@ function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denie
   return { text, ownRead: true };
 }
 
-/** A value the condition's read found, quoted and bounded, or `undefined` when there is none or it may not be said. */
+/** A value the condition's read found, quoted and whole, or `undefined` when there is none or it may not be said. */
 function foundText(seen: JsonValue | undefined, denied: ReadonlySet<string>): string | undefined {
   if (typeof seen !== "string") return undefined;
   const trimmed = seen.trim();
   if (!trimmed || denied.has(automationStudioEvidenceKey(trimmed))) return undefined;
-  const bounded = trimmed.length <= MAX_OPERAND_LENGTH ? trimmed : `${trimmed.slice(0, MAX_OPERAND_LENGTH - 1)}…`;
-  return sayable(bounded) ? JSON.stringify(bounded) : undefined;
+  return sayable(trimmed) ? JSON.stringify(trimmed) : undefined;
 }
 
 /** Whether a column's declaration and a condition's read address the same thing the same way. Whether either is required does not change what it reads. */
@@ -131,8 +128,7 @@ function canonical(value: JsonValue | undefined): string {
 /** A relation's value as written: a number whole, a word bare after `is`, text quoted and screened, a list as a list. */
 function operandText(key: string, value: JsonValue): string {
   if (Array.isArray(value)) {
-    const shown = value.slice(0, MAX_OPERANDS).map((item) => scalarText(key, item));
-    return `[${shown.join(", ")}${value.length > shown.length ? `, and ${value.length - shown.length} more` : ""}]`;
+    return `[${value.map((item) => scalarText(key, item)).join(", ")}]`;
   }
   return scalarText(key, value);
 }
@@ -142,8 +138,7 @@ function scalarText(key: string, value: JsonValue): string {
   if (typeof value === "boolean") return String(value);
   if (typeof value !== "string") return WITHHELD_OPERAND;
   if (key === "is" && WORD.test(value)) return value;
-  const bounded = value.length <= MAX_OPERAND_LENGTH ? value : `${value.slice(0, MAX_OPERAND_LENGTH - 1)}…`;
-  return sayable(bounded) ? JSON.stringify(bounded) : WITHHELD_OPERAND;
+  return sayable(value) ? JSON.stringify(value) : WITHHELD_OPERAND;
 }
 
 /** A column key or an attribute name that may be said: plain, not a declared key, and through both screens. */

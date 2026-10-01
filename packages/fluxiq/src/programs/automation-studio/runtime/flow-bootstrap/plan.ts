@@ -4,33 +4,7 @@
 // consumers of this module and of the flow-bootstrap barrel see what they
 // always saw.
 //
-// automationStudioFlowBootstrapCatalogByteBudget is the one member declared
-// here rather than under ./plan/. It is the only part of the plan that reads
-// the LLM runtime's token estimator, which runtime/llm/index.ts deliberately
-// keeps internal; holding that import at this level leaves every module under
-// ./plan/ reaching outside its own directory only through a barrel.
-import { automationStudioLlmTokenBudgetBytes } from "../llm/token-estimation.ts";
-import {
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
-  automationStudioFlowBootstrapOutputSchema,
-  type AutomationStudioFlowBootstrapSizeLimits
-} from "./plan/index.ts";
-
+// It once also declared automationStudioFlowBootstrapCatalogByteBudget, which
+// fitted the node catalog to a request's input-token budget. The catalog is
+// whole since 2026-09-30 (`./plan/catalog.ts`), so there is no budget to fit.
 export * from "./plan/index.ts";
-
-export function automationStudioFlowBootstrapCatalogByteBudget(input: {
-  maxInputTokens: number;
-  instructionBytes: number;
-  /** The Flow's size bounds, when the context will carry the schema built for them; the default-size schema otherwise. */
-  size?: AutomationStudioFlowBootstrapSizeLimits;
-}): number {
-  const totalBytes = automationStudioLlmTokenBudgetBytes(input.maxInputTokens);
-  const schema = input.size ? automationStudioFlowBootstrapOutputSchema(input.size) : AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA;
-  const schemaBytes = Buffer.byteLength(JSON.stringify(schema), "utf8");
-  const fixedEnvelopeReserveBytes = 1_800;
-  return Math.max(0, Math.min(
-    AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes,
-    totalBytes - Math.max(0, Math.trunc(input.instructionBytes)) - schemaBytes - fixedEnvelopeReserveBytes
-  ));
-}

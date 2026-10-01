@@ -60,7 +60,9 @@ describe("Automation Studio flow_bootstrap LLM harness", () => {
       expect(request.expectedOutput).toBe("flow_bootstrap");
       expect(request.promptVersion).toBe("automation-studio.flow-bootstrap.v1");
       expect(request.context.instructions.instructionIds).toEqual(["instruction.flow"]);
-      expect(request.context.instructions.instructions[0]).toMatchObject({ truncated: true });
+      // Carried whole, whatever the budget (2026-09-30): it was cut to 128 tokens here.
+      expect(request.context.instructions.instructions[0]).not.toHaveProperty("truncated");
+      expect(request.context.instructions.instructions[0]?.body).toBe("Build deterministic work. ".repeat(1_000));
       expect(request.context.flowBootstrap?.nodeCatalog.map((entry) => entry.id)).toEqual(["domain.demo.start"]);
       expect(JSON.stringify(request.context.flowBootstrap?.outputSchema)).not.toMatch(/recording|timeline/i);
       return {
@@ -77,7 +79,7 @@ describe("Automation Studio flow_bootstrap LLM harness", () => {
       tokenBudget: 128,
       flowBootstrap: { registry: new AutomationStudioNodeRegistry([nodeDefinition()]), resolution },
       provider,
-      tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
+      tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
       maxEstimatedCostUsd: 0.25,
       timeoutMs: 20_000
     });

@@ -35,23 +35,44 @@ export type AutomationStudioLlmTokenLimits = {
   maxTotalTokens: number;
 };
 
-const DEFAULT_AUTOMATION_STUDIO_LLM_TOKEN_LIMITS: AutomationStudioLlmTokenLimits = {
-  maxInputTokens: 8_000,
-  maxOutputTokens: 2_000,
-  maxTotalTokens: 10_000
-};
+/**
+ * What one call reserves for the model's reply when its caller names no output
+ * limit: 8,000 tokens, the reply reserve the live session-key profile has used
+ * since the window became the request bound (`../session-key-provider.ts`).
+ */
+export const AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS = 8_000;
+
+/**
+ * One call's limits when the caller names none: the model's context window,
+ * with the reply reserve taken out of it for the reply and the rest the
+ * input's.
+ *
+ * Until 2026-09-30 these were 8,000 input, 2,000 output and 10,000 total tokens,
+ * so a call through a resolver that named no limits was refused at 8,000 input
+ * tokens -- far below a whole page. The user's order that day leaves the window
+ * as the only bound on a request, so the defaults are the window: 992,000 input,
+ * 8,000 output and 1,000,000 total for DeepSeek today. A limit a caller names
+ * still binds, and the missing ones are derived from it: an output limit with
+ * no input limit leaves the input the window less that output, and a total
+ * limit with neither leaves the input the total less the reply reserve.
+ */
+export const AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS: AutomationStudioLlmTokenLimits = Object.freeze({
+  maxInputTokens: AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST - AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS,
+  maxOutputTokens: AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS,
+  maxTotalTokens: AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST
+});
 
 export function resolveAutomationStudioLlmTokenLimits(input?: Partial<AutomationStudioLlmTokenLimits>): {
   limits: AutomationStudioLlmTokenLimits;
   diagnostics: AutomationStudioLlmDiagnostic[];
 } {
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
-  const value = (key: keyof AutomationStudioLlmTokenLimits): number => {
+  const value = (key: keyof AutomationStudioLlmTokenLimits, fallback: number): number => {
     const requested = input?.[key];
-    if (requested === undefined) return DEFAULT_AUTOMATION_STUDIO_LLM_TOKEN_LIMITS[key];
+    if (requested === undefined) return fallback;
     if (!Number.isFinite(requested) || !Number.isInteger(requested) || requested <= 0) {
       diagnostics.push({ severity: "error", code: "llm_budget.invalid_token_limit", message: `${key} must be a positive integer.`, path: `tokenLimits.${key}` });
-      return DEFAULT_AUTOMATION_STUDIO_LLM_TOKEN_LIMITS[key];
+      return fallback;
     }
     if (requested > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST) {
       diagnostics.push({
@@ -64,11 +85,12 @@ export function resolveAutomationStudioLlmTokenLimits(input?: Partial<Automation
     }
     return requested;
   };
-  const limits = {
-    maxInputTokens: value("maxInputTokens"),
-    maxOutputTokens: value("maxOutputTokens"),
-    maxTotalTokens: value("maxTotalTokens")
-  };
+  // A limit the caller left out is derived from the ones it named, so naming
+  // one never leaves the others contradicting it (`AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS`).
+  const maxTotalTokens = value("maxTotalTokens", AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS.maxTotalTokens);
+  const maxOutputTokens = value("maxOutputTokens", Math.min(AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, maxTotalTokens));
+  const maxInputTokens = value("maxInputTokens", Math.max(1, maxTotalTokens - maxOutputTokens));
+  const limits = { maxInputTokens, maxOutputTokens, maxTotalTokens };
   if (limits.maxInputTokens > limits.maxTotalTokens) diagnostics.push({ severity: "error", code: "llm_budget.input_exceeds_total", message: "maxInputTokens cannot exceed maxTotalTokens.", path: "tokenLimits.maxInputTokens" });
   if (limits.maxOutputTokens > limits.maxTotalTokens) diagnostics.push({ severity: "error", code: "llm_budget.output_exceeds_total", message: "maxOutputTokens cannot exceed maxTotalTokens.", path: "tokenLimits.maxOutputTokens" });
   return { limits, diagnostics };

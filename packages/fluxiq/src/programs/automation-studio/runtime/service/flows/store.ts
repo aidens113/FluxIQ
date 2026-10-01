@@ -33,7 +33,7 @@ import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-value
 import { uniqueStrings, upsertBy } from "../collections.ts";
 import { stableJson } from "../stable-json.ts";
 import { flowMapRouteGroups, flowMapSortedRules, flowNodeFromGraphRecord, flowSubflowCategoriesFromFlow, flowSummaryFromFlow, removeUndefinedSubflowFields, sqlInstructionRequirement, sqlInstructionStatus, subflowParentCategoryId } from "./mapping.ts";
-import { withoutAutomationStudioLockedDefaultSettings } from "../flow-settings/index.ts";
+import { withoutAutomationStudioLockedDefaultSettings, withoutAutomationStudioTokensPerRunDefault } from "../flow-settings/index.ts";
 
 // The Flow documents and the per-project SQL projection of them, in one place
 // because they are mutually dependent: saving a Flow writes its projection and
@@ -81,13 +81,15 @@ export class AutomationStudioFlowStore {
   // be corrected, and so nothing is rewritten on a guess: the clearing writes
   // nothing by itself, and the next ordinary save persists what it produced.
   // Metadata a person configured does not match the block and is untouched.
+  // The 12,000-token cap every Flow was created with before 2026-09-30 is
+  // cleared here the same way (`flow-settings/tokens-per-run-default-migration.ts`).
   async getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
     await this.projects.requireProject(projectId);
     await this.loadProjectFlow(projectId, flowId);
     const flow = await this.repositories.flows.get(flowId);
     if (!flow || flow.projectId !== projectId) throw new Error(`Unknown Automation Studio Flow: ${flowId}`);
     const canonical = await this.materializeCanonicalGraphFlow(projectId, flow);
-    const metadata = withoutAutomationStudioLockedDefaultSettings(canonical.metadata);
+    const metadata = withoutAutomationStudioTokensPerRunDefault(withoutAutomationStudioLockedDefaultSettings(canonical.metadata));
     return metadata === canonical.metadata || metadata === undefined ? canonical : { ...canonical, metadata };
   }
 

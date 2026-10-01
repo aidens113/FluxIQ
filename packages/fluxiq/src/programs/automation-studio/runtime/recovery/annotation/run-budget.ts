@@ -24,6 +24,7 @@
 
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
+  AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
   AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
@@ -114,7 +115,9 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // diagnosis outright. The $0.25 purse is what bounds spending (2026-09-30).
   const tokenShares = input.explicitRunBudget ? costShares : Math.min(costShares, AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
   const tokenLimits = resolution?.tokenLimits;
-  const requestedTotalTokens = (tokenLimits?.maxTotalTokens ?? 10_000) * tokenShares;
+  // A resolver that names no per-call limit gets the harness's own default, which
+  // is the model's window (`../../llm/harness/token-limits.ts`); it was 10,000.
+  const requestedTotalTokens = (tokenLimits?.maxTotalTokens ?? AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS.maxTotalTokens) * tokenShares;
   const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(
     AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST * tokenShares,
     positiveInteger(resolution?.maxTotalTokensPerRun) ?? Number.POSITIVE_INFINITY,
@@ -154,8 +157,19 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   };
 }
 
-/** One call at the per-request token limits, every input token a cache miss, at the model's peak rates. */
+/**
+ * One call at the per-request token limits the resolver declared, every input
+ * token a cache miss, at the model's peak rates.
+ *
+ * Nothing when it declared none. The harness's own default is then the model's
+ * whole window (`../../llm/harness/token-limits.ts`, since 2026-09-30), a
+ * request no call is expected to fill and one whose worst case is more than the
+ * whole $0.25 purse; reserving it would leave room for one call per recovery.
+ * An even share of the purse is reserved instead, and the harness reserves each
+ * call at its own measured size when the provider can price it.
+ */
 function worstCaseCallCostUsd(tokenLimits: Partial<AutomationStudioLlmTokenLimits> | undefined, model: string | undefined): number {
+  if (!tokenLimits || Object.values(tokenLimits).every((value) => value === undefined)) return 0;
   const limits = resolveAutomationStudioLlmTokenLimits(tokenLimits).limits;
   const outputTokens = Math.min(limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
   const inputTokens = Math.max(0, Math.min(limits.maxInputTokens, limits.maxTotalTokens - outputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST - outputTokens));

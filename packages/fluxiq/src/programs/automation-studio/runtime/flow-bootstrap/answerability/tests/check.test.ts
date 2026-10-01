@@ -83,6 +83,15 @@ describe("a build may not propose a Flow that cannot answer the instruction", ()
     expect(verdict.instruction).toContain("Run the step from your node library that returns rows");
   });
 
+  it("lists every step of a long Flow, not the first twenty-four: no count cap (user, 2026-09-30)", () => {
+    const verdict = check(planOf(...Array.from({ length: 40 }, () => "web.output.dom-type")), EARBUDS);
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.cannotAnswer.steps).toHaveLength(40);
+    expect(verdict.cannotAnswer).not.toHaveProperty("stepsWithheld");
+  });
+
   it("accepts a legitimate alternative route: a search reached by URL rather than typed", () => {
     const typed = check(planOf(
       "web.output.browser-navigate",

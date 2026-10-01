@@ -33,9 +33,6 @@
 // buying, ordering. Saving a thing, or switching a store, chooses nothing.
 import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 
-const MAX_CHOICES = 4;
-const MAX_QUOTE = 120;
-
 const NUMBER_WORDS: Readonly<Record<string, number>> = Object.freeze({ two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 });
 const COUNT = `(?:${Object.keys(NUMBER_WORDS).join("|")}|one|[0-9]{1,3})`;
 
@@ -105,7 +102,6 @@ export function automationStudioInstructedChoices(actId: string, object: string)
   for (const each of found.sort((left, right) => left.at - right.at)) variant(each.value, each.word, each.quote, each.at);
   return choices
     .sort((left, right) => left.at - right.at)
-    .slice(0, MAX_CHOICES)
     .map(({ at: _at, ...choice }) => choice);
 }
 
@@ -122,6 +118,7 @@ function idWord(word: string): string {
   return lower === "color" ? "colour" : lower === "flavor" ? "flavour" : lower;
 }
 
+/** The person's words with whitespace folded, whole (no character cut, user 2026-09-30). */
 function fold(text: string): string {
-  return text.replace(/\s+/gu, " ").trim().slice(0, MAX_QUOTE).trimEnd();
+  return text.replace(/\s+/gu, " ").trim();
 }
