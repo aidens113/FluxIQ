@@ -6,18 +6,55 @@
 // re-author's brief, which has room, and says each condition with the rows it
 // rejected -- the fact a re-author needs to correct the one that dropped rows
 // the request wanted, instead of adding a step that already exists.
+//
+// **Why paging stopped is said as what it means, not as a closed word beside a
+// bound.** `run-muq66ff9-cb3767a1` was told "read 5 pages of at most 5, paging
+// stopped on control_disabled": a list whose Next was disabled on its last page.
+// The judge read "5 of at most 5" as the bound and advised raising maxPages, and
+// every re-author after it chased a bound that had read every page there was.
+// So a read the list ended (`stop.ts`) is said as having read every page, with
+// no bound beside it; only a read the page bound stopped is told the list may
+// go on and how to read further. Information only: nothing here refuses.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import { automationStudioResultReadStop } from "./stop.ts";
 
 /** Core's sentence for how one read went. */
 export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
-  const pages = `${read.pagesRead} ${read.pagesRead === 1 ? "page" : "pages"}${read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : ""}`;
-  const stopped = read.stop ? `, paging stopped on ${read.stop}` : "";
-  const cut = read.truncated ? ", cut short by a limit" : "";
   const seen = read.itemsSeen !== undefined ? ` of ${read.itemsSeen} items seen` : "";
   const attempts = read.attempts ? ` (the last of ${read.attempts} reads of this step)` : "";
-  const head = `step ${read.nodeId} read ${pages}${stopped}${cut} and kept ${read.kept}${seen}${attempts}`;
+  const head = `step ${read.nodeId} read ${pagesClause(read)} and kept ${read.kept}${seen}${attempts}`;
   return length === "brief" ? `${head}${briefTail(read)}` : `${capitalized(head)}.${fullTail(read)}`;
+}
+
+/** The pages read and why paging stopped, as what the stop means. */
+function pagesClause(read: AutomationStudioResultReadAccount): string {
+  const pages = pageCount(read.pagesRead);
+  const stop = automationStudioResultReadStop(read);
+  const cut = read.truncated ? ", cut short by a limit" : "";
+  const ended = (how: string) => `every page (${read.pagesRead}) and the list ended${how}${cut}`;
+  if (stop === "list_ended") return ended(listEnd(read));
+  if (stop === "page_bound") {
+    // Said as before: a read its page bound stopped is the one case "of at most N" describes.
+    const bound = read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : "";
+    return `${pages}${bound}${read.stop ? `, paging stopped on ${read.stop}` : ", as many as its page bound allows"}${cut}`;
+  }
+  // Something other than the list or the page bound stopped it: say the word, and that the bound was not it.
+  const before = read.pageLimit !== undefined && read.pagesRead < read.pageLimit ? ` before its page bound of ${read.pageLimit}` : "";
+  return `${pages}${read.stop ? `, paging stopped on ${read.stop}${before}` : read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : ""}${cut}`;
+}
+
+/** How the list showed it had ended, from the read's own stop word. */
+function listEnd(read: AutomationStudioResultReadAccount): string {
+  const last = `page ${read.pagesRead}`;
+  if (read.stop === "control_disabled") return `: its next control was disabled on ${last}`;
+  if (read.stop === "no_following_page") return `: its pager showed no page after ${last}`;
+  if (read.stop === "scrolled_to_end") return ": it scrolled to the end of the list";
+  if (read.stop === "control_absent") {
+    // `control_absent` on the first page is also what a next control that names nothing looks like.
+    return read.pagesRead > 1 ? `: no next control was on ${last}` : ": no next control was on the first page, which a next control that names nothing on the page would also show";
+  }
+  return read.pageLimit !== undefined ? ` before its page bound of ${read.pageLimit}` : "";
 }
 
 function briefTail(read: AutomationStudioResultReadAccount): string {
@@ -36,8 +73,16 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
 
 function fullTail(read: AutomationStudioResultReadAccount): string {
   const lines: string[] = [];
-  if (read.paginates === true) lines.push("It already follows pages; do not add a paging step around it -- change its own paging setting if more pages are needed.");
+  const stop = automationStudioResultReadStop(read);
+  if (read.paginates === true) {
+    lines.push(stop === "list_ended"
+      ? "It already follows pages and read to the end of the list, so a higher page bound would read nothing more; do not add a paging step around it."
+      : "It already follows pages; do not add a paging step around it -- change its own paging setting if more pages are needed.");
+  }
   if (read.paginates === false) lines.push("It does not follow pages.");
+  if (stop === "page_bound") {
+    lines.push(`Its page bound stopped it${read.pageLimit !== undefined ? ` at ${read.pageLimit}` : ""}, not the list, so the list may go on: raise its maxPages (maxScrolls for a read that scrolls) if the request needs rows past page ${read.pagesRead}.`);
+  }
   if (read.dedupes === true) lines.push(`It already keeps one row per ${read.dedupeBy?.length ? read.dedupeBy.join(" + ") : "row identity"}.`);
   if (read.dedupes === false) lines.push("It does not deduplicate.");
   const conditions = read.conditions ?? [];
@@ -51,6 +96,10 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   return lines.length ? ` ${lines.join(" ")}` : "";
+}
+
+function pageCount(pages: number): string {
+  return `${pages} ${pages === 1 ? "page" : "pages"}`;
 }
 
 function capitalized(text: string): string {
