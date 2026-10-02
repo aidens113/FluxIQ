@@ -455,7 +455,10 @@ describe("refuted-result service composition", () => {
       // The other Flow's failed generation shares nothing with this run: no
       // grant is held between them, so its failure neither revokes nor ends
       // anything here, and the run's own repair finishes.
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "loop_verification"]);
+      // The re-author is a build, so its own test is judged before it is proposed
+      // (lane D F43: a re-authored Flow is judged on its own test); the repaired
+      // run is then verified as before.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "loop_verification", "loop_verification"]);
       expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
       expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
@@ -483,10 +486,14 @@ describe("refuted-result service composition", () => {
         applied: true,
       });
 
+      // The re-author is a build, so its own test is judged before it is proposed
+      // (lane D F43: a re-authored Flow is judged on its own test); the repaired
+      // run is then verified as before.
       expect(harness.taskKinds).toEqual([
         "loop_verification",
         "loop_verification",
         "evidence_tool_decision",
+        "loop_verification",
         "loop_verification",
       ]);
       expect(run.status).toBe("succeeded");

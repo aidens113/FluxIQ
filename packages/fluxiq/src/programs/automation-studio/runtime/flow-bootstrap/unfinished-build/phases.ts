@@ -40,9 +40,15 @@
 // the loop's test of it did is judged against the instruction: `yes` is the
 // result; `no` is repaired as a round that stopped short is, "not doable" only
 // when a repair hands back the same Flow; an unsure verdict is the result,
-// unverified, unless steps carried from an earlier Flow were not run in the
-// test (run 41, `run-muq70foz-74caa189`), which is repaired. The judge's spend
-// counts against the build's run cost ceiling.
+// unverified. That includes a re-authored or improved Flow whose steps carried
+// from the earlier Flow were never run in this build's test: they cannot be
+// (an extended draft has no replay, `../../llm/node-tools/draft-from-flow.ts`),
+// so repairing for them could only end "not doable" for every improvement the
+// judge could not see whole -- the extension chat's "improve an automation"
+// did. Its claims are never what decides (run 41, `run-muq70foz-74caa189`): the
+// judge marks those steps not run, the person is told so, and the Flow's first
+// real run, which runs them, is judged. The judge's spend counts against the
+// build's run cost ceiling.
 //
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
@@ -241,7 +247,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.loop.trace], steps: ending.loop.steps, accounting: { ...ending.loop.accounting } }, accounting: spent, rounds, trace: [...record] };
       }
       addAccounting(spent, judgeAccounting(verdict.spent));
-      if (verdict.verdict === "yes" || (verdict.verdict !== "no" && !verdict.untestedCarried?.length)) {
+      if (verdict.verdict !== "no") {
         return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record], judged: verdict };
       }
       const judged = automationStudioFlowBootstrapJudgeFinished({ round, steps: ending.loop.steps, verdict, checklist: input.checklist });
