@@ -87,6 +87,8 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   summary: string;
+  /** The columns the instruction names, declared on an extraction whose author declared none (`./normalise.ts`). */
+  namedColumns?: readonly string[] | undefined;
 }): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const definitions = input.registry.list(input.resolution);
@@ -114,7 +116,8 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
       definitions,
       blockIndex,
       stepLabels,
-      path: `plan.subflows.${subflows.length}`
+      path: `plan.subflows.${subflows.length}`,
+      namedColumns: input.namedColumns
     });
     issues.push(...built.issues);
     for (const step of block.steps) {
@@ -235,6 +238,7 @@ function buildSubflow(input: {
   blockIndex: number;
   stepLabels: ReadonlyMap<string, number>;
   path: string;
+  namedColumns: readonly string[] | undefined;
 }): { nodes: AutomationStudioFlowBootstrapNode[]; edges: AutomationStudioFlowBootstrapEdge[]; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const nodes: AutomationStudioFlowBootstrapNode[] = [];
@@ -251,7 +255,7 @@ function buildSubflow(input: {
       continue;
     }
     const key = `s${index + 1}`;
-    const node = buildNode({ step, definition: found.definition, key, path: nodePath });
+    const node = buildNode({ step, definition: found.definition, key, path: nodePath, namedColumns: input.namedColumns });
     issues.push(...node.issues);
     nodes.push(node.node);
     definitionByKey.set(key, found.definition);
@@ -269,6 +273,7 @@ function buildNode(input: {
   definition: AutomationStudioNodeDefinition;
   key: string;
   path: string;
+  namedColumns: readonly string[] | undefined;
 }): { node: AutomationStudioFlowBootstrapNode; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const written: Record<string, JsonValue> = {};
@@ -336,7 +341,8 @@ function buildNode(input: {
     definition: input.definition,
     written,
     path: input.path,
-    fallbackName: input.step.description || input.definition.label
+    fallbackName: input.step.description || input.definition.label,
+    namedColumns: input.namedColumns
   });
   issues.push(...normalised.issues);
   const derived = outputActionId ?? derivedOutputActionId(input.definition);

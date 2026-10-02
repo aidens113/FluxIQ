@@ -57,12 +57,21 @@ const VALUE_TYPE_SYNONYMS: ReadonlyMap<string, string> = new Map([
 export function normaliseAuthoringRecordOutput(input: {
   value: JsonValue | undefined;
   definition: AutomationStudioNodeDefinition;
-  /** Column names read from elsewhere on the node, when the model wrote no schema. */
-  columns: readonly string[];
+  /**
+   * The columns to declare when the model wrote no schema: names read from
+   * elsewhere on the node, or the instruction's own columns matched to them,
+   * each with the label it was given (`./instruction-record-columns.ts`).
+   */
+  columns: readonly (string | { id: string; label: string })[];
   /** What the dataset is called when the model named it nothing usable. */
   fallbackName: string;
   path: string;
-}): { value: JsonValue | undefined; issues: AutomationStudioFlowBootstrapIssue[] } {
+}): {
+  value: JsonValue | undefined;
+  issues: AutomationStudioFlowBootstrapIssue[];
+  /** True when the schema was declared from `columns`, because the model wrote none. */
+  schemaDerived?: true;
+} {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   if (input.value === undefined || input.value === null) return { value: input.value, issues };
   const written = asObject(input.value);
@@ -79,6 +88,7 @@ export function normaliseAuthoringRecordOutput(input: {
   const label = typeof output.label === "string" ? output.label : undefined;
   const datasetId = typeof output.datasetId === "string" ? authoringDatasetId(output.datasetId) : undefined;
   output.datasetId = datasetId ?? authoringDatasetId(label ?? "") ?? authoringDatasetId(input.fallbackName) ?? "records";
+  const schemaDerived = fieldList(output.schema) === undefined;
   const schema = normaliseSchema(output.schema, input.columns);
   if (!schema) {
     issues.push(authoringError("record_schema.not_derivable", "A record output named a dataset but no columns to save in it.", input.path));
@@ -95,11 +105,11 @@ export function normaliseAuthoringRecordOutput(input: {
     else delete output.maxRecords;
   }
   if (label === undefined) delete output.label;
-  return { value: output, issues };
+  return { value: output, issues, ...(schemaDerived ? { schemaDerived: true as const } : {}) };
 }
 
 /** A schema written as a schema, a field list, a column map or a comma-separated line. */
-function normaliseSchema(written: JsonValue | undefined, columns: readonly string[]): JsonObject | undefined {
+function normaliseSchema(written: JsonValue | undefined, columns: readonly (string | { id: string; label: string })[]): JsonObject | undefined {
   const fields = fieldList(written) ?? fieldList(columns as JsonValue);
   if (!fields?.length) return undefined;
   const labels = new Set<string>();

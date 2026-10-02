@@ -56,6 +56,7 @@ import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResu
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
+import { automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
@@ -174,7 +175,9 @@ async function askOnce(
     ...(request.subflowId ? { subflowId: request.subflowId } : {}),
     instructions: [...request.instructions],
     ...(request.runDetail ? { runDetail: request.runDetail } : {}),
-    resultSummary: request.summary,
+    // With the instruction's named columns no stored column reads, said once
+    // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
+    resultSummary: automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
     provider,

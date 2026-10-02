@@ -45,6 +45,7 @@ import type {
   AutomationStudioResultRecordSetSummary,
   AutomationStudioRunResultSummary
 } from "./contracts.ts";
+import { automationStudioResultReadEmptiedColumns } from "./read-account/index.ts";
 
 /** Core's stable codes for what it found wrong with a result. */
 export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
@@ -164,7 +165,7 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
       ...(columns.length ? { columns } : {})
     });
   }
-  for (const set of summary.recordSets) findings.push(...recordSetFindings(set));
+  for (const set of summary.recordSets) findings.push(...recordSetFindings(set, summary));
   if (summary.withheld) {
     findings.push({ code: codes.summaryWithheld, detail: "Part of the account this verdict was reached from was cut to fit, so the sample is narrower than the counts." });
   }
@@ -175,10 +176,10 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
 }
 
 /** What one record set's own numbers and sample say about it. */
-function recordSetFindings(set: AutomationStudioResultRecordSetSummary): AutomationStudioResultRepairFinding[] {
+function recordSetFindings(set: AutomationStudioResultRecordSetSummary, summary: AutomationStudioRunResultSummary): AutomationStudioResultRepairFinding[] {
   const codes = AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES;
   const findings: AutomationStudioResultRepairFinding[] = [];
-  const empty = alwaysEmptyColumns(set);
+  const empty = alwaysEmptyColumns(set, summary);
   if (empty.length) {
     findings.push({
       code: codes.columnAlwaysEmpty,
@@ -212,11 +213,17 @@ function recordSetFindings(set: AutomationStudioResultRecordSetSummary): Automat
  * a finding about the bound rather than about the data. A column already named by
  * the required-value check is left out -- the same defect, said twice, is one
  * instruction the repair reads as two.
+ *
+ * So is a column a read's own condition keeps empty (`read-account/
+ * emptied-columns.ts`): `run-muq66ff9-cb3767a1` filtered on `ad is absent`,
+ * stored `ad`, and was told on all three re-authors to re-point a column that
+ * was empty because the request asked for exactly that. A column empty for no
+ * reason a read states keeps the finding.
  */
-function alwaysEmptyColumns(set: AutomationStudioResultRecordSetSummary): string[] {
+function alwaysEmptyColumns(set: AutomationStudioResultRecordSetSummary, summary: AutomationStudioRunResultSummary): string[] {
   const sample = set.sampleRows;
   if (!sample?.length || !set.columns.length) return [];
-  const named = new Set(set.missingRequiredColumns);
+  const named = new Set([...set.missingRequiredColumns, ...automationStudioResultReadEmptiedColumns(summary.reads, set.columns)]);
   return set.columns
     .filter((column) => !named.has(column) && sample.every((row) => !carriesValue(row, column)));
 }
