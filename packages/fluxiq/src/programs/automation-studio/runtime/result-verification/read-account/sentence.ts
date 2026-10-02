@@ -5,7 +5,8 @@
 // reading, so it carries the counts and names no condition. `full` is for the
 // re-author's brief, which has room, and says each condition with the rows it
 // rejected -- the fact a re-author needs to correct the one that dropped rows
-// the request wanted, instead of adding a step that already exists.
+// the request wanted, instead of adding a step that already exists -- and, where
+// the read sent them, the rows it removed by itself, by label (`alone-rows.ts`).
 //
 // **Why paging stopped is said as what it means, not as a closed word beside a
 // bound.** `run-muq66ff9-cb3767a1` was told "read 5 pages of at most 5, paging
@@ -87,7 +88,7 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   if (read.dedupes === false) lines.push("It does not deduplicate.");
   const conditions = read.conditions ?? [];
   if (conditions.length) {
-    const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}`);
+    const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}${leftOutOnlyByThis(condition.leftOutOnlyByThis)}`);
     lines.push(`Its conditions, each with the rows it rejected across the whole read (a row can fail more than one): ${said.join("; ")}.`);
     // The rows a condition removed by itself passed every other condition: if the answer lacks rows the request wanted, they are where they went.
     if (conditions.some((condition) => (condition.alone ?? 0) > 0)) {
@@ -96,6 +97,11 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   return lines.length ? ` ${lines.join(" ")}` : "";
+}
+
+/** The rows a condition removed by itself, named, each label quoted whole; nothing when the read did not send them. */
+function leftOutOnlyByThis(labels: readonly string[] | undefined): string {
+  return labels?.length ? ` (removed by itself: ${labels.map((label) => JSON.stringify(label)).join(", ")})` : "";
 }
 
 function pageCount(pages: number): string {

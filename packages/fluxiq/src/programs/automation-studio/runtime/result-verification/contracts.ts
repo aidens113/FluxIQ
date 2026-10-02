@@ -147,7 +147,8 @@ export type AutomationStudioResultFlowStepSummary = {
  * extraction-summary.ts` admits it on the attempt as `metadata.extraction`);
  * the conditions, the paging and the dedupe key are what the Flow authored the
  * step with. Counts, closed words, column ids and the model's own condition
- * wording -- no locator and no page value.
+ * wording -- no locator, and no page value but a condition's `leftOutOnlyByThis` row
+ * labels and the value its own read found, each screened.
  */
 export type AutomationStudioResultReadAccount = {
   nodeId: string;
@@ -178,9 +179,12 @@ export type AutomationStudioResultReadAccount = {
    * condition removed by itself (every other condition kept them): the rows
    * that say whether the condition is right, where its whole count cannot
    * (`run-mup2u8o3-6697c4be`: an accessory rule rejected 20, 5 alone, 3 of them
-   * true answers). Absent where the read did not count it.
+   * true answers). Absent where the read did not count it. `leftOutOnlyByThis`
+   * names those rows, each by its first text column (its title), whole, so the
+   * judge can check them against the request (live run 15: three earbuds "with
+   * Wireless Charging Case"); absent where the read did not send them.
    */
-  conditions?: Array<{ condition?: string; rejected?: number; alone?: number }>;
+  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[] }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /** How many attempts of this step reported a read. Absent when one did; the account is the last one's. */

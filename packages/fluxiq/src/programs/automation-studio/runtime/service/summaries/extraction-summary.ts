@@ -66,6 +66,21 @@
 // first value that condition's read found on an item it held of, or `null`, and
 // this projection copies it whole: nothing is cut (user, 2026-09-30). It is
 // screened where it is said, not here (`result-verification/read-account/condition.ts`).
+//
+// **And `conditions.aloneRows`: the rows each condition removed by itself, by
+// label** (t194 w49). A Flow's playback asks the page for the rows each `where`
+// condition removed by itself -- rows every other condition kept -- and the
+// read sends them as `rejectedSamples`, with `rejectedSamplesAlone` saying how
+// many lead each list. Live run 15 (`run-muqj2bgb-d048ec37`) held 10 of 13
+// earbuds: its accessory rule removed by itself three sold "with Wireless
+// Charging Case", and its judge, told only "5 of them by itself", passed it.
+// Only each row's label is kept: its first text column, whole -- the title, in
+// a read of products -- which names the row without the rest of it, as a
+// one-column record so the column it came from can still be screened. Every
+// alone row, and no row that also failed another condition. Screened where it
+// is said (`result-verification/read-account/alone-rows.ts`). Rows that are not
+// one list per condition, or a lead longer than its list, drop the summary, as
+// any other malformed member does.
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
@@ -113,6 +128,9 @@ const PAGINATION_STOPS = new Set([
 /** What a pagination stop word outside the set above is published as, on the rule `WAIT_STOP_UNKNOWN` states. */
 const PAGINATION_STOP_UNKNOWN = "unknown";
 
+/** A value that is an address rather than text: a URL, or a path from an origin. */
+const ADDRESS = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
+
 /**
  * The read's summary, rebuilt member by member, or `undefined` when the attempt
  * dispatched no read, the host reported no summary, the result payload was
@@ -145,8 +163,13 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   if (!missingFields.every((key) => fieldNames.includes(key))) return undefined;
   const listPresence = summary.listPresence;
   if (listPresence !== undefined && !(typeof listPresence === "string" && LIST_PRESENCE.has(listPresence))) return undefined;
-  const conditions = summary.conditions === undefined ? undefined : conditionReport(summary.conditions);
-  if (summary.conditions !== undefined && conditions === undefined) return undefined;
+  const reported = summary.conditions === undefined ? undefined : conditionReport(summary.conditions);
+  if (summary.conditions !== undefined && reported === undefined) return undefined;
+  // The rows each condition removed by itself, by label, when the read sent them with their leads (see the header).
+  const sampled = reported !== undefined && summary.rejectedSamples !== undefined && summary.rejectedSamplesAlone !== undefined;
+  const aloneRows = sampled ? aloneRowLabels(summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, (reported.rejected as number[]).length) : undefined;
+  if (sampled && aloneRows === undefined) return undefined;
+  const conditions = reported && aloneRows ? { ...reported, aloneRows } : reported;
   // The two counts a zero read is diagnosed by, absent from a producer that did
   // not count them and held to the same rule as every other count when sent.
   // They are deliberately not cross-checked against `recordCount` or against
@@ -227,6 +250,38 @@ function conditionReport(value: unknown): JsonObject | undefined {
   const alone = value.alone === undefined ? undefined : aloneCounts(value.alone, rejected);
   if (value.alone !== undefined && alone === undefined) return undefined;
   return { applied, kept, rejected: [...rejected], unfiltered: value.unfiltered, ...(seen ? { seen } : {}), ...(alone ? { alone } : {}) };
+}
+
+/**
+ * Per condition, the label of each row it removed by itself -- the leading
+ * `leads[index]` rows of its list -- as `{ column: label }`. `undefined` when
+ * the rows are not one list per condition of records of the read's own fields
+ * holding text or `null`, or a lead is not a count within its list. A row with
+ * no text says no label.
+ */
+function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly string[], conditions: number): JsonObject[][] | undefined {
+  if (!Array.isArray(samples) || !Array.isArray(leads) || samples.length !== conditions || leads.length !== conditions) return undefined;
+  const labels: JsonObject[][] = [];
+  for (const [index, rows] of samples.entries()) {
+    const lead = count(leads[index]);
+    if (!Array.isArray(rows) || lead === undefined || lead > rows.length) return undefined;
+    if (!rows.every((row) => isJsonRecord(row) && Object.entries(row).every(([key, cell]) => fieldNames.includes(key) && (cell === null || typeof cell === "string")))) return undefined;
+    labels.push((rows.slice(0, lead) as Array<Record<string, string | null>>).flatMap((row) => {
+      const label = rowLabel(row, fieldNames);
+      return label === undefined ? [] : [label];
+    }));
+  }
+  return labels;
+}
+
+/** A row's first text column in the read's field order, whole: a value with a letter in it that is not an address, else its first value at all. */
+function rowLabel(row: Record<string, string | null>, fieldNames: readonly string[]): JsonObject | undefined {
+  const cells = fieldNames.flatMap((key): Array<[string, string]> => {
+    const value = row[key]?.trim();
+    return value ? [[key, value]] : [];
+  });
+  const chosen = cells.find(([, value]) => /\p{L}/u.test(value) && !ADDRESS.test(value)) ?? cells[0];
+  return chosen ? { [chosen[0]]: chosen[1] } : undefined;
 }
 
 /** One count per condition, each at most that condition's rejections, or `undefined` for anything else. */

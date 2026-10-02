@@ -212,6 +212,33 @@ describe("what the projection admits", () => {
     }
   });
 
+  // Live run 15 (run-muqj2bgb-d048ec37): a playback asks for the rows each condition removed by itself
+  // ("alone"), and the accessory rule's were three true earbuds sold "with Wireless Charging Case".
+  it("keeps the label of every row a condition removed by itself, and no other row, and refuses malformed rows", () => {
+    const fields = { ...READ, fieldNames: ["url", "name", "price"] };
+    const counts = { applied: 40, kept: 10, rejected: [12, 20], unfiltered: false, alone: [0, 3] };
+    const earbud = { url: "/dp/B01", name: "Lumo Audio Drift Pro Wireless Earbuds, Wireless Charging Case, White", price: "$39.99" };
+    const trevio = { url: "/dp/B02", name: "  Trevio T5 Wireless Earbuds, Wireless Charging Case, Rose Gold ", price: "$29.99" };
+    const priceOnly = { url: null, name: null, price: "$12.00" };
+    const alsoFailedPrice = { url: "/dp/B03", name: "Charging Case Replacement", price: "$80.00" };
+    const admitted = (rejectedSamples: unknown, rejectedSamplesAlone: unknown) =>
+      extractionSummaryFromOutputs({ result: { extraction: { ...fields, conditions: counts, rejectedSamples, rejectedSamplesAlone } } });
+    // A playback's form: each list is its alone rows. The label is the first text column, whole; an address is not text.
+    expect(admitted([[], [earbud, trevio, priceOnly]], [0, 3])?.conditions).toEqual({
+      ...counts,
+      aloneRows: [[], [{ name: earbud.name }, { name: "Trevio T5 Wireless Earbuds, Wireless Charging Case, Rose Gold" }, { price: "$12.00" }]]
+    });
+    // The exploring form: every rejected row, the alone ones leading. Only the lead is kept.
+    expect(admitted([[], [earbud, alsoFailedPrice]], [0, 1])?.conditions).toMatchObject({ aloneRows: [[], [{ name: earbud.name }]] });
+    expect(JSON.stringify(admitted([[], [earbud, alsoFailedPrice]], [0, 1]))).not.toContain("Replacement");
+    // Rows with no leads, from a page build that did not order them, say nothing of which were alone, and are not kept.
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...fields, conditions: counts, rejectedSamples: [[], [earbud]] } } })?.conditions).toEqual(counts);
+    // Not one list per condition, a lead past its list, a column the read does not declare, a cell that is not text.
+    for (const [rows, leads] of [[[[earbud]], [1]], [[[], [earbud]], [0, 2]], [[[], [{ ...earbud, seller: "x" }]], [0, 1]], [[[], [{ ...earbud, price: 39.99 }]], [0, 1]], [[[], [earbud]], "1"]]) {
+      expect(admitted(rows, leads), JSON.stringify([rows, leads])).toBeUndefined();
+    }
+  });
+
   it("refuses a condition report that kept more than it looked at, and admits any number of conditions", () => {
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, conditions: { applied: 2, kept: 3, rejected: [], unfiltered: false } } } })).toBeUndefined();
     // No count cap: a read of two hundred conditions reports all two hundred (user, 2026-09-30).
