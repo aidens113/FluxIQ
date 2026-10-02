@@ -1,4 +1,5 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
+import { activityActionVerb } from "../../../../../ui/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts";
 import { automationStudioActivityAction } from "./action.ts";
 
@@ -12,6 +13,8 @@ const OPENING_PREFIX = "initial.";
 const REPLAY_KEY = "replay";
 
 const FROM_THE_START = "Trying the Flow from the start";
+/** The opening call when it goes to where the Flow starts rather than looks. */
+const ARRIVAL = "Opening where the Flow starts";
 
 /**
  * What one tool call is, said from the call's own input and nothing else --
@@ -19,10 +22,10 @@ const FROM_THE_START = "Trying the Flow from the start";
  *
  * - `title` is the action a person reads ("Clicking “Get a free quote”");
  * - `label` is the status sentence while it runs;
- * - `kind` is `note` for Core's own bookkeeping calls (the opening call made
+ * - `kind` is `note` for Core's own bookkeeping calls (the opening look made
  *   before the first decision, and a dry run putting the page back), which a
- *   reader may hide, and `tool` for a
- *   step that is part of the work;
+ *   reader may hide, and `tool` for a step that is part of the work -- the
+ *   opening call that goes to where the Flow starts among them;
  * - `phase` is `verifying` for a dry run's calls, `building` for the draft
  *   tool and `exploring` for everything else;
  * - `node` is the node id a run-node call names, for the raw record.
@@ -50,6 +53,13 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
     return { phase: "verifying", kind: "tool", title, label: `${FROM_THE_START}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`, dryRun: true, ...named };
   }
   if (call.callId.startsWith(OPENING_PREFIX)) {
+    // A build told where its Flow starts opens by going there, and that call is
+    // the Flow's first step rather than bookkeeping (`../../llm/evidence-loop.ts`,
+    // F31). Its verb is read back from the action's opening "-ing" word, as a
+    // card reads it, and the title keeps that word so the card's icon agrees.
+    if (action && activityActionVerb(action.split(" ")[0] ?? "", "gerund")?.verb === "navigate") {
+      return { phase: "exploring", kind: "tool", title: ARRIVAL, label: ARRIVAL, dryRun: false, ...named };
+    }
     const title = action ?? "Looking at where the Flow starts";
     return { phase: "exploring", kind: "note", title, label: title, dryRun: false, ...named };
   }

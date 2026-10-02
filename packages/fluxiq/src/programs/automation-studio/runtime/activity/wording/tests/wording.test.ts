@@ -57,4 +57,10 @@ describe("automationStudioActivityToolCall", () => {
     expect(automationStudioActivityToolCall(call("x", {}, "vendor.tool"))).toMatchObject({ title: "Working on the page" });
     expect(automationStudioActivityToolCall(call("x", {}, "core.flow_draft"))).toMatchObject({ phase: "building", title: "Updating the draft Flow" });
   });
+
+  it("reads an opening call that goes somewhere as going to where the Flow starts, a step of the work (F31)", () => {
+    expect(automationStudioActivityToolCall(call("initial.core.run_node", { node: NAVIGATE, parameters: { url: "https://x.example" }, consequences: [] }))).toEqual({
+      phase: "exploring", kind: "tool", title: "Opening where the Flow starts", label: "Opening where the Flow starts", dryRun: false, node: NAVIGATE
+    });
+  });
 });

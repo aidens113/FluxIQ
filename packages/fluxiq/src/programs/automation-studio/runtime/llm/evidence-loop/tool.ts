@@ -31,7 +31,8 @@ export type AutomationStudioLlmEvidenceTool = {
    * the loop cannot know before the call which one applies. And the tool may
    * carry an `initialObservation` although it is declared `mutate`, because the
    * caller -- not the model -- writes that one call's argument and is
-   * responsible for it being a look.
+   * responsible for it being a look. Only such a tool may declare an
+   * `arrival`, because the one tool must be able both to look and to go.
    */
   perCallEffect?: boolean;
   /**
@@ -47,6 +48,15 @@ export type AutomationStudioLlmEvidenceTool = {
    */
   actionInputKey?: string;
   /** Optional domain-declared observation that is safe to run before the first
-   * provider decision. The coordinator executes at most one such declaration. */
-  initialObservation?: { input: JsonObject };
+   * provider decision. The coordinator executes at most one such declaration.
+   *
+   * `arrival`, on a `perCallEffect` tool only, is an input of the same tool that
+   * takes the target to where the Flow being built starts. Given, the opening
+   * call runs it instead of `input` and records it exactly as a model's call
+   * added to the Flow would be (`../evidence-loop.ts`), so a build told where
+   * to start never opens on a look the domain refuses for not being there yet
+   * (F31, `run-muqc07fh-eeffbc86`). `input` stays the domain's look, for every
+   * caller that takes a fresh one (`../../parking/person-needed-tool-calls.ts`).
+   * Loop data: no provider payload carries it (`../deepseek/request-body.ts`). */
+  initialObservation?: { input: JsonObject; arrival?: JsonObject };
 };

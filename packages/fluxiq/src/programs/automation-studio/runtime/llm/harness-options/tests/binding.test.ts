@@ -197,3 +197,38 @@ describe("the start location a build was told", () => {
     expect(calls[0]![0]).not.toHaveProperty("startLocation");
   });
 });
+
+// F31: a build told where its Flow starts opens by going there. The binding
+// names the node that goes somewhere and the parameter the destination is
+// written into; Core puts the build's start there without reading it.
+describe("the arrival a domain declares", () => {
+  const LOOK = { node: "erp.output.read-ledger", parameters: {}, consequences: [] };
+  const OPEN = { node: "erp.output.open-period", parameter: "period" };
+  const NODE_IDS = ["erp.output.open-period", "erp.output.read-ledger"];
+  // The slot's own first look would be a second initial observation.
+  const nodeBinding = (runsNodes: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>, executeTool = vi.fn(async () => ({ observed: true }))): AutomationStudioLlmEvidenceRuntimeBinding =>
+    ({ ...slot(executeTool), tools: [slot().tools[1]!], runsNodes });
+  const initialOf = (registry: ReturnType<typeof automationStudioHarnessOptionRegistry>) =>
+    registry.list({ ...SCOPE, allowSideEffectsWithoutPolicy: true }).find((option) => option.toolId === "core.run_node")?.initialObservation;
+
+  it("rides on the run-node tool's first look, with the build's start as the named parameter", () => {
+    const registry = automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN }), nodeIds: NODE_IDS, startLocation: "2026-10" });
+    expect(initialOf(registry)).toEqual({ input: LOOK, arrival: { node: "erp.output.open-period", parameters: { period: "2026-10" }, consequences: [] } });
+  });
+
+  it("is the call the loop opens with, under the opening call id and with the start passed to the domain", async () => {
+    const executeTool = vi.fn(async () => ({ observed: true }));
+    const registry = automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN }, executeTool), nodeIds: NODE_IDS, startLocation: "2026-10" });
+    const binding = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true });
+    await runAutomationStudioLlmEvidenceLoop({ tools: binding.tools, executeTool: binding.executeTool, decide: async () => ({ kind: "complete", result: { done: true } }) });
+    expect(executeTool).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      callId: "initial.core.run_node", toolId: "core.run_node", startLocation: "2026-10",
+      value: { node: "erp.output.open-period", parameters: { period: "2026-10" }, consequences: [] }
+    }));
+  });
+
+  it("is left off a build told no start, and off a library that does not offer its node", () => {
+    expect(initialOf(automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN }), nodeIds: NODE_IDS }))).toEqual({ input: LOOK });
+    expect(initialOf(automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN, runnable: ["erp.output.read-ledger"] }), nodeIds: NODE_IDS, startLocation: "2026-10" }))).toEqual({ input: LOOK });
+  });
+});
