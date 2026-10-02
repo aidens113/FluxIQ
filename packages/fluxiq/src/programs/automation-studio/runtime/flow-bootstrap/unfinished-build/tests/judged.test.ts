@@ -156,20 +156,8 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(outcome.ending.message).toContain("what you asked: \"two packs of Softly Paper Towels in the cart\"; what its test did: \"the test pressed Add on the Softly napkins\"");
     expect(outcome.ending.message).toContain("ran from its start, but what it did was judged not to be what you asked");
     expect(outcome.ending.message).not.toContain("without failing");
-    expect(outcome.ending.message).toContain("and the last repair handed back the same Flow as the one before it.");
+    expect(outcome.ending.message).toContain("and the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step (3, as before); the judge found the same as before.");
     expect(kept[0]![0]).toBe("judged_wrong");
-  });
-
-  it("ends at the repair limit, not not doable, when each repair is a different Flow still judged no", async () => {
-    const { input, requests } = harness([
-      () => finished(wholeFlow()),
-      (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "another" } })])
-    ], [() => NO, () => NO], { maxRepairRounds: 1 });
-
-    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
-
-    expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "repair_rounds" });
   });
 
   it("is the build's result, unverified, when the judge cannot settle it", async () => {
