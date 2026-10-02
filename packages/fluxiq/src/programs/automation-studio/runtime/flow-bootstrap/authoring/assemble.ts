@@ -356,7 +356,9 @@ function buildNode(input: {
       definitionVersion: input.definition.version,
       ...(Object.keys(normalised.parameters).length ? { parameters: normalised.parameters } : {}),
       ...(derived ? { outputActionId: derived } : {}),
-      ...(consequences ?? normalised.consequences ? { consequences: (consequences ?? normalised.consequences)! } : {})
+      ...(consequences ?? normalised.consequences ? { consequences: (consequences ?? normalised.consequences)! } : {}),
+      // The pages its draft step ran between; a step a model wrote has none (`./contracts.ts`).
+      ...(input.step.routeSignatures ? { routeSignatures: structuredClone(input.step.routeSignatures) } : {})
     },
     issues
   };

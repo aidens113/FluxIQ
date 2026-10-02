@@ -635,12 +635,94 @@ every failure is swallowed. Each deterministic ladder rung leaves the candidate
 list once it has run, so an already-consumed deterministic answer does not
 suppress escalation forever.
 
+**A step that cannot run continues where the page is.** When a step of a run
+cannot run, Core reads the page through the host and continues at the node
+whose recorded pre-state matches, before any recovery rung or model call
+(user, 2026-10-01 and 2026-10-02; t243). A step cannot run when its attempt
+failed with category `target_not_found`, or when its readiness gate judged at
+least one condition and the state did not hold (synthesized before dispatch as
+`executor.ready_state.not_shown`). `target_ambiguous`, an action that ran and
+failed, and a target covered by a layer (`unexpected_state` at stage
+`execution`, which `clear_interference` owns) keep the ladder. The decision
+(`decideAutomationStudioStateRoute`, `runtime/executor/state-routing/`) runs in
+this order:
+
+1. **Declared way on.** A sometimes-present step takes the way on the Flow
+   itself declares, with no observation (the next paragraph). This is the case
+   of the rule where the Flow already says where the page is.
+2. **Candidates.** Every other node with a `before` signature in
+   `metadata.routeSignatures` (`runtime/route-state/signatures/`). With none,
+   and no effect of the failing step's own to test (step 3), nothing is
+   observed and the outcome is `no_pre_states`.
+3. **Observe, once,** the route state through the host (`observeRouteState`);
+   a failure is `unobserved`. The host is asked for the Flow document's
+   `flowId` and its `metadata.projectId`, else its `ownerId`, because a graph
+   run is handed no project id. Then the **effect** case: when the failing
+   step recorded its own `effect` and has a success edge, the host is asked
+   whether the page already shows that effect (`routeEffectHolds`, over the
+   route state itself, not a signature). This is the site having already done
+   what the step does -- a store already chosen, behind the store picker the
+   previous step opened (bigbox `store-remembered`). When it holds, the run
+   goes on along the step's own success edge, forward, through the progress
+   guard (step 6), with outcome `effect_holds`. When it does not, or the host
+   cannot say, matching goes on with the same observation, signed through the
+   host (`signRouteState`). The effect comes before matching because the
+   matching rule refuses this case on purpose: the open picker is a layer, and
+   layers must be equal, so no later step's pre-state matches -- a rule that
+   must not be relaxed, or a popup hiding a step's target would match the next
+   step's pre-state and skip the step silently. It is safe for out of stock:
+   "Add to cart" is absent, but its effect (the "Added to cart" panel) is not
+   on the page, the host's answer is true only on positive evidence (an effect
+   that added nothing says nothing), and no later pre-state matches, so the
+   ladder runs exactly as before.
+4. **Match** each candidate's `before` against the page
+   (`compareRouteSignatures`, structural equality without one). A node that
+   already acted in this run (succeeded, not skipped) is passed over when its
+   `after` also matches, because its effect still holds and running it again
+   would repeat it, or when it recorded no `after`, because nothing shows its
+   effect is gone. The failing node is never a candidate.
+5. **Choose** the highest closeness, then a node reachable forward from the
+   failing node (the page is already past it) before one reachable only
+   backward (the page went back), then the nearest by edge distance, then
+   document order.
+6. **Progress guard.** The progress mark is the count of distinct nodes that
+   acted plus For Each passes into a body. For each route target the run keeps
+   the mark at its last route there and a count of returns: a route into a
+   node whose mark has not moved since the previous route into it is a return
+   without progress. Three are allowed
+   (`AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT`); the fourth ends the run
+   `failed`, with a message naming the node, the count and why. Targets are
+   counted apart, any progress resets a target's count, and the run's step
+   limit still bounds everything else.
+
+A routed attempt reads `status: "succeeded"`, `route: "state_routed"` and
+`skipped: { reason: "state_routed", code, toNodeId, direction }`, with no
+`failure`, `fault` or `message`; the chat says which step was passed over and
+where the run continued, nothing goes on the defence ledger and no "Recovery
+started" is posted. Every consulted attempt carries a `stateRouting` record
+(`outcome`: `effect_holds`, `routed`, `no_match`, `unobserved`,
+`no_pre_states` or `guard_stopped`; candidate and match counts; target,
+direction and closeness)
+and never a route state or a signature. With no way on, the record stays on the
+failed attempt and the ladder runs exactly as before. Each failed attempt goes
+through ask and park handling, the waiting status, state routing, the ladder,
+the continuation rule, then failure, and a model is only ever called after the
+run, so routing always precedes it. Before dispatch, a readiness gate that did
+not hold asks the same decision: a way on skips the dispatch entirely, and none
+attempts the node as before, the dispatch reusing that decision if it fails as
+`target_not_found`. Flows without pre-states (built before t243, recorded
+Flows, nodes an extend re-seeds) keep the declared way on, record
+`no_pre_states` without observing the page, and run the ladder as before; a Flow
+gains state routing when it is next built or repaired
+(`runtime/executor/tests/state-routing-run.test.ts`).
+
 **A sometimes-present step that is not shown is skipped, not recovered.** A
 popup, banner or consent prompt is only sometimes on the page, so finding it
-gone is the page's state, not a failure (t174). Before the fault assessment,
-the "Recovery started" activity and the ladder, the executor asks
-`automationStudioAbsentStepSkip` (`runtime/executor/step-skip/absent-step.ts`) whether
-the failed node is sometimes-present and its target was observed absent.
+gone is the page's state, not a failure (t174). It is state routing's first
+case: before the fault assessment, the "Recovery started" activity and the
+ladder, the decision asks `automationStudioAbsentStepSkip`
+(`runtime/executor/step-skip/absent-step.ts`) whether the failed node is
+sometimes-present and its target was observed absent, and reads no page.
 Sometimes-present is the optional shape a build writes (a `failed` edge into a
 `builtin.control.merge` that the node's `success` edge also enters) or
 `metadata.sometimesPresent === true`; absent is a failure of category
@@ -656,8 +738,9 @@ observed first: when the gate judged at least one condition and the state was
 not met, the same skip is taken with nothing dispatched, under the code
 `executor.ready_state.not_shown`. A gate that judged nothing says nothing about
 the page and the node is pressed as before. A straight-line node whose target
-is absent, and an optional node failing any other way (`target_ambiguous`, an
-action that ran and failed), still go through the ladder unchanged
+is absent goes on to the rest of state routing, and through the ladder when that
+finds no way on; an optional node failing any other way (`target_ambiguous`, an
+action that ran and failed) goes through the ladder unchanged
 (`runtime/executor/tests/optional-failed-route.test.ts`, `absent-step.test.ts`).
 
 **The recorded state is read while the Flow runs.** Every node a recording

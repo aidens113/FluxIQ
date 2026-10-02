@@ -6,6 +6,7 @@ import type { AutomationStudioFlowPort } from "../../model/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../flow-bootstrap/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
+import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
 
 /** What a Flow build routes with, kept current as its exploration moves the page. */
 export type AutomationStudioBuildRouting = {
@@ -45,6 +46,36 @@ export type AutomationStudioBuildRouting = {
     evidence: Array<E | { callId: string; toolId: string; value: JsonObject }>;
     context: AutomationStudioFlowBootstrapRoutingContext;
   };
+  /**
+   * The route signatures of the pages a draft step ran between (t243): the
+   * page it started on, which is its expected pre-state, and the page it left,
+   * looked up by the step's own `stateBefore`/`stateAfter` digests. Absent when
+   * the build signed neither page.
+   *
+   * **Where they come from.** `recording` keeps, for each call that reported a
+   * page digest it left (`stateDigests.after`) and the route state of that page,
+   * the host's signature of that state under that digest; the free first look
+   * counts the same way. A step's `stateBefore` is the previous call's
+   * `stateAfter` whenever nothing moved the page in between, so a step that
+   * started on a page the build saw gets its pre-state.
+   *
+   * **Why by digest.** Call ids repeat across repair rounds (`initial.<tool>`
+   * opens every round, and the model picks the rest), so a map by call id would
+   * hand one round's page to another's step. A digest names the page itself.
+   * An observation the host made outside a call has no digest and maps nothing.
+   *
+   * **The effect.** `recording` also keeps the full route state of the page
+   * the newest call left, with that call's `stateDigests.after` -- one state,
+   * never more. A call that reports it started there (`stateDigests.before`
+   * equal to that digest), left a different page and reported the route state
+   * it left is a step whose page is known on both sides, so the host's
+   * `signRouteEffect` over those two states is kept under the pair of digests.
+   * A look (equal digests) did nothing and records none; a call that started
+   * elsewhere, or after a call that threw, has no known "before" and records
+   * none. A run reads the effect for a step it cannot run: the site may
+   * already have done what the step does (`../executor/state-routing/`).
+   */
+  signaturesOf(step: { stateBefore?: string | undefined; stateAfter?: string | undefined }): AutomationStudioRouteSignatures | undefined;
 };
 
 /** The tool id a situation is shown under in the window. */
@@ -117,6 +148,12 @@ export async function startAutomationStudioBuildRouting(input: {
     if (observation.ok) observations.push({ seen: START_SEEN, state: observation.state });
   };
   if (input.start !== "first_look" || !input.hostRuntime?.observeRouteState) settleStart(await observe(undefined));
+  // The host's signature of each page a call left, by the digest the call reported for it (`signaturesOf`).
+  const signatures = new Map<string, JsonObject>();
+  // The host's record of what each step did, by its before and after digests (`effectKey`).
+  const effects = new Map<string, JsonObject>();
+  // The page the newest call left, in full, with its digest: what the next call's effect is taken from.
+  let left: { digest: string; state: JsonObject } | undefined;
   // The newest call, and the state it left when that is known; whether it ran since the last decision.
   let newest: { callId: string; toolId: string; state?: JsonObject } | undefined;
   let calls = 0;
@@ -158,6 +195,9 @@ export async function startAutomationStudioBuildRouting(input: {
       // Anything else may move the page, so the start is read before it does.
       if (!start && !freeFirstLook) settleStart(await observe(call.signal));
       const ran: { callId: string; toolId: string; state?: JsonObject } = { callId: call.callId, toolId: call.toolId };
+      // Cleared until this call reports the page it left: one that throws may still have moved it.
+      const found = left;
+      left = undefined;
       let result: X;
       try {
         result = await executeTool(call);
@@ -174,7 +214,22 @@ export async function startAutomationStudioBuildRouting(input: {
         // Observed right after the look, so it is also the state the look left.
         if (observed.ok) ran.state = observed.state;
       }
+      const digests = reportedDigests(result);
+      const leftDigest = digests.after;
+      const signed = leftDigest !== undefined && ran.state ? automationStudioSignRouteState(input.hostRuntime, ran.state) : undefined;
+      if (leftDigest !== undefined && signed?.ok) signatures.set(leftDigest, signed.signature);
+      if (found && ran.state && digests.before === found.digest && leftDigest !== undefined && leftDigest !== found.digest) {
+        const effect = automationStudioSignRouteEffect(input.hostRuntime, found.state, ran.state);
+        if (effect.ok) effects.set(effectKey(found.digest, leftDigest), effect.signature);
+      }
+      if (leftDigest !== undefined && ran.state) left = { digest: leftDigest, state: ran.state };
       return result;
+    },
+    signaturesOf: (step) => {
+      const before = step.stateBefore === undefined ? undefined : signatures.get(step.stateBefore);
+      const after = step.stateAfter === undefined ? undefined : signatures.get(step.stateAfter);
+      const effect = step.stateBefore === undefined || step.stateAfter === undefined ? undefined : effects.get(effectKey(step.stateBefore, step.stateAfter));
+      return before || after || effect ? { ...(before ? { before } : {}), ...(after ? { after } : {}), ...(effect ? { effect } : {}) } : undefined;
     },
     observing: (decide) => async (decision) => {
       // What the page is now, once anything has had to learn it.
@@ -212,6 +267,28 @@ function placedAfterTheirCalls<E extends { callId: string }, R>(evidence: readon
     else after.set(anchor, [...(after.get(anchor) ?? []), entry]);
   });
   return [...before, ...evidence.flatMap((entry) => [entry, ...(after.get(entry.callId) ?? [])])];
+}
+
+/**
+ * The digests of the page a call found and the page it left, from its own
+ * captures, each when it reported one. The web domain reports both on an
+ * action: its read before acting is `before`, its read after is `after`.
+ */
+function reportedDigests(result: unknown): { before?: string; after?: string } {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return {};
+  const execution = result as { kind?: unknown; stateDigests?: unknown };
+  if (execution.kind !== "llm_evidence_tool_execution" || !execution.stateDigests || typeof execution.stateDigests !== "object") return {};
+  const { before, after } = execution.stateDigests as { before?: unknown; after?: unknown };
+  return { ...(isDigest(before) ? { before } : {}), ...(isDigest(after) ? { after } : {}) };
+}
+
+function isDigest(value: unknown): value is string {
+  return typeof value === "string" && value !== "";
+}
+
+/** One step's key in the effects map: the pages it ran between. Digests are code-shaped, so a newline cannot occur in one. */
+function effectKey(before: string, after: string): string {
+  return `${before}\n${after}`;
 }
 
 /** The route state a call reported about the page it left, when it reported a usable one. */

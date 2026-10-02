@@ -150,7 +150,7 @@ export function automationStudioFlowDraftDryRunGate(
         input.reusedClean?.();
         return passed(again, refused.observations, true);
       }
-      const feedback = automationStudioFlowDraftDryRunFeedback(again, asked);
+      const feedback = automationStudioFlowDraftDryRunFeedback(again, asked, input.steps);
       input.accountEvidence(feedback);
       input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
       return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(again) };
@@ -197,7 +197,7 @@ export function automationStudioFlowDraftDryRunGate(
       input.accountEvidence(replay.evidence.value);
       input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
     }
-    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked);
+    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked, input.steps);
     for (const outcome of replay.verdict.outcomes) {
       if (outcome.status !== "replayed") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
     }

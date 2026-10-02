@@ -207,7 +207,23 @@ describe("holding what was declared against what was instructed", () => {
     expect(check.undeclared).toEqual(["send_or_publish"]);
     expect(check.declaredNothing).toBe(2);
     expect(check.quotes).toEqual([{ consequence: "send_or_publish", instructionId: "instruction.schedule", quote: "Schedule a post for Friday" }]);
-    expect(check.sentence).toBe("Your instruction asks to send or publish something that others will receive or see, but no step of this Flow said it would do that, so the Flow may not do what you asked.");
+    expect(check.sentence).toBe("Your instruction asks to send or publish something (\"Schedule a post for Friday\"), but nothing FluxIQ did while building this Flow said it would.");
+  });
+
+  it("says each class in the person's words with their own quote, and counts nothing (run muqk4u32)", () => {
+    const press = (ref: string) => ({ action: { kind: "exploration_step" as const, id: "core.run_node", ref, verb: "press" as const, effect: "mutate" as const }, control: { name: null, kind: "button" }, consequences: [], permitted: true });
+    const check = automationStudioActionDeclarationCrossCheck({
+      declarations: Array.from({ length: 72 }, (_, index) => press(`call.${index}`)),
+      instructed: [
+        { consequence: "create_new", instructionId: "instruction.cart", instructionDigest: SCHEDULE.instructionDigest, quote: "add it to the cart" },
+        { consequence: "modify_existing", instructionId: "instruction.cart", instructionDigest: SCHEDULE.instructionDigest, quote: "set the quantity  to\n3" }
+      ]
+    });
+
+    expect(check.verdict).toBe("undeclared");
+    expect(check.undeclared).toEqual(["modify_existing", "create_new"]);
+    expect(check.sentence).toBe("Your instruction asks to change something that exists (\"set the quantity to 3\") and create something new (\"add it to the cart\"), but nothing FluxIQ did while building this Flow said it would.");
+    expect(check.sentence).not.toMatch(/modify_existing|create_new|72|\d+ action/u);
   });
 
   it("agrees when one action declared what the instruction asks for", () => {
@@ -235,7 +251,7 @@ describe("holding what was declared against what was instructed", () => {
     expect(check.verdict).toBe("beyond_instruction");
     expect(check.beyondInstruction).toEqual(["delete"]);
     expect(check.undeclared).toEqual([]);
-    expect(check.sentence).toBe("This Flow would delete or remove something, which your instruction does not ask for.");
+    expect(check.sentence).toBe("While building this Flow, FluxIQ said a step would delete something, which your instruction does not ask for.");
   });
 
   it("reports the contradiction first when both directions disagree", () => {
@@ -256,30 +272,6 @@ describe("holding what was declared against what was instructed", () => {
 
     expect(check.verdict).toBe("not_comparable");
     expect(check.undeclared).toEqual([]);
-    expect(check.sentence).toBe("This Flow took no step at all, so there is nothing to compare with your instruction.");
-  });
-
-  // t193 (`run-muqiojz4-04a7a8fc`, screenshot 00015): the question after the
-  // build read "The instruction asks for modify_existing and create_new, and
-  // none of this run's 61 actions said it would cause that; 61 of them said
-  // they would cause nothing lasting." Class codes and counts a person cannot use.
-  it("says each class in plain words, with no class code and no count, and keeps the record's fields", () => {
-    const declarations = Array.from({ length: 61 }, (_, index) => (
-      { action: { kind: "exploration_step" as const, id: "core.run_node", ref: `call.${index}`, verb: "press" as const, effect: "mutate" as const }, control: { name: null, kind: "button" }, consequences: [], permitted: true }
-    ));
-    const check = automationStudioActionDeclarationCrossCheck({
-      declarations,
-      instructed: [
-        { consequence: "modify_existing", instructionId: "instruction.cart", quote: "set the quantity to 2", instructionDigest: "sha256:cart" },
-        { consequence: "create_new", instructionId: "instruction.cart", quote: "add napkins to the cart", instructionDigest: "sha256:cart" }
-      ]
-    });
-
-    expect(check.verdict).toBe("undeclared");
-    expect(check.undeclared).toEqual(["modify_existing", "create_new"]);
-    expect(check.actions).toBe(61);
-    expect(check.declaredNothing).toBe(61);
-    expect(check.sentence).toBe("Your instruction asks to change something that already exists and create something new that stays, but no step of this Flow said it would do that, so the Flow may not do what you asked.");
-    expect(check.sentence).not.toMatch(/[a-z]+_[a-z]+|\d/u);
+    expect(check.sentence).toBe("Nothing FluxIQ did while building this Flow changed anything, so there is nothing to compare with your instruction.");
   });
 });

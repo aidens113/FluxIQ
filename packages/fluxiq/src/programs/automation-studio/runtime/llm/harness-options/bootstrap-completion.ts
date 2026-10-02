@@ -85,6 +85,7 @@ import type { AutomationStudioActionPermissionCheck } from "../../action-permiss
 import type { AutomationStudioBuildTestNote } from "../../result-verification/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 import {
@@ -222,6 +223,13 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   startLocation?: string | undefined;
   /** The Flow's size bounds, from its setting (`flow-bootstrap/plan/size-limits.ts`); the default when absent. */
   size?: AutomationStudioFlowBootstrapSizeLimits | undefined;
+  /**
+   * The route signatures the build recorded for a draft step -- the page it
+   * started on and the page it left (`route-state/build-routing.ts`,
+   * `signaturesOf`) -- which each plan node a step becomes carries to the Flow
+   * node. Read on the draft path only: a plan the model wrote carries none.
+   */
+  routeSignaturesOf?: ((step: { stateBefore?: string | undefined; stateAfter?: string | undefined }) => AutomationStudioRouteSignatures | undefined) | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -249,7 +257,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     : undefined;
   const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
   const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
-    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText)
+    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf)
     : undefined;
   const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText);
   // An issue about a normalised plan still carries the path of the plan the
@@ -388,7 +396,24 @@ function fromReply(
   resolution: AutomationStudioNodeRegistryResolution,
   instructionText: string | undefined
 ): AutomationStudioFlowBootstrapAcceptance {
-  return acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText });
+  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText });
+  return accepted.ok ? { ...accepted, plan: withoutRouteSignatures(accepted.plan) } : accepted;
+}
+
+/**
+ * A plan with no node carrying route signatures. They say which page a step
+ * ran between as the build saw it, so only the build may set them: a model
+ * that wrote its own would be telling a run where to continue.
+ */
+function withoutRouteSignatures(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioFlowBootstrapPlan {
+  if (!plan.subflows.some((subflow) => subflow.nodes.some((node) => "routeSignatures" in node))) return plan;
+  return {
+    ...plan,
+    subflows: plan.subflows.map((subflow) => ({
+      ...subflow,
+      nodes: subflow.nodes.map(({ routeSignatures: _dropped, ...node }) => node)
+    }))
+  };
 }
 
 /**
@@ -406,7 +431,8 @@ function fromDraft(
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution,
-  instructionText: string | undefined
+  instructionText: string | undefined,
+  routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined
 ): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
@@ -420,7 +446,8 @@ function fromDraft(
     registry,
     resolution,
     summary,
-    instructionText
+    instructionText,
+    routeSignaturesOf
   });
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };

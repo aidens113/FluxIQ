@@ -17,5 +17,5 @@
 export * from "./accept.ts";
 export * from "./assemble-draft.ts";
 export * from "./contracts.ts";
-export { automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";
+export { automationStudioFlowBootstrapDraftUnreadColumnsSentence, automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";
 export * from "./parse.ts";

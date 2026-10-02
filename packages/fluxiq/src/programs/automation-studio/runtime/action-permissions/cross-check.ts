@@ -30,7 +30,12 @@
 // 3. **It is said out loud in the thread**, where a caller has one, because a
 //    finding filed where nobody is shown it is the anti-pattern this product
 //    has already been corrected on once. The build does not wait for the
-//    answer: it has a Flow, and the question is about applying it.
+//    answer: it has a Flow, and the question is about applying it. It is a
+//    yes-or-no question only when a class nobody declared is one a person is
+//    asked about (`./destructive.ts`: money, delete, send or publish); a
+//    creation or an edit is said without a question, because the user's rule
+//    (2026-10-01) is that only those three ask the person
+//    (`../flow-bootstrap/action-permissions.ts`).
 //
 // **Which direction matters, and this changed on 2026-09-26.** It used to be that
 // a class declared where the instruction did not ask for it was already handled,
@@ -46,7 +51,7 @@
 // instruction plainly asks for something lasting, actions that commit ran, and
 // every one of them said it would cause nothing.
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
+import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
 import { automationStudioDeclaredConsequences, automationStudioDeclaredNothingLasting, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 
@@ -75,18 +80,13 @@ export type AutomationStudioActionDeclarationCrossCheck = {
   undeclared: AutomationStudioActionConsequence[];
   /** Declared, and not among what the instruction asks for. Already gated; recorded for completeness. */
   beyondInstruction: AutomationStudioActionConsequence[];
-  /** How many actions were put to the gate at all. */
+  /** How many actions were put to the gate at all, replays of the draft included. A record, never said to the person. */
   actions: number;
   /** How many of them acted and said they would cause nothing lasting. A read is not one of them. */
   declaredNothing: number;
   /** The person's own words, for each class in `undeclared`. */
   quotes: Array<{ consequence: AutomationStudioActionConsequence; instructionId: string; quote: string }>;
-  /**
-   * Core's own sentence for the finding, in words the person approving the
-   * Flow can answer. Never a model's, and never a class code or a count: the
-   * structured fields above carry those. A caller may put a question after it
-   * ("Apply it as it stands?"), whose "it" is the Flow the sentence ends on.
-   */
+  /** Core's own sentence for the finding. Never a model's. */
   sentence: string;
 };
 
@@ -122,37 +122,62 @@ export function automationStudioActionDeclarationCrossCheck(input: {
     actions: input.declarations.length,
     declaredNothing,
     quotes,
-    sentence: sentenceFor({ verdict, undeclared, beyondInstruction })
+    sentence: sentenceFor({ verdict, undeclared, beyondInstruction, quotes })
   };
 }
 
 /**
- * One plain sentence a person can act on, in Core's words: each class as the
- * person would say it (`AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES`), and no
- * count. On t193's `run-muqiojz4-04a7a8fc` the question after the build read
+ * Each class as a person says it, short enough to sit before their own quoted
+ * words. Deliberately not `AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES`, which
+ * explains a class to someone being asked to permit it; this only names what
+ * their instruction asked for. Exhaustive, so a new class is a compile error
+ * here until it can be said.
+ */
+const PLAIN: Readonly<Record<AutomationStudioActionConsequence, string>> = Object.freeze({
+  move_money: "move money",
+  delete: "delete something",
+  send_or_publish: "send or publish something",
+  modify_existing: "change something that exists",
+  create_new: "create something new"
+});
+
+/**
+ * One plain sentence a person can act on, in Core's words.
+ *
+ * No class codes and no counts. Run `run-muqk4u32-0b36e58f` ended its build on
  * "The instruction asks for modify_existing and create_new, and none of this
- * run's 61 actions said it would cause that; 61 of them said they would cause
- * nothing lasting." -- two class codes and two counts, none of which told the
- * person what to decide.
+ * run's 72 actions said it would cause that": the person cannot read the codes,
+ * and the 72 counted every replay of the draft as an action, so the number
+ * measured how often the build re-ran its own steps rather than anything the
+ * person asked about. Each class is named in plain words with the person's own
+ * quoted words beside it, which is what lets them check the reading.
  */
 function sentenceFor(input: {
   verdict: AutomationStudioActionDeclarationCrossCheckVerdict;
   undeclared: readonly AutomationStudioActionConsequence[];
   beyondInstruction: readonly AutomationStudioActionConsequence[];
+  quotes: ReadonlyArray<{ consequence: AutomationStudioActionConsequence; quote: string }>;
 }): string {
-  if (input.verdict === "not_comparable") return "This Flow took no step at all, so there is nothing to compare with your instruction.";
+  if (input.verdict === "not_comparable") return "Nothing FluxIQ did while building this Flow changed anything, so there is nothing to compare with your instruction.";
   if (input.verdict === "undeclared") {
-    return `Your instruction asks to ${phrases(input.undeclared)}, but no step of this Flow said it would do that, so the Flow may not do what you asked.`;
+    const asked = input.undeclared.map((consequence) => {
+      const quote = sayable(input.quotes.find((entry) => entry.consequence === consequence)?.quote ?? "");
+      return quote ? `${PLAIN[consequence]} ("${quote}")` : PLAIN[consequence];
+    });
+    return `Your instruction asks to ${list(asked)}, but nothing FluxIQ did while building this Flow said it would.`;
   }
   if (input.verdict === "beyond_instruction") {
-    return `This Flow would ${phrases(input.beyondInstruction)}, which your instruction does not ask for.`;
+    return `While building this Flow, FluxIQ said a step would ${list(input.beyondInstruction.map((consequence) => PLAIN[consequence]))}, which your instruction does not ask for.`;
   }
-  return "What this Flow does matches what your instruction asks for.";
+  return "What FluxIQ said its steps would do while building this Flow matches what your instruction asks for.";
 }
 
-/** "change something that already exists and create something new that stays". */
-function phrases(values: readonly AutomationStudioActionConsequence[]): string {
-  const said = values.map((value) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[value]);
-  if (said.length <= 1) return said[0] ?? "do nothing lasting";
-  return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
+/** The person's words on one line: whitespace collapsed, so a quote never breaks the sentence it sits in. */
+function sayable(quote: string): string {
+  return quote.replace(/\s+/gu, " ").trim();
+}
+
+function list(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "nothing";
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
 }

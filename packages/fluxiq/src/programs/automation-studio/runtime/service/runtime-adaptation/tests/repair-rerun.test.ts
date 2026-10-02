@@ -12,6 +12,12 @@ import { resolveAutomationStudioRuntimeAdaptationContext } from "../resolve-cont
 // press found nothing. It used to stop after three attempts at the press, and
 // the store kept none of the re-run's first four attempts, whose ids repeated
 // the first pass's.
+//
+// Since t174's F38 (2026-10-02) an optional press whose target the host found
+// absent is skipped, not failed: one attempt, recorded succeeded with route
+// `skipped` and `skipped.reason` `target_absent`, then the run takes the
+// press's failed route into the Merge, with no retry and no recovery ladder.
+// The re-run therefore has one check attempt where it used to have three.
 
 const PROJECT_ID = "project.rerun";
 
@@ -117,8 +123,11 @@ describe("a repaired re-run of an optional press whose target is gone", () => {
 
     expect(trace?.status).toBe("succeeded");
     const rerunAttempts = trace?.attempts.slice(4) ?? [];
-    expect(rerunAttempts.map((attempt) => attempt.nodeId)).toEqual(["search", "check", "check", "check", "join", "read"]);
-    expect(rerunAttempts[3]?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", edgeId: "check.failed" });
+    // An absent sometimes-present step is skipped and the run routes on (F38),
+    // so the press is tried once and never enters the recovery ladder.
+    expect(rerunAttempts.map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(rerunAttempts[1]).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } });
+    expect(rerunAttempts[1]?.recoveryDecision).toBeUndefined();
   });
 
   it("numbers the re-run's attempts after the first pass's, so the run keeps every one of them", async () => {
@@ -127,13 +136,15 @@ describe("a repaired re-run of an optional press whose target is gone", () => {
     const keptIds = result?.session?.trace?.attempts.map((attempt) => attempt.attemptId) ?? [];
 
     expect(firstPassIds).toEqual(["search.attempt.1", "check.attempt.2", "join.attempt.3", "read.attempt.4"]);
-    expect(keptIds.slice(4)).toEqual(["search.attempt.5", "check.attempt.6", "check.attempt.7", "check.attempt.8", "join.attempt.9", "read.attempt.10"]);
+    // One check attempt, since the absent optional press is skipped (F38).
+    expect(keptIds.slice(4)).toEqual(["search.attempt.5", "check.attempt.6", "join.attempt.7", "read.attempt.8"]);
     expect(new Set(keptIds).size).toBe(keptIds.length);
     // The detail the store is handed carries every attempt under its own id,
     // which is what the store's write-once-per-id keeps.
     const detailIds = saved.at(-1)?.actionAttempts?.map((attempt) => attempt.attemptId) ?? [];
     expect(detailIds).toEqual(keptIds);
-    expect(saved.at(-1)?.actionAttempts?.find((attempt) => attempt.attemptId === "check.attempt.6")?.status).toBe("failed");
+    // The skipped press reaches the stored detail as skipped, never as failed.
+    expect(saved.at(-1)?.actionAttempts?.find((attempt) => attempt.attemptId === "check.attempt.6")).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent" } });
   });
 });
 

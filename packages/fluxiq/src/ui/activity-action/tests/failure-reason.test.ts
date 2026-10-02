@@ -17,6 +17,11 @@ describe("activityActionFailureReason", () => {
     ["web.target.stale", "the page changed before it could"],
     ["example.user_intervention_required", "the page wanted a person"],
     ["action.refused", "it wasn't allowed"],
+    // A press the page itself turned down in words beside the control -- "Please select a Color." --
+    // or answered as busy or too fast, is not a permission refusal (t174 F40, run-muqk4u32).
+    ["web.action.refused_by_page", "the page turned it down"],
+    ["llm_evidence_loop.rejected.refused_by_page", "the page turned it down"],
+    ["web.action.rate_limited", "the page asked to wait and try again"],
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
     ["core.replay.changed", "it didn't work the same way again"],

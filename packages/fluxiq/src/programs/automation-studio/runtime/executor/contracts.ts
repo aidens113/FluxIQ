@@ -150,6 +150,34 @@ export type AutomationStudioRecoveryBudget = {
   maxAdaptationOrLlmAttemptsPerRun?: number;
 };
 
+/** Which way a state route went from the step that could not run: ahead of it in the graph, or only behind it. */
+export type AutomationStudioStateRouteDirection = "forward" | "backward";
+
+/**
+ * What state routing decided for one step that could not run.
+ *
+ * - `effect_holds`: the page already shows what the step itself does (its
+ *   recorded effect, per the host), so the run went on along the step's own
+ *   success edge to `toNodeId`, forward. `matched` is 0: no pre-state was compared.
+ * - `routed`: the page matched `toNodeId`'s recorded pre-state and the run went on there.
+ * - `no_match`: the page was read and matched no eligible node.
+ * - `unobserved`: the host could not read or sign the page.
+ * - `no_pre_states`: no other node recorded a pre-state, so nothing was read.
+ * - `guard_stopped`: the match was a return to a node without progress past the limit.
+ *
+ * `candidates` counts the other nodes with a recorded pre-state; `matched` the
+ * ones whose pre-state held and that were eligible to run.
+ */
+export type AutomationStudioStateRoutingRecord = {
+  outcome: "effect_holds" | "routed" | "no_match" | "unobserved" | "no_pre_states" | "guard_stopped";
+  candidates: number;
+  matched: number;
+  toNodeId?: string;
+  direction?: AutomationStudioStateRouteDirection;
+  closeness?: number;
+  reason?: string;
+};
+
 export type AutomationStudioNodeAttemptTrace = {
   attemptId: string;
   nodeId: string;
@@ -190,7 +218,26 @@ export type AutomationStudioNodeAttemptTrace = {
    * (`web.target.not_found`), or `executor.ready_state.not_shown` when the
    * node's ready state was judged and not met, and nothing was dispatched.
    */
-  skipped?: { reason: "target_absent"; code: string };
+  skipped?:
+    | { reason: "target_absent"; code: string }
+    /**
+     * The step could not run and the page matched another node's recorded
+     * pre-state, so the run continued at `toNodeId` (`state-routing/`). The
+     * attempt then reads `route: "state_routed"`, with no `failure`, `fault`
+     * or `message`. `forward` is a page already past the step; `backward` a
+     * page that has gone back.
+     */
+    | { reason: "state_routed"; code: string; toNodeId: string; direction: AutomationStudioStateRouteDirection };
+  /**
+   * What the run made of the page when this step could not run: whether it
+   * read the page, how many nodes recorded a pre-state to compare, how many
+   * matched, and where it went. Counts and closeness only: a route state or a
+   * signature is never kept on a trace, as a Router keeps no observed value.
+   * Absent when nothing judged the step unable to run, or when the Flow
+   * declared the way on itself. A step whose readiness gate did not hold and
+   * that was then dispatched anyway keeps the record of that consultation.
+   */
+  stateRouting?: AutomationStudioStateRoutingRecord;
   /**
    * Which attempt of this node this is, and why it was attempted again. Present
    * from the second attempt onwards, so a trace says plainly that the ladder,
