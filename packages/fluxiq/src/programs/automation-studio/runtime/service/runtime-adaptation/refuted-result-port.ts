@@ -30,7 +30,9 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import {
   automationStudioReauthorBrief,
+  automationStudioRefutedResultAttemptNamesNode,
   automationStudioRefutedResultDegraded,
+  automationStudioRefutedResultLadderSkipped,
   automationStudioRefutedResultReauthorDecision,
   automationStudioRefutedResultReauthored,
   automationStudioResultRepairPurse,
@@ -76,7 +78,13 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     // refuted again spends from the same total rather than a fresh one.
     const opened = automationStudioResultRepairPurse(refuted.detail, deps.maxCostUsd?.());
     const decision = automationStudioRefutedResultReauthorDecision({ detail: refuted.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
+    // Whether the patch ladder may follow at all (`recovery/refuted-result/ladder-skip.ts`): not for a
+    // refutation that names no step, and not once the re-author has explored (run-muqilf9s, run-muqiojz4).
+    const namesStep = automationStudioRefutedResultAttemptNamesNode(refuted.failedTraceAttempt);
+    const attempt = refuted.current.attempt;
     if (!decision.route) {
+      const skipped = automationStudioRefutedResultLadderSkipped({ detail: automationStudioRefutedResultReauthored({ detail: refuted.detail, decision, attempt }), namesStep, attempt });
+      if (skipped) return automationStudioResultRepairWithPurse(skipped, opened);
       const laddered = await patchLadder(deps, refuted, refuted.detail, opened);
       return automationStudioResultRepairWithPurse(automationStudioRefutedResultReauthored({ detail: laddered.detail, decision, attempt: refuted.current.attempt }), laddered.purse);
     }
@@ -93,8 +101,11 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
     });
     // A build that produced no edit at all degrades to the smaller repair --
     // the patch ladder a refutation the route does not take is given -- rather
-    // than ending the repair with nothing tried (`run-mulxk0ro-36bf090d`).
+    // than ending the repair with nothing tried (`run-mulxk0ro-36bf090d`) -- unless a build that
+    // explored already tried the fix, which is a change to the Flow's steps no runtime patch makes.
     if (!built.adaptationId && built.failure) {
+      const skipped = automationStudioRefutedResultLadderSkipped({ detail: repaired, namesStep, attempt, afterCode: built.failure.code });
+      if (skipped) return automationStudioResultRepairWithPurse(skipped, purse);
       const degraded = await degradeToPatchLadder(deps, refuted, repaired, built.failure.code, purse);
       return automationStudioResultRepairWithPurse(degraded.detail, degraded.purse);
     }
