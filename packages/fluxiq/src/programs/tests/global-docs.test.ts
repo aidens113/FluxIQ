@@ -189,8 +189,10 @@ describe("global program services", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  // A full TypeDoc conversion and HTML render of the framework: 12.4-13.7 s alone,
-  // over 15 s under the parallel suite.
-  }, 60_000);
+  // A full TypeDoc conversion and HTML render of the framework. 12.4-13.7 s alone
+  // on 2026-09-21. By 2026-10-02 the public API had 23,653 reflections and the run
+  // measured 42.2 s alone (conversion 23.8 s, HTML 15.9 s, JSON 2.6 s) and 59.0 s
+  // with 106 test files in parallel, so the 60 s limit failed the full sweep (t245).
+  }, 180_000);
 
 });
