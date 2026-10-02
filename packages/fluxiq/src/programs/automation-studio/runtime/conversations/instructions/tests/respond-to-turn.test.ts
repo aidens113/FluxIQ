@@ -145,4 +145,23 @@ describe("a person's turn, answered in the thread", () => {
     await say("and again");
     expect(seen).toEqual([{ author: "person", text: "hello" }, { author: "automation", text: "ok" }, { author: "panel", text: "Started the run." }]);
   });
+
+  it("hands what reading the turn cost to the command, never to the client", async () => {
+    const pricing: AutomationStudioConversationModel = {
+      name: "pricing",
+      decide: async (_request, execution) => {
+        execution.paid?.(0.0003);
+        return '{"do": "run.execute", "with": {"flow": "kettle"}}';
+      }
+    };
+    const { say } = await thread(pricing);
+    const answer = await say("run my kettle flow");
+    expect(answer.interpretationCostUsd).toBe(0.0003);
+    expect(answer.response).toMatchObject({ runNow: true });
+    expect(answer.response).not.toHaveProperty("costUsd");
+
+    await pool?.closeAll();
+    const unpriced = await (await thread(scripted('{"do": "run.execute", "with": {"flow": "kettle"}}'))).say("run my kettle flow");
+    expect(unpriced).not.toHaveProperty("interpretationCostUsd");
+  });
 });

@@ -81,7 +81,7 @@ export function automationStudioLlmStepLogModelStep(call: AutomationStudioLlmSte
     try {
       const failure = outcome.error === undefined ? undefined : errorRecord(outcome.error);
       files.json("decision.json", failure ? { error: failure } : { response: outcome.response, usage: outcome.usage ?? null });
-      const usage = usageOf(outcome.usage ?? replyUsage(outcome.error) ?? envelopeUsage(envelope));
+      const usage = usageOf(outcome.usage) ?? usageOf(replyUsage(outcome.error)) ?? usageOf(paidUsage(outcome.error)) ?? usageOf(envelopeUsage(envelope));
       const costUsd = usage?.estimatedCostUsd ?? priced(call, usage);
       const summary = automationStudioLlmStepLogSummary.model(outcome.response, outcome.error);
       const finishedAt = Date.now();
@@ -89,7 +89,7 @@ export function automationStudioLlmStepLogModelStep(call: AutomationStudioLlmSte
         step: folder.step, kind, startedAt: new Date(started).toISOString(), finishedAt: new Date(finishedAt).toISOString(), ms: finishedAt - started,
         provider: call.provider, model: call.model, url: call.url, requestId: call.requestId ?? null, attempt,
         taskKind: call.taskKind, stage: call.stage ?? null, iteration: call.iteration ?? null,
-        round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
+        part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
         status: failure ? "error" : "ok", httpStatus: httpStatus ?? null,
         usage: usage ? { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, cacheHitInputTokens: usage.cacheHitInputTokens ?? null, cacheMissInputTokens: usage.cacheMissInputTokens ?? null } : null,
         costUsd: costUsd ?? null, finishReason: finishReason ?? null, error: failure ? { code: failure.code } : null, summary
@@ -140,6 +140,20 @@ function errorRecord(error: unknown): { code: string; name: string; status: numb
 function replyUsage(error: unknown): AutomationStudioLlmStepLogUsage | undefined {
   const reply = (typeof error === "object" && error !== null ? (error as { reply?: unknown }).reply : undefined) as { usage?: unknown } | undefined;
   return typeof reply?.usage === "object" && reply.usage !== null ? reply.usage as AutomationStudioLlmStepLogUsage : undefined;
+}
+
+/**
+ * What a failed call was still billed, when the provider error carries it as
+ * `paid` (a reply that arrived and was refused after parsing): read duck-typed,
+ * as `replyUsage` reads `reply`.
+ */
+function paidUsage(error: unknown): AutomationStudioLlmStepLogUsage | undefined {
+  const paid = typeof error === "object" && error !== null ? (error as { paid?: unknown }).paid : undefined;
+  if (typeof paid !== "object" || paid === null) return undefined;
+  const raw = paid as Record<string, unknown>;
+  const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+  const cost = typeof raw.estimatedCostUsd === "number" && Number.isFinite(raw.estimatedCostUsd) && raw.estimatedCostUsd >= 0 ? raw.estimatedCostUsd : undefined;
+  return { inputTokens: count(raw.inputTokens), outputTokens: count(raw.outputTokens), cacheHitInputTokens: count(raw.cacheHitInputTokens), estimatedCostUsd: cost };
 }
 
 /** An OpenAI-shaped envelope's usage, for an adapter that does not parse it. */

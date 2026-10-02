@@ -65,6 +65,9 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
   let correction: string | null = null;
   let problem = "the model did not answer";
   let attempts = 0;
+  // What the attempts were priced at, summed; undefined until one is.
+  let costUsd: number | undefined;
+  const paid = (usd: number) => { if (Number.isFinite(usd) && usd >= 0) costUsd = (costUsd ?? 0) + usd; };
   while (attempts < limits.attempts) {
     const remaining = limits.deadlineMs - (clock.now() - started);
     if (remaining <= 0) {
@@ -75,10 +78,10 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     try {
       const raw = await input.model.decide(
         { instructions, transcript: [...input.transcript], message: input.message, correction },
-        { signal: AbortSignal.timeout(Math.min(limits.attemptTimeoutMs, remaining)), caller: input.caller ?? null }
+        { signal: AbortSignal.timeout(Math.min(limits.attemptTimeoutMs, remaining)), caller: input.caller ?? null, paid }
       );
       const decision = parseAutomationStudioConversationDecision(raw, input.context);
-      if (decision) return { decision, source: "model", modelProblem: null, attempts };
+      if (decision) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd) };
       correction = UNREADABLE;
       problem = "the model's answer could not be read";
     } catch (error) {
@@ -87,7 +90,12 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
       await clock.wait(Math.min(limits.backoffMs * 2 ** (attempts - 1), Math.max(0, limits.deadlineMs - (clock.now() - started))));
     }
   }
-  return fallback(input, problem, attempts);
+  return { ...fallback(input, problem, attempts), ...priced(costUsd) };
+}
+
+/** The interpretation's `costUsd`, present only when an attempt was priced. */
+function priced(costUsd: number | undefined): { costUsd?: number } {
+  return costUsd === undefined ? {} : { costUsd };
 }
 
 /** Why a model call failed, in words a person reads in the thread. Never the provider's own message, which is not written for them. */

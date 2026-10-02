@@ -3,8 +3,15 @@
 // **The rule (t234, `../../llm/build-purse/purse.ts`).** The purse is the only
 // cost authority: every build of the Flow until one is proposed or declared not
 // doable draws from one ceiling, opened with what the builds before it spent
-// (`../../flow-bootstrap/creation-spend/`). A refuted-result repair keeps its
-// own ceiling and never reads or writes that record.
+// (`../../flow-bootstrap/creation-spend/`). The chat's reading of the message
+// that asked for the build (`interpretationCostUsd`) is carried on top, so the
+// call that decided to build the Flow is saved into that record with the rest.
+// A refuted-result repair keeps its own ceiling, never reads or writes that
+// record, and carries nothing.
+//
+// **The step log.** The build's body is written as the creation's part, or the
+// re-author's for a repair, and the instruction reading as its `read` phase
+// (`../../llm/step-log/scope.ts`).
 //
 // **Why it is its own module.** The build's whole body runs under the purse,
 // and the instruction reading it refused has to reach the permission gate, the
@@ -13,6 +20,7 @@
 
 import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefused, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
+import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
 import type { AutomationStudioParkingPort } from "../../parking/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../index.ts";
 
@@ -42,11 +50,15 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   flowId: string;
   /** A refuted-result repair: its own ceiling, and no creation record read or written. */
   repair: boolean;
+  /** What the chat's reading of the message that asked for the build cost: carried on top of the record's spend. A repair ignores it. */
+  interpretationCostUsd?: number | undefined;
   ceilingUsd: number;
 }): Promise<AutomationStudioFlowBootstrapCreationPurse> {
   const { store, projectId, flowId, repair } = input;
   const creation = repair ? undefined : await store.get(projectId, flowId);
-  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, carriedUsd: creation?.spentUsd ?? 0 });
+  const interpretationUsd = repair ? 0 : input.interpretationCostUsd ?? 0;
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, carriedUsd: (creation?.spentUsd ?? 0) + interpretationUsd });
+  const part = repair ? "reauthor" : "creation";
   let creationEnded = false; // A Flow proposed, or the build ended not doable: the creation is over, and its record goes with it.
   // A call the purse refused, never sent: its own figures, read off the harness's refusal.
   const purseRefusalOf = (result: AutomationStudioLlmTaskResult): AutomationStudioLlmBuildPurseRefusal | undefined => !result.ok && result.providerInvocation === "not_attempted" && purse.refusal && result.diagnostics.some((diagnostic) => diagnostic.code === purse.refusal?.code) ? { ...purse.refusal } : undefined;
@@ -56,7 +68,7 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
     purse,
     get readingRefused() { return readingRefused; },
     // The build's whole body runs under the purse, so the instruction reading, every decision, the test and the judge are held against it (`../../llm/build-purse/run.ts`).
-    run: async (body) => await automationStudioLlmBuildPurseScope(purse, async () => {
+    run: async (body) => await automationStudioLlmBuildPurseScope(purse, async () => await automationStudioLlmStepLogScope.within({ part }, async () => {
       try {
         return await body();
       } finally {
@@ -64,8 +76,8 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
         if (!repair && creationEnded) await store.delete(projectId, flowId);
         else if (!repair) { const now = Date.now(); await store.save({ kind: "flow_creation_spend", projectId, flowId, spentUsd: purse.spentUsd(), builds: (creation?.builds ?? 0) + 1, createdAt: creation?.createdAt ?? now, updatedAt: now }); }
       }
-    }),
-    reading: (run) => async (request) => { const answer = await run(request); readingRefused ??= purseRefusalOf(answer); return answer; },
+    })),
+    reading: (run) => async (request) => { const answer = await automationStudioLlmStepLogScope.within({ phase: "read" }, () => run(request)); readingRefused ??= purseRefusalOf(answer); return answer; },
     askPort: (port) => ({ open: (ask) => { if (readingRefused) throw new AutomationStudioLlmBuildPurseRefused(readingRefused); return port.open(ask); }, ...(port.awaitAnswer ? { awaitAnswer: port.awaitAnswer.bind(port) } : {}) }),
     signal: (permissions) => {
       // A plan step refused only because the reading was not paid for does not stop the loop: its next decision ends it on cost.
