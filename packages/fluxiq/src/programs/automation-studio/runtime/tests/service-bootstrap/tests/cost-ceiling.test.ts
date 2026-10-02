@@ -1,5 +1,8 @@
 // A build is held to the run's cost ceiling ($0.10 since 2026-10-01; was
-// $0.25) from what each decision reports having cost.
+// $0.25) by its purse: each call's worst case, as the provider prices it, is
+// held before the call is sent, and one the ceiling cannot pay for is never
+// sent (`llm/build-purse/`). The purse is the only cost authority (t234): the
+// loop's count of decisions left no longer stops a build on its own.
 //
 // The user's rule: a build's total defaults to the ceiling, and a Flow's own setting
 // may lower it but never raise it. Before, a new Flow's settings carried $1 and
@@ -34,7 +37,7 @@ describe("a build's cost ceiling", () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     // A model that keeps looking while it may, and whose completions are
     // refused once only completing is offered: nothing but the budget ends it.
-    const provider = mockProvider(async (request) => {
+    const provider = { ...mockProvider(async (request) => {
       requests.push(request);
       const loop = request.context.evidenceLoop;
       const iteration = loop?.iteration ?? 0;
@@ -42,7 +45,10 @@ describe("a build's cost ceiling", () => {
         ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "inspect", input: { area: `area.${requests.length}` } }
         : { kind: "complete", result: { summary: "Unfinished.", plan: { ...plan(), subflows: [] } } };
       return { response: { kind: "evidence_tool_decision", summary: `Decision ${iteration}.`, decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: costPerCall } };
-    });
+    }),
+    // A provider that prices its requests, as DeepSeek does: each call's worst case is what it then reports.
+    // One that does not price is held at nothing, so only a priced call can be bounded before it is sent.
+    estimateCostUsd: () => costPerCall };
     // The host's own resolver defaults (`llm/session-key-provider.ts`).
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const instance = new AutomationStudioService({
@@ -69,9 +75,9 @@ describe("a build's cost ceiling", () => {
     expect(spent).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     // The build ran under the host's default total, which is the ceiling itself.
     expect(defaults.maxTotalEstimatedCostUsd).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
-    // And it stopped on money, not long before it: a decision's worth held back
-    // for the calls the loop cannot see, and one more it would not fit.
-    expect(spent).toBeGreaterThan(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - 3 * costPerCall);
+    // And it stopped on money, not before it: the purse refused only the call
+    // whose worst case no longer fit, so less than one call's worth is unspent.
+    expect(spent).toBeGreaterThan(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - costPerCall);
     expect(diagnostic.accounting?.estimatedCostUsd).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
   });
 });

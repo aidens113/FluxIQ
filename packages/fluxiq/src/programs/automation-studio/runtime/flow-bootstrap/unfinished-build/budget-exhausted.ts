@@ -6,7 +6,10 @@
 // budget and its size, what of the request the Flow already does, what was
 // tried and what blocked it, and whether the Flow so far was kept for the next
 // build to carry on from. It is also how a build that authored nothing ends
-// (supervisor, t208): never as a bare code, always with this message.
+// (supervisor, t208): never as a bare code, always with this message. A cost
+// ending says the figures that stopped it (F41); where one purse holds the
+// Flow's whole creation (t234), also what earlier builds of the Flow spent of
+// them and what of the Flow's ceiling building again has left.
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   type AutomationStudioFlowBootstrapBudgetBound,
@@ -32,8 +35,25 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxRounds?: number | undefined;
 };
 
-/** What a cost ending says was spent (`spending` below). */
-type Spending = { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined; projectedAtLeast?: boolean | undefined };
+/**
+ * What a cost ending says was spent: what the whole build had spent when its
+ * cost budget stopped it, what was held for calls still in flight, and the
+ * worst case of the call the purse refused (`../../llm/build-purse/`) -- absent
+ * where the provider does not price or no call was refused.
+ */
+export type AutomationStudioFlowBootstrapCostSpending = {
+  spentUsd: number;
+  pendingUsd: number;
+  projectedCostUsd?: number | undefined;
+  /** What earlier builds of the same Flow creation spent, included in `spentUsd`. Absent when none. */
+  carriedUsd?: number | undefined;
+  /**
+   * The Flow creation's ceiling, where one purse holds every build of it
+   * (t234): building again carries on from what is left of it, which the
+   * person is told. Absent where the build was given no purse.
+   */
+  ceilingUsd?: number | undefined;
+};
 
 /** The budget ending. */
 export function automationStudioFlowBootstrapBudgetExhausted(input: {
@@ -46,21 +66,18 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   /** Whether the Flow so far was kept for the next build. */
   kept: boolean;
   /**
-   * What the whole build had spent when its cost budget stopped it, what was
-   * held for calls still in flight, and the worst case of the call it declined
-   * (`../../llm/build-purse/`) -- absent where the provider does not price or no
-   * call was priced. `projectedAtLeast` where that is the last call's worst
-   * case, which the next, larger one costs at least at worst: the loop's count
-   * declined it before the purse priced it. Said only for a `cost` ending, so
-   * the person reads the figures that stopped it.
+   * The figures that stopped a `cost` ending, said only for one, so the person
+   * reads what stopped it -- and, where they are a Flow creation's, what of its
+   * ceiling building again has left.
    */
-  spending?: Spending | undefined;
+  spending?: AutomationStudioFlowBootstrapCostSpending | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const said = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
   const progress = said ? ` ${said}` : "";
+  const flowLeft = input.bound === "cost" && input.spending ? flowLeftSaid(input.spending) : "";
   const kept = input.kept
-    ? " The Flow so far was kept, and building again carries on from it."
+    ? ` The Flow so far was kept, and building again carries on from it${flowLeft}.`
     : " Nothing was kept to carry on from.";
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
@@ -89,17 +106,26 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
   }
 }
 
-/** What the build had spent and what its declined call could have cost, as the person is told it. */
-function spendingSaid(spending: Spending, ceilingUsd: number | undefined): string {
+/** What the build had spent -- earlier builds of the Flow's part named -- and what its refused call could have cost, as the person is told it. */
+function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceilingUsd: number | undefined): string {
+  const carried = spending.carriedUsd !== undefined && spending.carriedUsd > 0 ? ` (${usd(spending.carriedUsd)} of it by earlier builds of this Flow)` : "";
   const held = spending.pendingUsd > 0 ? `, with ${usd(spending.pendingUsd)} more held for calls still running` : "";
-  const spent = `: it had spent ${usd(spending.spentUsd)}${held}`;
-  if (spending.projectedCostUsd !== undefined) {
-    return spending.projectedAtLeast
-      ? `${spent}, and its next call could have cost ${usd(spending.projectedCostUsd)} or more`
-      : `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
-  }
-  const left = ceilingUsd === undefined ? 0 : ceilingUsd - spending.spentUsd - spending.pendingUsd;
+  const spent = `: it had spent ${usd(spending.spentUsd)}${carried}${held}`;
+  if (spending.projectedCostUsd !== undefined) return `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
+  const left = leftOf(spending.ceilingUsd ?? ceilingUsd, spending);
   return left >= 0.0005 ? `${spent}, which left ${usd(left)}, too little for its next call` : `${spent}, which left nothing for its next call`;
+}
+
+/** What a Flow creation's ceiling has left for building again, as the kept sentence ends; nothing where the build had no purse. */
+function flowLeftSaid(spending: AutomationStudioFlowBootstrapCostSpending): string {
+  if (spending.ceilingUsd === undefined) return "";
+  const left = leftOf(spending.ceilingUsd, spending);
+  const ceiling = `this Flow's $${spending.ceilingUsd.toFixed(2)}`;
+  return left >= 0.0005 ? `, with ${usd(left)} left of ${ceiling}` : `, with nothing left of ${ceiling}`;
+}
+
+function leftOf(ceilingUsd: number | undefined, spending: AutomationStudioFlowBootstrapCostSpending): number {
+  return ceilingUsd === undefined ? 0 : Math.max(0, ceilingUsd - spending.spentUsd - spending.pendingUsd);
 }
 
 function usd(amount: number): string {

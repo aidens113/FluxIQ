@@ -17,10 +17,27 @@
 // sent. A call that then reports costing more than it was held at is a breach,
 // counted, because the projection is meant to be the most it can cost.
 //
+// **One purse per Flow creation, and the only cost authority (t234).** The
+// user's limit is a Flow's: $0.10 (FLUXIQ_LLM_RUN_COST_CEILING_USD) for
+// creating it. Two counts used to stop a build -- this purse and the loop's own
+// count of decisions left (`../loop-budget.ts`), which held back an extra
+// average decision and stopped `run-muqbzu32-8691a65e` with $0.026 unspent and
+// no figures -- and every round, the judge and every later build each started
+// from a fresh share. Now one purse is opened for a build with what earlier
+// builds of the same Flow creation spent (`carriedUsd`), every call the build
+// makes is held against it (`./run.ts`, `automationStudioLlmBuildPurseScope`):
+// the instruction reading, each round's decisions, the test and the judge. The
+// loop's count only tells the model what is left; a refusal here is the only
+// cost ending.
+//
 // A provider that does not price leaves nothing to project. Such a call is held
-// at nothing and refused only once the purse is already spent; holding it at
-// the whole ceiling instead would refuse every call after the first one that
-// cost anything.
+// at the most any call on this purse has reported costing -- a measured figure,
+// nothing until one has reported -- so a run of like calls stops before the one
+// that would cross the ceiling, not after it. The loop's own count used to stop
+// such a build first, and with that count gone the purse is what holds it
+// (t234: a refuted result's repair ladder spent $0.12 of $0.10 without it).
+// Holding it at the whole ceiling instead would refuse every call after the
+// first one that cost anything.
 
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 
@@ -36,16 +53,8 @@ export type AutomationStudioLlmBuildPurseRefusal = {
   /** What calls still in flight were held at. */
   pendingUsd: number;
   ceilingUsd: number;
-  /**
-   * Absent for the purse's own refusal (`hold`). `"loop_budget"` where the
-   * loop's count of decisions left (`../loop-budget.ts`) stopped before the
-   * call reached the purse (`standing`): the call was never priced, so
-   * `projectedCostUsd`, `estimatedInputTokens` and `maxOutputTokens` are the
-   * last call priced -- the least the next, larger request can cost at worst --
-   * and the tokens are zero where nothing was priced. `run-muqbzu32-8691a65e`
-   * ended that way with $0.074 of $0.10 spent and said no figures (t194-w47).
-   */
-  declinedBy?: "loop_budget";
+  /** What earlier builds of the same Flow creation had spent, included in `spentUsd`. Absent when none. */
+  carriedUsd?: number;
 };
 
 /** One call's hold on the purse, settled once by whichever comes first. */
@@ -66,6 +75,14 @@ export type AutomationStudioLlmBuildPurseOptions = {
    * both saw is never charged twice.
    */
   spentUsd?: () => number;
+  /**
+   * What earlier builds of the same Flow creation already spent from this
+   * ceiling (`../../flow-bootstrap/creation-spend/`). One purse covers a Flow's
+   * creation -- every build of it, their tests, judges and repairs, until the
+   * Flow is proposed or declared not doable -- so building again carries the
+   * spend on rather than starting a fresh ceiling.
+   */
+  carriedUsd?: number;
   /** Told of each call that reported costing more than it was held at. */
   onBreach?: () => void;
 };
@@ -81,20 +98,26 @@ export class AutomationStudioLlmBuildPurse {
   refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** The worst case of the last call it priced: the least the next, larger request can cost at worst. */
   lastProjectedCostUsd: number | undefined;
-  private lastPriced: { estimatedInputTokens: number; maxOutputTokens: number } | undefined;
+  /** What earlier builds of the same Flow creation spent: part of `spentUsd`, never charged again. */
+  readonly carriedUsd: number;
   private settledUsd = 0;
+  /** The most any call settled on this purse reported costing: what an unpriced call is held at. */
+  private largestReportedUsd = 0;
   private readonly pending = new Map<number, number>();
   private holds = 0;
 
   constructor(private readonly options: AutomationStudioLlmBuildPurseOptions) {
     if (!Number.isFinite(options.ceilingUsd) || options.ceilingUsd < 0) throw new Error("A build purse's ceiling must be a finite, non-negative amount.");
+    const carried = options.carriedUsd ?? 0;
+    if (!Number.isFinite(carried) || carried < 0) throw new Error("A build purse's carried spend must be a finite, non-negative amount.");
     this.ceilingUsd = options.ceilingUsd;
+    this.carriedUsd = carried;
   }
 
-  /** What the build has spent: its accounting's figure or its settled calls', whichever is larger. */
+  /** What the Flow's creation has spent: what earlier builds carried, plus this build's accounting or settled calls, whichever is larger. */
   spentUsd(): number {
     const reported = this.options.spentUsd?.() ?? 0;
-    return Math.max(this.settledUsd, Number.isFinite(reported) ? reported : 0);
+    return this.carriedUsd + Math.max(this.settledUsd, Number.isFinite(reported) ? reported : 0);
   }
 
   /** What calls in flight are held at. */
@@ -102,40 +125,25 @@ export class AutomationStudioLlmBuildPurse {
     return [...this.pending.values()].reduce((sum, held) => sum + held, 0);
   }
 
-  /**
-   * Where the purse stands, in a refusal's figures, for a call something other
-   * than the purse declined to send (`declinedBy`): what was spent and held,
-   * and the last call's worst case. Information only: it holds and refuses
-   * nothing.
-   */
-  standing(): AutomationStudioLlmBuildPurseRefusal {
-    return {
-      code: "llm_budget.run_cost_limit",
-      ...(this.lastProjectedCostUsd !== undefined ? { projectedCostUsd: this.lastProjectedCostUsd } : {}),
-      estimatedInputTokens: this.lastPriced?.estimatedInputTokens ?? 0,
-      maxOutputTokens: this.lastPriced?.maxOutputTokens ?? 0,
-      spentUsd: this.spentUsd(),
-      pendingUsd: this.pendingUsd(),
-      ceilingUsd: this.ceilingUsd,
-      declinedBy: "loop_budget"
-    };
+  /** What is left of the ceiling once what was spent and what is held are taken out; never below nothing. */
+  leftUsd(): number {
+    return Math.max(0, this.ceilingUsd - this.spentUsd() - this.pendingUsd());
   }
 
   /**
    * Hold a call's worst case, or refuse it. `projectedCostUsd` is the call's
    * worst case (`./projected-cost.ts`); `undefined` means the provider does not
-   * price, and the call is refused only once nothing is left.
+   * price, and the call is held at the most any call here has reported costing,
+   * or refused only once nothing is left while none has.
    */
   hold(call: { projectedCostUsd: number | undefined; estimatedInputTokens: number; maxOutputTokens: number }): { ok: true; hold: AutomationStudioLlmBuildPurseHold } | { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {
     const spentUsd = this.spentUsd();
     const pendingUsd = this.pendingUsd();
     const projected = call.projectedCostUsd;
-    if (projected !== undefined) {
-      this.lastProjectedCostUsd = projected;
-      this.lastPriced = { estimatedInputTokens: call.estimatedInputTokens, maxOutputTokens: call.maxOutputTokens };
-    }
-    const over = projected !== undefined
-      ? spentUsd + pendingUsd + projected > this.ceilingUsd + EPSILON_USD
+    if (projected !== undefined) this.lastProjectedCostUsd = projected;
+    const heldUsd = projected ?? this.largestReportedUsd;
+    const over = heldUsd > 0
+      ? spentUsd + pendingUsd + heldUsd > this.ceilingUsd + EPSILON_USD
       : spentUsd + pendingUsd >= this.ceilingUsd;
     if (over) {
       this.refusal = {
@@ -145,12 +153,12 @@ export class AutomationStudioLlmBuildPurse {
         maxOutputTokens: call.maxOutputTokens,
         spentUsd,
         pendingUsd,
-        ceilingUsd: this.ceilingUsd
+        ceilingUsd: this.ceilingUsd,
+        ...(this.carriedUsd > 0 ? { carriedUsd: this.carriedUsd } : {})
       };
       return { ok: false, refusal: this.refusal };
     }
     const id = this.holds += 1;
-    const heldUsd = projected ?? 0;
     this.pending.set(id, heldUsd);
     let settled = false;
     return {
@@ -163,6 +171,7 @@ export class AutomationStudioLlmBuildPurse {
           const reported = usage?.estimatedCostUsd;
           const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
           this.settledUsd += valid ? reported : heldUsd;
+          if (valid) this.largestReportedUsd = Math.max(this.largestReportedUsd, reported);
           if (valid && projected !== undefined && reported > heldUsd + EPSILON_USD) {
             this.breaches += 1;
             this.options.onBreach?.();

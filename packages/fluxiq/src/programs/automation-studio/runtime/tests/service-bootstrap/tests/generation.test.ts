@@ -278,9 +278,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
     expect(configured?.maxEstimatedCostUsdPerRun).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     for (const request of decisions) expect(request.maxEstimatedCostUsd).toBe(0.25);
-    // The judge may ask twice, so each of its calls is held to half of what the build has left of its ceiling.
+    // The judge's calls are held against the build's one purse (`llm/build-purse/`, t234), as the decisions are,
+    // so they carry no share of their own: no longer half of what the build has left, the per-request default instead.
     const judged = requests.filter(isJudgeRequest);
-    if (finishes) expect(judged[0]?.maxEstimatedCostUsd).toBeCloseTo((AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - calls * 0.001) / 2, 9);
+    if (finishes) expect(judged[0]?.maxEstimatedCostUsd).toBe(decisions[0]?.maxEstimatedCostUsd);
   });
 
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {

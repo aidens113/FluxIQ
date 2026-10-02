@@ -3,7 +3,8 @@
 // No model is called: the provider is scripted, or `verify` is injected.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioResultVerificationReport, AutomationStudioResultVerificationRequest } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
@@ -144,5 +145,54 @@ describe("the verdict mapping", () => {
     const controller = new AbortController();
     const verify = () => new Promise<never>(() => { controller.abort(); });
     await expect(judge(PICKUP_CART, { verify, signal: controller.signal })({ summary: run40Summary() })).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("a judge under the build's purse (t234)", () => {
+  /** A Flow creation's ceiling, as configured (FLUXIQ_LLM_RUN_COST_CEILING_USD). */
+  const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  /** `scripted`, priced: each call's worst case is `worstCase(call)`, the purse's measure of it before it is sent. */
+  function priced(answers: readonly string[], worstCase: (call: number) => number) {
+    const llm = scripted(answers);
+    return { ...llm, provider: { ...llm.provider, estimateCostUsd: () => worstCase(llm.seen.length) } satisfies AutomationStudioLlmProvider };
+  }
+  /** A purse with `leftUsd` left of the ceiling, the rest spent by earlier builds of this Flow. */
+  const purseWith = (leftUsd: number) => new AutomationStudioLlmBuildPurse({ ceilingUsd: CEILING, carriedUsd: CEILING - leftUsd });
+
+  it("sets no cap of its own: the purse holds each call at its true worst case", async () => {
+    const calls: AutomationStudioResultVerificationRequest[] = [];
+    const verify = async (request: AutomationStudioResultVerificationRequest) => {
+      calls.push(request);
+      return { outcome: { schemaVersion: "automation-studio.result-verification.v1" as const, performed: true as const, verdict: "answers" as const, basis: "model" as const, code: "c", reason: "r", observation: "o" }, interventions: [] };
+    };
+    const purse = purseWith(0.5 * CEILING);
+    await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { verify })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
+    expect(calls).toHaveLength(1);
+    // Half of what is left, per call, used to refuse a judge call the purse could pay for.
+    expect(calls[0]).not.toHaveProperty("maxEstimatedCostUsd");
+  });
+
+  it("a call the purse refuses is not judged, says the spending limit stopped it, and throws nothing", async () => {
+    // Some cost is left, so the judge is asked; its call's worst case is more than that, so the purse refuses it unsent.
+    const { provider, seen } = priced(["yes"], () => 0.2 * CEILING);
+    const purse = purseWith(0.1 * CEILING);
+
+    const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
+
+    expect(seen).toHaveLength(0);
+    // It used to come back as `unknown`: verify reads a refused call as one that did not come back usable.
+    expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining(`spending limit of $${CEILING.toFixed(2)}`), spent: { estimatedCostUsd: 0 } });
+    expect(purse.spentUsd()).toBeCloseTo(CEILING - 0.1 * CEILING, 12);
+  });
+
+  it("a second ask the purse refuses is not judged either, and the first call's spend is still returned", async () => {
+    // The first call fits and answers no; asked again, the second's worst case no longer fits.
+    const { provider, seen } = priced(["no", "no"], (call) => (call === 0 ? 0.05 * CEILING : 0.5 * CEILING));
+    const purse = purseWith(0.1 * CEILING);
+
+    const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
+
+    expect(seen).toHaveLength(1);
+    expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining("spending limit"), spent: { totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd } });
   });
 });
