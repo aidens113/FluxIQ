@@ -152,7 +152,10 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      * domain said.
      *
      * Used only when the build has a `startLocation`, `initial` is declared
-     * (the arrival rides on it), and the node is one this binding offers.
+     * (the arrival rides on it), and the node is one this binding offers. A
+     * round whose draft already holds the Flow (a repair's, a re-author's)
+     * never arrives: it opens with the `initial` look where the test left the
+     * page, carrying the Flow's calls under `held` (run 38 C3, t241).
      */
     arrival?: { node: string; parameter: string };
     /**
