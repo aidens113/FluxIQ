@@ -14,6 +14,7 @@ import {
   AutomationStudioLlmRunBudgetLedger,
   estimateAutomationStudioDeepSeekCostUsd
 } from "../llm/index.ts";
+import { automationStudioLlmProjectedCallCostUsd } from "../llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
@@ -48,7 +49,10 @@ describe("the limits a caller's default resolution and a recovery share", () => 
     // diagnosis the run already made (`../recovery/annotation/patch-reserve.ts`).
     expect(budget.maxEstimatedCostUsdPerCall).toBe(budget.ledger.maxEstimatedCostUsdPerRun);
     const price = ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens);
-    const reserved = (inputTokens: number) => Math.min(budget.maxEstimatedCostUsdPerCall, price({ inputTokens, outputTokens: defaults.tokenLimits.maxOutputTokens }));
+    // As the harness reserves a call: the build purse's worst-case projection
+    // (every input token a cache miss, the whole reply allowance), under the
+    // per-call ceiling. One projection prices the ledger and the purse alike.
+    const reserved = (inputTokens: number) => Math.min(budget.maxEstimatedCostUsdPerCall, automationStudioLlmProjectedCallCostUsd({ estimateCostUsd: price }, inputTokens, defaults.tokenLimits.maxOutputTokens) ?? budget.maxEstimatedCostUsdPerCall);
 
     const runBudget = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
     // A whole-page diagnosis: 30,000 tokens measured, 25,000 reported.
@@ -64,9 +68,22 @@ describe("the limits a caller's default resolution and a recovery share", () => 
     });
     expect(runBudget.snapshot("run.one").pendingCalls).toBe(1);
 
-    // Each decision reserves its own 30,000-token worst case; the ledger
-    // refuses the one that would eat into the patch's share.
+    // Each decision reserves its own 30,000-token worst case, then is charged
+    // what it reported, as the harness completes every lease with the
+    // provider's usage (`../llm/harness/run.ts`). Decisions run one after
+    // another, so only the next one's worst case is ever held beside the
+    // patch's share -- the same rule the build's decision count follows
+    // (`../llm/loop-budget.ts`, t195 F37). Until t229 this loop never completed
+    // a lease, so every decision was charged its worst case (~$0.019 here)
+    // where live calls cost a quarter of that; at the $0.25 ceiling that still
+    // left eight, at $0.10 it left three.
+    // What a decision reports: its 30,000 input tokens, 61.8% of them served
+    // from DeepSeek's cache as live runs 36-37 measured (t195), and a
+    // 1,000-token reply.
+    const cacheHits = Math.round(30_000 * 0.618);
+    const reported = { inputTokens: 30_000, outputTokens: 1_000, totalTokens: 31_000, estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(30_000, 1_000, cacheHits) };
     let decisions = 0;
+    let refusal: string | undefined;
     while (decisions < AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxProviderCalls) {
       const reservation = runBudget.reserve({
         runId: "run.one",
@@ -76,10 +93,22 @@ describe("the limits a caller's default resolution and a recovery share", () => 
         maxEstimatedCostUsd: reserved(30_000),
         allowance: "exploration"
       });
-      if (!reservation.ok) break;
+      if (!reservation.ok) {
+        refusal = reservation.diagnostic.code;
+        break;
+      }
+      reservation.lease.complete(reported);
       decisions += 1;
     }
     expect(decisions).toBeGreaterThanOrEqual(8);
+    // The ceiling is still the stop. A decision is refused on the cost code
+    // the moment its worst case would eat into the patch's share, which is
+    // still held, and what the run spent never passes the ceiling.
+    const spent = runBudget.snapshot("run.one");
+    if (refusal !== undefined) expect(refusal).toBe("llm_budget.run_cost_limit");
+    expect(spent.pendingCalls).toBe(1);
+    expect(spent.budgetBreaches).toBe(0);
+    expect(spent.estimatedCostUsd).toBeLessThan(budget.ledger.maxEstimatedCostUsdPerRun);
   });
 
   // Twenty-six calls at a few seconds each is longer than two minutes, so a
