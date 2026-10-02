@@ -61,8 +61,8 @@ function wholeFlow(): AutomationStudioFlowDraftStep[] {
   return [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } }), step(3, { acts: ["a2"] })];
 }
 
-function no(findings: string[]): AutomationStudioFlowBootstrapTestVerdict {
-  return { verdict: "no", expected: "the towels in the cart", observed: "the test read no cart", findings, spent: { ...NOTHING_SPENT, estimatedCostUsd: 0.001 } };
+function no(findings: string[], records?: { stored: number; refused: number; missingRequired: number }): AutomationStudioFlowBootstrapTestVerdict {
+  return { verdict: "no", expected: "the towels in the cart", observed: "the test read no cart", findings, ...(records ? { records } : {}), spent: { ...NOTHING_SPENT, estimatedCostUsd: 0.001 } };
 }
 
 function harness(
@@ -225,5 +225,44 @@ describe("a round that ended on refused repeats and handed back the Flow it star
 
     expect(await runAutomationStudioFlowBootstrapBuildPhases(changed.input)).toMatchObject({ kind: "finished", rounds: 2 });
     expect(await runAutomationStudioFlowBootstrapBuildPhases(fresh.input)).toMatchObject({ kind: "finished", rounds: 2 });
+  });
+});
+
+// What the judged test stored is measured too (t240): the judge returns its
+// summary's counts on a no, so a repair that stored rows where none were, or
+// refused fewer or left fewer incomplete while storing no fewer, progressed.
+describe("a repair judged wrong for the same findings, measured by what its test stored", () => {
+  const YES: AutomationStudioFlowBootstrapTestVerdict = { verdict: "yes", spent: NOTHING_SPENT };
+  /** Three rounds, each a different Flow; the first two judged no with these counts and the same finding, the third yes. */
+  async function judgedTwice(first: { stored: number; refused: number; missingRequired: number }, second: { stored: number; refused: number; missingRequired: number }) {
+    const verdicts = [no(["result.required_values_missing"], first), no(["result.required_values_missing"], second), YES];
+    const { input, requests } = harness([
+      () => finished(wholeFlow(), spent(2, 0.01)),
+      (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], spent(2, 0.01)),
+      (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d10", acts: ["a2"], ranWith: { target: "kettle-card" } })], spent(2, 0.01))
+    ], { judge: async () => verdicts.shift()! });
+    return { outcome: await runAutomationStudioFlowBootstrapBuildPhases(input), requests };
+  }
+
+  it("repairs again after a repair that refused fewer rows and stored no fewer", async () => {
+    const { outcome, requests } = await judgedTwice({ stored: 4, refused: 5, missingRequired: 2 }, { stored: 4, refused: 1, missingRequired: 2 });
+    expect(requests).toHaveLength(3);
+    expect(outcome).toMatchObject({ kind: "finished", rounds: 3 });
+  });
+
+  it("repairs again after a repair that left fewer stored rows missing a required value", async () => {
+    const { outcome } = await judgedTwice({ stored: 6, refused: 0, missingRequired: 6 }, { stored: 6, refused: 0, missingRequired: 2 });
+    expect(outcome).toMatchObject({ kind: "finished", rounds: 3 });
+  });
+
+  it("repairs again after a repair that stored rows where none were", async () => {
+    const { outcome } = await judgedTwice({ stored: 0, refused: 0, missingRequired: 0 }, { stored: 3, refused: 0, missingRequired: 3 });
+    expect(outcome).toMatchObject({ kind: "finished", rounds: 3 });
+  });
+
+  it("ends not doable when fewer rows were refused only because fewer were stored", async () => {
+    const { outcome, requests } = await judgedTwice({ stored: 4, refused: 5, missingRequired: 0 }, { stored: 1, refused: 0, missingRequired: 0 });
+    expect(requests).toHaveLength(2);
+    expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_doable");
   });
 });

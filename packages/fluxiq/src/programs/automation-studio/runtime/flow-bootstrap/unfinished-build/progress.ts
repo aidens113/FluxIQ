@@ -15,7 +15,10 @@
 // each handed back a different Flow -- navigation steps added -- while the
 // judge said the same thing every time, that no step reads or stores a record.
 // The judge's free words (`expected`, `observed`) are not compared: two
-// accounts of the same failure differ in wording.
+// accounts of the same failure differ in wording. What the judged test stored
+// is (t240): rows stored where none were, or fewer refused or incomplete rows
+// while no fewer are stored -- a Flow that stopped reading has fewer refusals
+// and is no further.
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapProgressMeasure } from "./contracts.ts";
 
 /** What `after` measurably did better than `before`; empty when nothing did. */
@@ -32,6 +35,12 @@ export function automationStudioFlowBootstrapJudgementProgress(before: Automatio
   if (before.judge?.verdict === "no" && after.judge?.verdict === "no") {
     const now = new Set(after.judge.findings);
     if (before.judge.findings.some((finding) => !now.has(finding))) moved.push("judge_findings_resolved");
+    const [was, is] = [before.judge.records, after.judge.records];
+    if (was && is) {
+      if (was.stored === 0 && is.stored > 0) moved.push("records_stored");
+      if (is.stored >= was.stored && is.refused < was.refused) moved.push("fewer_records_refused");
+      if (is.stored >= was.stored && is.missingRequired < was.missingRequired) moved.push("fewer_records_missing_required");
+    }
   }
   return moved;
 }

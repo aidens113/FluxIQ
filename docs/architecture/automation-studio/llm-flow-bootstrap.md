@@ -794,7 +794,11 @@ round opens only when both hold:
   step, or more of them proven by the test; a test that now runs clean, or fails
   at fewer steps; with no judge, more steps that worked; a round that finished
   and was judged where the one before stopped short; carried steps now judged;
-  or a judge finding no longer reported. A merely different Flow is not
+  or a judge finding no longer reported. It also counts what the judged test
+  stored: the build-test judge returns its summary's stored, refused and
+  missing-required row counts on a `no`. Progress there means rows stored where
+  none were, or fewer refused or incomplete rows while no fewer are stored. A
+  merely different Flow is not
   progress: the earbuds build `run-muqiho7e-13be6c03` handed back three
   different Flows, and the judge reported the same thing each time.
 
@@ -802,8 +806,9 @@ A round that did not progress ends the build `not_doable`, saying what stood
 still. So does a round that ended on refused repeats
 (`repeat_without_progress`) and handed back the Flow it started from: a second
 round would only repeat it (run 38, cause C8). For an extend build's first
-round, the caller passes the seeded Flow's replay signature as
-`seedSignature`. Six live rounds stay the backstop, since the published
+round, `runtime/service.ts` passes the replay signature of the Flow that
+round starts from as `seedSignature`: the extended Flow's seed, or the kept
+draft a continuation carries on. Six live rounds stay the backstop, since the published
 record's reader is bounded by it. Every round draws on the Flow creation's one purse and
 shares the build's time/token budget and declared call count; no round has a
 cost share of its own, and the per-round decision backstop starts afresh.

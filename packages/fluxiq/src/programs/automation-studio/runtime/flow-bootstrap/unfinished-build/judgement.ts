@@ -155,7 +155,8 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     ...(verdict.expected ? { expected: verdict.expected } : {}),
     ...(verdict.observed ? { observed: verdict.observed } : {}),
     ...(verdict.advice ? { advice: verdict.advice } : {}),
-    findings: [...verdict.findings]
+    findings: [...verdict.findings],
+    ...(verdict.records ? { records: { ...verdict.records } } : {})
   };
 }
 

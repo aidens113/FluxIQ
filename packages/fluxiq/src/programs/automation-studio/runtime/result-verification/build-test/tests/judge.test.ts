@@ -76,6 +76,14 @@ describe("a judged no carries the judge's reading to the repair", () => {
     expect(verdict).toMatchObject({ verdict: "no", observed: expect.stringContaining("napkins"), advice: expect.stringContaining("250 Count") });
     expect(verdict.spent).toEqual({ inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 });
   });
+
+  // A build measures a repair by what its test stored (t240): the counts the verdict was reached from travel with a no.
+  it("carries the summary's stored, refused and missing-required counts on a no", async () => {
+    const summary = { ...run40Summary(), totalRecordCount: 7, totalRefusedCount: 3, totalRowsMissingRequired: 2 };
+    const { provider } = scripted(["no", "no"], { observed: "Seven rows stored, three refused." });
+    const verdict = await judge(PICKUP_CART, { provider })({ summary, budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "no", records: { stored: 7, refused: 3, missingRequired: 2 } });
+  });
 });
 
 describe("the verdict mapping", () => {
