@@ -9,6 +9,10 @@ describe("activityActionFailureReason", () => {
     ["web.wait.timed_out", "the page took too long"],
     ["web.target.ambiguous", "more than one thing on the page matched"],
     ["web.target.not-visible", "it was hidden on the page"],
+    // A press a coupon popup covered was said "hidden" (crossborder run-muqc07fh-eeffbc86), and one a dialog stood in front of "not allowed".
+    ["web.action.rejected.target_covered", "a popup or banner on the page was covering it"],
+    ["web.action.rejected.blocked_by_dialog", "a dialog on the page was in front of it"],
+    ["web.action.blocked_by_dialog", "a dialog on the page was in front of it"],
     ["web.field.disabled", "it couldn't be used yet"],
     ["web.target.stale", "the page changed before it could"],
     ["example.user_intervention_required", "the page wanted a person"],
