@@ -19,6 +19,7 @@ import {
 import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import type { AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
@@ -69,8 +70,22 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * as the newest entry (`AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID`); the
    * last decision is offered only completion; and with none left the loop ends
    * `llm_evidence_loop.iteration_limit`. Absent, none of that happens.
+   *
+   * Cost is the exception: its count only tells the model what is left and
+   * when to wrap up, and never ends a loop. The purse (`purse`, below) is the
+   * only cost authority, and a decision it refuses is the only cost ending.
    */
   budget?: AutomationStudioLlmEvidenceLoopBudget;
+  /**
+   * The build's purse (`./build-purse/purse.ts`), the one cost authority for a
+   * Flow's creation. Given, every decision is held against it and the loop
+   * makes no purse of its own: the cost the model is told is left is the
+   * purse's (with `budget` given, whether or not it names `maxCostUsd`), and a
+   * breach on it while this loop runs is counted in this loop's
+   * `budgetBreaches`. Absent, a loop whose `budget` names `maxCostUsd` makes
+   * its own purse at that ceiling.
+   */
+  purse?: AutomationStudioLlmBuildPurse;
   completionSchema?: JsonObject;
   minToolCalls?: number;
   propagateDecisionErrors?: boolean;

@@ -20,10 +20,11 @@
 // registry at the moment the tool is built.
 //
 // **The names are the whole library.** The enumerated names here are every
-// available node, as is the catalog the model is shown beside its evidence,
-// which carries each of them whole (`flow-bootstrap/plan/catalog.ts`). Until
-// 2026-09-30 that catalog was fitted to a byte budget, so this list was what
-// kept a node the catalog dropped runnable.
+// available node, as is the catalog the model is shown beside its evidence.
+// Since 2026-10-01 an evidence decision is shown that catalog by name only, and
+// the full definitions of just the nodes this build asked about
+// (`./describe-nodes.ts`, `./node-descriptions.ts`), so the description below
+// teaches the model to read a node's definition before first running it.
 //
 // **What the tool does not decide.** Whether a call looked or changed, what it
 // should be recorded as, and whether it belongs in the result are properties of
@@ -43,40 +44,40 @@ export const AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID = "core.run_node";
  *
  * Read off the declared classes rather than written into the prose, so a class
  * renamed or removed in `action-permissions/` is a compile error here instead
- * of an example that teaches a word the gate no longer knows. The list itself
- * is interpolated for the same reason: a class added there appears in the
- * guidance with nobody editing this file.
+ * of an example that teaches a word the gate no longer knows. The classes
+ * themselves are the `consequences` enum, which the model is given whole, so
+ * the prose no longer lists them (t235): a class added there reaches the model
+ * through the schema with nobody editing this file.
  */
 const PUBLISHING: (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number] = "send_or_publish";
 
+// The description, rewritten for the names-only catalog (t235, user
+// 2026-10-01): 1,990 characters before, against the 2,000 a provider accepts
+// (`tests/run-node.test.ts`), and 1,490 after, which the test now holds under 1,500. What went is what the
+// input schema already says -- the list of consequence classes, which is the
+// enum, and `add`/`act`, which the decision schema describes beside the call
+// (`../evidence-loop-decision.ts`). What came in is the two-step pattern: the
+// model picks a name from the catalog and reads that node's definition before
+// first using it.
 const DESCRIPTION = [
-  "Run one node from the library against the live target, now, and get back what that node really did.",
-  "This is the same node, with the same parameters, that the finished Flow runs: there is no separate exploration vocabulary.",
-  "Name the node in `node`, exactly as the catalog prints its id, and give that node's own parameters in `parameters`.",
-  "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"}, and leave every other way of naming it out. Never write a locator, a description or a guess of your own -- you have not been shown one, and a step that names something you did not observe is refused.",
-  "A node that reads a repeating list names that list the same way: its request is {\"handle\": \"<the handle the detection tool issued>\"} with the fields you want beside it, never a locator of your own. Detect the list first, then run the node and read the rows it really returned.",
-  "A node that runs and succeeds becomes a step of the Flow you are building, with the parameters it ran with, and you never write it down again.",
+  "Run one node from the library against the live target, now, and get back what it really did: the same node, with the same parameters, that the finished Flow runs.",
+  "flowBootstrap.nodeCatalog names every node; pick from those names. Before a node's first use, read its definition with core.describe_nodes -- once, for all the nodes you are about to use -- unless it is already in flowBootstrap.describedNodes. Then give exactly the parameters that definition declares.",
+  "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write a locator, a description or a guess of your own: a step that names something you did not observe is refused.",
+  "A node that reads a repeating list names it the same way, by the handle the detection tool issued, with the fields you want beside it: detect the list first, then read the rows it really returned.",
   // A check is not a failure to try again. "Run again. A failure ends nothing"
   // is what a build read as permission to knock on a robot check until the
   // site locked it out (`run-munp80f5-c31ea417`); a page that needs a person
   // is now handed to one (`../../flow-bootstrap/person-needed.ts`), so the
-  // model is told never to act on a check at all. Six characters under the
-  // bound below.
+  // model is told never to act on a check at all.
   "A failed node says what went wrong and how things now stand. A page that needs a person goes to the person: never press, type into or reload a check.",
-  "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are; run one that acts to make the page do what the instruction needs.",
-  // "only reads" earns its eight characters: a build that had to collect a
-  // page of products into a table read "leaves nothing behind" as a question
-  // about the dataset it would produce, answered `create_new` for the node that
-  // reads the list, and stopped to ask permission to read
-  // (`run-mueozmp8-348a2057`). The gate now disregards that answer; this is so
-  // it is not reached for. There was no room for a sentence: the description is
-  // 1,990 of the 2,000 characters a provider accepts, and a build whose first
-  // request is refused runs nothing at all (`tests/run-node.test.ts`).
-  // "or opens checkout" below is the one example a live build needed (t195-w18):
+  "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are, and one that acts to make the page do what the instruction needs. A step you add keeps the parameters it ran with.",
+  // "only reads" earns its place: a build that had to collect a page of
+  // products into a table read "leaves nothing behind" as a question about the
+  // dataset it would produce, answered `create_new` for the node that reads the
+  // list, and stopped to ask permission to read (`run-mueozmp8-348a2057`).
+  // "or opens checkout" is the one example a live build needed (t195-w18):
   // models declared `move_money` on the press that only opens a checkout page.
-  `Say in \`consequences\` what running this node would lastingly do, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}: [] when it only reads or leaves nothing behind, and a node that sends, publishes, orders, deletes or changes something saved names its class and is put to the person first.`,
-  `Judge this node, not the Flow: in one Flow the press that applies a filter or opens checkout is [] and the press that submits the post is ${PUBLISHING}.`,
-  "A step joins the Flow only when added (add on the call or amend_draft add); correct one with amend_draft: rerun, drop, reorder."
+  `Judge \`consequences\` for this node, not the Flow: [] when it only reads, and in one Flow the press that applies a filter or opens checkout is [] and the press that submits the post is ${PUBLISHING}.`
 ].join(" ");
 
 /**
@@ -122,13 +123,13 @@ export function automationStudioLlmRunNodeTool(input: {
       required: ["node", "parameters", "consequences"],
       properties: {
         node,
-        parameters: { type: "object", description: "That node's own parameters, exactly as its catalog entry declares them." },
+        parameters: { type: "object", description: "That node's own parameters, exactly as its definition in flowBootstrap.describedNodes declares them." },
         consequences: {
           type: "array",
           maxItems: 5,
           uniqueItems: true,
           items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] },
-          description: `What running this node would lastingly do. [] leaves nothing behind; a press that submits, orders, deletes or changes something saved names its class, such as ${PUBLISHING}.`
+          description: `What running this node would lastingly do. [] leaves nothing behind; a press that submits, orders, deletes or changes something saved names its class, such as ${PUBLISHING}, and is put to the person first.`
         }
       }
     },

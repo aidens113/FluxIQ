@@ -1,3 +1,4 @@
+import { automationStudioFlowBootstrapCatalogNames } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmTaskExpectsDiagnosis, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { automationStudioDeepSeekOutputSchema } from "./output-schema.ts";
 import {
@@ -69,8 +70,19 @@ export type AutomationStudioDeepSeekRequestShape = {
   toolIds: readonly string[] | null;
   /** How much the exploration had gathered when it asked. */
   evidence: { calls: number; iteration: number } | null;
-  /** The node catalog a build was shown, measured rather than quoted. */
-  catalog: { entries: number; bytes: number; truncated: boolean } | null;
+  /**
+   * The node catalog a build was shown, measured rather than quoted, as it was
+   * sent: `whole` entries for a one-shot build, and for an evidence decision
+   * the `names` list (entries are its lines) plus the nodes it had described in
+   * full (`./request-body.ts`).
+   */
+  catalog: {
+    form: "whole" | "names";
+    entries: number;
+    bytes: number;
+    truncated: boolean;
+    described?: { entries: number; bytes: number };
+  } | null;
   /** How many explored pages a repair was shown. */
   exploredPackets: number | null;
   /** Each field of the outbound request that arrived empty or wrong, by name. */
@@ -96,13 +108,7 @@ export function automationStudioDeepSeekRequestShape(input: {
   const schema = automationStudioDeepSeekOutputSchema(request);
   const loop = request.context.evidenceLoop;
   const bootstrap = request.context.flowBootstrap;
-  const catalog = bootstrap && Array.isArray(bootstrap.nodeCatalog)
-    ? {
-      entries: bootstrap.nodeCatalog.length,
-      bytes: Buffer.byteLength(JSON.stringify(bootstrap.nodeCatalog), "utf8"),
-      truncated: bootstrap.catalogTruncated === true
-    }
-    : null;
+  const catalog = bootstrap && Array.isArray(bootstrap.nodeCatalog) ? sentCatalog(request.taskKind === "evidence_tool_decision" && loop !== undefined, bootstrap) : null;
   const tokens = {
     measuredInput,
     declaredInput: request.estimatedInputTokens,
@@ -136,6 +142,34 @@ export function automationStudioDeepSeekRequestShape(input: {
     exploredPackets: request.context.explorationEvidence ? request.context.explorationEvidence.packets.length : null,
     malformed: malformedFields({ request, messages, schemaOffered: outputSchema.offered, tokens, loop: loop ?? null, catalog })
   };
+}
+
+/**
+ * The catalog as the request body sends it: the whole catalog to a one-shot
+ * build, and to an evidence decision the names (derived from the catalog the
+ * same way the body derives them when the packet carries none) and the
+ * described entries.
+ */
+function sentCatalog(
+  namesOnly: boolean,
+  bootstrap: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>
+): NonNullable<AutomationStudioDeepSeekRequestShape["catalog"]> {
+  if (!namesOnly) {
+    return { form: "whole", entries: bootstrap.nodeCatalog.length, bytes: jsonBytes(bootstrap.nodeCatalog), truncated: bootstrap.catalogTruncated === true };
+  }
+  const names = bootstrap.catalogNames ?? automationStudioFlowBootstrapCatalogNames(bootstrap.nodeCatalog);
+  const described = bootstrap.describedNodes ?? [];
+  return {
+    form: "names",
+    entries: Object.values(names).reduce((total, lines) => total + lines.length, 0),
+    bytes: jsonBytes(names),
+    truncated: false,
+    ...(described.length ? { described: { entries: described.length, bytes: jsonBytes(described) } } : {})
+  };
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
 /**

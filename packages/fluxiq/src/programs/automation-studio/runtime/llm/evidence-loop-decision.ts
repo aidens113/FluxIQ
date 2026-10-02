@@ -244,6 +244,10 @@ function readReplayRecord(value: unknown): AutomationStudioFlowDraftStepReplay |
  * allowance of them, which no tool does.
  */
 export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true, allowAmend = false, authoring = false): JsonObject {
+  // `add` and `act` are explained once, on the first call that can act, and
+  // offered bare on every other: the same two sentences on each variant were
+  // 468 characters a tool on every decision (t235). Every call still takes them.
+  const explainedAt = Math.max(0, tools.findIndex((tool) => tool.effect === "mutate" || tool.perCallEffect === true));
   return {
     oneOf: [
       ...(allowComplete ? [{
@@ -257,14 +261,14 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
           amendments: { type: "array", minItems: 1, maxItems: MAX_AMENDMENTS_PER_DECISION, items: structuredClone(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA) }
         }
       }] : []),
-      ...tools.map((tool) => ({
+      ...tools.map((tool, index) => ({
         type: "object", additionalProperties: false, required: ["kind", "callId", "toolId", "input"],
         properties: {
           kind: { const: "tool_call" }, callId: { type: "string", pattern: "^[a-zA-Z0-9_.:-]{1,200}$" },
           toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema),
           // Offered where the model authors its draft: promoting the step it is
           // taking costs no decision of its own (`../flow-draft/step.ts`, `taken`).
-          ...(authoring ? AUTHORING_CALL_PROPERTIES : {})
+          ...(authoring ? (index === explainedAt ? AUTHORING_CALL_PROPERTIES : AUTHORING_CALL_PROPERTIES_BARE) : {})
         }
       }))
     ]
@@ -275,6 +279,12 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
 const AUTHORING_CALL_PROPERTIES: JsonObject = {
   add: { type: "boolean", description: "true: if this call works, put its step into the Flow now. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
   act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." }
+};
+
+/** The same two properties without their explanation, which one variant carries. */
+const AUTHORING_CALL_PROPERTIES_BARE: JsonObject = {
+  add: { type: "boolean" },
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$" }
 };
 
 /** The three shapes a decision may take, which is also what a reply may arrive as instead of the wrapper. */

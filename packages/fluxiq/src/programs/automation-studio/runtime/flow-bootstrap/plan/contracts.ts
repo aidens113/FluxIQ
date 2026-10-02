@@ -129,7 +129,28 @@ export type AutomationStudioFlowBootstrapContext = {
    * the right shape when a person is asking about what is in front of them.
    */
   startLocation?: string;
+  /**
+   * Every node by id and what it does, by category (`./catalog-names.ts`).
+   * Evidence decisions only: it is what such a decision is shown in place of
+   * `nodeCatalog` (`../../llm/deepseek/request-body.ts`), which the packet still
+   * carries whole for every reader that checks it.
+   */
+  catalogNames?: AutomationStudioFlowBootstrapCatalogNames;
+  /**
+   * The full entries of the nodes this build has asked `core.describe_nodes`
+   * about, in the order first described; ids the catalog does not hold are
+   * skipped. Evidence decisions only, and absent until a node is described.
+   * Append-only for the length of a build, so it never cuts the cached prefix
+   * of a request that repeats it.
+   */
+  describedNodes?: AutomationStudioFlowBootstrapCatalogEntry[];
 };
+
+/**
+ * Every node of a catalog by id and what it does, by category
+ * (`./catalog-names.ts`): `{ "<category>": ["<id>: <description>", ...] }`.
+ */
+export type AutomationStudioFlowBootstrapCatalogNames = Record<string, string[]>;
 
 export type AutomationStudioFlowBootstrapIssue = {
   severity: "error" | "warning";

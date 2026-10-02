@@ -43,6 +43,44 @@ export type AutomationStudioLlmTokenLimits = {
 export const AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS = 8_000;
 
 /**
+ * What a build's decision call reserves for its reply: 2,000 tokens.
+ *
+ * Derived from what decisions actually reply with: at least three times the
+ * largest of 6,119 recorded build-decision replies across 1,222 runs (593
+ * tokens, an `amend_draft`; p99 469, median 101; none truncated), rounded up
+ * to the thousand. The corpus is
+ * `docs/working/language-driven-flow-loop-plan/reports/t234-reply-sizes.md` in
+ * the extension repository.
+ *
+ * It matters because a build's purse holds each call at its worst case before
+ * it is sent (`../build-purse/`): every input token uncached and the whole
+ * reply allowance. At the default 8,000 the reply alone was held at more than
+ * thirteen times what any decision has used, and a build stopped with money it
+ * could still have spent. The hold stays a true upper bound because the
+ * request's `max_tokens` is this same figure: the provider cannot reply past
+ * it.
+ *
+ * Only the build loop's decision call takes it (`../../service.ts`). Runtime
+ * patch steps may serialize to about 2,700 tokens, so the default reply
+ * allowance, patch steps, recovery and the instruction reading are unchanged.
+ */
+export const AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS = 2_000;
+
+/**
+ * A build decision's token limits: the resolver's input and total, with the
+ * reply allowance at most `AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS`.
+ *
+ * A decision's reply allowance is what decisions use, so the purse holds it at
+ * a true worst case; input and total are the resolver's. Limits the resolver
+ * named badly are passed through as named, so the harness refuses them with
+ * its own diagnostics rather than this narrowing hiding them.
+ */
+export function automationStudioLlmDecisionTokenLimits(named: Partial<AutomationStudioLlmTokenLimits> | undefined): Partial<AutomationStudioLlmTokenLimits> | undefined {
+  const resolved = resolveAutomationStudioLlmTokenLimits(named);
+  return resolved.diagnostics.length ? named : { ...resolved.limits, maxOutputTokens: Math.min(resolved.limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS) };
+}
+
+/**
  * One call's limits when the caller names none: the model's context window,
  * with the reply reserve taken out of it for the reply and the rest the
  * input's.

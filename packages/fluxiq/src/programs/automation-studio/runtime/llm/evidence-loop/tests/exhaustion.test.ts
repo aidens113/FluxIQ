@@ -50,15 +50,16 @@ describe("the record an exhausted evidence loop ends with", () => {
     expect(record.costRefusal).not.toBe(refusal);
   });
 
-  it("carries the purse's standing as the cost figures only where the loop's count ran out of cost (t194-w47)", () => {
-    const standing = { ...refusal, projectedCostUsd: 0.0314, spentUsd: 0.0738, ceilingUsd: 0.1, declinedBy: "loop_budget" as const };
-    // Run 13: the count found no decision the cost budget could pay for, and the purse never saw one.
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "cost" }, purseRefusal: standing }))
-      .toMatchObject({ budgetBound: "cost", costRefusal: standing });
-    // Tokens or time ran out: the standing is no cost ending's figures, and the bound stays the one that ran out.
-    const tokens = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "tokens" }, purseRefusal: standing });
+  it("names cost with the refusal's figures whether or not the loop counted a budget, and only for a budget ending (t234)", () => {
+    // A loop given the build's purse and no budget of its own has no count, and the refusal still ends it on cost.
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", purseRefusal: { ...refusal, carriedUsd: 0.05 } }))
+      .toMatchObject({ budgetBound: "cost", costRefusal: { ...refusal, carriedUsd: 0.05 } });
+    // Any other ending carries no cost figures, whatever the purse last refused.
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations", lastRemaining: { limitedBy: "cost" }, purseRefusal: refusal })).not.toHaveProperty("costRefusal");
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "tool_calls", purseRefusal: refusal })).not.toHaveProperty("budgetBound");
+    // Without a refusal a budget ending is the bound the count ran out of, with no figures (the count never runs out of cost).
+    const tokens = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "tokens" } });
     expect(tokens).toMatchObject({ budgetBound: "tokens" });
     expect(tokens).not.toHaveProperty("costRefusal");
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations", lastRemaining: { limitedBy: "cost" }, purseRefusal: standing })).not.toHaveProperty("costRefusal");
   });
 });

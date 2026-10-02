@@ -43,6 +43,8 @@ export type AutomationStudioConversationInterpretInput = {
   transcript: readonly AutomationStudioConversationModelTurn[];
   transcriptWithheld: boolean;
   context: AutomationStudioConversationDecisionContext;
+  /** The bound domain's own system instructions, already checked at bind time; placed by `prompt.ts`. */
+  domainInstructions?: string | undefined;
   /** Who sent it; the model's key may be released only to them. */
   caller?: AutomationStudioConversationCaller | null;
   limits?: Partial<AutomationStudioConversationInterpretLimits>;
@@ -58,7 +60,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
   const clock = input.clock ?? REAL_CLOCK;
   if (!input.model) return fallback(input, "no model is connected to the conversation yet", 0);
 
-  const instructions = automationStudioConversationInstructions(input.context, { transcriptWithheld: input.transcriptWithheld });
+  const instructions = automationStudioConversationInstructions(input.context, { transcriptWithheld: input.transcriptWithheld, domainInstructions: input.domainInstructions });
   const started = clock.now();
   let correction: string | null = null;
   let problem = "the model did not answer";
