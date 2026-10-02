@@ -1,9 +1,11 @@
 // A build whose exploration stops before the Flow is ready (audit A3, cause
 // 1): tested, judged and repaired; "not doable" only when a repair gets no
 // further; a budget that runs out said as exactly that.
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
+import { automationStudioLlmStepLogScope, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmStepLogContext } from "../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AutomationStudioFlowBootstrapUnfinishedStall,
@@ -348,5 +350,30 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     const stall = new AutomationStudioFlowBootstrapUnfinishedStall({ issueCodes: [], trace: [], accounting: spent(1, 0), steps: [] });
     expect(stall).toBeInstanceOf(Error);
     expect(stall.name).toBe("AutomationStudioFlowBootstrapUnfinishedStall");
+  });
+});
+
+// The step log (`../../../llm/step-log/`) writes each step under the round and
+// phase the build's phases set around each round and each test.
+describe("the round and phase every step of a build is written under", () => {
+  it("is the exploration for round 0, the test for its Flow test, and the repair for a seeded round", async () => {
+    const saved = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = path.join(tmpdir(), `fluxiq-phases-scope-${process.pid}-unused`);
+    const seen: Array<AutomationStudioLlmStepLogContext | undefined> = [];
+    try {
+      const partial = [step(1, { acts: ["a1"] })];
+      const { input } = harness([
+        () => { seen.push(automationStudioLlmStepLogScope.current()); return outOfDecisions(partial); },
+        (request) => { seen.push(automationStudioLlmStepLogScope.current()); return finished(request.repair!.seed); }
+      ], {
+        test: async () => { seen.push(automationStudioLlmStepLogScope.current()); return undefined; }
+      });
+      await expect(runAutomationStudioFlowBootstrapBuildPhases(input)).resolves.toMatchObject({ kind: "finished" });
+    } finally {
+      if (saved === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+      else process.env.FLUXIQ_LLM_STEP_LOG_DIR = saved;
+    }
+    expect(seen).toEqual([{ round: 0, phase: "explore" }, { round: 0, phase: "test" }, { round: 1, phase: "repair" }]);
+    expect(automationStudioLlmStepLogScope.current()).toBeUndefined();
   });
 });

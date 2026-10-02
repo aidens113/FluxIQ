@@ -21,7 +21,11 @@
 // any amendment tried.
 //
 // The same wrapper feeds the full decision dump (`./decision-dump.ts`) when
-// `FLUXIQ_BUILD_DECISION_DUMP` is set; either switch alone turns the wrapper on.
+// `FLUXIQ_BUILD_DECISION_DUMP` is set, and the step log (`../step-log/`) when
+// `FLUXIQ_LLM_STEP_LOG_DIR` is: each tool call the loop makes, an in-loop dry
+// run's replays included, becomes a step folder. Any one switch turns the
+// wrapper on.
+import { automationStudioLlmStepLogDirectory, automationStudioLlmStepLogTool } from "../step-log/index.ts";
 import { automationStudioLlmEvidenceDecisionDump } from "./decision-dump.ts";
 
 // Method signatures, so any loop input whose own requests carry more fields fits.
@@ -31,11 +35,12 @@ type Traceable = {
   checkCompletion?: ((result: never, context: never) => unknown) | undefined;
 };
 
-/** The loop's input, with its two waits timed when the trace or the dump is switched on; the same object when neither is. */
+/** The loop's input, with its two waits timed when the trace, the dump or the step log is switched on; the same object when none is. */
 export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable>(input: T, env: Readonly<Record<string, string | undefined>> = process.env, write: (line: string) => void = (line) => console.log(line)): T {
   const tracing = env.FLUXIQ_BUILD_PROGRESS_TRACE === "1";
   const dump = automationStudioLlmEvidenceDecisionDump(env);
-  if (!tracing && !dump) return input;
+  if (!tracing && !dump && !automationStudioLlmStepLogDirectory(env)) return input;
+  const execute = automationStudioLlmStepLogTool((request: Parameters<T["executeTool"]>[0]) => input.executeTool(request), env);
   const log = (line: string) => { if (tracing) write(`[FluxIQ build-trace] ${new Date().toISOString()} ${line}`); };
   log("loop start");
   const decide = async (request: Parameters<T["decide"]>[0]) => {
@@ -55,7 +60,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     const started = Date.now();
     log(`tool start callId=${callIdOf(request.callId)} toolId=${codeOf(request.toolId)}`);
     try {
-      const result = await input.executeTool(request);
+      const result = await execute(request);
       log(`tool end toolId=${codeOf(request.toolId)} ms=${Date.now() - started} resultCode=${codeOf((result as { resultCode?: unknown } | undefined)?.resultCode)}`);
       dump?.tool({ callId: request.callId, toolId: request.toolId, ms: Date.now() - started, request, result });
       return result;
