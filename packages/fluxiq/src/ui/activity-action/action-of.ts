@@ -20,6 +20,23 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["core.state_diff", "look"]
 ]);
 
+/**
+ * Core's own control nodes, by definition id, and the kind each one is. They
+ * act on the Flow's paths, never on the page, and their ids name no verb a
+ * card could read: a merge step's card read "Action · the page" (U-A2,
+ * `run-muq6lqnw-fdfa7aac`). Matched by whole id rather than by word, because
+ * "switch" or "each" in a step's own label ("Switch my pickup store") is no
+ * control step at all.
+ */
+const CORE_NODE_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string, ActivityActionKind>([
+  ["builtin.control.merge", "join"],
+  ["builtin.control.branch", "branch"],
+  ["builtin.control.switch", "branch"],
+  ["builtin.control.parallel", "branch"],
+  ["builtin.control.for-each", "repeat"],
+  ["builtin.control.loop", "repeat"]
+]);
+
 const REPLAY_PREFIX = "core.replay.";
 const REPLAYED = "core.replay.replayed";
 /** A result code that says the action did not happen (`programs/automation-studio/runtime/activity/observer.ts` reads codes the same way). */
@@ -94,6 +111,8 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
   if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
   if (core) return core;
+  const control = node ? CORE_NODE_KINDS.get(node) : undefined;
+  if (control) return control;
   const verb = kindOfId(node)
     ?? (ref && !ref.startsWith(CORE_PREFIX) ? kindOfId(ref) : undefined)
     ?? (event.step?.label ? kindOfWords(wordsOf(event.step.label), true) : undefined)

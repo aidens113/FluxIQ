@@ -217,6 +217,29 @@ describe("FluxIQ's step messages", () => {
     ]);
   });
 
+  it("leaves a chat-started build's failure to the chat's answer, which says it with how far it got (U-B2)", () => {
+    const ending = event(2, "failed", { kind: "step", title: "Build stopped: a budget ran out", status: "failed", text: "The build stopped at its spending limit of $0.25." }, { label: "Build stopped: a budget ran out", final: true, conversationId: "conversation.chat" });
+    const fromChat = conversationStepMessages([thought(1, "Clicking “Search”", "It lists the jobs."), ending]);
+    expect(fromChat.map((message) => message.kind)).toEqual(["decision"]);
+    const { conversationId: _chat, ...elsewhere } = ending;
+    const fromElsewhere = conversationStepMessages([thought(1, "Clicking “Search”", "It lists the jobs."), elsewhere]);
+    expect(fromElsewhere.map((message) => message.kind)).toEqual(["decision", "ended"]);
+  });
+
+  it("marks a run step failed when the run recovers from it or fails, and done when the run moves on (U-A1)", () => {
+    const run = { activityId: "run.1", subject: { kind: "run", id: "run.1", projectId: "project.one" } } as const;
+    const step = (sequence: number, index: number, nodeId: string, label: string) =>
+      event(sequence, "running", { kind: "step", title: label, status: "started", ref: nodeId, text: "Node: web.output.dom-click" }, { ...run, step: { index, count: 4, nodeId, label } });
+    const messages = conversationStepMessages([
+      step(1, 1, "n1", "Reject all"),
+      step(2, 2, "n2", "Set as my store"),
+      event(3, "repairing", { kind: "step", title: "Recovery started", status: "started", ref: "n2" }, { ...run, label: "Recovering from a failed step: Set as my store" }),
+      event(4, "failed", { kind: "step", title: "Run failed", status: "failed" }, { ...run, label: "Run failed", final: true })
+    ]);
+    const outcomes = messages.filter((message) => message.kind === "step").map((message) => [message.title, message.actions.map((action) => action.outcome)]);
+    expect(outcomes).toEqual([["Step 1: Reject all", ["done"]], ["Step 2: Set as my store", ["failed"]]]);
+  });
+
   it("keeps the newest messages when there are more than the limit", () => {
     const events = Array.from({ length: 30 }, (_, index) => thought(index + 1, `Step ${index + 1} action`, "Because."));
     const messages = conversationStepMessages(events, 10);
