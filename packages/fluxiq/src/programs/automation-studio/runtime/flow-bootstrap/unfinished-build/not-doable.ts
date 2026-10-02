@@ -37,7 +37,7 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   const judge = input.judgement.judge;
   const what = judge
     ? [judgedSaid(judge), checklistSaid].filter(Boolean).join(" ")
-    : checklistSaid || `the Flow could not be finished: ${automationStudioFlowBootstrapStopSaid(input.judgement.stopped)}.`;
+    : checklistSaid || `the Flow could not be finished: ${automationStudioFlowBootstrapStopSaid(input.judgement.stopped, input.judgement.lastIssueCodes)}.`;
   const repairs = input.rounds - 1;
   const last = judge ? "handed back the same Flow as the one before it" : "got no further than the one before it";
   const tried = `I tried ${input.rounds === 1 ? "once" : `${input.rounds} times`} live -- exploring${repairs ? `, then ${repairs === 1 ? "one repair" : `${repairs} repairs`} after testing what I had` : ""} -- over ${input.decisions} decisions, and the last ${repairs ? "repair" : "attempt"} ${last}.`;

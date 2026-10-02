@@ -1,5 +1,6 @@
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
+import { activityActionReplayFailing } from "./replay-failing.ts";
 import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome } from "./types.ts";
 import { activityActionVerb } from "./verb.ts";
 
@@ -16,6 +17,10 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["core.dry_run.page", "test"],
   ["core.completion_check", "test"],
   ["core.observe", "look"],
+  // Reading how a step is used, and an earlier result again: looks at what
+  // Core holds rather than actions on the page.
+  ["core.describe_nodes", "look"],
+  ["core.recall_result", "look"],
   ["core.state_snapshot", "look"],
   ["core.state_diff", "look"]
 ]);
@@ -37,8 +42,6 @@ const CORE_NODE_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["builtin.control.loop", "repeat"]
 ]);
 
-const REPLAY_PREFIX = "core.replay.";
-const REPLAYED = "core.replay.replayed";
 /** A result code that says the action did not happen (`programs/automation-studio/runtime/activity/observer.ts` reads codes the same way). */
 const FAILING = /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u;
 /** A result code that says the page needs a person before the work can go on. */
@@ -49,6 +52,8 @@ const PERMISSION_CODE = /(?:^|[._-])permission(?:[._-]|$)/u;
 const PERSON_TITLE = /\bcheck\b/iu;
 /** The name Core quotes in a title: Clicking “Get a free quote”. */
 const QUOTED = /“([^”]+)”/u;
+/** Words a look searches for, which Core says in straight quotes: Looking for "USB-C hub" on the page. */
+const SAID = /"([^"]+)"/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
 /** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
@@ -126,7 +131,7 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
 }
 
 function failingCode(code: string): boolean {
-  return code.startsWith(REPLAY_PREFIX) ? code !== REPLAYED : FAILING.test(code);
+  return code.startsWith("core.replay.") ? activityActionReplayFailing(code) : FAILING.test(code);
 }
 
 function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined): ActivityActionOutcome {
@@ -152,12 +157,15 @@ function declinedWhy(kind: ActivityActionKind, resolution: string | undefined): 
   return null;
 }
 
-function targetOf(event: ActivityActionEvent, detail: Detail): string | null {
+function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind): string | null {
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
     const name = candidate?.replace(/\s+/gu, " ").trim();
     if (name && !ID_SHAPED.test(name)) return name;
   }
-  return null;
+  // A look that names no control is named by the words it looks for, kept in
+  // their quotes so the card never reads them as a control's name.
+  const sought = kind === "look" ? SAID.exec(detail.title)?.[1]?.replace(/\s+/gu, " ").trim() : undefined;
+  return sought && !ID_SHAPED.test(sought) ? `"${sought}"` : null;
 }
 
 /**
@@ -182,7 +190,9 @@ function targetOf(event: ActivityActionEvent, detail: Detail): string | null {
  * read for it; a later event of the same work never settles a wait.
  *
  * `target` is the name Core quoted in the title, else the step's label, else
- * null; never an id. `why` is set only for a failure: a settled ask's
+ * for a look the words it looked for, in straight quotes, else null; never an
+ * id. A replay code that says the step held (`./replay-failing.ts`: replayed,
+ * verified, present, remembered) is done, not failed. `why` is set only for a failure: a settled ask's
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
  * else the result code's last words (`./failure-reason.ts`), and never is the
  * code.
@@ -197,5 +207,5 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const why = outcome !== "failed" ? null
     : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
       : record.resultCode ? activityActionFailureReason(record.resultCode) : null;
-  return { kind, target: targetOf(event, detail), outcome, why };
+  return { kind, target: targetOf(event, detail, kind), outcome, why };
 }

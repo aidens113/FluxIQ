@@ -18,7 +18,7 @@ import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "./field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -30,6 +30,8 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   /** Whether this build writes the Flow or adds to the one already there. */
   mode: AutomationStudioBootstrapAdaptationMode;
   startLocation?: string;
+  /** What the chat's reading of the message cost, carried into the creation purse. Absent when none was sent. */
+  interpretationCostUsd?: number;
 };
 
 /**
@@ -54,11 +56,16 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
   // everything downstream is handed a value rather than a field
   // (`../../flow-bootstrap/start-location.ts`).
   const startLocation = automationStudioFlowStartLocation(unsafeInput.startLocation);
+  const interpretationCostUsd = unsafeInput.interpretationCostUsd;
+  if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) {
+    throw new Error("Flow Bootstrap generation interpretation cost must be a finite, non-negative amount.");
+  }
   return {
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
     mode,
     ...(startLocation === undefined ? {} : { startLocation }),
+    ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
     caller: {
       actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
       actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")

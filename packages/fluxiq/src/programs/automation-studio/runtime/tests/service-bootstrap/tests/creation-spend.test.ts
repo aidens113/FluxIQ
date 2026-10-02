@@ -303,6 +303,58 @@ describe("a Flow creation's one purse", () => {
     // Nobody was asked to wait on an answer.
     expect(phases).not.toContain("waiting_permission");
   }, 30_000);
+
+  // The rule is $0.10 per Flow, and the chat call that decided to build the
+  // Flow is part of that Flow's cost (t234 W9): it is made before the Flow
+  // exists, so the build is told it and opens its purse with it carried.
+  it("(g) opens the purse with the chat's reading of the message carried, and saves it into the record", async () => {
+    // Half the ceiling carried, and each call priced at three tenths: one call
+    // fits and the second does not. With nothing carried, three would be sent.
+    const interpretationCostUsd = CEILING * 0.5;
+    const perCall = CEILING * 0.3;
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider: AutomationStudioLlmProvider = {
+      ...mockProvider(async (request) => {
+        requests.push(request);
+        return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, requests.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: perCall } };
+      }),
+      estimateCostUsd: () => perCall
+    };
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const instance = service(provider, LOOKING);
+
+    const ending = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), interpretationCostUsd }));
+
+    expect(ending.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(ending.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(requests).toHaveLength(1);
+    // The record carries the reading with the build's own spend.
+    const record = await spends(instance).get(project.id, flow.flowId);
+    expect(record).toMatchObject({ kind: "flow_creation_spend", builds: 1 });
+    expect(record?.spentUsd).toBeCloseTo(interpretationCostUsd + perCall, 10);
+  }, 30_000);
+
+  it("(h) a refuted-result repair ignores the chat's reading of the message", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider = mockProvider(async (request) => {
+      requests.push(request);
+      return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, requests.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
+    });
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const instance = service(provider, LOOKING, { maxCallsPerRun: 2 });
+    const now = Date.now();
+    const brief = {
+      schemaVersion: "0.1" as const, instructionId: "instruction.repair", title: "Repair the result", body: "The last run's result was refuted; build the Flow again.",
+      scope: { kind: "flow" as const, projectId: project.id, flowId: flow.flowId }, priority: 100, status: "active" as const, requirement: "required" as const, createdAt: now, updatedAt: now
+    };
+    const repair = (instance as unknown as { generateFlowBootstrapAdaptationInternal: (input: unknown, brief: unknown, costLeftUsd?: number) => Promise<unknown> }).generateFlowBootstrapAdaptationInternal;
+
+    // Carried, the whole ceiling would leave the repair nothing to send.
+    await rejectedGenerationDiagnostic(repair({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), interpretationCostUsd: CEILING }, brief, CEILING));
+
+    expect(requests.length).toBeGreaterThan(0);
+    await expect(spends(instance).get(project.id, flow.flowId)).resolves.toBeUndefined();
+  }, 30_000);
 });
 
 /** What the judge said of the Flow's test (as `./judged-build.test.ts` has it). */

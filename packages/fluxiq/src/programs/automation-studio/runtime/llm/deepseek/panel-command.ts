@@ -16,6 +16,9 @@
 // - The outbound body is checked for the key before it is sent, so a key that
 //   somehow reached the thread is refused rather than echoed back to DeepSeek.
 // - A reply is read under the adapter's byte ceiling.
+// - What a reply cost, priced from its usage, is told to the conversation
+//   (`execution.paid`), which carries it into the purse of a Flow the chat
+//   then builds: the call that decides to build a Flow is that Flow's spend.
 // - Every failure is an `AutomationStudioLlmProviderError` with a code and a
 //   `retryable` flag, which is what the conversation's retry and its plain
 //   English account of the failure both read (`conversations/instructions/`).
@@ -30,7 +33,8 @@ import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { automationStudioLlmProviderReplyAccount } from "../reply-account.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, readAutomationStudioDeepSeekBoundedResponse } from "./bounded-read.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, type AutomationStudioDeepSeekModel } from "./models.ts";
-import { estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
+import { isRecord } from "./json-record.ts";
+import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
@@ -72,8 +76,12 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
         const response = await send(fetchImpl, body, key, execution.signal);
         const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes);
         step?.reply(bytes, response.status);
+        const envelope = panelCommandEnvelope(new TextDecoder().decode(bytes));
+        // What the reply cost, told before anything can refuse it: a reply Core cannot use was still paid for.
+        const costUsd = "value" in envelope ? panelCommandCostUsd(envelope.value, model) : undefined;
+        if (costUsd !== undefined) execution.paid?.(costUsd);
         if (!response.ok) throw httpFailure(response.status);
-        const content = panelCommandContent(new TextDecoder().decode(bytes));
+        const content = panelCommandContent(envelope);
         step?.succeeded({ content });
         return content;
       } catch (error) {
@@ -133,14 +141,41 @@ function httpFailure(status: number): AutomationStudioLlmProviderError {
   return new AutomationStudioLlmProviderError("llm.provider_http_error", `DeepSeek answered ${status}.`, status >= 500, status);
 }
 
-/** The model's own words out of DeepSeek's envelope. The conversation parses them; an empty answer is a malformed one. */
-function panelCommandContent(text: string): string {
-  let envelope: unknown;
+/** DeepSeek's envelope, read once: its value, or the error that refused it as JSON, which `panelCommandContent` reports. */
+function panelCommandEnvelope(text: string): { value: unknown } | { notJson: unknown } {
   try {
-    envelope = JSON.parse(text);
-  } catch {
+    return { value: JSON.parse(text) };
+  } catch (error) {
+    return { notJson: error };
+  }
+}
+
+/**
+ * What one reply cost in US dollars, priced from its envelope's `usage` as the
+ * step log prices it (`../step-log/model-step.ts`). Undefined when the reply
+ * carries no usage, or counts the pricing refuses.
+ */
+function panelCommandCostUsd(envelope: unknown, model: AutomationStudioDeepSeekModel): number | undefined {
+  const usage = isRecord(envelope) && isRecord(envelope.usage) ? envelope.usage : undefined;
+  if (!usage) return undefined;
+  const inputTokens = usage.prompt_tokens;
+  const outputTokens = usage.completion_tokens;
+  if (typeof inputTokens !== "number" || typeof outputTokens !== "number") return undefined;
+  try {
+    return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens) ?? 0, model);
+  } catch (error) {
+    // Counts the pricing refuses (negative, fractional, past Core's limit) leave the reply unpriced; any other throw is a defect.
+    if (error instanceof RangeError) return undefined;
+    throw error;
+  }
+}
+
+/** The model's own words out of DeepSeek's envelope. The conversation parses them; an empty answer is a malformed one. */
+function panelCommandContent(read: { value: unknown } | { notJson: unknown }): string {
+  if (!("value" in read)) {
     throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply was not JSON.", true, undefined, undefined, undefined, undefined, { case: "envelope_not_json" });
   }
+  const envelope = read.value;
   const choice = (envelope as { choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }> } | null)?.choices?.[0];
   const content = choice?.message?.content;
   if (typeof content !== "string" || !content.trim()) {

@@ -52,6 +52,13 @@ export type AutomationStudioConversationCommandContext = {
   keyLocked: boolean;
   /** The page the person has open, as a build's start location. Null when none was sent. */
   startLocation: string | null;
+  /**
+   * What the chat's reading of the person's message cost in US dollars, when
+   * the model priced it. A build the command runs carries it in the Flow's
+   * creation purse, because the call that decided to build the Flow is part of
+   * what the Flow cost (`build.ts`). Absent, nothing is carried.
+   */
+  interpretationCostUsd?: number;
 };
 
 /**

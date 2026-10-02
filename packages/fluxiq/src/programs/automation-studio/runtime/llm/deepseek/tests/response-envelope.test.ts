@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
-import { createAutomationStudioDeepSeekProvider } from "../index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 
 /** Page text a reply may quote, which must never reach an account. */
 const PAGE_TEXT = "PRIVATE_PAGE_TEXT charging case";
@@ -111,6 +111,56 @@ describe("the account of a reply Core could not read", () => {
   it("changes nothing about a reply Core can read", async () => {
     const provider = adapter(() => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: DIAGNOSIS } }], usage: USAGE }), { status: 200, headers: { "content-type": "application/json" } }));
     await expect(provider.runTask(request())).resolves.toMatchObject({ response: { kind: "diagnosis" }, usage: { outputTokens: 571 } });
+  });
+});
+
+// `run-muqiojz4-04a7a8fc` step 0108: a 200 whose usage DeepSeek billed at about
+// $0.0041 was refused as `llm.provider_output_invalid`, and the run charged the
+// call at its $0.0144 hold, because only a malformed reply carried its cost.
+describe("what a refused reply cost", () => {
+  /** USAGE as the adapter prices it: what every refusal below must carry. */
+  const PAID = {
+    inputTokens: 21_424, outputTokens: 571, totalTokens: 21_995, cacheHitInputTokens: 19_584, cacheMissInputTokens: 1_840,
+    estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(21_424, 571, 19_584, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL)
+  };
+
+  it("carries the priced usage on output Core will not take, and through the normalizer", async () => {
+    // Well-formed JSON, the wrong answer: a runtime diagnosis that is not a diagnosis.
+    const error = await refusal({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "runtime_patch", patches: [] }) } }], usage: USAGE });
+    expect(error.code).toBe("llm.provider_output_invalid");
+    expect(error.paid).toEqual(PAID);
+    expect(PAID.estimatedCostUsd).toBeGreaterThan(0);
+    expect(normalizedAutomationStudioLlmProviderFailure(error).paid).toEqual(PAID);
+  });
+
+  it.each([
+    ["cut off at its limit", { finish_reason: "length", message: { content: DECISION.slice(0, 400) } }, "llm.provider_output_truncated"],
+    ["cut off with nothing in it", { finish_reason: "length", message: { content: " " } }, "llm.provider_output_padding_truncated"]
+  ])("carries it on a reply %s", async (_label, choice, code) => {
+    const error = await refusal({ choices: [choice], usage: USAGE });
+    expect(error.code).toBe(code);
+    expect(error.paid).toEqual(PAID);
+  });
+
+  it("carries it on usage over the request's limits", async () => {
+    const over = { prompt_tokens: 60_000, completion_tokens: 571, total_tokens: 60_571 };
+    const error = await refusal({ choices: [{ finish_reason: "stop", message: { content: DIAGNOSIS } }], usage: over });
+    expect(error.code).toBe("llm.provider_usage_limit_exceeded");
+    expect(error.paid).toEqual({ inputTokens: 60_000, outputTokens: 571, totalTokens: 60_571, estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(60_000, 571, 0, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL) });
+  });
+
+  it("carries it on a malformed reply as well as in the reply's account", async () => {
+    const error = await refusal({ choices: [{ finish_reason: "stop", message: { content: DECISION.slice(0, -3) } }], usage: USAGE });
+    expect(error.paid).toEqual(PAID);
+    expect(error.reply?.usage).toEqual(PAID);
+  });
+
+  it("travels through the normalizer as numbers only, and only from a real adapter error", () => {
+    const error = new AutomationStudioLlmProviderError("llm.provider_output_invalid", "m", false, undefined, undefined, undefined, undefined, undefined, undefined,
+      { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001, note: PAGE_TEXT, cacheHitInputTokens: -1 } as never);
+    expect(normalizedAutomationStudioLlmProviderFailure(error).paid).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 });
+    const clone = { name: "AutomationStudioLlmProviderError", code: "llm.provider_output_invalid", retryable: false, paid: { outputTokens: 5, estimatedCostUsd: 0.001 } };
+    expect(normalizedAutomationStudioLlmProviderFailure(clone).paid).toBeUndefined();
   });
 });
 

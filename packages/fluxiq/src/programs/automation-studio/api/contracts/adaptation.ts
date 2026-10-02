@@ -126,6 +126,14 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
    * requires a blank Flow (`runtime/flow-bootstrap/extend.ts`).
    */
   mode?: "create" | "extend";
+  /**
+   * What the chat's reading of the message that asked for this build cost, in
+   * US dollars: a finite, non-negative amount. A build that is not a repair
+   * opens the Flow's creation purse with it carried, so the call that decided
+   * to build the Flow counts against the Flow's ceiling. Omitted, nothing is
+   * carried. Anything else refuses the request.
+   */
+  interpretationCostUsd?: number;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {
