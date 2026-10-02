@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 2953
+- Public declarations: 2957
 - Class: 92
 - Interface: 2
-- Object: 371
-- Type: 1669
+- Object: 372
+- Type: 1670
 - Type Alias: 1
-- Value: 818
+- Value: 820
 
 ## Public Declarations
 
@@ -342,7 +342,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_CEILING_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/recovery-deadline.ts:40` | The largest a host may set it to. Above this a recovery is a background job. |
 | `AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/recovery-deadline.ts:37` | The default ceiling on one recovery, end to end. Ten minutes. It was two, when a recovery was a diagnosis, a short look and a patch. A recovery now iterates for as long as it is learning something -- a default recovery allows twenty-six provider calls -- and at a realistic few seconds a call, two minutes would quietly have become the new call cap, ending explorations that were still making progress. The per-call timeout is unchanged, so a hung call is still caught at its own limit; this bounds only how long a recovery that keeps answering may keep going, and it is still the clock a person watching the run is waiting on. |
 | `AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:40` | The loop's stages at the failure entry point, in the only order they may occur. |
-| `AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:41` | The attempt id prefix, so a reader can tell this attempt from one the graph executed. |
+| `AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:54` | The attempt id prefix, so a reader can tell this attempt from one the graph executed. |
+| `AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:61` | The node id, and the definition id, of a refutation that names no step: the result's own verification. A valid id, because the run's stores require one on every attempt, and one no Flow node carries. |
 | `AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/result-check-authorization/contracts.ts:159` | Why a standing authorization was not redeemed. One code per reason, so a reader can act on it. |
 | `AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/result-check-authorization/contracts.ts:144` | What a standing authorization is bounded by when the person turning checking on names no numbers. A verification call was measured at $0.001483 (four real DeepSeek calls, 2026-09-21), so the default total covers well over six hundred checks -- more than the default schedule reaches in a Flow's first several thousand runs -- while still being a number a person can reason about. The per-call ceiling is far above the measured call and far below a recovery's own $0.25, so a verification whose packet grew unexpectedly is refused rather than billed. |
 | `AUTOMATION_STUDIO_RESULT_CHECK_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/result-check-schedule/contracts.ts:42` | The codes a decision carries. One per reason, so a reader can tell them apart. |
@@ -1345,7 +1346,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmStepLogPhase` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/scope.ts:5` | Which part of a build a step belongs to, as the build's phases set it. |
 | `automationStudioLlmStepLogScope` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/scope.ts:21` | The build's round and phase, carried to the provider adapters and the tool wrapper without threading them through every call between. Core's provider call knows its task but not which round of a build it serves: rounds and phases live in `flow-bootstrap/unfinished-build/phases.ts`, which sets a scope around each round and each test. With the step log off, `run` just calls `fn`. |
 | `automationStudioLlmStepLogScreen` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/screen.ts:22` | - |
-| `automationStudioLlmStepLogTool` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/tool-step.ts:26` | - |
+| `automationStudioLlmStepLogTool` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/tool-step.ts:28` | - |
 | `AutomationStudioLlmStepLogUsage` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/step-log/model-step.ts:13` | What a model step's meta records of a call's token use. |
 | `AutomationStudioLlmStructuredResponse` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts:9` | - |
 | `AutomationStudioLlmTaskDomainInstructions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/task-domain-instructions.ts:10` | The bound domain's instructions as one request carries them: which domain they belong to, which version of them, and the text. Stamped on every request by the provider decorator (`./provider.ts`), never by a call site, so no path that reaches a provider can leave them out. A provider adapter puts the text in its system message; it is never part of the user payload. |
@@ -1610,13 +1611,16 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioRecoveryTraceRefusal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:87` | - |
 | `AutomationStudioRecoveryTraceStage` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:47` | - |
 | `AutomationStudioRecoveryTraceStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:72` | How a stage ended. `completed` means the stage ran and produced its answer, not that the answer was good news. `skipped` means it did not need to run; `refused` means something declined to let it; `failed` means it ran and did not produce an answer. |
-| `automationStudioRefutedResultAttempt` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:80` | - |
-| `AutomationStudioRefutedResultAttempt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:48` | The failure entry point's two shapes of the same attempt: the live trace the ladder classifies and patches from, and the run record the recovery context and the request's recent actions are read out of. |
-| `AutomationStudioRefutedResultAttemptInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:53` | - |
+| `automationStudioRefutedResultAttempt` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:100` | - |
+| `AutomationStudioRefutedResultAttempt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:68` | The failure entry point's two shapes of the same attempt: the live trace the ladder classifies and patches from, and the run record the recovery context and the request's recent actions are read out of. |
+| `AutomationStudioRefutedResultAttemptInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:73` | - |
+| `automationStudioRefutedResultAttemptNamesNode` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/attempt.ts:176` | - |
 | `automationStudioRefutedResultDegraded` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:254` | - |
 | `AutomationStudioRefutedResultFailure` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:281` | What a reader is told about a step of this route that failed: the code, and the closed facts around it that say which kind of failure it was. Codes, flags, counts and a status number, because this is written onto the run and published from there. `accounting` and `evidenceLoop` are the failed build's own diagnostic sections, already bounded and screened by the build (`flow-bootstrap/generation-failure/diagnostic.ts`), so a build that failed part way can be walked decision by decision. |
 | `automationStudioRefutedResultFlowWasReauthored` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:300` | - |
 | `AutomationStudioRefutedResultGenerated` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:171` | What a successful re-author build answers: its adaptation, and what it spent (`generateFlowBootstrapAdaptation`'s accounting). |
+| `AutomationStudioRefutedResultLadderSkip` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/ladder-skip.ts:31` | Why the patch ladder was not run for a refuted result, in codes a reader can key on. |
+| `automationStudioRefutedResultLadderSkipped` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/ladder-skip.ts:38` | - |
 | `automationStudioRefutedResultReauthorDecision` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:79` | - |
 | `AutomationStudioRefutedResultReauthorDecision` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:67` | - |
 | `automationStudioRefutedResultReauthored` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/reauthor.ts:191` | - |
