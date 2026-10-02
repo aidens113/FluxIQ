@@ -45,6 +45,14 @@ export type AutomationStudioBuildTestJudgeSpend = {
 };
 
 /**
+ * What a judged test stored, from the summary it was judged on: rows stored,
+ * rows refused, and stored rows missing a required value, across every record
+ * set (`AutomationStudioRunResultSummary`). A build measures a repair's progress
+ * by them (t240): fewer refused or incomplete rows, or rows where none were.
+ */
+export type AutomationStudioBuildTestRecordCounts = { stored: number; refused: number; missingRequired: number };
+
+/**
  * The judge's verdict on a build's test.
  *
  * Structurally `AutomationStudioFlowBootstrapTestVerdict`
@@ -55,7 +63,7 @@ export type AutomationStudioBuildTestJudgeSpend = {
 export type AutomationStudioBuildTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioBuildTestJudgeSpend }
   | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioBuildTestJudgeSpend }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; spent: AutomationStudioBuildTestJudgeSpend };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
 
 /** One question to the judge: the test's summary, and what the build has left to spend. */
 export type AutomationStudioBuildTestJudgeInput = {
@@ -136,6 +144,8 @@ export function automationStudioBuildTestJudge(deps: {
         ...(judgement?.observed ? { observed: judgement.observed } : {}),
         ...(judgement?.advice ? { advice: judgement.advice } : {}),
         findings: (outcome.repair?.findings ?? []).map((finding) => finding.code).filter((code) => !NOT_A_FINDING_OF_A_TEST.has(code)),
+        // The counts the verdict was reached from, for the build to measure the next repair against (t240).
+        records: { stored: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },
         spent
       };
     }

@@ -31,9 +31,15 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxDurationMs?: number | undefined;
   maxTotalTokens?: number | undefined;
   declaredCalls?: number | undefined;
-  maxRepairRounds: number;
   maxRounds?: number | undefined;
 };
+
+/**
+ * One more round's worst case under the purse (t240): its next decision and,
+ * where `judged`, the judging of its Flow, each at its capped hold
+ * (`./phases.ts`). A round is not opened that the purse cannot fund for it.
+ */
+export type AutomationStudioFlowBootstrapNextRoundHold = { usd: number; judged: boolean };
 
 /**
  * What a cost ending says was spent: what the whole build had spent when its
@@ -53,6 +59,12 @@ export type AutomationStudioFlowBootstrapCostSpending = {
    * person is told. Absent where the build was given no purse.
    */
   ceilingUsd?: number | undefined;
+  /**
+   * What the round the purse could not fund would have needed at worst, where
+   * nothing was refused and the purse was not spent outright: what the person
+   * is told it was too little for. Absent otherwise.
+   */
+  nextRound?: AutomationStudioFlowBootstrapNextRoundHold | undefined;
 };
 
 /** The budget ending. */
@@ -101,7 +113,8 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
     case "duration": return sizes.maxDurationMs !== undefined ? `its time limit of ${Math.round(sizes.maxDurationMs / 60_000)} minutes` : "its time limit";
     case "tokens": return sizes.maxTotalTokens !== undefined ? `its budget of ${sizes.maxTotalTokens} tokens` : "its token budget";
     case "calls": return sizes.declaredCalls !== undefined ? `its limit of ${sizes.declaredCalls} model calls` : "its limit on model calls";
-    case "repair_rounds": return `its limit of ${sizes.maxRepairRounds} repairs, while each repair was still getting further`;
+    // No build reaches it since t240 -- repairs are bounded by money and progress -- but published records may carry it.
+    case "repair_rounds": return "its limit on repairs";
     case "rounds": return sizes.maxRounds !== undefined ? `its limit of ${sizes.maxRounds} live rounds` : "its limit on live rounds";
   }
 }
@@ -113,6 +126,10 @@ function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceili
   const spent = `: it had spent ${usd(spending.spentUsd)}${carried}${held}`;
   if (spending.projectedCostUsd !== undefined) return `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
   const left = leftOf(spending.ceilingUsd ?? ceilingUsd, spending);
+  if (spending.nextRound && left >= 0.0005) {
+    const round = spending.nextRound.judged ? "its next decision and the judging of its Flow" : "its next decision";
+    return `${spent}, which left ${usd(left)}, too little for another round: ${round} could cost up to ${usd(spending.nextRound.usd)}`;
+  }
   return left >= 0.0005 ? `${spent}, which left ${usd(left)}, too little for its next call` : `${spent}, which left nothing for its next call`;
 }
 

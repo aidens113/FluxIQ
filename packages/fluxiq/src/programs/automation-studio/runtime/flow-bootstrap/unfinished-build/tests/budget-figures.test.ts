@@ -108,7 +108,7 @@ describe("the closing message of a build its purse stopped", () => {
   });
 
   it("says nothing was left where the provider does not price, and names money held for calls in flight", () => {
-    const told = { bound: "cost" as const, sizes: { maxCostUsd: 0.25, maxRepairRounds: 2 }, judgement: { round: 0, stopped: "budget" as const, tested: "not_tested" as const, testIssueCodes: [], failedSteps: [], stepsInFlow: 0, done: 0, todo: [], lastIssueCodes: [] }, checklist: undefined, rounds: 1, decisions: 9, kept: false };
+    const told = { bound: "cost" as const, sizes: { maxCostUsd: 0.25 }, judgement: { round: 0, stopped: "budget" as const, tested: "not_tested" as const, testIssueCodes: [], failedSteps: [], stepsInFlow: 0, done: 0, todo: [], lastIssueCodes: [] }, checklist: undefined, rounds: 1, decisions: 9, kept: false };
 
     expect(automationStudioFlowBootstrapBudgetExhausted({ ...told, spending: { spentUsd: 0.25, pendingUsd: 0 } }).message)
       .toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. /u);

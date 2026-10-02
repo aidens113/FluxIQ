@@ -42,7 +42,15 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend }
   | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; spent: AutomationStudioFlowBootstrapJudgeSpend };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; spent: AutomationStudioFlowBootstrapJudgeSpend };
+
+/**
+ * What the judged test stored, from the summary the judge read (t240): rows
+ * stored, rows refused, and stored rows missing a required value. What a
+ * repair's progress is measured by (`./progress.ts`). Absent where the judge
+ * reported none.
+ */
+export type AutomationStudioFlowBootstrapJudgedRecords = { stored: number; refused: number; missingRequired: number };
 
 /**
  * The judge's account of a Flow it sent back to repair, as the repair is told
@@ -56,6 +64,8 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
   advice?: string;
   findings: string[];
   untestedCarried?: number[];
+  /** A `no`'s record counts, where the judge reported them. */
+  records?: AutomationStudioFlowBootstrapJudgedRecords;
 };
 
 /** What a stopped round had recorded: its rows and what it spent. */
@@ -120,6 +130,45 @@ export type AutomationStudioFlowBootstrapRoundEnding =
     completionAttempts: number;
     progress: AutomationStudioFlowBootstrapRoundProgress;
   };
+
+/**
+ * What one round measurably did better than the judged round before it, read
+ * only from what the build's test and the judge report (`./progress.ts`):
+ * - `acts_done`: more of the checklist's acts and choices have a step;
+ * - `acts_proven`: more of those steps worked when the Flow ran from its start;
+ * - `test_passes`: the Flow now runs clean from its start where it did not;
+ * - `fewer_failed_steps`: it still fails, but at fewer steps;
+ * - `more_working_steps`: with no judge on either side, more steps worked when it ran;
+ * - `finished_and_judged`: the model said it was ready and its test passed, where the round before stopped short;
+ * - `carried_steps_judged`: the judge could not judge the Flow before (steps carried and never run) and now judged it;
+ * - `judge_findings_resolved`: a finding the judge reported before is no longer reported;
+ * - `records_stored`: the test stored rows where it stored none;
+ * - `fewer_records_refused`: fewer rows were refused, with no fewer stored;
+ * - `fewer_records_missing_required`: fewer stored rows lack a required value, with no fewer stored.
+ */
+export type AutomationStudioFlowBootstrapProgressMeasure =
+  | "acts_done"
+  | "acts_proven"
+  | "test_passes"
+  | "fewer_failed_steps"
+  | "more_working_steps"
+  | "finished_and_judged"
+  | "carried_steps_judged"
+  | "judge_findings_resolved"
+  | "records_stored"
+  | "fewer_records_refused"
+  | "fewer_records_missing_required";
+
+/**
+ * Why no route is left, as the not-doable ending says it (t240):
+ * `no_progress` -- the round measurably did no better than the judged round
+ * before it (`before`); `repeated_unchanged` -- the round ended on refused
+ * repeats of the same calls and handed back the Flow it started from, so a
+ * second round would only repeat it (run 38, cause C8).
+ */
+export type AutomationStudioFlowBootstrapNoRouteLeft =
+  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement }
+  | { kind: "repeated_unchanged" };
 
 /** What the test of the Flow so far found. */
 export type AutomationStudioFlowBootstrapTested = "replayed_clean" | "replay_failed" | "not_tested";
