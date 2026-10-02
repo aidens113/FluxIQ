@@ -24,8 +24,8 @@
 // **The same fact, said where it is read.** The warning above lands on the
 // plan, which the model and the judge never read. So the one sentence for it
 // lives here, beside the matcher, and is said twice: beside the build's draft
-// for a read whose fields miss a named column (`llm/harness-options/
-// draft-acts.ts`), and to the judge for a stored answer whose columns do
+// when no read of it gives a named column (`llm/harness-options/draft-acts.ts`),
+// and to the judge for a stored answer whose columns miss one
 // (`result-verification/read-account/unread-columns.ts`). Names come only from
 // the instruction, never from the page.
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
@@ -59,22 +59,52 @@ export function authoringInstructionRecordColumns(input: {
 }
 
 /**
- * "The instruction asks for a column "rating" that no field of step 3 reads.",
- * or nothing when the instruction names no column, there are no field keys to
- * hold it to, or every named column is read. `reader` names who reads the
- * fields; absent, the sentence is about the fields as a whole. Information,
- * never a refusal.
+ * "The instruction asks for a column "rating" that no field reads.", or nothing
+ * when the instruction names no column, there are no field keys to hold it to,
+ * or every named column is read. Said to the judge about one stored answer's
+ * columns. Information, never a refusal.
  */
 export function automationStudioFlowBootstrapUnreadColumnsSentence(input: {
   instructionText: string | undefined;
   fieldKeys: readonly string[];
-  reader?: string | undefined;
 }): string | undefined {
   if (!input.fieldKeys.length) return undefined;
-  const named = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
-  if (!named.length) return undefined;
-  const { unmatched } = authoringInstructionRecordColumns({ named, fieldKeys: input.fieldKeys });
-  if (!unmatched.length) return undefined;
+  const unmatched = unreadNamedColumns(input.instructionText, input.fieldKeys);
+  return unmatched.length ? unreadColumnsSentence(unmatched, "no field reads") : undefined;
+}
+
+/**
+ * "The instruction asks for a column "mutualFriends" that no read in the draft
+ * gives.", or nothing when no read has fields, the instruction names no
+ * column, or some read gives every named one. Said beside the build's draft.
+ *
+ * **About the draft, never about one read (run `run-murdouox-c5294247`, R4).**
+ * It used to be said per read and to name the read's step. A draft whose only
+ * read was the filter listing a repeat runs over was told "no field of step 12
+ * reads mutualFriends", and the model spent its last four decisions reworking
+ * that listing instead of adding the read after the confirms the table needed.
+ * A column is missing only when no read of the draft gives it, and saying so
+ * names no step: it is true whichever read the table should come from, and it
+ * points the model at no read to rework.
+ */
+export function automationStudioFlowBootstrapDraftUnreadColumnsSentence(input: {
+  instructionText: string | undefined;
+  /** The field keys of each read the draft holds. */
+  reads: readonly (readonly string[])[];
+}): string | undefined {
+  const fieldKeys = [...new Set(input.reads.flat())];
+  if (!fieldKeys.length) return undefined;
+  const unmatched = unreadNamedColumns(input.instructionText, fieldKeys);
+  return unmatched.length ? unreadColumnsSentence(unmatched, "no read in the draft gives") : undefined;
+}
+
+/** The columns the instruction names that none of `fieldKeys` reads. */
+function unreadNamedColumns(instructionText: string | undefined, fieldKeys: readonly string[]): string[] {
+  const named = automationStudioFlowBootstrapInstructionColumns(instructionText ?? "");
+  return named.length ? authoringInstructionRecordColumns({ named, fieldKeys }).unmatched : [];
+}
+
+function unreadColumnsSentence(unmatched: readonly string[], missing: string): string {
   const names = unmatched.map((name) => `"${name}"`).join(", ");
-  return `The instruction asks for ${unmatched.length === 1 ? "a column" : "columns"} ${names} that no field${input.reader ? ` of ${input.reader}` : ""} reads.`;
+  return `The instruction asks for ${unmatched.length === 1 ? "a column" : "columns"} ${names} that ${missing}.`;
 }
