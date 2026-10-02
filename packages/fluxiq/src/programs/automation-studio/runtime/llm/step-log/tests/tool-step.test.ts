@@ -79,6 +79,29 @@ describe("a tool step", () => {
     expect(readdirSync(directory)).toEqual([]);
   });
 
+  // Run 38 (`run-muqilf9s-c3211328`): twelve reads were logged `web.inspect.succeeded`,
+  // and what the loop recorded instead -- `evidence_not_json`, a call that failed with no
+  // evidence -- was visible only in the next request. The step says what Core made of it.
+  it("records whether Core read the value or refused it, and under which check", async () => {
+    const rows = [{ name: "Amara Osei", mutual: "23 mutual friends" }, { name: "Tom Becker", mutual: "1 mutual friend" }];
+    const answers: unknown[] = [
+      { ...execution({ ok: true }), unexpected: true },
+      { ...execution({ ok: true, read: { extracted: rows, firstRows: rows.slice(0, 1) } }), resultCode: "web.inspect.succeeded" }
+    ];
+    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => answers.shift(), env());
+    await run({ callId: "c1", toolId: "web.look" });
+    await run({ callId: "c2", toolId: "web.read" });
+    const failing = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }): Promise<unknown> => { throw Object.assign(new Error("closed"), { code: "web.page_closed" }); }, env());
+    await expect(failing({ callId: "c3", toolId: "web.look" })).rejects.toThrow("closed");
+
+    expect(json(path.join(directory, "0001-tool-web.look", "meta.json"))).toMatchObject({
+      resultCode: "web.action.succeeded", loopVerdict: "llm_evidence_loop.tool_result_invalid.unknown_key", summary: "web.action.succeeded, unread: unknown_key"
+    });
+    expect(json(path.join(directory, "0002-tool-web.read", "meta.json"))).toMatchObject({ resultCode: "web.inspect.succeeded", loopVerdict: "read", summary: "web.inspect.succeeded" });
+    expect(json(path.join(directory, "0003-tool-web.look", "meta.json"))).toMatchObject({ status: "threw", loopVerdict: "llm_evidence_loop.tool_failed" });
+    expect(readFileSync(path.join(directory, "index.md"), "utf8")).toContain("| 0001 | tool | web.look | web.action.succeeded, unread: unknown_key | - |");
+  });
+
   it("is turned on in the evidence loop's wrapper by the step log alone", async () => {
     const input = {
       decide: async (_request: { iteration: number }) => ({ kind: "complete" }),

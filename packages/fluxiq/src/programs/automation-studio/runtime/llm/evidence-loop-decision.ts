@@ -507,8 +507,15 @@ function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0): value
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (!value || typeof value !== "object" || depth > AUTOMATION_STUDIO_LLM_JSON_MAX_DEPTH || seen.has(value)) return false;
+  // `seen` holds this value's ancestors only: an object reached twice by two
+  // paths (a read's first rows are the same objects as its records) is not a
+  // cycle. Until 2026-10-02 every object stayed in `seen`, so every list read
+  // that returned rows was refused as not JSON (live run `run-muqilf9s-c3211328`).
   seen.add(value);
-  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen, depth + 1));
-  return Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen, depth + 1));
+  const valid = Array.isArray(value)
+    ? value.every((item) => isJsonValue(item, seen, depth + 1))
+    : Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen, depth + 1));
+  seen.delete(value);
+  return valid;
 }
 
