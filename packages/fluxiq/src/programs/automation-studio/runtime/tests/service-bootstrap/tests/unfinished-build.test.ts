@@ -172,7 +172,10 @@ describe("a Flow build that stops before its Flow is ready", () => {
     expect(requests.some((request) => repairEntry(request))).toBe(true);
     expect(diagnostic.code).toBe("flow_bootstrap.not_doable");
     expect(diagnostic.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 2, stepsInFlow: 1 } });
-    expect(diagnostic.ending?.message).toMatch(/^I could not build this Flow, and I found no way to: the Flow could not be finished: every attempt to finish was refused\./u);
+    // Said from what the refused decisions were -- here a plan with no Subflow,
+    // refused every time -- rather than as "every attempt to finish was refused",
+    // which run-muqiojz4-04a7a8fc was told after refused amendments alone.
+    expect(diagnostic.ending?.message).toMatch(/^I could not build this Flow, and I found no way to: the Flow could not be finished: too many of its decisions in a row could not be used, because the Flow it wrote was not one that could run\./u);
     expect(diagnostic.ending?.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had");
   });
 });
