@@ -68,7 +68,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
       files.meta({
         step: folder.step, kind, callId, toolId,
         startedAt: new Date(started).toISOString(), finishedAt: new Date(finished).toISOString(), ms: finished - started,
-        round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
+        part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
         status: error === undefined ? "ok" : "threw",
         resultCode: typeof execution?.resultCode === "string" ? execution.resultCode : null,
         resultReason: typeof execution?.resultReason === "string" ? execution.resultReason : null,

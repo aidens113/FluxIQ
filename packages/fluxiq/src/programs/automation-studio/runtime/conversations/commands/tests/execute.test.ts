@@ -123,6 +123,34 @@ describe("conversation commands", () => {
     expect(result?.text).not.toContain("token=secret");
   });
 
+  // The rule is a ceiling per Flow, and the chat call that decided to build the
+  // Flow is part of what it cost (t234 W9): the build is told it, to carry in
+  // the Flow's creation purse.
+  it("passes what reading the message cost to the build it runs", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const { port, calls } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true, payload: { instruction: { instructionId: "instruction.1" } } }),
+      "generate-flow-bootstrap-adaptation": BUILD_OK,
+      "review-flow-adaptation": REVIEW_OK
+    });
+
+    await executeAutomationStudioConversationCommand({
+      command: command("flow.createHere"),
+      context: contextFor(conversations, conversationId, port, { interpretationCostUsd: 0.0003 }),
+      arguments: { instruction: "Find the cheapest blue kettle." }
+    });
+    await automationStudioConversationCommandWork.idle();
+
+    const builds = calls.filter((call) => call.endpoint === "generate-flow-bootstrap-adaptation");
+    expect(builds).toEqual([
+      { endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, startLocation: PAGE, interpretationCostUsd: 0.0003 } }
+    ]);
+    // Only the build carries it.
+    expect(calls.filter((call) => "interpretationCostUsd" in call.payload)).toEqual(builds);
+  });
+
   it("says why a build stopped and how far it had got, and applies nothing", async () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);

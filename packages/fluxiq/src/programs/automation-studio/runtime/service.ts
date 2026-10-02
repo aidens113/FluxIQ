@@ -1474,7 +1474,7 @@ export class AutomationStudioService {
     try {
       // Every field of the request, read and refused in one place
       // (`./service/flow-bootstrap-commands/generation-request.ts`).
-      const { projectId, flowId, startLocation, caller, permittedConsequences, mode } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput);
+      const { projectId, flowId, startLocation, caller, permittedConsequences, mode, interpretationCostUsd } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput);
       failureCode = "flow_bootstrap.generation_lock_failed";
       return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
         failureCode = "flow_bootstrap.blank_target_required";
@@ -1547,7 +1547,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution }), harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation: callStartLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true }); // The nodes this build has been shown whole, shared by every round of it (`llm/node-tools/node-descriptions.ts`).
         const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, automationStudioLlmRunCostCeilingUsd(adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, repairCostLeftUsd)); // A repair build spends only what its repair has left (`service/runtime-adaptation/refuted-result-port.ts`).
         // One purse per Flow creation, the only cost authority, under which the build's whole body runs; its record is kept or dropped however the build ends (`service/flow-bootstrap-commands/creation-purse.ts`).
-        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief), ceilingUsd: bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
+        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief), interpretationCostUsd, ceilingUsd: bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
         return await creation.run(async () => {
         const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider });
         // The gate belongs to the build, not to the loop: a build that explored and one that wrote its Flow in a single call both put a step with a lasting consequence to the same person, through the Flow's own thread.

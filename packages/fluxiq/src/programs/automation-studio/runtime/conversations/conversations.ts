@@ -320,14 +320,17 @@ export class AutomationStudioConversations {
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})
     });
+    // What reading it cost stays off the answer the client sees; it travels to the command the turn runs (`commands/build.ts`).
+    const { costUsd, ...reading } = interpretation;
+    const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd };
     try {
       const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows });
-      return { turn, response: { ...interpretation, ...written }, problem: null };
+      return { turn, response: { ...reading, ...written }, problem: null, ...cost };
     } catch (error) {
       // The person's turn is stored and the decision was made; only writing
       // the answer failed. Say so rather than failing the whole request, which
       // would read as the message itself being lost and invite a duplicate.
-      return { turn, response: null, problem: `Your message was saved, but my answer could not be written into the thread: ${error instanceof Error ? error.message : String(error)}` };
+      return { turn, response: null, problem: `Your message was saved, but my answer could not be written into the thread: ${error instanceof Error ? error.message : String(error)}`, ...cost };
     }
   }
 

@@ -66,6 +66,10 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       let startLocation: string | undefined;
       try { startLocation = automationStudioFlowStartLocation(payload.startLocation); }
       catch { return { ok: false, error: "Flow bootstrap generation request contains an invalid start location." }; }
+      // What the chat's reading of the message cost, carried into the Flow's
+      // creation purse. Only a finite, non-negative amount passes.
+      const interpretationCostUsd = payload.interpretationCostUsd;
+      if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." };
       const readiness = flowBootstrapGenerationReadiness(service);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       // What the person allowed the build's actions to do. Absent is nothing;
@@ -94,6 +98,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           // so a request that named an unusable one was already refused rather
           // than built from nowhere.
           ...(startLocation === undefined ? {} : { startLocation }),
+          ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
           // Somebody has just pressed build, so a question this build raises is
           // worth holding it open for: answered, the build carries on with
           // permission instead of coming back needing another one.
@@ -139,7 +144,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "evidenceGuided",
   "useReusableContext",
   "startLocation",
-  "mode"
+  "mode",
+  "interpretationCostUsd"
 ]);
 
 function flowBootstrapGenerationReadiness(service: AutomationStudioService) {
