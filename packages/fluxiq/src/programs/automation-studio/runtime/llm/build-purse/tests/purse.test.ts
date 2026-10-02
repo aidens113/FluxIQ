@@ -66,6 +66,20 @@ describe("a build's purse", () => {
     const spent = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.25, spentUsd: () => 0.25 });
     expect(spent.hold(call(undefined))).toMatchObject({ ok: false, refusal: { spentUsd: 0.25, ceilingUsd: 0.25 } });
   });
+
+  it("states where it stands for a call something else declined, in a refusal's figures, and holds nothing for it (t194-w47)", () => {
+    let accounted = 0.0587;
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, spentUsd: () => accounted });
+    // Nothing priced yet: no worst case, and no tokens.
+    expect(purse.standing()).toEqual({ code: "llm_budget.run_cost_limit", estimatedInputTokens: 0, maxOutputTokens: 0, spentUsd: 0.0587, pendingUsd: 0, ceilingUsd: 0.1, declinedBy: "loop_budget" });
+    // Run 13's last decision: 72,677 input tokens, priced at worst at $0.0314, and settled at $0.0151.
+    const held = purse.hold({ projectedCostUsd: 0.0314, estimatedInputTokens: 72_677, maxOutputTokens: 8_000 });
+    if (held.ok) held.hold.settle({ inputTokens: 72_677, outputTokens: 515, totalTokens: 73_192, estimatedCostUsd: 0.0151 });
+    accounted = 0.0738;
+    expect(purse.standing()).toEqual({ code: "llm_budget.run_cost_limit", projectedCostUsd: 0.0314, estimatedInputTokens: 72_677, maxOutputTokens: 8_000, spentUsd: 0.0738, pendingUsd: 0, ceilingUsd: 0.1, declinedBy: "loop_budget" });
+    expect(purse.refusal).toBeUndefined();
+    expect(purse.pendingUsd()).toBe(0);
+  });
 });
 
 describe("a call made under a purse", () => {

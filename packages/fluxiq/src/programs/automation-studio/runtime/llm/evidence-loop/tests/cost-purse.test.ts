@@ -76,6 +76,8 @@ describe("a build's cost ceiling, held before each decision is sent", () => {
     const refusal = result.exhaustion!.costRefusal!;
     expect(refusal).toMatchObject({ code: "llm_budget.run_cost_limit", spentUsd: 0.01, pendingUsd: 0, ceilingUsd: 0.25, maxOutputTokens: 8_000 });
     // Priced from the request the harness measured, at the uncached rate.
+    // The purse refused it, so it is no standing of the loop count's.
+    expect(refusal).not.toHaveProperty("declinedBy");
     expect(refusal.estimatedInputTokens).toBeGreaterThan(2_400_000 / 3);
     expect(refusal.projectedCostUsd).toBeCloseTo(priceUsd({ inputTokens: refusal.estimatedInputTokens, outputTokens: 8_000 }), 9);
     expect(refusal.spentUsd + refusal.projectedCostUsd!).toBeGreaterThan(0.25);
