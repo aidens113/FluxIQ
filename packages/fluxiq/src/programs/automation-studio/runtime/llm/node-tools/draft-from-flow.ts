@@ -30,6 +30,20 @@
 //     (`harness-options/plan-step-consequences.ts`), and Core does not get to
 //     make the second one on the model's behalf for a node it did not author.
 //
+// **Where a node started is kept beside the steps, never on them.** A rerun of
+// a seeded step used to run wherever the last call left the page: live run
+// `run-muqk713g-d08ad3dc` reran the Flow's list read on results page 5, where
+// the refuted run's pagination had stopped, and read 11 rows unfiltered. The
+// run being repaired did watch each node start, and what its host captured
+// there is read off the run (`./run-start-pages.ts`) and handed in as
+// `startPages`. It comes back as `startedOnByStepId` for a rerun to put the
+// page back to (`./step-place.ts`). Not as `replay.from`: that field is read as
+// "this step can be run again" by the dry run's gate and by every reader that
+// compares where steps acted (`flow-draft/verify-only.ts`,
+// `flow-bootstrap/instructed-acts/`), and a page the step started on in an
+// earlier run says nothing about either. So the steps are the same with or
+// without it, and the gate sees exactly the draft it saw before.
+//
 // **Order is the Flow's own.** The assembler numbers a plan's nodes by the
 // order of the steps it is given, so the seed walks the graph from the node
 // nothing enters and follows the edges. A node the walk cannot reach is
@@ -96,6 +110,12 @@ export type AutomationStudioFlowDraftFlowSeed = {
   steps: AutomationStudioFlowDraftStep[];
   /** The existing node each seeded step stands for, by that step's own id. */
   nodeIdByStepId: Record<string, string>;
+  /**
+   * Where each seeded step's node started in the run being repaired, by that
+   * step's own id: the host's token, carried unread, for the steps whose node
+   * has one. Empty when no run was handed in or it captured none.
+   */
+  startedOnByStepId: Record<string, JsonObject>;
 };
 
 /**
@@ -109,12 +129,15 @@ export type AutomationStudioFlowDraftFlowSeed = {
 export function automationStudioFlowDraftSeedFromFlow(input: {
   nodes: readonly AutomationStudioFlowNode[];
   edges: readonly AutomationStudioFlowEdge[];
+  /** Where each node started in the run being repaired, by node id (`./run-start-pages.ts`). */
+  startPages?: Readonly<Record<string, JsonObject>> | undefined;
 }): AutomationStudioFlowDraftFlowSeed {
   const authored = input.nodes.filter((node) => !DERIVED_CONTROL_NODES.has(node.definitionId));
   const ordered = orderedNodes(authored, input.edges);
   const optional = optionalNodeIds(authored, input.edges);
   const steps: AutomationStudioFlowDraftStep[] = [];
   const nodeIdByStepId: Record<string, string> = {};
+  const startedOnByStepId: Record<string, JsonObject> = {};
   for (const node of ordered) {
     const id = `${SEED_STEP_ID_PREFIX}${steps.length + 1}`;
     const parameters: JsonObject = node.parameterValues ? structuredClone(node.parameterValues) : {};
@@ -138,8 +161,10 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       ...(optional.has(node.id) ? { routing: { kind: "optional" as const } } : {})
     });
     nodeIdByStepId[id] = node.id;
+    const startedOn = input.startPages?.[node.id];
+    if (startedOn) startedOnByStepId[id] = structuredClone(startedOn);
   }
-  return { steps, nodeIdByStepId };
+  return { steps, nodeIdByStepId, startedOnByStepId };
 }
 
 /**

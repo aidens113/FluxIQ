@@ -18,7 +18,7 @@ const tools = [
 const CHEAP_PER_PAGE = [4, 3, 3, 3, 0];
 
 /** The results site. `reset` is a replay's `{ replay: "reset", from }`; `unreachable` makes every reset fail. */
-function site(options: { unreachable?: boolean } = {}) {
+function site(options: { unreachable?: boolean; noReplay?: boolean } = {}) {
   let page = 1;
   const result = (fields: JsonObject, before: number) => ({ kind: "llm_evidence_tool_execution", stateDigests: { before: `p${before}`, after: `p${page}` }, ...fields });
   return vi.fn(async ({ toolId, value }: { callId?: string; toolId: string; value: JsonObject }) => {
@@ -41,7 +41,7 @@ function site(options: { unreachable?: boolean } = {}) {
       evidence: { rows, unfiltered: kept === 0, pagesRead: pages.length },
       effectApplied: true,
       resultCode: "web.inspect.succeeded",
-      draft: { actionId: "web.read", effect: "observe", proposes: true, replay: { from: { location: `p${before}` }, produced: { records: rows } } }
+      draft: { actionId: "web.read", effect: "observe", proposes: true, ...(options.noReplay ? {} : { replay: { from: { location: `p${before}` }, produced: { records: rows } } }) }
     }, before);
   });
 }
@@ -105,5 +105,34 @@ describe("a rerun of a read that paged to the end", () => {
     expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["read.1", "rerun.1.place"]);
     const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
     expect(answered).toMatchObject({ ok: false, code: "rerun_place_unreachable" });
+  });
+
+  // Live run `run-muqk713g` (C6): every re-author rerun of the Flow's read ran on results page 5, where the refuted
+  // run left the page, and nothing told the model so. A rerun's answer now says where it ran.
+  it("says in the rerun's answer that it ran where the page is when nothing recorded where its step started", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(read)
+      .mockResolvedValueOnce(rerun("price < 50"))
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = site({ noReplay: true });
+
+    await loop(decide, executeTool).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["read.1", "rerun.1"]);
+    const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
+    expect(answered).toMatchObject({ rows: 11, unfiltered: true, rerunPlace: { place: "in_place", reason: "start_page_unknown" } });
+  });
+
+  it("says in the rerun's answer that it put the page back to where its step started", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(read)
+      .mockResolvedValueOnce(rerun("price < 50"))
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = site();
+
+    await loop(decide, executeTool).catch(() => undefined);
+
+    const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
+    expect(answered).toMatchObject({ rows: 13, rerunPlace: { place: "put_back", startPage: "step" } });
   });
 });
