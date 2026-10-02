@@ -27,9 +27,16 @@
 //     build's own check. Information, never proof.
 //   - `carried`, a step seeded from an earlier Flow (run 41). Such a step has
 //     no replay, so the draft was not testable and nothing ran.
+//   - `notes`, what the completion check's capability questions found of the
+//     Flow -- no step producing the records asked for, or none going to where
+//     it starts (t195-w28a). Information the judge confirms against the steps,
+//     never a refusal.
 //
 // **What it does not carry.** The cart, a confirmation, any page the Flow does
 // not itself read: the test does not look at them (t195-w25 open question 5).
+// Nor a page view inside an observation, Core's bookkeeping, or text another
+// step already sent (`./observation.ts`, t195-w28a), nor a handle or a
+// machine-minted key among a step's words.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -47,6 +54,7 @@ import {
   checkAutomationStudioInstructedActs
 } from "../../flow-bootstrap/instructed-acts/index.ts";
 import {
+  AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY,
   automationStudioEvidenceKey,
   automationStudioExecutableTargetKey,
   automationStudioFlowDraftStepCarried,
@@ -54,8 +62,9 @@ import {
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
 } from "../../llm/index.ts";
-import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestStep, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import { automationStudioBuildTestObservationReader } from "./observation.ts";
 
 /**
  * The test a build ran, as this builder reads it.
@@ -73,8 +82,22 @@ export type AutomationStudioBuildTestReportInput = {
 /** Whether a step was seeded from an earlier Flow rather than taken in this build (`llm/node-tools/draft-from-flow.ts`). */
 const carriedStep = automationStudioFlowDraftStepCarried;
 
-/** Keys whose value is a declaration Core reads, or the node a step runs, never what the step acted on. */
-const NOT_TARGET_WORDS = new Set(["consequences", "node"]);
+/**
+ * Keys whose value is a declaration Core reads, the node a step runs, or a
+ * handle Core issued for something observed, never what the step acted on.
+ */
+const NOT_TARGET_WORDS = new Set(["consequences", "node", AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY]);
+
+/**
+ * A machine-minted key rather than a word: one unbroken run of letters, digits
+ * and underscores, long, with several underscores and digits in it -- the
+ * domain's own name for a field it detected (`div_x0531l50_x1r2vv8_...` in run
+ * 36, two per read, 228 characters a request). A product code or a person's
+ * text has spaces, hyphens or few underscores, and is kept.
+ */
+function machineMinted(text: string): boolean {
+  return text.length >= 24 && /^\w+$/u.test(text) && (text.match(/_/gu)?.length ?? 0) >= 3 && (text.match(/[0-9]/gu)?.length ?? 0) >= 3;
+}
 
 /**
  * The summary a build's test is judged from.
@@ -94,8 +117,13 @@ export function automationStudioBuildTestResultSummary(input: {
   result?: JsonObject | undefined;
   startLocation?: string | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /** The domain's declared view keys, left out of every observation (`./observation.ts`). */
+  observedStateKeys?: readonly string[] | undefined;
+  /** What the completion check found the accepted Flow cannot do (`AutomationStudioBuildTestNote`). */
+  notes?: readonly AutomationStudioBuildTestNote[] | undefined;
 }): AutomationStudioRunResultSummary {
   const denied = input.deniedEvidenceKeys;
+  const observe = denied === undefined ? undefined : automationStudioBuildTestObservationReader({ deniedEvidenceKeys: denied, observedStateKeys: input.observedStateKeys });
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
   let withheld = denied === undefined;
   const claimed = resultClaims(input.result?.acts);
@@ -106,8 +134,8 @@ export function automationStudioBuildTestResultSummary(input: {
     const claims = [...new Set([...(step.acts ?? []), ...claimed.filter((claim) => names(claim.step, step)).map((claim) => claim.action)])]
       .filter((claim) => claim.trim() && !automationStudioLocatorShapedText(claim));
     const runs = step.routing ? routingValue(step.routing, input.steps) : undefined;
-    const observed = denied !== undefined && input.report && (step.effect !== "mutate" || checked)
-      ? screenedObservation(observationsOf(step, input.report.observations), denied)
+    const observed = observe && input.report && (step.effect !== "mutate" || checked)
+      ? observe(step, observationsOf(step, input.report.observations))
       : undefined;
     if (observed?.withheld) withheld = true;
     return {
@@ -140,7 +168,8 @@ export function automationStudioBuildTestResultSummary(input: {
     test: input.report ? (input.report.reused ? "reused" : "ran") : "not_run",
     steps,
     ...(checklist?.length ? { checklist: checklist.map((item) => automationStudioWithoutLocators(item)) } : {}),
-    ...(!check.ok ? { missingActs: automationStudioWithoutLocators(check.missingActs) } : {})
+    ...(!check.ok ? { missingActs: automationStudioWithoutLocators(check.missingActs) } : {}),
+    ...(input.notes?.length ? { notes: input.notes.map((note) => automationStudioWithoutLocators({ ...note })) } : {})
   };
   const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied });
   return {
@@ -174,34 +203,11 @@ function outcomeWord(outcome: AutomationStudioFlowDraftReplayOutcome): Automatio
 
 const OUTCOME_WORDS: ReadonlySet<string> = new Set(["replayed", "verified", "present", "remembered", "failed", "changed", "unreproducible"]);
 
-/** What the test observed of this step: one answer as it came, several as a list. */
-function observationsOf(step: AutomationStudioFlowDraftStep, observations: AutomationStudioBuildTestReportInput["observations"]): JsonValue | undefined {
-  const own = observations.filter((observation) => step.id !== undefined && observation.stepId !== undefined
+/** What the test observed of this step, each answer as it came; the reader makes one a value, several a list. */
+function observationsOf(step: AutomationStudioFlowDraftStep, observations: AutomationStudioBuildTestReportInput["observations"]): JsonValue[] {
+  return observations.filter((observation) => step.id !== undefined && observation.stepId !== undefined
     ? observation.stepId === step.id
-    : observation.step === step.position);
-  if (!own.length) return undefined;
-  return own.length === 1 ? own[0]!.evidence : own.map((observation) => observation.evidence);
-}
-
-/**
- * An observation as it may be sent: no denied key, no locator-shaped key or
- * text, and nothing credential-shaped (dropped whole). `withheld` when
- * anything was taken out.
- */
-function screenedObservation(value: JsonValue | undefined, denied: readonly string[]): { value?: JsonValue; withheld: boolean } {
-  if (value === undefined) return { withheld: false };
-  const deniedKeys = new Set(denied.map(automationStudioEvidenceKey));
-  const kept = automationStudioWithoutLocators(withoutKeys(value, deniedKeys));
-  if (screenAutomationStudioLlmEvidence(kept, []).secretShaped) return { withheld: true };
-  return { value: kept, withheld: JSON.stringify(kept) !== JSON.stringify(value) };
-}
-
-function withoutKeys(value: JsonValue, denied: ReadonlySet<string>): JsonValue {
-  if (Array.isArray(value)) return value.map((item) => withoutKeys(item, denied));
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !denied.has(automationStudioEvidenceKey(key)) && !automationStudioLocatorShapedText(key))
-    .map(([key, item]) => [key, withoutKeys(item as JsonValue, denied)]));
+    : observation.step === step.position).map((observation) => observation.evidence);
 }
 
 /**
@@ -216,7 +222,7 @@ function targetWords(step: AutomationStudioFlowDraftStep, denied: readonly strin
   const collect = (value: unknown): void => {
     if (typeof value === "string") {
       const text = value.trim();
-      if (text && text !== step.actionId && !words.includes(text) && !automationStudioLocatorShapedText(text)
+      if (text && text !== step.actionId && !words.includes(text) && !automationStudioLocatorShapedText(text) && !machineMinted(text)
         && !screenAutomationStudioLlmEvidence(text, []).secretShaped) words.push(text);
       return;
     }

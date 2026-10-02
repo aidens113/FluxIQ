@@ -1,0 +1,1168 @@
+{
+ "source": "run 36, build-2026-10-01T22-30-40-711Z-38848: the Flow its last completion proposed, each step's draft and tool result as the test observes it",
+ "startLocation": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+ "result": {
+  "summary": "Opens Circleway, dismisses the cookie and notification prompts, goes to Friend requests, confirms each request showing at least five mutual friends, and extracts the accepted requests with their names and mutual-friend text.",
+  "acts": [
+   {
+    "action": "a1",
+    "step": "25"
+   }
+  ]
+ },
+ "steps": [
+  {
+   "position": 1,
+   "id": "d1",
+   "iteration": 1,
+   "toolId": "core.run_node",
+   "actionId": "web.output.browser-navigate",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.browser-navigate",
+    "parameters": {
+     "url": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.browser-navigate",
+    "parameters": {
+     "url": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept"
+  },
+  {
+   "position": 2,
+   "id": "d2",
+   "iteration": 2,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t477"
+     }
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(2)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Allow all cookies",
+      "selector": "body > div:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(2)"
+     }
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    },
+    "produced": {
+     "records": 468
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "routing": {
+    "kind": "optional"
+   }
+  },
+  {
+   "position": 3,
+   "id": "d3",
+   "iteration": 3,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t481"
+     }
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(3) > div > div:nth-of-type(3) > div:nth-of-type(1)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Not now",
+      "selector": "body > div:nth-of-type(3) > div > div:nth-of-type(3) > div:nth-of-type(1)"
+     }
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    },
+    "produced": {
+     "records": 468
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "routing": {
+    "kind": "optional"
+   }
+  },
+  {
+   "position": 4,
+   "id": "d4",
+   "iteration": 4,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t12"
+     }
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(1) > div:nth-of-type(1) > nav > a:nth-of-type(2)",
+     "element": {
+      "tagName": "a",
+      "accessibleName": "Friends",
+      "visibleText": "4",
+      "selector": "body > div:nth-of-type(1) > div:nth-of-type(1) > nav > a:nth-of-type(2)"
+     }
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/"
+    },
+    "produced": {
+     "records": 484
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept"
+  },
+  {
+   "position": 5,
+   "id": "d5",
+   "iteration": 5,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t682"
+     }
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(3)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Close chat",
+      "visibleText": "✕",
+      "selector": "body > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(3)"
+     }
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "routing": {
+    "kind": "optional"
+   }
+  },
+  {
+   "position": 6,
+   "id": "d6",
+   "iteration": 6,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-extract_list",
+   "effect": "observe",
+   "input": {
+    "node": "web.output.dom-extract_list",
+    "parameters": {
+     "extractList": {
+      "handle": "extraction.1",
+      "fields": {
+       "name": "div_x0531l50_x1r2vv8_x4q0id2_a_x0ybvghy_x130pqy_x1yfagd",
+       "mutual": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b"
+      },
+      "minItems": 0,
+      "where": [
+       {
+        "field": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+        "matches": "(?:[5-9]|[1-9][0-9]+) mutual"
+       }
+      ]
+     },
+     "timeoutMs": 10000
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-extract_list",
+    "parameters": {
+     "extractList": {
+      "handle": "extraction.1",
+      "fields": {
+       "name": "div_x0531l50_x1r2vv8_x4q0id2_a_x0ybvghy_x130pqy_x1yfagd",
+       "mutual": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b"
+      },
+      "minItems": 0,
+      "where": [
+       {
+        "field": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+        "matches": "(?:[5-9]|[1-9][0-9]+) mutual"
+       }
+      ]
+     },
+     "timeoutMs": 10000
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.inspect.succeeded",
+   "disposition": "kept",
+   "acts": [
+    "a1"
+   ]
+  },
+  {
+   "position": 7,
+   "id": "d7",
+   "iteration": 7,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t578"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div:nth-of-type(2)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Confirm",
+      "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div:nth-of-type(2)",
+      "context": {
+       "listPosition": {
+        "index": 2,
+        "total": 4
+       },
+       "record": {
+        "text": "Amara Osei23 mutual friends3d"
+       }
+      }
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "acts": [
+    "a1"
+   ]
+  },
+  {
+   "position": 8,
+   "id": "d8",
+   "iteration": 8,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t590"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(3) > div > div:nth-of-type(2)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Confirm",
+      "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(3) > div > div:nth-of-type(2)",
+      "context": {
+       "listPosition": {
+        "index": 3,
+        "total": 4
+       },
+       "record": {
+        "text": "Priya Nair4 mutual friends5d"
+       }
+      }
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "acts": [
+    "a1"
+   ]
+  },
+  {
+   "position": 9,
+   "id": "d9",
+   "iteration": 9,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t602"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(4) > div > div:nth-of-type(2)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Confirm",
+      "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(4) > div > div:nth-of-type(2)",
+      "context": {
+       "listPosition": {
+        "index": 4,
+        "total": 4
+       },
+       "record": {
+        "text": "Jonas WeberAisha Khan and 4 other mutual friends1w"
+       }
+      }
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "acts": [
+    "a1"
+   ]
+  },
+  {
+   "position": 10,
+   "id": "d10",
+   "iteration": 10,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-click",
+   "effect": "mutate",
+   "input": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t566"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "ranWith": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(1) > div > div:nth-of-type(2)",
+     "element": {
+      "tagName": "div",
+      "role": "button",
+      "accessibleName": "Confirm",
+      "selector": "body > div:nth-of-type(1) > div:nth-of-type(2) > div > div:nth-of-type(2) > div:nth-of-type(1) > div > div:nth-of-type(2)",
+      "context": {
+       "listPosition": {
+        "index": 1,
+        "total": 4
+       }
+      }
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.action.succeeded",
+   "disposition": "kept",
+   "acts": [
+    "a1"
+   ]
+  },
+  {
+   "position": 11,
+   "id": "d11",
+   "iteration": 11,
+   "toolId": "core.run_node",
+   "actionId": "web.output.dom-extract_list",
+   "effect": "observe",
+   "input": {
+    "node": "web.output.dom-extract_list",
+    "parameters": {
+     "extractList": {
+      "handle": "extraction.1",
+      "fields": {
+       "name": "div_x0531l50_x1r2vv8_x4q0id2_a_x0ybvghy_x130pqy_x1yfagd",
+       "mutual": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b"
+      },
+      "minItems": 0,
+      "where": [
+       {
+        "field": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+        "contains": "Request accepted"
+       }
+      ]
+     },
+     "timeoutMs": 10000
+    },
+    "consequences": []
+   },
+   "ranWith": {
+    "node": "web.output.dom-extract_list",
+    "parameters": {
+     "extractList": {
+      "handle": "extraction.1",
+      "fields": {
+       "name": "div_x0531l50_x1r2vv8_x4q0id2_a_x0ybvghy_x130pqy_x1yfagd",
+       "mutual": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b"
+      },
+      "minItems": 0,
+      "where": [
+       {
+        "field": "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+        "contains": "Request accepted"
+       }
+      ]
+     },
+     "timeoutMs": 10000
+    },
+    "consequences": []
+   },
+   "proposes": true,
+   "replay": {
+    "from": {
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/"
+    },
+    "produced": {
+     "records": 179
+    }
+   },
+   "effectApplied": true,
+   "resultCode": "web.inspect.succeeded",
+   "disposition": "kept"
+  }
+ ],
+ "report": {
+  "verdict": {
+   "outcomes": [
+    {
+     "step": 1,
+     "stepId": "d1",
+     "actionId": "web.output.browser-navigate",
+     "status": "replayed",
+     "resultCode": "web.action.succeeded"
+    },
+    {
+     "step": 2,
+     "stepId": "d2",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "resultCode": "web.action.succeeded"
+    },
+    {
+     "step": 3,
+     "stepId": "d3",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "resultCode": "web.action.succeeded"
+    },
+    {
+     "step": 4,
+     "stepId": "d4",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "resultCode": "web.action.succeeded"
+    },
+    {
+     "step": 5,
+     "stepId": "d5",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "resultCode": "web.action.succeeded"
+    },
+    {
+     "step": 6,
+     "stepId": "d6",
+     "actionId": "web.output.dom-extract_list",
+     "status": "replayed",
+     "resultCode": "web.inspect.succeeded"
+    },
+    {
+     "step": 7,
+     "stepId": "d7",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "mode": "verify",
+     "resultCode": "core.replay.present"
+    },
+    {
+     "step": 8,
+     "stepId": "d8",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "mode": "verify",
+     "resultCode": "core.replay.present"
+    },
+    {
+     "step": 9,
+     "stepId": "d9",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "mode": "verify",
+     "resultCode": "core.replay.present"
+    },
+    {
+     "step": 10,
+     "stepId": "d10",
+     "actionId": "web.output.dom-click",
+     "status": "replayed",
+     "mode": "verify",
+     "resultCode": "core.replay.present"
+    },
+    {
+     "step": 11,
+     "stepId": "d11",
+     "actionId": "web.output.dom-extract_list",
+     "status": "replayed",
+     "resultCode": "web.inspect.succeeded"
+    }
+   ]
+  },
+  "observations": [
+   {
+    "step": 1,
+    "stepId": "d1",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+     "truncated": false,
+     "page": "PAGE \"Circleway\"\nURL ~/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 126 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t468 consent covers 99\nDIALOG t469 \"Allow the use of cookies from Circleway on this browser?\" modal consent\nARRIVED reload\n\n[banner]\nt3 link \"Circleway\" ~/ covered-by t468\nt7 field \"Search Circleway\" =\"\" covered-by t468\n[navigation]\nt9 link \"Home\" ~/ covered-by t468\nt12 link \"Friends\" ~/friends/ covered-by t468\nt16 link \"Video\" ~/watch/ covered-by t468\nt19 link \"Groups\" ~/groups/feed/ covered-by t468\n[banner]\nt24 button \"Menu\" covered-by t468\nt27 button \"Messenger\" covered-by t468\nt31 button \"Notifications\" covered-by t468\nt35 button \"Your profile\" covered-by t468\n[page]\nt40 h1 \"Circleway\"\n[navigation]\n- 1/8\nt45 link \"Maya Lindqvist\" ~/people/maya-lindqvist/ covered-by t468\n- 2/8\nt53 link \"FFriends\" ~/friends/ covered-by t468\n- 3/8\nt57 link \"MMemories\" ~/memories/ covered-by t468\n- 4/8\nt61 link \"SSaved\" ~/saved/ covered-by t468\n- 5/8\nt65 link \"GGroups\" ~/groups/feed/ covered-by t468\n- 6/8\nt69 link \"VVideo\" ~/watch/ covered-by t468\n- 7/8\nt73 link \"EEvents\" ~/events/ covered-by t468\n- 8/8\nt77 link \"AAds Manager\" ~/ads/manager/ covered-by t468\nt80 h2 \"Your shortcuts\"\n- 1/3\nt83 link \"Riverside Allotment Society\" ~/groups/riverside-allotments/ covered-by t468\n- 2/3\nt91 link \"Harbourside Runners\" ~/groups/harbourside-runners/ covered-by t468\n- 3/3\nt99 link \"Old Town Bakers' Circle\" ~/groups/old-town-bakers/ covered-by t468\n[contentinfo]\nt106 \"Privacy · Terms · Advertising · Ad choices · Cookies · More ·\"\n--- below the fold ---\nt107 \"Circleway © 2026 · web 438.0.0.36\"\n--- on screen ---\n[main]\nt111 link \"Create story\" ~/stories/create/ covered-by t468\nt115 link \"Aisha Khan\" ~/stories/aisha-khan/ covered-by t468\nt117 link \"Grace Liu\" ~/stories/grace-liu/ covered-by t468\nt119 link \"Dev Patel\" ~/stories/dev-patel/ covered-by t468\nt121 link \"Sofía Marín\" ~/stories/sofia-marin/ covered-by t468\nt125 link same href as t45 covered-by t468\nt130 button \"What's on your mind, Maya?\" covered-by t468\nt132 button \"Live video\" covered-by t468\nt135 button \"Photo/video\" covered-by t468\nt138 button \"Feeling/activity\" covered-by t468\nt139 h2 \"Feed posts\"\nt143 link ~/people/aisha-khan/?__cft__[0]=AZ1sld8tp1yzgcgp&__tn__=%2CO%2CP-R covered-by t468\nt152 h3 link \"Aisha Khan\" ~/people/aisha-khan/?__cft__[0]=AZ5pk6y7ss20qn&__tn__=%2CO%2CP-R covered-by t468\nt155 link \"Monday 21 September 2026 at 07:58\" ~/posts/p_4b2a10/?__cft__[0]=AZ1synwahss20qn&__tn__=%2CO%2CP-R covered-by t468\nt158 img \"Shared with Friends\"\nt160 button \"Actions for this post\" closed covered-by t468\nt163 button \"Hide post\" covered-by t468\nt166 \"First proper frost on the allotment this morning. Dahlias are done for the year, so the tubers are coming up this weekend. Anyone want some 'Café au Lait' divisions?\"\nt167 link ~/photo/?fbid=4b2a10?__cft__[0]=AZ1eza5mzss20qn&__tn__=%2CO%2CP-R covered-by t468\n--- below the fold ---\nt170 button \"See who reacted to this\"\nt174 \"Tom Becker and 23 others\"\nt175 button \"6 comments\" closed\nt178 button \"Like\"\nt182 button \"Leave a comment\"\nt186 button \"Send this to friends or post it on your profile.\"\nt192 link ~/l/?u=https%3A%2F%2Fgreenleafseeds.example%2F&h=AT7f0c21\nt200 h3 link \"Greenleaf Seeds Co.\" same href\nt202 link \"Swpyobnsmorehdu\" ~/ads/about/?__cft__[0]=AZ11d7lit1x7xkk8&__tn__=%2CO%2CP-R\nt214 img \"Shared with Public\"\nt216 button \"Actions for this post\" closed\nt219 button \"Hide post\"\nt222 \"Autumn sowing sale: 30% off broad beans, garlic and overwintering onions until Sunday. Free delivery on orders over £25.\"\nt223 link \"GREENLEAFSEEDS.EXAMPLESow now, harvest in springShop now\" same href as t192\nt229 button \"Shop now\"\nt231 button \"Like\"\nt235 button \"Leave a comment\"\nt239 button \"Send this to friends or post it on your profile.\"\nt245 link ~/groups/riverside-allotments/?__cft__[0]=AZ91tfmtqxp2r&__tn__=%2CO%2CP-R\nt253 h3 link \"Riverside Allotment Society\" same href\nt256 link \"Elena Sokolova\" ~/people/elena-sokolova/?__cft__[0]=AZzgubzqtqxp2r&__tn__=%2CO%2CP-R\nt259 link \"Monday 21 September 2026 at 05:55\" ~/posts/p_7c1e44/?__cft__[0]=AZ1dtg2vntqxp2r&__tn__=%2CO%2CP-R\nt262 img \"Shared with Members of Riverside Allotment Society\"\nt264 button \"Actions for this post\" closed\nt267 button \"Hide post\"\nt270 \"Notes from Saturday's committee meeting, for anyone who couldn't make it. The water troughs will be switched off from 1 November, so please drain your hoses and store them in your shed rather than…\"\nt271 button \"See more\"\nt273 button \"See who reacted to this\"\nt277 \"41\"\nt278 button \"18 comments\" closed\nt281 button \"Like\"\nt285 button \"Leave a comment\"\nt289 button \"Send this to friends or post it on your profile.\"\nt295 link ~/people/maya-lindqvist/?__cft__[0]=AZ4g281w1hcbzok&__tn__=%2CO%2CP-R\nt304 h3 link \"Maya Lindqvist\" ~/people/maya-lindqvist/?__cft__[0]=AZocdzutnsbfi&__tn__=%2CO%2CP-R\nt307 link \"Sunday 20 September 2026 at 13:10\" ~/posts/p_0d3a91/?__cft__[0]=AZ1q9t5tqtnsbfi&__tn__=%2CO%2CP-R\nt310 img \"Shared with Public\"\nt312 button \"Actions for this post\" closed\nt315 \"Open day at Riverside Allotments on Saturday 26 September, 10:00 to 15:00! Seed swap, jam tasting and plot tours, everyone welcome. Find us at plot 14.\"\nt317 \"Boosted · 1,204 people reached · £21.00 spent\"\nt318 button \"See results\"\nt320 button \"See who reacted to this\"\nt324 \"Aisha Khan and 36 others\"\nt325 button \"9 comments\" closed\nt327 button \"4 shares\"\nt330 button \"Like\"\nt334 button \"Leave a comment\"\nt338 button \"Send this to friends or post it on your profile.\"\nt344 link ~/people/marcus-reid/?__cft__[0]=AZoop6r719c3ybq&__tn__=%2CO%2CP-R\nt353 h3 link \"Marcus Reid\" ~/people/marcus-reid/?__cft__[0]=AZ1k65hm11gc8z8o&__tn__=%2CO%2CP-R\nt356 link \"Monday 21 September 2026 at 04:53\" ~/posts/p_9b3302/?__cft__[0]=AZd6b2ff1gc8z8o&__tn__=%2CO%2CP-R\nt359 img \"Shared with Public\"\nt361 button \"Actions for this post\" closed\nt364 button \"Hide post\"\nt367 \"Harbourside Council has confirmed the Quay Street bridge will close for repairs from 5 October for up to six weeks. Buses 12 and 12A will divert via Mill Lane. Full details and the diversion map in the link.\"\nt368 link \"HARBOURSIDEPOST.EXAMPLEQuay Street bridge to close for six weeks of repairs\" ~/l/?u=https%3A%2F%2Fharbourside-post.example%2Fnews%2Fquay-street-bridge&h=AT9b3302\nt373 button \"See who reacted to this\"\nt377 \"1.2K\"\nt378 button \"212 comments\" closed\nt380 button \"388 shares\"\nt383 button \"Like\"\nt387 button \"Leave a comment\"\nt391 button \"Send this to friends or post it on your profile.\"\n--- on screen ---\n[complementary]\nt397 h3 \"Sponsored\"\nt398 link \"Harbour Kayak Toursharbourkayak.example\" ~/l/?u=https%3A%2F%2Fharbourkayak.example%2F covered-by t468\nt403 link \"Mill Lane Hardwaremilllanehardware.example\" ~/l/?u=https%3A%2F%2Fmilllanehardware.example%2F covered-by t468\nt408 h3 \"Birthdays\"\nt409 \"Nadia Rahman and 2 others have birthdays today.\"\nt410 h3 \"Contacts\"\n- 1/7\nt413 link \"Elena Sokolova\" ~/messages/t/elena-sokolova/ covered-by t468\n- 2/7\nt421 link \"Aisha Khan\" ~/messages/t/aisha-khan/ covered-by t468\n- 3/7\nt429 link \"Tom Becker\" ~/messages/t/tom-becker/ covered-by t468\n- 4/7\nt437 link \"Hannah Okafor\" ~/messages/t/hannah-okafor/ covered-by t468\n- 5/7\nt445 link \"Dev Patel\" ~/messages/t/dev-patel/ covered-by t468\n- 6/7\nt453 link \"Grace Liu\" ~/messages/t/grace-liu/ covered-by t468\n--- below the fold ---\n- 7/7\nt461 link \"Marcus Reid\" ~/messages/t/marcus-reid/\n--- on screen ---\n[page]\nt468 layer consent covers 99\nt469 dialog \"Allow the use of cookies from Circleway on this browser?\" modal consent\n[dialog t469]\nt473 \"We use cookies and similar technologies to help provide and improve content on Circleway. We also use them to provide a safer experience by using information we receive from cookies on and off Circleway, and to provide and improve Circleway Products for people who have an account.\"\nt474 \"Essential cookies are required to use Circleway. Optional cookies let us show you more relevant ads and measure how they perform. You can review or change your choice at any time in your cookie settings.\"\nt476 button \"Decline optional cookies\"\nt477 button \"Allow all cookies\"",
+     "ok": true,
+     "node": "web.output.browser-navigate",
+     "status": "succeeded",
+     "pageChanged": true,
+     "read": {
+      "commandId": "8e83b86c-8152-4f4a-bbf0-397aaf943b50",
+      "actionType": "web.browser.navigate",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+       "actual": "http://127.0.0.1:63149/scenarios/social-network-feed/: the browser loaded the page again"
+      },
+      "message": "Navigation completed.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+      "title": "Circleway",
+      "startedAt": 1790893843895,
+      "finishedAt": 1790893844939
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 2,
+    "stepId": "d2",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+     "truncated": false,
+     "page": "PAGE \"Circleway\"\nURL ~/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 120 elements with visible words or a control, in page order · find_on_page searches the rest\nARRIVED reload\n\n[banner]\nt3 link \"Circleway\" ~/\nt7 field \"Search Circleway\" =\"\"\n[navigation]\nt9 link \"Home\" ~/\nt12 link \"Friends\" ~/friends/\nt16 link \"Video\" ~/watch/\nt19 link \"Groups\" ~/groups/feed/\n[banner]\nt24 button \"Menu\"\nt27 button \"Messenger\"\nt31 button \"Notifications\"\nt35 button \"Your profile\"\n[page]\nt40 h1 \"Circleway\"\n[navigation]\n- 1/8\nt45 link \"Maya Lindqvist\" ~/people/maya-lindqvist/\n- 2/8\nt53 link \"FFriends\" ~/friends/\n- 3/8\nt57 link \"MMemories\" ~/memories/\n- 4/8\nt61 link \"SSaved\" ~/saved/\n- 5/8\nt65 link \"GGroups\" ~/groups/feed/\n- 6/8\nt69 link \"VVideo\" ~/watch/\n- 7/8\nt73 link \"EEvents\" ~/events/\n- 8/8\nt77 link \"AAds Manager\" ~/ads/manager/\nt80 h2 \"Your shortcuts\"\n- 1/3\nt83 link \"Riverside Allotment Society\" ~/groups/riverside-allotments/\n- 2/3\nt91 link \"Harbourside Runners\" ~/groups/harbourside-runners/\n- 3/3\nt99 link \"Old Town Bakers' Circle\" ~/groups/old-town-bakers/\n[contentinfo]\nt106 \"Privacy · Terms · Advertising · Ad choices · Cookies · More ·\"\n--- below the fold ---\nt107 \"Circleway © 2026 · web 438.0.0.36\"\n--- on screen ---\n[main]\nt111 link \"Create story\" ~/stories/create/\nt115 link \"Aisha Khan\" ~/stories/aisha-khan/\nt117 link \"Grace Liu\" ~/stories/grace-liu/\nt119 link \"Dev Patel\" ~/stories/dev-patel/\nt121 link \"Sofía Marín\" ~/stories/sofia-marin/\nt125 link same href as t45\nt130 button \"What's on your mind, Maya?\"\nt132 button \"Live video\"\nt135 button \"Photo/video\"\nt138 button \"Feeling/activity\"\nt139 h2 \"Feed posts\"\nt143 link ~/people/aisha-khan/?__cft__[0]=AZ1sld8tp1yzgcgp&__tn__=%2CO%2CP-R\nt152 h3 link \"Aisha Khan\" ~/people/aisha-khan/?__cft__[0]=AZ5pk6y7ss20qn&__tn__=%2CO%2CP-R\nt155 link \"Monday 21 September 2026 at 07:58\" ~/posts/p_4b2a10/?__cft__[0]=AZ1synwahss20qn&__tn__=%2CO%2CP-R\nt158 img \"Shared with Friends\"\nt160 button \"Actions for this post\" closed\nt163 button \"Hide post\"\nt166 \"First proper frost on the allotment this morning. Dahlias are done for the year, so the tubers are coming up this weekend. Anyone want some 'Café au Lait' divisions?\"\nt167 link ~/photo/?fbid=4b2a10?__cft__[0]=AZ1eza5mzss20qn&__tn__=%2CO%2CP-R\n--- below the fold ---\nt170 button \"See who reacted to this\"\nt174 \"Tom Becker and 23 others\"\nt175 button \"6 comments\" closed\nt178 button \"Like\"\nt182 button \"Leave a comment\"\nt186 button \"Send this to friends or post it on your profile.\"\nt192 link ~/l/?u=https%3A%2F%2Fgreenleafseeds.example%2F&h=AT7f0c21\nt200 h3 link \"Greenleaf Seeds Co.\" same href\nt202 link \"Swpyobnsmorehdu\" ~/ads/about/?__cft__[0]=AZ11d7lit1x7xkk8&__tn__=%2CO%2CP-R\nt214 img \"Shared with Public\"\nt216 button \"Actions for this post\" closed\nt219 button \"Hide post\"\nt222 \"Autumn sowing sale: 30% off broad beans, garlic and overwintering onions until Sunday. Free delivery on orders over £25.\"\nt223 link \"GREENLEAFSEEDS.EXAMPLESow now, harvest in springShop now\" same href as t192\nt229 button \"Shop now\"\nt231 button \"Like\"\nt235 button \"Leave a comment\"\nt239 button \"Send this to friends or post it on your profile.\"\nt245 link ~/groups/riverside-allotments/?__cft__[0]=AZ91tfmtqxp2r&__tn__=%2CO%2CP-R\nt253 h3 link \"Riverside Allotment Society\" same href\nt256 link \"Elena Sokolova\" ~/people/elena-sokolova/?__cft__[0]=AZzgubzqtqxp2r&__tn__=%2CO%2CP-R\nt259 link \"Monday 21 September 2026 at 05:55\" ~/posts/p_7c1e44/?__cft__[0]=AZ1dtg2vntqxp2r&__tn__=%2CO%2CP-R\nt262 img \"Shared with Members of Riverside Allotment Society\"\nt264 button \"Actions for this post\" closed\nt267 button \"Hide post\"\nt270 \"Notes from Saturday's committee meeting, for anyone who couldn't make it. The water troughs will be switched off from 1 November, so please drain your hoses and store them in your shed rather than…\"\nt271 button \"See more\"\nt273 button \"See who reacted to this\"\nt277 \"41\"\nt278 button \"18 comments\" closed\nt281 button \"Like\"\nt285 button \"Leave a comment\"\nt289 button \"Send this to friends or post it on your profile.\"\nt295 link ~/people/maya-lindqvist/?__cft__[0]=AZ4g281w1hcbzok&__tn__=%2CO%2CP-R\nt304 h3 link \"Maya Lindqvist\" ~/people/maya-lindqvist/?__cft__[0]=AZocdzutnsbfi&__tn__=%2CO%2CP-R\nt307 link \"Sunday 20 September 2026 at 13:10\" ~/posts/p_0d3a91/?__cft__[0]=AZ1q9t5tqtnsbfi&__tn__=%2CO%2CP-R\nt310 img \"Shared with Public\"\nt312 button \"Actions for this post\" closed\nt315 \"Open day at Riverside Allotments on Saturday 26 September, 10:00 to 15:00! Seed swap, jam tasting and plot tours, everyone welcome. Find us at plot 14.\"\nt317 \"Boosted · 1,204 people reached · £21.00 spent\"\nt318 button \"See results\"\nt320 button \"See who reacted to this\"\nt324 \"Aisha Khan and 36 others\"\nt325 button \"9 comments\" closed\nt327 button \"4 shares\"\nt330 button \"Like\"\nt334 button \"Leave a comment\"\nt338 button \"Send this to friends or post it on your profile.\"\nt344 link ~/people/marcus-reid/?__cft__[0]=AZoop6r719c3ybq&__tn__=%2CO%2CP-R\nt353 h3 link \"Marcus Reid\" ~/people/marcus-reid/?__cft__[0]=AZ1k65hm11gc8z8o&__tn__=%2CO%2CP-R\nt356 link \"Monday 21 September 2026 at 04:53\" ~/posts/p_9b3302/?__cft__[0]=AZd6b2ff1gc8z8o&__tn__=%2CO%2CP-R\nt359 img \"Shared with Public\"\nt361 button \"Actions for this post\" closed\nt364 button \"Hide post\"\nt367 \"Harbourside Council has confirmed the Quay Street bridge will close for repairs from 5 October for up to six weeks. Buses 12 and 12A will divert via Mill Lane. Full details and the diversion map in the link.\"\nt368 link \"HARBOURSIDEPOST.EXAMPLEQuay Street bridge to close for six weeks of repairs\" ~/l/?u=https%3A%2F%2Fharbourside-post.example%2Fnews%2Fquay-street-bridge&h=AT9b3302\nt373 button \"See who reacted to this\"\nt377 \"1.2K\"\nt378 button \"212 comments\" closed\nt380 button \"388 shares\"\nt383 button \"Like\"\nt387 button \"Leave a comment\"\nt391 button \"Send this to friends or post it on your profile.\"\n--- on screen ---\n[complementary]\nt397 h3 \"Sponsored\"\nt398 link \"Harbour Kayak Toursharbourkayak.example\" ~/l/?u=https%3A%2F%2Fharbourkayak.example%2F\nt403 link \"Mill Lane Hardwaremilllanehardware.example\" ~/l/?u=https%3A%2F%2Fmilllanehardware.example%2F\nt408 h3 \"Birthdays\"\nt409 \"Nadia Rahman and 2 others have birthdays today.\"\nt410 h3 \"Contacts\"\n- 1/7\nt413 link \"Elena Sokolova\" ~/messages/t/elena-sokolova/\n- 2/7\nt421 link \"Aisha Khan\" ~/messages/t/aisha-khan/\n- 3/7\nt429 link \"Tom Becker\" ~/messages/t/tom-becker/\n- 4/7\nt437 link \"Hannah Okafor\" ~/messages/t/hannah-okafor/\n- 5/7\nt445 link \"Dev Patel\" ~/messages/t/dev-patel/\n- 6/7\nt453 link \"Grace Liu\" ~/messages/t/grace-liu/\n--- below the fold ---\n- 7/7\nt461 link \"Marcus Reid\" ~/messages/t/marcus-reid/",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Allow all cookies",
+     "read": {
+      "commandId": "5489ddbb-18ab-4856-ba56-bb7153ca4863",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 825,474 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+      "title": "Circleway",
+      "startedAt": 1790893847763,
+      "finishedAt": 1790893847976
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 3,
+    "stepId": "d3",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+     "truncated": false,
+     "page": "PAGE \"Circleway\"\nURL ~/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 120 elements with visible words or a control, in page order · find_on_page searches the rest\nARRIVED reload\n\n[banner]\nt3 link \"Circleway\" ~/\nt7 field \"Search Circleway\" =\"\"\n[navigation]\nt9 link \"Home\" ~/\nt12 link \"Friends\" ~/friends/\nt16 link \"Video\" ~/watch/\nt19 link \"Groups\" ~/groups/feed/\n[banner]\nt24 button \"Menu\"\nt27 button \"Messenger\"\nt31 button \"Notifications\"\nt35 button \"Your profile\"\n[page]\nt40 h1 \"Circleway\"\n[navigation]\n- 1/8\nt45 link \"Maya Lindqvist\" ~/people/maya-lindqvist/\n- 2/8\nt53 link \"FFriends\" ~/friends/\n- 3/8\nt57 link \"MMemories\" ~/memories/\n- 4/8\nt61 link \"SSaved\" ~/saved/\n- 5/8\nt65 link \"GGroups\" ~/groups/feed/\n- 6/8\nt69 link \"VVideo\" ~/watch/\n- 7/8\nt73 link \"EEvents\" ~/events/\n- 8/8\nt77 link \"AAds Manager\" ~/ads/manager/\nt80 h2 \"Your shortcuts\"\n- 1/3\nt83 link \"Riverside Allotment Society\" ~/groups/riverside-allotments/\n- 2/3\nt91 link \"Harbourside Runners\" ~/groups/harbourside-runners/\n- 3/3\nt99 link \"Old Town Bakers' Circle\" ~/groups/old-town-bakers/\n[contentinfo]\nt106 \"Privacy · Terms · Advertising · Ad choices · Cookies · More ·\"\n--- below the fold ---\nt107 \"Circleway © 2026 · web 438.0.0.36\"\n--- on screen ---\n[main]\nt111 link \"Create story\" ~/stories/create/\nt115 link \"Aisha Khan\" ~/stories/aisha-khan/\nt117 link \"Grace Liu\" ~/stories/grace-liu/\nt119 link \"Dev Patel\" ~/stories/dev-patel/\nt121 link \"Sofía Marín\" ~/stories/sofia-marin/\nt125 link same href as t45\nt130 button \"What's on your mind, Maya?\"\nt132 button \"Live video\"\nt135 button \"Photo/video\"\nt138 button \"Feeling/activity\"\nt139 h2 \"Feed posts\"\nt143 link ~/people/aisha-khan/?__cft__[0]=AZ1sld8tp1yzgcgp&__tn__=%2CO%2CP-R\nt152 h3 link \"Aisha Khan\" ~/people/aisha-khan/?__cft__[0]=AZ5pk6y7ss20qn&__tn__=%2CO%2CP-R\nt155 link \"Monday 21 September 2026 at 07:58\" ~/posts/p_4b2a10/?__cft__[0]=AZ1synwahss20qn&__tn__=%2CO%2CP-R\nt158 img \"Shared with Friends\"\nt160 button \"Actions for this post\" closed\nt163 button \"Hide post\"\nt166 \"First proper frost on the allotment this morning. Dahlias are done for the year, so the tubers are coming up this weekend. Anyone want some 'Café au Lait' divisions?\"\nt167 link ~/photo/?fbid=4b2a10?__cft__[0]=AZ1eza5mzss20qn&__tn__=%2CO%2CP-R\n--- below the fold ---\nt170 button \"See who reacted to this\"\nt174 \"Tom Becker and 23 others\"\nt175 button \"6 comments\" closed\nt178 button \"Like\"\nt182 button \"Leave a comment\"\nt186 button \"Send this to friends or post it on your profile.\"\nt192 link ~/l/?u=https%3A%2F%2Fgreenleafseeds.example%2F&h=AT7f0c21\nt200 h3 link \"Greenleaf Seeds Co.\" same href\nt202 link \"Swpyobnsmorehdu\" ~/ads/about/?__cft__[0]=AZ11d7lit1x7xkk8&__tn__=%2CO%2CP-R\nt214 img \"Shared with Public\"\nt216 button \"Actions for this post\" closed\nt219 button \"Hide post\"\nt222 \"Autumn sowing sale: 30% off broad beans, garlic and overwintering onions until Sunday. Free delivery on orders over £25.\"\nt223 link \"GREENLEAFSEEDS.EXAMPLESow now, harvest in springShop now\" same href as t192\nt229 button \"Shop now\"\nt231 button \"Like\"\nt235 button \"Leave a comment\"\nt239 button \"Send this to friends or post it on your profile.\"\nt245 link ~/groups/riverside-allotments/?__cft__[0]=AZ91tfmtqxp2r&__tn__=%2CO%2CP-R\nt253 h3 link \"Riverside Allotment Society\" same href\nt256 link \"Elena Sokolova\" ~/people/elena-sokolova/?__cft__[0]=AZzgubzqtqxp2r&__tn__=%2CO%2CP-R\nt259 link \"Monday 21 September 2026 at 05:55\" ~/posts/p_7c1e44/?__cft__[0]=AZ1dtg2vntqxp2r&__tn__=%2CO%2CP-R\nt262 img \"Shared with Members of Riverside Allotment Society\"\nt264 button \"Actions for this post\" closed\nt267 button \"Hide post\"\nt270 \"Notes from Saturday's committee meeting, for anyone who couldn't make it. The water troughs will be switched off from 1 November, so please drain your hoses and store them in your shed rather than…\"\nt271 button \"See more\"\nt273 button \"See who reacted to this\"\nt277 \"41\"\nt278 button \"18 comments\" closed\nt281 button \"Like\"\nt285 button \"Leave a comment\"\nt289 button \"Send this to friends or post it on your profile.\"\nt295 link ~/people/maya-lindqvist/?__cft__[0]=AZ4g281w1hcbzok&__tn__=%2CO%2CP-R\nt304 h3 link \"Maya Lindqvist\" ~/people/maya-lindqvist/?__cft__[0]=AZocdzutnsbfi&__tn__=%2CO%2CP-R\nt307 link \"Sunday 20 September 2026 at 13:10\" ~/posts/p_0d3a91/?__cft__[0]=AZ1q9t5tqtnsbfi&__tn__=%2CO%2CP-R\nt310 img \"Shared with Public\"\nt312 button \"Actions for this post\" closed\nt315 \"Open day at Riverside Allotments on Saturday 26 September, 10:00 to 15:00! Seed swap, jam tasting and plot tours, everyone welcome. Find us at plot 14.\"\nt317 \"Boosted · 1,204 people reached · £21.00 spent\"\nt318 button \"See results\"\nt320 button \"See who reacted to this\"\nt324 \"Aisha Khan and 36 others\"\nt325 button \"9 comments\" closed\nt327 button \"4 shares\"\nt330 button \"Like\"\nt334 button \"Leave a comment\"\nt338 button \"Send this to friends or post it on your profile.\"\nt344 link ~/people/marcus-reid/?__cft__[0]=AZoop6r719c3ybq&__tn__=%2CO%2CP-R\nt353 h3 link \"Marcus Reid\" ~/people/marcus-reid/?__cft__[0]=AZ1k65hm11gc8z8o&__tn__=%2CO%2CP-R\nt356 link \"Monday 21 September 2026 at 04:53\" ~/posts/p_9b3302/?__cft__[0]=AZd6b2ff1gc8z8o&__tn__=%2CO%2CP-R\nt359 img \"Shared with Public\"\nt361 button \"Actions for this post\" closed\nt364 button \"Hide post\"\nt367 \"Harbourside Council has confirmed the Quay Street bridge will close for repairs from 5 October for up to six weeks. Buses 12 and 12A will divert via Mill Lane. Full details and the diversion map in the link.\"\nt368 link \"HARBOURSIDEPOST.EXAMPLEQuay Street bridge to close for six weeks of repairs\" ~/l/?u=https%3A%2F%2Fharbourside-post.example%2Fnews%2Fquay-street-bridge&h=AT9b3302\nt373 button \"See who reacted to this\"\nt377 \"1.2K\"\nt378 button \"212 comments\" closed\nt380 button \"388 shares\"\nt383 button \"Like\"\nt387 button \"Leave a comment\"\nt391 button \"Send this to friends or post it on your profile.\"\n--- on screen ---\n[complementary]\nt397 h3 \"Sponsored\"\nt398 link \"Harbour Kayak Toursharbourkayak.example\" ~/l/?u=https%3A%2F%2Fharbourkayak.example%2F\nt403 link \"Mill Lane Hardwaremilllanehardware.example\" ~/l/?u=https%3A%2F%2Fmilllanehardware.example%2F\nt408 h3 \"Birthdays\"\nt409 \"Nadia Rahman and 2 others have birthdays today.\"\nt410 h3 \"Contacts\"\n- 1/7\nt413 link \"Elena Sokolova\" ~/messages/t/elena-sokolova/\n- 2/7\nt421 link \"Aisha Khan\" ~/messages/t/aisha-khan/\n- 3/7\nt429 link \"Tom Becker\" ~/messages/t/tom-becker/\n- 4/7\nt437 link \"Hannah Okafor\" ~/messages/t/hannah-okafor/\n- 5/7\nt445 link \"Dev Patel\" ~/messages/t/dev-patel/\n- 6/7\nt453 link \"Grace Liu\" ~/messages/t/grace-liu/\n--- below the fold ---\n- 7/7\nt461 link \"Marcus Reid\" ~/messages/t/marcus-reid/",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Not now",
+     "read": {
+      "commandId": "dd374166-3007-4f26-a0ea-35f4ac8031ae",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 731,418 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+      "title": "Circleway",
+      "startedAt": 1790893853278,
+      "finishedAt": 1790893853421
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 4,
+    "stepId": "d4",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 84 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t675 \"Chat with Elena Sokolova\" covers 10\nDIALOG t675 \"Chat with Elena Sokolova\"\n\n[banner]\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542\n- 1/4\nt557 link ~/people/tom.becker.9/\nt563 link \"Tom Becker\" same href\nt564 \"1 mutual friend\"\nt565 \"2w\"\nt566 button \"Confirm\"\nt567 button \"Delete\"\n- 2/4\nt569 link ~/people/amara-osei/\nt575 link \"Amara Osei\" same href\nt576 \"23 mutual friends\"\nt577 \"3d\"\nt578 button \"Confirm\"\nt579 button \"Delete\"\n- 3/4\nt581 link ~/people/priya-nair/\nt587 link \"Priya Nair\" same href covered-by t675\nt588 \"4 mutual friends\"\nt589 \"5d\"\nt590 button \"Confirm\" covered-by t675\nt591 button \"Delete\" covered-by t675\n- 4/4\nt593 link ~/people/jonas-weber/\nt599 link \"Jonas Weber\" same href covered-by t675\nt600 \"Aisha Khan and 4 other mutual friends\"\nt601 \"1w\"\nt602 button \"Confirm\" covered-by t675\nt603 button \"Delete\" covered-by t675\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\n--- below the fold ---\nt616 \"2 mutual friends\"\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\n--- below the fold ---\nt627 \"Grace Liu is a mutual friend\"\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/ covered-by t675\nt637 link \"Idris Bello\" same href covered-by t675\n--- below the fold ---\nt638 \"6 mutual friends\"\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/ covered-by t675\nt648 link \"Noah Fischer\" same href covered-by t675\n--- below the fold ---\nt649 \"1 mutual friend\"\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"\n--- on screen ---\n[page]\nt675 dialog \"Chat with Elena Sokolova\" covers 10\nt679 \"Elena Sokolova\"\nt680 \"Active now\"\nt681 button \"Minimise chat\"\nt682 button \"Close chat\"\nt684 \"Morning! Are you still doing the jam stall at the open day?\"\nt685 \"I can bring the gazebo if you need it\"\nt687 field \"Message\"\nt688 button",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Friends",
+     "read": {
+      "commandId": "248bf8b3-8d58-4d16-980c-3d3276801b33",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "navigation to http://127.0.0.1:63149/scenarios/social-network-feed/friends/ begins, or the page answers the click in place",
+       "actual": "navigation to http://127.0.0.1:63149/scenarios/social-network-feed/friends/ was initiated"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/",
+      "title": "Circleway",
+      "startedAt": 1790893856991,
+      "finishedAt": 1790893857147
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 5,
+    "stepId": "d5",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 75 elements with visible words or a control, in page order · find_on_page searches the rest\n\n[banner]\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542\n- 1/4\nt557 link ~/people/tom.becker.9/\nt563 link \"Tom Becker\" same href\nt564 \"1 mutual friend\"\nt565 \"2w\"\nt566 button \"Confirm\"\nt567 button \"Delete\"\n- 2/4\nt569 link ~/people/amara-osei/\nt575 link \"Amara Osei\" same href\nt576 \"23 mutual friends\"\nt577 \"3d\"\nt578 button \"Confirm\"\nt579 button \"Delete\"\n- 3/4\nt581 link ~/people/priya-nair/\nt587 link \"Priya Nair\" same href\nt588 \"4 mutual friends\"\nt589 \"5d\"\nt590 button \"Confirm\"\nt591 button \"Delete\"\n- 4/4\nt593 link ~/people/jonas-weber/\nt599 link \"Jonas Weber\" same href\nt600 \"Aisha Khan and 4 other mutual friends\"\nt601 \"1w\"\nt602 button \"Confirm\"\nt603 button \"Delete\"\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\n--- below the fold ---\nt616 \"2 mutual friends\"\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\n--- below the fold ---\nt627 \"Grace Liu is a mutual friend\"\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\n--- below the fold ---\nt638 \"6 mutual friends\"\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\n--- below the fold ---\nt649 \"1 mutual friend\"\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Close chat",
+     "read": {
+      "commandId": "5a036100-8ba7-485d-b6b1-063931bbf701",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 1157,291 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "startedAt": 1790893860331,
+      "finishedAt": 1790893860393
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 6,
+    "stepId": "d6",
+    "resultCode": "web.inspect.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 75 elements with visible words or a control, in page order · find_on_page searches the rest\n\n[banner]\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542\n- 1/4\nt728 link ~/people/tom.becker.9/\nt734 link \"Tom Becker\" same href\nt735 \"1 mutual friend\"\nt736 \"2w\"\nt737 \"Request accepted\"\nt738 link \"Message\" ~/messages/t/tom.becker.9/\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt704 link ~/people/priya-nair/\nt710 link \"Priya Nair\" same href\nt711 \"4 mutual friends\"\nt712 \"5d\"\nt713 \"Request accepted\"\nt714 link \"Message\" ~/messages/t/priya-nair/\n- 4/4\nt716 link ~/people/jonas-weber/\nt722 link \"Jonas Weber\" same href\nt723 \"Aisha Khan and 4 other mutual friends\"\nt724 \"1w\"\nt725 \"Request accepted\"\nt726 link \"Message\" ~/messages/t/jonas-weber/\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\n--- below the fold ---\nt616 \"2 mutual friends\"\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\n--- below the fold ---\nt627 \"Grace Liu is a mutual friend\"\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\n--- below the fold ---\nt638 \"6 mutual friends\"\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\n--- below the fold ---\nt649 \"1 mutual friend\"\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-extract_list",
+     "status": "succeeded",
+     "pageChanged": false,
+     "read": {
+      "commandId": "03fac912-f6c0-43a1-a8c4-c9c2cb99ea4b",
+      "actionType": "web.dom.extract_list",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "at least 0 records, each carrying name, mutual",
+       "actual": "1 record from 1 page, 3 items left out by where; every declared field present"
+      },
+      "message": "List extracted.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "extracted": [
+       {
+        "name": "Amara Osei",
+        "mutual": "23 mutual friends"
+       }
+      ],
+      "extraction": {
+       "recordCount": 1,
+       "pagesRead": 1,
+       "truncated": false,
+       "missingFields": [],
+       "fieldNames": [
+        "name",
+        "mutual"
+       ],
+       "itemsSeen": 4,
+       "emptyRecords": 0,
+       "listPresence": "appeared",
+       "listWait": {
+        "stoppedOn": "list_present",
+        "waitedMs": 902,
+        "waitedFor": 1
+       },
+       "conditions": {
+        "applied": 4,
+        "kept": 1,
+        "rejected": [
+         3
+        ],
+        "unfiltered": false,
+        "seen": [
+         "23 mutual friends"
+        ],
+        "alone": [
+         3
+        ]
+       }
+      },
+      "startedAt": 1790893959778,
+      "finishedAt": 1790893960753,
+      "rejectedRows": [
+       {
+        "where": 0,
+        "rejected": 3,
+        "alone": 3,
+        "rowsAlone": [
+         {
+          "name": "Tom Becker",
+          "mutual": "1 mutual friend"
+         },
+         {
+          "name": "Priya Nair",
+          "mutual": "4 mutual friends"
+         },
+         {
+          "name": "Jonas Weber",
+          "mutual": "Aisha Khan and 4 other mutual friends"
+         }
+        ],
+        "rowsWithOthers": []
+       }
+      ],
+      "rejectedRowsNote": "In rejectedRows, rowsAlone are rows that condition removed by itself (every other condition kept them): check each against the instruction, and if any is a row the instruction asks for, that condition is wrong and must change; rowsWithOthers also failed another condition."
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 7,
+    "stepId": "d7",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 scrolled to y=34 · 76 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t497 covers 1\n\n[banner]\nt497 layer covers 1\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542 covered-by t497\n- 1/4\nt557 link ~/people/tom.becker.9/\nt563 link \"Tom Becker\" same href\nt564 \"1 mutual friend\"\nt565 \"2w\"\nt566 button \"Confirm\"\nt567 button \"Delete\"\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt581 link ~/people/priya-nair/\nt587 link \"Priya Nair\" same href\nt588 \"4 mutual friends\"\nt589 \"5d\"\nt590 button \"Confirm\"\nt591 button \"Delete\"\n- 4/4\nt593 link ~/people/jonas-weber/\nt599 link \"Jonas Weber\" same href\nt600 \"Aisha Khan and 4 other mutual friends\"\nt601 \"1w\"\nt602 button \"Confirm\"\nt603 button \"Delete\"\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\nt616 \"2 mutual friends\"\n--- below the fold ---\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\nt627 \"Grace Liu is a mutual friend\"\n--- below the fold ---\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\nt638 \"6 mutual friends\"\n--- below the fold ---\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\nt649 \"1 mutual friend\"\n--- below the fold ---\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Confirm",
+     "read": {
+      "commandId": "cc668db6-1b20-4d1a-846b-f71d558f0d96",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 681,360 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "startedAt": 1790893893280,
+      "finishedAt": 1790893893494
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 8,
+    "stepId": "d8",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 scrolled to y=34 · 76 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t497 covers 1\n\n[banner]\nt497 layer covers 1\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542 covered-by t497\n- 1/4\nt557 link ~/people/tom.becker.9/\nt563 link \"Tom Becker\" same href\nt564 \"1 mutual friend\"\nt565 \"2w\"\nt566 button \"Confirm\"\nt567 button \"Delete\"\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt704 link ~/people/priya-nair/\nt710 link \"Priya Nair\" same href\nt711 \"4 mutual friends\"\nt712 \"5d\"\nt713 \"Request accepted\"\nt714 link \"Message\" ~/messages/t/priya-nair/\n- 4/4\nt593 link ~/people/jonas-weber/\nt599 link \"Jonas Weber\" same href\nt600 \"Aisha Khan and 4 other mutual friends\"\nt601 \"1w\"\nt602 button \"Confirm\"\nt603 button \"Delete\"\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\nt616 \"2 mutual friends\"\n--- below the fold ---\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\nt627 \"Grace Liu is a mutual friend\"\n--- below the fold ---\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\nt638 \"6 mutual friends\"\n--- below the fold ---\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\nt649 \"1 mutual friend\"\n--- below the fold ---\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Confirm",
+     "read": {
+      "commandId": "77f27944-e00e-4d98-9dff-ac8408841f41",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 902,360 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "startedAt": 1790893896881,
+      "finishedAt": 1790893897079
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 9,
+    "stepId": "d9",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 scrolled to y=50 · 76 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t497 covers 1\n\n[banner]\nt497 layer covers 1\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542 covered-by t497\n- 1/4\nt557 link ~/people/tom.becker.9/\nt563 link \"Tom Becker\" same href\nt564 \"1 mutual friend\"\nt565 \"2w\"\nt566 button \"Confirm\"\nt567 button \"Delete\"\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt704 link ~/people/priya-nair/\nt710 link \"Priya Nair\" same href\nt711 \"4 mutual friends\"\nt712 \"5d\"\nt713 \"Request accepted\"\nt714 link \"Message\" ~/messages/t/priya-nair/\n- 4/4\nt716 link ~/people/jonas-weber/\nt722 link \"Jonas Weber\" same href\nt723 \"Aisha Khan and 4 other mutual friends\"\nt724 \"1w\"\nt725 \"Request accepted\"\nt726 link \"Message\" ~/messages/t/jonas-weber/\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\nt616 \"2 mutual friends\"\n--- below the fold ---\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\nt627 \"Grace Liu is a mutual friend\"\n--- below the fold ---\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\nt638 \"6 mutual friends\"\n--- below the fold ---\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\nt649 \"1 mutual friend\"\n--- below the fold ---\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Confirm",
+     "read": {
+      "commandId": "9dda9362-76c1-43a9-bfd0-5d25f39a16de",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 1123,361 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "startedAt": 1790893900123,
+      "finishedAt": 1790893900323
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 10,
+    "stepId": "d10",
+    "resultCode": "web.action.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 scrolled to y=34 · 76 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t497 covers 1\n\n[banner]\nt497 layer covers 1\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542 covered-by t497\n- 1/4\nt728 link ~/people/tom.becker.9/\nt734 link \"Tom Becker\" same href\nt735 \"1 mutual friend\"\nt736 \"2w\"\nt737 \"Request accepted\"\nt738 link \"Message\" ~/messages/t/tom.becker.9/\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt704 link ~/people/priya-nair/\nt710 link \"Priya Nair\" same href\nt711 \"4 mutual friends\"\nt712 \"5d\"\nt713 \"Request accepted\"\nt714 link \"Message\" ~/messages/t/priya-nair/\n- 4/4\nt716 link ~/people/jonas-weber/\nt722 link \"Jonas Weber\" same href\nt723 \"Aisha Khan and 4 other mutual friends\"\nt724 \"1w\"\nt725 \"Request accepted\"\nt726 link \"Message\" ~/messages/t/jonas-weber/\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\nt616 \"2 mutual friends\"\n--- below the fold ---\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\nt627 \"Grace Liu is a mutual friend\"\n--- below the fold ---\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\nt638 \"6 mutual friends\"\n--- below the fold ---\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\nt649 \"1 mutual friend\"\n--- below the fold ---\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-click",
+     "status": "succeeded",
+     "pageChanged": true,
+     "control": "Confirm",
+     "read": {
+      "commandId": "6474a03a-1c42-44d1-b39f-e0e8fbdab184",
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "the click lands on the target or something inside it",
+       "actual": "the point 460,360 landed on the target"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "startedAt": 1790893950945,
+      "finishedAt": 1790893951171
+     },
+     "inFlow": true
+    }
+   },
+   {
+    "step": 11,
+    "stepId": "d11",
+    "resultCode": "web.inspect.succeeded",
+    "evidence": {
+     "schemaVersion": "web-llm-page.v3",
+     "trust": "untrusted-page-evidence",
+     "location": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+     "truncated": false,
+     "page": "PAGE \"Friends | Circleway\"\nURL ~/friends/   (~ = http://127.0.0.1:63149/scenarios/social-network-feed)\nVIEW 1280x720 at the top · 75 elements with visible words or a control, in page order · find_on_page searches the rest\n\n[banner]\nt498 link \"Circleway\" ~/\nt502 field \"Search Circleway\" =\"\"\n[navigation]\nt504 link \"Home\" ~/\nt507 link \"Friends\" ~/friends/\nt511 link \"Video\" ~/watch/\nt514 link \"Groups\" ~/groups/feed/\n[banner]\nt519 button \"Menu\"\nt522 button \"Messenger\"\nt526 button \"Notifications\"\nt530 button \"Your profile\"\n[navigation]\nt537 h1 \"Friends\"\n- 1/6\nt540 link \"Home\" ~/friends/\n- 2/6\nt542 link \"Friend requests\" ~/friends/requests/\n- 3/6\nt544 link \"Suggestions\" ~/friends/suggestions/\n- 4/6\nt546 link \"All friends\" ~/friends/list/\n- 5/6\nt548 link \"Birthdays\" ~/friends/birthdays/\n- 6/6\nt550 link \"Custom lists\" ~/friends/lists/\n[main]\nt553 h2 \"Friend requests\"\nt554 link \"See all\" same href as t542\n- 1/4\nt728 link ~/people/tom.becker.9/\nt734 link \"Tom Becker\" same href\nt735 \"1 mutual friend\"\nt736 \"2w\"\nt737 \"Request accepted\"\nt738 link \"Message\" ~/messages/t/tom.becker.9/\n- 2/4\nt692 link ~/people/amara-osei/\nt698 link \"Amara Osei\" same href\nt699 \"23 mutual friends\"\nt700 \"3d\"\nt701 \"Request accepted\"\nt702 link \"Message\" ~/messages/t/amara-osei/\n- 3/4\nt704 link ~/people/priya-nair/\nt710 link \"Priya Nair\" same href\nt711 \"4 mutual friends\"\nt712 \"5d\"\nt713 \"Request accepted\"\nt714 link \"Message\" ~/messages/t/priya-nair/\n- 4/4\nt716 link ~/people/jonas-weber/\nt722 link \"Jonas Weber\" same href\nt723 \"Aisha Khan and 4 other mutual friends\"\nt724 \"1w\"\nt725 \"Request accepted\"\nt726 link \"Message\" ~/messages/t/jonas-weber/\nt605 h2 \"People you may know\"\nt606 link \"See all\" same href as t544\n- 1/6\nt609 link ~/people/rosa-delgado/\nt615 link \"Rosa Delgado\" same href\n--- below the fold ---\nt616 \"2 mutual friends\"\nt617 button \"Add friend\"\nt618 button \"Remove\"\n--- on screen ---\n- 2/6\nt620 link ~/people/jonas.weber.hb/\nt626 link \"Jonas Weber\" same href\n--- below the fold ---\nt627 \"Grace Liu is a mutual friend\"\nt628 button \"Add friend\"\nt629 button \"Remove\"\n--- on screen ---\n- 3/6\nt631 link ~/people/idris-bello/\nt637 link \"Idris Bello\" same href\n--- below the fold ---\nt638 \"6 mutual friends\"\nt639 button \"Add friend\"\nt640 button \"Remove\"\n--- on screen ---\n- 4/6\nt642 link ~/people/noah-fischer/\nt648 link \"Noah Fischer\" same href\n--- below the fold ---\nt649 \"1 mutual friend\"\nt650 button \"Add friend\"\nt651 button \"Remove\"\n- 5/6\nt653 link ~/people/chloe-martin/\nt659 link \"Chloe Martin\" same href\nt660 \"9 mutual friends\"\nt661 button \"Add friend\"\nt662 button \"Remove\"\n- 6/6\nt664 link ~/people/sam-okoro/\nt670 link \"Sam Okoro\" same href\nt671 \"3 mutual friends\"\nt672 button \"Add friend\"\nt673 button \"Remove\"",
+     "ok": true,
+     "node": "web.output.dom-extract_list",
+     "status": "succeeded",
+     "pageChanged": false,
+     "read": {
+      "commandId": "4915ed6f-825a-4b94-b49b-1e3869d4ffa1",
+      "actionType": "web.dom.extract_list",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "at least 0 records, each carrying name, mutual",
+       "actual": "4 records from 1 page, but where kept none of the 4 items it was applied to, so the rows it rejected were returned unfiltered; where[0] rejected every one -- narrow the conditions rather than trusting these rows; every declared field present"
+      },
+      "message": "List extracted.",
+      "url": "http://127.0.0.1:63149/scenarios/social-network-feed/friends/",
+      "title": "Friends | Circleway",
+      "extracted": [
+       {
+        "name": "Tom Becker",
+        "mutual": "1 mutual friend"
+       },
+       {
+        "name": "Amara Osei",
+        "mutual": "23 mutual friends"
+       },
+       {
+        "name": "Priya Nair",
+        "mutual": "4 mutual friends"
+       },
+       {
+        "name": "Jonas Weber",
+        "mutual": "Aisha Khan and 4 other mutual friends"
+       }
+      ],
+      "extraction": {
+       "recordCount": 4,
+       "pagesRead": 1,
+       "truncated": false,
+       "missingFields": [],
+       "fieldNames": [
+        "name",
+        "mutual"
+       ],
+       "itemsSeen": 4,
+       "emptyRecords": 0,
+       "listPresence": "appeared",
+       "listWait": {
+        "stoppedOn": "list_present",
+        "waitedMs": 904,
+        "waitedFor": 1
+       },
+       "conditions": {
+        "applied": 4,
+        "kept": 0,
+        "rejected": [
+         4
+        ],
+        "unfiltered": true,
+        "seen": [
+         null
+        ],
+        "alone": [
+         4
+        ]
+       }
+      },
+      "startedAt": 1790893973498,
+      "finishedAt": 1790893974448,
+      "rejectedRows": [
+       {
+        "where": 0,
+        "rejected": 4,
+        "alone": 4,
+        "rowsAlone": [
+         {
+          "name": "Tom Becker",
+          "mutual": "1 mutual friend"
+         },
+         {
+          "name": "Amara Osei",
+          "mutual": "23 mutual friends"
+         },
+         {
+          "name": "Priya Nair",
+          "mutual": "4 mutual friends"
+         },
+         {
+          "name": "Jonas Weber",
+          "mutual": "Aisha Khan and 4 other mutual friends"
+         }
+        ],
+        "rowsWithOthers": []
+       }
+      ],
+      "rejectedRowsNote": "In rejectedRows, rowsAlone are rows that condition removed by itself (every other condition kept them): check each against the instruction, and if any is a row the instruction asks for, that condition is wrong and must change; rowsWithOthers also failed another condition."
+     },
+     "inFlow": true
+    }
+   }
+  ],
+  "reused": false
+ }
+}
