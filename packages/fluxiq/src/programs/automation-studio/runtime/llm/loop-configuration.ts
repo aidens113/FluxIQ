@@ -20,6 +20,7 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
@@ -280,6 +281,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * between "each step worked when I took it" and "these steps work as a Flow".
    */
   dryRun?: false;
+  /**
+   * What the dry run observed, each time it passes: the replay it passed on and
+   * what each step answered, for a judge of what the build actually did. Never
+   * called on a refusal (`node-tools/dry-run-gate.ts`).
+   */
+  observeTest?(report: AutomationStudioFlowDraftTestReport): void;
   signal?: AbortSignal;
 };
 

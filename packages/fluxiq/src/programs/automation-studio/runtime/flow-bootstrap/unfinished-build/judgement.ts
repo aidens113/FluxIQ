@@ -19,10 +19,24 @@
 // is read by the same rule the completion check applies
 // (`../instructed-acts/checklist.ts`), acts and their choices alike, so the
 // repair is told exactly what a completion would be refused for.
+//
+// **A finished round is judged by the judge (t195).** A Flow the model said
+// was ready and whose test passed is judged against the instruction from what
+// that test actually did (the caller's `judge`, `./phases.ts`). One judged
+// wrong is made a judgement here too (`automationStudioFlowBootstrapJudgeFinished`),
+// carrying the judge's own account, so it takes the same repair path as a
+// round that stopped short. The checklist is still read for it, as
+// information: the Flow is judged on what its test does.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapTested, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
+import type {
+  AutomationStudioFlowBootstrapJudgedWrong,
+  AutomationStudioFlowBootstrapJudgement,
+  AutomationStudioFlowBootstrapTested,
+  AutomationStudioFlowBootstrapTestVerdict,
+  AutomationStudioFlowBootstrapUnfinishedStop
+} from "./contracts.ts";
 
 /** What the caller's test answers: the loop's dry-run gate, over the steps it is given. */
 export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStudioFlowDraftStep[]) => Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
@@ -71,13 +85,9 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       testIssueCodes = [...new Set(refusal.issueCodes)];
     } else tested = "replayed_clean";
   }
-  const checklist = input.checklist(seed);
-  const todo = automationStudioInstructedActsNotDone(checklist);
-  const all = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
   // A step named for an act is a claim; the same step working when the Flow
-  // ran from its start is the nearest thing to a result Core can see.
-  const worked = new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position));
-  const proven = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position) => position !== undefined && worked.has(position)).length;
+  // ran from its start is the nearest thing to a result Core can see (`proven`).
+  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position)));
   return {
     kind: "judged",
     seed,
@@ -88,12 +98,73 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       testIssueCodes,
       failedSteps: seed.filter((step) => step.replayed !== undefined && step.replayed.status !== "replayed").map((step) => step.position),
       stepsInFlow: seed.length,
-      done: all - todo.length,
+      done,
       ...(tested === "not_tested" ? {} : { proven }),
       todo,
-      lastIssueCodes: [...new Set(input.lastIssueCodes)]
+      lastIssueCodes: [...new Set(input.lastIssueCodes)],
+      flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
   };
+}
+
+/**
+ * The judgement of a finished round the judge sent back: a `no`, or an unsure
+ * verdict where steps carried from an earlier Flow were not run in its test.
+ * Nothing is run here: the loop's own test already ran (`replayed_clean`), or
+ * ran none of the carried steps (`not_tested`). The seed is the Flow the round
+ * finished with, which the repair starts from.
+ */
+export function automationStudioFlowBootstrapJudgeFinished(input: {
+  round: number;
+  steps: readonly AutomationStudioFlowDraftStep[];
+  verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>;
+  checklist(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioInstructedActChecklistItem[] | undefined;
+}): { judgement: AutomationStudioFlowBootstrapJudgement; seed: AutomationStudioFlowDraftStep[] } {
+  const seed = automationStudioFlowBootstrapRepairSeed(input.steps);
+  // A repair seed carries no replays: what worked in the loop's own test is read off the round's steps, by id.
+  const workedIds = new Set(input.steps.filter((step) => step.replayed?.status === "replayed" && step.id !== undefined).map((step) => step.id));
+  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)));
+  const judge = judgedWrong(input.verdict);
+  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length ? "not_tested" : "replayed_clean";
+  return {
+    seed,
+    judgement: {
+      round: input.round,
+      stopped: "judged_wrong",
+      tested,
+      testIssueCodes: [],
+      failedSteps: [],
+      stepsInFlow: seed.length,
+      done,
+      ...(tested === "not_tested" ? {} : { proven }),
+      todo,
+      lastIssueCodes: [],
+      judge,
+      flowSignature: automationStudioFlowDraftReplaySignature(seed)
+    }
+  };
+}
+
+/** The judge's account, as a judgement keeps it: only what it said. */
+function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgedWrong {
+  if (verdict.verdict !== "no") {
+    return { verdict: verdict.verdict, findings: verdict.why ? [verdict.why] : [], ...(verdict.untestedCarried?.length ? { untestedCarried: [...verdict.untestedCarried] } : {}) };
+  }
+  return {
+    verdict: "no",
+    ...(verdict.expected ? { expected: verdict.expected } : {}),
+    ...(verdict.observed ? { observed: verdict.observed } : {}),
+    ...(verdict.advice ? { advice: verdict.advice } : {}),
+    findings: [...verdict.findings]
+  };
+}
+
+/** Acts and choices done, and the ids of those still to do, by the checklist's rule. */
+function checklistRead(checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined, worked: ReadonlySet<number>): { done: number; todo: string[]; proven: number } {
+  const todo = automationStudioInstructedActsNotDone(checklist);
+  const all = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
+  const proven = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position) => position !== undefined && worked.has(position)).length;
+  return { done: all - todo.length, todo, proven };
 }
 
 /** The judgement as the repair's first decision reads it (`../../llm/evidence-loop/resume.ts`): codes, counts and ids, every one of them. */
@@ -106,7 +177,20 @@ export function automationStudioFlowBootstrapJudgementValue(judgement: Automatio
     stepsInFlow: judgement.stepsInFlow,
     actsDone: judgement.done,
     actsTodo: [...judgement.todo],
-    ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {})
+    ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {}),
+    ...(judgement.judge ? { judge: judgeValue(judgement.judge) } : {})
+  };
+}
+
+/** The judge's account as the repair reads it: its words are the model's own, already screened by the judge. */
+function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject {
+  return {
+    verdict: judge.verdict,
+    ...(judge.expected ? { expected: judge.expected } : {}),
+    ...(judge.observed ? { observed: judge.observed } : {}),
+    ...(judge.advice ? { advice: judge.advice } : {}),
+    findings: [...judge.findings],
+    ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {})
   };
 }
 
@@ -114,8 +198,14 @@ export function automationStudioFlowBootstrapJudgementValue(judgement: Automatio
  * Whether a repair got any further than the judgement before it: more acts or
  * choices done, more steps in the Flow, or fewer of them failing the test. A
  * repair that got no further is the evidence that no route is left.
+ *
+ * Where a judge sent a Flow back (either side has `judge`), the checklist is
+ * information, not the bar: the repair advanced if it handed back a different
+ * Flow -- its replay signature changed -- or more of the checklist is done. A
+ * repair that hands back the same Flow is the evidence for not doable.
  */
 export function automationStudioFlowBootstrapJudgementAdvanced(before: AutomationStudioFlowBootstrapJudgement, after: AutomationStudioFlowBootstrapJudgement): boolean {
+  if (before.judge || after.judge) return after.flowSignature !== before.flowSignature || after.done > before.done;
   if (after.done > before.done || after.stepsInFlow > before.stepsInFlow) return true;
   if (before.tested === "replay_failed" && after.tested === "replayed_clean") return true;
   return before.tested === "replay_failed" && after.tested === "replay_failed" && after.failedSteps.length < before.failedSteps.length;

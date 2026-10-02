@@ -27,6 +27,17 @@
 // here proposes the step it might have meant instead. A step leaves a Flow
 // because the model decided it should, and an amendment the loop reinterpreted
 // would be an edit -- perhaps a removal -- that nobody decided.
+//
+// **It does say what comes next, by number, where the draft shows it.** Live run
+// 37 (`run-muq5v4zg-39182b58`) filtered its friend requests correctly as step
+// 13, sent `13 repeat over 13` with no press anywhere in the draft, was told
+// the rule in general (`over_not_before`), then reran step 13 unchanged three
+// times (`changes_nothing`) until the round stopped -- it never pressed a
+// Confirm. Both refusals were about a listing whose rows were right and a loop
+// that lacked its act. So a refusal about a listing carries `next`: the press
+// after it to put the repeat on, or, when there is none, that the act on one
+// row it kept comes first, with the repeat to send then. Nothing is changed on
+// the model's behalf; `next` is information, in the draft's own numbers.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
@@ -52,9 +63,9 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   no_such_position: "There is no position to move a step to at that number.",
   run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs an input saying what changes in the step's argument, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",
   no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
-  over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}.",
+  over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}. When no step does the act to a row yet, do it to one row the listing kept and add it first: there is nothing to repeat until then.",
   not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs.",
-  changes_nothing: "That rerun was already run with exactly this argument on this same page, and its result is the one already shown: running it again changes nothing, so it was not run. Change what differs in the step's argument, change the page first, or go on with the result you have.",
+  changes_nothing: "That rerun was already run with exactly this argument on this same page, and its result is the one already shown: running it again changes nothing, so it was not run. Change what differs in the step's argument, change the page first, or go on with the result you have. A listing whose rows are right is never run again: go on to the act on one row it kept.",
   did_not_work: "That step did not work, so it is already out of the Flow and nothing needs dropping or keeping about it. The only amendment that changes it is rerun with a corrected argument; or run the action again as a new call. If the Flow does not need it, leave it alone.",
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
@@ -73,6 +84,10 @@ const AMENDMENT_UNDONE_CODE = "llm_evidence_loop.draft_amendment_undone";
 // reason and sent the same edit anyway: everything-store round 2 sent one set
 // of five refused amendments four decisions running.
 const REPEATED_INSTRUCTION = " Every refusal marked repeated was refused for the same reason before, and it will be refused again however often it is sent: stop sending it.";
+
+// Said whenever a refusal carries `next`, so the model reads it as the step to
+// take rather than one more explanation (live run 37).
+const NEXT_INSTRUCTION = " next, beside a refusal, is what to do instead, in the draft's own step numbers: do that rather than sending the refused amendment again.";
 
 const UNDONE_INSTRUCTION = " These amendments put the draft back exactly as it stood at iteration sameDraftAsIteration, so the Flow is no different from then."
   + " Decide once whether the step belongs in the Flow and leave it: toggling a step counts toward stopping this exploration.";
@@ -94,13 +109,16 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   refusals: readonly (AutomationStudioFlowDraftAmendmentRefusal & { repeated?: boolean })[];
   /** How many of the same decision's amendments did land. */
   applied: number;
-  steps: readonly { position: number }[];
+  steps: readonly AutomationStudioDraftAmendmentFeedbackStep[];
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
   /** The iteration whose draft the applied amendments put back exactly, when they did. */
   sameDraftAsIteration?: number;
 }): JsonObject {
-  const refused = input.refusals.map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}) }));
+  const refused = input.refusals.map((refusal) => {
+    const next = nextStep(refusal, input.steps);
+    return { step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}), ...(next ? { next } : {}) };
+  });
   const undone = input.sameDraftAsIteration !== undefined;
   const met = [...new Set(refused.map((refusal) => refusal.reason))];
   const reasons: JsonObject = {};
@@ -119,8 +137,56 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
     ...(undone ? { sameDraftAsIteration: input.sameDraftAsIteration! } : {}),
     instruction: ((refused.length || !undone ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
       + (refused.some((refusal) => refusal.repeated) ? REPEATED_INSTRUCTION : "")
+      + (refused.some((refusal) => refusal.next) ? NEXT_INSTRUCTION : "")
       + (undone ? UNDONE_INSTRUCTION : "")).trim()
   };
+}
+
+/**
+ * What the feedback reads of a draft step. The position always; from the loop,
+ * which passes the draft itself, also whether the step changes something
+ * (`effect`), whether that worked, and whether it is in the Flow -- enough to
+ * tell a listing from a press. A step given as a position alone gets the
+ * general reason and no `next`.
+ */
+type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string };
+
+/**
+ * What to do instead of a refused amendment about a listing, in the draft's
+ * numbers, or nothing when the refusal is not about one.
+ *
+ * `over_not_before`: the listing is whichever of the two steps named only
+ * reads -- `over`, or the step the repeat was put on (`13 repeat over 13`).
+ * `changes_nothing`: the step rerun unchanged, when it only reads.
+ */
+function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
+  const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
+  const reads = (step: AutomationStudioDraftAmendmentFeedbackStep | undefined): step is AutomationStudioDraftAmendmentFeedbackStep => step?.effect !== undefined && step.effect !== "mutate";
+  if (refusal.reason === "over_not_before") {
+    const listing = [at(refusal.over), at(refusal.step)].find(reads);
+    return listing ? `Step ${listing.position} is the listing, so the repeat cannot go on it. ${rowAct(listing.position, steps)}` : undefined;
+  }
+  if (refusal.reason === "changes_nothing") {
+    const listing = at(refusal.step);
+    if (!reads(listing)) return undefined;
+    return `Step ${listing.position} already ran with exactly this argument, so its result stands as shown: do not run it again. If it lists the rows an act is done to and they are the right ones, go on to the act. ${rowAct(listing.position, steps)}`;
+  }
+  return undefined;
+}
+
+/**
+ * The act a loop over the listing at `listing` needs: the first step after it
+ * that changed something, with the repeat to put on it, or -- when there is
+ * none -- that the act on one row comes first.
+ */
+function rowAct(listing: number, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string {
+  const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false);
+  const repeat = (act: string): string => `{"step": ${act}, "change": "repeat", "over": ${listing}}`;
+  if (!press) {
+    return `No step after step ${listing} does anything to a row yet, so there is nothing to repeat. A loop over rows needs the act done once first: do it to one row step ${listing} kept -- press that row's own control, never one on a row it left out -- with add true and its act, then send ${repeat("<that press>")}.`;
+  }
+  const add = press.disposition === "kept" ? "" : `add step ${press.position} with its act, then `;
+  return `Step ${press.position} is the first step after step ${listing} that changes something. If it is the act done to one row step ${listing} kept, the repeat goes on it: ${add}send ${repeat(String(press.position))}.`;
 }
 
 /** Every position the draft has, ascending. */

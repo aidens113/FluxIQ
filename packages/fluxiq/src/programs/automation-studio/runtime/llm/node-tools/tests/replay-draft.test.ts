@@ -243,3 +243,47 @@ describe("what a dry run still refuses", () => {
     expect(sent.verdict.outcomes[2]?.withheldBy).toBe(2);
   });
 });
+
+// What the test observed (t195-w26a): the judge of a build's actual results is
+// shown what each step's replay answered, not only the status word it earned.
+describe("what a replay observed", () => {
+  const STORE = "https://store.test/";
+  const answering = (steps: SiteStep[]) => async ({ callId, value }: { callId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+    if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { reset: callId }, effectApplied: true, resultCode: "core.replay.replayed" };
+    const node = String(value.node);
+    const read = steps.find((each) => each.node === node)?.effect === "observe";
+    const code = value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed";
+    return { kind: "llm_evidence_tool_execution", evidence: read ? { rows: [{ name: "Towels", price: "9.99" }] } : { pressed: node }, effectApplied: code === "core.replay.replayed", resultCode: code };
+  };
+
+  it("reports one observation per step, a verified step included, with what each step answered and not the reset", async () => {
+    const steps: SiteStep[] = [
+      { node: "node.open_towels", from: STORE, there: true },
+      { node: "node.add_to_cart", from: STORE, consequences: ["create_new"], there: true },
+      { node: "node.read_cart", from: STORE, effect: "observe", there: true }
+    ];
+    const { verdict, observations } = await replayAutomationStudioFlowDraft({ steps: draft(steps), attempt: 1, executeTool: answering(steps) });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.outcomes[1]?.mode).toBe("verify");
+    expect(observations).toEqual([
+      { step: 1, stepId: "d1", resultCode: "core.replay.replayed", evidence: { pressed: "node.open_towels" } },
+      { step: 2, stepId: "d2", resultCode: "core.replay.verified", evidence: { pressed: "node.add_to_cart" } },
+      { step: 3, stepId: "d3", resultCode: "core.replay.replayed", evidence: { rows: [{ name: "Towels", price: "9.99" }] } }
+    ]);
+  });
+
+  it("reports nothing for a step whose answer could not be read, and nothing when the reset failed", async () => {
+    const steps: SiteStep[] = [{ node: "node.open_towels", from: STORE, there: true }, { node: "node.add_to_cart", from: STORE, there: true }];
+    const unreadable = await replayAutomationStudioFlowDraft({
+      steps: draft(steps),
+      attempt: 1,
+      executeTool: async (call) => {
+        if (String(call.value.node) === "node.add_to_cart") throw new Error("the host does not replay");
+        return answering(steps)(call);
+      }
+    });
+    expect(unreadable.observations.map((each) => each.step)).toEqual([1]);
+    const noReset = await replayAutomationStudioFlowDraft({ steps: draft(steps), attempt: 1, executeTool: async () => answer("core.replay.reset_failed") });
+    expect(noReset.observations).toEqual([]);
+  });
+});

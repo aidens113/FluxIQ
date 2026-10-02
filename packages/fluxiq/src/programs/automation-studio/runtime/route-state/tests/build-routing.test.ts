@@ -354,11 +354,15 @@ describe("route-state captures per recorded build", () => {
     // evidence did not add an entry.
     expect(rows).toEqual({
       // A completion the check refuses is no longer tested (2026-09-30; `recorded-runs.ts` says why), so
-      // the decisions after bigbox's 22 and 26, crossborder's 19 and run 4's 40, 44 and 46 have no dry-run
-      // calls before them: 15, 10 and 29 unreported captures where the logged runs gave 17, 11 and 32.
+      // the decisions after bigbox's 22 and 26, crossborder's 19 and run 4's 29, 40, 44 and 46 have no
+      // dry-run calls before them: 15, 10 and 28 unreported captures where the logged runs gave 17, 11 and 32.
+      // Run 4's 29 joined them on 2026-10-01 (2a5ad68c): its check passed only so its dry run would happen,
+      // and the dry run now makes steps 3 and 6 optional and would accept it, so the script refuses it as
+      // today's check does. Decision 30 then follows a refusal, not a dry run: one capture fewer after, and
+      // the refusal's entry grows the shown count, so the old rule catches it (before 30, unseen 2).
       "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 4 },
       crossborder: { decisions: 22, before: 12, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 1 },
-      "everything-store-run4": { decisions: 48, before: 29, afterReported: 0, afterUnreported: 29, callsBeforeUnseen: 3 }
+      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 28, callsBeforeUnseen: 2 }
     });
   });
 

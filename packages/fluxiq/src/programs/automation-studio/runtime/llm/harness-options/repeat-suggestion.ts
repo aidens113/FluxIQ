@@ -28,6 +28,10 @@
 // span (`after`, `../../flow-bootstrap/instructed-acts/span.ts`). The answer is
 // the same repeat run one step further: `{ step: <the repeat's own step>,
 // change: "repeat", over: <its over>, through: <after> }`.
+//
+// **Where it is said (t195).** A completion is no longer refused for either
+// reason, so the suggestion is no longer a refusal's: the acts checklist shows
+// it on the act while the model builds (`./draft-acts.ts`, `repeatWith`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";

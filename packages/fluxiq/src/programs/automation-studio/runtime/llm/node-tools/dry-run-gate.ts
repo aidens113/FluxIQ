@@ -40,6 +40,22 @@ import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayIn
  */
 export type AutomationStudioFlowDraftDryRunRefusal = "cancelled" | { issueCodes: readonly string[] };
 
+/** What one step's replay answered: its evidence, as the domain gave it. */
+export type AutomationStudioFlowDraftTestObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue };
+
+/**
+ * What a passing test observed, for a judge of what the build actually did.
+ *
+ * `verdict` is the replay it passed on; `observations` what that replay's
+ * steps answered; `reused` that the answer came from an earlier replay of the
+ * same draft rather than a new one.
+ */
+export type AutomationStudioFlowDraftTestReport = {
+  verdict: AutomationStudioFlowDraftDryRun;
+  observations: AutomationStudioFlowDraftTestObservation[];
+  reused: boolean;
+};
+
 export type AutomationStudioFlowDraftDryRunGateInput = {
   /** Off for a caller that turned the dry run off, or that accrues no draft. */
   enabled: boolean;
@@ -64,6 +80,12 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
    * attempt can say so rather than reading as a dry run that never ran.
    */
   reusedClean?(): void;
+  /**
+   * What the test observed, on every pass -- a new clean replay, one that
+   * passed once a sometimes-present step was made optional, or an earlier
+   * replay reused -- and never on a refusal or a draft the gate does not apply to.
+   */
+  observed?(report: AutomationStudioFlowDraftTestReport): void;
   signal?: AbortSignal;
 };
 
@@ -81,6 +103,9 @@ export function automationStudioFlowDraftDryRunGate(
   // replayed, or is one the Flow would not always run), so an unconditional
   // step that did not replay is never carried past a later completion on it.
   let cleanSignature: string | undefined;
+  // What the replay that made `cleanSignature` clean passed on and observed,
+  // so a reuse of it reports what that replay saw.
+  let clean: { verdict: AutomationStudioFlowDraftDryRun; observations: AutomationStudioFlowDraftTestObservation[] } | undefined;
   // Steps an earlier dry run already told the model did not replay. It marks
   // their feedback lines `again` and nothing more. It used to let an
   // unreproducible step through the second time it was reported, and live
@@ -98,13 +123,18 @@ export function automationStudioFlowDraftDryRunGate(
   // not: a step marked optional, or only_if on a check, no longer blocks, and
   // routing is not part of the signature. Insisting changes nothing: a step
   // that did not replay blocks again (`../../flow-draft/dry-run.ts`).
-  let refused: { signature: string; verdict: AutomationStudioFlowDraftDryRun; replays: number } | undefined;
+  let refused: { signature: string; verdict: AutomationStudioFlowDraftDryRun; observations: AutomationStudioFlowDraftTestObservation[]; replays: number } | undefined;
+  const passed = (verdict: AutomationStudioFlowDraftDryRun, observations: AutomationStudioFlowDraftTestObservation[], reused: boolean): undefined => {
+    clean = { verdict, observations };
+    input.observed?.({ verdict, observations, reused });
+    return undefined;
+  };
   return async () => {
     if (!input.enabled || !automationStudioFlowDraftReplayable(input.steps)) return undefined;
     const signature = automationStudioFlowDraftReplaySignature(input.steps);
     if (signature === cleanSignature) {
       input.reusedClean?.();
-      return undefined;
+      return clean ? passed(clean.verdict, clean.observations, true) : undefined;
     }
     if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
       const again = automationStudioFlowDraftDryRunVerdict({
@@ -118,7 +148,7 @@ export function automationStudioFlowDraftDryRunGate(
         // such, so the attempt does not read as a dry run that never ran.
         cleanSignature = signature;
         input.reusedClean?.();
-        return undefined;
+        return passed(again, refused.observations, true);
       }
       const feedback = automationStudioFlowDraftDryRunFeedback(again, asked);
       input.accountEvidence(feedback);
@@ -149,17 +179,18 @@ export function automationStudioFlowDraftDryRunGate(
     input.targetMoved();
     if (replay.verdict.ok) {
       cleanSignature = signature;
-      return undefined;
+      return passed(replay.verdict, replay.observations, false);
     }
     // A step the replay found missing and proved the Flow did not need -- a
     // banner the site remembers having been answered -- is made optional rather
     // than refused, when that is all that stood in the way
     // (`../../flow-draft/sometimes-present.ts`).
-    if (madeOptional(input.steps, replay.verdict)) {
+    const optional = madeOptional(input.steps, replay.verdict);
+    if (optional) {
       cleanSignature = signature;
-      return undefined;
+      return passed(optional, replay.observations, false);
     }
-    refused = { signature, verdict: replay.verdict, replays: refused?.signature === signature ? refused.replays + 1 : 1 };
+    refused = { signature, verdict: replay.verdict, observations: replay.observations, replays: refused?.signature === signature ? refused.replays + 1 : 1 };
     // The target as it was when the replay broke, which is what a correction
     // has to be made from, and then the verdict that says what to do about it.
     if (replay.evidence) {
@@ -178,24 +209,24 @@ export function automationStudioFlowDraftDryRunGate(
 
 /**
  * Makes optional the steps this refused replay proved are only sometimes there,
- * and says whether that leaves nothing in the way. Changes nothing when it does
- * not: a step is made optional only by a replay the Flow then passes, so a
+ * and answers the verdict that passes once they are, when that leaves nothing in
+ * the way. Changes nothing, and answers `undefined`, when it does not: a step is made optional only by a replay the Flow then passes, so a
  * refusal the model must answer is never half-answered for it.
  */
-function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): boolean {
+function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): AutomationStudioFlowDraftDryRun | undefined {
   const sometimesPresent = automationStudioFlowDraftSometimesPresentStepIds({ steps, verdict });
-  if (!sometimesPresent.size) return false;
+  if (!sometimesPresent.size) return undefined;
   const judged = automationStudioFlowDraftDryRunVerdict({
     attempt: verdict.attempt,
     reset: verdict.reset,
     outcomes: verdict.outcomes,
     conditional: new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes), ...sometimesPresent])
   });
-  if (!judged.ok) return false;
+  if (!judged.ok) return undefined;
   for (const step of steps) {
     if (!sometimesPresent.has(automationStudioFlowDraftStepId(step))) continue;
     step.routing = { kind: "optional" };
     if (step.replayed) step.replayed = { ...step.replayed, madeOptional: true };
   }
-  return true;
+  return judged;
 }

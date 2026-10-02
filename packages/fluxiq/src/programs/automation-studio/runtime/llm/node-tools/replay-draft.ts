@@ -74,6 +74,17 @@ export type AutomationStudioFlowDraftReplayResult = {
    * replay broke*, which is what a correction needs.
    */
   evidence?: { callId: string; toolId: string; value: JsonValue };
+  /**
+   * What each step's replay answered, one entry per step whose answer could be
+   * read, in the order they ran; the reset is not a step and is not here.
+   *
+   * The verdict keeps only a status word per step, and a judge of what the
+   * build actually did needs what the test saw: the rows a read returned, the
+   * page a press left. A re-anchored step reports its second answer, the one
+   * its outcome is read from. Structurally `AutomationStudioFlowDraftTestObservation`
+   * (`./dry-run-gate.ts`), declared here so the replay does not import its gate.
+   */
+  observations: { step: number; stepId?: string; resultCode?: string; evidence: JsonValue }[];
 };
 
 /**
@@ -99,13 +110,15 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
   const from = automationStudioFlowDraftReplayFrom(input.steps);
   const outcomes: AutomationStudioFlowDraftReplayOutcome[] = [];
+  const observations: AutomationStudioFlowDraftReplayResult["observations"] = [];
   const first = proposed[0];
-  if (!from || !first) return { verdict: verdictOf(input, "failed", outcomes) };
+  if (!from || !first) return { verdict: verdictOf(input, "failed", outcomes), observations };
   const resetCallId = `dryrun.${input.attempt}.reset`;
   const reset = await call(input, resetCallId, automationStudioNodeReplayToolId(first), automationStudioNodeReplayResetCall(from));
   if (!reset.readable || reset.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.resetFailed || reset.result.effectApplied !== true) {
     return {
       verdict: verdictOf(input, "failed", outcomes),
+      observations,
       ...(reset.readable ? { evidence: { callId: resetCallId, toolId: automationStudioNodeReplayToolId(first), value: reset.result.evidence } } : {})
     };
   }
@@ -146,6 +159,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
       ...(reanchored ? { reanchored: true as const } : {})
     };
     outcomes.push(outcome);
+    if (ran.readable) {
+      observations.push({
+        step: step.position,
+        stepId,
+        ...(ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
+        evidence: ran.result.evidence
+      });
+    }
     if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed[index + 1])) {
       withheldBy = step.position;
     }
@@ -156,7 +177,7 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     // sense halfway, and the difference is what the model needs.
     if (!evidence && ran.readable) evidence = { callId: reanchored ? `${callId}.again` : callId, toolId, value: ran.result.evidence };
   }
-  return { verdict: verdictOf(input, "ok", outcomes), ...(evidence ? { evidence } : {}) };
+  return { verdict: verdictOf(input, "ok", outcomes), observations, ...(evidence ? { evidence } : {}) };
 }
 
 function verdictOf(

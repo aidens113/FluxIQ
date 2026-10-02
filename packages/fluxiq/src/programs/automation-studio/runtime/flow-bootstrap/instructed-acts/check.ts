@@ -1,13 +1,29 @@
 // Whether every lasting act the instruction asks for has a step in the draft
 // that does it (`./contracts.ts` says why, and which run it was measured on).
 //
+// **This verdict no longer refuses a completion (t195).** It refused lane B's
+// `choice_is_the_act_step` six times, lane D's run 36 24 times while the
+// checklist showed the act done, and in round 4 the napkins named on the
+// towels' Add (run 40): each time the Flow never reached the test that would
+// have shown what it did. The test from the start, and then a judge of its
+// actual results, decide whether the Flow does what it was told; this verdict
+// is information beside them. The one rule a completion is still refused for
+// is the permission rule (`./permission.ts`): an act whose verb names a class
+// a person is asked about needs a step declaring it, or nobody is asked.
+// "Refused" below is what this verdict says, not what happens to a completion.
+//
 // **What is checked, and what cannot be.** Core cannot see what a step did to
 // the page, so a claim is checked for what makes it possible: the step exists,
-// the model kept it, it is an action that changed something, and no other act
-// already claimed it. A model that names the wrong press for "save" passes this
-// and is caught by the run's own verification; a model that names nothing,
-// names a step it dropped, names a look, or names one press for two acts is
-// caught here, while it can still act on it.
+// the model kept it, it is an action that changed something, no other act
+// already claimed it, and its own record does not name another act's object
+// instead of this one's (`./object-binding.ts`). A model that names the wrong
+// press for "save" on a record that names nothing passes this and is caught by
+// the run's own verification; a model that names nothing, names a step it
+// dropped, names a look, names one press for two acts, or names the towels'
+// Add to cart for the napkins is caught here, while it can still act on it
+// (live run 40, `run-muq6lqnw-fdfa7aac`), and told which object that step acted
+// on and which act asks for it. So is a quantity claimed on a repeat over a
+// list, or on presses of the add that are not the count (`./quantity-fault.ts`).
 //
 // **Forgiving in how an act is named, never in whether it is.** The model may
 // name an act by the id a refusal gave it (`a2`), by a word of the person's
@@ -80,6 +96,8 @@ import type {
   AutomationStudioInstructedChoice
 } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedActsOnSaid } from "./object-binding.ts";
+import { AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS } from "./quantity-fault.ts";
 import { automationStudioInstructedActsStanding } from "./standing.ts";
 
 /** The issue a missing act refuses completion under. */
@@ -101,7 +119,8 @@ const KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonl
   submit: ["book", "buy", "order", "send", "post", "create", "confirm", "withdraw", "submit", "place", "check out", "checkout", "ask", "request", "apply", "quote", "bid"]
 });
 
-const INSTRUCTION = "Nothing was created and this build is still open. "
+/** What a refusal over the acts is told first; `./permission.ts` says it too. */
+export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was created and this build is still open. "
   + "missingActs.acts are things the person's instruction asks to be done -- each quote is their own words -- that no step in your Flow is named as doing, and reason says why. "
   + "For each one: if a step in your Flow already does it, say so with amend_draft add on that step and act set to the act's id; if none does, run the node that does it (press the control, set the option, open the page) with add and act on the call. "
   + "Then complete again. A step you added with act already counts for that act; acts in the result, e.g. [{\"action\": \"a1\", \"step\": \"7\"}], names a step by its number and an act by its id, and a claim that names no act answers none. "
@@ -137,7 +156,7 @@ const REPEAT_INSTRUCTION = " A reason of act_needs_repeat means the act is asked
 const SPAN_INSTRUCTION = " A reason of span_stops_short means the step right after your repeat (after) does part of the act on each item, such as the confirmation the repeated press opened, but runs once after the loop: repeat through it -- amend_draft repeat on the repeat's first step with through set to after.";
 
 /** Said only when an act's verb names a class a person is asked about and no step of it declared that class. */
-const CONSEQUENCE_INSTRUCTION = " A reason of act_consequence_undeclared means the person's words ask for an act of that class of consequence (consequence) and no step that does it declares it: rerun the step that does it declaring that class in its consequences, and keep it; the person will be asked before it happens.";
+export const AUTOMATION_STUDIO_INSTRUCTED_ACT_CONSEQUENCE_INSTRUCTION = " A reason of act_consequence_undeclared means the person's words ask for an act of that class of consequence (consequence) and no step that does it declares it: rerun the step that does it declaring that class in its consequences, and keep it; the person will be asked before it happens.";
 
 /** Every act, and whether the draft has a step for each. Nothing here calls a provider. */
 export function checkAutomationStudioInstructedActs(input: {
@@ -160,12 +179,12 @@ export function checkAutomationStudioInstructedActs(input: {
   // An authored step that says which act it does is the model's claim already
   // (`../../flow-draft/step.ts`, `acts`); a claim written in the result is one
   // more, tried after them, never dropped for them (`./standing.ts`).
-  const claims = assign(acts, choices, readClaims(input.result.acts));
+  const claims = automationStudioInstructedActClaims({ acts, choices, result: input.result });
   const standing = automationStudioInstructedActsStanding({
     acts,
     steps,
     onlyArrives,
-    claimedFor: (id) => (claims.get(id) ?? []).flatMap((claim) => findStep(steps, claim.step) ?? [])
+    claimedFor: (id) => (claims.get(id) ?? []).flatMap((claim) => automationStudioInstructedActClaimedStep(steps, claim.step) ?? [])
   });
   const missing: AutomationStudioInstructedActMissing[] = [];
   // The positions of the steps named for an act, when each of them only reads the page.
@@ -181,7 +200,14 @@ export function checkAutomationStudioInstructedActs(input: {
     }
     if (stood.reads) reads.set(item.id, stood.reads);
     // A step is named by its position, the number the draft shows; the model never sees a step's id.
-    missing.push({ ...item, reason: stood.fault, step: `${stood.step.position}`, ...(stood.after !== undefined ? { after: stood.after } : {}) });
+    missing.push({
+      ...item,
+      reason: stood.fault,
+      step: `${stood.step.position}`,
+      ...(stood.after !== undefined ? { after: stood.after } : {}),
+      ...(stood.actsOn !== undefined ? { actsOn: stood.actsOn } : {}),
+      ...(stood.presses ? { presses: stood.presses } : {})
+    });
   }
   if (!missing.length) return { ok: true, acts };
   // Each act, then its choices, as the instruction asks for them.
@@ -210,17 +236,22 @@ export function checkAutomationStudioInstructedActs(input: {
         ...("consequence" in act && act.consequence && act.reason === "act_consequence_undeclared" ? { consequence: act.consequence } : {}),
         reason: act.reason,
         ...(act.step ? { step: act.step } : {}),
-        ...(act.after !== undefined ? { after: act.after } : {})
+        ...(act.after !== undefined ? { after: act.after } : {}),
+        ...(act.actsOn !== undefined ? { actsOn: act.actsOn } : {}),
+        ...(act.presses ? { presses: [...act.presses] } : {})
       })),
       // The steps that could be named: kept, and changed something, by the
       // positions the draft shows. Every one of them (user, 2026-09-30): no count cap.
       stepsThatChangedSomething: kept.map((step) => step.position)
     },
-    instruction: INSTRUCTION
+    instruction: AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION
       + missing.flatMap((act) => {
         const positions = reads.get(act.id);
         return positions ? [readsSaid(act.id, positions)] : [];
       }).join("")
+      + missing.flatMap((act) => act.actsOn !== undefined && act.step
+        ? [automationStudioInstructedActsOnSaid({ id: act.id, of: "of" in act ? act.of : act.id, step: act.step, actsOn: act.actsOn, acts })]
+        : []).join("")
       + REASON_INSTRUCTIONS
         .filter(([reason]) => missing.some((act) => act.reason === reason))
         .map(([, said]) => said)
@@ -246,8 +277,22 @@ const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedAct
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION],
   ["span_stops_short", SPAN_INSTRUCTION],
-  ["act_consequence_undeclared", CONSEQUENCE_INSTRUCTION]
+  ["act_consequence_undeclared", AUTOMATION_STUDIO_INSTRUCTED_ACT_CONSEQUENCE_INSTRUCTION],
+  ...AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS
 ];
+
+/**
+ * Which of the model's result claims (`result.acts`) name which act or choice,
+ * by id. Shared with the one refusal a completion still meets
+ * (`./permission.ts`), so a claim is read one way wherever it is read.
+ */
+export function automationStudioInstructedActClaims(input: {
+  acts: readonly AutomationStudioInstructedAct[];
+  choices: readonly AutomationStudioInstructedChoice[];
+  result: JsonObject;
+}): Map<string, AutomationStudioInstructedActClaim[]> {
+  return assign(input.acts, input.choices, readClaims(input.result.acts));
+}
 
 /** The model's claims, in any of the shapes it may reasonably write them. */
 function readClaims(value: unknown): AutomationStudioInstructedActClaim[] {
@@ -360,7 +405,7 @@ function wordsOf(text: string): string[] {
 }
 
 /** A step by its id (`d7`), or by its position (`7`, `step 7`, `#7`). */
-function findStep(steps: readonly AutomationStudioFlowDraftStep[], named: string): AutomationStudioFlowDraftStep | undefined {
+export function automationStudioInstructedActClaimedStep(steps: readonly AutomationStudioFlowDraftStep[], named: string): AutomationStudioFlowDraftStep | undefined {
   const trimmed = named.trim().toLowerCase();
   const byId = steps.find((step) => step.id !== undefined && step.id.toLowerCase() === trimmed);
   if (byId) return byId;

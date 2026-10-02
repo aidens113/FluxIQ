@@ -18,7 +18,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTask
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { caller, mockProvider } from "./fixtures.ts";
+import { caller, isJudgeRequest, judgeReply, mockProvider } from "./fixtures.ts";
 
 const OPEN_ID = "domain.example.open";
 const READ_ID = "domain.example.read";
@@ -118,12 +118,20 @@ function firstBuildPlan(runtime: AutomationStudioNativeNodeRuntime, scope: Param
   return result.validated;
 }
 
+/**
+ * A service holding the applied Flow, whose model decides as `decide` says.
+ * The judge of the extended Flow's test says yes: the steps carried from the
+ * Flow on disk are not run by the build's test, and only a judge's yes
+ * proposes a Flow with untested carried steps (run 41,
+ * `flow-bootstrap/unfinished-build/phases.ts`).
+ */
 async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioLlmTaskRequest): Promise<unknown> }) {
   const runtime = nativeRuntime();
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
   const provider = mockProvider(async (request) => {
     requests.push(request);
+    if (isJudgeRequest(request)) return judgeReply();
     return await input.decide(request);
   });
   const instance = new AutomationStudioService({
@@ -208,6 +216,9 @@ describe("extending a Flow that already exists", () => {
     expect(record.existingIds).toMatchObject({ routerId: applied.topology.router.routerId, subflowId: before.subflow.subflowId, graphFlowId: before.graphFlow.flowId });
     // The model was asked, and the loop it was asked through is the build's own.
     expect(requests.some((request) => request.taskKind === "evidence_tool_decision")).toBe(true);
+    // And the extended Flow was judged, once, after the model said it was ready.
+    expect(requests.filter(isJudgeRequest)).toHaveLength(1);
+    expect(isJudgeRequest(requests.at(-1)!)).toBe(true);
   }, 60_000);
 
   it("runs the step the Flow was missing and adds it, keeping the ids of the ones it kept", async () => {

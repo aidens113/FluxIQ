@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { automationStudioInstructedActsChecklist } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceParseCompletionCheck } from "../../evidence-loop-decision.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../bootstrap-completion.ts";
@@ -439,8 +440,12 @@ describe("every check on every attempt", () => {
 // `run-mum06sfc-f1d9403f`: told to put two kettles in the cart, move the phone
 // case to Save for later and read the cart back, the build searched, went to
 // the cart and read it, and `complete` was accepted because the Flow produced
-// records. Its consequence cross-check said `undeclared` and refused nothing.
-// Completion now refuses it, naming each act it left undone.
+// records. Completion then refused such a draft, naming each act it left
+// undone -- and refused lane B's `choice_is_the_act_step` six times, lane D's
+// run 36 24 times and the napkins named on the towels' Add (run 40), none of
+// which ever reached the test that would have shown what the Flow did. Since
+// t195 the test from the start and a judge of its results decide; the acts
+// checklist is information beside them, and these completions are accepted.
 describe("a completed draft that does not do what the instruction asks", () => {
   const KETTLES = "Kettle to cart" + NEWLINE + "Put two Tidewell electric kettles in sage green, 1.7 litre, sold by Brightaisle itself, in my cart, and move the phone case that is already in my cart to Save for later. Then give me what is in my cart, leaving out the saved items, as a table with columns item, quantity and price, where quantity is a plain number and price is the price of one.";
   const ran = (position: number, node: string, parameters: JsonObject, effect: "observe" | "mutate" = "mutate"): AutomationStudioFlowDraftStep => ({
@@ -456,48 +461,25 @@ describe("a completed draft that does not do what the instruction asks", () => {
     ran(4, "web.browser.navigate", { url: "https://store.test/cart" }),
     ran(5, "web.dom.extract_list", { extractList: { item: ".line", fields: { item: ".name", quantity: ".qty", price: ".price" } } }, "observe")
   ];
-  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts?: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
+  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts?: JsonObject[], instructionText = KETTLES) => checkAutomationStudioFlowBootstrapCompletion({
     result: { summary: "Reads the cart.", ...(acts ? { acts } : {}) },
-    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: KETTLES
+    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText
   });
+  // What the checklist says of the same draft: the information the model and the judge read instead of a refusal.
+  const todo = (draftSteps: AutomationStudioFlowDraftStep[], instructionText = KETTLES) =>
+    (automationStudioInstructedActsChecklist({ instructionText, draftSteps }) ?? []).flatMap((item) => [item, ...(item.choices ?? [])]).map((item) => [item.id, item.todo]);
 
-  it("is refused, naming every act the instruction asks for that no step is named as doing", async () => {
+  it("is accepted with no step named for any act, the checklist still saying each is to do", async () => {
     const verdict = await complete(searchedAndRead);
 
-    expect(verdict.ok).toBe(false);
-    if (verdict.ok) return;
-    expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_cannot_answer"]);
-    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
-    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[]; keptSteps: string[] } };
-    // "Put two ... in sage green" also asks for a quantity and a colour, each a choice of a1's item with no verb of its own.
-    expect(feedback.missingActs.acts.map((act) => [act.id, act.kind, act.verb, act.reason])).toEqual([
-      ["a1", "add_to", "put", "no_step_named"],
-      ["a1.quantity", "set", undefined, "no_step_named"],
-      ["a1.colour", "set", undefined, "no_step_named"],
-      ["a2", "move", "move", "no_step_named"],
-      ["a3", "open", "give", "no_step_named"]
-    ]);
-    expect(feedback.missingActs.acts[0]?.quote).toContain("Put two Tidewell electric kettles");
-    expect(feedback.issues).toContainEqual(expect.objectContaining({ code: "bootstrap.instructed_act_missing" }));
-    expect(feedback.instruction).toContain("missingActs.acts are things the person's instruction asks to be done");
+    expect(verdict.ok).toBe(true);
+    expect(todo(searchedAndRead)).toEqual([["a1", "no_step_added"], ["a1.quantity", "no_step_added"], ["a1.colour", "no_step_added"], ["a2", "no_step_added"], ["a3", "no_step_added"]]);
   });
 
-  it("still names the two acts left undone once the model names the cart for the one it did", async () => {
-    const verdict = await complete(searchedAndRead, [{ action: "give me what is in my cart", step: "d4" }]);
-
-    expect(verdict.ok).toBe(false);
-    if (verdict.ok) return;
-    const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
-    expect(feedback.missingActs.acts.map((act) => act.id)).toEqual(["a1", "a1.quantity", "a1.colour", "a2"]);
-  });
-
-  it("refuses the read of the cart claimed as putting the kettles in it", async () => {
+  it("is accepted with the read of the cart claimed as putting the kettles in it", async () => {
     const verdict = await complete(searchedAndRead, [{ action: "a1", step: "d5" }, { action: "a2", step: "d3" }, { action: "a3", step: "d4" }]);
 
-    expect(verdict.ok).toBe(false);
-    if (verdict.ok) return;
-    const feedback = verdict.check.feedback as unknown as { missingActs: { acts: JsonObject[] } };
-    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_changed_nothing"], ["a1.quantity", "no_step_named"], ["a1.colour", "no_step_named"]]);
+    expect(verdict.ok).toBe(true);
   });
 
   it("is accepted once each act has a kept step of its own that changed something", async () => {
@@ -514,43 +496,99 @@ describe("a completed draft that does not do what the instruction asks", () => {
 
     expect(verdict.ok).toBe(true);
   });
+
+  // Live run 36 (`run-muq3uozx-3153564b`): a1 named on the listing, with the
+  // Confirm repeated over it. 24 completions were refused for the read. Since
+  // round 4 a1 named on the Confirm as well is accepted by the check itself;
+  // named only on the read, it was still refused until the check stopped refusing.
+  it("accepts run 36's shapes: a1 named on the listing alone, or on the listing and the repeated Confirm", async () => {
+    const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
+    const listing = { ...ran(2, "web.dom.extract_list", { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } } }, "observe"), acts: ["a1"] };
+    const confirm = { ...ran(3, "web.dom.click", { selector: ".confirm" }), routing: { kind: "repeat" as const, over: "d2", through: "d3" } };
+    const onTheRead = [ran(1, "web.browser.navigate", { url: "https://social.test/friends" }), listing, confirm];
+
+    expect((await complete(onTheRead, [{ action: "a1", step: "2" }], CONFIRM)).ok).toBe(true);
+    expect(todo(onTheRead, CONFIRM)).toEqual([["a1", "step_only_reads"]]);
+    expect((await complete([onTheRead[0]!, listing, { ...confirm, acts: ["a1"] }], [{ action: "a1", step: "2" }], CONFIRM)).ok).toBe(true);
+  });
+
+  // Lane B: the size named on the Add press, refused six times `choice_is_the_act_step`.
+  it("accepts lane B's shape: the size named on the press that adds, the checklist saying choice_is_the_act_step", async () => {
+    const TOWELS = "Add the ValueRidge paper towels in the 12 Double Rolls size to my cart.";
+    const draft = [
+      ran(1, "web.browser.navigate", { url: "https://store.test/towels" }),
+      { ...ran(2, "web.dom.click", { selector: "#add-to-cart" }), acts: ["a1", "a1.size"] }
+    ];
+    const verdict = await complete(draft, undefined, TOWELS);
+
+    expect(verdict.ok).toBe(true);
+    expect(todo(draft, TOWELS)).toEqual([["a1", undefined], ["a1.size", "choice_is_the_act_step"]]);
+  });
+
+  // Live run 40 (`run-muq6lqnw-fdfa7aac`): one search and one Add to cart, on
+  // the towels, with the napkins' act named on that Add.
+  it("accepts run 40's shape: the napkins named on the towels' Add to cart, the checklist saying which object it acted on", async () => {
+    const BOTH = "Add one pack of the ValueRidge Essentials Select-A-Size Paper Towels and one pack of the ValueRidge Everyday Dinner Napkins to my cart.";
+    const towelsPage = "https://store.test/ip/valueridge-essentials-select-a-size-paper-towels/418830127";
+    const draft = [
+      ran(1, "web.browser.navigate", { url: "https://store.test/" }),
+      ran(2, "web.dom.type", { selector: "#search", text: "ValueRidge Essentials Select-A-Size Paper Towels" }),
+      ran(3, "web.dom.click", { selector: "#go" }),
+      { ...ran(4, "web.dom.click", { selector: "#add-to-cart" }), acts: ["a1", "a2"], replay: { from: { location: towelsPage } } }
+    ];
+    const verdict = await complete(draft, undefined, BOTH);
+
+    expect(verdict.ok).toBe(true);
+    expect(todo(draft, BOTH)).toEqual([["a1", undefined], ["a2", "step_acts_on_another_object"]]);
+  });
 });
 
-// `run-munoeac4-33c17306` (run 15): the Flow accepted on the build's second
-// completion was two navigations to its start location, named for the add to
-// cart and the coupon. Completion hands the check where the build starts, so a
-// step that only arrives there is not taken for either.
-describe("a completed draft whose acts are named for arriving where it starts", () => {
-  const START = "http://127.0.0.1:59512";
-  const HUBS = "Put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart, and collect that store's coupon.";
-  const ran = (position: number, node: string, parameters: JsonObject): AutomationStudioFlowDraftStep => ({
-    position, id: `d${position}`, iteration: position, actionId: node, toolId: "core.run_node",
-    input: { node, parameters, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept"
+// The one instructed-act rule a completion is still refused for (withdraw
+// audit R2, run 3 `run-munnyvbr-11c28a0f`): an act whose verb names a class a
+// person is asked about needs a step declaring it, or nobody is asked.
+describe("a completed draft whose act a person must be asked about is not declared", () => {
+  const WITHDRAW = "On Guildline, withdraw the connection request I sent to Dana Whitfield.";
+  const press = (consequences: string[], overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position: 3, id: "d3", iteration: 3, actionId: "web.dom.click", toolId: "core.run_node",
+    input: { node: "web.dom.click", parameters: { selector: ".withdraw" }, consequences }, effect: "mutate", effectApplied: true, disposition: "kept",
+    acts: ["a1"], ...overrides
   });
-  // "Put three of" also asks for a quantity, set here by a step of its own (d9), so each case is about the arrivals.
-  const arrivals = [ran(1, "web.browser.navigate", { url: START }), ran(2, "web.browser.navigate", { url: START }), ran(9, "web.dom.type", { selector: "#quantity", text: "3" })];
-  const quantity = { action: "a1.quantity", step: "d9" };
-  const complete = (draftSteps: AutomationStudioFlowDraftStep[], acts: JsonObject[]) => checkAutomationStudioFlowBootstrapCompletion({
-    result: { summary: "Puts the hubs in the cart.", acts },
-    projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: HUBS, startLocation: START
+  const before: AutomationStudioFlowDraftStep[] = [
+    { position: 1, id: "d1", iteration: 1, actionId: "web.browser.navigate", toolId: "core.run_node", input: { node: "web.browser.navigate", parameters: { url: "https://guildline.test/" }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept" },
+    { position: 2, id: "d2", iteration: 2, actionId: "web.dom.click", toolId: "core.run_node", input: { node: "web.dom.click", parameters: { selector: "#sent" }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept" }
+  ];
+  const complete = (withdraw: AutomationStudioFlowDraftStep) => checkAutomationStudioFlowBootstrapCompletion({
+    result: { summary: "Withdraws the request." }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps: [...before, withdraw], instructionText: WITHDRAW,
+    // A domain that permits what is declared: what is refused here is only a step that declares nothing to permit.
+    binding: { resolvePlanNodeParameters: async () => ({ status: "unchanged" }) },
+    permissionFor: () => async () => ({ permitted: true })
   });
+  const undeclared = { acts: [{ id: "a1", kind: "submit", verb: "withdraw", quote: expect.stringContaining("withdraw the connection request"), consequence: "delete", reason: "act_consequence_undeclared", step: "3" }] };
 
-  it("is refused, naming each act as only arrived at", async () => {
-    const verdict = await complete(arrivals, [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity]);
+  it("is refused act_consequence_undeclared when the withdraw press declares only modify_existing", async () => {
+    const verdict = await complete(press(["modify_existing"]));
 
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
+    expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_cannot_answer"]);
     expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing"]);
-    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[] } };
-    expect(feedback.missingActs.acts.map((act) => [act.id, act.reason])).toEqual([["a1", "step_only_arrives"], ["a2", "step_only_arrives"]]);
-    expect(feedback.instruction).toContain("does not do the act");
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: JsonObject };
+    // The permission account alone: nothing of what the checklist says about whether the act is done.
+    expect(feedback.missingActs).toEqual(undeclared);
+    expect(feedback.instruction).toContain("A reason of act_consequence_undeclared");
   });
 
-  it("is accepted once each act is named for a press after the arrival", async () => {
-    const pressed = [...arrivals, ran(3, "web.dom.click", { selector: "#add-to-cart" }), ran(4, "web.dom.click", { selector: "#collect-coupon" })];
-    const verdict = await complete(pressed, [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }, quantity]);
+  it("is still refused for the declaration when the press is marked optional", async () => {
+    const verdict = await complete(press(["modify_existing"], { routing: { kind: "optional" } }));
 
-    expect(verdict.ok).toBe(true);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect((verdict.check.feedback as unknown as { missingActs: JsonObject }).missingActs).toEqual(undeclared);
+  });
+
+  it("is accepted once the press declares delete, optional or not", async () => {
+    expect((await complete(press(["delete"]))).ok).toBe(true);
+    expect((await complete(press(["delete"], { routing: { kind: "optional" } }))).ok).toBe(true);
   });
 });
 

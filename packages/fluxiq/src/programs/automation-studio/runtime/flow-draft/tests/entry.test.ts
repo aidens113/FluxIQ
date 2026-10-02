@@ -69,6 +69,20 @@ describe("the draft entry a decision is shown", () => {
     expect(instruction).not.toMatch(/still shown|no longer shown|evicted|omitted/u);
   });
 
+  // Live run 37 (`run-muq5v4zg-39182b58`) read "then amend_draft repeat over
+  // the listing step" as a repeat on the listing, `13 repeat over 13`, with no
+  // press in the draft.
+  it("says the three steps of a loop in order, and that the repeat goes on the press, never on the listing", () => {
+    const authored = (automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction;
+    expect(authored).toContain("three steps in this order");
+    expect(authored).toContain(`{"step": <that press>, "change": "repeat", "over": <the listing>}`);
+    expect(authored).toContain("The repeat goes on the press, never on the listing");
+    expect(authored).toContain("a listing that already keeps the right rows is not run again");
+    const transcript = value([step(1, "press", { target: "t" })]).instruction;
+    expect(transcript).toContain("the repeat goes on the act, never on the listing");
+    expect(transcript).toContain("A listing that already keeps the right rows is not run again.");
+  });
+
   it("preserves every non-default value on a step line", () => {
     const special = step(1, "press", { target: "target.1" }, {
       resultCode: "action.refused",
