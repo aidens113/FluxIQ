@@ -11,6 +11,7 @@ import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudio
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AutomationStudioLlmDecisionContextRecorder, automationStudioLlmDecisionContextEntry, automationStudioLlmDecisionContextShown } from "../decision-context/index.ts";
 
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
@@ -228,4 +229,87 @@ describe("a request over the model's context window", () => {
     await expect(build).rejects.toThrow(/llm_budget\.input_limit_exceeded: Packed LLM request is an estimated \d+ input tokens \(\d+ bytes\), over its 992000-token input limit: the 1000000-token context window/u);
     expect(calls).toEqual({ secrets: 0, transport: 0 });
   });
+});
+
+// A read's rows as a view of their own (t194 w48): declared `read.extracted`,
+// replaced inside the read only by the next read, never by a page or a click.
+// Live run 13 (`run-muqbzu32-8691a65e`) carried three whole reads of one list
+// in its last request, 164,577 of its 290,929 characters.
+describe("held views", () => {
+const HELD_KEYS = ["page", "read.extracted", "read.rejectedRows"];
+const rows = (callId: string) => [{ name: `${callId} row 1` }, { name: `${callId} row 2` }];
+const listRead = (callId: string): AutomationStudioLlmEvidenceEntry => ({
+  callId,
+  toolId: "core.run_node",
+  value: { ok: true, page: `page of ${callId}`, read: { actionType: "list", extracted: rows(callId), extraction: { recordCount: 2 }, rejectedRows: { fields: ["name"] }, firstRows: [rows(callId)[0]!] }, inFlow: true }
+});
+const click = (callId: string): AutomationStudioLlmEvidenceEntry => ({
+  callId,
+  toolId: "core.run_node",
+  value: { ok: true, page: `page of ${callId}`, read: { actionType: "click", message: "Element clicked." } }
+});
+const readOf = (entry: AutomationStudioLlmEvidenceEntry) => (entry.value as JsonObject).read;
+
+describe("a read's rows a newer read replaced", () => {
+  it("are replaced inside the read by the next read, keeping the rest of the read in its order", () => {
+    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), listRead("read.2"), listRead("read.3")], HELD_KEYS);
+    expect(window[0]!.value).toEqual({
+      ok: true,
+      read: { actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.1 row 1" }], supersededBy: "read.2" },
+      inFlow: true,
+      supersededBy: "read.2"
+    });
+    expect(JSON.stringify(window[0]!.value)).toBe(JSON.stringify({
+      ok: true,
+      read: { actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.1 row 1" }], supersededBy: "read.2" },
+      inFlow: true,
+      supersededBy: "read.2"
+    }));
+    expect(readOf(window[1]!)).toEqual({ actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.2 row 1" }], supersededBy: "read.3" });
+    // The newest read is whole, page and rows.
+    expect(window[2]!.value).toEqual(listRead("read.3").value);
+  });
+
+  it("stay whole when only a click or a page view followed: those replace the page, never the rows", () => {
+    const look: AutomationStudioLlmEvidenceEntry = { callId: "look.3", toolId: "core.run_node", value: { ok: true, page: "page of look.3" } };
+    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), click("click.2"), look], HELD_KEYS);
+    expect(readOf(window[0]!)).toEqual(readOf(listRead("read.1")));
+    expect((window[0]!.value as JsonObject).supersededBy).toBe("click.2");
+    expect(window[0]!.value).not.toHaveProperty("page");
+    // A click's own read holds no declared member, so it is no read view.
+    expect(readOf(window[1]!)).toEqual({ actionType: "click", message: "Element clicked." });
+  });
+
+  it("name the read that replaced them directly, so a reference once written never changes", () => {
+    const records = [listRead("read.1"), click("click.2"), listRead("read.3"), click("click.4"), listRead("read.5")];
+    const shown = (count: number) => automationStudioLlmEvidenceContextWindow(records.slice(0, count), HELD_KEYS);
+    expect((readOf(shown(5)[0]!) as JsonObject).supersededBy).toBe("read.3");
+    expect((readOf(shown(5)[2]!) as JsonObject).supersededBy).toBe("read.5");
+    // Each entry the fourth decision showed with both its views replaced is the same, byte for byte, in the fifth.
+    expect(JSON.stringify(shown(5)[0])).toBe(JSON.stringify(shown(4)[0]));
+    expect(JSON.stringify(shown(5)[1])).toBe(JSON.stringify(shown(4)[1]));
+  });
+
+  it("are a holder's own: a member named at the top level, or a holder that is no object, is never touched", () => {
+    const records: AutomationStudioLlmEvidenceEntry[] = [
+      { callId: "a", toolId: "x", value: { extracted: [1], read: "not an object" } },
+      { callId: "b", toolId: "x", value: { extracted: [2], detail: { read: { extracted: [3] } } } }
+    ];
+    expect(automationStudioLlmEvidenceContextWindow(records, ["read.extracted"])).toEqual(records);
+  });
+
+  it("show a recall's newest answer whole and replace each earlier answer by the next", () => {
+    const recall = (callId: string, of: string): AutomationStudioLlmEvidenceEntry =>
+      ({ callId, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { recalled: of, restored: { read: { extracted: rows(of) } } } });
+    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), listRead("read.2"), recall("recall.3", "read.1"), recall("recall.4", "read.1")], HELD_KEYS);
+    expect(window[2]!.value).toEqual({ recalled: "read.1", supersededBy: "recall.4" });
+    expect(window[3]!.value).toEqual(recall("recall.4", "read.1").value);
+  });
+
+  it("are never replaced where no held key was declared", () => {
+    const records = [listRead("read.1"), listRead("read.2")];
+    const window = automationStudioLlmEvidenceContextWindow(records, ["page"]);
+    expect(readOf(window[0]!)).toEqual(readOf(records[0]!));
+  });
+});
 });
