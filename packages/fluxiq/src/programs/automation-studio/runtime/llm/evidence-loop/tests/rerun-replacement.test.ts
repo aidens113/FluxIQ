@@ -71,18 +71,45 @@ describe("a rerun taking the replaced step's place", () => {
   const step = (id: string, position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep =>
     ({ id, position, iteration: position, actionId: "node", input: {}, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", ...over });
 
-  it("carries the acts and routing, and every statement naming the old step names the rerun", () => {
+  it("carries the routing, and every statement naming the old step names the rerun", () => {
     // d15 lists the rows, d16 acts on each (repeat over d15), and d15 is rerun as d17.
     const steps = [
-      step("d15", 1, { effect: "observe", acts: ["a1"] }),
+      step("d15", 1, { effect: "observe" }),
       step("d16", 2, { routing: { kind: "repeat", through: "d16", over: "d15" } }),
       step("d17", 3, { effect: "observe", disposition: "taken" })
     ];
     automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
     expect(steps.map((entry) => [entry.id, entry.position, entry.disposition])).toEqual([["d17", 1, "kept"], ["d15", 2, "dropped"], ["d16", 3, "kept"]]);
-    expect(steps[0]!.acts).toEqual(["a1"]);
-    expect(steps[1]!.acts).toBeUndefined();
     expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
+  });
+
+  it("carries the acts onto a rerun that changes something", () => {
+    const steps = [step("d1", 1, { acts: ["a1"] }), step("d2", 2, { disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition, entry.acts])).toEqual([["d2", "kept", ["a1"]], ["d1", "dropped", undefined]]);
+  });
+
+  // Live run 36: a1 named on a listing rode every later rerun of that listing,
+  // and the completion check judged the listing as the act 24 times running.
+  it("does not carry an act onto a rerun that only reads, and leaves it on neither step", () => {
+    const steps = [step("d10", 1, { effect: "observe", acts: ["a1"] }), step("d11", 2, { effect: "observe", disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition, entry.acts])).toEqual([["d11", "kept", undefined], ["d10", "dropped", undefined]]);
+  });
+
+  // The same rule where the act is named on the call itself (`../../evidence-loop.ts`):
+  // a read run with act is added, and names no act.
+  it("records no act on a read run with act, and records it on a press", async () => {
+    const list = { toolId: "list", description: "List rows.", inputSchema: { type: "object" }, effect: "observe" as const };
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "list", input: {}, act: "a1" })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "go", input: { url: "https://shop.test/" }, act: "a1" })
+      .mockResolvedValueOnce(completed);
+    const executeTool = vi.fn()
+      .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, draft: { actionId: "web.dom.list", proposes: true } })
+      .mockResolvedValueOnce(ran(true));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list, go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.steps.map((entry) => [entry.id, entry.effect, entry.disposition, entry.acts])).toEqual([["d1", "observe", "kept", undefined], ["d2", "mutate", "kept", ["a1"]]]);
   });
 
   it("leaves a rerun of a step that was not in the Flow out of it too", () => {

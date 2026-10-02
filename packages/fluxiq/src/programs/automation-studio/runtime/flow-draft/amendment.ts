@@ -16,10 +16,13 @@
 //                   Since 2026-09-30 a step the model runs is evidence, not a
 //                   step of the Flow, until the model adds it -- here, or with
 //                   `add` on the call itself (`../llm/evidence-loop-decision.ts`).
-//                   `act` says which instructed act it does.
+//                   `act` says which instructed act it does, and only a step
+//                   that changes something does one (`act_on_a_read`).
 //   drop         -- this step should not be in the result at all.
 //   exploratory  -- I did this to look around; do not keep it.
-//   keep         -- undo any of the above, and make the step unconditional.
+//   keep         -- undo any of the above, and make the step unconditional
+//                   again: it clears optional, only_if and on_failed, never a
+//                   repeat, and nothing at all when it carries `act`.
 //   reorder      -- this step belongs at another position.
 //   rerun        -- do it again with a corrected argument, replacing it.
 //
@@ -96,7 +99,10 @@ export type AutomationStudioFlowDraftAmendment = {
   /**
    * `add` or `keep` only: the instructed act (`a1`, `a2` ...) this step does,
    * as the checklist beside the draft names it. Recorded on the step, and read
-   * as the model's claim when it completes (`./step.ts`, `acts`).
+   * as the model's claim when it completes (`./step.ts`, `acts`). Only a step
+   * whose effect is `mutate` does an act; one named on a read is not recorded
+   * there, the rest of the amendment is applied, and the model is told why
+   * (`act_on_a_read`).
    */
   act?: string;
 };
@@ -108,10 +114,13 @@ export type AutomationStudioFlowDraftAmendment = {
  */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u;
 
-/** Why one amendment changed nothing. */
+/**
+ * Why one amendment changed nothing -- or, for `act_on_a_read`, the one part of
+ * it that was not done: the act a read cannot do, beside the rest, which was.
+ */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
-  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing";
+  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named";
 };
 
 /**
@@ -134,7 +143,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     step: { type: "integer", minimum: 1, description: "The step number shown in the draft." },
     change: {
       enum: [...AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES],
-      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again. reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item: first rerun the listing with a where that keeps only the items to act on (every row it returns is acted on), do the act to one row it kept (never to a row it leaves out), then repeat with over that listing, right before this one; each pass acts on its own row. Drop any other step that does the same act to a single row."
+      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item: first rerun the listing with a where that keeps only the items to act on (every row it returns is acted on), do the act to one row it kept (never to a row it leaves out), then repeat with over that listing, right before this one; each pass acts on its own row. Drop any other step that does the same act to a single row."
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "add or reorder: the position to put the step at. on_failed: the step to run when this one fails. Counting from 1." },
@@ -142,7 +151,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     check: { type: "integer", minimum: 1, description: "only_if only: the step whose success this one runs on. Leave it out for the step before it, which is usually the check you just ran." },
     through: { type: "integer", minimum: 1, description: "repeat only: the last step of the span that repeats. Leave it out to repeat this step alone. A press that opens a confirmation repeats with it: name the confirmation as through." },
     over: { type: "integer", minimum: 1, description: "repeat only: the step whose rows the span repeats for, or whose success it repeats while. Leave it out for the step before it." },
-    act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "add or keep: the act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity." }
+    act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "add or keep: the act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Only a step that changes something (changed is not a read) does an act: never name one on a listing or a read." }
   }
 };
 
@@ -196,6 +205,18 @@ export function applyAutomationStudioFlowDraftAmendments(
       refused.push({ step: amendment.step, reason: NOT_A_FLOW_STEP });
       continue;
     }
+    // An act is something done: a step that only reads -- a listing a Flow may
+    // hold, as much as the look above -- does none, whatever the model calls it.
+    // Live run 36 (`run-muq3uozx-3153564b`, E11) sent `10 add act a1` about a
+    // withdrawn rerun of the request listing and had it applied; every later
+    // rerun of that listing carried the act on, and the completion check judged
+    // the listing as the act's step 24 times running.
+    // Information, not a refusal (user, 2026-10-01: no restriction on what the
+    // model does beyond permission asks): the rest of the amendment is applied,
+    // the act is not recorded on the read -- it cannot be done there -- and the
+    // model is told so, beside whatever else the amendment changed.
+    const actOnRead = amendment.act !== undefined && step.effect !== "mutate";
+    if (actOnRead) refused.push({ step: amendment.step, reason: "act_on_a_read" });
     if (amendment.change === "reorder") {
       if (moveStep(steps, step, amendment.to, amendment.settings)) applied += 1;
       else refused.push({ step: amendment.step, reason: placeExists(steps, amendment.to) ? "already_so" : "no_such_position" });
@@ -210,19 +231,29 @@ export function applyAutomationStudioFlowDraftAmendments(
     const disposition = amendment.change === "keep" || amendment.change === "add" ? "kept" : amendment.change === "drop" ? "dropped" : "exploratory";
     const changesDisposition = step.disposition !== disposition;
     const changesSettings = amendment.settings !== undefined;
-    // `keep` is how a step is put back the way it was found, and a routing
-    // statement is part of the way it was changed: a model that says "keep"
-    // about a step it made conditional means the step, unconditionally. `add`
-    // leaves routing alone: it says the step is in the Flow, nothing more.
-    const clearsRouting = amendment.change === "keep" && step.routing !== undefined;
-    const act = disposition === "kept" && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !step.acts?.includes(amendment.act) ? amendment.act : undefined;
+    // `keep` is how a step is put back the way it was found, and a condition
+    // is part of the way it was changed: a model that says "keep" about a step
+    // it made conditional means the step, unconditionally. `add` leaves routing
+    // alone: it says the step is in the Flow, nothing more. Two things `keep`
+    // never clears. A `repeat` is the act done to every row, not a condition on
+    // the step. And a `keep` carrying `act` is a statement about the act: live
+    // run 36 (E21, E26) sent `keep act a1` about the repeated Confirm and lost
+    // its repeat each time.
+    const clearsRouting = amendment.change === "keep" && amendment.act === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
+    const alreadyNamed = amendment.act !== undefined && step.acts?.includes(amendment.act) === true;
+    const act = disposition === "kept" && !actOnRead && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !alreadyNamed ? amendment.act : undefined;
     // `add` at a position is one thought: put this step in the Flow, there.
     const moves = amendment.change === "add" && amendment.to !== undefined && amendment.to !== step.position && placeExists(steps, amendment.to);
     if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !moves) {
       // Said as which side of the Flow the step is already on, because that is
       // what the model was trying to settle: a `keep` about a step in the Flow
       // is a confirmation, and the generic "already so" got it sent again.
-      refused.push({ step: amendment.step, reason: disposition === "kept" ? "already_in_flow" : "already_out" });
+      // Except where it named an act the step already names: that model was
+      // told by the checklist to name it, and "nothing to confirm" contradicted
+      // it (live run 36). It is told the name stands and the todo is the fault.
+      const reason = disposition !== "kept" ? "already_out" : alreadyNamed ? "act_already_named" : "already_in_flow";
+      // A read whose only news was the act has already been told why.
+      if (!actOnRead) refused.push({ step: amendment.step, reason });
       continue;
     }
     step.disposition = disposition;

@@ -54,7 +54,7 @@
 // Codes, identifiers and counts only -- no page text, no model words -- which
 // is the same rule every evidence entry Core writes is held to.
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop/index.ts";
 
 /** The evidence entry the loop's no-progress redirection arrives under. */
@@ -88,6 +88,13 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
    * which is what a redirect has to name rather than only what not to repeat.
    */
   actsMissing?: readonly string[] | undefined;
+  /**
+   * The acts checklist as the draft entry carries it (`../loop-configuration.ts`,
+   * `draft.acts`): read for each missing act's `todo` and `step`, so a redirect
+   * about an act a step already names corrects that step instead of asking for
+   * a new one.
+   */
+  acts?: JsonValue | undefined;
 };
 
 /**
@@ -137,14 +144,43 @@ function actsMissing(input: AutomationStudioLlmEvidenceStallRedirectInput): stri
   return [...new Set((input.actsMissing ?? []).filter((id) => /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u.test(id)))];
 }
 
+/**
+ * The step the checklist says names one act, and why it is not done, or
+ * nothing when no step names it (`todo: no_step_added`) or the checklist is
+ * absent. An act's id is matched on the act and on each of its choices.
+ * Codes and positions only, as the checklist itself carries them.
+ */
+function namedStep(acts: JsonValue | undefined, id: string): { step: number; todo: string } | undefined {
+  if (!Array.isArray(acts)) return undefined;
+  const items = acts.flatMap((item) => (isObject(item) ? [item, ...(Array.isArray(item.choices) ? item.choices.filter(isObject) : [])] : []));
+  const item = items.find((candidate) => candidate.id === id);
+  if (!item) return undefined;
+  const { step, todo } = item;
+  if (typeof step !== "number" || !Number.isSafeInteger(step) || step < 1) return undefined;
+  if (typeof todo !== "string" || todo === "no_step_added" || !ISSUE_CODE.test(todo)) return undefined;
+  return { step, todo };
+}
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];
   const owed = actsMissing(input);
   if (owed.length) {
+    const named = namedStep(input.acts, owed[0]!);
+    // "Run it" only when no step names the act. Where one does, the checklist
+    // says why it is not done, and running another step for the act is what
+    // live run 36 did on this note: it confirmed a request its listing had left
+    // out (E36).
+    const next = named
+      ? ` Step ${named.step} already names ${owed[0]}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${owed[0]}, and never act yourself on an item your listing left out.`
+      : ` Your next step is the one that does ${owed[0]}: run it and add it with act ${owed[0]}.`;
     said.push(`The acts checklist still has ${owed.join(", ")} not done by any step in your Flow (actsMissing). Going back to a page you have already been on, or pressing what you already pressed, does not do them.`
-      + ` Your next step is the one that does ${owed[0]}: run it and add it with act ${owed[0]}. Complete only once no act is missing.`);
+      + `${next} Complete only once no act is missing.`);
   }
   said.push(
     `The last ${input.stepsWithoutProgress} steps told you nothing you did not already have.`,

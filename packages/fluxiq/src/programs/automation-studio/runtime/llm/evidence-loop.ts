@@ -210,7 +210,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
     if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) {
       appended.disposition = "kept";
-      if (authored.act !== undefined) automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act);
+      if (authored.act !== undefined && appended.effect === "mutate") automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act); // A read does no act (`../flow-draft/amendment.ts`, `act_on_a_read`); one act, one step (`../flow-draft/act-claim.ts`).
     }
     draftSteps.push(appended);
     return drafting && automationStudioFlowDraftStepIsAction(appended);
@@ -284,7 +284,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
       canComplete: offeredCompletion,
       answerability: rows.answerability,
       looksWithdrawn: looks.active(counters.attemptEpoch),
-      actsMissing: input.draft ? input.draft.actsMissing?.(draftSteps) : undefined
+      actsMissing: input.draft ? input.draft.actsMissing?.(draftSteps) : undefined,
+      // The checklist, so a stall note about an act a step already names corrects that step (`./evidence-progress/stall-redirect.ts`).
+      acts: input.draft ? input.draft.acts?.(draftSteps) : undefined
     }),
     show: (iteration: number, note: JsonObject) => {
       accountEvidence(note);

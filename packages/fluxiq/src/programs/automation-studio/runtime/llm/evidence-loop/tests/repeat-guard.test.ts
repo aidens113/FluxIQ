@@ -118,7 +118,8 @@ describe("a call already tried on this same page", () => {
   });
 
   it("run 36: the same refused amendment sent again and again stalls the round at the third repeat", async () => {
-    // `25 keep act a1` seven times, each refused `already_in_flow`: the first is a refusal, the next three are repeats of it.
+    // `25 keep act a1` seven times, each refused `already_in_flow` in the run -- `act_already_named` since lane D's F36, which
+    // tells the model the name stands: the first is a refusal, the next three are repeats of it.
     const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a1" }] };
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Next" }, add: true, act: "a1" })
@@ -128,6 +129,6 @@ describe("a call already tried on this same page", () => {
     await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
     expect(decide).toHaveBeenCalledTimes(5);
     const feedback = shownAt(decide, 2).find((entry) => entry.toolId === "core.amendment_check")?.value;
-    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "already_in_flow" }] });
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named" }] });
   });
 });

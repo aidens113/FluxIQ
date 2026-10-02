@@ -12,8 +12,13 @@
 //
 // `span.ts` is published because the amendment that answers `span_stops_short`
 // (`../../llm/harness-options/repeat-suggestion.ts`) finds the span the same way.
+//
+// `standing.ts` is the one loop the check and the checklist share, trying every
+// step named for an act; `step-fault.ts` is the rule it holds each step to.
 export * from "./check.ts";
 export * from "./checklist.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";
 export * from "./span.ts";
+export * from "./standing.ts";
+export * from "./step-fault.ts";
