@@ -15,7 +15,7 @@ function outputsOf(action: ActivityAction | null): string[] {
 describe("activityActionOf: the Flow's own control steps (U-A2)", () => {
   const step = (definition: string | undefined, label?: string): ActivityActionEvent => ({
     phase: "running",
-    step: { index: 3, count: 9, nodeId: "n3", ...(label === undefined ? {} : { label }) },
+    step: { nodeId: "n3", ...(label === undefined ? {} : { label }) },
     detail: { kind: "step", title: label ?? "Step 3 of 9", status: "started", ref: "n3", ...(definition === undefined ? {} : { text: `Node: ${definition}` }) }
   });
   it.each<[string, ActivityActionKind]>([
