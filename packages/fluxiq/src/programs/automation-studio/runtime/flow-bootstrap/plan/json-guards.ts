@@ -15,10 +15,16 @@ export function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0)
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (!value || typeof value !== "object" || seen.has(value as object) || depth > 12) return false;
+  // `seen` holds ancestors only: the same object under two keys is not a cycle (`../../llm/evidence-loop-decision.ts`).
   seen.add(value as object);
-  if (Array.isArray(value)) return value.length <= 256 && value.every((item) => isJsonValue(item, seen, depth + 1));
-  const entries = Object.entries(value as Record<string, unknown>);
-  return entries.length <= 256 && entries.every(([key, item]) => key.length <= 200 && isJsonValue(item, seen, depth + 1));
+  let valid: boolean;
+  if (Array.isArray(value)) valid = value.length <= 256 && value.every((item) => isJsonValue(item, seen, depth + 1));
+  else {
+    const entries = Object.entries(value as Record<string, unknown>);
+    valid = entries.length <= 256 && entries.every(([key, item]) => key.length <= 200 && isJsonValue(item, seen, depth + 1));
+  }
+  seen.delete(value as object);
+  return valid;
 }
 
 export function isRecord(value: unknown): value is Record<string, any> {
