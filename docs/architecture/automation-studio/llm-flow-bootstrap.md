@@ -587,7 +587,14 @@ built at all cannot run. Checks 6 and 7 are information, not refusals (user,
 2026-10-01: no restriction on what the model does beyond the permission
 gates): what they find travels on the accepted verdict as `notes`, and reaches
 the judge of the build's test as `buildTest.notes`
-(`runtime/result-verification/build-test/`). The judge's verdict on what the
+(`runtime/result-verification/build-test/`). A replayed list read's observation
+also carries `readRows`: the labels of the rows it returned and, per condition,
+the rows that condition alone left out, screened by the same function as the
+runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
+can see an asked row was dropped (live run `run-muqk713g`, cause C3). A judge
+reply that leaves a diagnosis text empty (`changed: ""` beside a yes) has that
+field read as omitted, not refused (`runtime/llm/harness/provider-result.ts`,
+cause C2). The judge's verdict on what the
 test actually did decides, and a wrong result is repaired with its reasons. The
 instructed-act check that follows is information the same way, except
 `act_consequence_undeclared`, which is what makes a delete, a payment or a send
@@ -813,6 +820,13 @@ record's reader is bounded by it. Every round draws on the Flow creation's one p
 shares the build's time/token budget and declared call count; no round has a
 cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
+A build that ends without a Flow records why each round stopped and, for "not
+doable", which case left no route, as closed words on its ending's `tried`
+(`stops: [{round, stopped}]`, `noRoute: {kind}`, `unfinished-build/tried.ts`);
+a re-author attempt keeps that ending (`service/runtime-adaptation/reauthor-build.ts`),
+so a debug can tell which bound ended which round. A rerun of a draft step says
+where it ran (`rerunPlace`: put back to its start page, or in place and why,
+`runtime/llm/node-tools/step-place.ts`).
 
 The three explicit endings carry `diagnostic.ending.message`, the outstanding
 acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
