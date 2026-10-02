@@ -48,16 +48,20 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
  * amendment handler refused as `changes_nothing` (`./amendment.ts`) -- and
  * says how the round stops when this one is the last allowed: stalled with the
  * error its caller builds, ended where it has none, or nothing while it goes on.
+ * `issueCode` is what the stall is recorded under, and what the person's
+ * ending reads its reason from: the repeat refusal by default, the amendment
+ * refusal for a run of amendments refused again (`./amendment.ts`).
  */
 export function automationStudioLlmEvidenceRepeatStop(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
-  inARow: number
+  inARow: number,
+  issueCode: string = AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE
 ): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" }> | undefined {
   const { input, trace, accounting, draftSteps, noProgress } = context;
   noProgress.stepped();
   if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW && !noProgress.reached()) return undefined;
   if (input.unusableDecisions) {
-    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
+    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: [issueCode], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => structuredClone(step)) }) };
   }
   return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
 }

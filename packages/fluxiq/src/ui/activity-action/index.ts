@@ -6,5 +6,6 @@ export { activityActionOf } from "./action-of.ts";
 export { ACTIVITY_ACTION_ICONS } from "./icons.ts";
 export { activityActionKey } from "./key.ts";
 export { ACTIVITY_ACTION_NAMES } from "./names.ts";
+export { activityActionReplayFailing } from "./replay-failing.ts";
 export type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome, ActivityActionVerb } from "./types.ts";
 export { activityActionVerb } from "./verb.ts";

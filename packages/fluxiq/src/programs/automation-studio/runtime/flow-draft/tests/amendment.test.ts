@@ -87,10 +87,12 @@ describe("acts on the draft", () => {
     expect(draft[1]?.acts).toEqual(["a1"]);
   });
 
-  it("refuses an act the step already names as act_already_named, not as already in the Flow", () => {
+  it("refuses an act the step already names as act_already_named, not as already in the Flow, naming the act", () => {
     const draft = listingAndConfirm();
+    // The act rides on the refusal, so the telling can read the checklist for it
+    // (run-muqiojz4-04a7a8fc named a done act five times running).
     for (const change of ["add", "keep"] as const) {
-      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change, act: "a1" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "act_already_named" }] });
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change, act: "a1" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "act_already_named", act: "a1" }] });
     }
     expect(draft[1]?.acts).toEqual(["a1"]);
   });

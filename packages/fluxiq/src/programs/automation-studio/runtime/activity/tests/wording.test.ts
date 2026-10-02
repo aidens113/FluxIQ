@@ -48,6 +48,15 @@ describe("observed tool calls", () => {
     expect(seen[1]!.label).toBe("Clicking on the page — didn't work");
   });
 
+  // Live run `run-muqiojz4-04a7a8fc`: "Set as my store" was gone because the site remembered the store.
+  it("say a dry run step the site remembered, or whose effect was already there, as done", async () => {
+    for (const code of ["core.replay.remembered", "core.replay.present", "core.replay.verified"]) {
+      seen = [];
+      await inBuild(() => observed(code).executeTool(call("dryrun.1.5", { replay: "step", node: CLICK, parameters: { element: QUOTE } })));
+      expect(seen[1]!.label).toBe("Trying the Flow from the start: clicking “Get a free quote” — done");
+    }
+  });
+
   it("say a dry run step that did not repeat, as verifying", async () => {
     await inBuild(() => observed("core.replay.unreproducible").executeTool(call("dryrun.1.3", { replay: "step", node: CLICK, parameters: { element: QUOTE } })));
     expect(seen.map((event) => event.phase)).toEqual(["verifying", "verifying"]);
