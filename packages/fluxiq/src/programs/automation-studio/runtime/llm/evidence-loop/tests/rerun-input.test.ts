@@ -59,6 +59,8 @@ describe("the argument a rerun runs with", () => {
     expect(input.description).toContain("JSON merge patch over the argument the step ran with");
     expect(input.description).toContain("Only the keys that change");
     expect(input.description).toContain("null removes a key");
+    // What 0051 of `run-murdouox-c5294247` did not know: leaving a column out of a restated map keeps it.
+    expect(input.description).toContain("a key left out is kept, and a new key given a left-out key's value renames it");
     // Either shape the re-author wrote is one the merge reads (t194-w39).
     expect(input.description).toContain("a node's parameters may be written without parameters around them");
   });
@@ -191,5 +193,57 @@ describe("a patch that changes a column's kind", () => {
     // The old kind's member written again in the same patch is the patch's.
     expect(fields(automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { ad: { kind: "image", attribute: "src" } } } })).ad)
       .toEqual({ kind: "image", attribute: "src", selector: ".ad", required: false });
+  });
+});
+
+// Live run `run-murdouox-c5294247`, the repair of a friend-requests listing whose
+// columns were named by a detection's keys. Step 0047 renamed `mutual` to the
+// instruction's `mutualFriends` by restating the map; the merge kept both, so the
+// call that ran was not the one the model wrote, and its next, corrected rerun
+// merged back into that same call and was refused as an exact repeat.
+describe("a column a rerun writes under a new name", () => {
+  const listing = (): JsonObject => ({
+    node: "web.output.dom-extract_list",
+    parameters: { extractList: { handle: "extraction.5", fields: { name: "kA", mutual: "kB", confirm: "kC" }, where: [{ field: "kB", matches: "x" }] } },
+    consequences: []
+  });
+  const fieldsOf = (input: JsonObject): JsonObject => extractList(input).fields as JsonObject;
+
+  it("is that column renamed when its value is the one of a column the patch leaves out", () => {
+    const patch = { extractList: { handle: "extraction.5", fields: { name: "kA", mutualFriends: "kB", confirm: "kC" }, where: [{ field: "kB", matches: "x" }] } };
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), patch))).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { parameters: patch }))).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
+    // 0051's map, which also left `confirm` out: the rename still holds, and a
+    // column left out is kept, as a merge patch keeps it; null removes it.
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { name: "kA", mutualFriends: "kB" } } })))
+      .toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { mutualFriends: "kB", confirm: null } } })))
+      .toEqual({ name: "kA", mutualFriends: "kB" });
+  });
+
+  it("keeps what the model could not see of a column it renamed, from the one stored column it restates", () => {
+    const input = automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { label: shown(mark("data-ad-id", ".ad")) } } });
+    expect(fieldsOf(input).label).toEqual(mark("data-ad-id", ".ad"));
+    expect(fieldsOf(input)).not.toHaveProperty("ad");
+    expect(fieldsOf(input).plus).toEqual(mark("aria-label", ".plus"));
+  });
+
+  it("is a new column when its value is no left-out column's, or more than one's", () => {
+    // No column holds `kD`: an added column, every other kept.
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { price: "kD" } } })))
+      .toEqual({ name: "kA", mutual: "kB", confirm: "kC", price: "kD" });
+    // Three stored text columns read as `{kind: "text", required: true}`: which one is meant is not said, so none is renamed.
+    const input = automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { title: { kind: "text", required: true } } } });
+    expect(Object.keys(fieldsOf(input))).toEqual(["name", "price", "rating", "plus", "ad", "title"]);
+    // A column the patch writes again is not a source, even with the same value.
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { mutual: "kB", again: "kB" } } })))
+      .toEqual({ name: "kA", mutual: "kB", confirm: "kC", again: "kB" });
+  });
+
+  it("renames only by a word: a number or a flag another key happens to hold is not a name", () => {
+    const paged = (): JsonObject => ({ node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.1", paginate: { maxPages: 3 }, unique: true } }, consequences: [] });
+    const input = automationStudioLlmEvidenceRerunInput(paged(), { extractList: { paginate: { maxScrolls: 3 }, dedupe: true } });
+    expect(extractList(input).paginate).toEqual({ maxPages: 3, maxScrolls: 3 });
+    expect(extractList(input)).toMatchObject({ unique: true, dedupe: true });
   });
 });
