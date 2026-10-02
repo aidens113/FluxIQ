@@ -570,4 +570,41 @@ describe("Automation Studio LLM execution API", () => {
     }
     expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
   });
+  // What the chat's reading of the message cost, carried into the Flow's
+  // creation purse (t234 W9). Forwarded as given; anything but a finite,
+  // non-negative amount is refused before the service is asked.
+  it("forwards what reading the message cost, and refuses an amount it cannot carry", async () => {
+    const generateFlowBootstrapAdaptation = vi.fn().mockResolvedValue({
+      projectId: "project.one",
+      flowId: "flow.blank",
+      adaptationId: "adaptation.bootstrap.one",
+      status: "proposed",
+      riskLevel: "low",
+      sourceInstructionIds: ["instruction.one"],
+      baseDependencyDigest: "digest.one",
+      baseSettingsRevision: 7,
+      accounting: { requestId: "request.one", estimatedInputTokens: 300 }
+    });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+    const call = (interpretationCostUsd: unknown) => registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+      scope: {},
+      actor,
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", evidenceGuided: true, ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }) }
+    });
+
+    await expect(call(0.0003)).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation).toHaveBeenLastCalledWith(expect.objectContaining({ interpretationCostUsd: 0.0003 }));
+    await expect(call(undefined)).resolves.toMatchObject({ ok: true });
+    expect(generateFlowBootstrapAdaptation.mock.calls.at(-1)?.[0]).not.toHaveProperty("interpretationCostUsd");
+
+    generateFlowBootstrapAdaptation.mockClear();
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, "0.0003", null]) {
+      await expect(call(bad)).resolves.toEqual({ ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." });
+    }
+    expect(generateFlowBootstrapAdaptation).not.toHaveBeenCalled();
+  });
 });

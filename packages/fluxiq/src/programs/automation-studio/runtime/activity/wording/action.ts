@@ -7,7 +7,7 @@ type Phrase = {
   named?: (name: string) => string;
   /** The words the call types or looks for, with the control's name when there is one. */
   said?: (text: string, name: string | undefined) => string;
-  also?: { word: RegExp; plain: string };
+  also?: { word: RegExp; plain: string; named?: (name: string) => string };
 };
 
 /** What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`): the control, and the words it types or looks for. */
@@ -41,8 +41,16 @@ const PHRASES: readonly Phrase[] = [
   { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
   { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
   { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list" } },
-  { verb: "detect", plain: "Looking for something on the page", also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the list of items" } },
-  { verb: "look", plain: "Looking at the page", said: (text) => `Looking for ${said(text)} on the page` },
+  { verb: "describe", plain: "Reading the details of a control", named: (name) => `Reading the details of ${quoted(name)}` },
+  {
+    verb: "detect",
+    plain: "Looking for a pattern on the page",
+    also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the repeating list on the page", named: (name) => `Looking for the repeating list around ${quoted(name)}` }
+  },
+  // "Looking at the page" said nothing a person could tell apart: a capture of
+  // the whole page, a search for words and a control's details all read the
+  // same (t193, live run `run-muqiojz4-04a7a8fc`). A capture is the whole page.
+  { verb: "look", plain: "Looking over the whole page", said: (text) => `Looking for ${said(text)} on the page` },
   { verb: "scroll", plain: "Scrolling the page" },
   { verb: "wait", plain: "Waiting for the page" },
   { verb: "assert", plain: "Checking the page" },
@@ -53,15 +61,19 @@ const PHRASES: readonly Phrase[] = [
 ];
 
 /**
- * The accessible name of the element a step acts on, when the step already
- * carries it: the element identity a resolved node keeps (`element`), which is
- * part of the Flow the person owns. Never a value typed, read or observed.
+ * The name of the element a step acts on, when the step already carries it:
+ * the element identity a resolved node keeps (`element`), which is part of the
+ * Flow the person owns -- its accessible name, else the words it shows. A
+ * dry run's steps carry only that identity, and a control named by its words
+ * alone ("+", "12 Double Rolls") read "Test run" with no target (t193). Never a
+ * value typed, read or observed.
  */
 function elementName(parameters: unknown): string | undefined {
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return undefined;
   const element = (parameters as { element?: unknown }).element;
   if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  return automationStudioActivityHumanLabel((element as { accessibleName?: unknown }).accessibleName, 60);
+  const identity = element as { accessibleName?: unknown; visibleText?: unknown };
+  return automationStudioActivityHumanLabel(identity.accessibleName, 60) ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
 }
 
 /** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
@@ -87,10 +99,10 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     const named = activityActionVerb(word)?.verb;
     const verb = named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
-    if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return verb.also.plain;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.
-    const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? (verb.named ? elementName(input.parameters) : undefined);
+    const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? (verb.named || verb.also?.named ? elementName(input.parameters) : undefined);
+    if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);
     return name && verb.named ? verb.named(name) : verb.plain;

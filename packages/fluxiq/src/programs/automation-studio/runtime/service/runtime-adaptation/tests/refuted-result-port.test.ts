@@ -6,6 +6,7 @@ import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError } from "../../../llm/index.ts";
 import {
+  AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE,
@@ -217,7 +218,9 @@ describe("the repair's one purse", () => {
     expect(generate).toHaveBeenCalledTimes(1);
     expect(port.annotate).not.toHaveBeenCalled();
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", retryable: true });
-    expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.8), leftUsd: usd(CEILING * 0.2), averagedCalls: 2, averagedUsd: usd(CEILING * 0.8), refusedParts: ["reauthor", "patch_ladder"], bound: "cost" });
+    expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.8), leftUsd: usd(CEILING * 0.2), averagedCalls: 2, averagedUsd: usd(CEILING * 0.8), refusedParts: ["reauthor"], bound: "cost" });
+    // The first build explored, so the ladder is not a later part at all here: its fix is the re-author's (run 38).
+    expect(marker(result).ladderSkipped).toEqual({ reason: "structural_fix", afterCode: "llm_budget.run_cost_limit" });
   });
 
   it("is never raised by a Flow set above the ceiling", async () => {
@@ -247,5 +250,80 @@ describe("the repair's one purse", () => {
     const second = await automationStudioRefutedResultRepairPort(deps({ annotate: spentLadder as never }))({ ...notWrongAnswer, detail: spentDetail });
     expect(spentLadder).not.toHaveBeenCalled();
     expect(marker(second).purse).toMatchObject({ refusedParts: ["patch_ladder"], bound: "cost" });
+  });
+});
+
+// A refutation of the result itself names no step (`recovery/refuted-result/attempt.ts`): the patch
+// ladder repairs one failed step and was handed a healthy one instead (run-muqilf9s, run-muqiojz4).
+describe("a refutation that names no step", () => {
+  const unnamed = { ...request, failedTraceAttempt: { nodeId: AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID } as never };
+
+  it("is not handed to the patch ladder when the route does not take it", async () => {
+    const notWrongAnswer = { ...unnamed, detail: { ...detail, metadata: { [AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]: { attempted: true, attempts: 1, code: "core.result.unconfirmed" } } } as unknown as AutomationStudioFlowRunDetail };
+    const port = deps({});
+    const result = await automationStudioRefutedResultRepairPort(port)(notWrongAnswer);
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(marker(result)).toMatchObject({ routed: false, ladderSkipped: { reason: "names_no_step" } });
+    expect(result?.metadata?.ladder).toBeUndefined();
+  });
+
+  it("does not degrade to the patch ladder when the re-author built nothing", async () => {
+    const generate = vi.fn(async () => { throw new AutomationStudioLlmRequestRefusedError("llm.request.evidence_denied_key", "refused"); });
+    const port = deps({ generate: generate as never });
+    const result = await automationStudioRefutedResultRepairPort(port)(unnamed);
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(marker(result)).toMatchObject({ routed: true, code: "flow_bootstrap.request_refused_evidence_denied_key", ladderSkipped: { reason: "names_no_step", afterCode: "flow_bootstrap.request_refused_evidence_denied_key" } });
+    expect(marker(result).degraded).toBeUndefined();
+  });
+});
+
+// Run 38 (`run-muqilf9s-c3211328`, cause C5): the re-author explored for eight
+// decisions with the judge's fix -- a read, a filter and a confirm for each row
+// -- and ended `not_doable`. The patch ladder then spent a diagnosis and a
+// runtime patch call to answer `no_repair` under `control_gone`, because none of
+// its runtime patches can add a step. A refutation's fix is always a change to
+// the Flow's steps, so once the re-author has tried it, the ladder is not run.
+describe("a re-author that explored and built nothing", () => {
+  const explored = (decisionCount: number) => new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.provider_output_validation_failed", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received",
+    accounting: { requestId: "request.reauthor", estimatedInputTokens: 10, estimatedCostUsd: 0.0176 },
+    evidenceLoop: { iterationCount: decisionCount, decisionCount, toolCallCount: 2, evidenceBytes: 100 }
+  });
+
+  it("is not followed by the patch ladder, and the run says why", async () => {
+    const generate = vi.fn(async () => { throw explored(8); });
+    const port = deps({ generate: generate as never });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(result?.metadata?.ladder).toBeUndefined();
+    expect(marker(result)).toMatchObject({ routed: true, code: "flow_bootstrap.provider_output_validation_failed", ladderSkipped: { reason: "structural_fix", afterCode: "flow_bootstrap.provider_output_validation_failed" } });
+    expect(marker(result).degraded).toBeUndefined();
+    expect(marker(result).purse.refusedParts).toBeUndefined();
+  });
+
+  it("still degrades to the patch ladder when the build ended before its first decision", async () => {
+    const generate = vi.fn(async () => { throw explored(0); });
+    const port = deps({ generate: generate as never });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+
+    expect(port.annotate).toHaveBeenCalledTimes(1);
+    expect(marker(result)).toMatchObject({ degraded: { to: "patch_ladder", afterCode: "flow_bootstrap.provider_output_validation_failed" } });
+    expect(marker(result).ladderSkipped).toBeUndefined();
+  });
+
+  it("counts only this repair's builds, not an earlier pass's", async () => {
+    const earlierPass = { attempt: 1, routed: true, code: "flow_bootstrap.not_doable", evidenceLoop: { decisionCount: 8 } };
+    const second = {
+      ...request,
+      current: automationStudioResultRepairHistoryEntry({ attempt: 2, outcome, summary, nodeId: "node.s6" }),
+      detail: { ...detail, metadata: { ...(detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { routed: true, attempts: [earlierPass] } } } as AutomationStudioFlowRunDetail
+    };
+    const port = deps({ generate: (async () => { throw explored(0); }) as never });
+    const result = await automationStudioRefutedResultRepairPort(port)(second);
+
+    expect(port.annotate).toHaveBeenCalledTimes(1);
+    expect(marker(result).ladderSkipped).toBeUndefined();
   });
 });

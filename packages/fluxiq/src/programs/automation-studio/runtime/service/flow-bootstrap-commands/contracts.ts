@@ -49,6 +49,14 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
    * build carries straight on with permission the moment they answer.
    */
   permissionAskTimeoutMs?: number;
+  /**
+   * What the chat's reading of the message that asked for this build cost, in
+   * US dollars. A build that is not a refuted-result repair opens the Flow's
+   * creation purse with it carried on top of what earlier builds spent, so it
+   * is saved into the creation's record with the rest (`./creation-purse.ts`).
+   * A repair ignores it. Absent, nothing is carried.
+   */
+  interpretationCostUsd?: number;
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {

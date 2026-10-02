@@ -290,7 +290,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if (asked !== undefined) throw asked;
       // Only a Flow with steps in it is tested: an empty one has nothing to run.
       if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
-        input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
+        input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
       }
       // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
       const judged = await automationStudioFlowBootstrapJudgeUnfinished({

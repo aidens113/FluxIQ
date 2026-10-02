@@ -161,7 +161,13 @@ async function runDeepSeekTask(input: {
     }
     if (typeof secret !== "string" || !secret.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
     if (body.includes(secret)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
-    step = automationStudioLlmStepLogModelStep({ provider: "deepseek", model: input.model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: input.request.taskKind, requestId: input.request.requestId, stage: input.request.context.stage, iteration: input.request.context.evidenceLoop?.iteration });
+    // `price` lets the step log price a failed call from the reply's own usage,
+    // as the panel's chat call does, where no refusal carried a cost.
+    const model = input.model;
+    step = automationStudioLlmStepLogModelStep({
+      provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: input.request.taskKind, requestId: input.request.requestId, stage: input.request.context.stage, iteration: input.request.context.evidenceLoop?.iteration,
+      price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model)
+    });
     const response = await input.fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
       redirect: "manual",

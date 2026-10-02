@@ -68,10 +68,17 @@ export type AutomationStudioConversationInterpretation = {
   modelProblem: string | null;
   /** Model calls made, including retries. Zero when no model is connected. */
   attempts: number;
+  /**
+   * What the model calls cost in US dollars, every attempt summed, when the
+   * model priced them (`./model.ts` `paid`). Absent when none did. It is not
+   * part of the endpoint's answer: it goes to the command the turn runs, which
+   * carries it into the purse of a Flow it builds (`../commands/build.ts`).
+   */
+  costUsd?: number;
 };
 
 /** What the endpoint answers with after a person's turn, beside the turn itself. */
-export type AutomationStudioConversationResponse = AutomationStudioConversationInterpretation & {
+export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd"> & {
   /** The turn Core wrote in answer: the reply, the question, what it is doing, or the confirmation it asks for. */
   turnId: string;
   /** Set when the invocation waits for the person's confirmation; the ask's id. */

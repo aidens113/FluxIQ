@@ -1,3 +1,4 @@
+import { automationStudioLlmEvidenceToolResultInvalidCode } from "../evidence-loop-decision.ts";
 import { automationStudioLlmStepLogDirectory } from "./directory.ts";
 import { automationStudioLlmStepLogWriter } from "./files.ts";
 import { automationStudioLlmStepLogFolderRefused, automationStudioLlmStepLogOpenFolder, type AutomationStudioLlmStepLogFolder } from "./folder.ts";
@@ -20,8 +21,9 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * exactly the `evidence` the loop hands the model back (the raw value when the
  * tool did not answer with an execution result; the error's name and code when
  * it threw), `page.txt` the compact page text when the evidence carries one,
- * and `meta.json`, last, the timing and result code. `run` itself, untouched,
- * when the step log is off.
+ * and `meta.json`, last, the timing, the result code and `loopVerdict`: whether
+ * Core read the value or refused it, so a refused one is no longer visible only
+ * in the next request. `run` itself, untouched, when the step log is off.
  */
 export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (request: R) => Promise<O>, env: Readonly<Record<string, string | undefined>> = process.env): (request: R) => Promise<O> {
   const directory = automationStudioLlmStepLogDirectory(env);
@@ -63,16 +65,23 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
       files.json("result.json", error === undefined ? evidence ?? null : { error: thrown(error) });
       const page = error === undefined ? automationStudioLlmStepLogPageText(evidence) : undefined;
       if (page !== undefined) files.text("page.txt", page);
-      const summary = automationStudioLlmStepLogSummary.tool(evidence, execution?.resultCode, error === undefined ? undefined : thrown(error));
+      // What Core made of the value, by the reader the loop and a test's replay both use. A value it
+      // refuses reaches the model as a call that failed with no evidence, whatever `resultCode` says:
+      // run 38's twelve reads were logged `web.inspect.succeeded` and every one was refused
+      // `evidence_not_json` (`run-muqilf9s-c3211328`). The effect a tool declares never decides a refusal.
+      const unread = error === undefined ? automationStudioLlmEvidenceToolResultInvalidCode(result, "observe") : undefined;
+      const summary = automationStudioLlmStepLogSummary.tool(evidence, execution?.resultCode, error === undefined ? undefined : thrown(error), unread);
       const finished = Date.now();
       files.meta({
         step: folder.step, kind, callId, toolId,
         startedAt: new Date(started).toISOString(), finishedAt: new Date(finished).toISOString(), ms: finished - started,
-        round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
+        part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
         status: error === undefined ? "ok" : "threw",
         resultCode: typeof execution?.resultCode === "string" ? execution.resultCode : null,
         resultReason: typeof execution?.resultReason === "string" ? execution.resultReason : null,
         effectApplied: typeof execution?.effectApplied === "boolean" ? execution.effectApplied : null,
+        // `read`, the code the loop records for a value it refused, or the one for a call that threw.
+        loopVerdict: error !== undefined ? "llm_evidence_loop.tool_failed" : unread ?? "read",
         summary
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined });

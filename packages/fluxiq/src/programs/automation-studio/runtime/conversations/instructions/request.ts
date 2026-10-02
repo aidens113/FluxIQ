@@ -35,6 +35,12 @@ export type AutomationStudioConversationInstructionAnswer = {
   turn: AutomationStudioConversationTurn;
   response: AutomationStudioConversationResponse | null;
   problem: string | null;
+  /**
+   * What reading the turn cost in US dollars, when the model priced it. Absent
+   * otherwise. Never sent to the client: the handler hands it to the command the
+   * turn runs, so a Flow the chat builds carries it in its creation purse.
+   */
+  interpretationCostUsd?: number;
 };
 
 

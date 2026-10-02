@@ -4,8 +4,11 @@
 // The request is the one the panel's "Explore and build" and "Improve
 // automation" send (`generate-flow-bootstrap-adaptation`, evidence-guided),
 // plus what only the chat knows: the page the person has open, as the place
-// the Flow starts. The session travels as `authSessionId` because the endpoint
-// refuses a request whose session is not the caller's own.
+// the Flow starts, and what reading the person's message cost, which the build
+// carries in the Flow's creation purse (the rule is a ceiling per Flow, and the
+// chat call that decided to build it is part of that Flow's cost). The session
+// travels as `authSessionId` because the endpoint refuses a request whose
+// session is not the caller's own.
 
 import type { AutomationStudioConversationCommandContext } from "./command.ts";
 import { automationStudioConversationCallCause } from "./progress.ts";
@@ -30,7 +33,8 @@ export async function buildAutomationStudioFlowFromConversation(
     evidenceGuided: true,
     // An extend amends the Flow's own steps from where the Flow already
     // starts; the page on screen is a creation's starting point.
-    ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {})
+    ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),
+    ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd })
   });
   if (!response.ok) return { ok: false, cause: automationStudioConversationCallCause("the build", response) };
   const adaptation = (response.payload as { adaptation?: { adaptationId?: unknown; permissionRequest?: unknown } } | undefined)?.adaptation;

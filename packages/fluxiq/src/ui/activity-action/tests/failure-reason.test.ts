@@ -20,7 +20,8 @@ describe("activityActionFailureReason", () => {
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
     ["core.replay.changed", "it didn't work the same way again"],
-    ["core.replay.unreproducible", "it didn't work the same way again"]
+    ["core.replay.unreproducible", "it didn't work the same way again"],
+    ["core.replay.reset_failed", "it didn't work the same way again"]
   ])("says %s as %s", (code, why) => {
     expect(activityActionFailureReason(code)).toBe(why);
   });
@@ -28,6 +29,8 @@ describe("activityActionFailureReason", () => {
   it("says nothing for a code that names no reason, and never the code", () => {
     expect(activityActionFailureReason("web.action.failed")).toBeNull();
     expect(activityActionFailureReason("core.replay.replayed")).toBeNull();
+    // A step the site remembered, was checked, or was already in place held (t193).
+    for (const held of ["core.replay.remembered", "core.replay.verified", "core.replay.present"]) expect(activityActionFailureReason(held)).toBeNull();
     expect(activityActionFailureReason("example.unrecognised_state")).toBeNull();
     expect(activityActionFailureReason("not_found")).toBe("it wasn't on the page");
   });

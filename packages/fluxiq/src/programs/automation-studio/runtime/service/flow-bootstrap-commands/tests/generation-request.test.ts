@@ -30,4 +30,13 @@ describe("a Flow Bootstrap generation request", () => {
     expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ executionGrant: {} }))).toThrow(/unsupported fields: executionGrant/);
     expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ caller: { ...CALLER, purpose: "build_and_adapt" } }))).toThrow(/unsupported fields: purpose/);
   });
+
+  it("reads what the chat's reading of the message cost, and refuses anything but a finite, non-negative amount", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0.0003 }))).toMatchObject({ interpretationCostUsd: 0.0003 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0 }))).toMatchObject({ interpretationCostUsd: 0 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("interpretationCostUsd");
+    for (const bad of [-0.0001, Number.NaN, Number.POSITIVE_INFINITY, "0.0003", null]) {
+      expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: bad }))).toThrow(/interpretation cost/);
+    }
+  });
 });
