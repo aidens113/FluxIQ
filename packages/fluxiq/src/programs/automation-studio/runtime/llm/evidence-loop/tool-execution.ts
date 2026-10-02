@@ -140,5 +140,23 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * replayed. Both fields are carried opaquely; Core reads neither.
      */
     replay?: AutomationStudioFlowDraftStepReplay;
+    /**
+     * The words of the thing the call acted on, as the caller's own result
+     * showed them: the control a press pressed, on the web. Shown on the
+     * draft step beside `input`, because the token `input` names it by says
+     * nothing once its page is gone. Page text: read only through
+     * `automationStudioFlowDraftControlWords` (`../../flow-draft/control-words.ts`),
+     * which withholds what the call's evidence never showed, and never written
+     * into the Flow.
+     */
+    control?: string;
+    /**
+     * The caller's word that the call answered something that stood in front
+     * of the page -- a dialog, a consent wall, a covering popup -- and was gone
+     * after it. Only `true` is carried; anything else is read as nothing. A
+     * step that says it and does none of the person's acts is optional in the
+     * Flow (`../../flow-draft/sometimes-present.ts`).
+     */
+    interruption?: true;
   };
 };

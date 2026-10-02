@@ -3,9 +3,11 @@
 // WAY THAT MAKE AN INTELLIGENT FLOW!"), the acts checklist beside it (audit A1,
 // cause 1), and what progress means once it is authored (audit A1, cause 2).
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import { automationStudioLlmEvidenceParseDecision } from "../../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceParseDecision, automationStudioLlmEvidenceParseToolExecutionResult, automationStudioLlmEvidenceToolResultInvalidCode } from "../../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceCallRecord } from "../call-record.ts";
+import { automationStudioFlowBootstrapDraftNodeStep, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../node-tools/index.ts";
 import { automationStudioLlmEvidenceAuthoredProgress } from "../../evidence-progress/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
@@ -197,6 +199,112 @@ describe("authoring properties in the decision schema", () => {
     const plain = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, false)).length;
     // One explained pair plus four bare pairs over the schema with none.
     expect(authored - plain).toBeLessThan(468 + 4 * 120);
+  });
+});
+
+// The words of the control a step acted on, from the caller's draft statement
+// to the core.flow_draft entry the model reads -- and never into the Flow.
+// Live run `run-muqiho5c-e830ce01` pressed "Not now" (t1082) and the draft it
+// was shown said only `input: {target: {handle: "t1082"}}`. It then added that
+// step as its "put three in my cart" act, completed, and the cart was empty.
+const pressTool = { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const };
+const controlPage = "t1009 button \"Add to cart\"\nt1082 button \"Not now\"";
+// What a caller returned, as the loop receives it: JSON it has not read yet.
+const execution = (control: unknown, evidence: JsonObject = { ok: true, control: "Not now", page: controlPage }): JsonValue => ({
+  kind: "llm_evidence_tool_execution",
+  evidence,
+  effectApplied: true,
+  draft: { actionId: "web.output.dom-click", input: { node: "web.output.dom-click", parameters: { target: { handle: "t1082" } }, consequences: [] }, effect: "mutate", proposes: true, control }
+}) as JsonValue;
+
+describe("the control's words on a call's draft statement", () => {
+  it("are read on the parse path when the call's own evidence showed them", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(execution("Not now"), "mutate")?.draft?.control).toBe("Not now");
+  });
+
+  it("are withheld, never refused, when the call's evidence did not show them or they are not plain words", () => {
+    for (const control of ["Place order", "<b>Not now</b>", 42, { name: "Not now" }, ""]) {
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult(execution(control), "mutate");
+      expect(parsed?.effectApplied, JSON.stringify(control)).toBe(true);
+      expect(parsed?.draft, JSON.stringify(control)).not.toHaveProperty("control");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(execution(control), "mutate")).toBeUndefined();
+    }
+  });
+
+  it("are cut to a bound", () => {
+    const long = `Not now ${"really ".repeat(40)}`.trim();
+    const control = automationStudioLlmEvidenceParseToolExecutionResult(execution(long, { page: long }), "mutate")?.draft?.control;
+    expect(control?.length).toBeLessThanOrEqual(120);
+    expect(control?.startsWith("Not now really")).toBe(true);
+  });
+
+  it("are copied onto the call's record", () => {
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(execution("Not now"), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, parsed).control).toBe("Not now");
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("control");
+  });
+});
+
+describe("the draft the model is shown", () => {
+  it("names the control each step pressed beside its input", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "t1082" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(execution("Not now")), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    expect(result.steps[0]?.control).toBe("Not now");
+    const shown = (decide.mock.calls[1]![0] as { evidence: Shown }).evidence.find((entry) => entry.toolId === "core.flow_draft")!.value;
+    const line = (shown.steps as JsonObject[])[0]!;
+    expect(line).toMatchObject({ step: 1, input: { node: "web.output.dom-click", parameters: { target: { handle: "t1082" } }, consequences: [] }, control: "Not now" });
+  });
+});
+
+describe("the Flow a draft is written into", () => {
+  it("never carries the control's words in a step's parameters", () => {
+    const written = automationStudioFlowBootstrapDraftNodeStep({
+      position: 1, iteration: 1, callId: "call.1", actionId: "web.output.dom-click", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+      input: { node: "web.output.dom-click", parameters: { target: { handle: "t1082" } }, consequences: [] },
+      ranWith: { node: "web.output.dom-click", parameters: { selector: "#dismiss" }, consequences: [] },
+      effect: "mutate", effectApplied: true, disposition: "kept", proposes: true, control: "Not now"
+    });
+    expect(written?.entries?.map((entry) => entry.key)).toEqual(["selector", "consequences"]);
+    expect(JSON.stringify(written)).not.toContain("Not now");
+  });
+});
+
+// The host's statement that a press answered a layer standing in front of the
+// page -- a dialog, a consent wall, a covering popup -- that was gone after it
+// (t174-w60, case 2). Only `true` travels; anything else is the host saying
+// nothing, and the call's result is never lost over it.
+const interrupting = (interruption: unknown): JsonValue => ({
+  kind: "llm_evidence_tool_execution",
+  evidence: { ok: true },
+  effectApplied: true,
+  draft: { actionId: "web.output.dom-click", input: { target: { handle: "t1082" } }, effect: "mutate", proposes: true, interruption }
+}) as JsonValue;
+
+describe("a call's statement that it answered an interruption", () => {
+  it("is carried on the parse path when it is true", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(interrupting(true), "mutate")?.draft?.interruption).toBe(true);
+  });
+
+  it("is withheld, never refused, when it is anything but true", () => {
+    for (const interruption of ["yes", 1, false, "true", { layer: "dialog" }]) {
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult(interrupting(interruption), "mutate");
+      expect(parsed?.effectApplied, JSON.stringify(interruption)).toBe(true);
+      expect(parsed?.draft, JSON.stringify(interruption)).not.toHaveProperty("interruption");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(interrupting(interruption), "mutate"), JSON.stringify(interruption)).toBeUndefined();
+    }
+  });
+
+  it("is copied onto the call's record, and onto the step the loop appends", async () => {
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(interrupting(true), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, parsed).interruption).toBe(true);
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("interruption");
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "t1082" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(interrupting(true)), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    expect(result.steps[0]?.interruption).toBe(true);
   });
 });
 

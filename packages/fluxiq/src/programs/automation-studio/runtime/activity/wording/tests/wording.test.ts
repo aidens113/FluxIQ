@@ -35,6 +35,13 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: "vendor.frobnicate" })).toBeUndefined();
   });
 
+  // F36 (`run-muqiho5c-e830ce01`): a control with no accessible name read "Click · the page" in the playback.
+  it("names an element by its visible text when it has no accessible name, the name first when it has both", () => {
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "div", visibleText: "Not now" } } })).toBe("Clicking “Not now”");
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { accessibleName: "Space Grey", visibleText: "Grey" } } })).toBe("Clicking “Space Grey”");
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { visibleText: "a.b" } } })).toBe("Clicking on the page");
+  });
+
   it("names an element by the words it shows when it has no accessible name (t193: dry-run cards read a bare Test run)", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "span", visibleText: "+" } } })).toBe("Clicking “+”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "div", visibleText: "12 Double Rolls$16.47" } } })).toBe("Clicking “12 Double Rolls$16.47”");

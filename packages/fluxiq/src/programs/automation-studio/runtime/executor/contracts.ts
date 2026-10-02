@@ -181,6 +181,17 @@ export type AutomationStudioNodeAttemptTrace = {
   transitionComparison?: AutomationStudioTransitionComparison;
   recoveryDecision?: AutomationStudioRecoveryDecision;
   /**
+   * Set when the run skipped this node rather than ran it: a sometimes-present
+   * step (a popup, a banner, a consent prompt) whose target was observed not to
+   * be on the page (`step-skip/absent-step.ts`). The attempt then reads `status:
+   * "succeeded"`, `route: "skipped"`, and carries no `failure`, `fault`,
+   * `message` or `recoveryDecision`, because a step that was not shown did not
+   * fail. `code` is what observed it: the host's failure code
+   * (`web.target.not_found`), or `executor.ready_state.not_shown` when the
+   * node's ready state was judged and not met, and nothing was dispatched.
+   */
+  skipped?: { reason: "target_absent"; code: string };
+  /**
    * Which attempt of this node this is, and why it was attempted again. Present
    * from the second attempt onwards, so a trace says plainly that the ladder,
    * not the Flow, put the node back on the page.

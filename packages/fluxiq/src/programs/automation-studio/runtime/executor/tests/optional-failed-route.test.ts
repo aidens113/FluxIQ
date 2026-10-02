@@ -54,28 +54,93 @@ function decisionKind(attempt: AutomationStudioNodeAttemptTrace | undefined) {
   return attempt?.recoveryDecision?.selected?.kind;
 }
 
+/** The dispatches whose payload names `elementId`, counted, around a dispatcher. */
+function counting(dispatcher: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>, elementId: string) {
+  const counter = { calls: 0 };
+  const counted: typeof dispatcher = (effect, context) => {
+    if (JSON.stringify(effect.payload ?? null).includes(elementId)) counter.calls += 1;
+    return dispatcher(effect, context);
+  };
+  return { counter, dispatcher: counted };
+}
+
+/** The check fails some other way than its target being absent. */
+const checkFails = (category: "action_failed" | "target_ambiguous"): NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> => (effect) => JSON.stringify(effect.payload ?? null).includes("soft-check")
+  ? { status: "failed", route: "failed", message: "The press did nothing.", failure: { category, code: `web.test.${category}`, retryable: true, stage: "execution" } }
+  : { status: "success", route: "success", outputs: { ok: true } };
+
+// The rule (user, 2026-10-02): an absent sometimes-present step is skipped by
+// observing the page, never reported as a failure -- no recovery, no retries.
 describe("an optional press whose target is absent, under the default recovery budget", () => {
-  it("retries the press, then follows its failed route through the Merge to the node after it", async () => {
-    const trace = await run();
+  it("skips the press after one dispatch and follows its failed route through the Merge, with no recovery", async () => {
+    const { counter, dispatcher } = counting(checkAbsent, "soft-check");
+    const trace = await run({ effectDispatcher: dispatcher });
 
     expect(trace.status).toBe("succeeded");
-    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["search", "check", "check", "check", "join", "read"]);
-    const checks = trace.attempts.filter((attempt) => attempt.nodeId === "check");
-    expect(checks.map(decisionKind)).toEqual(["retry_node", "retry_node", "deterministic_path"]);
-    expect(checks[2]?.recoveryDecision?.selected).toMatchObject({ edgeId: "check.failed", targetNodeId: "join" });
-    expect(checks[2]?.recoveryDecision?.metadata).not.toHaveProperty("budgetExhausted");
+    expect(counter.calls).toBe(1);
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    const check = trace.attempts[1]!;
+    expect(check).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } });
+    expect(check).not.toHaveProperty("recoveryDecision");
+    expect(check).not.toHaveProperty("failure");
+    expect(check).not.toHaveProperty("fault");
+    expect(trace.defence).toBeUndefined();
   });
 
-  it("still follows the failed route when the subflow budget allows no recovery beyond the node's own retries", async () => {
-    // One recovery per subflow: the retries must not be what spends it.
+  it("still follows the failed route when the subflow budget allows only one recovery", async () => {
     const trace = await run({ recoveryBudget: { ...DEFAULT_RECOVERY_BUDGET, maxRecoveryAttemptsPerSubflow: 1 } });
 
     expect(trace.status).toBe("succeeded");
     expect(trace.attempts.at(-1)?.nodeId).toBe("read");
   });
 
-  it("gives the failed route no budget at all when the Flow sets the subflow budget to zero", async () => {
+  it("skips it even when the Flow sets the subflow budget to zero: a skip is not a recovery", async () => {
     const trace = await run({ recoveryBudget: { ...DEFAULT_RECOVERY_BUDGET, maxRecoveryAttemptsPerSubflow: 0 } });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(trace.attempts[1]).not.toHaveProperty("recoveryDecision");
+  });
+});
+
+describe("a failure the skip does not cover keeps the recovery ladder", () => {
+  it("retries a straight-line press whose target is absent: a step that is always there did fail", async () => {
+    const straight: AutomationStudioFlowDocument = {
+      ...optionalPressFlow,
+      nodes: optionalPressFlow.nodes.filter((node) => node.id !== "join"),
+      edges: [
+        { id: "search.check", sourceNodeId: "search", sourcePortId: "success", targetNodeId: "check", targetPortId: "in" },
+        { id: "check.read", sourceNodeId: "check", sourcePortId: "success", targetNodeId: "read", targetPortId: "in" }
+      ]
+    };
+    const { counter, dispatcher } = counting(checkAbsent, "soft-check");
+    const trace = await runAutomationStudioGraph(straight, { effectDispatcher: dispatcher, recoveryBudget: DEFAULT_RECOVERY_BUDGET, delay: async () => undefined });
+
+    const checks = trace.attempts.filter((attempt) => attempt.nodeId === "check");
+    expect(counter.calls).toBe(3);
+    expect(checks.slice(0, 2).map(decisionKind)).toEqual(["retry_node", "retry_node"]);
+    expect(checks.every((attempt) => attempt.skipped === undefined && attempt.status === "failed")).toBe(true);
+    // The retry record still points at the attempt it followed.
+    expect(checks[1]?.retry?.previousAttemptId).toBe(checks[0]?.attemptId);
+  });
+
+  // The ladder as it was: an action that ran and failed is retried; an ambiguous
+  // target is not retryable and goes straight to the authored failed route.
+  it.each([
+    ["action_failed", ["retry_node", "retry_node", "deterministic_path"]],
+    ["target_ambiguous", ["deterministic_path"]]
+  ] as const)("takes the ladder for an optional press that failed with %s", async (category, decisions) => {
+    const trace = await run({ effectDispatcher: checkFails(category) });
+
+    expect(trace.status).toBe("succeeded");
+    const checks = trace.attempts.filter((attempt) => attempt.nodeId === "check");
+    expect(checks.map(decisionKind)).toEqual(decisions);
+    expect(checks.at(-1)?.recoveryDecision?.selected).toMatchObject({ edgeId: "check.failed", targetNodeId: "join" });
+    expect(checks.every((attempt) => attempt.skipped === undefined && attempt.status === "failed")).toBe(true);
+  });
+
+  it("gives an optional press that failed some other way no failed route when the subflow budget is zero", async () => {
+    const trace = await run({ effectDispatcher: checkFails("action_failed"), recoveryBudget: { ...DEFAULT_RECOVERY_BUDGET, maxRecoveryAttemptsPerSubflow: 0 } });
 
     expect(trace.status).toBe("failed");
     expect(trace.attempts.at(-1)?.recoveryDecision?.candidates.map((candidate) => candidate.kind)).not.toContain("deterministic_path");
@@ -124,18 +189,19 @@ describe("attempt numbering in a run that continues under the same id", () => {
   it("numbers from one when the run records nothing before it", async () => {
     const trace = await run();
 
-    expect(trace.attempts.map((entry) => entry.attemptId)).toEqual([
-      "search.attempt.1", "check.attempt.2", "check.attempt.3", "check.attempt.4", "join.attempt.5", "read.attempt.6"
-    ]);
+    expect(trace.attempts.map((entry) => entry.attemptId)).toEqual(["search.attempt.1", "check.attempt.2", "join.attempt.3", "read.attempt.4"]);
   });
 
   it("numbers after the attempts already recorded, so no id repeats one the first pass wrote", async () => {
     const trace = await run({ priorAttemptCount: 6 });
 
-    expect(trace.attempts.map((entry) => entry.attemptId)).toEqual([
-      "search.attempt.7", "check.attempt.8", "check.attempt.9", "check.attempt.10", "join.attempt.11", "read.attempt.12"
-    ]);
-    // The retry record still points at the attempt it followed.
+    expect(trace.attempts.map((entry) => entry.attemptId)).toEqual(["search.attempt.7", "check.attempt.8", "join.attempt.9", "read.attempt.10"]);
+  });
+
+  it("numbers a retried attempt after the one it followed", async () => {
+    const trace = await run({ effectDispatcher: checkFails("action_failed"), priorAttemptCount: 6 });
+
+    expect(trace.attempts.slice(0, 4).map((entry) => entry.attemptId)).toEqual(["search.attempt.7", "check.attempt.8", "check.attempt.9", "check.attempt.10"]);
     expect(trace.attempts[2]?.retry?.previousAttemptId).toBe("check.attempt.8");
   });
 });

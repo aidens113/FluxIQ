@@ -32,10 +32,12 @@
 //
 // It is not made `optional` here. Whether a missing control was an
 // interruption that only sometimes appears (a dialog layer) or a step of the
-// page the Flow always needs is a fact about the press, and no host records it
-// yet: the web binding writes only where the step found the page and how much
-// it read. A host that recorded the target's layer at press time would let
-// this mark such a step optional itself (t195-w20b's report says what it needs).
+// page the Flow always needs is a fact about the press, not the replay, and
+// the host now records it at press time: a press that answered a layer gone
+// after it carries `interruption` (`./step.ts`). Such a step, with no act and
+// no routing of its own, is optional wherever the Flow is written
+// (`./sometimes-present.ts`, `automationStudioFlowDraftInterruptionStepIds`),
+// so a remembered dismissal is skipped in playback rather than marked here.
 //
 // **reanchored.** A step whose target is missing while the replay stands on a
 // page other than its own, right after a step that was not done again --

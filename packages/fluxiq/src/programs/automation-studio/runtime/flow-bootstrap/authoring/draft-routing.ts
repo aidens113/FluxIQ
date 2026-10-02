@@ -36,10 +36,17 @@
 // that is not contiguous, a loop inside a loop. Each is a shape whose meaning
 // is not obvious from the statement, and a wrong edge is a Flow that does the
 // wrong thing quietly. Each refusal names the amendment that fixes it.
+//
+// **A step the host says answered an interruption is optional here** when it
+// does none of the person's acts and says nothing else about when it runs
+// (`runtime/flow-draft/sometimes-present.ts`): a consent wall or popup the
+// site remembers is absent on the next visit, and playback skips an absent
+// optional step. That is the step's effective routing, read here; the draft
+// itself is not rewritten, so the model is shown what it said.
 
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepId } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftInterruptionStepIds, automationStudioFlowDraftStepId } from "../../flow-draft/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBranch, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
@@ -84,7 +91,8 @@ export function routeAutomationStudioFlowDraftSteps(input: {
 }): { steps: AutomationStudioFlowScriptStep[]; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const emitted: AutomationStudioFlowScriptStep[] = [];
-  const byId = new Map(input.steps.map((entry) => [automationStudioFlowDraftStepId(entry.step), entry] as const));
+  const steps = effectiveSteps(input.steps);
+  const byId = new Map(steps.map((entry) => [automationStudioFlowDraftStepId(entry.step), entry] as const));
   const consumed = new Set<string>();
   const positionOf = new Map([...byId.keys()].map((id, index) => [id, index] as const));
   let derived = 0;
@@ -93,7 +101,7 @@ export function routeAutomationStudioFlowDraftSteps(input: {
   const refuse = (step: AutomationStudioFlowDraftStep, code: string, message: string): void => {
     issues.push(authoringError(code, message, `draft.steps.${step.position}`));
   };
-  const needsLibrary = input.steps.some((entry) => entry.step.routing !== undefined);
+  const needsLibrary = steps.some((entry) => entry.step.routing !== undefined);
   if (needsLibrary) {
     for (const id of [MERGE_NODE_ID, FOR_EACH_NODE_ID]) {
       if (input.registry.get(id, input.resolution)) continue;
@@ -102,7 +110,7 @@ export function routeAutomationStudioFlowDraftSteps(input: {
     }
   }
 
-  for (const [index, entry] of input.steps.entries()) {
+  for (const [index, entry] of steps.entries()) {
     const id = automationStudioFlowDraftStepId(entry.step);
     if (consumed.has(id)) continue;
     const routing = entry.step.routing;
@@ -115,7 +123,7 @@ export function routeAutomationStudioFlowDraftSteps(input: {
       // joins at, as the step after it (`llm/node-tools/draft-from-flow.ts`).
       // Joining there keeps that node, and its id, rather than adding a second
       // join and leaving the first with one way in.
-      const held = heldJoin(input.steps[index + 1], consumed, input.registry, input.resolution);
+      const held = heldJoin(steps[index + 1], consumed, input.registry, input.resolution);
       if (held) {
         emitted.push({ ...scriptStep(entry, label(id)), branches: [branch("failed", label(held))] });
         continue;
@@ -160,6 +168,19 @@ export function routeAutomationStudioFlowDraftSteps(input: {
     if (repeated) refuse(entry.step, repeated.code, repeated.message);
   }
   return { steps: emitted, issues };
+}
+
+/**
+ * The steps as the Flow is written from them: each one the host says answered
+ * an interruption, with no act and no routing of its own, routed `optional`.
+ * A copy; the draft's own steps are left as the model authored them.
+ */
+function effectiveSteps(steps: readonly AutomationStudioFlowDraftRoutedStep[]): readonly AutomationStudioFlowDraftRoutedStep[] {
+  const interruptions = automationStudioFlowDraftInterruptionStepIds(steps.map((entry) => entry.step));
+  if (!interruptions.size) return steps;
+  return steps.map((entry) => interruptions.has(automationStudioFlowDraftStepId(entry.step))
+    ? { ...entry, step: { ...entry.step, routing: { kind: "optional" as const } } }
+    : entry);
 }
 
 /**

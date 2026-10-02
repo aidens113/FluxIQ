@@ -5,12 +5,17 @@
 // the exploration runs, the list of what it did is in front of the model when
 // it writes the result.
 //
-// **Nothing here is page content.** Every field is Core's own bookkeeping,
-// the argument the model itself wrote when it asked for the action, or -- as
-// `does` -- the bound domain's own wording of that call (`./step.ts`, `words`):
-// the name of the control a handle stood for and the words the call typed or
-// looked for, made from names the model was already shown when it chose the
-// call. Nothing is read from a page to make this entry.
+// **One field here is page content: `control`.** Every other field is Core's
+// own bookkeeping, the argument the model itself wrote when it asked for the
+// action, or -- as `does` -- the bound domain's own wording of that call
+// (`./step.ts`, `words`): the name of the control a handle stood for and the
+// words the call typed or looked for, made from names the model was already
+// shown when it chose the call. `control` is the words of the control a step
+// acted on, which the call's own result had already shown the model, screened
+// and bounded on the way in (`./control-words.ts`). Both answer one defect: a
+// handle alone let live runs `run-muqiho5c-e830ce01` and `run-muqiojz4-04a7a8fc`
+// take a press of "Not now" or a "×" for Add to cart. They name the same
+// control, so a line shows `control` only when the domain gave no `does`.
 //
 // Every step is listed, with the argument it ran with, and the guidance is
 // told in full -- a look too, as `disposition: look`. A look holds a step
@@ -98,6 +103,9 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     // every press read alike and run `run-muqiojz4-04a7a8fc` named a "×" as
     // its add-to-cart act.
     ...(step.words ? { does: { ...step.words } } : {}),
+    // The same control in the words the call's own result showed, only when the
+    // domain gave no `does` for it: the two name one control (header).
+    ...(step.control && !step.words ? { control: step.control } : {}),
     ...(step.resultCode ? { resultCode: step.resultCode } : {}),
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),
