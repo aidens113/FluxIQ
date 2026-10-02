@@ -42,7 +42,7 @@ describe("a completion refused twice over the same draft", () => {
     expect(first[0]!.value).toEqual(refusal.feedback);
     const second = ofTool(shownAt(decide, 2), "core.completion_check");
     expect(second.map((entry) => entry.callId)).toEqual(["core.completion_check.2"]);
-    expect(second[0]!.value).toEqual({ ...refusal.feedback, sameAsIteration: 1, timesSent: 2 });
+    expect(second[0]!.value).toEqual({ ...refusal.feedback, sameAsIteration: 1, timesSent: 2, sentAgain: expect.stringMatching(/^This draft was refused for these same reasons at decision 1, and this is attempt 2 over it unchanged\. The check reads the draft's steps, not the result's words/u) });
     const rows = historyRows(shownAt(decide, 2)).filter((row) => row[1] === "completion");
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(rows)).toContain("bootstrap.missing_parameter");

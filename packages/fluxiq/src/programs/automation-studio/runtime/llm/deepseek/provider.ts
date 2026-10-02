@@ -28,6 +28,7 @@ import { automationStudioDeepSeekRequestShape } from "./request-shape.ts";
 import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusal } from "./refusal.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
 import { automationStudioDeepSeekMalformedReply, parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
+import { automationStudioLlmStepLogModelStep, type AutomationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 export const AUTOMATION_STUDIO_DEEPSEEK_ORIGIN = "https://api.deepseek.com";
 export const AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL = `${AUTOMATION_STUDIO_DEEPSEEK_ORIGIN}/chat/completions`;
@@ -138,6 +139,9 @@ async function runDeepSeekTask(input: {
     timedOut = true;
     controller.abort();
   }, input.request.timeoutMs);
+  // The step log's record of this exchange (`../step-log/`): opened just before the
+  // request is sent, never handed the credential or a header. Undefined when off.
+  let step: AutomationStudioLlmStepLogModelStep | undefined;
   try {
     try {
       secret = await waitForAbortable(input.resolveSecret({
@@ -157,6 +161,7 @@ async function runDeepSeekTask(input: {
     }
     if (typeof secret !== "string" || !secret.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
     if (body.includes(secret)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
+    step = automationStudioLlmStepLogModelStep({ provider: "deepseek", model: input.model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: input.request.taskKind, requestId: input.request.requestId, stage: input.request.context.stage, iteration: input.request.context.evidenceLoop?.iteration });
     const response = await input.fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
       redirect: "manual",
@@ -170,6 +175,8 @@ async function runDeepSeekTask(input: {
       },
       body
     });
+    // A reply the call never reads for itself is read for the step log from a copy.
+    if (step && (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))) await stepLogReply(step, response, input.maxResponseBytes);
     if (response.redirected || (response.status >= 300 && response.status < 400) || (response.url && response.url !== AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL)) {
       throw new AutomationStudioLlmProviderError("llm.provider_redirect_rejected", "DeepSeek redirected outside the fixed provider endpoint.");
     }
@@ -178,18 +185,26 @@ async function runDeepSeekTask(input: {
       throw automationStudioDeepSeekMalformedReply({ case: "media_type" }, "DeepSeek returned a non-JSON media type.");
     }
     const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, input.maxResponseBytes);
+    step?.reply(bytes, response.status);
     let envelope: unknown;
     try {
       envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
     } catch {
       throw automationStudioDeepSeekMalformedReply({ case: "envelope_not_json" }, "DeepSeek returned malformed JSON.");
     }
-    return parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model);
+    const parsed = parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model);
+    step?.succeeded(parsed.response, parsed.usage);
+    return parsed;
   } catch (error) {
-    if (error instanceof AutomationStudioLlmProviderError) throw error;
-    if (timedOut) throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true);
-    if (input.signal?.aborted) throw parentSignalFailure(input.signal);
-    throw new AutomationStudioLlmProviderError("llm.provider_network_error", "The DeepSeek request failed at the network boundary.", true);
+    const failure = error instanceof AutomationStudioLlmProviderError
+      ? error
+      : timedOut
+        ? new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true)
+        : input.signal?.aborted
+          ? parentSignalFailure(input.signal)
+          : new AutomationStudioLlmProviderError("llm.provider_network_error", "The DeepSeek request failed at the network boundary.", true);
+    step?.failed(failure);
+    throw failure;
   } finally {
     clearTimeout(timer);
     input.signal?.removeEventListener("abort", abortFromParent);
@@ -243,6 +258,19 @@ async function deepSeekRefusalFailure(
     return new AutomationStudioLlmProviderError("llm.provider_rate_limited", "DeepSeek rate limited the request.", true, response.status, undefined, said);
   }
   return new AutomationStudioLlmProviderError("llm.provider_http_error", "DeepSeek returned an unsuccessful HTTP status.", response.status >= 500, response.status, undefined, said);
+}
+
+/**
+ * The raw body of a reply the call itself never reads -- a refusal, a redirect,
+ * a non-JSON media type -- for the step log, read from a clone under the same
+ * byte ceiling so the call's own read of it is untouched.
+ */
+async function stepLogReply(step: AutomationStudioLlmStepLogModelStep, response: Response, maxResponseBytes: number): Promise<void> {
+  try {
+    step.reply(await readAutomationStudioDeepSeekBoundedResponse(response.clone(), maxResponseBytes), response.status);
+  } catch {
+    /* best-effort: an unread copy only leaves response.json absent */
+  }
 }
 
 function parentSignalFailure(signal: AbortSignal): AutomationStudioLlmProviderError {

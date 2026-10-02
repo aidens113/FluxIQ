@@ -30,7 +30,9 @@ import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { automationStudioLlmProviderReplyAccount } from "../reply-account.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, readAutomationStudioDeepSeekBoundedResponse } from "./bounded-read.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, type AutomationStudioDeepSeekModel } from "./models.ts";
+import { estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
+import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 /** The most a decision may run to. The answer is one small object; this is room for a reply in words. */
 const PANEL_COMMAND_MAX_OUTPUT_TOKENS = 600;
@@ -61,10 +63,23 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
       }
       if (!key) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "No model key could be released.", false);
       if (body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The message would have carried the model key to the model.", false);
-      const response = await send(fetchImpl, body, key, execution.signal);
-      const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes);
-      if (!response.ok) throw httpFailure(response.status);
-      return panelCommandContent(new TextDecoder().decode(bytes));
+      // The step log's `NNNN-chat` folder (`../step-log/`): the exact body and reply, never the key. Undefined when off.
+      const step = automationStudioLlmStepLogModelStep({
+        provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: "panel_command", kind: "chat",
+        price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model)
+      });
+      try {
+        const response = await send(fetchImpl, body, key, execution.signal);
+        const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes);
+        step?.reply(bytes, response.status);
+        if (!response.ok) throw httpFailure(response.status);
+        const content = panelCommandContent(new TextDecoder().decode(bytes));
+        step?.succeeded({ content });
+        return content;
+      } catch (error) {
+        step?.failed(error);
+        throw error;
+      }
     }
   };
 }

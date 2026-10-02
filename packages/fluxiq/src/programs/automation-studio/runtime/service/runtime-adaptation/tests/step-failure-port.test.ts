@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, automationStudioStepFailureReauthorDecision } from "../../../recovery/refuted-result/index.ts";
 import { automationStudioStepFailureRepairPort, type AutomationStudioStepFailureRepairPortDependencies } from "../step-failure-port.ts";
 
@@ -166,25 +167,30 @@ describe("a failed run that is never re-authored", () => {
 });
 
 // One purse for the whole repair: the ladder was its first part.
+// Amounts are fractions of the run cost ceiling ($0.10 since 2026-10-01; was
+// $0.25), so the scenarios hold whatever the ceiling is set to.
 describe("what the re-author may spend", () => {
-  it("hands the build only what the ladder left of $0.25", async () => {
-    const port = deps();
-    const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 10, estimatedCostUsd: 0.2 } }));
+  const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+
+  it("hands the build only what the ladder left of the ceiling", async () => {
+    const port = deps({ generate: vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: { estimatedCostUsd: CEILING * 0.08 } })) as never });
+    const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 10, estimatedCostUsd: CEILING * 0.8 } }));
     expect(port.generate).toHaveBeenCalledTimes(1);
-    expect((port.generate.mock.calls[0] as unknown[])[2]).toBeCloseTo(0.05, 9);
+    expect((port.generate.mock.calls[0] as unknown[])[2]).toBeCloseTo(CEILING * 0.2, 9);
     // The build's own spend is charged to the same purse, which the run carries.
-    expect(marker(result?.detail).purse).toMatchObject({ limitUsd: 0.25, spentUsd: 0.22 });
+    expect(marker(result?.detail).purse).toMatchObject({ limitUsd: CEILING });
+    expect(marker(result?.detail).purse.spentUsd).toBeCloseTo(CEILING * 0.88, 9);
   });
 
   it("is lowered by the Flow's own limit", async () => {
-    const port = deps({ maxCostUsd: () => 0.1 });
-    await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 10, estimatedCostUsd: 0.04 } }));
-    expect((port.generate.mock.calls[0] as unknown[])[2]).toBeCloseTo(0.06, 9);
+    const port = deps({ maxCostUsd: () => CEILING * 0.4 });
+    await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 10, estimatedCostUsd: CEILING * 0.16 } }));
+    expect((port.generate.mock.calls[0] as unknown[])[2]).toBeCloseTo(CEILING * 0.24, 9);
   });
 
   it("asks no model when the ladder left nothing, and names the cost bound", async () => {
     const port = deps();
-    const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 12, estimatedCostUsd: 0.25 } }));
+    const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 12, estimatedCostUsd: CEILING } }));
     expect(port.generate).not.toHaveBeenCalled();
     expect(result?.reauthored).toBe(false);
     expect(marker(result?.detail)).toMatchObject({ routed: true, code: "llm_budget.run_cost_limit", providerInvocation: "not_attempted" });

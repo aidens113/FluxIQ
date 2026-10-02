@@ -52,6 +52,16 @@ describe("activity scope", () => {
     expect(seen[1]!.step).toEqual({ index: 2, count: 5, nodeId: "n2", label: "Open list" });
     expect(seen[2]!.detail).toMatchObject({ title: "Step 6", ref: "n3" });
   });
+
+  it("says which node a step runs, as the record a tool row carries, so a card can tell a merge from a press (U-A2)", async () => {
+    await runWithAutomationStudioActivity({ kind: "run", id: "run-8", projectId: "p1" }, async () => {
+      emitAutomationStudioActivityStep({ index: 3, count: 9, nodeId: "n3", definitionId: "builtin.control.merge" });
+      emitAutomationStudioActivityStep({ index: 4, count: 9, nodeId: "n4" });
+    });
+    const steps = seen.filter((event) => event.step !== undefined);
+    expect(steps[0]!.detail).toMatchObject({ ref: "n3", text: "Node: builtin.control.merge" });
+    expect(steps[1]!.detail?.text).toBeUndefined();
+  });
 });
 
 describe("withAutomationStudioBuildActivity", () => {

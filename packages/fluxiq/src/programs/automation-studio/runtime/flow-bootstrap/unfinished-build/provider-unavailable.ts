@@ -21,7 +21,7 @@ import {
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapNotDoneSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid } from "./not-done.ts";
 
 /** The ending of a build whose model provider stopped answering. */
 export function automationStudioFlowBootstrapProviderUnavailable(input: {
@@ -42,9 +42,7 @@ export function automationStudioFlowBootstrapProviderUnavailable(input: {
   const changed = input.changes
     ? `No Flow was created or changed. ${input.changes === 1 ? "The one action" : `The ${input.changes} actions`} already taken on the page ${input.changes === 1 ? "was" : "were"} not undone.`
     : "No Flow was created or changed, and nothing on the page was changed.";
-  const progress = asked && notDone.length < asked
-    ? `${asked - notDone.length} of the ${asked} things you asked are done${notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : ""}.`
-    : "";
+  const progress = asked && notDone.length < asked ? automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement) : "";
   const kept = input.kept ? "The steps worked out so far were kept, and building again carries on from them." : "Nothing was kept to carry on from.";
   const message = [happened, changed, progress, kept, "Try again once the provider is answering."].filter(Boolean).join(" ");
   return {

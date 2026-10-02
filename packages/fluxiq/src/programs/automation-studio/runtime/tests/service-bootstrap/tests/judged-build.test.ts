@@ -20,7 +20,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, plan, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -248,8 +248,8 @@ describe("a Flow the model says is ready", () => {
   });
 
   it("proposes the Flow, said to be unverified, when the build has no cost left to ask the judge", async () => {
-    // The completion spends what the build had left of its $0.25.
-    const run = await build({ instruction: READ_TOWELS, decisions: [read("call.read"), complete()], judge: [], usage: (decision) => (decision === 1 ? { ...USAGE, estimatedCostUsd: 0.25 } : USAGE) });
+    // The completion spends all the build had: its run cost ceiling.
+    const run = await build({ instruction: READ_TOWELS, decisions: [read("call.read"), complete()], judge: [], usage: (decision) => (decision === 1 ? { ...USAGE, estimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } : USAGE) });
     const result = await run.generation;
 
     expect(result.status).toBe("proposed");

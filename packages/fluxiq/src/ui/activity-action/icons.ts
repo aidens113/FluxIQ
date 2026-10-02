@@ -14,6 +14,9 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["draft", "pencil"],
   ["test", "flask-conical"],
   ["repair", "wrench"],
+  ["join", "git-merge"],
+  ["branch", "git-branch"],
+  ["repeat", "repeat"],
   ["other", "circle-dot"]
 ];
 

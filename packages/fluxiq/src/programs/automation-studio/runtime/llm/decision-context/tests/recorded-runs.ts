@@ -120,6 +120,7 @@ const RUN_NODE_TOOL_ID = "core.run_node";
 /** Run 4 logged no completion check, so what its checks refused is not known. */
 const UNLOGGED_CHECK_CODE = "recorded.unlogged_completion_refusal";
 /** Why a logged completion that the check refused no longer runs its dry run. */
+const A_RERUN_RUNS_FROM_ITS_PLACE = "a rerun runs from the page its step started on, put back first when the page has moved since (lane C, t194 runs 11 and 12)";
 const NOT_TESTED_WHILE_THE_CHECK_REFUSES = "a completion the check refuses is still live work and is not tested; the draft is replayed only once the check accepts it";
 
 /** A settings-only edit of one kept step: the stand-in for an amendment whose content was not logged. */
@@ -463,7 +464,13 @@ D47 complete
     // The second decides it: none of the five runs a dry run. 47 traces as
     // logged again.
     29: { line: "D29 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    // Each rerun of the list read (32, 38, 42) now first puts the page back
+    // where the read started, as a replay's reset does: the page had moved
+    // since (`../../node-tools/step-place.ts`).
+    32: { line: "D32 amend_draft | rerun.23.place core.replay.replayed | rerun.23 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
+    38: { line: "D38 amend_draft | rerun.24.place core.replay.replayed | rerun.24 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
     40: { line: "D40 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
+    42: { line: "D42 amend_draft | rerun.26.place core.replay.replayed | rerun.26 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
     44: { line: "D44 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
     46: { line: "D46 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES }
   }

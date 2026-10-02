@@ -1,49 +1,69 @@
-// The acts checklist the loop shows beside the draft carries the repeat
-// amendment an act needs (t195): the completion no longer refuses
-// `act_needs_repeat` or `span_stops_short`, so the suggestion that went with
-// the refusal (`../repeat-suggestion.ts`) is shown here instead, as information.
+// The model is told, beside its draft, when a list read it ran misses a column
+// the instruction names.
+//
+// The build declares the instruction's named columns as the read's schema, and
+// a named column no field reads was a warning on the plan that nobody saw
+// (F35). The draft entry is in front of the model on every decision after the
+// read, so the note goes there: information, never an act and never a refusal.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
-import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs } from "../draft-acts.ts";
 
-const registry = new AutomationStudioNodeRegistry();
-for (const definition of webDomainNodeDefinitionsFixture()) registry.register(definition);
-const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+const COLUMNS = "Scrape every product the search returns as a table with columns name, price and rating.";
 
-const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
-const WITHDRAW = "On Guildline, withdraw every connection request I sent a month or more ago that is still waiting for an answer.";
-
-function step(position: number, actionId: string, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
-  return { position, id: `d${position}`, iteration: position, actionId, input: {}, effect: "mutate", effectApplied: true, disposition: "kept", ...overrides };
+function readStep(position: number, fields: JsonObject, disposition: AutomationStudioFlowDraftStep["disposition"] = "taken"): AutomationStudioFlowDraftStep {
+  return {
+    position, id: `d${position}`, iteration: position, actionId: "web.output.dom-extract_list", toolId: "core.run_node",
+    input: { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "list.1", fields } }, consequences: [] },
+    effect: "observe", effectApplied: true, disposition, proposes: true
+  };
 }
 
-const shown = (instructionText: string, steps: AutomationStudioFlowDraftStep[], library = true) =>
-  automationStudioFlowBootstrapDraftActs({ instructionText, ...(library ? { registry, resolution } : {}) }).acts(steps) as JsonObject[];
+const navigate: AutomationStudioFlowDraftStep = {
+  position: 1, id: "d1", iteration: 1, actionId: "web.output.browser-navigate", toolId: "core.run_node",
+  input: { node: "web.output.browser-navigate", parameters: { url: "https://store.test/" }, consequences: [] },
+  effect: "mutate", effectApplied: true, disposition: "kept", proposes: true
+};
 
-describe("the repeat amendment on the acts checklist", () => {
-  // Run `run-muntu7in-e3dd1972`: the listing, then one Confirm named for the act.
-  const once = [step(1, "web.output.browser-navigate"), step(2, "web.output.dom-extract_list"), step(3, "web.output.dom-click", { acts: ["a1"] })];
+const notesOf = (value: unknown): string[] => Array.isArray(value)
+  ? value.flatMap((item) => typeof item === "object" && item !== null && typeof (item as JsonObject).note === "string" ? [(item as JsonObject).note as string] : [])
+  : [];
 
-  it("shows an act that needs a repeat the amendment that repeats its step over the listing", () => {
-    const [act] = shown(CONFIRM, once);
+describe("the draft says when a read misses a column the instruction names", () => {
+  it("names the column and the read, in the entry the model is shown", () => {
+    const steps = [navigate, readStep(2, { name: ".name", price: ".price", plus: ".plus" })];
+    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts(steps);
 
-    expect(act).toMatchObject({ id: "a1", todo: "act_needs_repeat", step: 3, repeatWith: { step: 3, change: "repeat", over: 2, through: 3 } });
-    expect(act?.repeatSaid).toContain("repeatWith is the amendment that makes step 3 run once for every row step 2 lists");
+    expect(notesOf(acts)).toEqual(["The instruction asks for a column \"rating\" that no field of step 2 reads."]);
+    const entry = automationStudioFlowDraftEntry({ steps, authored: true, acts });
+    expect(JSON.stringify(entry?.value)).toContain("no field of step 2 reads");
   });
 
-  it("shows a span that stops short the amendment carried through the step after it", () => {
-    const draft = [step(1, "web.output.dom-extract_list"), step(2, "web.output.dom-click", { acts: ["a1"], routing: { kind: "repeat", over: "d1", through: "d2" } }), step(3, "web.output.dom-click", { input: { consequences: ["delete"] } })];
-    const [act] = shown(WITHDRAW, draft);
-
-    expect(act).toMatchObject({ id: "a1", todo: "span_stops_short", step: 2, after: 3, repeatWith: { step: 2, change: "repeat", over: 1, through: 3 } });
+  it("names every column a read misses, once per read", () => {
+    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts([navigate, readStep(2, { name: ".name" })]);
+    expect(notesOf(acts)).toEqual(["The instruction asks for columns \"price\", \"rating\" that no field of step 2 reads."]);
   });
 
-  it("shows no amendment without the node library, or once the act is done", () => {
-    expect(shown(CONFIRM, once, false)[0]).not.toHaveProperty("repeatWith");
-    const repeated = [once[0]!, once[1]!, step(3, "web.output.dom-click", { acts: ["a1"], routing: { kind: "repeat", over: "d2", through: "d3" } })];
-    expect(shown(CONFIRM, repeated)[0]).toEqual({ id: "a1", verb: "confirm", quote: expect.any(String), plural: true, done: 3 });
+  it("says nothing when every named column is read, the instruction names none, or the read was withdrawn", () => {
+    const all = { name: ".name", price: ".price", rating: ".stars", plus: ".plus" };
+    const missing = { name: ".name", price: ".price" };
+    const cases: Array<{ instructionText?: string; steps: AutomationStudioFlowDraftStep[] }> = [
+      { instructionText: COLUMNS, steps: [navigate, readStep(2, all)] },
+      { instructionText: "Scrape every product the search returns.", steps: [navigate, readStep(2, missing)] },
+      { steps: [navigate, readStep(2, missing)] },
+      { instructionText: COLUMNS, steps: [navigate, readStep(2, missing, "dropped")] }
+    ];
+    for (const { instructionText, steps } of cases) {
+      const acts = automationStudioFlowBootstrapDraftActs({ instructionText }).acts(steps);
+      expect(notesOf(acts)).toEqual([]);
+      expect(JSON.stringify(acts ?? null)).not.toContain("no field");
+    }
+  });
+
+  it("never counts the note as an act still owed", () => {
+    const draftActs = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS });
+    const steps = [navigate, readStep(2, { name: ".name" })];
+    expect(draftActs.actsMissing(steps)).toEqual(draftActs.actsMissing([navigate, readStep(2, { name: ".name", price: ".p", rating: ".r" })]));
   });
 });

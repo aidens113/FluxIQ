@@ -57,6 +57,8 @@
 // the step -- what it did, what it was given, what state it produced -- Core
 // already holds and never asks for again.
 
+import { automationStudioFlowDraftClaimAct } from "./act-claim.ts";
+import { automationStudioFlowDraftKeepOpeners } from "./opener.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -154,7 +156,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "add or reorder: the position to put the step at. on_failed: the step to run when this one fails. Counting from 1." },
-    input: { type: "object", description: "rerun only: a JSON merge patch over the argument the step ran with. Only the keys that change; a list replaces whole; null removes a key." },
+    input: { type: "object", description: "rerun only: a JSON merge patch over the argument the step ran with. Only the keys that change, and a node's parameters may be written without parameters around them; a list replaces whole; null removes a key." },
     check: { type: "integer", minimum: 1, description: "only_if only: the step whose success this one runs on. Leave it out for the step before it, which is usually the check you just ran." },
     through: { type: "integer", minimum: 1, description: "repeat only: the last step of the span that repeats. Leave it out to repeat this step alone. A press that opens a confirmation repeats with it: name the confirmation as through." },
     over: { type: "integer", minimum: 1, description: "repeat only: the step whose rows the span repeats for -- the listing, a step before this one -- or whose success it repeats while. Leave it out for the step before it." },
@@ -264,8 +266,11 @@ export function applyAutomationStudioFlowDraftAmendments(
       continue;
     }
     step.disposition = disposition;
+    // A step in the Flow brings the press that opened its page (`./opener.ts`).
+    if (disposition === "kept") automationStudioFlowDraftKeepOpeners(steps, step);
     if (clearsRouting) delete step.routing;
-    if (act !== undefined) step.acts = [...(step.acts ?? []), act];
+    // One act, one step: the claim moves here from any step that held it (`./act-claim.ts`).
+    if (act !== undefined) automationStudioFlowDraftClaimAct(steps, step, act);
     if (moves) moveStep(steps, step, amendment.to, undefined);
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;

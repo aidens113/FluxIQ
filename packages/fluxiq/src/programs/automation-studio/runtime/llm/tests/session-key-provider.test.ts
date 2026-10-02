@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import type { AutomationStudioSessionKeyPorts } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../deepseek/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../flow-execution-limits/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../session-key-provider.ts";
 
 // A model call made for a person needs no grant: nothing is issued, held or
@@ -21,7 +22,7 @@ describe("session-key provider resolver", () => {
     });
     const resolution = resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.one", actorSessionId: "session.one" } });
     expect(resolution).toBeDefined();
-    expect(resolution).toMatchObject({ timeoutMs: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.timeoutMs, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 });
+    expect(resolution).toMatchObject({ timeoutMs: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.timeoutMs, maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, maxTotalEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD });
     const first = await resolution!.provider.runTask(request()) as { response: unknown };
     await resolution!.provider.runTask(request({ requestId: "request.two", idempotencyKey: "idempotency.two" }));
     expect(first.response).toMatchObject({ kind: "diagnosis" });

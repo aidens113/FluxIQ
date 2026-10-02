@@ -40,7 +40,7 @@ const HISTORY = "core.evidence_history";
 const DIVERGES: Readonly<Record<RecordedRunName, readonly number[]>> = {
   "bigbox-run6": [22, 26],
   crossborder: [19],
-  "everything-store-run4": [29, 40, 44, 46]
+  "everything-store-run4": [29, 32, 38, 40, 42, 44, 46]
 };
 
 /** How each replay ends: after its last logged call, or on the decision after its last logged one. */

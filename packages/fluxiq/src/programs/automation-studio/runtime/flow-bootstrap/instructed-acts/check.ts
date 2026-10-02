@@ -127,8 +127,8 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was create
   + "Each act needs a step of its own, and it must be one that changed something.";
 
 /** Said only when a claim named a step that only arrived, so the plain refusal stays as it was. */
-const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to the page this Flow starts on: "
-  + "arriving at the start page does not do the act. After arriving, press or set the control that does it (the add, collect, save or set control), keep that step, and name it for the act instead.";
+const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to an address -- the page this Flow starts on, or another page of its site -- "
+  + "and arriving at a page does not do the act. After arriving, press or set the control that does it (the add, collect, save or set control), keep that step, and name it for the act instead.";
 
 /** Said only when a claim named an optional step. */
 const OPTIONAL_INSTRUCTION = " A reason of step_is_optional means the step named is marked optional, so the Flow carries on without it when it fails and the act may never be done: "

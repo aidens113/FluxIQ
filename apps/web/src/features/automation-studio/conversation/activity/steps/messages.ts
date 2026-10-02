@@ -26,7 +26,12 @@
 // not a message of its own. A decision carries one action; a second one is its
 // own `action` message. A check, a run step and a standalone action carry their
 // own card. A card that started is updated in place when it ends. A run step
-// Core never ends is over once anything later happens in its unit of work.
+// Core never ends is over once anything later happens in its unit of work:
+// failed when that is the run's recovery from that step or the run failing,
+// done otherwise. A build started from a chat ends in that chat's answer, so
+// its failure is not said again as an `ended` message. Both rules match the
+// extension's chat (`apps/extension/src/panel/chat/stream/step/messages.ts`
+// downstream).
 //
 // A card waiting on the person (a permission ask, a robot check) is over only
 // when Core says so: the ask row that settles the wait carries the same ask id
@@ -91,6 +96,8 @@ type Unit = {
   open: Map<string, Slot>;
   /** A run step Core started and will not end. */
   step: Slot | undefined;
+  /** The node that run step ran (its `detail.ref`), so the row that says it failed can be told from any later row. */
+  stepNode: string | undefined;
   /** Each ask's card, by its ask id, so the row that settles it finds it. */
   asks: Map<string, Slot>;
   /** A robot-check card still waiting for its other half: the ask, or the tool that met the check. */
@@ -102,6 +109,17 @@ type Unit = {
 const ONLY_CODES = /^(?:result:\s*)?[a-z0-9-]*[._][a-z0-9_.-]+(?:\s*,\s*[a-z0-9-]*[._][a-z0-9_.-]+)*$/iu;
 
 /** The messages for `events` (oldest first), at most `limit` of them, the newest. */
+/**
+ * Whether `event`, the row after a run step Core started, says that step
+ * failed: the run's recovery from a failed step names the node it recovers
+ * (`ref`, `executor/graph-run.ts`), and a run that fails ends on its final
+ * `failed` row.
+ */
+function stepFailedBy(event: ConversationActivity, node: string | undefined): boolean {
+  if (event.phase === "failed") return true;
+  return event.phase === "repairing" && node !== undefined && event.detail?.ref === node;
+}
+
 export function conversationStepMessages(events: readonly ConversationActivity[], limit = 1_000): ConversationStepMessage[] {
   const drafts: ConversationStepMessage[] = [];
   const units = new Map<string, Unit>();
@@ -155,19 +173,26 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
   for (const event of events) {
     let unit = units.get(event.activityId);
     if (!unit) {
-      unit = { decision: undefined, open: new Map(), step: undefined, asks: new Map(), check: undefined, repairing: false };
+      unit = { decision: undefined, open: new Map(), step: undefined, stepNode: undefined, asks: new Map(), check: undefined, repairing: false };
       units.set(event.activityId, unit);
     }
     if (event.phase === "repairing") unit.repairing = true;
     if (unit.step !== undefined) {
       const card = drafts[unit.step.message]!.actions[unit.step.action]!;
-      if (card.outcome === "working") update(unit.step, { ...card, outcome: "done" }, event.sequence);
+      // A recovery for that same node, or the run failing, is the step failing:
+      // a press that did not work read "Done" just above "Run failed" (U-A1).
+      if (card.outcome === "working") update(unit.step, { ...card, outcome: stepFailedBy(event, unit.stepNode) ? "failed" : "done" }, event.sequence);
       unit.step = undefined;
+      unit.stepNode = undefined;
     }
     const before = drafts.length;
     const detail = event.detail && !conversationActivityIsInternal(event.detail) ? event.detail : undefined;
     if (detail) place(event, detail, unit);
-    if (drafts.length === before && conversationActivityOutcome(event) === "failed") {
+    // A build started from a chat ends in that chat's answer: Core's command
+    // writes how it ended, and how far it got, into the thread, so saying it
+    // here as well showed the same ending twice (U-B2).
+    const answeredInThread = event.subject.kind === "build" && event.conversationId !== undefined;
+    if (drafts.length === before && conversationActivityOutcome(event) === "failed" && !answeredInThread) {
       const title = conversationActivityHeadline(event.subject.kind, "failed", unit.repairing);
       add(event, "ended", title, humanText(event.label.split(" — ")[0]));
     }
@@ -248,7 +273,10 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
       const label = event.step.label?.trim();
       const title = label && conversationActivityTextIsHuman(label) ? `Step ${event.step.index}: ${label}` : `Step ${event.step.index}`;
       slot = attach(add(event, "step", title, undefined), action, event.sequence);
-      if (status === "started") unit.step = slot;
+      if (status === "started") {
+        unit.step = slot;
+        unit.stepNode = detail.ref;
+      }
     }
   }
 

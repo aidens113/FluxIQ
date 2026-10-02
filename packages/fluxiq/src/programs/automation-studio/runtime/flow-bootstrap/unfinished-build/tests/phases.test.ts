@@ -1,9 +1,11 @@
 // A build whose exploration stops before the Flow is ready (audit A3, cause
 // 1): tested, judged and repaired; "not doable" only when a repair gets no
 // further; a budget that runs out said as exactly that.
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
+import { automationStudioLlmStepLogScope, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmStepLogContext } from "../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AutomationStudioFlowBootstrapUnfinishedStall,
@@ -153,7 +155,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, tested: "not_tested" } });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. 1 of the 3 things you asked are done/u);
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
     expect(outcome.ending.message).toContain("The Flow so far was kept, and building again carries on from it.");
     expect(outcome.ending.message).not.toContain("not doable");
   });
@@ -280,7 +282,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", notDone: [{ id: "a1" }, { id: "a1.quantity" }, { id: "a2" }], tried: { rounds: 1, decisions: 40, stepsInFlow: 0, tested: "not_tested" } });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. 0 of the 3 things you asked are done; still to do: /u);
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. None of the 3 things you asked is done; still to do: /u);
     expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I explored live once over 40 decisions, and what held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
   });
 
@@ -348,5 +350,30 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     const stall = new AutomationStudioFlowBootstrapUnfinishedStall({ issueCodes: [], trace: [], accounting: spent(1, 0), steps: [] });
     expect(stall).toBeInstanceOf(Error);
     expect(stall.name).toBe("AutomationStudioFlowBootstrapUnfinishedStall");
+  });
+});
+
+// The step log (`../../../llm/step-log/`) writes each step under the round and
+// phase the build's phases set around each round and each test.
+describe("the round and phase every step of a build is written under", () => {
+  it("is the exploration for round 0, the test for its Flow test, and the repair for a seeded round", async () => {
+    const saved = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = path.join(tmpdir(), `fluxiq-phases-scope-${process.pid}-unused`);
+    const seen: Array<AutomationStudioLlmStepLogContext | undefined> = [];
+    try {
+      const partial = [step(1, { acts: ["a1"] })];
+      const { input } = harness([
+        () => { seen.push(automationStudioLlmStepLogScope.current()); return outOfDecisions(partial); },
+        (request) => { seen.push(automationStudioLlmStepLogScope.current()); return finished(request.repair!.seed); }
+      ], {
+        test: async () => { seen.push(automationStudioLlmStepLogScope.current()); return undefined; }
+      });
+      await expect(runAutomationStudioFlowBootstrapBuildPhases(input)).resolves.toMatchObject({ kind: "finished" });
+    } finally {
+      if (saved === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+      else process.env.FLUXIQ_LLM_STEP_LOG_DIR = saved;
+    }
+    expect(seen).toEqual([{ round: 0, phase: "explore" }, { round: 0, phase: "test" }, { round: 1, phase: "repair" }]);
+    expect(automationStudioLlmStepLogScope.current()).toBeUndefined();
   });
 });

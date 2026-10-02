@@ -114,6 +114,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
     check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: true }> & {
       answerability: AutomationStudioLlmEvidenceLoopAnswerability;
     };
+    /**
+     * What the accepted plan was written with a warning about, such as an
+     * instruction's named column no field reads (`record_output.named_column_unmatched`).
+     * Kept on the accepted record rather than dropped; never a refusal. It sits
+     * beside `check`, not in it, because the loop reads a check by its exact keys.
+     */
+    warnings?: AutomationStudioFlowBootstrapIssue[];
   }
   | {
     ok: false;
@@ -218,9 +225,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     : undefined;
   const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
   const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
-    ? fromDraft(draftSteps, result, input.registry, input.resolution)
+    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText)
     : undefined;
-  const accepted = drafted ?? fromReply(result, input.registry, input.resolution);
+  const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText);
   // An issue about a normalised plan still carries the path of the plan the
   // model wrote, so the shape a refused parameter accepts is read from that one.
   const written = typeof result.plan === "object" && result.plan !== null && !Array.isArray(result.plan) ? result.plan : result;
@@ -308,7 +315,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     const verdict = refused(failures, accepted.script, answerability);
     return verdict.ok ? verdict : { ...verdict, check: { ...verdict.check, ...restoredField } };
   }
-  return { ok: true, summary: accepted.summary, buildPlan, check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField } };
+  const warnings = accepted.issues.filter((item) => item.severity === "warning");
+  return {
+    ok: true,
+    summary: accepted.summary,
+    buildPlan,
+    check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField },
+    ...(warnings.length ? { warnings } : {})
+  };
 }
 
 /** Registry validation, which may throw. */
@@ -330,12 +344,15 @@ function validatePlan(
  * arrive in -- a Flow script, or the nested plan that was once the only one --
  * and one place that normalises it.
  */
+// `instructionText` declares the instruction's named columns as the schema of an
+// extraction whose author declared none (`flow-bootstrap/authoring/instruction-record-columns.ts`).
 function fromReply(
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
-  resolution: AutomationStudioNodeRegistryResolution
+  resolution: AutomationStudioNodeRegistryResolution,
+  instructionText: string | undefined
 ): AutomationStudioFlowBootstrapAcceptance {
-  return acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution });
+  return acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText });
 }
 
 /**
@@ -352,7 +369,8 @@ function fromDraft(
   steps: readonly AutomationStudioFlowDraftStep[],
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
-  resolution: AutomationStudioNodeRegistryResolution
+  resolution: AutomationStudioNodeRegistryResolution,
+  instructionText: string | undefined
 ): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
@@ -365,7 +383,8 @@ function fromDraft(
     write: automationStudioFlowBootstrapDraftNodeStep,
     registry,
     resolution,
-    summary
+    summary,
+    instructionText
   });
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };

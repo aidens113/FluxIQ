@@ -42,8 +42,13 @@ export function automationStudioLlmEvidenceRerunRequest(
   amendments: readonly AutomationStudioFlowDraftAmendment[],
   steps: readonly AutomationStudioFlowDraftStep[],
   toolIds: ReadonlySet<string>,
-  /** Whether this exact call already failed or changed nothing on the page as it is now (`../repeat-guard/outcomes.ts`). */
-  ranAlready: (toolId: string, input: JsonObject) => boolean = () => false
+  /**
+   * Whether this exact call already failed or changed nothing on the page it
+   * would run on (`../repeat-guard/outcomes.ts`): `at` is the page the step
+   * started on, where the rerun is put back to (`../node-tools/step-place.ts`),
+   * or absent for the page as it is now.
+   */
+  ranAlready: (toolId: string, input: JsonObject, at?: string) => boolean = () => false
 ): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[] } {
   let request: AutomationStudioLlmEvidenceRerunCall | undefined;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
@@ -67,7 +72,7 @@ export function automationStudioLlmEvidenceRerunRequest(
     // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
     const input = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
     // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`).
-    if (ranAlready(toolId, input)) {
+    if (ranAlready(toolId, input, step.replay?.from ? step.stateBefore : undefined)) {
       refused.push({ step: amendment.step, reason: "changes_nothing" });
       continue;
     }

@@ -7,6 +7,7 @@ import type {
 } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor.ts";
 import {
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD as CEILING,
   AutomationStudioLlmProviderError,
   type AutomationStudioHarnessOptionBundle,
   type AutomationStudioLlmEvidenceRuntimeBinding,
@@ -106,7 +107,7 @@ describe("what bounds a recovery", () => {
   });
 
   // Money still ends an exploration, on its own code, and the patch keeps its
-  // share. Each call reserves a twenty-fourth of the $0.25 purse and spends 98%
+  // share. Each call reserves a twenty-fourth of the run cost ceiling's purse and spends 98%
   // of what it reserved. With the patch's share held back, the exploration is
   // refused at its twenty-third decision rather than its twenty-fourth, and the
   // patch then fits in what was held for it -- where before the exploration
@@ -120,7 +121,7 @@ describe("what bounds a recovery", () => {
     });
     const spent = costAccounting(run.detail);
     expect(spent).toMatchObject({ calls: 24, explorationCalls: 22, pendingCalls: 0 });
-    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(0.25);
+    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(CEILING);
     expect(run.executed).toHaveLength(22);
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     expect(patchIntervention(run.detail)).toMatchObject({ validation: { ok: true } });
@@ -173,9 +174,11 @@ describe("what bounds a recovery", () => {
   });
 
   // A person who asked the model into an exploring recovery is held to the
-  // run's own budget -- twenty-six calls, 100,000 tokens, and the $0.25 run
-  // cost ceiling, which the resolver's $2 cannot raise -- and the training
-  // budget being spent does not stop it.
+  // run's own budget -- twenty-six calls, 100,000 tokens, and the run cost
+  // ceiling, which the resolver's $2 cannot raise -- and the training
+  // budget being spent does not stop it. The per-call token limits are small
+  // enough that one call's worst case ($0.0024 at peak) stays under its even
+  // share of the $0.10 ceiling, so the share is what each call reserves.
   it("holds an explore_and_adapt recovery to the run's budget, not to the training budget", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const run = await annotate({
@@ -185,7 +188,7 @@ describe("what bounds a recovery", () => {
       requests,
       asked: {
         intent: "explore_and_adapt",
-        resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 } }
+        resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 } }
       }
     });
 
@@ -193,11 +196,11 @@ describe("what bounds a recovery", () => {
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     const spent = costAccounting(run.detail);
     expect(spent).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
-    // Nearly all of the run's $0.25, and never past it.
-    expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(0.2);
-    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(0.25);
-    // Every call reserved its share of the run's $0.25, not the resolver's $2.
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(0.25 / 26, 8);
+    // Nearly all of the run's ceiling, and never past it.
+    expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(CEILING * 0.8);
+    expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(CEILING);
+    // Every call reserved its share of the run's ceiling, not the resolver's $2.
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(CEILING / 26, 8);
     // The diagnosis and the patch say which intent they run for.
     expect(requests.filter((request) => request.taskKind !== "evidence_tool_decision").map((request) => request.metadata?.executionPurpose)).toEqual(["explore_and_adapt", "explore_and_adapt"]);
     expect(budgetCodes(run.detail)).toEqual([]);

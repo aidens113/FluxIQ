@@ -101,6 +101,26 @@ describe("what Core's own arithmetic finds wrong with a result", () => {
     expect(finding?.datasetId).toBe("members");
   });
 
+  // `run-muq66ff9-cb3767a1`: the read kept `ad` and filtered on `ad is absent`, and all three re-authors were told to re-point it.
+  it("does not call a column empty when a read's own condition keeps it empty, and still names one empty for no stated reason", () => {
+    const summary = result({
+      recordSets: [recordSet({
+        columns: ["name", "role", "ad"],
+        sampleRows: [{ name: "Hollis", role: "", ad: "" }, { name: "Vane", role: "", ad: null }]
+      })],
+      reads: [{ nodeId: "s8", definitionId: "web.output.dom-extract_list", pagesRead: 5, stop: "control_disabled", truncated: false, kept: 2, conditions: [{ condition: "ad is absent", rejected: 20 }] }]
+    });
+    const directive = automationStudioResultRepairDirective({ summary });
+    expect(directive.findings.find((item) => item.code === codes.columnAlwaysEmpty)?.columns).toEqual(["role"]);
+    expect(directive.fix.some((line) => line.includes("(role)"))).toBe(true);
+    expect(directive.fix.some((line) => line.includes("(role, ad)") || line.includes("(ad)"))).toBe(false);
+    // Only that column, and only while a read says so: alone, it leaves no finding at all.
+    expect(codesOf(result({ ...summary, recordSets: [recordSet({ columns: ["name", "ad"], sampleRows: [{ name: "Hollis", ad: "" }] })] })))
+      .toEqual([codes.countsLookRight]);
+    expect(codesOf(result({ recordSets: [recordSet({ columns: ["name", "ad"], sampleRows: [{ name: "Hollis", ad: "" }] })] })))
+      .toContain(codes.columnAlwaysEmpty);
+  });
+
   it("says nothing about a set's columns when no row was sampled, because the bound is not a finding", () => {
     expect(codesOf(result({ recordSets: [recordSet()] }))).toEqual([codes.countsLookRight]);
   });

@@ -107,3 +107,8 @@ export * from "./resolver-contract.ts";
 // A resolution narrowed by the Flow's own configured call count, token limits,
 // timeout and per-call cost (`flow-execution-limits/`). Numbers only: the run's budget enforces them.
 export * from "./flow-execution-limits/index.ts";
+// Every model exchange and tool call of a run written as its own folder when
+// `FLUXIQ_LLM_STEP_LOG_DIR` names an absolute directory (`step-log/`). Public
+// because the service's test of a stopped build's Flow wraps its tool calls
+// with it, and the build's phases set the round and phase of each step.
+export * from "./step-log/index.ts";

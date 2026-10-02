@@ -61,6 +61,8 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   summary: string;
+  /** The columns the instruction names, declared on an extraction whose author declared none (`./normalise.ts`). */
+  namedColumns?: readonly string[] | undefined;
 }): { plan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const read = readAuthoringPlanSubflows(input.value);
@@ -73,7 +75,7 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   const subflows: AutomationStudioFlowBootstrapSubflow[] = [];
   for (const [index, subflow] of read.subflows.entries()) {
     const path = `plan.subflows.${index}`;
-    const built = buildSubflow({ written: subflow.written, definitions, key: keys[index]!, index, path });
+    const built = buildSubflow({ written: subflow.written, definitions, key: keys[index]!, index, path, namedColumns: input.namedColumns });
     issues.push(...built.issues);
     if (built.subflow) subflows.push(built.subflow);
   }
@@ -113,6 +115,7 @@ function buildSubflow(input: {
   key: string;
   index: number;
   path: string;
+  namedColumns: readonly string[] | undefined;
 }): { subflow?: AutomationStudioFlowBootstrapSubflow; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const writtenNodes = authoringNodeList(input.written) ?? [];
@@ -148,7 +151,8 @@ function buildSubflow(input: {
       definition: found.definition,
       written: writtenParameters(value, found.definition),
       path: nodePath,
-      fallbackName: typeof value.name === "string" ? value.name : found.definition.label
+      fallbackName: typeof value.name === "string" ? value.name : found.definition.label,
+      namedColumns: input.namedColumns
     });
     issues.push(...normalised.issues);
     const outputActionId = typeof value.outputActionId === "string" && value.outputActionId

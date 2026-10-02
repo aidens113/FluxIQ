@@ -15,6 +15,16 @@ export type ActivityActionKind =
   | "draft"
   | "test"
   | "repair"
+  /**
+   * The Flow's own control steps, which act on the Flow's paths and never on
+   * the page: two paths joining (`merge`), one path chosen among several
+   * (`branch`, `switch`, `parallel`), and steps repeated (`for-each`, `loop`).
+   * Before these a merge step's card read "Action · the page" (U-A2,
+   * `run-muq6lqnw-fdfa7aac`): neither the name nor the target was true.
+   */
+  | "join"
+  | "branch"
+  | "repeat"
   | "other";
 
 /** Where the action stands: still going, finished, failed, or waiting on a person. */

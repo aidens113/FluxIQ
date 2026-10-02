@@ -31,6 +31,7 @@
 
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
@@ -66,6 +67,12 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   summary: string;
+  /**
+   * The active instructions' own words, as the build read them. The columns
+   * they name are declared as the schema of every extraction whose author
+   * declared none (`./instruction-record-columns.ts`); absent, nothing is.
+   */
+  instructionText?: string | undefined;
 }): {
   plan?: AutomationStudioFlowBootstrapPlan;
   refusedPlan?: AutomationStudioFlowBootstrapPlan;
@@ -113,7 +120,8 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
     return { issues };
   }
   const script: AutomationStudioFlowScript = { summary: input.summary, blocks: [{ name: input.summary, steps, line: 1 }] };
-  const assembled = assembleAutomationStudioFlowScriptPlan({ script, registry: input.registry, resolution: input.resolution, summary: input.summary });
+  const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
+  const assembled = assembleAutomationStudioFlowScriptPlan({ script, registry: input.registry, resolution: input.resolution, summary: input.summary, namedColumns });
   const all = [...issues, ...assembled.issues];
   // A step nothing could write down refuses the plan: it is a step that was
   // performed and would be absent from the result, which is the one outcome

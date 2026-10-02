@@ -19,11 +19,17 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE = "llm_evidence_
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW = 3;
 
-const INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then or changed nothing. "
-  + "Making it again on an unchanged page does the same, so it was not run and cost nothing but this decision. "
+const INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
+  + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
   + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
   + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
   + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+
+/** Said instead for a look that already answered the same on this page (`same_answer`). */
+const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
+  + "The page has not changed, so asking again answers the same again; it was not run. "
+  + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or look for something different. "
+  + "Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /** The note shown for one refused repeat. */
 export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
@@ -43,6 +49,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     },
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: INSTRUCTION
+    instruction: input.earlier.outcome === "same_answer" ? LOOK_INSTRUCTION : INSTRUCTION
   };
 }

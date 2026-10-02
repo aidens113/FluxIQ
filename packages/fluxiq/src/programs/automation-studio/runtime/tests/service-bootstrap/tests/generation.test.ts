@@ -7,7 +7,7 @@ import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceO
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
-import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, isJudgeRequest, judgeReply, JUDGE_USAGE, type DataDirSeed } from "./fixtures.ts";
 
@@ -266,16 +266,17 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const decisions = requests.filter((request) => !isJudgeRequest(request));
     expect(decisions).toHaveLength(calls);
     expect(requests).toHaveLength(calls + (finishes ? 1 : 0));
-    // A new Flow's settings carry the $0.25 run cost ceiling, and the build's
+    // A new Flow's settings carry the run cost ceiling ($0.10 since 2026-10-01;
+    // was $0.25), and the build's
     // total is that ceiling, which the resolution's $2 cannot raise. A build has
     // no ledger, so its requests no longer carry an even share of the total
     // that nothing checked: each carries the harness's own per-request default.
     const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
-    expect(configured?.maxEstimatedCostUsdPerRun).toBe(0.25);
+    expect(configured?.maxEstimatedCostUsdPerRun).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     for (const request of decisions) expect(request.maxEstimatedCostUsd).toBe(0.25);
-    // The judge may ask twice, so each of its calls is held to half of what the build has left.
+    // The judge may ask twice, so each of its calls is held to half of what the build has left of its ceiling.
     const judged = requests.filter(isJudgeRequest);
-    if (finishes) expect(judged[0]?.maxEstimatedCostUsd).toBeCloseTo((0.25 - calls * 0.001) / 2, 9);
+    if (finishes) expect(judged[0]?.maxEstimatedCostUsd).toBeCloseTo((AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - calls * 0.001) / 2, 9);
   });
 
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {

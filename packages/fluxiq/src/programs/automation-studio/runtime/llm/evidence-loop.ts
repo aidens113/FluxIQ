@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  automationStudioFlowDraftClaimAct, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable,
@@ -25,7 +26,7 @@ import {
   automationStudioLlmEvidenceAskedAgain,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
-  automationStudioLlmEvidenceHandleRefusedRepeat,
+  automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
   automationStudioLlmEvidenceLookWithdrawal,
@@ -66,7 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
-import { automationStudioFlowDraftDryRunGate } from "./node-tools/index.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
   automationStudioLlmEvidenceCanonicalJson,
@@ -209,9 +210,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
     if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) {
       appended.disposition = "kept";
-      if (authored.act !== undefined && appended.effect === "mutate") appended.acts = [authored.act]; // A read does no act (`../flow-draft/amendment.ts`, `act_on_a_read`).
+      if (authored.act !== undefined && appended.effect === "mutate") automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act); // A read does no act (`../flow-draft/amendment.ts`, `act_on_a_read`); one act, one step (`../flow-draft/act-claim.ts`).
     }
     draftSteps.push(appended);
+    if (authoring && appended.disposition === "kept") automationStudioFlowDraftKeepOpeners(draftSteps, appended); // The press that opened its page joins it (`../flow-draft/opener.ts`).
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
   // A digest of the whole state, when the caller offered to take one. It is
@@ -609,17 +611,6 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // spent on something else. The budget is still what ran out, and the paid decision leaves its row (`./evidence-loop/final-decision-row.ts`).
     if (finalDecision) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
-    // The same call that already failed or changed nothing on this same page is
-    // refused unrun, before the repeat policy, so every action repeat is
-    // refused in one place and stalls the round at the third in a row; a look
-    // is never in that record and is still answered below (`repeat-guard/outcomes.ts`).
-    const triedHere = wrappingUp ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
-    if (triedHere) {
-      const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
-      if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
-      if (next.kind === "end") return next.result;
-      continue;
-    }
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
     const tool = toolsById.get(decision.toolId)!;
@@ -628,6 +619,18 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
     // or, in the wrap-up, any tool at all -- the wrap-up offers none, and a call it was not offered is answered, never run.
     const reobservation = !eligibleToolIds.has(decision.toolId);
+    // The same call that already failed or changed nothing on this same page is
+    // refused unrun, before the repeat policy runs it again, so every action repeat
+    // is refused in one place and stalls the round at the third in a row; a look
+    // that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).
+    const blocked = wrappingUp ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
+    const triedHere = blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
+    if (triedHere) {
+      const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
+      if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
+      if (next.kind === "end") return next.result;
+      continue;
+    }
     if (!rerunning && (answeredBy !== undefined || reobservation || wrappingUp)) {
       const code = wrappingUp ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
       const by = wrappingUp ? latestObservations.get(decision.toolId) ?? "" : answeredBy ?? latestObservations.get(decision.toolId)!;
@@ -660,8 +663,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
     try {
+      // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
+      const place = rerunning && rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
-      ran = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
+      ran = place?.kind === "unreachable" ? place.result : await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -694,7 +699,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
     // What this call did on the page it found: a call that failed or changed nothing is not made again there (`repeat-guard/outcomes.ts`).
-    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason });
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value) });
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
       latestObservations.set(tool.toolId, callId);
@@ -756,6 +761,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       }
       noProgress.redirect(iteration);
     }
+    // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
+    const searching = automationStudioLlmEvidenceSearchingWithoutActing(handling, iteration);
+    if (searching?.kind === "end") return searching.result;
+    if (searching) { if (input.propagateDecisionErrors) throw searching.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
   }
   return exhausted("iterations");
 }

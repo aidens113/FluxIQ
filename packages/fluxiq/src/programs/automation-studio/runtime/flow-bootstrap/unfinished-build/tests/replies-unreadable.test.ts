@@ -59,7 +59,7 @@ describe("a build whose model replies kept arriving unreadable", () => {
     expect(message).toMatch(/^The build stopped because the model's replies could not be read: 6 in a row came back unreadable -- most often because its brackets did not match/u);
     expect(message).toContain("each was asked again with a note of what was wrong.");
     expect(message).toContain("In all, 8 of 14 replies could not be read, over one live round; each was paid for and counted in the build's budget.");
-    expect(message).toContain("1 of the 3 things you asked are done; still to do:");
+    expect(message).toContain("1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it; still to do:");
     expect(message).toContain("The Flow so far was kept, and building again carries on from it.");
     expect(message).not.toMatch(/llm\.|_/u);
     // The round's rows are published with the ending, and its spend with them:

@@ -12,6 +12,30 @@ function outputsOf(action: ActivityAction | null): string[] {
   return action ? [action.kind, action.target ?? "", action.outcome, action.why ?? ""] : [];
 }
 
+describe("activityActionOf: the Flow's own control steps (U-A2)", () => {
+  const step = (definition: string | undefined, label?: string): ActivityActionEvent => ({
+    phase: "running",
+    step: { nodeId: "n3", ...(label === undefined ? {} : { label }) },
+    detail: { kind: "step", title: label ?? "Step 3 of 9", status: "started", ref: "n3", ...(definition === undefined ? {} : { text: `Node: ${definition}` }) }
+  });
+  it.each<[string, ActivityActionKind]>([
+    ["builtin.control.merge", "join"],
+    ["builtin.control.branch", "branch"],
+    ["builtin.control.switch", "branch"],
+    ["builtin.control.parallel", "branch"],
+    ["builtin.control.for-each", "repeat"],
+    ["builtin.control.loop", "repeat"]
+  ])("reads %s as a %s step, acting on no control", (definition, kind) => {
+    expect(outputsOf(activityActionOf(step(definition)))).toEqual([kind, "", "working", ""]);
+  });
+
+  it("never takes a step's own words for a control step", () => {
+    expect(activityActionOf(step(undefined, "Switch my pickup store"))?.kind).not.toBe("branch");
+    expect(activityActionOf(step(undefined, "Read each price"))?.kind).toBe("read");
+    expect(activityActionOf(step("web.output.dom-click"))?.kind).toBe("click");
+  });
+});
+
 describe("activityActionOf: what is not an action", () => {
   it.each<[string, ActivityActionEvent]>([
     ["a pure status change", { phase: "running" }],

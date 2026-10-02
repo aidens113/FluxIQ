@@ -85,7 +85,9 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       testIssueCodes = [...new Set(refusal.issueCodes)];
     } else tested = "replayed_clean";
   }
-  const { done, todo } = checklistRead(input.checklist(seed));
+  // A step named for an act is a claim; the same step working when the Flow
+  // ran from its start is the nearest thing to a result Core can see (`proven`).
+  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position)));
   return {
     kind: "judged",
     seed,
@@ -97,6 +99,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       failedSteps: seed.filter((step) => step.replayed !== undefined && step.replayed.status !== "replayed").map((step) => step.position),
       stepsInFlow: seed.length,
       done,
+      ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [...new Set(input.lastIssueCodes)],
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
@@ -118,18 +121,22 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   checklist(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioInstructedActChecklistItem[] | undefined;
 }): { judgement: AutomationStudioFlowBootstrapJudgement; seed: AutomationStudioFlowDraftStep[] } {
   const seed = automationStudioFlowBootstrapRepairSeed(input.steps);
-  const { done, todo } = checklistRead(input.checklist(seed));
+  // A repair seed carries no replays: what worked in the loop's own test is read off the round's steps, by id.
+  const workedIds = new Set(input.steps.filter((step) => step.replayed?.status === "replayed" && step.id !== undefined).map((step) => step.id));
+  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)));
   const judge = judgedWrong(input.verdict);
+  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length ? "not_tested" : "replayed_clean";
   return {
     seed,
     judgement: {
       round: input.round,
       stopped: "judged_wrong",
-      tested: judge.untestedCarried?.length ? "not_tested" : "replayed_clean",
+      tested,
       testIssueCodes: [],
       failedSteps: [],
       stepsInFlow: seed.length,
       done,
+      ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [],
       judge,
@@ -153,10 +160,11 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
 }
 
 /** Acts and choices done, and the ids of those still to do, by the checklist's rule. */
-function checklistRead(checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined): { done: number; todo: string[] } {
+function checklistRead(checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined, worked: ReadonlySet<number>): { done: number; todo: string[]; proven: number } {
   const todo = automationStudioInstructedActsNotDone(checklist);
   const all = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
-  return { done: all - todo.length, todo };
+  const proven = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position) => position !== undefined && worked.has(position)).length;
+  return { done: all - todo.length, todo, proven };
 }
 
 /** The judgement as the repair's first decision reads it (`../../llm/evidence-loop/resume.ts`): codes, counts and ids, every one of them. */
