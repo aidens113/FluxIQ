@@ -184,8 +184,12 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       // A sometimes-present step the run passed over because its target was
       // observed absent (`executor/step-skip/absent-step.ts`). The attempt reads
       // `succeeded` down `route: "skipped"`, which alone a reader cannot tell
-      // from a press; this says the step was skipped and what observed it.
-      ...(attempt.skipped ? { skipped: { reason: attempt.skipped.reason, code: attempt.skipped.code } } : {}),
+      // from a press; this says the step was skipped and what observed it. A
+      // step state routing passed over (`executor/state-routing/`) also says
+      // where the run went on to, so a run's detail shows the routing decision.
+      ...(attempt.skipped ? { skipped: attempt.skipped.reason === "state_routed"
+        ? { reason: "state_routed", code: attempt.skipped.code, toNodeId: attempt.skipped.toNodeId, direction: attempt.skipped.direction }
+        : { reason: "target_absent", code: attempt.skipped.code } } : {}),
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
         ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),

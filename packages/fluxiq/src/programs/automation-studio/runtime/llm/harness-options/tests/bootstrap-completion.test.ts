@@ -615,3 +615,36 @@ describe("a completed list read with no declared columns", () => {
     }
   });
 });
+
+// t243: a draft step's route signatures reach the plan the completion builds,
+// and a plan the model wrote itself carries none: they are Core-derived only.
+describe("the route signatures a completed build carries", () => {
+  const signed = { before: { at: "/collections/audio" }, after: { at: "/collections/audio" } };
+
+  it("puts the build's signatures for each draft step on the plan node it became", async () => {
+    const draftSteps: AutomationStudioFlowDraftStep[] = [{
+      position: 1, id: "d1", iteration: 1, actionId: "web.dom.extract_list", toolId: "core.run_node",
+      input: { node: "web.dom.extract_list", parameters: { extractList }, consequences: [] },
+      effect: "observe", effectApplied: true, disposition: "kept", proposes: true, stateBefore: "D0", stateAfter: "D0"
+    }];
+    const asked: Array<{ stateBefore?: string; stateAfter?: string }> = [];
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps,
+      routeSignaturesOf: (step) => (asked.push({ ...(step.stateBefore ? { stateBefore: step.stateBefore } : {}), ...(step.stateAfter ? { stateAfter: step.stateAfter } : {}) }), signed)
+    });
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(asked).toEqual([{ stateBefore: "D0", stateAfter: "D0" }]);
+    expect(verdict.buildPlan.plan.subflows[0]?.nodes[0]?.routeSignatures).toEqual(signed);
+    expect(verdict.buildPlan.subflows[0]?.nodes[0]?.routeSignatures).toEqual(signed);
+  });
+
+  it("drops any the model wrote into its own plan before reading it", async () => {
+    const plan = planWith({ extractList });
+    ((plan.subflows as JsonObject[])[0]!.nodes as JsonObject[])[0]!.routeSignatures = signed;
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result: { summary: "Scrape the products", plan }, projectId: "project.1", flowId: "flow.1", registry, resolution });
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.buildPlan.plan.subflows[0]?.nodes.some((node) => "routeSignatures" in node)).toBe(false);
+  });
+});

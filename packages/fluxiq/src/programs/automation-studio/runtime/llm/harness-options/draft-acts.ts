@@ -21,8 +21,11 @@
 // a named column no field reads was a warning on the plan that nobody saw
 // (F35, `flow-bootstrap/authoring/instruction-record-columns.ts`). The draft
 // entry is in front of the model on every decision after its read, and this is
-// where Core holds both the instruction and the read's fields, so each such
-// read adds one `note` after the acts. A note is information: it has no id, no
+// where Core holds both the instruction and the reads' fields, so a named
+// column no read of the draft gives adds one `note` after the acts. It names no
+// step: the read it named was once the filter listing a repeat runs over, and
+// the model reworked that listing instead of adding the read the table needed
+// (run `run-murdouox-c5294247`, R4). A note is information: it has no id, no
 // act can be claimed for it, `actsMissing` never counts it, and nothing is
 // refused for it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
@@ -30,7 +33,7 @@ import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResoluti
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
 import {
-  automationStudioFlowBootstrapUnreadColumnsSentence,
+  automationStudioFlowBootstrapDraftUnreadColumnsSentence,
   automationStudioInstructedActsChecklist,
   automationStudioInstructedActsChecklistValue,
   automationStudioInstructedActsNotDone,
@@ -75,16 +78,17 @@ function withRepeat(
   return suggestion ? { ...item, repeatWith: suggestion.amendment, repeatSaid: suggestion.instruction.trim() } : item;
 }
 
-/** One note per read of the draft whose fields miss a column the instruction names. */
+/** One note for the draft when no read of it gives a column the instruction names. */
 function unreadColumnNotes(instructionText: string | undefined, steps: readonly AutomationStudioFlowDraftStep[]): JsonObject[] {
   if (!instructionText) return [];
-  return steps.flatMap((step) => {
+  const reads = steps.flatMap((step) => {
     // A read the model withdrew, or one that failed, is no longer its read.
     if (step.disposition === "dropped" || step.disposition === "exploratory") return [];
     if (!automationStudioFlowBootstrapDraftStepIsWritable(step) || !automationStudioFlowDraftStepIsProposable(step)) return [];
-    const note = automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText, fieldKeys: readFieldKeys(step.input.parameters), reader: `step ${step.position}` });
-    return note ? [{ note }] : [];
+    return [readFieldKeys(step.input.parameters)];
   });
+  const note = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText, reads });
+  return note ? [{ note }] : [];
 }
 
 /**

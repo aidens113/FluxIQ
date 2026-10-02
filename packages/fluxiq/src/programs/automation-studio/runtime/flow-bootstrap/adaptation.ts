@@ -22,6 +22,7 @@ import type {
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
+import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../route-state/signatures/index.ts";
 
 /**
  * `create` builds a whole topology on a blank Flow; `extend` only adds to an
@@ -216,7 +217,11 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
         metadata: withAutomationStudioNodeAdaptationId({
           bootstrapAdaptationId: input.adaptationId,
           bootstrapSymbolicKey: node.key,
-          ...(node.outputActionId ? { outputActionId: node.outputActionId } : {})
+          ...(node.outputActionId ? { outputActionId: node.outputActionId } : {}),
+          // The pages the step ran between as the build saw them, which a run
+          // reads to continue at the node whose expected pre-state is the page
+          // it finds (`../route-state/signatures/`).
+          ...routeSignaturesMetadata(node.routeSignatures)
         }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({
@@ -374,4 +379,14 @@ export function assertAutomationStudioBootstrapHasNoRecordingProvenance(value: u
       stack.push(child);
     }
   }
+}
+
+/**
+ * A plan node's route signatures as node metadata, under the key a run reads
+ * them by; nothing when it recorded none. Read through the same test as the
+ * node's metadata is, so the node never keeps a value the run would discard.
+ */
+function routeSignaturesMetadata(value: unknown): JsonObject {
+  const signatures = value === undefined ? undefined : automationStudioRouteSignaturesValue(value);
+  return signatures ? { [AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY]: signatures as JsonObject } : {};
 }

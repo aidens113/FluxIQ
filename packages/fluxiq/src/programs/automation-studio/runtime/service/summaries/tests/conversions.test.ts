@@ -67,6 +67,15 @@ describe("runtimeSessionToFlowRunDetail skipped step", () => {
     expect(record).not.toHaveProperty("failure");
   });
 
+  // t243: a step state routing passed over says where the run went on to.
+  it("carries a state-routed attempt's target node and direction", () => {
+    const routed = { ...attempt("cart.attempt.2", {}), route: "state_routed", skipped: { reason: "state_routed", code: "executor.state_routing.effect_holds", toNodeId: "checkout", direction: "forward" } } as AutomationStudioNodeAttemptTrace;
+    const record = runtimeSessionToFlowRunDetail(session([routed]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ route: "state_routed", skipped: { reason: "state_routed", code: "executor.state_routing.effect_holds", toNodeId: "checkout", direction: "forward" } });
+    expect(record).not.toHaveProperty("failure");
+  });
+
   it("writes no skipped mark for an attempt that ran", () => {
     const ran = runtimeSessionToFlowRunDetail(session([attempt("click.attempt.1", {}), failedAttempt()]), "project.conversions");
     for (const record of ran.actionAttempts ?? []) expect(record).not.toHaveProperty("skipped");
