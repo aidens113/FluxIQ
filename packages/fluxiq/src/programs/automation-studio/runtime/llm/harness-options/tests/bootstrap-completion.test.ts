@@ -175,7 +175,9 @@ describe("the handle a built plan carries", () => {
 // asked whether the Flow does what the person's sentence asked for, and four
 // live builds against one instruction proposed four different Flows as finished
 // -- one of which navigated twice, typed three times and read nothing. The last
-// check asks that, from the plan and the instruction text alone.
+// check asks that, from the plan and the instruction text alone -- and since
+// t195-w28a what it finds is information for the judge of the Flow's test,
+// never a refusal: only the permission gates refuse.
 describe("a completed plan that could not answer the instruction", () => {
   const readsOneValue: JsonObject = {
     schemaVersion: "0.1",
@@ -189,40 +191,26 @@ describe("a completed plan that could not answer the instruction", () => {
     }]
   };
 
-  it("is refused under its own code, with what the instruction asks for beside the issue", async () => {
+  it("is accepted with no record producer for a requested table, what the check found carried as a note", async () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Read the price", plan: readsOneValue },
       projectId: "project.1", flowId: "flow.1", registry, resolution,
       instructionText: "Scrape every product the search returns as a table with columns name and price."
     });
 
-    expect(verdict.ok).toBe(false);
-    if (verdict.ok) return;
-    expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_answer");
-    expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_answer_instruction"]);
-    expect(verdict.check.answerability).toEqual({
-      recordsRequested: true,
-      recordProducerPresent: false,
-      recordStorePresent: false,
-      issueCode: "bootstrap.cannot_answer_instruction"
-    });
-    const feedback = verdict.check.feedback as unknown as Feedback & { cannotAnswer: JsonObject };
-    expect(feedback.issues[0]).toEqual({
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual(["web.output.dom-extract"]);
+    // The facts still travel on the record, with no refusal's issue code.
+    expect(verdict.check.answerability).toEqual({ recordsRequested: true, recordProducerPresent: false, recordStorePresent: false });
+    expect(verdict.notes).toEqual([{
       code: "bootstrap.cannot_answer_instruction",
-      path: "plan.subflows",
-      message: "The instruction asks for a set of records and no step of this Flow produces or saves one, so no run of it could answer."
-    });
-    expect(feedback.cannotAnswer).toMatchObject({
-      asks: "a set of records: rows with named fields",
-      quote: "Scrape every product the search returns as a table with columns name and price",
-      columns: ["name", "price"],
-      steps: ["web.output.dom-extract"]
-    });
-    expect(feedback.instruction).toContain("keep it in the draft, and finish again");
-    expect(feedback.instruction).not.toContain("Where an issue carries accepted");
+      said: "The instruction asks for a set of records and no step of this Flow produces or saves one, so no run of it could answer.",
+      columns: ["name", "price"]
+    }]);
   });
 
-  it("is not refused when the instruction asks for no records, and never reaches the check without one", async () => {
+  it("carries no note when the instruction asks for no records, and never reaches the check without one", async () => {
     for (const instructionText of ["Read the price of the item on this page and tell me what it is.", undefined]) {
       const verdict = await checkAutomationStudioFlowBootstrapCompletion({
         result: { summary: "Read the price", plan: readsOneValue },
@@ -231,6 +219,7 @@ describe("a completed plan that could not answer the instruction", () => {
       });
 
       expect(verdict.ok).toBe(true);
+      if (verdict.ok) expect(verdict.notes).toBeUndefined();
     }
   });
 });
@@ -240,39 +229,30 @@ describe("a completed plan that could not answer the instruction", () => {
 // blank tab a run starts on, `Cannot access contents of url "about:blank"`. An
 // extraction on its own satisfies every check above, answerability included; it
 // simply has nowhere to do it. The seventh check asks that, from the plan and
-// the start location the build was given.
+// the start location the build was given, and since t195-w28a its answer is a
+// note for the judge rather than a refusal.
 describe("a completed plan that could not reach where the Flow starts", () => {
   const START_LOCATION = "https://shop.test/collections/audio";
 
-  it("is refused under its own code, with where the Flow starts beside the issue", async () => {
+  it("is accepted, with where the Flow starts carried as a note", async () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products", plan: planWith({ extractList }) },
       projectId: "project.1", flowId: "flow.1", registry, resolution,
       startLocation: START_LOCATION
     });
 
-    expect(verdict.ok).toBe(false);
-    if (verdict.ok) return;
-    expect(verdict.code).toBe("flow_bootstrap.evidence_completion_cannot_reach_start");
-    expect(verdict.check.issueCodes).toEqual(["bootstrap.cannot_reach_start_location"]);
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
     expect(verdict.check.answerability).toEqual({
       recordsRequested: false,
       recordProducerPresent: true,
       recordStorePresent: false
     });
-    const feedback = verdict.check.feedback as unknown as Feedback & { cannotReach: JsonObject };
-    expect(feedback.issues[0]).toEqual({
+    expect(verdict.notes).toEqual([{
       code: "bootstrap.cannot_reach_start_location",
-      path: "plan.subflows",
-      message: "This Flow acts on the target it was told to start at and no step of it goes there, so no run of it could take its first step."
-    });
-    expect(feedback.cannotReach).toEqual({
-      starts: START_LOCATION,
-      lacks: "no step of this Flow goes to where it starts",
-      steps: ["web.output.dom-extract_list"]
-    });
-    expect(feedback.instruction).toContain("keep it in the draft as the first step, and finish again");
-    expect(feedback.instruction).not.toContain("Where an issue carries accepted");
+      said: "This Flow acts on the target it was told to start at and no step of it goes there, so no run of it could take its first step.",
+      starts: START_LOCATION
+    }]);
   });
 
   it("accepts the same reading once the Flow goes there first", async () => {
@@ -297,6 +277,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     if (!verdict.ok) return;
     expect(verdict.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId))
       .toEqual(["web.output.browser-navigate", "web.output.dom-extract_list"]);
+    expect(verdict.notes).toBeUndefined();
   });
 
   // Both bigbox builds (`run-mulx76vv-a882551e`, `run-mum0ke7z-940cbd27`) ran
@@ -378,7 +359,9 @@ describe("a completed plan that could not reach where the Flow starts", () => {
 
 // `run-mulxsbyy-d4d4c7a1` was refused three times by three different checks,
 // one per attempt, the last on its forced final decision. Every check whose
-// input exists now runs on every attempt, and the refusal carries them all.
+// input exists now runs on every attempt, and the refusal carries every one
+// that refuses. The capability checks no longer refuse (t195-w28a): a plan
+// refused for how it was written is refused for that alone.
 describe("every check on every attempt", () => {
   const readsOneValue: JsonObject = {
     schemaVersion: "0.1",
@@ -386,7 +369,7 @@ describe("every check on every attempt", () => {
     subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [{ key: "read", definitionId: "web.output.dom-extract", definitionVersion: "1.0.0", outputActionId: "web.dom.extract", parameters: { selector: ".price" } }], edges: [] }]
   };
 
-  it("returns a refused parameter, an unanswerable plan and an unreachable start together", async () => {
+  it("refuses a plan that cannot be built for that alone, not for what it cannot answer or reach", async () => {
     const binding = { resolvePlanNodeParameters: () => ({ status: "refused" as const, issueCodes: ["web.handle.invented"] }) };
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Read the price", plan: readsOneValue },
@@ -397,20 +380,15 @@ describe("every check on every attempt", () => {
 
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.codes).toEqual([
-      "flow_bootstrap.evidence_completion_parameters_unresolved",
-      "flow_bootstrap.evidence_completion_cannot_answer",
-      "flow_bootstrap.evidence_completion_cannot_reach_start"
-    ]);
+    expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_parameters_unresolved"]);
     expect(verdict.code).toBe("flow_bootstrap.evidence_completion_parameters_unresolved");
-    expect(verdict.check.issueCodes).toEqual(["web.handle.invented", "bootstrap.cannot_answer_instruction", "bootstrap.cannot_reach_start_location"]);
-    const feedback = verdict.check.feedback as unknown as Feedback & { refusals: string[]; cannotAnswer: JsonObject; cannotReach: JsonObject };
-    expect(feedback.refusals).toEqual(verdict.codes);
-    expect(feedback.cannotAnswer).toBeDefined();
-    expect(feedback.cannotReach).toBeDefined();
-    expect(feedback.instruction).toContain("correct all of them before completing again");
+    expect(verdict.check.issueCodes).toEqual(["web.handle.invented"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { refusals?: string[]; cannotAnswer?: JsonObject; cannotReach?: JsonObject };
+    expect(feedback.refusals).toBeUndefined();
+    expect(feedback.cannotAnswer).toBeUndefined();
+    expect(feedback.cannotReach).toBeUndefined();
     expect(feedback.instruction).toContain("Where an issue carries accepted");
-    expect(feedback.instruction).toContain("keep it in the draft as the first step");
+    expect(feedback.instruction).not.toContain("keep it in the draft as the first step");
   });
 
   // A Subflow's node count is the Flow's size setting, which the structural

@@ -73,7 +73,7 @@ describe("a judged no carries the judge's reading to the repair", () => {
     const { provider } = scripted(["no", "no"], { observed: "No step searches for or adds the napkins; two packs are never set.", changed: "Add steps that search the napkins, choose 250 Count and add them; set the towels' quantity to two." });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "no", observed: expect.stringContaining("napkins"), advice: expect.stringContaining("250 Count") });
-    expect(verdict.spent).toEqual({ inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002 });
+    expect(verdict.spent).toEqual({ inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 });
   });
 });
 
@@ -88,7 +88,7 @@ describe("the verdict mapping", () => {
 
   it("answers is yes, with every call's spend summed", async () => {
     const verdict = await judge(PICKUP_CART, { verify: async () => report(answered("answers", "model"), 2) })({ summary: run40Summary() });
-    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.03 } });
+    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.03, calls: 2 } });
   });
 
   it("two unsure answers are unknown, never a pass and never a repair", async () => {
@@ -97,6 +97,8 @@ describe("the verdict mapping", () => {
     expect(seen).toHaveLength(2);
     expect(verdict).toMatchObject({ verdict: "unknown", why: expect.any(String) });
     expect(verdict.spent.totalTokens).toBe(1920);
+    // Each call the judge made is counted, so the build can count it with its other calls outside the loop.
+    expect(verdict.spent.calls).toBe(2);
   });
 
   it("a no the second call did not repeat is unknown", async () => {
@@ -119,7 +121,7 @@ describe("the verdict mapping", () => {
     const verify = async (request: AutomationStudioResultVerificationRequest) => { calls.push(request); return report(answered("answers", "model")); };
     const verdict = await judge(PICKUP_CART, { verify })({ summary: run40Summary(), budget: { maxCostUsd: 0 } });
     expect(calls).toHaveLength(0);
-    expect(verdict).toMatchObject({ verdict: "not_judged", spent: { estimatedCostUsd: 0 } });
+    expect(verdict).toMatchObject({ verdict: "not_judged", spent: { estimatedCostUsd: 0, calls: 0 } });
   });
 
   it("asks within what the build has left, under a build-test run id", async () => {

@@ -486,7 +486,16 @@ A completed candidate is checked while the model can still correct it. Every
 check a completion must pass runs as the evidence loop's completion check,
 `checkAutomationStudioFlowBootstrapCompletion`
 (`runtime/llm/harness-options/bootstrap-completion.ts`). The checks run in this
-order, and each refusal has its own code:
+order. Checks 1 to 5 refuse, each with its own code: a plan that cannot be
+built at all cannot run. Checks 6 and 7 are information, not refusals (user,
+2026-10-01: no restriction on what the model does beyond the permission
+gates): what they find travels on the accepted verdict as `notes`, and reaches
+the judge of the build's test as `buildTest.notes`
+(`runtime/result-verification/build-test/`). The judge's verdict on what the
+test actually did decides, and a wrong result is repaired with its reasons. The
+instructed-act check that follows is information the same way, except
+`act_consequence_undeclared`, which is what makes a delete, a payment or a send
+get asked.
 
 1. The `{summary, plan}` envelope: `flow_bootstrap.evidence_completion_wrapper_invalid`.
 2. The plan's structure: `flow_bootstrap.evidence_completion_plan_invalid`.
@@ -495,10 +504,10 @@ order, and each refusal has its own code:
 4. The domain's resolution of each node's parameters:
    `flow_bootstrap.evidence_completion_parameters_unresolved`.
 5. Registry validation: `flow_bootstrap.evidence_completion_plan_invalid`.
-6. Whether the Flow could answer the instruction at all:
-   `flow_bootstrap.evidence_completion_cannot_answer`.
-7. Whether the Flow could reach the place it starts:
-   `flow_bootstrap.evidence_completion_cannot_reach_start`.
+6. Whether the Flow could answer the instruction at all: a note with code
+   `bootstrap.cannot_answer_instruction` and the requested `columns`.
+7. Whether the Flow could reach the place it starts: a note with the start
+   location it `starts` from.
 
 Check 6 is the only one that reads the instruction rather than the node library,
 and it is what stops a build proposing a Flow that cannot produce what the
@@ -512,7 +521,7 @@ confirmed all four parsed, resolved and validated.
 instructions' own text, with no provider call on any path. It reads what the
 instruction asks to be given back from a short list of unambiguous words
 (`records`, `rows`, `columns`, `as a table`, `scrape`, `extract` and a few
-more), and refuses only where the instruction plainly asks for a set of records
+more), and notes only where the instruction plainly asks for a set of records
 and no step of the Flow produces or saves one — a step whose definition declares
 where its own result keeps rows, or one whose record output names a dataset. It
 judges capability, never a chain: a Flow that reaches a search by URL rather
@@ -533,7 +542,7 @@ a step that returns rows is present; it simply has nowhere to do it.
 
 `flow-bootstrap/reachability/` answers it from the plan and the start location
 the build was given (`flow-bootstrap/start-location.ts`), with no provider call
-on any path. It refuses only when all three hold: the build was given a start
+on any path. It notes only when all three hold: the build was given a start
 location, the plan holds at least one step that acts on the bound domain's own
 target — a node the domain registered, or one of Core's told to dispatch a
 domain output — and no step of the plan carries where the Flow starts. Core
