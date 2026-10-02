@@ -5,7 +5,7 @@ import {
   automationStudioFlowDraftClaimAct, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepIsAction,
-  automationStudioFlowDraftStepIsProposable,
+  automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
 // The record of every decision and what the loop answered it, and what one
@@ -419,6 +419,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
+    const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
@@ -473,7 +474,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
+    const draftChanged = draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
     const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
@@ -529,9 +530,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A build told where its Flow starts opens by going there (F31): its look
     // was refused for not being there yet, and the model's first paid decision
     // was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays,
-    // since the domain keys per-build memory on it. No provider call.
+    // since the domain keys per-build memory on it. No provider call. A draft already holding the Flow (a repair's, a re-author's) holds its start: its opening is taken, not added (run 38 appended it as step 6).
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
+    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), ...(draftSteps.some((step) => step.disposition === "kept") ? {} : { add: true as const }) };
     const ended = await runCall(0, opening.callId, opening, initialTool, automationStudioLlmEvidenceRequestSignature({ tool: initialTool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: opening.input }));
     if (ended) return ended;
   } else if (initialTool) {

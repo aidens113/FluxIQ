@@ -4,8 +4,8 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
-import type { AutomationStudioResultVerificationReport, AutomationStudioResultVerificationRequest } from "../../verify.ts";
+import { AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { verifyAutomationStudioRunResult, type AutomationStudioResultVerificationReport, type AutomationStudioResultVerificationRequest } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
 import {
@@ -183,6 +183,30 @@ describe("a judge under the build's purse (t234)", () => {
     // It used to come back as `unknown`: verify reads a refused call as one that did not come back usable.
     expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining(`spending limit of $${CEILING.toFixed(2)}`), spent: { estimatedCostUsd: 0 } });
     expect(purse.spentUsd()).toBeCloseTo(CEILING - 0.1 * CEILING, 12);
+  });
+
+  it("run 38 (C7): the judge's call is held at a 2,000-token reply, so $0.009 left still pays for it", async () => {
+    // Priced on the reply alone, at a rate that makes the default 8,000-token allowance the $0.011 hold run 38 refused.
+    const outputRateUsd = 0.0112 / 8_000;
+    const asked: number[] = [];
+    const llm = scripted(["yes"]);
+    const provider: AutomationStudioLlmProvider = { ...llm.provider, estimateCostUsd: ({ outputTokens }) => { asked.push(outputTokens); return outputTokens * outputRateUsd; } };
+    const purse = purseWith(0.009);
+
+    const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
+
+    expect(verdict).toMatchObject({ verdict: "yes" });
+    expect(llm.seen).toHaveLength(1);
+    expect(llm.seen[0]?.tokenLimits.maxOutputTokens).toBe(AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(new Set(asked)).toEqual(new Set([AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS]));
+    expect(AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS * outputRateUsd).toBeCloseTo(0.0028, 12);
+  });
+
+  it("a reply allowance a resolver named smaller than the judge's cap is kept", async () => {
+    const { provider, seen } = scripted(["yes"]);
+    await judge(PICKUP_CART, { provider, verify: (request) => verifyAutomationStudioRunResult({ ...request, tokenLimits: { maxOutputTokens: 500 } }) })({ summary: run40Summary() });
+    expect(seen[0]?.tokenLimits.maxOutputTokens).toBe(500);
   });
 
   it("a second ask the purse refuses is not judged either, and the first call's spend is still returned", async () => {

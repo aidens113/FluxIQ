@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
-  AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
+  AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
+  automationStudioLlmProviderPaidUsage
 } from "../provider-contract.ts";
 import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
 import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
@@ -10,9 +11,9 @@ import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
-import type { AutomationStudioLlmProvider } from "./provider.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmUsageSummary } from "./provider.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
-import { validRequestIdentity } from "./json-bounds.ts";
+import { isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { automationStudioLlmScreenedProviderThrow } from "./throw-screen.ts";
 import { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 import { expectedOutputForTask } from "./task-kind.ts";
@@ -232,9 +233,14 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       // misreading this work exists to stop.
       ...retryDiagnostics
     ];
-    if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
+    // A reply the adapter refused was still paid for: what the provider said it
+    // cost, from the malformed reply's account or from any other refusal of a
+    // reply that arrived. Without it both ledgers charged the hold, and
+    // `run-muqiojz4-04a7a8fc` step 0108 cost $0.0041 and was charged $0.0144.
+    const paid = failure.reply?.usage ?? failure.paid;
+    if (reservation?.ok) reservation.lease.complete(paid, callOutcome(diagnostics));
     // A request the adapter refused before sending cost nothing; one that may have gone out is charged as held, or as reported.
-    if (held?.ok) { if (failure.provenance.providerInvocation === "not_attempted") held.hold.release(); else held.hold.settle(failure.reply?.usage); }
+    if (held?.ok) { if (failure.provenance.providerInvocation === "not_attempted") held.hold.release(); else held.hold.settle(paid); }
     return {
       ok: false,
       request,
@@ -250,12 +256,17 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     };
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
+  // The call answered, so what it reported costing is charged even when its
+  // result cannot be parsed: read first, bounded to numbers, and inside the try
+  // so a result that throws on being read is charged at its hold, as before.
+  let reported: AutomationStudioLlmUsageSummary | undefined;
   try {
+    reported = automationStudioLlmProviderPaidUsage(isRecord(call.result) ? call.result.usage : undefined);
     providerResult = parseAutomationStudioLlmProviderResult(call.result, expectedOutput, input.flowBootstrap);
   } catch {
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
-    if (reservation?.ok) reservation.lease.complete(undefined, callOutcome(diagnostics));
-    if (held?.ok) held.hold.settle();
+    if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));
+    if (held?.ok) held.hold.settle(reported);
     return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);

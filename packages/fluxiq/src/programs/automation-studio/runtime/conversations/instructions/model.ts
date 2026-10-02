@@ -44,6 +44,14 @@ export type AutomationStudioConversationModelExecution = {
   signal: AbortSignal;
   /** Null when the turn did not come from a signed-in person, such as in a test. */
   caller: AutomationStudioConversationCaller | null;
+  /**
+   * Told what this attempt cost in US dollars, when the model prices its calls
+   * (the DeepSeek panel-command call does, from its reply's usage). A model
+   * that does not price never calls it, and nothing is carried for it. Called
+   * at most once per attempt, before it answers or throws: a reply that could
+   * not be used was still paid for.
+   */
+  paid?(costUsd: number): void;
 };
 
 export type AutomationStudioConversationModel = {

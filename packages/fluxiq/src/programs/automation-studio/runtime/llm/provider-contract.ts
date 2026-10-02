@@ -1,6 +1,7 @@
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../provider-refusal/index.ts";
 import { automationStudioLlmProviderThrowRead, type AutomationStudioLlmProviderThrowRead } from "./throw-account/index.ts";
 import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
+import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 
 /**
  * Every way a provider refuses a request before sending it, one code per check.
@@ -163,7 +164,17 @@ export class AutomationStudioLlmProviderError extends Error {
      */
     readonly reply?: AutomationStudioLlmProviderReplyAccount,
     /** The refused request's size, on `llm.provider_input_budget_exceeded` only. */
-    readonly inputSize?: AutomationStudioLlmProviderInputSize
+    readonly inputSize?: AutomationStudioLlmProviderInputSize,
+    /**
+     * What the provider reported the call cost, on any refusal of a reply that
+     * arrived with well-formed usage -- output Core would not take, a reply cut
+     * off at its limit, usage over the request's limits -- not only the
+     * malformed cases `reply` describes. The call was paid for either way, and
+     * without this the run's ledger and the build's purse charged it at its
+     * hold: `run-muqiojz4-04a7a8fc` step 0108 cost $0.0041 and was charged
+     * $0.0144.
+     */
+    readonly paid?: AutomationStudioLlmUsageSummary
   ) {
     super(message);
   }
@@ -191,6 +202,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
   reply?: AutomationStudioLlmProviderReplyAccount;
   /** The refused request's size, when the adapter refused it as too large. */
   inputSize?: AutomationStudioLlmProviderInputSize;
+  /** What the provider reported a refused reply cost, numbers only. Bounded again here. */
+  paid?: AutomationStudioLlmUsageSummary;
   /**
    * What an untyped throw was, as read (`throw-account/`). Only on
    * `llm.provider_request_failed`: a typed failure already names its fault with
@@ -208,6 +221,7 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
     // From a real instance only, like the refusal: a clone's claim is not read.
     const reply = error instanceof AutomationStudioLlmProviderError ? automationStudioLlmProviderReplyAccount(error.reply) : undefined;
     const inputSize = typed.code === "llm.provider_input_budget_exceeded" ? inputSizeFromProviderError(error) : undefined;
+    const paid = error instanceof AutomationStudioLlmProviderError ? automationStudioLlmProviderPaidUsage(error.paid) : undefined;
     return {
       code: typed.code,
       message: inputSize ? sizedInputBudgetMessage(inputSize) : safeProviderFailureMessage(typed.code),
@@ -216,7 +230,8 @@ export function normalizedAutomationStudioLlmProviderFailure(error: unknown): {
       ...(typed.status !== undefined ? { status: typed.status } : {}),
       provenance: error instanceof AutomationStudioLlmProviderError ? error.provenance : defaultProviderFailureProvenance(typed.code),
       ...(refusal ? { refusal } : {}),
-      ...(reply ? { reply } : {})
+      ...(reply ? { reply } : {}),
+      ...(paid ? { paid } : {})
     };
   }
   // The code says only that something threw. What threw is the one thing that
@@ -269,6 +284,30 @@ function inputSizeFromProviderError(error: unknown): AutomationStudioLlmProvider
     maxTotalTokens: size.maxTotalTokens,
     contextWindowTokens: size.contextWindowTokens
   };
+}
+
+const PAID_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
+
+/**
+ * What a call reported costing, bounded to the usage summary's numeric fields:
+ * every count a non-negative safe integer, the cost a non-negative finite
+ * number, anything else left behind. `undefined` when there is no output count,
+ * the same bar `./reply-account.ts` sets for a reply's usage. Read wherever a
+ * reported cost crosses a boundary -- off a refusal, or off a result the harness
+ * could not parse -- so a value built by anything but an adapter carries
+ * numbers only.
+ */
+export function automationStudioLlmProviderPaidUsage(value: unknown): AutomationStudioLlmUsageSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const usage: AutomationStudioLlmUsageSummary = {};
+  for (const field of PAID_TOKEN_FIELDS) {
+    const count = record[field];
+    if (Number.isSafeInteger(count) && (count as number) >= 0) usage[field] = count as number;
+  }
+  const cost = record.estimatedCostUsd;
+  if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) usage.estimatedCostUsd = cost;
+  return usage.outputTokens === undefined ? undefined : usage;
 }
 
 function sizedInputBudgetMessage(size: AutomationStudioLlmProviderInputSize): string {

@@ -2,8 +2,9 @@
 // continues: codes, counts and Core's own words, never page content.
 
 import { describe, expect, it, vi } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID, automationStudioLlmEvidenceResumeEntry } from "../resume.ts";
 
 function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
@@ -130,5 +131,70 @@ describe("a continued build", () => {
     const shown = (decide.mock.calls[0]![0] as { evidence: { toolId: string; value: { instruction?: string } }[] }).evidence;
     const resumed = shown.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID)!;
     expect(resumed.value.instruction).toContain("They were not run again");
+  });
+});
+
+// Live run 38 (`run-muqilf9s-c3211328`, cause C3): repair round 1 resumed a
+// five-step draft, opened with the free navigation to the start, and appended it
+// as step 6 because the opening was always sent with `add: true`. The Flow then
+// ended on the feed, off the requests page its last step left, and the refuted
+// result was filed under that navigate. A re-author's draft is the Flow too,
+// seeded with no resume; a round that resumes with nothing in the Flow has no
+// start yet, and its opening is still the Flow's first step.
+describe("the opening of a round whose draft already holds the Flow", () => {
+  const look: JsonObject = { node: "web.output.dom-capture", parameters: {}, consequences: [] };
+  const arrival: JsonObject = { node: "web.output.browser-navigate", parameters: { url: "https://social.example/" }, consequences: [] };
+  const runNode: AutomationStudioLlmEvidenceTool = {
+    toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: look, arrival }
+  };
+  const arrived = {
+    kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { url: "https://social.example/", title: "Feed" } }, effectApplied: true,
+    draft: { actionId: "web.output.browser-navigate", input: arrival, effect: "mutate", proposes: true }
+  };
+  const kept = (position: number): AutomationStudioFlowDraftStep => step(position, { id: `d${position}`, toolId: "core.run_node", ranWith: { target: `t.${position}` }, proposes: true });
+  const round = async (draft: Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["draft"]) => {
+    const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => arrived);
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [runNode], decide: vi.fn().mockResolvedValue({ kind: "recorded_run_ended" }), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") },
+      ...(draft === undefined ? {} : { draft })
+    });
+    return { result, executeTool };
+  };
+
+  it("still goes to the start, but a resumed five-step draft stays five steps", async () => {
+    const { result, executeTool } = await round({
+      seed: [kept(1), kept(2), kept(3), kept(4), kept(5)],
+      resume: { revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [] }
+    });
+
+    expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: arrival });
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("taken");
+    expect(result.steps.filter((entry) => entry.disposition === "kept").map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3", "call.4", "call.5"]);
+  });
+
+  it("is the Flow's first step on a build's first round, as before", async () => {
+    const { result } = await round(undefined);
+
+    expect(result.steps.map((entry) => [entry.callId, entry.disposition])).toEqual([["initial.core.run_node", "kept"]]);
+  });
+
+  it("is the Flow's first step on a round that seeds a draft without resuming one", async () => {
+    const { result } = await round({ seed: [] });
+
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("kept");
+  });
+
+  it("is taken, not added, when a re-author's draft holds the Flow without resuming it", async () => {
+    const { result } = await round({ seed: [kept(1), kept(2), kept(3)] });
+
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("taken");
+    expect(result.steps.filter((entry) => entry.disposition === "kept").map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3"]);
+  });
+
+  it("is the Flow's first step when a round resumes with nothing in the Flow", async () => {
+    const { result } = await round({ seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: { stepsInFlow: 0 } } });
+
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("kept");
   });
 });

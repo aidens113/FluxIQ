@@ -23,7 +23,9 @@ export {
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD,
   AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS,
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
+  AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS,
   automationStudioLlmDecisionTokenLimits,
+  automationStudioLlmJudgeTokenLimits,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmTokenLimits
 } from "./token-limits.ts";

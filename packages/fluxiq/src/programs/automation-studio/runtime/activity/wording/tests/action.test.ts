@@ -42,7 +42,7 @@ describe("a call the bound domain describes", () => {
     const title = automationStudioActivityAction({ id: "web.find_on_page", words: { text: "Voltbay" } });
     expect(title).toBe('Looking for "Voltbay" on the page');
     expect(card(title!)?.kind).toBe("look");
-    expect(automationStudioActivityAction({ id: "web.find_on_page" })).toBe("Looking at the page");
+    expect(automationStudioActivityAction({ id: "web.find_on_page" })).toBe("Looking over the whole page");
     expect(automationStudioActivityAction({ id: "web.output.search", words: { text: "towels" } })).toBe('Searching the page for "towels"');
   });
 
@@ -52,6 +52,17 @@ describe("a call the bound domain describes", () => {
     expect(card(title!)).toMatchObject({ kind: "type", target: "Search" });
     expect(automationStudioActivityAction({ id: "web.output.dom-type", words: { text: "towels" } })).toBe('Typing "towels"');
     expect(automationStudioActivityAction({ id: "web.output.dom-type", words: { target: "Search" } })).toBe("Typing into “Search”");
+  });
+
+  it("names a find's card by the words it looks for, in quotes, never as a control", () => {
+    const title = automationStudioActivityAction({ id: "web.find_on_page", words: { text: "Colour" } })!;
+    expect(card(title)).toMatchObject({ kind: "look", target: '"Colour"' });
+  });
+
+  it("names the control whose details are read, on the card too", () => {
+    const title = automationStudioActivityAction({ id: "web.describe_element", words: { target: "Colour" } })!;
+    expect(title).toBe("Reading the details of “Colour”");
+    expect(activityActionOf({ phase: "exploring", detail: { kind: "tool", title, status: "started", ref: "web.describe_element" } })).toMatchObject({ kind: "look", target: "Colour" });
   });
 
   it("says which control a press is on", () => {

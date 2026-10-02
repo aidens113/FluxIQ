@@ -4,7 +4,8 @@ const MAX_SUMMARY = 100;
 /**
  * One line of at most 100 characters saying what a step came to, for its row
  * in `index.md`: a decision's kind and tool, how many amendments, or that it
- * completed; a tool's result code, or `ok` / `refused`; a failure's code.
+ * completed; a tool's result code, or `ok` / `refused`, and the check Core
+ * refused its value under when it did not read it; a failure's code.
  */
 export const automationStudioLlmStepLogSummary = {
   model(response: unknown, error: unknown): string {
@@ -23,10 +24,10 @@ export const automationStudioLlmStepLogSummary = {
     if (typeof record?.content === "string") return oneLine(record.content);
     return "ok";
   },
-  tool(evidence: unknown, resultCode: unknown, error: unknown): string {
+  tool(evidence: unknown, resultCode: unknown, error: unknown, unread?: string | undefined): string {
     if (error !== undefined) return oneLine(`threw ${codeOf(error) ?? (error instanceof Error ? error.name : "non_error")}`);
-    if (typeof resultCode === "string" && resultCode) return oneLine(resultCode);
-    return asRecord(evidence)?.ok === false ? "refused" : "ok";
+    const said = typeof resultCode === "string" && resultCode ? resultCode : asRecord(evidence)?.ok === false ? "refused" : "ok";
+    return oneLine(unread ? `${said}, unread: ${unread.replace(/^llm_evidence_loop\.tool_result_invalid\.?/u, "") || "invalid"}` : said);
   }
 };
 

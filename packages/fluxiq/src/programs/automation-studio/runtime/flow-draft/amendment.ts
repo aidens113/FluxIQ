@@ -130,6 +130,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * filtered listing with no press after it, and was told the rule in general.
    */
   over?: number;
+  /**
+   * `act_already_named` only: the act the amendment named, so the telling can
+   * say whether the checklist already shows it done and, when it does, which
+   * acts are still to do (`../llm/draft-amendment-feedback.ts`). Live run
+   * `run-muqiojz4-04a7a8fc` named `a2.quantity` on its step five decisions
+   * running while the checklist showed it done and `a3` still to do.
+   */
+  act?: string;
 };
 
 /**
@@ -262,7 +270,7 @@ export function applyAutomationStudioFlowDraftAmendments(
       // it (live run 36). It is told the name stands and the todo is the fault.
       const reason = disposition !== "kept" ? "already_out" : alreadyNamed ? "act_already_named" : "already_in_flow";
       // A read whose only news was the act has already been told why.
-      if (!actOnRead) refused.push({ step: amendment.step, reason });
+      if (!actOnRead) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
     step.disposition = disposition;

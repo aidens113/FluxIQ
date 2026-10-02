@@ -22,10 +22,10 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: QUOTE } })).toBe("Clicking “Get a free quote”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { target: { handle: "target.4" } } })).toBe("Clicking on the page");
     expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: "https://shop.example/services" } })).toBe("Opening a page");
-    expect(automationStudioActivityAction({ id: SNAPSHOT })).toBe("Looking at the page");
+    expect(automationStudioActivityAction({ id: SNAPSHOT })).toBe("Looking over the whole page");
     expect(automationStudioActivityAction({ id: "web.output.dom-extract_list" })).toBe("Reading the list");
     expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "secret", element: { accessibleName: "Search" } } })).toBe("Typing into “Search”");
-    expect(automationStudioActivityAction({ id: "web.detect_repeating_structure" })).toBe("Looking for the list of items");
+    expect(automationStudioActivityAction({ id: "web.detect_repeating_structure" })).toBe("Looking for the repeating list on the page");
     expect(automationStudioActivityAction({ id: "web.output.dom-wait_for_selector" })).toBe("Waiting for the page");
   });
 
@@ -40,6 +40,19 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "div", visibleText: "Not now" } } })).toBe("Clicking “Not now”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { accessibleName: "Space Grey", visibleText: "Grey" } } })).toBe("Clicking “Space Grey”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { visibleText: "a.b" } } })).toBe("Clicking on the page");
+  });
+
+  it("names an element by the words it shows when it has no accessible name (t193: dry-run cards read a bare Test run)", () => {
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "span", visibleText: "+" } } })).toBe("Clicking “+”");
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { tagName: "div", visibleText: "12 Double Rolls$16.47" } } })).toBe("Clicking “12 Double Rolls$16.47”");
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { accessibleName: "Close", visibleText: "×" } } })).toBe("Clicking “Close”");
+  });
+
+  it("says what a look inspects: a control's details, a list around a control, or the whole page", () => {
+    expect(automationStudioActivityAction({ id: "web.describe_element", words: { target: "Add to cart" } })).toBe("Reading the details of “Add to cart”");
+    expect(automationStudioActivityAction({ id: "web.recovery.describe_element" })).toBe("Reading the details of a control");
+    expect(automationStudioActivityAction({ id: "web.detect_repeating_structure", words: { target: "Paper towels" } })).toBe("Looking for the repeating list around “Paper towels”");
+    expect(automationStudioActivityAction({ id: SNAPSHOT })).not.toBe("Looking at the page");
   });
 
   it("never names an element with an id, and never reads a typed value", () => {
@@ -57,12 +70,31 @@ describe("automationStudioActivityToolCall", () => {
   });
 
   it("marks Core's opening call as a note, and names every other call by what it does", () => {
-    expect(automationStudioActivityToolCall(call("initial.core.run_node", { node: SNAPSHOT, parameters: {}, consequences: [] }))).toMatchObject({ kind: "note", phase: "exploring", title: "Looking at the page" });
+    expect(automationStudioActivityToolCall(call("initial.core.run_node", { node: SNAPSHOT, parameters: {}, consequences: [] }))).toMatchObject({ kind: "note", phase: "exploring", title: "Looking over the page the Flow starts on" });
     expect(automationStudioActivityToolCall(call("nav.start", { node: NAVIGATE, parameters: { url: "https://x.example" } }))).toMatchObject({ kind: "tool", phase: "exploring", title: "Opening a page" });
-    expect(automationStudioActivityToolCall(call("x", { node: "vendor.frobnicate" }))).toMatchObject({ title: "Trying a step on the page" });
-    expect(automationStudioActivityToolCall(call("x", {}))).toMatchObject({ title: "Trying a step on the page" });
-    expect(automationStudioActivityToolCall(call("x", {}, "vendor.tool"))).toMatchObject({ title: "Working on the page" });
+    expect(automationStudioActivityToolCall(call("x", { node: "vendor.frobnicate" }))).toMatchObject({ title: "Running the “Frobnicate” step" });
+    expect(automationStudioActivityToolCall(call("x", {}))).toMatchObject({ title: "Running a step" });
+    expect(automationStudioActivityToolCall(call("x", {}, "vendor.recall_notes"))).toMatchObject({ title: "Using “Recall notes”" });
     expect(automationStudioActivityToolCall(call("x", {}, "core.flow_draft"))).toMatchObject({ phase: "building", title: "Updating the draft Flow" });
+  });
+
+  it("says what Core's own look-ups read (t193: they read Working on the page)", () => {
+    expect(automationStudioActivityToolCall(call("d1", { ids: ["web.output.dom-type"] }, "core.describe_nodes"))).toMatchObject({ kind: "tool", phase: "exploring", title: "Looking up how to use “Type”" });
+    expect(automationStudioActivityToolCall(call("d2", { ids: ["web.output.dom-type", "web.output.dom-click", "web.output.dom-extract-list", "builtin.control.merge"] }, "core.describe_nodes")).title)
+      .toBe("Looking up how to use “Type, Click, Extract list and 1 more”");
+    expect(automationStudioActivityToolCall(call("d3", { ids: ["web.output.dom-click", "web.output.dom-type"] }, "core.describe_nodes")).title).toBe("Looking up how to use “Click and Type”");
+    expect(automationStudioActivityToolCall(call("d4", {}, "core.describe_nodes")).title).toBe("Looking up how to use a step");
+    expect(automationStudioActivityToolCall(call("r1", { callId: "open-store-picker-1" }, "core.recall_result")).title).toBe("Looking again at what “open store picker 1” found");
+    expect(automationStudioActivityToolCall(call("r2", { callId: "initial.core.run_node" }, "core.recall_result")).title).toBe("Looking again at what an earlier step found");
+  });
+
+  it("says a rerun's reset as bookkeeping for its step, and the rerun as that step tried again (t193: Action · the page)", () => {
+    expect(automationStudioActivityToolCall(call("rerun.10.place", { replay: "reset", from: { location: "https://x.example/p" } }))).toEqual({
+      phase: "exploring", kind: "note", title: "Putting the page back to where step 10 starts", label: "Putting the page back to where step 10 starts", dryRun: false
+    });
+    expect(automationStudioActivityToolCall(call("rerun.10", { node: CLICK, parameters: { element: QUOTE } }))).toEqual({
+      phase: "exploring", kind: "tool", title: "Clicking “Get a free quote”", label: "Trying step 10 again: clicking “Get a free quote”", dryRun: false, node: CLICK
+    });
   });
 
   it("reads an opening call that goes somewhere as going to where the Flow starts, a step of the work (F31)", () => {

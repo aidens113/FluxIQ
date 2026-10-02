@@ -227,6 +227,22 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(feedback.refused).toHaveLength(3);
   });
 
+  // run-muqiojz4-04a7a8fc: `10 keep act a2.quantity` five times running, the
+  // checklist showing a2.quantity done and a3 still to do.
+  it("tells an act named again that the checklist shows done that nothing is left for it, and what still is", () => {
+    const told = (actsNotDone: readonly string[] | undefined) => automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 2, reason: "act_already_named", act: "a2.quantity" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone
+    });
+    expect(told(["a3", "a3.size"]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }]);
+    expect(told([]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Nothing on the checklist is still to do: complete when the Flow does what the person asked." }]);
+    // Still to do: the todo is the fault, as before, and nothing more is said.
+    expect(told(["a2.quantity", "a3"]).refused).toEqual([{ step: 2, reason: "act_already_named" }]);
+    // No checklist read: nothing is claimed about it.
+    expect(told(undefined).refused).toEqual([{ step: 2, reason: "act_already_named" }]);
+    // The reason itself now says what a done act needs.
+    expect((told(undefined).reasons as Record<string, string>).act_already_named).toContain("If the acts checklist shows the act done, nothing is left to do for it");
+  });
+
   it("lists the positions that do exist only when one that does not was named", () => {
     expect(built([{ step: 9, reason: "no_such_step" }]).positions).toEqual([1, 2, 3]);
     expect(built([{ step: 2, reason: "already_so" }]).positions).toBeUndefined();
@@ -332,5 +348,48 @@ describe("a refusal about a listing says what comes next", () => {
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "over_not_before" }] });
     expect(nextOf(feedback!)).toContain(`No step after step 1 does anything to a row yet`);
     expect(nextOf(feedback!)).toContain(`"over": 1}`);
+  });
+});
+
+// Live run `run-muqiojz4-04a7a8fc` (t193, bigbox), decisions 25-29: `keep act
+// a2.quantity` on a step the checklist already showed doing it, refused
+// `act_already_named` five times running while a3 was still to do; the reason
+// said only what to do about an act not done, and the round stalled -- recorded
+// as a refused call, which the person's ending read as "every attempt to finish
+// was refused".
+describe("an act named again that the checklist already shows done, through the loop", () => {
+  const stalledError = new Error("stalled");
+  const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a2.quantity" }] };
+  const run = (actsMissing: () => readonly string[], onStall: (input: { issueCodes: readonly string[] }) => unknown = () => stalledError) => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.press.1", toolId: "press", input: { target: "plus" }, add: true, act: "a2.quantity" })
+      .mockResolvedValue(keep);
+    const done = runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: pressing(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
+      draft: { actsMissing }, unusableDecisions: { maxConsecutive: 8, stalled: onStall }
+    });
+    return { decide, done };
+  };
+
+  it("is told nothing is left to do for it, and which acts still are", async () => {
+    const { decide, done } = run(() => ["a3", "a3.size"]);
+    await expect(done).rejects.toBe(stalledError);
+    const feedback = feedbackShown(decide, 2);
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }] });
+    expect(String(feedback?.instruction)).toContain("next, beside a refusal, is what to do instead");
+  });
+
+  it("is told the general reason alone while the checklist still shows the act not done", async () => {
+    const { decide, done } = run(() => ["a2.quantity", "a3"]);
+    await expect(done).rejects.toBe(stalledError);
+    expect(feedbackShown(decide, 2)?.refused).toEqual([{ step: 1, reason: "act_already_named" }]);
+  });
+
+  it("stalls the round as amendments refused, not as a refused call", async () => {
+    const onStall = vi.fn((_input: { issueCodes: readonly string[] }) => stalledError);
+    const { done } = run(() => ["a3"], onStall);
+    await expect(done).rejects.toBe(stalledError);
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(onStall.mock.calls[0]![0].issueCodes).toEqual(["llm_evidence_loop.draft_amendments_refused"]);
   });
 });

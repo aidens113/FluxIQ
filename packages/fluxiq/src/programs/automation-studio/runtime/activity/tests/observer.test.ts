@@ -188,6 +188,21 @@ describe("a call the bound domain describes", () => {
     expect(seen.filter((event) => event.detail?.kind === "tool").map((event) => event.detail?.title)).toEqual(['Typing "USB-C hub" into “Search”', 'Typing "USB-C hub" into “Search”']);
   });
 
+  // Live run `run-muqiojz4-04a7a8fc`: asked again after the click, the handle was gone with the
+  // popup it closed, and the row that ended the press of "No thanks" read "Clicking on the page".
+  it("asks the domain once, before the call runs, and keeps its words for the call's end", async () => {
+    let asked = 0;
+    const once = (call: { toolId: string; value: Record<string, unknown> }) => (asked++ === 0 ? describeCall(call) : undefined);
+    for (const executeTool of [async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "web.action.succeeded" }), async () => { throw new Error("gone"); }]) {
+      seen = [];
+      asked = 0;
+      const observed = observeAutomationStudioEvidenceLoop(loopInput({ describeCall: once, executeTool: executeTool as never }));
+      await inScope(() => observed.executeTool({ callId: "c1", toolId: "core.run_node", value: typing.input })).catch(() => undefined);
+      expect(asked).toBe(1);
+      expect(seen.map((event) => event.detail?.title)).toEqual(['Typing "USB-C hub" into “Search”', 'Typing "USB-C hub" into “Search”']);
+    }
+  });
+
   it("says the verb alone when the domain describes nothing, or answers in another shape", async () => {
     const observed = observeAutomationStudioEvidenceLoop(loopInput({ describeCall: () => ({ target: 7 }) as never }));
     await inScope(() => observed.executeTool({ callId: "c1", toolId: "core.run_node", value: typing.input }));

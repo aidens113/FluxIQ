@@ -30,22 +30,22 @@ export function parseAutomationStudioDeepSeekEnvelope(
   if (typeof choice.message.content !== "string") malformed({ case: "content_missing", ...finishReasonOf(choice) }, paid);
   if (choice.finish_reason === "length") {
     if (choice.message.content.trim() === "") {
-      throw new AutomationStudioLlmProviderError("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.");
+      refusePaid("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.", paid);
     }
-    throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.");
+    refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
   }
   if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
   const structured = parseDeepSeekJsonContent(choice.message.content, paid);
   const usage = value.usage;
-  if (!isRecord(usage)) usageInvalid();
+  if (!isRecord(usage)) usageInvalid(paid);
   const inputTokens = nonNegativeInteger(usage.prompt_tokens);
   const outputTokens = nonNegativeInteger(usage.completion_tokens);
   const totalTokens = nonNegativeInteger(usage.total_tokens);
-  if (inputTokens === undefined || outputTokens === undefined || totalTokens === undefined || totalTokens !== inputTokens + outputTokens) usageInvalid();
-  if (inputTokens > request.tokenLimits.maxInputTokens || outputTokens > request.tokenLimits.maxOutputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded();
+  if (inputTokens === undefined || outputTokens === undefined || totalTokens === undefined || totalTokens !== inputTokens + outputTokens) usageInvalid(paid);
+  if (inputTokens > request.tokenLimits.maxInputTokens || outputTokens > request.tokenLimits.maxOutputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded(paid);
   const cacheHitInputTokens = automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens);
   return {
-    response: parseDeepSeekStructuredResponse(structured, request),
+    response: parseDeepSeekStructuredResponse(structured, request, paid),
     usage: {
       inputTokens,
       outputTokens,
@@ -56,7 +56,8 @@ export function parseAutomationStudioDeepSeekEnvelope(
   };
 }
 
-function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest): AutomationStudioLlmStructuredResponse {
+function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest, paid: AutomationStudioLlmUsageSummary | undefined): AutomationStudioLlmStructuredResponse {
+  const outputInvalid: () => never = () => refusePaid("llm.provider_output_invalid", "DeepSeek returned output that does not satisfy the requested structure.", paid);
   if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) {
     if (!isRecord(structured) || structured.kind !== "diagnosis") outputInvalid();
     return structured as AutomationStudioLlmStructuredResponse;
@@ -194,11 +195,20 @@ function firstTopLevelJsonObjectEnd(content: string): number | undefined {
  * adapter's call as well, for the two cases it meets before the envelope.
  */
 export function automationStudioDeepSeekMalformedReply(reply: AutomationStudioLlmProviderReplyAccount, message = "DeepSeek returned an invalid response envelope."): AutomationStudioLlmProviderError {
-  return new AutomationStudioLlmProviderError("llm.provider_malformed_response", message, false, undefined, undefined, undefined, undefined, reply);
+  return new AutomationStudioLlmProviderError("llm.provider_malformed_response", message, false, undefined, undefined, undefined, undefined, reply, undefined, reply.usage);
 }
 
 function malformed(reply: AutomationStudioLlmProviderReplyAccount, paid: AutomationStudioLlmProviderReplyAccount["usage"]): never {
   throw automationStudioDeepSeekMalformedReply({ ...reply, ...(paid ? { usage: paid } : {}) });
+}
+
+/**
+ * A refusal of a reply that arrived, carrying what the provider said it cost:
+ * Core would not take the reply, but the call was paid for, and the run's
+ * ledger and the build's purse charge it at that rather than at its hold.
+ */
+function refusePaid(code: "llm.provider_output_invalid" | "llm.provider_output_truncated" | "llm.provider_output_padding_truncated" | "llm.provider_usage_invalid" | "llm.provider_usage_limit_exceeded", message: string, paid: AutomationStudioLlmUsageSummary | undefined): never {
+  throw new AutomationStudioLlmProviderError(code, message, false, undefined, undefined, undefined, undefined, undefined, undefined, paid);
 }
 
 /** The provider's finish reason, where it gave a code-shaped one; the account bounds it again. */
@@ -228,16 +238,13 @@ function replyUsage(value: unknown, model: AutomationStudioDeepSeekModel): Autom
   };
 }
 
-function outputInvalid(): never {
-  throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "DeepSeek returned output that does not satisfy the requested structure.");
+/** Usage Core will not account by, with `paid` (the lenient read) where it exists; today both reads ask the same of the counts, so it is normally absent here. */
+function usageInvalid(paid: AutomationStudioLlmUsageSummary | undefined): never {
+  refusePaid("llm.provider_usage_invalid", "DeepSeek returned invalid token usage.", paid);
 }
 
-function usageInvalid(): never {
-  throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "DeepSeek returned invalid token usage.");
-}
-
-function usageLimitExceeded(): never {
-  throw new AutomationStudioLlmProviderError("llm.provider_usage_limit_exceeded", "DeepSeek reported usage above the configured token limits.");
+function usageLimitExceeded(paid: AutomationStudioLlmUsageSummary | undefined): never {
+  refusePaid("llm.provider_usage_limit_exceeded", "DeepSeek reported usage above the configured token limits.", paid);
 }
 
 function nonNegativeInteger(value: unknown): number | undefined {

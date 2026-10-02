@@ -59,6 +59,13 @@ export type AutomationStudioFlowDraftStepEffect = "observe" | "mutate";
  */
 export type AutomationStudioFlowDraftStepDisposition = "kept" | "taken" | "dropped" | "exploratory";
 
+/**
+ * What a step's call names, in the bound domain's own words: the control its
+ * argument names by a token, and the words it types or looks for -- the same
+ * answer the chat shows (`../llm/loop-configuration.ts`, `describeCall`).
+ */
+export type AutomationStudioFlowDraftStepWords = { target?: string; text?: string };
+
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
@@ -134,6 +141,19 @@ export type AutomationStudioFlowDraftStep = {
    * written from changes.
    */
   interruption?: true;
+  /**
+   * What the call names, in the domain's words, kept when the step was
+   * appended: the draft line shows it as `does` (`./entry.ts`).
+   *
+   * `input` names a control by a token -- `{"target":{"handle":"t1091"}}` --
+   * and a token means something only on the page it was shown on, so a draft of
+   * ten presses read as ten lines the model could not tell apart. Live run
+   * `run-muqiojz4-04a7a8fc` named its step 10, a "×" closing a chat overlay, as
+   * the act "add ... to my cart", and the Flow failed its test on that ×.
+   * Absent when the caller has no words for the call, or its answer could not
+   * be read.
+   */
+  words?: AutomationStudioFlowDraftStepWords;
   effect: AutomationStudioFlowDraftStepEffect;
   /** Whether a changing action changed anything, as the caller reported it. */
   effectApplied?: boolean;
