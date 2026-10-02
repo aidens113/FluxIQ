@@ -21,11 +21,22 @@ const ANSWER_SHAPE = [
   "Do not ask whether you may do something ordinary. Asking for it is the person's permission."
 ].join("\n");
 
+/**
+ * The system message for one person's message.
+ *
+ * `domainInstructions` is the bound domain's own text
+ * (`AutomationStudioLlmEvidenceRuntimeBinding.systemInstructions`), already
+ * checked when the runtime was bound. It goes after the panel's vocabulary --
+ * Core's fixed list of what may be chosen -- and before what only this message
+ * knows: the project's Flows and what is on screen. The answer-shape rules
+ * stay last and stay Core's; nothing the domain writes replaces them. Absent,
+ * the message is exactly what it was.
+ */
 export function automationStudioConversationInstructions(
   context: AutomationStudioConversationDecisionContext,
-  notes: { transcriptWithheld: boolean }
+  notes: { transcriptWithheld: boolean; domainInstructions?: string | undefined }
 ): string {
-  const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), "", flowSection(context), "", onScreenSection(context)];
+  const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), ...(notes.domainInstructions ? ["", notes.domainInstructions] : []), "", flowSection(context), "", onScreenSection(context)];
   if (notes.transcriptWithheld) sections.push("", "The earlier part of this conversation could not be read just now, so only the latest message is shown.");
   sections.push("", ANSWER_SHAPE);
   return sections.join("\n");

@@ -336,6 +336,51 @@ them. The bootstrap directives are absent from the untrusted user context and
 other task messages. Requests disable thinking and set temperature to zero;
 the strict Bootstrap response schema remains authoritative.
 
+### Domain system instructions
+
+A domain may bind its own instructions with its evidence runtime:
+`AutomationStudioLlmEvidenceRuntimeBinding.systemInstructions`, a
+`{ version, text }` checked when the runtime is bound
+(`runtime/llm/domain-instructions/`). `version` matches
+`^[a-z0-9][a-z0-9._-]{0,63}$`, and `text` is non-blank, at most 4,000
+characters, with no control character but a line feed. A text that fails is
+refused by the service constructor or `bindLlmEvidenceRuntime`, never mid-build.
+
+Coverage is central, not per call site. The service wraps the host's execution
+resolver and the result-check resolver once, where they are stored, with
+`automationStudioLlmResolverWithDomainInstructions`. Every provider either
+resolves is decorated by `automationStudioLlmProviderWithDomainInstructions`,
+which sets `domainInstructions: { domainId, version, text }` on each request
+passed to `runTask` and to `measureInput`. That covers every evidence decision,
+the bootstrap call, the instruction authority, the build judge, runtime
+diagnosis and patch, result verification, recovery annotation and the standing
+repair authority, and any call site added later. The binding is read when a
+provider is resolved, so a runtime bound after the resolver is the one sent.
+
+The request carries the instructions beside its context, like
+`deniedEvidenceKeys`. They are never part of the user payload, but they are
+part of the system message, so the provider's `measureInput` counts them. The
+DeepSeek system message is built in three parts:
+
+1. Core's rules: the JSON-only and injection rules, then the task's schema
+   instruction.
+2. The domain's text, set off by a blank line before and after.
+3. Core's prose for the task, as before: the evidence-decision instruction,
+   compact-output rules, runtime-patch prose, diagnosis fields and the
+   reusable-context rule.
+
+Both of the first two parts are constant for a binding and a task kind, so the
+text sits inside the prefix a provider's cache reuses from one call to the next.
+Nothing a domain writes replaces Core's schema or injection rules. Without
+instructions the message is byte for byte what it was; the pins are
+`runtime/llm/deepseek/tests/system-prompt-pins.json`.
+
+The chat's interpreter (`runtime/conversations/instructions/prompt.ts`) gets
+the same text. The service connects the conversations collaborator to its
+binding with `bindDomainInstructions`. The text follows the panel's fixed
+capability vocabulary and precedes the project's Flows and what is on screen.
+The answer-shape rules stay last.
+
 Provider response content is still untrusted. For bootstrap tasks the adapter
 requires exactly `kind`, `summary`, and `plan`, then parses the plan through
 the strict bootstrap parser before returning it to the harness. The harness

@@ -88,7 +88,7 @@ import {
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
+import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmEvidenceRuntimeBindingChecked, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmResolverWithDomainInstructions, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, emitAutomationStudioBuildRequest, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
@@ -394,9 +394,9 @@ export class AutomationStudioService {
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
-    this.llmProviderResolver = options.llmProviderResolver;
-    this.llmEvidenceRuntime = options.llmEvidenceRuntime;
-    this.resultCheckProviderResolver = options.resultCheckProviderResolver;
+    this.llmProviderResolver = automationStudioLlmResolverWithDomainInstructions(options.llmProviderResolver, () => this.llmEvidenceRuntime); // Every provider resolved stamps the bound domain's instructions (`llm/domain-instructions/`).
+    this.llmEvidenceRuntime = automationStudioLlmEvidenceRuntimeBindingChecked(options.llmEvidenceRuntime); // A bad `systemInstructions` fails here, at bind, not mid-build.
+    this.resultCheckProviderResolver = automationStudioLlmResolverWithDomainInstructions(options.resultCheckProviderResolver, () => this.llmEvidenceRuntime);
     this.hostRuntime = options.hostRuntime;
     this.reusableLlmContextEnabled = options.reusableLlmContext?.enabled === true;
     this.reusableLlmContextContentProtection = options.reusableLlmContext?.contentProtection;
@@ -440,7 +440,7 @@ export class AutomationStudioService {
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
     this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool);
-    this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool);
+    this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool).bindDomainInstructions(() => this.llmEvidenceRuntime?.systemInstructions?.text); // The chat is told what every Flow model call is told.
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
     this.proposalGeneration = new AutomationStudioProposalGeneration(this.recordings, automationStudioFacadePorts(this));
@@ -450,12 +450,12 @@ export class AutomationStudioService {
   }
 
   bindLlmExecutionProvider(resolver: NonNullable<AutomationStudioServiceOptions["llmProviderResolver"]>): this {
-    this.llmProviderResolver = resolver;
+    this.llmProviderResolver = automationStudioLlmResolverWithDomainInstructions(resolver, () => this.llmEvidenceRuntime);
     return this;
   }
 
   bindLlmEvidenceRuntime(runtime: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>): this {
-    this.llmEvidenceRuntime = runtime;
+    this.llmEvidenceRuntime = automationStudioLlmEvidenceRuntimeBindingChecked(runtime);
     return this;
   }
 
