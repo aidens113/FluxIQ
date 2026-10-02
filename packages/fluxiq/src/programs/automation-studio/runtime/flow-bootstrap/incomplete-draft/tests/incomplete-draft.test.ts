@@ -142,6 +142,24 @@ describe("a stored record read back", () => {
     expect(parseAutomationStudioFlowBootstrapIncompleteDraft(moved, OWNER)).toBeNull();
   });
 
+  // The domain's words for a step's call (`../../../flow-draft/step.ts`, `words`):
+  // a continuation's draft lines say which control each kept press named, as
+  // the build's own did.
+  it("keeps the domain's words for a step through the record and back, and refuses words of any other shape", () => {
+    const record = automationStudioFlowBootstrapIncompleteDraftKept({
+      ...BUILD, stopped: "unusable_decisions", outstandingIssueCodes: [], completionAttempts: 0, now: 1,
+      steps: [step(1, { words: { target: "×" } }), step(2, { words: { target: "Search", text: "paper towels" } }), step(3)]
+    })!;
+    expect(record.steps.map((kept) => kept.words)).toEqual([{ target: "×" }, { target: "Search", text: "paper towels" }, undefined]);
+    const read = parseAutomationStudioFlowBootstrapIncompleteDraft(JSON.parse(JSON.stringify(record)), OWNER);
+    expect(read?.steps.map((kept) => kept.words)).toEqual([{ target: "×" }, { target: "Search", text: "paper towels" }, undefined]);
+    for (const words of [{ target: 7 }, { target: "×", page: "<html>" }, {}, "×", ["×"]]) {
+      const damaged = JSON.parse(JSON.stringify(record));
+      damaged.steps[0].words = words;
+      expect(parseAutomationStudioFlowBootstrapIncompleteDraft(damaged, OWNER)).toBeNull();
+    }
+  });
+
   // A Flow is no longer capped at sixty-four nodes, so a draft kept from a
   // build of a larger Flow must seed the next build. The reader has only the
   // owner's ids and bounds by the largest Flow the setting allows.

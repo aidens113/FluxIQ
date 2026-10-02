@@ -199,3 +199,61 @@ describe("authoring properties in the decision schema", () => {
     expect(authored - plain).toBeLessThan(468 + 4 * 120);
   });
 });
+
+// Live run `run-muqiojz4-04a7a8fc` (t193, bigbox): every press was a draft line
+// with only a handle, and the model named a "×" closing a chat overlay as its
+// add-to-cart act. The loop now keeps the domain's words for each call on its
+// step, and the draft line shows them as `does`.
+describe("the draft says which control each step named", () => {
+  const press = (index: number, handle: string, over: JsonObject = {}) => ({ kind: "tool_call", callId: `press.${index}`, toolId: "go", input: { target: { handle } }, ...over });
+  const names: Record<string, string> = { t667: "12 Double Rolls", t1091: "×" };
+  const named = (_call: { toolId: string; value: JsonObject }): unknown => {
+    const handle = (_call.value.target as { handle?: string } | undefined)?.handle;
+    return handle && names[handle] ? { target: names[handle] } : undefined;
+  };
+
+  it("keeps the domain's words on the step and shows them as does, beside the handle the model wrote", async () => {
+    const describeCall = vi.fn(named);
+    const decide = vi.fn()
+      .mockResolvedValueOnce(press(1, "t667", { add: true }))
+      .mockResolvedValueOnce(press(2, "t1091"))
+      .mockResolvedValueOnce(press(3, "t404"))
+      .mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+
+    expect(result.ok).toBe(true);
+    expect(result.steps.map((step: AutomationStudioFlowDraftStep) => step.words)).toEqual([{ target: "12 Double Rolls" }, { target: "×" }, undefined]);
+    expect(describeCall).toHaveBeenCalledWith({ toolId: "go", value: { target: { handle: "t1091" } } });
+    const draft = shownAt(decide, 3).find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: JsonObject[] } | undefined;
+    expect(draft?.steps.map((line) => line.does)).toEqual([{ target: "12 Double Rolls" }, { target: "×" }, undefined]);
+    expect(draft?.steps[1]?.input).toEqual({ target: { handle: "t1091" } });
+  });
+
+  // The "×" closed its overlay, and the page the click left no longer shows
+  // its handle: asked after the call, the domain named nothing (t193 lead).
+  it("asks for the words before the call runs, while the handle still names its control", async () => {
+    let closed = false;
+    const describeCall = vi.fn((call: { toolId: string; value: JsonObject }) => (closed ? undefined : named(call)));
+    const executeTool = vi.fn(async () => { closed = true; return worked; });
+    const decide = vi.fn().mockResolvedValueOnce(press(1, "t1091", { add: true })).mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, describeCall: describeCall as never, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+
+    expect(result.steps.map((step: AutomationStudioFlowDraftStep) => step.words)).toEqual([{ target: "×" }]);
+  });
+
+  it("records every step, without words, when the domain has none or answers in another shape", async () => {
+    const answers: Array<() => unknown> = [() => undefined, () => "×", () => ({ target: 7, text: "  " })];
+    const describeCall = vi.fn((_call: { toolId: string; value: JsonObject }) => answers.shift()!());
+    const decide = vi.fn()
+      .mockResolvedValueOnce(press(1, "t667", { add: true }))
+      .mockResolvedValueOnce(press(2, "t1091"))
+      .mockResolvedValueOnce(press(3, "t933"))
+      .mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+
+    expect(result.ok).toBe(true);
+    expect(describeCall).toHaveBeenCalledTimes(3);
+    expect(result.steps).toHaveLength(3);
+    expect(result.steps.every((step: AutomationStudioFlowDraftStep) => !("words" in step))).toBe(true);
+  });
+});
