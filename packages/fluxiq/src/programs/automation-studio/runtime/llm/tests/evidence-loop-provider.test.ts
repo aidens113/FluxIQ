@@ -83,6 +83,38 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(secrets).toBe(0);
   });
 
+  // F31: the opening arrival is loop data. It is checked like the look it
+  // rides on, accepted only on a tool whose calls declare their own effect,
+  // and never projected to the model.
+  it("checks an opening arrival and never sends it to the model", async () => {
+    const arrival = { node: "web.output.navigate", parameters: { url: "https://start.example/" }, consequences: [] };
+    const runNode = [{ toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true, initialObservation: { input: { node: "web.output.dom-capture" }, arrival } }];
+    let outbound = "";
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
+      fetchImpl: (async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "Done.", decision: { kind: "complete", result: {} } }) } }],
+        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
+      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+    });
+    const loop = { ...evidenceLoop, tools: runNode, decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(runNode, completionSchema) };
+    await expect(provider.runTask(request({ context: { ...request().context, evidenceLoop: loop } }))).resolves.toMatchObject({ response: { kind: "evidence_tool_decision" } });
+    expect(outbound).not.toContain("arrival");
+    expect(outbound).not.toContain("https://start.example/");
+
+    let secrets = 0;
+    const refusing = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async () => { secrets += 1; return "test-secret"; },
+      fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
+    });
+    const lookOnly = [{ ...tools[0]!, effect: "observe" as const, initialObservation: { input: {}, arrival } }];
+    const refused = request({ context: { ...request().context, evidenceLoop: { ...evidenceLoop, tools: lookOnly, decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(lookOnly, completionSchema) } } });
+    await expect(refusing.runTask(refused)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
+    expect(secrets).toBe(0);
+  });
+
   it("accepts historic evidence from a tool omitted from the current eligible schema", async () => {
     const eligibleTools = [{ toolId: "act", description: "Perform a bounded mutation.", inputSchema: { type: "object" }, effect: "mutate" as const }];
     const currentLoop = {

@@ -32,8 +32,19 @@ describe("a step added to the Flow", () => {
     expect(steps.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "taken"]);
   });
 
-  it("brings nothing when the page moved between them, when the press was dropped, or when the states were not seen", () => {
-    const moved = draft([{ from: "s1", to: "s2" }, { from: "s2b", to: "s3" }]);
+  it("run 40: brings the product link though the product page went on loading before the size was chosen", () => {
+    // The search results, the product link (taken), the size on a product page whose digest grew after the press answered.
+    const steps = draft([{ from: "s0", to: "s1", disposition: "kept" }, { from: "s1", to: "s2" }, { from: "s2", to: "s3" }, { from: "s3b", to: "s4" }]);
+    expect(automationStudioFlowDraftKeepOpeners(steps, steps[3]!).map((step) => step.position)).toEqual([3, 2]);
+  });
+
+  it("brings no more than two presses back, however long the taken chain", () => {
+    const steps = draft([{ from: "s0", to: "s1" }, { from: "s1", to: "s2" }, { from: "s2", to: "s3" }, { from: "s3", to: "s4" }, { from: "s4", to: "s5" }]);
+    expect(automationStudioFlowDraftKeepOpeners(steps, steps[4]!).map((step) => step.position)).toEqual([4, 3]);
+  });
+
+  it("brings nothing when the page is back where the press started, when the press was dropped, or when the states were not seen", () => {
+    const moved = draft([{ from: "s1", to: "s2" }, { from: "s1", to: "s3" }]);
     expect(automationStudioFlowDraftKeepOpeners(moved, moved[1]!)).toEqual([]);
     const dropped = draft([{ from: "s1", to: "s2", disposition: "dropped" }, { from: "s2", to: "s3" }]);
     expect(automationStudioFlowDraftKeepOpeners(dropped, dropped[1]!)).toEqual([]);

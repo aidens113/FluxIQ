@@ -19,7 +19,15 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "../loop-budget.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting } from "./accounting.ts";
 
 export type AutomationStudioLlmEvidenceLoopPurse = {
-  /** The decision the purse refused, once it has: what ended the loop. */
+  /**
+   * What the cost budget declined the next decision by, read once the loop
+   * ends (`./exhaustion.ts`). The purse's own refusal, once it has refused one;
+   * otherwise the purse's standing (`declinedBy: "loop_budget"`), which says
+   * what was spent and the last decision's worst case where the loop's count
+   * (`../loop-budget.ts`) stopped before the decision reached the purse --
+   * `./exhaustion.ts` keeps that one only when cost is the bound that ran out.
+   * Undefined without a cost budget.
+   */
   readonly refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** The worst case of the last decision priced: the least the next, larger one can cost at worst. */
   readonly lastProjectedCostUsd: number | undefined;
@@ -37,7 +45,7 @@ export function automationStudioLlmEvidenceLoopPurse(budget: AutomationStudioLlm
     onBreach: () => { accounting.budgetBreaches = (accounting.budgetBreaches ?? 0) + 1; }
   });
   return {
-    get refusal() { return purse?.refusal; },
+    get refusal() { return purse ? purse.refusal ?? purse.standing() : undefined; },
     get lastProjectedCostUsd() { return purse?.lastProjectedCostUsd; },
     run: (call) => automationStudioLlmBuildPurseRun(purse, call),
     refused: (thrown) => thrown instanceof AutomationStudioLlmBuildPurseRefused

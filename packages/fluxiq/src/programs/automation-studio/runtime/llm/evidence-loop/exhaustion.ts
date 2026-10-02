@@ -117,10 +117,17 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    */
   outstandingIssueCodes: readonly string[];
   /**
-   * The call the build's purse refused, when that is what ended the loop
+   * The decision the cost budget declined, when that is what ended the loop
    * (`./cost-purse.ts`): what was spent, what the next decision would have
    * cost at worst, and the ceiling it would have crossed. `budgetBound` is then
    * `cost`. The decision was never sent, so `iterations` does not count it.
+   *
+   * Either the purse refused it, or the loop's count of decisions left
+   * (`../loop-budget.ts`) found none it could pay for before the decision
+   * reached the purse (`declinedBy: "loop_budget"`): its figure is then the
+   * last decision's worst case, the least the next can cost at worst. The
+   * second used to carry nothing, so `run-muqbzu32-8691a65e` stopped at $0.074
+   * of $0.10 and told the person no figure at all (t194-w47).
    */
   costRefusal?: AutomationStudioLlmBuildPurseRefusal;
 };
@@ -146,11 +153,14 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
   lastIssueCodes: readonly string[];
   /** Which budget bound had the fewest decisions left when the budget was last read, where it was. */
   lastRemaining: { limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound } | undefined;
-  /** The call the build's purse refused, once it has refused one (`./cost-purse.ts`). */
+  /** The call the build's purse refused, or its standing where it refused none (`./cost-purse.ts`). */
   purseRefusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   outstandingIssueCodes: readonly string[];
 }): AutomationStudioLlmEvidenceLoopExhaustion {
-  const { bound, lastRemaining, purseRefusal } = state;
+  const { bound, lastRemaining } = state;
+  // The purse's refusal ends the loop on cost whatever the count said; its
+  // standing is the cost figures only where cost is the bound the count ran out of.
+  const purseRefusal = state.purseRefusal && (state.purseRefusal.declinedBy === undefined || lastRemaining?.limitedBy === "cost") ? state.purseRefusal : undefined;
   return {
     bound,
     maxIterations: state.maxIterations,

@@ -116,13 +116,34 @@ describe("the closing message of a build its purse stopped", () => {
       .toMatch(/^The build stopped at its time limit of 9 minutes before the Flow was finished\. /u);
   });
 
-  it("is unchanged where the loop's own arithmetic stopped it and no call was refused", async () => {
+  it("says what was spent and what was left where the round ended on cost with no call's figures (t194-w47)", async () => {
+    // It used to say no figure here: "The build stopped at its spending limit of $0.25 before the Flow was finished. 1 of the 3 ..."
     const { input } = harness([() => stoppedByCost([step(1, { acts: ["a1"] })], spent(40, 0.24))]);
 
     const outcome = await unfinished(input);
 
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
-    expect(outcome.ending.message).not.toContain("had spent");
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.240, which left \$0\.010, too little for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
+  });
+
+  it("says the loop count's figure as a least worst case, not a most", async () => {
+    // Run 13's figures: $0.0738 spent, and the last request's worst case $0.0314, which the next costs at least at worst.
+    const declined = { ...refusal(0.0738, 0.0314, 0.1), declinedBy: "loop_budget" as const };
+    const { input } = harness([() => stoppedByCost([step(1, { acts: ["a1"] })], spent(15, 0.0738), declined)]);
+    input.budget = { maxCostUsd: 0.1, maxDurationMs: 540_000 };
+
+    const outcome = await unfinished(input);
+
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.10 before the Flow was finished: it had spent \$0\.074, and its next call could have cost \$0\.031 or more\. /u);
+  });
+
+  it("says the whole build's spend where a repair had nothing left to start with", async () => {
+    // The exploration spent the whole ceiling and stopped short; no repair can start, and no call was declined.
+    const { input } = harness([() => outOfDecisions([step(1, { acts: ["a1"] })], spent(64, 0.25))]);
+
+    const outcome = await unfinished(input);
+
+    expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. /u);
   });
 });
 

@@ -295,6 +295,36 @@ describe("how a person's answer settles a request", () => {
     expect(await place(PLACE)).toEqual({ permitted: true });
   });
 
+  // t229: a decline stops being the run's request once answered, and a
+  // recovery read only the request, so it went on to a repair after a deny.
+  // The no stands until a grant replaces it, and trying the control again
+  // makes it the last word once more.
+  it("keeps a person's no standing until a grant replaces it", async () => {
+    const run = asking();
+    expect(run.standingDecline).toBeUndefined();
+    await run.checkFor(STEP)(CHECKOUT);
+    expect(run.standingDecline).toBeUndefined();
+    run.settle("declined");
+    expect(run.request).toBeUndefined();
+    expect(run.standingDecline?.requestId).toBe("permission-request:1");
+
+    const place = run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.9" });
+    await place(PLACE);
+    expect(run.standingDecline?.requestId).toBe("permission-request:1");
+    run.settle("granted");
+    expect(run.standingDecline).toBeUndefined();
+
+    await run.checkFor({ kind: "exploration_step", id: "demo.press", ref: "call.10" })(CHECKOUT);
+    expect(run.standingDecline?.requestId).toBe("permission-request:1");
+  });
+
+  it("stands on no decline when nobody answered", async () => {
+    const run = asking();
+    await run.checkFor(STEP)(CHECKOUT);
+    run.settle("unanswered");
+    expect(run.standingDecline).toBeUndefined();
+  });
+
   it("keeps a request nobody answered in force, so nothing after it is asked", async () => {
     const run = asking();
     await run.checkFor(STEP)(CHECKOUT);

@@ -25,13 +25,18 @@ export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek/index.ts
 // has to agree on them, and because one hardcoded string in each of those
 // layers is what made DeepSeek's last rename a source edit in two repositories
 // at once.
+// The default is the developer and Lab knob `FLUXIQ_LLM_DEFAULT_MODEL`, read
+// once at load, `deepseek-flash` when unset.
 export {
+  AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL,
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS,
   AUTOMATION_STUDIO_DEEPSEEK_MODELS,
+  AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV,
   automationStudioDeepSeekModelRefusal,
   isAutomationStudioDeepSeekModel,
   resolveAutomationStudioDeepSeekModel,
+  resolveAutomationStudioLlmDefaultModel,
   type AutomationStudioDeepSeekModel
 } from "./deepseek/index.ts";
 // What a call costs, beside the adapter that makes it: dated provider prices,
@@ -75,6 +80,8 @@ export {
 // (`decision-context/`). Public because a caller reading a run's evidence has
 // to be able to name the entry and read its rows.
 export * from "./decision-context/index.ts";
+// Core's tool that gives back a held view a newer result replaced (`evidence-recall/`, t194 w48).
+export * from "./evidence-recall/index.ts";
 // What the model is told when the draft refuses one of its amendments, and the
 // entry it arrives under. Published beside the loop for the same reason the
 // decision and completion feedback are: a caller reading a run's evidence has

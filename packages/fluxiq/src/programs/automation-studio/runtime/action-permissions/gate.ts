@@ -128,6 +128,8 @@ export class AutomationStudioActionPermissionGate {
   private readonly askedAbout = new Map<string, { controlName: string; controlKind: string | null }>();
   /** Questions a person answered no, each with the control it was asked about. */
   private readonly declined: Array<{ request: AutomationStudioActionPermissionRequest; controlName: string; controlKind: string | null }> = [];
+  /** The declined request, while a no is the last word on a lasting act (see `standingDecline`). */
+  private lastDeclined: AutomationStudioActionPermissionRequest | undefined;
   private readonly stopped = new AbortController();
   private instructedEntries: readonly AutomationStudioInstructedConsequence[] | undefined;
   private deriving: Promise<{ derived: true; entries: readonly AutomationStudioInstructedConsequence[] } | { derived: false; reason: unknown }> | undefined;
@@ -180,6 +182,23 @@ export class AutomationStudioActionPermissionGate {
   }
 
   /**
+   * The request a person declined, while that no is still the last word this
+   * run had on a lasting act: set when a person declines, and again whenever
+   * the declined question is refused unasked; cleared only by a grant, which
+   * is the person allowing a different way forward.
+   *
+   * `request` stops carrying a decline the moment it is answered, so a run can
+   * go on and ask about another control. That is right for the asking and
+   * wrong for whatever the run would build afterwards: a recovery whose
+   * exploration ended with a person's no standing must not go on to a repair,
+   * because that repair is built around the act the person refused
+   * (t229: after 2a5ad68c the patch call ran straight after a deny).
+   */
+  get standingDecline(): AutomationStudioActionPermissionRequest | undefined {
+    return this.lastDeclined;
+  }
+
+  /**
    * Take the answer to the request this gate raised and has not settled.
    *
    * `granted` adds exactly the classes the request said were missing, and
@@ -214,10 +233,12 @@ export class AutomationStudioActionPermissionGate {
     const control = this.askedAbout.get(settled.requestId);
     if (answer === "declined") {
       if (control) this.declined.push({ request: settled, ...control });
+      this.lastDeclined = settled;
       // Answered, so no longer what the run stands on; a Flow step that needs it puts it back.
       if (this.latest === settled) this.latest = undefined;
       return;
     }
+    this.lastDeclined = undefined;
     for (const consequence of settled.missing) this.permitted.add(consequence);
     if (this.latest === settled) this.latest = undefined;
   }
@@ -330,6 +351,8 @@ export class AutomationStudioActionPermissionGate {
       if (declined) {
         // Only a step of the Flow makes the run stand on it again (see `request`).
         if (action.kind === "flow_step") this.latest = declined.request;
+        // Tried again after the no: the no is the last word once more.
+        this.lastDeclined = declined.request;
         return record({ permitted: false, missing: [...declined.request.missing], requestId: declined.request.requestId, declined: true });
       }
       const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence)));
